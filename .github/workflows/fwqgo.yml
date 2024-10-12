@@ -17,6 +17,5 @@ jobs:
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          cd /path/to/your/app
-          git pull origin main
+          echo "Connection successful"
           # 添加其他必要的部署步骤,如重启服务等
