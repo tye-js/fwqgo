@@ -26,8 +26,8 @@ jobs:
       with:
         name: build-files
         path: |
-          .next
-          public
+          /home/runner/work/fwqgo/fwqgo
+    
 
 
   deploy:
