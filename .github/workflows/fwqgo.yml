@@ -23,10 +23,9 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
           echo "Connection successful"
-          rm -rf /home/ecs-user/www/fwqgo/
-          mkdir -p /home/ecs-user/www/fwqgo/
-          cd /home/ecs-user/www/fwqgo/
-          
+          cd /home/ecs-user/www/fwqgo/fwqgo
+          git pull origin main
           npm install --production
+          npm run build
 
           
