@@ -9,6 +9,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build application
+      run: npm run build
     
     - name: Deploy to Ubuntu server
       uses: appleboy/ssh-action@master
@@ -19,7 +30,8 @@ jobs:
         script: |
           echo "Connection successful"
           # 添加其他必要的部署步骤,如重启服务等
-          cd /home/ecs-user/www
-          cd fwqgo
+          cd /home/ecs-user/www/fwqgo
+          git fetch --all
+          git reset --hard origin/main
           npm install
           
