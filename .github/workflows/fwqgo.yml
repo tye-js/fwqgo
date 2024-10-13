@@ -19,3 +19,5 @@ jobs:
         script: |
           echo "Connection successful"
           # 添加其他必要的部署步骤,如重启服务等
+          cd /home/ecs-user/www
+          git pull origin main
