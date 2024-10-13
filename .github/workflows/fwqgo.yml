@@ -47,10 +47,9 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
           echo "Connection successful"
-          rm -rf /home/ecs-user/www/fwqgo/.next
-          mkdir -p /home/ecs-user/www/fwqgo/.next
-          cp -r .next /home/ecs-user/www/fwqgo/
-          cp -r public /home/ecs-user/www/fwqgo/
+          rm -rf /home/ecs-user/www/fwqgo/
+          mkdir -p /home/ecs-user/www/fwqgo/
+          cp -r /home/runner/work/fwqgo/fwqgo /home/ecs-user/www/fwqgo/
           cd /home/ecs-user/www/fwqgo/
           npm install --production
 
