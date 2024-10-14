@@ -25,7 +25,7 @@ jobs:
           echo "Connection successful"
           cd /home/ecs-user/www/fwqgo/fwqgo
           git pull origin main
-          npm install --production
-          npm run build
-
+          echo "git pull successfiul"
+          docker-compose down
+          docker-compose up -d --build
           
