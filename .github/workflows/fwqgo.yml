@@ -24,6 +24,7 @@ jobs:
         script: |
           echo "Connection successful"
           cd /home/ecs-user/www/fwqgo/fwqgo
+          pm2 stop ecosystem.config.js
           git pull origin main
           echo "git pull successfiul"
           npm install
