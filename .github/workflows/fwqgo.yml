@@ -26,6 +26,5 @@ jobs:
           cd /home/ecs-user/www/fwqgo/fwqgo
           git pull origin main
           echo "git pull successfiul"
-          docker build -t nextjs-docker .
-          docker run -p 3000:3000 nextjs-docker
+          npm run build
           
