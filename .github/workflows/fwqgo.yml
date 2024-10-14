@@ -26,5 +26,6 @@ jobs:
           cd /home/ecs-user/www/fwqgo/fwqgo
           git pull origin main
           echo "git pull successfiul"
+          npm install
           npm run build
           
