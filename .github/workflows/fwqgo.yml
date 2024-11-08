@@ -24,8 +24,8 @@ jobs:
           script: |
             echo "Connection successful"
             cd /home/ecs-user/www/fwqgo/fwqgo
-            find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
             pm2 stop ecosystem.config.js
+            find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
             git pull origin main
             echo "git pull successfiul"
             echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
