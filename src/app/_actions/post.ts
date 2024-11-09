@@ -8,7 +8,6 @@ interface CreatePostInput {
   img?: string;
   published: boolean;
   categoryId: number;
-  tags: { name: string }[]; // 添加tags字段
 }
 
 export async function createPost(input: CreatePostInput) {
@@ -33,16 +32,6 @@ export async function createPost(input: CreatePostInput) {
       data: {
         ...input,
         slug,
-        tags: {
-          create: input.tags.map((tag) => ({
-            name: tag.name,
-            // 如果需要先检查标签是否存在
-            // connectOrCreate: {
-            //   where: { name: tag.name },
-            //   create: { name: tag.name }
-            // }
-          })),
-        },
       },
     });
 

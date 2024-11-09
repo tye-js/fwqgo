@@ -40,8 +40,9 @@ export function ImageUpload({ onChange, value }: ImageUploadProps) {
       });
 
       if (!response.ok) throw new Error("上传失败");
+      const data = (await response.json()) as { url: string };
 
-      const data = await response.json();
+      // const data = await response.json();
       onChange(data.url);
     } catch (error) {
       console.error("上传错误:", error);

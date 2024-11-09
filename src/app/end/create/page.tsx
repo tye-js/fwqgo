@@ -68,7 +68,7 @@ export default function CreatePost() {
         setCategories(result.data);
       }
     }
-    fetchCategories();
+    void fetchCategories();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -88,7 +88,6 @@ export default function CreatePost() {
         img: imageUrl,
         published: true,
         categoryId: parseInt(categoryId),
-        tags: tags.map((tag) => ({ name: tag.name })),
       });
 
       if (result.error) {
