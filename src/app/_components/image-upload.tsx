@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 
 interface ImageUploadProps {
   onChange: (value: string) => void;
@@ -19,13 +20,13 @@ export function ImageUpload({ onChange, value }: ImageUploadProps) {
 
       // 验证文件类型
       if (!file.type.startsWith("image/")) {
-        alert("请上传图片文件");
+        toast.error("请上传图片文件");
         return;
       }
 
       // 验证文件大小 (例如限制为 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        alert("图片大小不能超过 5MB");
+        toast.error("图片大小不能超过 5MB");
         return;
       }
 
@@ -46,7 +47,7 @@ export function ImageUpload({ onChange, value }: ImageUploadProps) {
       onChange(data.url);
     } catch (error) {
       console.error("上传错误:", error);
-      alert("上传失败，请重试");
+      toast.error("上传失败，请重试");
     } finally {
       setIsUploading(false);
     }
@@ -74,7 +75,7 @@ export function ImageUpload({ onChange, value }: ImageUploadProps) {
         accept="image/*"
         onChange={handleUpload}
         disabled={isUploading}
-        className="cursor-pointer"
+        className="w-80 cursor-pointer"
       />
       {isUploading && (
         <p className="text-sm text-muted-foreground">上传中...</p>

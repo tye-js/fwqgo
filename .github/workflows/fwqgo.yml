@@ -25,7 +25,8 @@ jobs:
             echo "Connection successful"
             cd /home/ecs-user/www/fwqgo/fwqgo
             pm2 stop ecosystem.config.cjs
-            find . -mindepth 1 -maxdepth 1 ! -name '.git' ! -name 'ecosystem.config.cjs' -exec rm -rf {} +
+            rm -rf node_modules
+            rm -rf .next
             echo "remove success"
             git pull origin main
             echo "git pull successfiul"

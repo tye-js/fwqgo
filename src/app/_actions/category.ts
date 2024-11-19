@@ -18,22 +18,20 @@ export async function getCategories() {
 
     return { data: categories };
   } catch (error) {
-    console.error("获取分类列表失败:", error);
-    return { error: "获取分类列表失败" };
+    return { error: "获取分类列表失败", message: error };
   }
 }
 
 export async function getCategoryBySlug(slug: string) {
   try {
-    const category = await db.category.findFirst({
+    const category = await db.category.findUnique({
       where: {
         slug,
       },
     });
     return { data: category };
   } catch (error) {
-    console.error("获取分类失败:", error);
-    return { error: "获取分类失败" };
+    return { error: "获取分类失败", message: error };
   }
 }
 
@@ -51,7 +49,28 @@ export async function getAllCategories() {
 
     return { data: categories };
   } catch (error) {
-    console.error("获取全部分类列表失败:", error);
-    return { error: "获取全部分类列表失败" };
+    return { error: "获取全部分类列表失败", message: error };
+  }
+}
+
+export async function getLeafCategories() {
+  try {
+    const leafCategories = await db.category.findMany({
+      select: {
+        id: true,
+        name: true,
+      },
+      where: {
+        children: {
+          none: {}, // 没有任何子分类的分类
+        },
+      },
+      orderBy: {
+        id: "asc",
+      },
+    });
+    return { data: leafCategories };
+  } catch (error) {
+    return { error: "获取叶子分类列表失败", message: error };
   }
 }

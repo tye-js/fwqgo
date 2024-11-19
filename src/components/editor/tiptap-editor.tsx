@@ -5,6 +5,8 @@ import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import { EditorToolbar } from "./editor-toolbar";
+import { useState } from "react";
+import { cn } from "@/lib/utils";
 
 interface TiptapEditorProps {
   content: string;
@@ -12,9 +14,14 @@ interface TiptapEditorProps {
 }
 
 export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        heading: {
+          levels: [2, 3, 4, 5, 6],
+        },
+      }),
       Image,
       Link.configure({
         openOnClick: false,
@@ -27,7 +34,7 @@ export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
     editorProps: {
       attributes: {
         class:
-          "prose prose-sm sm:prose lg:prose-lg xl:prose-2xl mx-auto focus:outline-none",
+          "prose prose-sm lg:prose mx-auto focus:outline-none h-full w-full",
       },
     },
     onUpdate: ({ editor }) => {
@@ -42,10 +49,22 @@ export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
   if (!editor) return null;
 
   return (
-    <div className="rounded-lg border">
-      <EditorToolbar editor={editor} />
-      <div className="p-4">
-        <EditorContent editor={editor} />
+    <div
+      className={cn(
+        "relative h-full border",
+        isFullscreen && "fixed inset-0 z-50 bg-background",
+      )}
+    >
+      <EditorToolbar
+        editor={editor}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={(e) => {
+          e.preventDefault();
+          setIsFullscreen(!isFullscreen);
+        }}
+      />
+      <div className="h-full *:overflow-y-auto">
+        <EditorContent editor={editor} className="h-full" />
       </div>
     </div>
   );
