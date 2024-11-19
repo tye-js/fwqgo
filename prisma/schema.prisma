@@ -19,7 +19,8 @@ model Post {
     title       String    // 文章标题
     slug        String    @unique
     content     String    @db.Text // 文章内容
-    description String?   // 文章描述
+    keywords    String?   @db.VarChar(320) // 文章关键词
+    description String?   @db.VarChar(320) // 文章描述
     img         String?   // 文章封面图片 URL
     published   Boolean   @default(false) // 是否发布
     createdAt   DateTime  @default(now())
@@ -46,7 +47,8 @@ model Category {
     id          Int      @id @default(autoincrement())
     name        String   @unique
     slug        String   @unique
-    description String?
+    description String?   @db.VarChar(320) // 文章描述@db.VarChar(320)
+    keywords    String?   @db.VarChar(320) // 关键词
     parentId    Int?
     parent      Category? @relation("CategoryToCategory", fields: [parentId], references: [id])
     children    Category[] @relation("CategoryToCategory")
@@ -61,7 +63,8 @@ model Category {
 model Tag {
     id          Int       @id @default(autoincrement())
     name        String    @unique
-    description String?
+    keywords    String?   @db.VarChar(320) // 关键词
+    description String?   @db.VarChar(320) // 文章描述
     slug        String    @unique
     posts       PostTag[]
     createdAt   DateTime  @default(now())

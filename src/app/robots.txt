@@ -1,0 +1,20 @@
+# 全局规则
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /private/
+Disallow: /admin/
+Disallow: /*.json$
+Disallow: /*?*  # 禁止带参数的URL
+
+# 针对常见爬虫的特殊规则
+User-agent: Googlebot
+Allow: /
+Crawl-delay: 1
+
+User-agent: Bingbot
+Allow: /
+Crawl-delay: 1
+
+# Sitemap 声明
+Sitemap: https://fwqgo.com/sitemap.xml

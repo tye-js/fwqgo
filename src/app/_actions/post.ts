@@ -4,6 +4,7 @@ import { db } from "@/server/db";
 
 interface CreatePostInput {
   title: string;
+  description: string;
   content: string;
   img?: string;
   published: boolean;
@@ -12,7 +13,6 @@ interface CreatePostInput {
 
 export async function createPost(input: CreatePostInput) {
   try {
-    console.log(input);
     // 先验证分类是否存在
     const category = await db.category.findUnique({
       where: { id: input.categoryId },
@@ -28,6 +28,12 @@ export async function createPost(input: CreatePostInput) {
       .replace(/[^\w\s\u4e00-\u9fff]/g, "") // 保留中文字符和英文字母数字
       .replace(/\s+/g, "-") // 空格替换为连字符
       .replace(/[\u4e00-\u9fff]/g, (char) => encodeURIComponent(char)); // 中文字符 URL 编码
+
+    const result = await getPostBySlug(slug);
+    if (result.data) {
+      return { error: "文章已存在" };
+    }
+
     const post = await db.post.create({
       data: {
         ...input,
@@ -37,8 +43,7 @@ export async function createPost(input: CreatePostInput) {
 
     return { data: post };
   } catch (error) {
-    console.error("创建文章失败:", error);
-    return { error: "创建文章失败" };
+    return { error: "创建文章失败", message: error };
   }
 }
 
@@ -49,8 +54,7 @@ export async function getPosts() {
     });
     return { data: posts };
   } catch (error) {
-    console.error("获取文章列表失败:", error);
-    return { error: "获取文章列表失败" };
+    return { error: "获取文章列表失败", message: error };
   }
 }
 
@@ -68,7 +72,6 @@ export async function getPostByCategoryId(id: number) {
         img: true,
         tags: true,
         createdAt: true,
-        updatedAt: true,
       },
       orderBy: {
         createdAt: "desc",
@@ -76,8 +79,7 @@ export async function getPostByCategoryId(id: number) {
     });
     return { data: posts };
   } catch (error) {
-    console.error("获取文章列表失败:", error);
-    return { error: "获取文章列表失败" };
+    return { error: "通过分类id获取文章列表失败", message: error };
   }
 }
 
@@ -86,7 +88,39 @@ export async function getPostBySlug(slug: string) {
     const post = await db.post.findUnique({ where: { slug } });
     return { data: post };
   } catch (error) {
-    console.error("获取文章失败:", error);
-    return { error: "获取文章失败" };
+    return { error: "通过slug获取文章失败", message: error };
+  }
+}
+
+export async function getPostsWithTagsByCategoryId(id: number) {
+  try {
+    const posts = await db.post.findMany({
+      where: { categoryId: id },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        img: true,
+        createdAt: true,
+        slug: true,
+        tags: {
+          select: {
+            tag: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+    return { data: posts };
+  } catch (error) {
+    return { error: "通过分类id获取文章列表失败", message: error };
   }
 }
