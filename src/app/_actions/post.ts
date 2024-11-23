@@ -1,12 +1,12 @@
 "use server";
 
 import { db } from "@/server/db";
-
+import { slugify } from "@/lib/utils";
 interface CreatePostInput {
   title: string;
   description: string;
   content: string;
-  img?: string;
+  imgUrl?: string;
   published: boolean;
   categoryId: number;
 }
@@ -23,11 +23,8 @@ export async function createPost(input: CreatePostInput) {
     }
 
     // 生成 slug
-    const slug = input.title
-      .toLowerCase()
-      .replace(/[^\w\s\u4e00-\u9fff]/g, "") // 保留中文字符和英文字母数字
-      .replace(/\s+/g, "-") // 空格替换为连字符
-      .replace(/[\u4e00-\u9fff]/g, (char) => encodeURIComponent(char)); // 中文字符 URL 编码
+    const slug = slugify(input.title);
+    console.log(slug);
 
     const result = await getPostBySlug(slug);
     if (result.data) {
@@ -69,7 +66,7 @@ export async function getPostByCategoryId(id: number) {
         title: true,
         slug: true,
         description: true,
-        img: true,
+        imgUrl: true,
         tags: true,
         createdAt: true,
       },
@@ -92,6 +89,37 @@ export async function getPostBySlug(slug: string) {
   }
 }
 
+export async function getPostWithTagsBySlug(slug: string) {
+  try {
+    const post = await db.post.findUnique({
+      where: { slug },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        keywords: true,
+        imgUrl: true,
+        content: true,
+        createdAt: true,
+        tags: {
+          select: {
+            tag: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    return { data: post };
+  } catch (error) {
+    return { error: "通过slug获取文章失败", message: error };
+  }
+}
+
 export async function getPostsWithTagsByCategoryId(id: number) {
   try {
     const posts = await db.post.findMany({
@@ -100,7 +128,7 @@ export async function getPostsWithTagsByCategoryId(id: number) {
         id: true,
         title: true,
         description: true,
-        img: true,
+        imgUrl: true,
         createdAt: true,
         slug: true,
         tags: {

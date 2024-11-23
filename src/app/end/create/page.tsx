@@ -11,7 +11,7 @@ import { createPost } from "@/app/_actions/post";
 import { createTags } from "@/app/_actions/tag";
 import { createPostTags } from "@/app/_actions/post-tag";
 import { getLeafCategories } from "@/app/_actions/category";
-
+import { ScraperForm } from "@/app/_components/scraper-form";
 import { X } from "lucide-react"; // 添加这个import用于显示删除图标
 
 import {
@@ -91,7 +91,7 @@ export default function CreatePost() {
         title,
         description,
         content,
-        img: imageUrl,
+        imgUrl: imageUrl,
         published: true,
         categoryId: parseInt(categoryId),
       });
@@ -143,7 +143,7 @@ export default function CreatePost() {
         title,
         description,
         content,
-        img: imageUrl,
+        imgUrl: imageUrl,
         published: false,
         categoryId: parseInt(categoryId),
       });
@@ -162,7 +162,14 @@ export default function CreatePost() {
 
   return (
     <div className="mx-auto min-h-[85vh]">
-      <h1 className="text-2xl font-bold">创建新文章</h1>
+      <div>
+        <ScraperForm
+          setContent={setContent}
+          setTitle={setTitle}
+          setDescription={setDescription}
+          setTags={setTags}
+        />
+      </div>
       <form className="grid min-h-[80vh] grid-cols-6 gap-8">
         <div className="col-span-3 space-y-2">
           <label className="text-sm font-medium">文章内容</label>
@@ -286,6 +293,12 @@ export default function CreatePost() {
           </div>
         </div>
       </form>
+
+      {content.length > 0 && (
+        <div className="mt-4 text-sm text-gray-500">
+          文章字数：{content.length}
+        </div>
+      )}
     </div>
   );
 }
