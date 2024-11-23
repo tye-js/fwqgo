@@ -42,16 +42,16 @@ const CategoryPage = async ({ params }: { params: { category: string } }) => {
   if (postsError) return <div>加载失败: {postsError}</div>;
   if (!posts) return <div>加载中...</div>;
   return (
-    <div className="mt-2 grid grid-cols-6 gap-8">
-      <div className="col-span-4 space-y-4">
+    <div className="mt-2 grid grid-cols-8 gap-8">
+      <div className="col-span-8 space-y-4 md:col-span-6">
         {category && <PageCard {...categoryInfo} />}
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
+        <div className="flex flex-col gap-4">
           {posts.map((post) => (
             <ArticleCard key={post.id} post={post} />
           ))}
         </div>
       </div>
-      <div className="col-span-2">
+      <div className="col-span-2 hidden md:block">
         <div className="grid grid-cols-6 items-center gap-2">
           <label htmlFor="search" className="col-span-1 text-sm">
             搜索

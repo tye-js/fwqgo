@@ -22,8 +22,8 @@ const HeaderComponent = async () => {
         <h2 className="text-xl font-bold text-neutral-900">
           <Link href={"/"}>服务器go</Link>
         </h2>
-        <NavigationMenu>
-          <NavigationMenuList className="gap-6">
+        <NavigationMenu className="hidden lg:block">
+          <NavigationMenuList className="gap-2 lg:gap-6">
             {categories.map((category) =>
               !!category.children.length ? (
                 <NavigationMenuItem key={category.id}>

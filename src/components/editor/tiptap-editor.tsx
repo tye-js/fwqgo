@@ -2,10 +2,14 @@
 
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import Table from "@tiptap/extension-table";
+import TableCell from "@tiptap/extension-table-cell";
+import TableHeader from "@tiptap/extension-table-header";
+import TableRow from "@tiptap/extension-table-row";
 import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import { EditorToolbar } from "./editor-toolbar";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 
 interface TiptapEditorProps {
@@ -15,36 +19,52 @@ interface TiptapEditorProps {
 
 export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        heading: {
-          levels: [2, 3, 4, 5, 6],
+
+  const editor = useEditor(
+    {
+      extensions: [
+        StarterKit.configure({
+          heading: {
+            levels: [2, 3, 4, 5, 6],
+          },
+        }),
+        Table.configure({
+          resizable: true,
+        }),
+        TableCell,
+        TableHeader,
+        TableRow,
+        Image,
+        Link.configure({
+          openOnClick: false,
+          HTMLAttributes: {
+            class: "text-primary underline",
+          },
+        }),
+      ],
+      content: content,
+      editorProps: {
+        attributes: {
+          class:
+            "prose-zinc prose-sm dark:prose-invert lg:prose prose-a:text-blue-600 col-span-4 h-full w-full mx-auto",
         },
-      }),
-      Image,
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: {
-          class: "text-primary underline",
-        },
-      }),
-    ],
-    content,
-    editorProps: {
-      attributes: {
-        class:
-          "prose prose-sm lg:prose mx-auto focus:outline-none h-full w-full",
       },
+      onUpdate: ({ editor }) => {
+        onChange(editor.getHTML());
+      },
+      // 添加这个配置来解决 SSR 问题
+      enableInputRules: false,
+      enablePasteRules: false,
+      immediatelyRender: false,
     },
-    onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
-    },
-    // 添加这个配置来解决 SSR 问题
-    enableInputRules: false,
-    enablePasteRules: false,
-    immediatelyRender: false,
-  });
+    [content],
+  );
+
+  useEffect(() => {
+    if (editor && content !== editor.getHTML()) {
+      editor.commands.setContent(content);
+    }
+  }, [content, editor]);
 
   if (!editor) return null;
 

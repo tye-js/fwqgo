@@ -18,7 +18,6 @@ export default function CreateLayout({
         position="top-center"
         expand={false}
         richColors
-        closeButton
         toastOptions={{
           style: {
             background: "hsl(var(--background))",
