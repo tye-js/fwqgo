@@ -48,3 +48,24 @@ export function formatDate(date: Date) {
 export function decodeSlug(url: string) {
   return decodeURIComponent(url);
 }
+
+export function sanitizeFileName(fileName: string) {
+  // 获取文件扩展名
+  const lastDotIndex = fileName.lastIndexOf(".");
+  const ext = lastDotIndex !== -1 ? fileName.slice(lastDotIndex) : "";
+  const nameWithoutExt =
+    lastDotIndex !== -1 ? fileName.slice(0, lastDotIndex) : fileName;
+
+  // 编码文件名（不包括扩展名）
+  const encodedName = encodeURIComponent(nameWithoutExt);
+
+  // 限制编码后的文件名长度（保留扩展名）
+  const maxLength = 200 - ext.length;
+  const truncatedName =
+    encodedName.length > maxLength
+      ? encodedName.slice(0, maxLength)
+      : encodedName;
+
+  // 返回处理后的文件名（带扩展名）
+  return `${truncatedName}${ext}`;
+}

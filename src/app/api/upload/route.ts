@@ -1,3 +1,4 @@
+import { sanitizeFileName } from "@/lib/utils";
 import { writeFile } from "fs/promises";
 import { type NextRequest, NextResponse } from "next/server";
 import path from "path";
@@ -19,15 +20,15 @@ export async function POST(request: NextRequest) {
 
     // 生成唯一文件名
     const timestamp = Date.now();
-    const originalName = file.name.replace(/[^a-zA-Z0-9.]/g, "");
-    const filename = `${timestamp}-${originalName}`;
+    const sanitizedName = sanitizeFileName(file.name);
+    const filename = `${timestamp}-${sanitizedName}`;
 
     // 保存文件
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
     // 确保上传目录存在
-    const uploadDir = path.join(process.cwd(), "public/uploads");
+    const uploadDir = path.join("/var/www/", "uploads");
     const filePath = path.join(uploadDir, filename);
 
     await writeFile(filePath, buffer);

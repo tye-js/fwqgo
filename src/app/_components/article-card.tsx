@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { type Post, type Tag } from "@prisma/client";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { Clock } from "lucide-react";
+
 import { Suspense } from "react";
 import { formatDate } from "@/lib/utils";
 // 定义联合类型
@@ -64,7 +64,6 @@ function ArticleCard({ post }: { post: PostWithTags }) {
           </div>
 
           <div className="flex items-center space-x-2">
-            <Clock className="h-4 w-4 text-gray-400" />
             <span className="text-sm text-gray-500">
               {formatDate(post.createdAt)}
             </span>
