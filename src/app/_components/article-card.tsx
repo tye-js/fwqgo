@@ -24,10 +24,10 @@ function ArticleCard({ post }: { post: PostWithTags }) {
   return (
     <Card
       key={post.id}
-      className="flex h-[192px] w-full items-center overflow-hidden px-2 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
+      className="flex h-[114px] w-full items-center overflow-hidden px-2 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg md:h-[150px] lg:h-[192px]"
     >
       <Link href={`/fwq/posts/${post.slug}`}>
-        <div className="relative h-[180px] w-[250px] overflow-hidden rounded-lg">
+        <div className="relative h-[108px] w-[150px] overflow-hidden rounded-lg md:h-[144px] md:w-[200px] lg:h-[180px] lg:w-[250px]">
           <Suspense
             fallback={<div className="h-full w-full bg-gray-300"></div>}
           >
@@ -36,11 +36,11 @@ function ArticleCard({ post }: { post: PostWithTags }) {
                 src={post.imgUrl}
                 alt={post.title}
                 fill
-                sizes="(max-width: 768px) 200px, lg:250px"
+                sizes="150px,(max-width: 768px) 200px, (max-width: 1024px)250px"
                 className="object-cover object-center"
               />
             ) : (
-              <div className="h-[180px] bg-gray-300 lg:w-[250px]"></div>
+              <div className="h-full w-full bg-gray-300"></div>
             )}
           </Suspense>
         </div>
@@ -49,14 +49,16 @@ function ArticleCard({ post }: { post: PostWithTags }) {
         <h3 className="mb-2 line-clamp-3 h-14 text-lg font-semibold text-gray-800 transition-colors duration-300 hover:text-blue-600">
           <Link href={`/fwq/posts/${post.slug}`}>{post.title}</Link>
         </h3>
-        <p className="mb-4 line-clamp-3 text-sm text-gray-600/80">
+        <p className="mb-2 line-clamp-2 hidden text-sm text-gray-600/80 md:block lg:mb-4 lg:line-clamp-3">
           {post.description}
         </p>
-        <div className="flex h-8 items-center justify-between">
-          <div className="hidden gap-2 md:flex">
+        <div className="hidden h-8 items-center justify-between lg:flex">
+          <div className="hidden gap-2 lg:flex">
             {post.tags.slice(0, 4).map((tag) => (
               <Badge key={tag.tag.id} variant="secondary" className="text-xs">
-                <Link href={`/fwq/tags/${tag.tag.slug}`}>{tag.tag.name}</Link>
+                <Link href={`/fwq/tags/${tag.tag.slug}/page/1`}>
+                  {tag.tag.name}
+                </Link>
               </Badge>
             ))}
           </div>

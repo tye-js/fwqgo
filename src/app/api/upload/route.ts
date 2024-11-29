@@ -1,27 +1,46 @@
-import { NextResponse } from "next/server";
-import { uploadImage } from "@/lib/upload";
+import { writeFile } from "fs/promises";
+import { type NextRequest, NextResponse } from "next/server";
+import path from "path";
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File;
 
     if (!file) {
-      return NextResponse.json({ error: "没有上传文件" }, { status: 400 });
+      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    // 转换文件为 Buffer
-    const buffer = Buffer.from(await file.arrayBuffer());
+    // 验证文件类型
+    const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      return NextResponse.json({ error: "Invalid file type" }, { status: 400 });
+    }
 
-    // 上传图片
-    const url = await uploadImage({
-      file: buffer,
-      filename: file.name,
+    // 生成唯一文件名
+    const timestamp = Date.now();
+    const originalName = file.name.replace(/[^a-zA-Z0-9.]/g, "");
+    const filename = `${timestamp}-${originalName}`;
+
+    // 保存文件
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+
+    // 确保上传目录存在
+    const uploadDir = path.join(process.cwd(), "public/uploads");
+    const filePath = path.join(uploadDir, filename);
+
+    await writeFile(filePath, buffer);
+
+    // 返回文件URL
+    const fileUrl = `/uploads/${filename}`;
+
+    return NextResponse.json({
+      success: true,
+      url: fileUrl,
     });
-
-    return NextResponse.json({ url });
   } catch (error) {
-    console.error("上传错误:", error);
-    return NextResponse.json({ error: "上传失败" }, { status: 500 });
+    console.error("Upload error:", error);
+    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   }
 }

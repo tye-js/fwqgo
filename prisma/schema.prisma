@@ -26,6 +26,10 @@ model Post {
     createdAt   DateTime  @default(now())
     updatedAt   DateTime?  @updatedAt
 
+    views       Int       @default(0) // 浏览量
+    recommendedTag Tag?    @relation("RecommendedPosts", fields: [recommendedTagName], references: [name]) // 推荐标签
+    recommendedTagName String? // 推荐标签名称
+
     // 关联作者（User）
     author      User?      @relation(fields: [authorId], references: [id])
     authorId    String?
@@ -37,6 +41,7 @@ model Post {
     // 关联标签（一篇文章多个标签）
     tags        PostTag[]
 
+    @@index([recommendedTagName])
     @@index([title])
     @@index([categoryId])
     @@index([authorId])
@@ -67,6 +72,8 @@ model Tag {
     description String?   @db.VarChar(800) // 文章描述
     slug        String    @unique
     posts       PostTag[]
+    recommendedPosts Post[] @relation("RecommendedPosts") // 被推荐的文章
+
     createdAt   DateTime  @default(now())
     updatedAt   DateTime?  @updatedAt
 }

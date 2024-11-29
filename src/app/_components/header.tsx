@@ -34,7 +34,7 @@ const HeaderComponent = async () => {
                         <ListItem
                           key={item.id}
                           title={item.name}
-                          href={"/fwq/" + item.slug}
+                          href={"/fwq/" + item.slug + "/page/1"}
                         >
                           {item.description}
                         </ListItem>
@@ -44,7 +44,11 @@ const HeaderComponent = async () => {
                 </NavigationMenuItem>
               ) : (
                 <NavigationMenuItem key={category.id}>
-                  <Link href={"/fwq/" + category.slug} legacyBehavior passHref>
+                  <Link
+                    href={"/fwq/" + category.slug + "/page/1"}
+                    legacyBehavior
+                    passHref
+                  >
                     <NavigationMenuLink
                       className={navigationMenuTriggerStyle()}
                     >
@@ -64,11 +68,13 @@ const HeaderComponent = async () => {
 const ListItem = React.forwardRef<
   React.ElementRef<"a">,
   React.ComponentPropsWithoutRef<"a">
->(({ className, title, children, ...props }, ref) => {
+>(({ className, title, children, href, ...props }, ref) => {
+  if (!href) return null;
   return (
     <li>
       <NavigationMenuLink asChild>
-        <a
+        <Link
+          href={href}
           ref={ref}
           className={cn(
             "block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
@@ -78,7 +84,7 @@ const ListItem = React.forwardRef<
         >
           <div className="text-sm font-medium leading-none">{title}</div>
           <p className="line-clamp-2 text-sm leading-snug">{children}</p>
-        </a>
+        </Link>
       </NavigationMenuLink>
     </li>
   );

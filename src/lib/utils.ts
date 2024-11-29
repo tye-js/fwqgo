@@ -7,6 +7,7 @@ export function cn(...inputs: ClassValue[]) {
 
 export function slugify(text: string): string {
   const processedText = text
+    .trim()
     // 移除特殊字符和标点符号
     .replace(/[：，。！？「」（）\[\]{}|@#$%^&*+=\\/<>～｜、；'："】【]/g, "")
     // 替换冒号和空格为连字符
@@ -20,7 +21,7 @@ export function slugify(text: string): string {
     // 移除首尾的连字符
     .replace(/^-+|-+$/g, "")
     // 限制长度
-    .substring(0, 20);
+    .substring(0, 40);
 
   // URL 编码，处理中文字符
   return processedText
@@ -29,7 +30,7 @@ export function slugify(text: string): string {
       // 如果是英文字母、数字或连字符，保持原样
       if (/[a-z0-9-]/.test(char)) return char;
       // 其他字符（包括中文）进行 URL 编码
-      return encodeURIComponent(char);
+      return char;
     })
     .join("");
 }
@@ -42,4 +43,8 @@ export function formatDate(date: Date) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+export function decodeSlug(url: string) {
+  return decodeURIComponent(url);
 }

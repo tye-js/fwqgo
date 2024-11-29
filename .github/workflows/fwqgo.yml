@@ -23,7 +23,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             echo "Connection successful"
-            cd /home/ecs-user/www/fwqgo/fwqgo
+            cd /home/${{ secrets.SERVER_USER }}/www/fwqgo
             pm2 stop ecosystem.config.cjs
             rm -rf node_modules
             rm -rf .next
