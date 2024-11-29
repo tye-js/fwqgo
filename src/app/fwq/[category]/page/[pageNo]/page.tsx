@@ -26,7 +26,11 @@ export async function generateMetadata({
   };
 }
 
-const CategoryPage = async ({ params }: { params: { category: string } }) => {
+const CategoryPage = async ({
+  params,
+}: {
+  params: { category: string; pageNo: string };
+}) => {
   const { data: category, error: categoryError } = await CategoryInfo(
     params.category,
   );
@@ -34,6 +38,7 @@ const CategoryPage = async ({ params }: { params: { category: string } }) => {
   if (!category) return <div>加载中...</div>;
   const { data: posts, error: postsError } = await getPostsWithTagsByCategoryId(
     category.id,
+    parseInt(params.pageNo),
   );
   const categoryInfo = {
     name: category.name,
@@ -42,16 +47,16 @@ const CategoryPage = async ({ params }: { params: { category: string } }) => {
   if (postsError) return <div>加载失败: {postsError}</div>;
   if (!posts) return <div>加载中...</div>;
   return (
-    <div className="mt-2 grid grid-cols-8 gap-8">
-      <div className="col-span-8 space-y-4 md:col-span-6">
+    <div className="mt-2 grid grid-cols-8 gap-2 md:gap-4 lg:gap-8">
+      <div className="col-span-8 space-y-2 lg:col-span-6 lg:space-y-4">
         {category && <PageCard {...categoryInfo} />}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2 lg:gap-4">
           {posts.map((post) => (
             <ArticleCard key={post.id} post={post} />
           ))}
         </div>
       </div>
-      <div className="col-span-2 hidden md:block">
+      <div className="col-span-2 hidden lg:block">
         <div className="grid grid-cols-6 items-center gap-2">
           <label htmlFor="search" className="col-span-1 text-sm">
             搜索

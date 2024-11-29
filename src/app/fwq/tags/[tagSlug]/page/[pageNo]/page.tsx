@@ -2,6 +2,7 @@ import { getPostsWithTagsByTagSlug, getTagBySlug } from "@/app/_actions/tag";
 import ArticleCard from "@/app/_components/article-card";
 import PageCard from "@/app/_components/page-card";
 import { Input } from "@/components/ui/input";
+import { decodeSlug } from "@/lib/utils";
 import type { Metadata } from "next";
 
 export async function generateMetadata({
@@ -9,7 +10,8 @@ export async function generateMetadata({
 }: {
   params: { tagSlug: string };
 }): Promise<Metadata> {
-  const { data: tag, error } = await getTagBySlug(params.tagSlug);
+  const decodedTagSlug = decodeSlug(params.tagSlug);
+  const { data: tag, error } = await getTagBySlug(decodedTagSlug);
   if (error || !tag)
     return {
       title: "服务器go",
@@ -23,9 +25,9 @@ export async function generateMetadata({
 }
 
 async function TagPage({ params }: { params: { tagSlug: string } }) {
-  const { data: postsWithTag, error } = await getPostsWithTagsByTagSlug(
-    params.tagSlug,
-  );
+  const decodedTagSlug = decodeSlug(params.tagSlug);
+  const { data: postsWithTag, error } =
+    await getPostsWithTagsByTagSlug(decodedTagSlug);
   if (error || !postsWithTag?.posts)
     return (
       <div>
@@ -41,7 +43,7 @@ async function TagPage({ params }: { params: { tagSlug: string } }) {
     <div className="mt-2 grid grid-cols-6 gap-8">
       <div className="col-span-4 space-y-4">
         {postsWithTag && <PageCard {...cardInfo} />}
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
+        <div className="flex flex-col gap-2 lg:gap-4">
           {posts.map((post) => (
             <ArticleCard key={post.post.id} post={post.post} />
           ))}

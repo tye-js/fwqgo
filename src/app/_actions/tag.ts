@@ -1,5 +1,6 @@
 "use server";
 
+import { slugify } from "@/lib/utils";
 import { db } from "@/server/db";
 import { z } from "zod";
 
@@ -24,7 +25,7 @@ export async function createTag(input: z.infer<typeof createTagSchema>) {
   if (existingTag) return { id: existingTag.id };
 
   // 生成 slug
-  const slug = input.name.toLowerCase().replace(/\s+/g, "-");
+  const slug = slugify(input.name);
 
   const tag = await db.tag.create({
     data: { name: result.name, slug },
@@ -61,6 +62,7 @@ export async function getTagBySlug(tagSlug: string) {
 // 通过标签 slug 获取多个文章的信息，并且包括每个文章的标签信息
 export async function getPostsWithTagsByTagSlug(tagSlug: string) {
   try {
+    console.log(tagSlug);
     const postsWithTags = await db.tag.findUnique({
       where: { slug: tagSlug },
       select: {

@@ -24,7 +24,6 @@ export async function createPost(input: CreatePostInput) {
 
     // 生成 slug
     const slug = slugify(input.title);
-    console.log(slug);
 
     const result = await getPostBySlug(slug);
     if (result.data) {
@@ -89,6 +88,40 @@ export async function getPostBySlug(slug: string) {
   }
 }
 
+// 根据推荐标签名称获取相关文章
+export async function getRecommendedPosts(
+  tagName: string | null,
+  currentPostId: number,
+) {
+  try {
+    if (!tagName) return { data: [] };
+    const posts = await db.post.findMany({
+      where: {
+        recommendedTagName: tagName,
+        id: {
+          not: currentPostId, // 排除当前文章
+        },
+        published: true, // 只获取已发布的文章
+      },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        description: true,
+        imgUrl: true,
+        createdAt: true,
+      },
+      take: 5, // 限制返回5篇推荐文章
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+    return { data: posts };
+  } catch (error) {
+    return { error: "获取推荐文章失败", message: error };
+  }
+}
+
 export async function getPostWithTagsBySlug(slug: string) {
   try {
     const post = await db.post.findUnique({
@@ -101,6 +134,8 @@ export async function getPostWithTagsBySlug(slug: string) {
         imgUrl: true,
         content: true,
         createdAt: true,
+        views: true,
+        recommendedTagName: true,
         tags: {
           select: {
             tag: {
@@ -114,13 +149,22 @@ export async function getPostWithTagsBySlug(slug: string) {
         },
       },
     });
-    return { data: post };
+    // 如果文章存在且有推荐标签，获取推荐文章
+    let recommendedPosts = null;
+    if (post?.recommendedTagName) {
+      const recommended = await getRecommendedPosts(
+        post.recommendedTagName,
+        post.id,
+      );
+      recommendedPosts = recommended.data;
+    }
+    return { data: { post, recommendedPosts } };
   } catch (error) {
     return { error: "通过slug获取文章失败", message: error };
   }
 }
 
-export async function getPostsWithTagsByCategoryId(id: number) {
+export async function getPostsWithTagsByCategoryId(id: number, pageNo: number) {
   try {
     const posts = await db.post.findMany({
       where: { categoryId: id },
@@ -143,6 +187,8 @@ export async function getPostsWithTagsByCategoryId(id: number) {
           },
         },
       },
+      skip: (pageNo - 1) * 10,
+      take: 10,
       orderBy: {
         createdAt: "desc",
       },
