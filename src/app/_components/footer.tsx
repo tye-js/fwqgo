@@ -5,25 +5,25 @@ const FooterComponent = () => {
   const footerData = [
     {
       title: "关于我们",
-      href: "/about",
+      href: "/",
       content:
         "服务器go致力于为用户提供最全面、最专业的服务器选购指南和优惠信息。",
     },
     {
       title: "快速链接",
       links: [
-        { title: "服务器推荐", href: "/recommendations" },
-        { title: "优惠活动", href: "/deals" },
-        { title: "评测对比", href: "/comparisons" },
-        { title: "使用教程", href: "/tutorials" },
+        { title: "服务器推荐", href: "/" },
+        { title: "优惠活动", href: "/" },
+        { title: "评测对比", href: "/" },
+        { title: "使用教程", href: "/" },
       ],
     },
     {
       title: "特色专区",
       links: [
-        { title: "黑五专区", href: "/black-friday" },
-        { title: "住宅IP专区", href: "/residential-ip" },
-        { title: "出海专区", href: "/overseas-expansion" },
+        { title: "黑五专区", href: "/" },
+        { title: "住宅IP专区", href: "/" },
+        { title: "出海专区", href: "/" },
       ],
     },
     {

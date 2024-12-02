@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     await writeFile(filePath, buffer);
 
     // 返回文件URL
-    const fileUrl = `/uploads/${filename}`;
+    const fileUrl = `${process.env.PUBLIC_URL}/uploads/${filename}`;
 
     return NextResponse.json({
       success: true,
@@ -42,6 +42,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Upload error:", error);
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+    return NextResponse.json({ error: `Upload failed` }, { status: 500 });
   }
 }
