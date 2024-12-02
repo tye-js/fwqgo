@@ -33,11 +33,12 @@ function ArticleCard({ post }: { post: PostWithTags }) {
           >
             {post.imgUrl ? (
               <Image
-                src={post.imgUrl}
+                src={process.env.NEXT_PUBLIC_URL + post.imgUrl}
                 alt={post.title}
                 fill
                 sizes="150px,(max-width: 768px) 200px, (max-width: 1024px)250px"
                 className="object-cover object-center"
+                quality={100}
               />
             ) : (
               <div className="h-full w-full bg-gray-300"></div>

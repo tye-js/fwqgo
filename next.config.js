@@ -5,6 +5,18 @@
 import "./src/env.js";
 
 /** @type {import("next").NextConfig} */
-const config = {};
+const config = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "fwqgo.com",
+        pathname: "/uploads/**",
+        port: "",
+        search: "",
+      },
+    ],
+  },
+};
 
 export default config;

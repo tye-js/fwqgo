@@ -12,7 +12,6 @@ interface ImageUploadProps {
 
 export function ImageUpload({ onChange, value }: ImageUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
-
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const file = e.target.files?.[0];
@@ -64,6 +63,7 @@ export function ImageUpload({ onChange, value }: ImageUploadProps) {
               className="object-cover"
               alt="Upload"
               src={value}
+              unoptimized={false}
             />
           </div>
         ) : (
