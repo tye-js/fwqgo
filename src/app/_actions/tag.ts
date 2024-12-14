@@ -82,6 +82,7 @@ export async function getPostsWithTagsByTagSlug(tagSlug: string) {
                 imgUrl: true,
                 createdAt: true,
                 tags: {
+                  take: 5,
                   select: {
                     tag: {
                       select: {

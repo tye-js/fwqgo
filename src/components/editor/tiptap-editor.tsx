@@ -57,7 +57,7 @@ export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
       enablePasteRules: false,
       immediatelyRender: false,
     },
-    [content],
+    [],
   );
 
   useEffect(() => {
@@ -71,8 +71,8 @@ export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
   return (
     <div
       className={cn(
-        "relative h-full border",
-        isFullscreen && "fixed inset-0 z-50 bg-background",
+        "relative overflow-hidden border",
+        isFullscreen ? "fixed inset-0 z-50 bg-background" : "h-[80vh]",
       )}
     >
       <EditorToolbar
@@ -83,7 +83,7 @@ export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
           setIsFullscreen(!isFullscreen);
         }}
       />
-      <div className="h-full *:overflow-y-auto">
+      <div className="h-[calc(100%-140px)] overflow-y-auto py-2">
         <EditorContent editor={editor} className="h-full" />
       </div>
     </div>

@@ -47,6 +47,7 @@ export function ScraperForm({
       if (!data.success) throw new Error(data.error);
 
       // setArticle(data.data);
+      console.log(data.data.htmlContent);
       setContent(data.data.htmlContent);
       setTitle(data.data.title);
       setDescription(data.data.description);

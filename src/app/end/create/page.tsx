@@ -7,12 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ImageUpload } from "@/app/_components/image-upload";
-import { createPost } from "@/app/_actions/post";
+import {
+  createPost,
+  updatePostByRecommendedTagName,
+} from "@/app/_actions/post";
 import { createTags } from "@/app/_actions/tag";
 import { createPostTags } from "@/app/_actions/post-tag";
 import { getLeafCategories } from "@/app/_actions/category";
 import { ScraperForm } from "@/app/_components/scraper-form";
-import { X } from "lucide-react"; // 添加这个import用于显示删除图标
+import { X } from "lucide-react";
 
 import {
   Select,
@@ -43,7 +46,7 @@ export default function CreatePost() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
-
+  const [recommendTags, setRecommendTags] = useState<Tag>({ name: "" });
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<Tag[]>([]);
@@ -107,9 +110,7 @@ export default function CreatePost() {
       if (!postId) {
         throw new Error("写入文章存在");
       }
-      // if (!resultTags.data) {
-      //   throw new Error("写入标签存在");
-      // }
+
       const tagsArray = resultTags.data;
 
       // 向数据库中插入文章标签关联
@@ -120,6 +121,16 @@ export default function CreatePost() {
       if (resultPostTags.error) {
         throw new Error(resultPostTags.error);
       }
+      if (recommendTags.name) {
+        const resultUpdate = await updatePostByRecommendedTagName(
+          postId,
+          recommendTags.name,
+        );
+        if (resultUpdate.error) {
+          throw new Error(resultUpdate.error);
+        }
+      }
+
       // 跳转到文章详情页
       router.push(`/fwq/posts/${result.data?.slug}`);
     } catch (error) {
@@ -272,6 +283,14 @@ export default function CreatePost() {
             <label className="text-sm font-medium">封面图片</label>
             <ImageUpload value={imageUrl} onChange={setImageUrl} />
           </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium">推荐标签</label>
+            <Input
+              className="w-32"
+              value={recommendTags.name}
+              onChange={(e) => setRecommendTags({ name: e.target.value })}
+            />
+          </div>
           <div className="flex justify-center gap-2">
             <Button
               type="button"
@@ -294,7 +313,7 @@ export default function CreatePost() {
         </div>
       </form>
 
-      {content.length > 0 && (
+      {content && content.length > 0 && (
         <div className="mt-4 text-sm text-gray-500">
           文章字数：{content.length}
         </div>

@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { TableOfContents } from "@/components/toc/table-of-contents";
 import { Clock, Eye, Tags } from "lucide-react";
+import { incrementPostViews } from "@/app/_actions/post-actions";
 
 export async function generateMetadata({
   params,
@@ -21,8 +22,8 @@ export async function generateMetadata({
     };
   return {
     title: post.title,
-    description: post.description!,
-    keywords: post.keywords!,
+    description: post.description ?? `${post.title}`,
+    keywords: post.keywords ?? `${post.title}`,
   };
 }
 
@@ -33,6 +34,7 @@ async function PostPage({ params }: { params: { slug: string } }) {
   if (!data) return <div>加载中...</div>;
   const { post, recommendedPosts } = data;
   if (!post) return <div>加载中...</div>;
+  void incrementPostViews({ slug: decodedSlug });
   return (
     <div className="mt-4 grid grid-cols-8 gap-2 lg:gap-6">
       <aside className="col-span-2 hidden lg:block">
@@ -40,14 +42,14 @@ async function PostPage({ params }: { params: { slug: string } }) {
           <TableOfContents content={post.content} />
         </div>
       </aside>
-      <article className="prose-sm col-span-5 dark:prose-invert lg:prose prose-h1:text-2xl prose-h1:font-medium prose-a:text-blue-600 prose-a:no-underline">
+      <article className="prose-sm col-span-8 px-2 dark:prose-invert lg:prose prose-h1:text-2xl prose-h1:font-medium prose-a:text-blue-600 prose-a:no-underline md:col-span-5">
         <h1>{post.title}</h1>
         <div className="flex justify-center gap-4 border-b border-zinc-200 pb-2 text-sm text-zinc-600">
           <div className="flex items-center gap-1">
             <Clock className="size-4" />
             {formatDate(post.createdAt)}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="hidden items-center gap-1 md:flex">
             <Eye className="size-4" />
             {post.views}次浏览
           </div>
@@ -92,7 +94,7 @@ async function PostPage({ params }: { params: { slug: string } }) {
         )}
       </article>
 
-      <nav className="col-span-1">
+      <nav className="hidden md:col-span-1 md:block">
         {recommendedPosts && (
           <div className="border-t border-zinc-200">
             <h3 className="text-lg font-bold">
