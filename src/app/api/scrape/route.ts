@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import * as cheerio from "cheerio";
+import puppeteer from "puppeteer";
 import { z } from "zod";
+import { slugify } from "@/lib/utils";
 
 const urlSchema = z.object({
   url: z.string().url(),
@@ -11,13 +13,26 @@ export async function POST(req: Request) {
     const body = (await req.json()) as { url: string };
     const { url } = urlSchema.parse(body);
 
-    const response = await fetch(url);
-    const html = await response.text();
-    const $ = cheerio.load(html);
+    // 添加请求头模拟浏览器
+    const headers = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    };
+    if (url.includes("vpsgongyi.net")) {
+      const data = await puppeteerScrape(url);
+      return NextResponse.json({ success: true, data });
+    } else {
+      const response = await fetch(url, { headers });
+      const html = await response.text();
+      const $ = cheerio.load(html);
 
-    const article = urlAndRules(url, $);
+      const article = urlAndRules(url, $);
 
-    return NextResponse.json({ success: true, data: article });
+      return NextResponse.json({ success: true, data: article });
+    }
   } catch (error) {
     console.error("Scraping error:", error);
     return NextResponse.json(
@@ -124,11 +139,24 @@ function urlAndRules(url: string, $: cheerio.CheerioAPI) {
           const url = new URL(href);
           // 检查并替换 aff 参数
           const searchParams = new URLSearchParams(url.search);
-          if (searchParams.has("aff")) {
+          if (href.includes("zgovps.com") && searchParams.has("affid")) {
+            searchParams.set("affid", "33");
+          } else if (href.includes("raksmart.com") && searchParams.has("aff")) {
             searchParams.set("aff", "5734");
-            url.search = searchParams.toString();
-            $link.attr("href", url.toString());
+          } else if (href.includes("casbay.com") && searchParams.has("aff")) {
+            searchParams.set("aff", "44");
+          } else if (href.includes("vmiss.com") && searchParams.has("aff")) {
+            searchParams.set("aff", "849");
+          } else if (href.includes("clawcloudsingaporeprivatelimited.sjv.io")) {
+            // 替换为新的链接
+            $link.attr(
+              "href",
+              "https://clawcloudsingaporeprivatelimited.sjv.io/yqqo4G",
+            );
+            return;
           }
+          url.search = searchParams.toString();
+          $link.attr("href", url.toString());
         } catch (error) {
           console.error("Failed to parse URL:", href, error);
         }
@@ -161,4 +189,92 @@ function urlAndRules(url: string, $: cheerio.CheerioAPI) {
   }
   // 返回文章信息
   return { title, htmlContent, description, tags };
+}
+
+// 处理gongyi.net的抓取问题，需要使用puppeteer
+async function puppeteerScrape(url: string) {
+  const browser = await puppeteer.launch({
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
+
+  const page = await browser.newPage();
+
+  // 设置更真实的浏览器特征
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  );
+  await page.setViewport({ width: 1920, height: 1080 });
+
+  // 访问页面并等待 Cloudflare 验证完成
+  await page.goto(url, { waitUntil: "networkidle0", timeout: 30000 });
+
+  // 等待内容加载
+  await page.waitForSelector(".entry-content", { timeout: 30000 });
+
+  // 提取内容
+  const data = await page.evaluate(() => {
+    const title = document.querySelector("h1.entry-title")?.textContent?.trim();
+    const htmlContent =
+      document.querySelector(".entry-content")?.innerHTML?.trim() ?? "1";
+    const description = document
+      .querySelector(".entry-content p")
+      ?.textContent?.trim();
+    const tags = Array.from(document.querySelectorAll(".tags-links a"))
+      .map((tag) => tag.textContent?.trim())
+      .filter(Boolean);
+    return { title, htmlContent, tags, description };
+  });
+  const $ = cheerio.load(data.htmlContent);
+  $("img").remove();
+  $("noscript").remove();
+  $(".lwptoc").remove();
+  // 移除空的p标签
+  $("p").each((_, element) => {
+    const $p = $(element);
+    const text = $p.text().trim();
+    const hasImages = $p.find("img").length > 0;
+    // 如果段落内容只包含空格、&nbsp;或者只包含图片，则移除该段落
+    if (!text || text === "&nbsp;" || (text === "" && !hasImages)) {
+      $p.remove();
+    }
+  });
+
+  // 处理h2-h6标题标签
+  $("h2, h3, h4, h5, h6").each((_, element) => {
+    const $heading = $(element);
+    const headingText = slugify($heading.text().trim());
+    const headingId = `fwq-${headingText}`;
+    $heading.attr("id", headingId);
+  });
+  // 处理文章中的链接
+  $("a").each((_, element) => {
+    const $link = $(element);
+    const href = $link.attr("href");
+
+    if (href) {
+      if (href.includes("vpsgongyi.net")) {
+        // 如果链接包含，保留文本内容但移除 a 标签
+        $link.replaceWith($link.text());
+        return;
+      }
+
+      try {
+        // TODO 此处要处理不同云服务商对应的返利链接
+        const url = new URL(href);
+        // 检查并替换 aff 参数
+        const searchParams = new URLSearchParams(url.search);
+        if (searchParams.has("aff")) {
+          searchParams.set("aff", "1317");
+          url.search = searchParams.toString();
+          $link.attr("href", url.toString());
+        }
+      } catch (error) {
+        console.error("Failed to parse URL:", href, error);
+      }
+    }
+  });
+  data.htmlContent = $.html();
+  console.log(data.htmlContent);
+  await browser.close();
+  return data;
 }

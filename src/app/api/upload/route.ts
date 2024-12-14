@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     await writeFile(filePath, buffer);
 
     // 返回文件URL
-    const fileUrl = `${process.env.PUBLIC_URL}/uploads/${filename}`;
+    const fileUrl = `/uploads/${filename}`;
 
     return NextResponse.json({
       success: true,

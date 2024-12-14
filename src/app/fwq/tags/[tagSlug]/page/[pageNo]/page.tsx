@@ -19,8 +19,8 @@ export async function generateMetadata({
     };
   return {
     title: `${tag.name}-服务器`,
-    description: tag.description!,
-    keywords: tag.keywords!,
+    description: tag.description ?? `${tag.name}`,
+    keywords: tag.keywords ?? `${tag.name}`,
   };
 }
 

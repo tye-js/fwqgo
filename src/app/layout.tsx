@@ -4,14 +4,13 @@ import { GeistSans } from "geist/font/sans";
 import { type Metadata } from "next";
 import { OpenPanelComponent } from "@openpanel/nextjs";
 
-import Header from "./_components/header";
-import Footer from "./_components/footer";
-import { Separator } from "@/components/ui/separator";
-
 export const metadata: Metadata = {
   title: "服务器go",
   description: "服务器go",
   icons: [{ rel: "icon", url: "/favicon.ico" }],
+  other: {
+    "impact-site-verification": "dd276990-077b-4697-8ee5-2afcb05cdd99",
+  },
 };
 
 export default function RootLayout({
@@ -27,15 +26,7 @@ export default function RootLayout({
         // If you have a user id, you can pass it here to identify the user
         // profileId={'123'}
       />
-      <body className="flex flex-col bg-background">
-        <Header />
-        <Separator />
-        <main className="container mx-auto min-h-[90vh] flex-1">
-          {children}
-        </main>
-        <Separator />
-        <Footer />
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

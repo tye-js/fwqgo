@@ -62,7 +62,7 @@ export function ImageUpload({ onChange, value }: ImageUploadProps) {
               sizes="200px"
               className="object-cover"
               alt="Upload"
-              src={value}
+              src={process.env.NEXT_PUBLIC_URL + value}
               unoptimized={false}
             />
           </div>

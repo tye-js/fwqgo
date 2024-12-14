@@ -21,8 +21,8 @@ export async function generateMetadata({
     };
   return {
     title: `${category.name}-服务器go`,
-    description: category.description!,
-    keywords: category.keywords!,
+    description: category.description ?? `${category.name}`,
+    keywords: category.keywords ?? `${category.name}`,
   };
 }
 
@@ -56,7 +56,7 @@ const CategoryPage = async ({
           ))}
         </div>
       </div>
-      <div className="col-span-2 hidden lg:block">
+      <div className="hidden lg:col-span-2 lg:block">
         <div className="grid grid-cols-6 items-center gap-2">
           <label htmlFor="search" className="col-span-1 text-sm">
             搜索

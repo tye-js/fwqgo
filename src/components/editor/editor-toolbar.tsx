@@ -66,10 +66,18 @@ export function EditorToolbar({
       setIsLinkDialogOpen(false);
     }
   };
+  // 添加处理对话框关闭的函数
+  const handleDialogClose = () => {
+    setUrl("");
+    setIsImageDialogOpen(false);
+    setIsLinkDialogOpen(false);
+    // 确保编辑器重新获得焦点
+    editor.commands.focus();
+  };
 
   return (
     <>
-      <div className="flex flex-wrap gap-2 border-b p-2">
+      <div className="sticky top-0 flex flex-wrap gap-2 border-b bg-background p-2">
         {/* 标题按钮组 */}
         <div className="flex gap-1 border-r pr-2">
           {/* 重复类似的Toggle组件用于h2-h6 */}
@@ -252,86 +260,92 @@ export function EditorToolbar({
           </Button>
         </div>
       </div>
-      <div className="control-group">
-        <div className="button-group">
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              editor
-                .chain()
-                .focus()
-                .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-                .run();
-            }}
-          >
-            Insert table
-          </button>
-          <button
-            onClick={() => editor.chain().focus().addColumnBefore().run()}
-          >
-            Add column before
-          </button>
-          <button onClick={() => editor.chain().focus().addColumnAfter().run()}>
-            Add column after
-          </button>
-          <button onClick={() => editor.chain().focus().deleteColumn().run()}>
-            Delete column
-          </button>
-          <button onClick={() => editor.chain().focus().addRowBefore().run()}>
-            Add row before
-          </button>
-          <button onClick={() => editor.chain().focus().addRowAfter().run()}>
-            Add row after
-          </button>
-          <button onClick={() => editor.chain().focus().deleteRow().run()}>
-            Delete row
-          </button>
-          <button onClick={() => editor.chain().focus().deleteTable().run()}>
-            Delete table
-          </button>
-          <button onClick={() => editor.chain().focus().mergeCells().run()}>
-            Merge cells
-          </button>
-          <button onClick={() => editor.chain().focus().splitCell().run()}>
-            Split cell
-          </button>
-          <button
-            onClick={() => editor.chain().focus().toggleHeaderColumn().run()}
-          >
-            Toggle header column
-          </button>
-          <button
-            onClick={() => editor.chain().focus().toggleHeaderRow().run()}
-          >
-            Toggle header row
-          </button>
-          <button
-            onClick={() => editor.chain().focus().toggleHeaderCell().run()}
-          >
-            Toggle header cell
-          </button>
-          <button onClick={() => editor.chain().focus().mergeOrSplit().run()}>
-            Merge or split
-          </button>
-          <button
-            onClick={() =>
-              editor.chain().focus().setCellAttribute("colspan", 2).run()
-            }
-          >
-            Set cell attribute
-          </button>
-          <button onClick={() => editor.chain().focus().fixTables().run()}>
-            Fix tables
-          </button>
-          <button onClick={() => editor.chain().focus().goToNextCell().run()}>
-            Go to next cell
-          </button>
-          <button
-            onClick={() => editor.chain().focus().goToPreviousCell().run()}
-          >
-            Go to previous cell
-          </button>
-        </div>
+      <div className="flex flex-wrap gap-2 border-b p-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={(e) => {
+            e.preventDefault();
+            editor
+              .chain()
+              .focus()
+              .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+              .run();
+          }}
+        >
+          插入表格
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={(e) => {
+            e.preventDefault();
+            editor.chain().focus().addColumnAfter().run();
+          }}
+        >
+          添加列
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={(e) => {
+            e.preventDefault();
+            editor.chain().focus().deleteColumn().run();
+          }}
+        >
+          删除列
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={(e) => {
+            e.preventDefault();
+            editor.chain().focus().addRowAfter().run();
+          }}
+        >
+          添加行
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={(e) => {
+            e.preventDefault();
+            editor.chain().focus().deleteRow().run();
+          }}
+        >
+          删除行
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={(e) => {
+            e.preventDefault();
+            editor.chain().focus().deleteTable().run();
+          }}
+        >
+          删除表格
+        </Button>
+
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={(e) => {
+            e.preventDefault();
+            editor.chain().focus().toggleHeaderColumn().run();
+          }}
+        >
+          切换列标题
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={(e) => {
+            e.preventDefault();
+            editor.chain().focus().toggleHeaderRow().run();
+          }}
+        >
+          切换行标题
+        </Button>
       </div>
       <Dialog open={isImageDialogOpen} onOpenChange={setIsImageDialogOpen}>
         <DialogContent>
@@ -347,8 +361,10 @@ export function EditorToolbar({
               if (e.key === "Enter") {
                 e.preventDefault();
                 handleImageSubmit();
+                handleDialogClose();
               }
             }}
+            autoFocus
           />
           <DialogFooter>
             <Button onClick={handleImageSubmit}>确认</Button>
@@ -369,11 +385,20 @@ export function EditorToolbar({
               if (e.key === "Enter") {
                 e.preventDefault();
                 handleLinkSubmit();
+                handleDialogClose();
               }
             }}
+            autoFocus
           />
           <DialogFooter>
-            <Button onClick={handleLinkSubmit}>确认</Button>
+            <Button
+              onClick={() => {
+                handleLinkSubmit();
+                handleDialogClose();
+              }}
+            >
+              确认
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,7 +1,9 @@
 "use server";
 
 import { db } from "@/server/db";
-import { slugify } from "@/lib/utils";
+import { decodeSlug, slugify } from "@/lib/utils";
+import { revalidatePath } from "next/cache";
+import { type NewTag, type TagMain } from "@/types";
 interface CreatePostInput {
   title: string;
   description: string;
@@ -36,16 +38,140 @@ export async function createPost(input: CreatePostInput) {
         slug,
       },
     });
-
+    revalidatePath("/");
     return { data: post };
   } catch (error) {
     return { error: "创建文章失败", message: error };
   }
 }
 
-export async function getPosts() {
+export async function updatePostByRecommendedTagName(
+  postId: number,
+  recommendedTagName: string,
+) {
+  try {
+    const result = await db.post.update({
+      where: { id: postId },
+      data: { recommendedTagName },
+    });
+    return { data: result };
+  } catch (error) {
+    return { error: "更新文章推荐标签失败", message: error };
+  }
+}
+// 获取所有文章列表
+export async function getPosts({
+  pageNo = 1,
+  pageSize = 10,
+}: {
+  pageNo?: number;
+  pageSize?: number;
+}) {
   try {
     const posts = await db.post.findMany({
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        imgUrl: true,
+        published: true,
+      },
+      orderBy: { createdAt: "desc" },
+      skip: (pageNo - 1) * pageSize,
+      take: pageSize,
+    });
+    return { data: posts };
+  } catch (error) {
+    return { error: "获取文章列表失败", message: error };
+  }
+}
+
+// 更新文章标题/slug/图片链接/发布状态
+export async function updatePost(input: {
+  id: number;
+  title: string;
+  slug: string;
+  imgUrl: string | null;
+  published: boolean;
+}) {
+  try {
+    const post = await db.post.update({ where: { id: input.id }, data: input });
+    revalidatePath("/end/edit");
+    return { data: post };
+  } catch (error) {
+    return { error: "更新文章失败", message: error };
+  }
+}
+
+// 更新文章简述/内容/分类
+export async function updatePostContent(input: {
+  id: number;
+  description: string;
+  content: string;
+  categoryId: number;
+  recommendTagName: string;
+}) {
+  try {
+    // 首先验证推荐标签是否存在
+    await db.$transaction(async (tx) => {
+      if (input.recommendTagName) {
+        const existingTag = await tx.tag.findUnique({
+          where: { name: input.recommendTagName },
+        });
+
+        if (!existingTag) {
+          return { error: "推荐标签不存在，请先创建该标签" };
+        }
+      }
+      await tx.post.update({
+        where: { id: input.id },
+        data: {
+          description: input.description,
+          content: input.content,
+          categoryId: input.categoryId,
+          recommendedTagName: input.recommendTagName,
+        },
+      });
+    });
+    return { success: true };
+  } catch (error) {
+    return { error: "更新文章失败", message: error };
+  }
+}
+
+// 通过ID删除文章
+export async function deletePostById(id: number) {
+  try {
+    await db.post.delete({ where: { id } });
+    revalidatePath("/end/edit");
+    return { data: "删除文章成功" };
+  } catch (error) {
+    return { error: "删除文章失败", message: error };
+  }
+}
+
+export async function getPostsWithTags() {
+  try {
+    const posts = await db.post.findMany({
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        description: true,
+        imgUrl: true,
+        createdAt: true,
+        tags: {
+          select: {
+            tag: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
     return { data: posts };
@@ -81,7 +207,30 @@ export async function getPostByCategoryId(id: number) {
 
 export async function getPostBySlug(slug: string) {
   try {
-    const post = await db.post.findUnique({ where: { slug } });
+    const decodedSlug = decodeSlug(slug);
+    const post = await db.post.findUnique({
+      where: { slug: decodedSlug },
+      select: {
+        content: true,
+        id: true,
+        description: true,
+        recommendedTagName: true,
+        keywords: true,
+        categoryId: true,
+        views: true,
+        tags: {
+          select: {
+            tag: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+          },
+        },
+      },
+    });
     return { data: post };
   } catch (error) {
     return { error: "通过slug获取文章失败", message: error };
@@ -124,8 +273,9 @@ export async function getRecommendedPosts(
 
 export async function getPostWithTagsBySlug(slug: string) {
   try {
+    const decodedSlug = decodeSlug(slug);
     const post = await db.post.findUnique({
-      where: { slug },
+      where: { slug: decodedSlug },
       select: {
         id: true,
         title: true,
@@ -176,6 +326,7 @@ export async function getPostsWithTagsByCategoryId(id: number, pageNo: number) {
         createdAt: true,
         slug: true,
         tags: {
+          take: 5,
           select: {
             tag: {
               select: {
@@ -196,5 +347,77 @@ export async function getPostsWithTagsByCategoryId(id: number, pageNo: number) {
     return { data: posts };
   } catch (error) {
     return { error: "通过分类id获取文章列表失败", message: error };
+  }
+}
+
+interface UpdatePostTagsParams {
+  postId: number;
+  oldTags: TagMain[];
+  newTags: NewTag[];
+}
+/**
+ * 比较最新的tags与post.tags。
+ * 最新的tags中有的，而post.tags中没有的，则插入数据库post-tag表。
+ * 最新的tags中没有的，而post.tags中有的，则删除post-tag表中对应的数据。
+ * 两边都有的，就不处理
+ * @param postId 文章id
+ * @param oldTags 旧标签
+ * @param newTags 新标签
+ * @returns
+ */
+export async function updatePostTags({
+  postId,
+  oldTags,
+  newTags,
+}: UpdatePostTagsParams) {
+  try {
+    // 找出需要添加的标签
+    const tagsToAdd = newTags.filter(
+      (newTag) =>
+        !oldTags.some((oldTag) => oldTag.tag.name === newTag.tag.name),
+    );
+
+    // 找出需要删除的标签
+    const tagsToRemove = oldTags.filter(
+      (oldTag) =>
+        !newTags.some((newTag) => newTag.tag.name === oldTag.tag.name),
+    );
+
+    await db.$transaction(async (tx) => {
+      // 1. 删除需要移除的标签关联
+      await tx.postTag.deleteMany({
+        where: {
+          postId,
+          tagId: {
+            in: tagsToRemove.map((tag) => tag.tag.id),
+          },
+        },
+      });
+
+      // 2. 创建新标签并获取它们的ID
+      const createdTags = await Promise.all(
+        tagsToAdd.map(async (tag) => {
+          return await tx.tag.create({
+            data: {
+              name: tag.tag.name,
+              slug: tag.tag.slug,
+            },
+          });
+        }),
+      );
+
+      // 3. 创建新的标签关联
+      await tx.postTag.createMany({
+        data: createdTags.map((tag) => ({
+          postId,
+          tagId: tag.id,
+        })),
+      });
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error("更新文章标签失败:", error);
+    return { error: "更新文章标签失败" };
   }
 }

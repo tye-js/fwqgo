@@ -15,3 +15,8 @@ const globalForPrisma = globalThis as unknown as {
 export const db = globalForPrisma.prisma ?? createPrismaClient();
 
 if (env.NODE_ENV !== "production") globalForPrisma.prisma = db;
+
+// const connectionString = process.env.DATABASE_URL!;
+// const pool = new Pool({ connectionString });
+// const adapter = new PrismaNeon(pool);
+// export const db = new PrismaClient({ adapter });
