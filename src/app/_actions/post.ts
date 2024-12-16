@@ -211,6 +211,7 @@ export async function getPostBySlug(slug: string) {
     const post = await db.post.findUnique({
       where: { slug: decodedSlug },
       select: {
+        title: true,
         content: true,
         id: true,
         description: true,
