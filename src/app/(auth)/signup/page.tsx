@@ -49,9 +49,9 @@ export default function RegisterPage() {
         body: JSON.stringify(data),
       });
 
-      const result = await res.json();
+      const result = (await res.json()) as { error?: string };
 
-      if (!res.ok) {
+      if (result.error) {
         setError(result.error);
         return;
       }
@@ -59,6 +59,7 @@ export default function RegisterPage() {
       // 注册成功后跳转到登录页
       router.push("/login");
     } catch (err) {
+      console.log(err);
       setError("注册失败，请重试");
     }
   };

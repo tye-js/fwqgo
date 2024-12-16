@@ -19,9 +19,10 @@ export default function Page() {
       router.push("/");
     }
 
-    const result = await res.json();
+    const result = (await res.json()) as { error?: string };
     if (result.error) {
       console.log(result.error);
+      return;
     }
   };
 

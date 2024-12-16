@@ -22,7 +22,7 @@ const registerSchema = z
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = (await request.json()) as z.infer<typeof registerSchema>;
     const { username, password } = registerSchema.parse(body);
 
     // 检查用户名是否已存在
@@ -54,6 +54,12 @@ export async function POST(request: Request) {
       );
     }
 
-    return Response.json({ error: "注册失败，请重试" }, { status: 500 });
+    return Response.json(
+      {
+        error: "注册失败，请重试",
+        details: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 },
+    );
   }
 }

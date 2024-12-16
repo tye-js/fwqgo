@@ -11,7 +11,7 @@ const loginSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = (await request.json()) as z.infer<typeof loginSchema>;
     const { username, password } = loginSchema.parse(body);
 
     const user = await db.user.findUnique({
