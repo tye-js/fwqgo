@@ -17,15 +17,13 @@ const createTagSchema = z.object({
 export async function createTag(input: z.infer<typeof createTagSchema>) {
   // 验证输入
   const result = createTagSchema.parse(input);
-
-  const existingTag = await db.tag.findUnique({
-    select: { id: true },
-    where: { name: input.name },
-  });
-  if (existingTag) return { id: existingTag.id };
-
   // 生成 slug
   const slug = slugify(input.name);
+  const existingTag = await db.tag.findUnique({
+    select: { id: true },
+    where: { slug },
+  });
+  if (existingTag) return { id: existingTag.id };
 
   const tag = await db.tag.create({
     data: { name: result.name, slug },
@@ -62,7 +60,6 @@ export async function getTagBySlug(tagSlug: string) {
 // 通过标签 slug 获取多个文章的信息，并且包括每个文章的标签信息
 export async function getPostsWithTagsByTagSlug(tagSlug: string) {
   try {
-    console.log(tagSlug);
     const postsWithTags = await db.tag.findUnique({
       where: { slug: tagSlug },
       select: {
@@ -95,6 +92,9 @@ export async function getPostsWithTagsByTagSlug(tagSlug: string) {
                 },
               },
             },
+          },
+          orderBy: {
+            createdAt: "desc",
           },
         },
       },

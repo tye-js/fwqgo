@@ -154,9 +154,11 @@ function urlAndRules(url: string, $: cheerio.CheerioAPI) {
               "https://clawcloudsingaporeprivatelimited.sjv.io/yqqo4G",
             );
             return;
+          } else if (href.includes("lisahost.com") && searchParams.has("aff")) {
+            searchParams.set("aff", "3448");
+            url.search = searchParams.toString();
+            $link.attr("href", url.toString());
           }
-          url.search = searchParams.toString();
-          $link.attr("href", url.toString());
         } catch (error) {
           console.error("Failed to parse URL:", href, error);
         }

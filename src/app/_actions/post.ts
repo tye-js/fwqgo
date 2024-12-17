@@ -50,6 +50,14 @@ export async function updatePostByRecommendedTagName(
   recommendedTagName: string,
 ) {
   try {
+    // 先验证标签是否存在
+    const tag = await db.tag.findUnique({
+      where: { name: recommendedTagName },
+    });
+
+    if (!tag) {
+      return { error: `标签 '${recommendedTagName}' 不存在` };
+    }
     const result = await db.post.update({
       where: { id: postId },
       data: { recommendedTagName },
@@ -110,6 +118,7 @@ export async function updatePostContent(input: {
   content: string;
   categoryId: number;
   recommendTagName: string;
+  keywords: string;
 }) {
   try {
     // 首先验证推荐标签是否存在
@@ -130,6 +139,7 @@ export async function updatePostContent(input: {
           content: input.content,
           categoryId: input.categoryId,
           recommendedTagName: input.recommendTagName,
+          keywords: input.keywords,
         },
       });
     });
@@ -172,6 +182,7 @@ export async function getPostsWithTags() {
           },
         },
       },
+      take: 15,
       orderBy: { createdAt: "desc" },
     });
     return { data: posts };
@@ -394,24 +405,34 @@ export async function updatePostTags({
           },
         },
       });
-
+      // 如果标签已经存在，则返回id，不然创建新的，返回id
       // 2. 创建新标签并获取它们的ID
-      const createdTags = await Promise.all(
+      const createdTagsIdArray = await Promise.all(
         tagsToAdd.map(async (tag) => {
-          return await tx.tag.create({
+          const slug = slugify(tag.tag.name);
+          const existingTag = await tx.tag.findUnique({
+            where: { slug },
+            select: { id: true },
+          });
+          if (existingTag) {
+            return existingTag.id;
+          }
+          const newTagResult = await tx.tag.create({
             data: {
               name: tag.tag.name,
-              slug: tag.tag.slug,
+              slug,
             },
+            select: { id: true },
           });
+          return newTagResult.id;
         }),
       );
 
-      // 3. 创建新的标签关联
+      // 向数据库中插入文章标签关联
       await tx.postTag.createMany({
-        data: createdTags.map((tag) => ({
-          postId,
-          tagId: tag.id,
+        data: createdTagsIdArray.map((tag) => ({
+          postId: postId,
+          tagId: tag,
         })),
       });
     });

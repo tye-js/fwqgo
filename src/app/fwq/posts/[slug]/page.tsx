@@ -7,6 +7,8 @@ import type { Metadata } from "next";
 import { TableOfContents } from "@/components/toc/table-of-contents";
 import { Clock, Eye, Tags } from "lucide-react";
 import { incrementPostViews } from "@/app/_actions/post-actions";
+import Image from "next/image";
+import { Suspense } from "react";
 
 export async function generateMetadata({
   params,
@@ -61,6 +63,24 @@ async function PostPage({ params }: { params: { slug: string } }) {
             </Link>
           </div>
         </div>
+        <div className="relative mx-auto h-[240px] w-[360px] overflow-hidden rounded-lg md:h-[320px] md:w-[480px] lg:h-[400px] lg:w-[600px]">
+          <Suspense
+            fallback={<div className="h-full w-full bg-gray-300"></div>}
+          >
+            {post.imgUrl ? (
+              <Image
+                src={process.env.NEXT_PUBLIC_URL + post.imgUrl}
+                alt={post.title}
+                fill
+                sizes="360px,(max-width: 768px) 480px, (max-width: 1024px)600px"
+                className="object-cover object-center"
+                quality={100}
+              />
+            ) : (
+              <div className="h-full w-full bg-gray-300"></div>
+            )}
+          </Suspense>
+        </div>
         <main dangerouslySetInnerHTML={{ __html: post.content }} />
         <div className="mt-4 border-t border-zinc-200 pt-4">
           <div className="text-sm text-zinc-600">标签:</div>
@@ -101,11 +121,11 @@ async function PostPage({ params }: { params: { slug: string } }) {
               推荐文章-{post.recommendedTagName}
             </h3>
             <div className="flex flex-col space-y-2 text-sm">
-              {recommendedPosts.map((post) => (
+              {/* {recommendedPosts.map((post) => (
                 <Link key={post.id} href={`/fwq/posts/${post.slug}`}>
                   {post.title}
                 </Link>
-              ))}
+              ))} */}
             </div>
           </div>
         )}

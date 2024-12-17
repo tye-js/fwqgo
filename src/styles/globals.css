@@ -104,7 +104,7 @@
 }
 
 .toc {
-  @apply rounded-lg bg-muted p-4;
+  @apply rounded-lg bg-muted;
 }
 
 .toc ul {

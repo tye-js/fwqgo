@@ -18,9 +18,9 @@ export async function middleware(request: NextRequest) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ sessionId }),
+        cache: "no-store", // 禁用缓存
       },
     );
-
     const { valid } = (await response.json()) as { valid: boolean };
 
     if (!valid) {
