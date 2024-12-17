@@ -21,6 +21,8 @@ import { type PostEditFormData } from "@/types/post.types";
 import { toast } from "sonner";
 import { updatePostContent, updatePostTags } from "@/app/_actions/post";
 import { type NewTag } from "@/types";
+import { Separator } from "@/components/ui/separator";
+import { addIdsToHeadings } from "@/lib/toc";
 interface Category {
   id: number;
   name: string;
@@ -43,7 +45,7 @@ export default function EditPost({
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<NewTag[]>(post.tags);
-
+  const [keywords, setKeywords] = useState<string>(post.post.keywords ?? "");
   const handleAddTag = (tagInput: string) => {
     if (!tagInput.trim()) return;
 
@@ -53,10 +55,8 @@ export default function EditPost({
         slug: tagInput.trim(),
       },
     };
-    console.log(newTag);
 
     setTags(tags ? [...tags, newTag] : [newTag]);
-    console.log(tags);
     setTagInput("");
     setIsAddingTag(false);
   };
@@ -90,13 +90,15 @@ export default function EditPost({
       if (tagsResult.error) {
         throw new Error(tagsResult.error);
       }
+      const contentWithIds = addIdsToHeadings(content);
       // 更新文章内容
       const result = await updatePostContent({
         id: post.post.id,
         description,
-        content,
+        content: contentWithIds,
         categoryId: parseInt(categoryId),
         recommendTagName,
+        keywords: keywords.toString(),
       });
       if (result.error) {
         throw new Error(result.error);
@@ -128,7 +130,7 @@ export default function EditPost({
           <div className="flex items-center space-x-2">
             <label className="text-sm font-medium">分类</label>
             <Select
-              defaultValue={"8"}
+              defaultValue={categoryId}
               onValueChange={(value) => setCategoryId(value)}
             >
               <SelectTrigger className="w-[180px]">
@@ -223,6 +225,20 @@ export default function EditPost({
               className="w-32"
               value={recommendTagName}
               onChange={(e) => setRecommendTagName(e.target.value)}
+            />
+          </div>
+          <Separator />
+          <div className="flex flex-col gap-2">
+            <label className="text-nowrap text-sm font-medium">关键词</label>
+            <p className="text-xs text-gray-500">
+              建议：关键词之间用逗号分隔，最多支持5个,单个关键词不超过6个汉字
+            </p>
+            <Input
+              className="w-full"
+              value={keywords}
+              onChange={(e) =>
+                setKeywords(e.target.value.replace(/，/g, ",").toString())
+              }
             />
           </div>
           <div className="flex justify-center">

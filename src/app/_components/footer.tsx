@@ -13,22 +13,20 @@ const FooterComponent = () => {
       title: "快速链接",
       links: [
         { title: "服务器推荐", href: "/" },
-        { title: "优惠活动", href: "/" },
-        { title: "评测对比", href: "/" },
-        { title: "使用教程", href: "/" },
+        { title: "服务器促销", href: "/fwq/tags/便宜vps推荐/page/1" },
       ],
     },
     {
       title: "特色专区",
       links: [
         { title: "黑五专区", href: "/" },
-        { title: "住宅IP专区", href: "/" },
-        { title: "出海专区", href: "/" },
+        { title: "住宅IP专区", href: "/fwq/isp-vps/page/1" },
+        { title: "出海专区", href: "/fwq/export-vps/page/1" },
       ],
     },
     {
       title: "联系我们",
-      content: "邮箱: info@servergo.com",
+      content: "邮箱: .com",
     },
   ];
   return (

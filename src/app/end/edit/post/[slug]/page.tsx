@@ -18,8 +18,8 @@ export default async function EditPostPage({
     return <div>获取文章失败</div>;
   }
   return (
-    <div>
+    <>
       <EditPost post={{ post, tags: post.tags }} categories={categories} />
-    </div>
+    </>
   );
 }

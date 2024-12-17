@@ -7,12 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ImageUpload } from "@/app/_components/image-upload";
-import {
-  createPost,
-  updatePostByRecommendedTagName,
-} from "@/app/_actions/post";
-import { createTags } from "@/app/_actions/tag";
-import { createPostTags } from "@/app/_actions/post-tag";
+import { createPost } from "@/app/_actions/creat-post";
+
 import { getLeafCategories } from "@/app/_actions/category";
 import { ScraperForm } from "@/app/_components/scraper-form";
 import { X } from "lucide-react";
@@ -28,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { Separator } from "@/components/ui/separator";
 
 interface Category {
   id: number;
@@ -46,10 +43,11 @@ export default function CreatePost() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [recommendTags, setRecommendTags] = useState<Tag>({ name: "" });
+  const [recommendTag, setRecommendTag] = useState<Tag>({ name: "" });
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<Tag[]>([]);
+  const [keywords, setKeywords] = useState<string[]>([]);
 
   const handleAddTag = () => {
     if (!tagInput.trim()) return;
@@ -90,49 +88,22 @@ export default function CreatePost() {
     try {
       setIsSubmitting(true);
       // 向数据库中插入文章
-      const result = await createPost({
-        title,
-        description,
-        content,
-        imgUrl: imageUrl,
-        published: true,
-        categoryId: parseInt(categoryId),
+      await createPost({
+        post: {
+          title: title.trim(),
+          description: description.trim(),
+          content,
+          imgUrl: imageUrl,
+          published: true,
+          categoryId: parseInt(categoryId),
+          recommendedTagName: recommendTag.name,
+          keywords: keywords.join(",").toString(),
+        },
+        tags,
       });
-
-      if (result.error) {
-        throw new Error(result.error);
-      }
-      // 向数据库中插入标签
-      const resultTags = await createTags(tags);
-      // 向数据库中插入文章标签关联
-      // 获得文章id
-      const postId = result.data?.id;
-      if (!postId) {
-        throw new Error("写入文章存在");
-      }
-
-      const tagsArray = resultTags.data;
-
-      // 向数据库中插入文章标签关联
-      const resultPostTags = await createPostTags({
-        postId,
-        tags: tagsArray,
-      });
-      if (resultPostTags.error) {
-        throw new Error(resultPostTags.error);
-      }
-      if (recommendTags.name) {
-        const resultUpdate = await updatePostByRecommendedTagName(
-          postId,
-          recommendTags.name,
-        );
-        if (resultUpdate.error) {
-          throw new Error(resultUpdate.error);
-        }
-      }
 
       // 跳转到文章详情页
-      router.push(`/fwq/posts/${result.data?.slug}`);
+      router.push(`/end/edit/`);
     } catch (error) {
       console.error("创建文章失败:", error);
       toast.error("创建文章失败，请重试");
@@ -150,18 +121,20 @@ export default function CreatePost() {
     try {
       setIsSaving(true);
 
-      const result = await createPost({
-        title,
-        description,
-        content,
-        imgUrl: imageUrl,
-        published: false,
-        categoryId: parseInt(categoryId),
+      await createPost({
+        post: {
+          title: title.trim(),
+          description: description.trim(),
+          content,
+          imgUrl: imageUrl,
+          published: true,
+          categoryId: parseInt(categoryId),
+          recommendedTagName: recommendTag.name,
+          keywords: keywords.join(",").toString(),
+        },
+        tags,
       });
 
-      if (result.error) {
-        throw new Error(result.error);
-      }
       toast.success("保存文章成功");
     } catch (error) {
       console.error("保存文章失败:", error);
@@ -287,8 +260,22 @@ export default function CreatePost() {
             <label className="text-sm font-medium">推荐标签</label>
             <Input
               className="w-32"
-              value={recommendTags.name}
-              onChange={(e) => setRecommendTags({ name: e.target.value })}
+              value={recommendTag.name}
+              onChange={(e) => setRecommendTag({ name: e.target.value })}
+            />
+          </div>
+          <Separator />
+          <div className="flex flex-col gap-2">
+            <label className="text-nowrap text-sm font-medium">关键词</label>
+            <p className="text-xs text-gray-500">
+              建议：关键词之间用逗号分隔，最多支持5个,单个关键词不超过6个汉字
+            </p>
+            <Input
+              className="w-full"
+              value={keywords.join(",")}
+              onChange={(e) =>
+                setKeywords(e.target.value.replace(/，/g, ",").split(","))
+              }
             />
           </div>
           <div className="flex justify-center gap-2">

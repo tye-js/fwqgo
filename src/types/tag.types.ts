@@ -7,3 +7,5 @@ export interface TagMain {
 export interface NewTag {
   tag: Pick<Tag, "name" | "slug">;
 }
+
+export type TagName = Pick<Tag, "name">;

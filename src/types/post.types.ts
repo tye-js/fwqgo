@@ -1,5 +1,5 @@
 import { type Post } from "@prisma/client";
-import { type TagMain } from "./tag.types";
+import { type TagMain, type TagName } from "./tag.types";
 
 // 继承 Prisma 类型
 export interface PostWithAuthor extends Post {
@@ -54,3 +54,19 @@ export interface PostEditFormData {
   >;
   tags: TagMain[];
 }
+
+// 创建文章时的输入类型
+export type CreatePostParams = {
+  post: Pick<
+    Post,
+    | "title"
+    | "description"
+    | "content"
+    | "imgUrl"
+    | "published"
+    | "categoryId"
+    | "recommendedTagName"
+    | "keywords"
+  >;
+  tags: TagName[];
+};

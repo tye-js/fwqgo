@@ -19,8 +19,8 @@ export async function generateMetadata({
     };
   return {
     title: `${tag.name}-服务器`,
-    description: tag.description ?? `${tag.name}`,
-    keywords: tag.keywords ?? `${tag.name}`,
+    description: tag.description ?? `${tag.name}的服务器,${tag.name}的VPS`,
+    keywords: tag.keywords ?? `${tag.name}的服务器,${tag.name}的VPS`,
   };
 }
 
@@ -36,12 +36,14 @@ async function TagPage({ params }: { params: { tagSlug: string } }) {
     );
   const cardInfo = {
     name: postsWithTag.name,
-    description: postsWithTag.description!,
+    description:
+      postsWithTag.description! ??
+      `${postsWithTag.name}的服务器,${postsWithTag.name}的VPS`,
   };
   const posts = postsWithTag.posts;
   return (
-    <div className="mt-2 grid grid-cols-6 gap-8">
-      <div className="col-span-4 space-y-4">
+    <div className="mt-2 grid grid-cols-8 gap-2 md:gap-4 lg:gap-8">
+      <div className="col-span-8 space-y-2 lg:col-span-6 lg:space-y-4">
         {postsWithTag && <PageCard {...cardInfo} />}
         <div className="flex flex-col gap-2 lg:gap-4">
           {posts.map((post) => (
@@ -49,8 +51,13 @@ async function TagPage({ params }: { params: { tagSlug: string } }) {
           ))}
         </div>
       </div>
-      <div className="col-span-2">
-        <Input placeholder="搜索" />
+      <div className="hidden lg:col-span-2 lg:block">
+        <div className="grid grid-cols-6 items-center gap-2">
+          <label htmlFor="search" className="col-span-1 text-sm">
+            搜索
+          </label>
+          <Input id="search" placeholder="搜索" className="col-span-4" />
+        </div>
       </div>
     </div>
   );
