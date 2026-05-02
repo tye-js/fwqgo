@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import {
-  Bot,
-  GalleryVerticalEnd,
-  Settings2,
+  Images,
+  Globe,
+  DatabaseZap,
   SquareTerminal,
 } from "lucide-react";
 
+import { BrandMarkIcon } from "@/components/brand/brand-logo";
 import { NavMain } from "@/components/endpoint/nav-main";
 import { NavUser } from "@/components/endpoint/nav-user";
 import { TeamSwitcher } from "@/components/endpoint/team-switcher";
@@ -18,8 +19,8 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { usePathname } from "next/navigation";
 
-// This is sample data.
 const data = {
   user: {
     name: "fwqgo",
@@ -29,35 +30,35 @@ const data = {
   teams: [
     {
       name: "FWQGO",
-      logo: GalleryVerticalEnd,
+      logo: BrandMarkIcon,
       plan: "服务器go",
     },
   ],
   navMain: [
     {
       title: "文章",
-      url: "#",
+      url: "/end/posts",
       icon: SquareTerminal,
-      isActive: true,
+      isActive: false,
       items: [
         {
           title: "新建",
-          url: "/end/create",
+          url: "/end/posts/create",
         },
         {
           title: "修改",
-          url: "/end/edit",
+          url: "/end/posts/edit",
         },
       ],
     },
     {
       title: "图片",
-      url: "#",
-      icon: Bot,
+      url: "/end/images",
+      icon: Images,
       items: [
         {
           title: "查看",
-          url: "#",
+          url: "/end/images/list",
         },
         {
           title: "Explorer",
@@ -71,24 +72,43 @@ const data = {
     },
 
     {
-      title: "设置",
-      url: "#",
-      icon: Settings2,
+      title: "SEO",
+      url: "/end/seo",
+      icon: Globe,
       items: [
         {
-          title: "General",
+          title: "主页",
+          url: "/end/seo/",
+        },
+        {
+          title: "分类",
+          url: "/end/seo/category/",
+        },
+        {
+          title: "标签",
+          url: "/end/seo/tag/",
+        },
+      ],
+    },
+    {
+      title: "采集",
+      url: "/end/collect",
+      icon: DatabaseZap,
+      items: [
+        {
+          title: "返利设定",
+          url: "/end/collect/aff-man",
+        },
+        {
+          title: "首页推荐",
+          url: "/end/collect/homepage-promoted",
+        },
+        {
+          title: "分类",
           url: "#",
         },
         {
-          title: "Team",
-          url: "#",
-        },
-        {
-          title: "Billing",
-          url: "#",
-        },
-        {
-          title: "Limits",
+          title: "标签",
           url: "#",
         },
       ],
@@ -97,6 +117,10 @@ const data = {
 };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const pathname = usePathname();
+  data.navMain.forEach((item) => {
+    item.isActive = pathname.startsWith(item.url);
+  });
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>

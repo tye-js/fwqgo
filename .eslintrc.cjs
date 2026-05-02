@@ -1,14 +1,16 @@
 /** @type {import("eslint").Linter.Config} */
 const config = {
+  "root": true,
   "parser": "@typescript-eslint/parser",
   "parserOptions": {
     "project": true
   },
   "plugins": [
-    "@typescript-eslint"
+    "@typescript-eslint",
+    "@next/next"
   ],
   "extends": [
-    "next/core-web-vitals",
+    "plugin:@next/next/core-web-vitals-legacy",
     "plugin:@typescript-eslint/recommended-type-checked",
     "plugin:@typescript-eslint/stylistic-type-checked"
   ],

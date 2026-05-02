@@ -1,7 +1,8 @@
-import { type Post } from "@prisma/client";
+import { type posts } from "@/server/db/schema";
 import { type TagMain, type TagName } from "./tag.types";
 
-// 继承 Prisma 类型
+// 继承 Drizzle 类型
+type Post = typeof posts.$inferSelect;
 export interface PostWithAuthor extends Post {
   author: {
     name: string;
@@ -70,3 +71,11 @@ export type CreatePostParams = {
   >;
   tags: TagName[];
 };
+
+export type RecommendedPost = Pick<Post, "id" | "title" | "slug" | "imgUrl">;
+
+// 侧边栏最新文章
+export type LatestPostForSidebar = Pick<
+  Post,
+  "id" | "title" | "slug" | "imgUrl"
+>;

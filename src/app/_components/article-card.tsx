@@ -1,66 +1,88 @@
 import Link from "next/link";
 import Image from "next/image";
+import { ArrowUpRight, CalendarDays } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
-
 import { Card, CardContent } from "@/components/ui/card";
-
-import { Suspense } from "react";
-import { formatDate } from "@/lib/utils";
+import { formatDate, isWithin24Hours } from "@/lib/utils";
 import { type PostWithTags } from "@/types";
 
 function ArticleCard({ post }: { post: PostWithTags }) {
+  const isNewPost = isWithin24Hours(post.createdAt);
+
   return (
     <Card
       key={post.id}
-      className="flex w-full items-center overflow-hidden px-2 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg md:h-[150px] lg:h-[192px]"
+      className="group overflow-hidden rounded-[28px] border border-border/70 bg-background/85 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.38)] transition-all duration-300 hover:-translate-y-1 hover:border-primary/30"
     >
-      <Link href={`/fwq/posts/${post.slug}`}>
-        <div className="relative h-[90px] w-[120px] overflow-hidden rounded-lg md:h-[120px] md:w-[160px] lg:h-[150px] lg:w-[200px]">
-          <Suspense
-            fallback={<div className="h-full w-full bg-gray-300"></div>}
-          >
-            {post.imgUrl ? (
-              <Image
-                src={process.env.NEXT_PUBLIC_URL + post.imgUrl}
-                alt={post.title}
-                fill
-                sizes="150px,(max-width: 768px) 200px, (max-width: 1024px)300px"
-                className="object-cover object-center"
-                quality={100}
-              />
-            ) : (
-              <div className="h-full w-full bg-gray-300"></div>
-            )}
-          </Suspense>
-        </div>
-      </Link>
-      <CardContent className="flex w-full flex-col justify-between p-5">
-        <Link href={`/fwq/posts/${post.slug}`}>
-          <h3 className="mb-2 line-clamp-3 h-14 text-lg font-semibold text-gray-800 transition-colors duration-300 hover:text-blue-600">
-            {post.title}
-          </h3>
+      <div className="grid md:grid-cols-[280px_1fr]">
+        <Link
+          href={`/fwq/posts/${post.slug}`}
+          className="relative min-h-[220px] overflow-hidden md:min-h-full"
+        >
+          {post.imgUrl ? (
+            <Image
+              src={`${process.env.NEXT_PUBLIC_URL}${post.imgUrl}`}
+              alt={post.title}
+              fill
+              sizes="(max-width: 768px) 100vw, 280px"
+              className="object-cover transition-transform duration-500 group-hover:scale-105"
+            />
+          ) : (
+            <div className="h-full w-full bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.18),transparent_36%),linear-gradient(135deg,hsl(var(--muted)),hsl(var(--background)))]" />
+          )}
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent,rgba(15,23,42,0.14))]" />
         </Link>
-        <p className="mb-2 line-clamp-2 hidden text-sm text-gray-600/80 md:block lg:mb-4 lg:line-clamp-3">
-          {post.description}
-        </p>
-        <div className="hidden h-8 items-center justify-between lg:flex">
-          <div className="hidden gap-2 lg:flex">
-            {post.tags.slice(0, 4).map((tag) => (
-              <Badge key={tag.tag.id} variant="secondary" className="text-xs">
-                <Link href={`/fwq/tags/${tag.tag.slug}/page/1`}>
-                  {tag.tag.name}
-                </Link>
-              </Badge>
-            ))}
+
+        <CardContent className="flex flex-col justify-between p-6">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              {isNewPost ? (
+                <Badge className="bg-emerald-500 text-white hover:bg-emerald-500">
+                  NEW
+                </Badge>
+              ) : null}
+              <span className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-muted/30 px-3 py-1 text-xs text-muted-foreground">
+                <CalendarDays className="size-3" />
+                {formatDate(post.createdAt)}
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              <Link href={`/fwq/posts/${post.slug}`}>
+                <h3 className="font-editorial line-clamp-2 text-2xl font-semibold leading-tight tracking-[-0.04em] text-foreground transition-colors group-hover:text-accent">
+                  {post.title}
+                </h3>
+              </Link>
+              <p className="line-clamp-3 text-sm leading-7 text-muted-foreground">
+                {post.description ?? "查看详细测评、优惠信息与适用场景。"}
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-500">
-              {formatDate(post.createdAt)}
-            </span>
+          <div className="mt-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {post.tags.slice(0, 4).map((tag) => (
+                <Link
+                  key={tag.tag.id}
+                  href={`/fwq/tags/${tag.tag.slug}/page/1`}
+                  className="rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/15"
+                >
+                  #{tag.tag.name}
+                </Link>
+              ))}
+            </div>
+
+            <Link
+              href={`/fwq/posts/${post.slug}`}
+              className="inline-flex items-center gap-2 text-sm font-medium text-accent"
+            >
+              阅读全文
+              <ArrowUpRight className="size-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            </Link>
           </div>
-        </div>
-      </CardContent>
+        </CardContent>
+      </div>
     </Card>
   );
 }

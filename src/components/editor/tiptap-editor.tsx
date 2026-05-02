@@ -11,6 +11,7 @@ import Link from "@tiptap/extension-link";
 import { EditorToolbar } from "./editor-toolbar";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { Card, CardContent } from "@/components/ui/card";
 
 interface TiptapEditorProps {
   content: string;
@@ -69,10 +70,10 @@ export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
   if (!editor) return null;
 
   return (
-    <div
+    <Card
       className={cn(
-        "relative overflow-hidden border",
-        isFullscreen ? "fixed inset-0 z-50 bg-background" : "h-[80vh]",
+        "relative overflow-hidden rounded-[26px] border-border/70 bg-background/92 shadow-sm",
+        isFullscreen ? "fixed inset-0 z-50 rounded-none" : "min-h-[80vh]",
       )}
     >
       <EditorToolbar
@@ -83,9 +84,9 @@ export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
           setIsFullscreen(!isFullscreen);
         }}
       />
-      <div className="h-[calc(100%-140px)] overflow-y-auto py-2">
+      <CardContent className="h-[calc(100%-252px)] overflow-y-auto px-5 py-4 md:px-6">
         <EditorContent editor={editor} className="h-full" />
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

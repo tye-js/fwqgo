@@ -1,4 +1,6 @@
-import { type Tag } from "@prisma/client";
+import { type tags } from "@/server/db/schema";
+
+type Tag = typeof tags.$inferSelect;
 
 export interface TagMain {
   tag: Pick<Tag, "id" | "name" | "slug">;
