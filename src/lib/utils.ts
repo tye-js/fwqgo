@@ -69,3 +69,11 @@ export function sanitizeFileName(fileName: string) {
   // 返回处理后的文件名（带扩展名）
   return `${truncatedName}${ext}`;
 }
+
+// 判断时间是不是24小时内
+export function isWithin24Hours(date: Date) {
+  const now = new Date();
+  const diffTime = Math.abs(now.getTime() - date.getTime());
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays <= 1;
+}

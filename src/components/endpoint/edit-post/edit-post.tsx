@@ -253,7 +253,6 @@ export default function EditPost({
           </div>
         </div>
       </form>
-
       {content && content.length > 0 && (
         <div className="mt-4 text-sm text-gray-500">
           文章字数：{content.length}

@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1751285364269,
+      "tag": "0000_remarkable_terrax",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1751382835184,
+      "tag": "0001_ambiguous_thanos",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776844800000,
+      "tag": "0002_silent_homepage_promoted_posts",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,5 +1,8 @@
 import { Toaster } from "sonner";
 import { type Metadata } from "next";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { BookMarked } from "lucide-react";
 
 import { AppSidebar } from "@/components/endpoint/app-sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -9,19 +12,42 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import AppBreadcrumb from "@/components/endpoint/app-breadcrumb";
+import { validateSession } from "../_actions/validate-session";
+
+
 
 export const metadata: Metadata = {
-  title: " 后台系统",
+  title: "后台系统",
   description: "服务器go的后台系统，用来管理服务器go的文章。",
-  icons: [{ rel: "icon", url: "/favicon.ico" }],
+  icons: [{ rel: "icon", url: "/icon.svg" }],
 };
+import { Suspense } from "react";
+
+async function SessionGuard() {
+  const headersList = await headers();
+  const sessionId = headersList.get("x-session-id");
+  // 验证 session
+  if (!sessionId) redirect("/login");
+  try {
+    const isValid = await validateSession(sessionId);
+    if (!isValid) redirect("/login");
+  } catch (error) {
+    console.error(error);
+    redirect("/login");
+  }
+  return null;
+}
+
 export default function CreateLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-background">
+    <div className="editorial-surface min-h-screen bg-background">
+      <Suspense fallback={null}>
+        <SessionGuard />
+      </Suspense>
       {/* 添加 Toaster 组件用于消息通知 */}
       <Toaster
         position="top-center"
@@ -38,16 +64,23 @@ export default function CreateLayout({
       />
       <main className="mx-auto p-4">
         <SidebarProvider>
-          <AppSidebar />
+          <Suspense fallback={null}>
+            <AppSidebar />
+          </Suspense>
           <SidebarInset>
-            <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
-              <div className="flex items-center gap-2 px-4">
-                <SidebarTrigger className="-ml-1" />
-                <Separator orientation="vertical" className="mr-2 h-4" />
-                <AppBreadcrumb />
+            <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-2 border-b border-border/60 bg-background/85 transition-[width,height] backdrop-blur-xl ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
+              <div className="flex items-center gap-3 px-4">
+                <SidebarTrigger className="-ml-1 rounded-full border border-border/70 bg-background/90" />
+                <Separator orientation="vertical" className="mr-1 h-4" />
+                <BookMarked className="size-4 text-accent" />
+                <Suspense fallback={null}>
+                  <AppBreadcrumb />
+                </Suspense>
               </div>
             </header>
-            {children}
+            <Suspense fallback={<div className="p-4">加载中...</div>}>
+              {children}
+            </Suspense>
           </SidebarInset>
         </SidebarProvider>
       </main>

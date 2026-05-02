@@ -3,6 +3,8 @@ import { compare } from "bcryptjs";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { randomUUID } from "crypto";
+import { users, sessions } from "@/server/db/schema";
+import { eq } from "drizzle-orm";
 
 const loginSchema = z.object({
   username: z.string().min(3),
@@ -14,9 +16,11 @@ export async function POST(request: Request) {
     const body = (await request.json()) as z.infer<typeof loginSchema>;
     const { username, password } = loginSchema.parse(body);
 
-    const user = await db.user.findUnique({
-      where: { username },
-    });
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.username, username))
+      .limit(1);
 
     if (!user)
       return Response.json({ error: "用户名或密码错误" }, { status: 401 });
@@ -27,19 +31,22 @@ export async function POST(request: Request) {
       return Response.json({ error: "用户名或密码错误" }, { status: 401 });
 
     // 创建 session
-    const session = await db.session.create({
-      data: {
+    const sessionId = randomUUID();
+    const [session] = await db
+      .insert(sessions)
+      .values({
+        id: sessionId,
         userId: user.id,
         expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30天
         sessionToken: randomUUID(), // 添加随机生成的 sessionToken
-      },
-    });
+      })
+      .returning();
 
-    cookies().set("session_id", session.id, {
+    (await cookies()).set("session_id", session!.id, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      expires: session.expires,
+      expires: session!.expires,
     });
 
     return Response.json({ success: true });

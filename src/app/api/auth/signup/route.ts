@@ -1,6 +1,9 @@
 import { db } from "@/server/db";
 import { hash } from "bcryptjs";
 import { z } from "zod";
+import { users } from "@/server/db/schema";
+import { eq } from "drizzle-orm";
+import { randomUUID } from "crypto";
 
 const registerSchema = z
   .object({
@@ -26,9 +29,11 @@ export async function POST(request: Request) {
     const { username, password } = registerSchema.parse(body);
 
     // 检查用户名是否已存在
-    const existingUser = await db.user.findUnique({
-      where: { username },
-    });
+    const [existingUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.username, username))
+      .limit(1);
 
     if (existingUser) {
       return Response.json({ error: "用户名已存在" }, { status: 400 });
@@ -38,11 +43,11 @@ export async function POST(request: Request) {
     const hashedPassword = await hash(password, 12);
 
     // 创建新用户
-    await db.user.create({
-      data: {
-        username,
-        password: hashedPassword,
-      },
+    await db.insert(users).values({
+      id: randomUUID(),
+      username,
+      password: hashedPassword,
+      updatedAt: new Date(),
     });
 
     return Response.json({ success: true });

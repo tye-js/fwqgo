@@ -46,11 +46,3 @@ export function generateToc(content: string): TocItem[] {
 
   return toc;
 }
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/<[^>]*>/g, "") // 移除HTML标签
-    .replace(/[\s\W-]+/g, "-") // 将空格和非单词字符替换为连字符
-    .replace(/^-+|-+$/g, ""); // 移除首尾连字符
-}

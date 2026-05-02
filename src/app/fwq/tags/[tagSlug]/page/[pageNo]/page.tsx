@@ -1,15 +1,22 @@
 import { getPostsWithTagsByTagSlug, getTagBySlug } from "@/app/_actions/tag";
+import { getLatestPostsForSidebar } from "@/app/_actions/post";
 import ArticleCard from "@/app/_components/article-card";
 import PageCard from "@/app/_components/page-card";
-import { Input } from "@/components/ui/input";
+import { PaginationComponent } from "@/app/_components/pagination";
 import { decodeSlug } from "@/lib/utils";
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { ArrowUpRight, Hash, Newspaper } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 
-export async function generateMetadata({
-  params,
-}: {
-  params: { tagSlug: string };
-}): Promise<Metadata> {
+export async function generateMetadata(
+  props: {
+    params: Promise<{ tagSlug: string }>;
+  }
+): Promise<Metadata> {
+  const params = await props.params;
   const decodedTagSlug = decodeSlug(params.tagSlug);
   const { data: tag, error } = await getTagBySlug(decodedTagSlug);
   if (error || !tag)
@@ -24,10 +31,21 @@ export async function generateMetadata({
   };
 }
 
-async function TagPage({ params }: { params: { tagSlug: string } }) {
+import { Suspense } from "react";
+
+async function TagPageContent({
+  paramsPromise,
+}: {
+  paramsPromise: Promise<{ tagSlug: string; pageNo: string }>;
+}) {
+  const params = await paramsPromise;
   const decodedTagSlug = decodeSlug(params.tagSlug);
   const { data: postsWithTag, error } =
-    await getPostsWithTagsByTagSlug(decodedTagSlug);
+    await getPostsWithTagsByTagSlug(
+      decodedTagSlug,
+      Number.parseInt(params.pageNo, 10),
+    );
+  const { data: latestPosts } = await getLatestPostsForSidebar();
   if (error || !postsWithTag?.posts)
     return (
       <div>
@@ -35,32 +53,92 @@ async function TagPage({ params }: { params: { tagSlug: string } }) {
       </div>
     );
   const cardInfo = {
+    kind: "标签页",
     name: postsWithTag.name,
     description:
-      postsWithTag.description! ??
+      postsWithTag.description ??
       `${postsWithTag.name}的服务器,${postsWithTag.name}的VPS`,
+    totalCount: postsWithTag.totalCount ?? 0,
+    pageNo: postsWithTag.pageNo,
   };
   const posts = postsWithTag.posts;
+  const totalPage = Math.ceil((postsWithTag.totalCount ?? 0) / 10);
+
+  if ((postsWithTag.totalCount ?? 0) > 0 && postsWithTag.pageNo > totalPage) {
+    notFound();
+  }
+
   return (
-    <div className="mt-2 grid grid-cols-8 gap-2 md:gap-4 lg:gap-8">
-      <div className="col-span-8 space-y-2 lg:col-span-6 lg:space-y-4">
+    <div className="grid gap-8 xl:grid-cols-[minmax(0,0.82fr)_320px]">
+      <div className="space-y-5">
         {postsWithTag && <PageCard {...cardInfo} />}
-        <div className="flex flex-col gap-2 lg:gap-4">
-          {posts.map((post) => (
-            <ArticleCard key={post.post.id} post={post.post} />
-          ))}
+        <div className="space-y-4">
+          {posts.length > 0 ? (
+            posts.map((post) => <ArticleCard key={post.post.id} post={post.post} />)
+          ) : (
+            <div className="rounded-[26px] border border-dashed border-border/70 bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+              当前标签下还没有已发布文章。
+            </div>
+          )}
         </div>
+        <PaginationComponent
+          pageNo={postsWithTag.pageNo}
+          totalPage={totalPage}
+          basePath={`/fwq/tags/${params.tagSlug}`}
+        />
       </div>
-      <div className="hidden lg:col-span-2 lg:block">
-        <div className="grid grid-cols-6 items-center gap-2">
-          <label htmlFor="search" className="col-span-1 text-sm">
-            搜索
-          </label>
-          <Input id="search" placeholder="搜索" className="col-span-4" />
+
+      <aside className="hidden xl:block">
+        <div className="sticky top-24 space-y-4">
+          <Card className="rounded-[26px] border-border/70 bg-background/90 shadow-none">
+            <CardContent className="space-y-4 p-5">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Hash className="size-4 text-accent" />
+                标签说明
+              </div>
+              <p className="text-sm leading-6 text-muted-foreground">
+                标签页更适合跨分类浏览同一主题下的内容，适合连续阅读评测、优惠和线路文章。
+              </p>
+              <Badge variant="secondary">
+                当前第 {postsWithTag.pageNo} / {Math.max(totalPage, 1)} 页
+              </Badge>
+            </CardContent>
+          </Card>
+
+          {latestPosts && latestPosts.length > 0 ? (
+            <Card className="rounded-[26px] border-border/70 bg-background/90 shadow-none">
+              <CardContent className="space-y-3 p-5">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Newspaper className="size-4 text-accent" />
+                  最新文章
+                </div>
+                {latestPosts.map((post) => (
+                  <Link
+                    key={post.id}
+                    href={`/fwq/posts/${post.slug}`}
+                    className="group flex items-start justify-between gap-3 rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 transition-colors hover:border-accent/30 hover:bg-accent/5"
+                  >
+                    <p className="line-clamp-2 text-sm font-medium leading-6 text-foreground transition-colors group-hover:text-accent">
+                      {post.title}
+                    </p>
+                    <ArrowUpRight className="mt-1 size-4 shrink-0 text-muted-foreground" />
+                  </Link>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
-      </div>
+      </aside>
     </div>
   );
 }
 
-export default TagPage;
+export default function TagPage(
+  props: { params: Promise<{ tagSlug: string; pageNo: string }> }
+) {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <TagPageContent paramsPromise={props.params} />
+    </Suspense>
+  );
+}

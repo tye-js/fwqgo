@@ -1,13 +1,14 @@
 import "@/styles/globals.css";
 
-import { GeistSans } from "geist/font/sans";
 import { type Metadata } from "next";
-import { OpenPanelComponent } from "@openpanel/nextjs";
 
 export const metadata: Metadata = {
   title: "服务器go",
-  description: "服务器go",
-  icons: [{ rel: "icon", url: "/favicon.ico" }],
+  description:
+    "服务器go为您汇总国内国外VPS、云服务器、独立服务器、原生IP云服务器的最新促销信息，更有商家背景、售后服务全面解析，助您轻松选购高性价比服务器！",
+  keywords:
+    "服务器go,VPS,云服务器,独立服务器,原生IP云服务器,CN2 GIA VPS,原生IP云服务器,最新优惠码,服务器商家推荐,服务器购买指南",
+  icons: { icon: "/icon.svg" },
   other: {
     "impact-site-verification": "dd276990-077b-4697-8ee5-2afcb05cdd99",
   },
@@ -17,16 +18,8 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN" className={`${GeistSans.variable}`}>
-      <OpenPanelComponent
-        clientId="9aad57c8-1f8c-43a7-9a99-b03d2bd76860"
-        trackScreenViews={true}
-        // trackAttributes={true}
-        // trackOutgoingLinks={true}
-        // If you have a user id, you can pass it here to identify the user
-        // profileId={'123'}
-      />
-      <body>{children}</body>
+    <html lang="zh-CN">
+      <body className="font-ui bg-background text-foreground antialiased">{children}</body>
     </html>
   );
 }

@@ -1,45 +1,84 @@
 "use client";
 
 import { type Editor } from "@tiptap/react";
-
-import { Toggle } from "@/components/ui/toggle";
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
 import {
   Bold,
-  Italic,
-  List,
-  ListOrdered,
-  Quote,
   Code,
-  SquareCode,
-  Redo,
-  Undo,
-  ImageIcon,
-  Link,
   Heading2,
   Heading3,
   Heading4,
   Heading5,
   Heading6,
+  ImageIcon,
+  Link as LinkIcon,
+  List,
+  ListOrdered,
   Maximize2,
+  Quote,
+  Redo,
+  SquareCode,
+  Table2,
+  Undo,
 } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useState } from "react";
+import { Toggle } from "@/components/ui/toggle";
 
 interface EditorToolbarProps {
   editor: Editor;
   onToggleFullscreen?: (e: React.MouseEvent) => void;
-  onTogglePreview?: (e: React.MouseEvent) => void;
   isFullscreen?: boolean;
-  isPreview?: boolean;
+}
+
+type ToolbarButton = {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  active?: boolean;
+  onClick: () => void;
+};
+
+function ToolbarGroup({
+  title,
+  items,
+}: {
+  title: string;
+  items: ToolbarButton[];
+}) {
+  return (
+    <div className="space-y-2 rounded-2xl border border-border/70 bg-background p-3">
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+        {title}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {items.map((item) => (
+          <Toggle
+            key={item.label}
+            size="sm"
+            pressed={item.active}
+            onPressedChange={() => item.onClick()}
+            className="h-9 rounded-xl border border-border/70 bg-background px-3 hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+            aria-label={item.label}
+          >
+            <item.icon className="h-4 w-4" />
+          </Toggle>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function EditorToolbar({
@@ -51,354 +90,243 @@ export function EditorToolbar({
   const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
   const [url, setUrl] = useState("");
 
-  const handleImageSubmit = () => {
-    if (url) {
-      editor.chain().focus().setImage({ src: url }).run();
-      setUrl("");
-      setIsImageDialogOpen(false);
-    }
-  };
+  const headingLevels = [2, 3, 4, 5, 6] as const;
 
-  const handleLinkSubmit = () => {
-    if (url) {
-      editor.chain().focus().setLink({ href: url }).run();
-      setUrl("");
-      setIsLinkDialogOpen(false);
-    }
-  };
-  // 添加处理对话框关闭的函数
-  const handleDialogClose = () => {
+  const headingItems: ToolbarButton[] = headingLevels.map((level) => ({
+    label: `标题 ${level}`,
+    icon:
+      {
+        2: Heading2,
+        3: Heading3,
+        4: Heading4,
+        5: Heading5,
+        6: Heading6,
+      }[level] ?? Heading2,
+    active: editor.isActive("heading", { level }),
+    onClick: () => editor.chain().focus().toggleHeading({ level }).run(),
+  }));
+
+  const formatItems: ToolbarButton[] = [
+    {
+      label: "粗体",
+      icon: Bold,
+      active: editor.isActive("bold"),
+      onClick: () => editor.chain().focus().toggleBold().run(),
+    },
+    {
+      label: "行内代码",
+      icon: Code,
+      active: editor.isActive("code"),
+      onClick: () => editor.chain().focus().toggleCode().run(),
+    },
+    {
+      label: "代码块",
+      icon: SquareCode,
+      active: editor.isActive("codeBlock"),
+      onClick: () => editor.chain().focus().toggleCodeBlock().run(),
+    },
+    {
+      label: "无序列表",
+      icon: List,
+      active: editor.isActive("bulletList"),
+      onClick: () => editor.chain().focus().toggleBulletList().run(),
+    },
+    {
+      label: "有序列表",
+      icon: ListOrdered,
+      active: editor.isActive("orderedList"),
+      onClick: () => editor.chain().focus().toggleOrderedList().run(),
+    },
+    {
+      label: "引用",
+      icon: Quote,
+      active: editor.isActive("blockquote"),
+      onClick: () => editor.chain().focus().toggleBlockquote().run(),
+    },
+  ];
+
+  function closeDialog() {
     setUrl("");
     setIsImageDialogOpen(false);
     setIsLinkDialogOpen(false);
-    // 确保编辑器重新获得焦点
     editor.commands.focus();
-  };
+  }
+
+  function handleImageSubmit() {
+    if (!url) return;
+    editor.chain().focus().setImage({ src: url }).run();
+    closeDialog();
+  }
+
+  function handleLinkSubmit() {
+    if (!url) return;
+    editor.chain().focus().setLink({ href: url }).run();
+    closeDialog();
+  }
 
   return (
     <>
-      <div className="sticky top-0 flex flex-wrap gap-2 border-b bg-background p-2">
-        {/* 标题按钮组 */}
-        <div className="flex gap-1 border-r pr-2">
-          {/* 重复类似的Toggle组件用于h2-h6 */}
-          <Toggle
-            size="sm"
-            pressed={editor.isActive("heading", { level: 2 })}
-            onPressedChange={() =>
-              editor.chain().focus().toggleHeading({ level: 2 }).run()
-            }
-            className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-          >
-            <Heading2 className="h-4 w-4" />
-          </Toggle>
-          {/* ... h3-h6 类似 ... */}
-          <Toggle
-            size="sm"
-            pressed={editor.isActive("heading", { level: 3 })}
-            onPressedChange={() =>
-              editor.chain().focus().toggleHeading({ level: 3 }).run()
-            }
-            className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-          >
-            <Heading3 className="h-4 w-4" />
-          </Toggle>
-          <Toggle
-            size="sm"
-            pressed={editor.isActive("heading", { level: 4 })}
-            onPressedChange={() =>
-              editor.chain().focus().toggleHeading({ level: 4 }).run()
-            }
-            className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-          >
-            <Heading4 className="h-4 w-4" />
-          </Toggle>
-          <Toggle
-            size="sm"
-            pressed={editor.isActive("heading", { level: 5 })}
-            onPressedChange={() =>
-              editor.chain().focus().toggleHeading({ level: 5 }).run()
-            }
-            className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-          >
-            <Heading5 className="h-4 w-4" />
-          </Toggle>
-          <Toggle
-            size="sm"
-            pressed={editor.isActive("heading", { level: 6 })}
-            onPressedChange={() =>
-              editor.chain().focus().toggleHeading({ level: 6 }).run()
-            }
-            className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-          >
-            <Heading6 className="h-4 w-4" />
-          </Toggle>
-        </div>
+      <Card className="rounded-none border-x-0 border-t-0 border-b border-border/70 shadow-none">
+        <CardContent className="space-y-4 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">编辑器工具栏</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                先写内容，再做结构和媒体补充，表格工具单独放在下面。
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => editor.chain().focus().undo().run()}
+                disabled={!editor.can().undo()}
+              >
+                <Undo className="h-4 w-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => editor.chain().focus().redo().run()}
+                disabled={!editor.can().redo()}
+              >
+                <Redo className="h-4 w-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant={isFullscreen ? "secondary" : "outline"}
+                onClick={onToggleFullscreen}
+              >
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
 
-        {/* 格式化按钮组 */}
-        <div className="flex gap-1 border-r pr-2">
-          <Toggle
-            size="sm"
-            pressed={editor.isActive("bold")}
-            onPressedChange={() => editor.chain().focus().toggleBold().run()}
-            className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-          >
-            <Bold className="h-4 w-4" />
-          </Toggle>
-          <Toggle
-            size="sm"
-            pressed={editor.isActive("italic")}
-            onPressedChange={() => editor.chain().focus().toggleItalic().run()}
-            className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-          >
-            <Italic className="h-4 w-4" />
-          </Toggle>
-          <Toggle
-            size="sm"
-            pressed={editor.isActive("code")}
-            onPressedChange={() => editor.chain().focus().toggleCode().run()}
-            className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-          >
-            <Code className="h-4 w-4" />
-          </Toggle>
-          <Toggle
-            size="sm"
-            pressed={editor.isActive("codeBlock")}
-            onPressedChange={() =>
-              editor.chain().focus().toggleCodeBlock().run()
-            }
-            className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-          >
-            <SquareCode className="h-4 w-4" />
-          </Toggle>
+          <div className="grid gap-3 xl:grid-cols-[1fr_1.2fr_0.9fr]">
+            <ToolbarGroup title="标题层级" items={headingItems} />
+            <ToolbarGroup title="基础格式" items={formatItems} />
+            <div className="space-y-2 rounded-2xl border border-border/70 bg-background p-3">
+              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                插入内容
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsImageDialogOpen(true)}
+                >
+                  <ImageIcon className="h-4 w-4" />
+                  图片
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsLinkDialogOpen(true)}
+                >
+                  <LinkIcon className="h-4 w-4" />
+                  链接
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    editor
+                      .chain()
+                      .focus()
+                      .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+                      .run()
+                  }
+                >
+                  <Table2 className="h-4 w-4" />
+                  表格
+                </Button>
+              </div>
+            </div>
+          </div>
 
-          <Toggle
-            size="sm"
-            pressed={editor.isActive("bulletList")}
-            onPressedChange={() =>
-              editor.chain().focus().toggleBulletList().run()
-            }
-            className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-          >
-            <List className="h-4 w-4" />
-          </Toggle>
+          <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                表格操作
+              </span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => editor.chain().focus().addColumnAfter().run()}>
+                添加列
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => editor.chain().focus().deleteColumn().run()}>
+                删除列
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => editor.chain().focus().addRowAfter().run()}>
+                添加行
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => editor.chain().focus().deleteRow().run()}>
+                删除行
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => editor.chain().focus().toggleHeaderColumn().run()}>
+                列标题
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => editor.chain().focus().toggleHeaderRow().run()}>
+                行标题
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => editor.chain().focus().deleteTable().run()}>
+                删除表格
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-          <Toggle
-            size="sm"
-            pressed={editor.isActive("orderedList")}
-            onPressedChange={() =>
-              editor.chain().focus().toggleOrderedList().run()
-            }
-            className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-          >
-            <ListOrdered className="h-4 w-4" />
-          </Toggle>
-
-          <Toggle
-            size="sm"
-            pressed={editor.isActive("blockquote")}
-            onPressedChange={() =>
-              editor.chain().focus().toggleBlockquote().run()
-            }
-            className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-          >
-            <Quote className="h-4 w-4" />
-          </Toggle>
-        </div>
-
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => editor.chain().focus().undo().run()}
-          disabled={!editor.can().undo()}
-          className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-        >
-          <Undo className="h-4 w-4" />
-        </Button>
-
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => editor.chain().focus().redo().run()}
-          disabled={!editor.can().redo()}
-          className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-        >
-          <Redo className="h-4 w-4" />
-        </Button>
-
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.preventDefault();
-            setIsImageDialogOpen(true);
-          }}
-          className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-        >
-          <ImageIcon className="h-4 w-4" />
-        </Button>
-
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.preventDefault();
-            setIsLinkDialogOpen(true);
-          }}
-          className="hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-        >
-          <Link className="h-4 w-4" />
-        </Button>
-        {/* 视图控制按钮组 */}
-        <div className="flex gap-1">
-          <Button
-            size="sm"
-            variant={isFullscreen ? "secondary" : "ghost"}
-            onClick={onToggleFullscreen}
-            className="hover:bg-muted"
-          >
-            <Maximize2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-      <div className="flex flex-wrap gap-2 border-b p-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.preventDefault();
-            editor
-              .chain()
-              .focus()
-              .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-              .run();
-          }}
-        >
-          插入表格
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.preventDefault();
-            editor.chain().focus().addColumnAfter().run();
-          }}
-        >
-          添加列
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.preventDefault();
-            editor.chain().focus().deleteColumn().run();
-          }}
-        >
-          删除列
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.preventDefault();
-            editor.chain().focus().addRowAfter().run();
-          }}
-        >
-          添加行
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.preventDefault();
-            editor.chain().focus().deleteRow().run();
-          }}
-        >
-          删除行
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.preventDefault();
-            editor.chain().focus().deleteTable().run();
-          }}
-        >
-          删除表格
-        </Button>
-
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.preventDefault();
-            editor.chain().focus().toggleHeaderColumn().run();
-          }}
-        >
-          切换列标题
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.preventDefault();
-            editor.chain().focus().toggleHeaderRow().run();
-          }}
-        >
-          切换行标题
-        </Button>
-      </div>
       <Dialog open={isImageDialogOpen} onOpenChange={setIsImageDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>插入图片</DialogTitle>
-            <DialogDescription>输入图片URL，然后按回车键确认</DialogDescription>
+            <DialogDescription>输入图片 URL 后即可插入正文。</DialogDescription>
           </DialogHeader>
           <Input
-            placeholder="输入图片URL"
+            placeholder="输入图片 URL"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
                 handleImageSubmit();
-                handleDialogClose();
               }
             }}
             autoFocus
           />
           <DialogFooter>
-            <Button onClick={handleImageSubmit}>确认</Button>
+            <Button variant="secondary" onClick={closeDialog}>
+              取消
+            </Button>
+            <Button onClick={handleImageSubmit}>插入图片</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isLinkDialogOpen} onOpenChange={setIsLinkDialogOpen}>
-        <DialogContent aria-describedby={undefined}>
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>插入链接</DialogTitle>
+            <DialogDescription>输入链接 URL 后即可添加超链接。</DialogDescription>
           </DialogHeader>
           <Input
-            placeholder="输入链接URL"
+            placeholder="输入链接 URL"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
                 handleLinkSubmit();
-                handleDialogClose();
               }
             }}
             autoFocus
           />
           <DialogFooter>
-            <Button
-              onClick={() => {
-                handleLinkSubmit();
-                handleDialogClose();
-              }}
-            >
-              确认
+            <Button variant="secondary" onClick={closeDialog}>
+              取消
             </Button>
+            <Button onClick={handleLinkSubmit}>插入链接</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

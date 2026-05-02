@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/server/db";
+import { postTags } from "@/server/db/schema";
 
 interface CreatePostTagsInput {
   postId: number;
@@ -10,9 +11,9 @@ interface CreatePostTagsInput {
 export async function createPostTags({ postId, tags }: CreatePostTagsInput) {
   try {
     // 向数据库中插入文章标签关联
-    const result = await db.postTag.createMany({
-      data: tags.map((tag) => ({ postId, tagId: tag.id })),
-    });
+    const result = await db
+      .insert(postTags)
+      .values(tags.map((tag) => ({ postId, tagId: tag.id })));
     return { data: result };
   } catch (error) {
     return { error: "创建文章标签关联失败", message: error };
