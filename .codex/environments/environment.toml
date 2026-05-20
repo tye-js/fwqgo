@@ -9,3 +9,8 @@ script = ""
 name = "运行"
 icon = "run"
 command = "bun run dev"
+
+[[actions]]
+name = "执行"
+icon = "run"
+command = "bun run dev"
