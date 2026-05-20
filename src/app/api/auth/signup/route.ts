@@ -25,6 +25,10 @@ const registerSchema = z
 
 export async function POST(request: Request) {
   try {
+    if (process.env.ENABLE_PUBLIC_SIGNUP !== "true") {
+      return Response.json({ error: "注册入口已关闭" }, { status: 403 });
+    }
+
     const body = (await request.json()) as z.infer<typeof registerSchema>;
     const { username, password } = registerSchema.parse(body);
 
@@ -54,17 +58,11 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return Response.json(
-        { error: error.errors[0]?.message },
+        { error: error.issues[0]?.message },
         { status: 400 },
       );
     }
 
-    return Response.json(
-      {
-        error: "注册失败，请重试",
-        details: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 },
-    );
+    return Response.json({ error: "注册失败，请重试" }, { status: 500 });
   }
 }

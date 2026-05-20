@@ -42,18 +42,19 @@ export async function POST(request: Request) {
       })
       .returning();
 
-    (await cookies()).set("session_id", session!.id, {
+    if (!session) {
+      return Response.json({ error: "登录失败" }, { status: 500 });
+    }
+
+    (await cookies()).set("session_id", session.id, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      expires: session!.expires,
+      expires: session.expires,
     });
 
     return Response.json({ success: true });
-  } catch (error) {
-    return Response.json(
-      { error: "登录失败!!", message: error },
-      { status: 500 },
-    );
+  } catch {
+    return Response.json({ error: "登录失败" }, { status: 500 });
   }
 }

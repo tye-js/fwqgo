@@ -10,6 +10,7 @@ import {
   primaryKey,
   index,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 
 // Post table
@@ -28,6 +29,7 @@ export const posts = pgTable(
     updatedAt: timestamp("updatedAt"),
     views: integer("views").default(0).notNull(),
     recommendedTagName: text("recommendedTagName"),
+    recommendedTagId: integer("recommendedTagId"),
     authorId: text("authorId"),
     categoryId: integer("categoryId").notNull(),
   },
@@ -38,6 +40,24 @@ export const posts = pgTable(
     recommendedTagIdx: index("posts_recommendedTagName_idx").on(
       table.recommendedTagName,
     ),
+    recommendedTagIdIdx: index("posts_recommendedTagId_idx").on(
+      table.recommendedTagId,
+    ),
+    categoryFk: foreignKey({
+      columns: [table.categoryId],
+      foreignColumns: [categories.id],
+      name: "posts_categoryId_categories_id_fk",
+    }).onDelete("restrict"),
+    authorFk: foreignKey({
+      columns: [table.authorId],
+      foreignColumns: [users.id],
+      name: "posts_authorId_users_id_fk",
+    }).onDelete("set null"),
+    recommendedTagFk: foreignKey({
+      columns: [table.recommendedTagId],
+      foreignColumns: [tags.id],
+      name: "posts_recommendedTagId_tags_id_fk",
+    }).onDelete("set null"),
   }),
 );
 
@@ -56,6 +76,11 @@ export const categories = pgTable(
   },
   (table) => ({
     parentIdx: index("categories_parentId_idx").on(table.parentId),
+    parentFk: foreignKey({
+      columns: [table.parentId],
+      foreignColumns: [table.id],
+      name: "categories_parentId_categories_id_fk",
+    }).onDelete("set null"),
   }),
 );
 
@@ -81,6 +106,16 @@ export const postTags = pgTable(
   (table) => ({
     pk: primaryKey({ columns: [table.postId, table.tagId] }),
     tagIdx: index("post_tags_tagId_idx").on(table.tagId),
+    postFk: foreignKey({
+      columns: [table.postId],
+      foreignColumns: [posts.id],
+      name: "post_tags_postId_posts_id_fk",
+    }).onDelete("cascade"),
+    tagFk: foreignKey({
+      columns: [table.tagId],
+      foreignColumns: [tags.id],
+      name: "post_tags_tagId_tags_id_fk",
+    }).onDelete("restrict"),
   }),
 );
 
@@ -118,6 +153,11 @@ export const accounts = pgTable(
     providerProviderAccountIdKey: unique(
       "accounts_provider_providerAccountId_key",
     ).on(table.provider, table.providerAccountId),
+    userFk: foreignKey({
+      columns: [table.userId],
+      foreignColumns: [users.id],
+      name: "accounts_userId_users_id_fk",
+    }).onDelete("cascade"),
   }),
 );
 
@@ -133,6 +173,11 @@ export const sessions = pgTable(
   },
   (table) => ({
     userIdx: index("sessions_userId_idx").on(table.userId),
+    userFk: foreignKey({
+      columns: [table.userId],
+      foreignColumns: [users.id],
+      name: "sessions_userId_users_id_fk",
+    }).onDelete("cascade"),
   }),
 );
 
@@ -176,6 +221,11 @@ export const homepagePromotedPosts = pgTable(
   (table) => ({
     postIdx: index("homepage_promoted_posts_postId_idx").on(table.postId),
     sortIdx: index("homepage_promoted_posts_sortOrder_idx").on(table.sortOrder),
+    postFk: foreignKey({
+      columns: [table.postId],
+      foreignColumns: [posts.id],
+      name: "homepage_promoted_posts_postId_posts_id_fk",
+    }).onDelete("cascade"),
   }),
 );
 
@@ -190,8 +240,8 @@ export const postsRelations = relations(posts, ({ one, many }) => ({
     references: [categories.id],
   }),
   recommendedTag: one(tags, {
-    fields: [posts.recommendedTagName],
-    references: [tags.name],
+    fields: [posts.recommendedTagId],
+    references: [tags.id],
   }),
   tags: many(postTags),
 }));

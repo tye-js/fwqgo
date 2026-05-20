@@ -1,10 +1,13 @@
 import { sanitizeFileName } from "@/lib/utils";
+import { requireAdminSession } from "@/server/auth/session";
 import { writeFile } from "fs/promises";
 import { type NextRequest, NextResponse } from "next/server";
 import path from "path";
 
 export async function POST(request: NextRequest) {
   try {
+    await requireAdminSession();
+
     const formData = await request.formData();
     const file = formData.get("file") as File;
 

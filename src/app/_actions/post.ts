@@ -2,9 +2,12 @@
 
 import { db } from "@/server/db";
 import { decodeSlug, slugify } from "@/lib/utils";
-import { revalidatePath } from "next/cache";
+import { type CreatePostParams } from "@/types/post.types";
 import { type NewTag, type TagMain } from "@/types";
 import { attachTagsToPosts } from "@/server/db/post-tags";
+import { normalizeArticleHtml } from "@/lib/content";
+import { requireAdminSession } from "@/server/auth/session";
+import { cacheTags, revalidateSiteContent, tagCache } from "@/server/cache/tags";
 import {
   posts,
   categories,
@@ -33,38 +36,106 @@ interface CreatePostInput {
   imgUrl?: string;
   published: boolean;
   categoryId: number;
+  recommendedTagName?: string | null;
+  keywords?: string | null;
 }
 
-export async function createPost(input: CreatePostInput) {
+export async function createPost(input: CreatePostInput | CreatePostParams) {
   try {
-    // 先验证分类是否存在
-    const category = await db
-      .select()
+    await requireAdminSession();
+    const postInput = "post" in input ? input.post : input;
+    const inputTags = "tags" in input ? input.tags : [];
+
+    const [category] = await db
+      .select({ id: categories.id, slug: categories.slug })
       .from(categories)
-      .where(eq(categories.id, input.categoryId))
+      .where(eq(categories.id, postInput.categoryId))
       .limit(1);
 
-    if (category.length === 0) {
+    if (!category) {
       return { error: "分类不存在" };
     }
 
-    // 生成 slug
-    const slug = slugify(input.title);
+    const slug = slugify(postInput.title);
 
-    const result = await getPostBySlug(slug);
-    if (result.data) {
+    const [existingPost] = await db
+      .select({ id: posts.id })
+      .from(posts)
+      .where(eq(posts.slug, slug))
+      .limit(1);
+
+    if (existingPost) {
       return { error: "文章已存在" };
     }
 
-    const [post] = await db
-      .insert(posts)
-      .values({
-        ...input,
-        slug,
-      })
-      .returning();
+    const post = await db.transaction(async (tx) => {
+      const tagRows = await Promise.all(
+        inputTags.map(async (tag) => {
+          const tagSlug = slugify(tag.name);
+          const [existingTag] = await tx
+            .select({ id: tags.id, name: tags.name })
+            .from(tags)
+            .where(eq(tags.slug, tagSlug))
+            .limit(1);
 
-    revalidatePath("/");
+          if (existingTag) {
+            return existingTag;
+          }
+
+          const [newTag] = await tx
+            .insert(tags)
+            .values({ name: tag.name, slug: tagSlug })
+            .returning({ id: tags.id, name: tags.name });
+
+          return newTag!;
+        }),
+      );
+      const recommendedTag =
+        postInput.recommendedTagName
+          ? (tagRows.find((tag) => tag.name === postInput.recommendedTagName) ??
+            (
+              await tx
+                .select({ id: tags.id, name: tags.name })
+                .from(tags)
+                .where(eq(tags.name, postInput.recommendedTagName))
+                .limit(1)
+            )[0] ??
+            null)
+          : null;
+
+      const [createdPost] = await tx
+        .insert(posts)
+        .values({
+          ...postInput,
+          slug,
+          content: normalizeArticleHtml(postInput.content),
+          recommendedTagName: recommendedTag?.name ?? null,
+          recommendedTagId: recommendedTag?.id ?? null,
+        })
+        .returning();
+
+      if (createdPost && tagRows.length > 0) {
+        await tx.insert(postTags).values(
+          tagRows.map((tag) => ({
+            postId: createdPost.id,
+            tagId: tag.id,
+          })),
+        );
+      }
+
+      return createdPost;
+    });
+
+    if (post) {
+      revalidateSiteContent([
+        cacheTags.post(post.id),
+        cacheTags.postSlug(post.slug),
+        cacheTags.category(post.categoryId),
+        cacheTags.categorySlug(category.slug),
+        ...(inputTags.length > 0 ? [cacheTags.tags] : []),
+      ]);
+    }
+
     return { data: post };
   } catch (error) {
     return { error: "创建文章失败", message: error };
@@ -76,22 +147,35 @@ export async function updatePostByRecommendedTagName(
   recommendedTagName: string,
 ) {
   try {
+    await requireAdminSession();
+
     // 先验证标签是否存在
-    const tag = await db
-      .select()
+    const [tag] = await db
+      .select({ id: tags.id, name: tags.name })
       .from(tags)
       .where(eq(tags.name, recommendedTagName))
       .limit(1);
 
-    if (tag.length === 0) {
+    if (!tag) {
       return { error: `标签 '${recommendedTagName}' 不存在` };
     }
 
     const [result] = await db
       .update(posts)
-      .set({ recommendedTagName })
+      .set({
+        recommendedTagName: tag.name,
+        recommendedTagId: tag.id,
+        updatedAt: new Date(),
+      })
       .where(eq(posts.id, postId))
       .returning();
+
+    if (result) {
+      revalidateSiteContent([
+        cacheTags.post(result.id),
+        cacheTags.postSlug(result.slug),
+      ]);
+    }
 
     return { data: result };
   } catch (error) {
@@ -107,6 +191,9 @@ export async function getPosts({
   pageNo?: number;
   pageSize?: number;
 }) {
+  "use cache";
+  tagCache(cacheTags.posts);
+
   try {
     const postsData = await db
       .select({
@@ -129,6 +216,9 @@ export async function getPosts({
 
 // 获取文章总数
 export async function getPostCount() {
+  "use cache";
+  tagCache(cacheTags.posts);
+
   const [result] = await db.select({ count: count() }).from(posts);
   return { data: result?.count ?? 0 };
 }
@@ -246,6 +336,7 @@ export async function getDashboardStats() {
 
 export async function getPublishedPostCountByCategoryId(categoryId: number) {
   "use cache";
+  tagCache(cacheTags.posts, cacheTags.category(categoryId));
 
   const [result] = await db
     .select({ count: count() })
@@ -264,13 +355,35 @@ export async function updatePost(input: {
   published: boolean;
 }) {
   try {
+    await requireAdminSession();
+
+    const [currentPost] = await db
+      .select({
+        slug: posts.slug,
+        categoryId: posts.categoryId,
+      })
+      .from(posts)
+      .where(eq(posts.id, input.id))
+      .limit(1);
+
     const [post] = await db
       .update(posts)
-      .set(input)
+      .set({ ...input, updatedAt: new Date() })
       .where(eq(posts.id, input.id))
       .returning();
 
-    revalidatePath("/end/edit");
+    if (post) {
+      revalidateSiteContent([
+        cacheTags.post(post.id),
+        cacheTags.postSlug(post.slug),
+        cacheTags.category(post.categoryId),
+        ...(currentPost?.slug && currentPost.slug !== post.slug
+          ? [cacheTags.postSlug(currentPost.slug)]
+          : []),
+        ...(currentPost?.categoryId ? [cacheTags.category(currentPost.categoryId)] : []),
+      ]);
+    }
+
     return { data: post };
   } catch (error) {
     return { error: "更新文章失败", message: error };
@@ -287,33 +400,57 @@ export async function updatePostContent(input: {
   keywords: string;
 }) {
   try {
-    // 首先验证推荐标签是否存在
+    await requireAdminSession();
+
+    const [currentPost] = await db
+      .select({
+        slug: posts.slug,
+        categoryId: posts.categoryId,
+      })
+      .from(posts)
+      .where(eq(posts.id, input.id))
+      .limit(1);
+
+    let recommendedTag: { id: number; name: string } | null = null;
     if (input.recommendTagName) {
-      const existingTag = await db
-        .select()
+      const [existingTag] = await db
+        .select({ id: tags.id, name: tags.name })
         .from(tags)
         .where(eq(tags.name, input.recommendTagName))
         .limit(1);
 
-      if (existingTag.length === 0) {
+      if (!existingTag) {
         return { error: "推荐标签不存在，请先创建该标签" };
       }
+
+      recommendedTag = existingTag;
     }
 
     const [post] = await db
       .update(posts)
       .set({
         description: input.description,
-        content: input.content,
+        content: normalizeArticleHtml(input.content),
         categoryId: input.categoryId,
-        recommendedTagName: input.recommendTagName,
+        recommendedTagName: recommendedTag?.name ?? null,
+        recommendedTagId: recommendedTag?.id ?? null,
         keywords: input.keywords,
+        updatedAt: new Date(),
       })
       .where(eq(posts.id, input.id))
       .returning();
 
-    revalidatePath("/sitemap.xml");
-    revalidatePath(`/end/edit/post/${post!.slug}`);
+    if (post) {
+      revalidateSiteContent([
+        cacheTags.post(post.id),
+        cacheTags.postSlug(post.slug),
+        cacheTags.category(post.categoryId),
+        ...(currentPost?.categoryId && currentPost.categoryId !== post.categoryId
+          ? [cacheTags.category(currentPost.categoryId)]
+          : []),
+      ]);
+    }
+
     return { success: true };
   } catch (error) {
     return { error: "更新文章失败", message: error };
@@ -323,9 +460,22 @@ export async function updatePostContent(input: {
 // 通过ID删除文章
 export async function deletePostById(id: number) {
   try {
-    await db.delete(posts).where(eq(posts.id, id));
-    revalidatePath("/end/edit");
-    revalidatePath("/sitemap.xml");
+    await requireAdminSession();
+
+    const [deletedPost] = await db.delete(posts).where(eq(posts.id, id)).returning({
+      id: posts.id,
+      slug: posts.slug,
+      categoryId: posts.categoryId,
+    });
+
+    if (deletedPost) {
+      revalidateSiteContent([
+        cacheTags.post(deletedPost.id),
+        cacheTags.postSlug(deletedPost.slug),
+        cacheTags.category(deletedPost.categoryId),
+      ]);
+    }
+
     return { data: "删除文章成功" };
   } catch (error) {
     return { error: "删除文章失败", message: error };
@@ -334,15 +484,27 @@ export async function deletePostById(id: number) {
 
 export async function deletePostsByIds(ids: number[]) {
   try {
+    await requireAdminSession();
+
     if (ids.length === 0) {
       return { data: 0 };
     }
 
-    await db.delete(posts).where(inArray(posts.id, ids));
-    revalidatePath("/end/posts/edit");
-    revalidatePath("/sitemap.xml");
+    const deletedPosts = await db.delete(posts).where(inArray(posts.id, ids)).returning({
+      id: posts.id,
+      slug: posts.slug,
+      categoryId: posts.categoryId,
+    });
 
-    return { data: ids.length };
+    revalidateSiteContent(
+      deletedPosts.flatMap((post) => [
+        cacheTags.post(post.id),
+        cacheTags.postSlug(post.slug),
+        cacheTags.category(post.categoryId),
+      ]),
+    );
+
+    return { data: deletedPosts.length };
   } catch (error) {
     return { error: "批量删除文章失败", message: error };
   }
@@ -351,6 +513,7 @@ export async function deletePostsByIds(ids: number[]) {
 // 获取带有标签的文章列表 (优化 N+1 问题)
 export async function getPostsWithTags(limit = 15) {
   "use cache";
+  tagCache(cacheTags.posts, cacheTags.homepage);
 
   try {
     const postsData = await db.query.posts.findMany({
@@ -382,11 +545,20 @@ export async function getPostsWithTags(limit = 15) {
 
 export async function getHomepagePostsWithTags() {
   "use cache";
+  tagCache(cacheTags.posts, cacheTags.homepage);
 
-  return getPostsWithTags(40);
+  try {
+    return await getPostsWithTags(40);
+  } catch (error) {
+    console.error("Failed to load homepage posts:", error);
+    return { data: [] };
+  }
 }
 
 export async function getHomepageSidebarData() {
+  "use cache";
+  tagCache(cacheTags.posts, cacheTags.homepage, cacheTags.sidebar);
+
   const promotedPostsPromise = (async () => {
     try {
       return await db
@@ -413,20 +585,27 @@ export async function getHomepageSidebarData() {
     }
   })();
 
-  const popularPostsPromise = db
-    .select({
-      id: posts.id,
-      title: posts.title,
-      slug: posts.slug,
-      description: posts.description,
-      imgUrl: posts.imgUrl,
-      views: posts.views,
-      createdAt: posts.createdAt,
-    })
-    .from(posts)
-    .where(eq(posts.published, true))
-    .orderBy(desc(posts.views), desc(posts.createdAt))
-    .limit(6);
+  const popularPostsPromise = (async () => {
+    try {
+      return await db
+        .select({
+          id: posts.id,
+          title: posts.title,
+          slug: posts.slug,
+          description: posts.description,
+          imgUrl: posts.imgUrl,
+          views: posts.views,
+          createdAt: posts.createdAt,
+        })
+        .from(posts)
+        .where(eq(posts.published, true))
+        .orderBy(desc(posts.views), desc(posts.createdAt))
+        .limit(6);
+    } catch (error) {
+      console.error("Failed to load homepage popular posts:", error);
+      return [];
+    }
+  })();
 
   const [promotedPosts, popularPosts] = await Promise.all([
     promotedPostsPromise,
@@ -447,6 +626,9 @@ export async function getHomepageSidebarData() {
 }
 
 export async function getPostByCategoryId(id: number) {
+  "use cache";
+  tagCache(cacheTags.posts, cacheTags.category(id));
+
   try {
     const postsData = await db
       .select({
@@ -483,6 +665,9 @@ export async function getPostByCategoryId(id: number) {
 }
 
 export async function getPostBySlug(slug: string) {
+  "use cache";
+  tagCache(cacheTags.posts, cacheTags.postSlug(decodeSlug(slug)));
+
   try {
     const decodedSlug = decodeSlug(slug);
     const [post] = await db
@@ -493,6 +678,7 @@ export async function getPostBySlug(slug: string) {
         description: posts.description,
         imgUrl: posts.imgUrl,
         recommendedTagName: posts.recommendedTagName,
+        recommendedTagId: posts.recommendedTagId,
         keywords: posts.keywords,
         categoryId: posts.categoryId,
         views: posts.views,
@@ -524,13 +710,18 @@ export async function getPostBySlug(slug: string) {
   }
 }
 
-// 根据推荐标签名称获取相关文章
+// 根据推荐标签获取相关文章
 export async function getRecommendedPosts(
-  tagName: string | null,
+  tagId: number | null,
   currentPostId: number,
 ) {
+  "use cache";
+  if (tagId) {
+    tagCache(cacheTags.posts, cacheTags.tag(tagId));
+  }
+
   try {
-    if (!tagName) return { data: [] };
+    if (!tagId) return { data: [] };
 
     const postsData = await db
       .select({
@@ -542,7 +733,7 @@ export async function getRecommendedPosts(
       .from(posts)
       .where(
         and(
-          eq(posts.recommendedTagName, tagName),
+          eq(posts.recommendedTagId, tagId),
           not(eq(posts.id, currentPostId)),
           eq(posts.published, true),
         ),
@@ -557,9 +748,12 @@ export async function getRecommendedPosts(
 }
 
 export async function getPostWithTagsBySlug(slug: string) {
+  "use cache";
+  tagCache(cacheTags.posts, cacheTags.postSlug(decodeSlug(slug)));
+
   try {
     const decodedSlug = decodeSlug(slug);
-    const [post] = await db
+    const [postRow] = await db
       .select({
         id: posts.id,
         title: posts.title,
@@ -569,15 +763,19 @@ export async function getPostWithTagsBySlug(slug: string) {
         content: posts.content,
         createdAt: posts.createdAt,
         views: posts.views,
+        recommendedTagId: posts.recommendedTagId,
         recommendedTagName: posts.recommendedTagName,
+        recommendedTagSlug: tags.slug,
       })
       .from(posts)
+      .leftJoin(tags, eq(posts.recommendedTagId, tags.id))
       .where(and(eq(posts.slug, decodedSlug), eq(posts.published, true)))
       .limit(1);
 
-    if (!post) {
+    if (!postRow) {
       return { data: { post: null, recommendedPosts: null } };
     }
+    const { recommendedTagSlug, ...post } = postRow;
 
     // 获取文章的标签
     const postTagsData = await db
@@ -594,16 +792,23 @@ export async function getPostWithTagsBySlug(slug: string) {
 
     // 如果文章存在且有推荐标签，获取推荐文章
     let recommendedPosts = null;
-    if (post?.recommendedTagName) {
+    if (post?.recommendedTagId) {
       const recommended = await getRecommendedPosts(
-        post.recommendedTagName,
+        post.recommendedTagId,
         post.id,
       );
       recommendedPosts = recommended.data;
     }
 
     return {
-      data: { post: { ...post, tags: postTagsData }, recommendedPosts },
+      data: {
+        post: {
+          ...post,
+          recommendedTagSlug,
+          tags: postTagsData,
+        },
+        recommendedPosts,
+      },
     };
   } catch (error) {
     return { error: "通过slug获取文章失败", message: error };
@@ -612,6 +817,7 @@ export async function getPostWithTagsBySlug(slug: string) {
 
 export async function getPostsWithTagsByCategoryId(id: number, pageNo: number) {
   "use cache";
+  tagCache(cacheTags.posts, cacheTags.category(id));
 
   try {
     const postsData = await db
@@ -655,6 +861,8 @@ export async function updatePostTags({
   newTags,
 }: UpdatePostTagsParams) {
   try {
+    await requireAdminSession();
+
     // 找出需要添加的标签
     const tagsToAdd = newTags.filter(
       (newTag) =>
@@ -671,25 +879,6 @@ export async function updatePostTags({
     await db.transaction(async (tx) => {
       // 1. 删除需要移除的标签文章关联
       if (tagsToRemove.length > 0) {
-        // 检查并删除没有其他文章引用的标签
-        for (const tag of tagsToRemove) {
-          const [result] = await tx
-            .select()
-            .from(postTags)
-            .where(
-              and(
-                eq(postTags.tagId, tag.tag.id),
-                not(eq(postTags.postId, postId)),
-              ),
-            )
-            .limit(1);
-
-          if (!result) {
-            await tx.delete(tags).where(eq(tags.id, tag.tag.id));
-          }
-        }
-
-        // 删除PostTag表中对应的关联
         await tx.delete(postTags).where(
           and(
             eq(postTags.postId, postId),
@@ -738,6 +927,25 @@ export async function updatePostTags({
       }
     });
 
+    const [post] = await db
+      .select({
+        id: posts.id,
+        slug: posts.slug,
+        categoryId: posts.categoryId,
+      })
+      .from(posts)
+      .where(eq(posts.id, postId))
+      .limit(1);
+
+    if (post) {
+      revalidateSiteContent([
+        cacheTags.post(post.id),
+        cacheTags.postSlug(post.slug),
+        cacheTags.category(post.categoryId),
+        cacheTags.tags,
+      ]);
+    }
+
     return { success: true };
   } catch (error) {
     console.error("更新文章标签失败:", error);
@@ -748,6 +956,9 @@ export async function updatePostTags({
 // 通过id获取当前文章的上下文章
 // 通过id获取当前文章的上下文章 (优化 ID 逻辑)
 export async function getPostsByPostId(id: number) {
+  "use cache";
+  tagCache(cacheTags.posts);
+
   try {
     const [prevPost] = await db
       .select()
@@ -774,6 +985,7 @@ export async function getPostsByPostId(id: number) {
  */
 export async function getLatestPostsForSidebar() {
   "use cache";
+  tagCache(cacheTags.posts, cacheTags.sidebar);
 
   const postsData = await db
     .select({

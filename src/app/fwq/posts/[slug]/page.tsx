@@ -25,7 +25,7 @@ import { PostViewCount } from "@/app/_components/post-view-count";
 import { RecommendedPostCard } from "@/app/_components/recommended-post-card";
 import { WebmasterStatement } from "@/app/_components/webmaster-statement";
 import { Card, CardContent } from "@/components/ui/card";
-import { addIdsToHeadings } from "@/lib/toc";
+import { notFound } from "next/navigation";
 
 export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;
@@ -45,26 +45,23 @@ export async function generateMetadata(props: {
   };
 }
 
-async function PostPageContent({ paramsPromise }: { paramsPromise: Promise<{ slug: string }> }) {
+async function PostPageContent({
+  paramsPromise,
+}: {
+  paramsPromise: Promise<{ slug: string }>;
+}) {
   const params = await paramsPromise;
   const decodedSlug = decodeSlug(params.slug);
   const { data, error } = await getPostWithTagsBySlug(decodedSlug);
   if (error) return <div>加载失败: {error}</div>;
-  if (!data) return <div>加载中...</div>;
+  if (!data) notFound();
   const { post, recommendedPosts } = data;
 
-  if (!post) return <div>加载中...</div>;
-  const contentWithIds = addIdsToHeadings(post.content);
+  if (!post) notFound();
+  const contentWithIds = post.content;
 
   const { data: posts } = await getPostsByPostId(post.id);
-
-  if (!posts || posts.length === 0) {
-    // 如果获取失败或者没有上下篇文章，可以不显示或者显示加载中
-    // 之前逻辑是 return Loading...
-    return <div>加载中...</div>;
-  }
-
-  const [prevPost, nextPost] = posts;
+  const [prevPost, nextPost] = posts ?? [null, null];
   const { data: latestPosts } = await getLatestPostsForSidebar();
 
   const jsonLd = {
@@ -120,7 +117,7 @@ async function PostPageContent({ paramsPromise }: { paramsPromise: Promise<{ slu
                 <PostViewCount slug={decodedSlug} initialViews={post.views} />
                 {post.recommendedTagName ? (
                   <Link
-                    href={`/fwq/tags/${post.recommendedTagName}/page/1`}
+                    href={`/fwq/tags/${post.recommendedTagSlug ?? post.recommendedTagName}/page/1`}
                     className="inline-flex items-center gap-2 transition-colors hover:text-foreground"
                   >
                     <Tags className="size-4" />
@@ -178,7 +175,7 @@ async function PostPageContent({ paramsPromise }: { paramsPromise: Promise<{ slu
                     </CardContent>
                   </Card>
 
-                  {posts && posts.length > 0 ? (
+                  {prevPost || nextPost ? (
                     <Card className="rounded-[24px] border-border/70 bg-muted/20 shadow-none">
                       <CardContent className="space-y-3 p-5">
                         <div className="text-sm font-medium text-foreground">

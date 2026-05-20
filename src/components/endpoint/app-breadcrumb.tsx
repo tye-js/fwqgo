@@ -22,12 +22,14 @@ export default function AppBreadcrumb() {
       url: `/${item}`,
     }))
     .filter((item) => item.title !== "");
-  let breadcrumbUrl = "";
   return (
     <Breadcrumb>
       <BreadcrumbList>
         {breadcrumbItems.map((item, index) => {
-          breadcrumbUrl = breadcrumbUrl + item.url;
+          const breadcrumbUrl = breadcrumbItems
+            .slice(0, index + 1)
+            .map((breadcrumbItem) => breadcrumbItem.url)
+            .join("");
           if (index === breadcrumbItems.length - 1) {
             return (
               <BreadcrumbItem key={item.title} className="hidden md:block">

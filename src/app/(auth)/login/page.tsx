@@ -16,12 +16,13 @@ export default function Page() {
     });
 
     if (res.ok) {
-      router.push("/");
+      router.push("/end");
+      router.refresh();
+      return;
     }
 
     const result = (await res.json()) as { error?: string };
     if (result.error) {
-      console.log(result.error);
       return;
     }
   };
