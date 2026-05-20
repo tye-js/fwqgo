@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { resolveImageUrl } from "@/lib/utils";
 
 interface ImageUploadProps {
   onChange: (value: string) => void;
@@ -62,7 +63,7 @@ export function ImageUpload({ onChange, value }: ImageUploadProps) {
               sizes="200px"
               className="object-cover"
               alt="Upload"
-              src={process.env.NEXT_PUBLIC_URL + value}
+              src={resolveImageUrl(value) ?? "/img/placeholders/fwq-placeholder.png"}
               unoptimized={false}
             />
           </div>

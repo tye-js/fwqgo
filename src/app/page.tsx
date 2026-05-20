@@ -21,7 +21,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { Separator } from "@/components/ui/separator";
-import { formatDate, isWithin24Hours } from "@/lib/utils";
+import { formatDate, isWithin24Hours, resolveImageUrl } from "@/lib/utils";
 
 function formatCount(value: number) {
   return value.toLocaleString("zh-CN");
@@ -56,7 +56,7 @@ function HeroArticleTile({
       <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent,rgba(15,23,42,0.72))]" />
       {imgUrl ? (
         <Image
-          src={`${process.env.NEXT_PUBLIC_URL}${imgUrl}`}
+          src={resolveImageUrl(imgUrl) ?? "/img/placeholders/fwq-placeholder.png"}
           alt={title}
           fill
           priority={isLarge}

@@ -26,6 +26,7 @@ import { RecommendedPostCard } from "@/app/_components/recommended-post-card";
 import { WebmasterStatement } from "@/app/_components/webmaster-statement";
 import { Card, CardContent } from "@/components/ui/card";
 import { addIdsToHeadings } from "@/lib/toc";
+import { resolveImageUrl } from "@/lib/utils";
 
 export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;
@@ -134,7 +135,7 @@ async function PostPageContent({ paramsPromise }: { paramsPromise: Promise<{ slu
               <div className="relative overflow-hidden rounded-[26px] border border-border/70 bg-muted/20">
               {post.imgUrl ? (
                 <Image
-                  src={process.env.NEXT_PUBLIC_URL + post.imgUrl}
+                  src={resolveImageUrl(post.imgUrl) ?? "/img/placeholders/fwq-placeholder.png"}
                   alt={post.title}
                     width={1440}
                     height={840}

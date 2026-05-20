@@ -77,3 +77,14 @@ export function isWithin24Hours(date: Date) {
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   return diffDays <= 1;
 }
+
+export function resolveImageUrl(path?: string | null) {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+
+  const baseUrl =
+    process.env.NEXT_PUBLIC_URL?.replace(/\/$/, "") ?? "https://fwqgo.com";
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  return `${baseUrl}${normalizedPath}`;
+}

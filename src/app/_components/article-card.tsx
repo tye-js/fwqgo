@@ -4,7 +4,7 @@ import { ArrowUpRight, CalendarDays } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatDate, isWithin24Hours } from "@/lib/utils";
+import { formatDate, isWithin24Hours, resolveImageUrl } from "@/lib/utils";
 import { type PostWithTags } from "@/types";
 
 function ArticleCard({ post }: { post: PostWithTags }) {
@@ -22,7 +22,7 @@ function ArticleCard({ post }: { post: PostWithTags }) {
         >
           {post.imgUrl ? (
             <Image
-              src={`${process.env.NEXT_PUBLIC_URL}${post.imgUrl}`}
+              src={resolveImageUrl(post.imgUrl) ?? "/img/placeholders/fwq-placeholder.png"}
               alt={post.title}
               fill
               sizes="(max-width: 768px) 100vw, 280px"

@@ -169,9 +169,9 @@ export const homepagePromotedPosts = pgTable(
   "homepage_promoted_posts",
   {
     id: serial("id").primaryKey(),
-    postId: integer("postId").notNull().unique(),
-    sortOrder: integer("sortOrder").default(0).notNull(),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    postId: integer("postid").notNull().unique(),
+    sortOrder: integer("sortorder").default(0).notNull(),
+    createdAt: timestamp("createdat").defaultNow().notNull(),
   },
   (table) => ({
     postIdx: index("homepage_promoted_posts_postId_idx").on(table.postId),

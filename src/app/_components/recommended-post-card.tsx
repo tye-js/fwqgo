@@ -2,6 +2,7 @@ import { type RecommendedPost } from "@/types/post.types";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
+import { resolveImageUrl } from "@/lib/utils";
 
 export function RecommendedPostCard({ post }: { post: RecommendedPost }) {
   return (
@@ -12,10 +13,10 @@ export function RecommendedPostCard({ post }: { post: RecommendedPost }) {
       <div className="relative h-[180px] overflow-hidden">
             {post.imgUrl ? (
               <Image
-                src={process.env.NEXT_PUBLIC_URL + post.imgUrl}
+                src={resolveImageUrl(post.imgUrl) ?? "/img/placeholders/fwq-placeholder.png"}
                 alt={post.title}
                 fill
-            sizes="(max-width: 768px) 100vw, 320px"
+                sizes="(max-width: 768px) 100vw, 320px"
                 className="object-cover object-center"
               />
             ) : null}

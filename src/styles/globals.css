@@ -8,39 +8,39 @@
       "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Georgia", serif;
     --font-ui:
       "Inter", "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-    --background: 36 33% 98%;
-    --foreground: 240 10% 4%;
+    --background: 210 33% 98%;
+    --foreground: 223 64% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 4%;
+    --card-foreground: 223 64% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 4%;
-    --primary: 240 7% 9%;
+    --popover-foreground: 223 64% 12%;
+    --primary: 223 64% 12%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 5% 25%;
+    --secondary: 215 19% 35%;
     --secondary-foreground: 0 0% 100%;
-    --muted: 210 20% 93%;
-    --muted-foreground: 240 4% 36%;
-    --accent: 330 81% 60%;
+    --muted: 210 40% 95%;
+    --muted-foreground: 215 16% 42%;
+    --accent: 217 90% 57%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 73% 47%;
     --destructive-foreground: 0 0% 100%;
-    --border: 240 11% 89%;
-    --input: 240 11% 89%;
-    --ring: 240 7% 9%;
+    --border: 214 30% 89%;
+    --input: 214 30% 89%;
+    --ring: 217 90% 57%;
     --radius: 1.15rem;
-    --chart-1: 330 81% 60%;
-    --chart-2: 196 70% 43%;
-    --chart-3: 39 92% 54%;
-    --chart-4: 145 57% 45%;
-    --chart-5: 257 68% 62%;
-    --sidebar-background: 36 33% 98%;
-    --sidebar-foreground: 240 10% 4%;
-    --sidebar-primary: 240 7% 9%;
+    --chart-1: 217 90% 57%;
+    --chart-2: 191 87% 43%;
+    --chart-3: 223 64% 12%;
+    --chart-4: 205 90% 72%;
+    --chart-5: 197 60% 48%;
+    --sidebar-background: 210 33% 98%;
+    --sidebar-foreground: 223 64% 12%;
+    --sidebar-primary: 223 64% 12%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 20% 93%;
-    --sidebar-accent-foreground: 240 7% 9%;
-    --sidebar-border: 240 11% 89%;
-    --sidebar-ring: 240 7% 9%;
+    --sidebar-accent: 210 40% 95%;
+    --sidebar-accent-foreground: 223 64% 12%;
+    --sidebar-border: 214 30% 89%;
+    --sidebar-ring: 217 90% 57%;
   }
 
   .dark {
@@ -86,14 +86,15 @@
   body {
     @apply bg-background text-foreground;
     background-image:
-      radial-gradient(circle at top left, rgba(236, 72, 153, 0.06), transparent 24%),
-      linear-gradient(to right, rgba(24, 24, 27, 0.03) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(24, 24, 27, 0.03) 1px, transparent 1px);
-    background-size: auto, 28px 28px, 28px 28px;
+      radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 28%),
+      radial-gradient(circle at bottom right, rgba(6, 182, 212, 0.06), transparent 22%),
+      linear-gradient(to right, rgba(37, 99, 235, 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(37, 99, 235, 0.04) 1px, transparent 1px);
+    background-size: auto, auto, 28px 28px, 28px 28px;
   }
 
   ::selection {
-    background: rgba(236, 72, 153, 0.18);
+    background: rgba(37, 99, 235, 0.18);
   }
 }
 
@@ -162,23 +163,34 @@
 
 .home-grid-surface {
   background-image:
-    linear-gradient(to right, rgba(24, 24, 27, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(24, 24, 27, 0.05) 1px, transparent 1px);
-  background-size: 28px 28px;
+    radial-gradient(circle at 8% 18%, rgba(37, 99, 235, 0.08), transparent 18%),
+    radial-gradient(circle at 88% 76%, rgba(6, 182, 212, 0.08), transparent 18%),
+    linear-gradient(to right, rgba(37, 99, 235, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(37, 99, 235, 0.05) 1px, transparent 1px);
+  background-size: auto, auto, 28px 28px, 28px 28px;
 }
 
 .not-found-surface {
   background-image:
-    radial-gradient(circle at 20% 20%, rgba(236, 72, 153, 0.08), transparent 22%),
-    linear-gradient(to right, rgba(24, 24, 27, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(24, 24, 27, 0.05) 1px, transparent 1px);
+    radial-gradient(circle at 20% 20%, rgba(37, 99, 235, 0.08), transparent 22%),
+    linear-gradient(to right, rgba(37, 99, 235, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(37, 99, 235, 0.05) 1px, transparent 1px);
   background-size: auto, 30px 30px, 30px 30px;
 }
 
 .editorial-surface {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.94)),
-    linear-gradient(to right, rgba(24, 24, 27, 0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(24, 24, 27, 0.04) 1px, transparent 1px);
+    linear-gradient(to right, rgba(37, 99, 235, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(37, 99, 235, 0.04) 1px, transparent 1px);
   background-size: auto, 28px 28px, 28px 28px;
+}
+
+.tech-line-bg {
+  background-image:
+    radial-gradient(circle at 10% 20%, rgba(37, 99, 235, 0.1), transparent 22%),
+    radial-gradient(circle at 88% 32%, rgba(6, 182, 212, 0.08), transparent 20%),
+    linear-gradient(to right, rgba(37, 99, 235, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(37, 99, 235, 0.05) 1px, transparent 1px);
+  background-size: auto, auto, 36px 36px, 36px 36px;
 }
