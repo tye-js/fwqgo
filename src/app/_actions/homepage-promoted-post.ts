@@ -5,8 +5,13 @@ import { asc, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/server/db";
 import { homepagePromotedPosts, posts } from "@/server/db/schema";
+import { requireAdminSession } from "@/server/auth/session";
+import { cacheTags, revalidateSiteContent, tagCache } from "@/server/cache/tags";
 
 export async function getHomepagePromotedPostList() {
+  "use cache";
+  tagCache(cacheTags.homepage);
+
   try {
     const result = await db.query.homepagePromotedPosts.findMany({
       orderBy: [
@@ -36,6 +41,8 @@ export async function addHomepagePromotedPost(input: {
   sortOrder: number;
 }) {
   try {
+    await requireAdminSession();
+
     const [post] = await db
       .select({
         id: posts.id,
@@ -62,7 +69,7 @@ export async function addHomepagePromotedPost(input: {
       })
       .returning();
 
-    revalidatePath("/");
+    revalidateSiteContent([cacheTags.homepage, cacheTags.post(input.postId)]);
     revalidatePath("/end/collect/homepage-promoted");
 
     return { data: result };
@@ -76,6 +83,8 @@ export async function updateHomepagePromotedPost(input: {
   sortOrder: number;
 }) {
   try {
+    await requireAdminSession();
+
     const [result] = await db
       .update(homepagePromotedPosts)
       .set({
@@ -84,7 +93,7 @@ export async function updateHomepagePromotedPost(input: {
       .where(eq(homepagePromotedPosts.id, input.id))
       .returning();
 
-    revalidatePath("/");
+    revalidateSiteContent([cacheTags.homepage]);
     revalidatePath("/end/collect/homepage-promoted");
 
     return { data: result };
@@ -95,12 +104,14 @@ export async function updateHomepagePromotedPost(input: {
 
 export async function deleteHomepagePromotedPost(id: number) {
   try {
+    await requireAdminSession();
+
     const [result] = await db
       .delete(homepagePromotedPosts)
       .where(eq(homepagePromotedPosts.id, id))
       .returning();
 
-    revalidatePath("/");
+    revalidateSiteContent([cacheTags.homepage]);
     revalidatePath("/end/collect/homepage-promoted");
 
     return { data: result };
@@ -111,6 +122,8 @@ export async function deleteHomepagePromotedPost(id: number) {
 
 export async function deleteHomepagePromotedPosts(ids: number[]) {
   try {
+    await requireAdminSession();
+
     if (ids.length === 0) {
       return { data: 0 };
     }
@@ -120,7 +133,7 @@ export async function deleteHomepagePromotedPosts(ids: number[]) {
       .where(inArray(homepagePromotedPosts.id, ids))
       .returning({ id: homepagePromotedPosts.id });
 
-    revalidatePath("/");
+    revalidateSiteContent([cacheTags.homepage]);
     revalidatePath("/end/collect/homepage-promoted");
 
     return { data: result.length };
@@ -130,6 +143,9 @@ export async function deleteHomepagePromotedPosts(ids: number[]) {
 }
 
 export async function getPublishedPostOptions() {
+  "use cache";
+  tagCache(cacheTags.posts);
+
   try {
     const result = await db
       .select({

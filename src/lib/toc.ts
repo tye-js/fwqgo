@@ -1,3 +1,5 @@
+import { normalizeArticleHtml } from "@/lib/content";
+
 interface TocItem {
   id: string;
   level: number;
@@ -14,19 +16,7 @@ export function generateUniqueId(text: string): string {
 }
 // 为标题添加id
 export function addIdsToHeadings(content: string): string {
-  // 匹配所有h1-h6标签
-  const headingRegex = /<h([2-6])(.*?)>(.*?)<\/h\1>/g;
-  return content.replace(
-    headingRegex,
-    (match: string, level: string, attrs: string, text: string) => {
-      const id: string = generateUniqueId(text);
-      // 移除原有的id属性（如果存在）
-      let newAttrs: string = attrs.replace(/\s*id="[^"]*"/, "");
-      // 如果已有属性，在属性后添加id；如果没有属性，直接添加id
-      newAttrs = attrs ? `${attrs} id="${id}"` : ` id="${id}"`;
-      return `<h${level}${newAttrs}>${text}</h${level}>`;
-    },
-  );
+  return normalizeArticleHtml(content);
 }
 
 export function generateToc(content: string): TocItem[] {

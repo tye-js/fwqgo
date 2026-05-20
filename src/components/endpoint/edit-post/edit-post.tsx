@@ -22,7 +22,6 @@ import { toast } from "sonner";
 import { updatePostContent, updatePostTags } from "@/app/_actions/post";
 import { type NewTag } from "@/types";
 import { Separator } from "@/components/ui/separator";
-import { addIdsToHeadings } from "@/lib/toc";
 interface Category {
   id: number;
   name: string;
@@ -90,12 +89,11 @@ export default function EditPost({
       if (tagsResult.error) {
         throw new Error(tagsResult.error);
       }
-      const contentWithIds = addIdsToHeadings(content);
       // 更新文章内容
       const result = await updatePostContent({
         id: post.post.id,
         description,
-        content: contentWithIds,
+        content,
         categoryId: parseInt(categoryId),
         recommendTagName,
         keywords: keywords.toString(),

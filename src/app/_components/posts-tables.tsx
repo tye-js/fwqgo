@@ -138,12 +138,12 @@ export function PostList({ posts }: { posts: PostListProp[] }) {
   ) {
     setEditPostData((prev) => {
       if (!prev) return null;
-      return { ...prev, [key]: value } as PostListProp;
+      return { ...prev, [key]: value };
     });
   }
 
   async function handleSave(postId: number) {
-    if (!editPostData || editPostData.id !== postId) return;
+    if (editPostData?.id !== postId) return;
     setIsSaving(true);
     const { error } = await updatePost({ ...editPostData });
     setIsSaving(false);

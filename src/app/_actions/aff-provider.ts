@@ -5,6 +5,7 @@ import { type AffManData } from "@/types";
 import { revalidatePath } from "next/cache";
 import { affServiceProviders } from "@/server/db/schema";
 import { eq, desc, inArray, count } from "drizzle-orm";
+import { requireAdminSession } from "@/server/auth/session";
 // 通过href查询affServiceProvider
 export async function getAffValueByHref(hostname: string) {
   try {
@@ -13,8 +14,6 @@ export async function getAffValueByHref(hostname: string) {
     const possibleDomains = domainParts
       .map((_, index, arr) => arr.slice(index).join("."))
       .filter((domain) => domain.includes(".")); // 确保至少包含一个点号
-    console.log(possibleDomains);
-
     const [result] = await db
       .select()
       .from(affServiceProviders)
@@ -53,6 +52,8 @@ export async function getAffProviderCount() {
 }
 
 export async function updateAffProvider(data: AffManData) {
+  await requireAdminSession();
+
   const [result] = await db
     .update(affServiceProviders)
     .set(data)
@@ -63,6 +64,8 @@ export async function updateAffProvider(data: AffManData) {
 }
 
 export async function deleteAffProvider(id: number) {
+  await requireAdminSession();
+
   const [result] = await db
     .delete(affServiceProviders)
     .where(eq(affServiceProviders.id, id))
@@ -72,6 +75,8 @@ export async function deleteAffProvider(id: number) {
 }
 
 export async function deleteAffProviders(ids: number[]) {
+  await requireAdminSession();
+
   if (ids.length === 0) {
     return { data: 0 };
   }
@@ -86,6 +91,8 @@ export async function deleteAffProviders(ids: number[]) {
 }
 
 export async function addAffProvider(data: Omit<AffManData, "id">) {
+  await requireAdminSession();
+
   const [result] = await db
     .insert(affServiceProviders)
     .values(data)

@@ -2,10 +2,7 @@ import { getAffValueByHref } from "@/app/_actions/aff-provider";
 
 export async function handleAffUrl(href: string) {
   try {
-    // TODO 此处要处理不同云服务商对应的返利链接
     const newUrl = new URL(href);
-    console.log(newUrl);
-    // 传入hostname比对officialUrl 来获取对应affParam和affId
     const { data: affServiceProvider } = await getAffValueByHref(
       newUrl.hostname,
     );

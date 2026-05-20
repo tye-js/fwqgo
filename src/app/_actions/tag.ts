@@ -3,6 +3,8 @@
 import { slugify } from "@/lib/utils";
 import { db } from "@/server/db";
 import { attachTagsToPosts } from "@/server/db/post-tags";
+import { requireAdminSession } from "@/server/auth/session";
+import { cacheTags, revalidateSiteContent, tagCache } from "@/server/cache/tags";
 import { z } from "zod";
 import { tags, posts, postTags } from "@/server/db/schema";
 import { eq, desc, count, and, asc, ilike, or, sql } from "drizzle-orm";
@@ -18,6 +20,8 @@ const createTagSchema = z.object({
 
 // 创建新文章时添加的标签，如果标签已经存在，则返回已存在的标签，否则创建新标签
 export async function createTag(input: z.infer<typeof createTagSchema>) {
+  await requireAdminSession();
+
   // 验证输入
   const result = createTagSchema.parse(input);
   // 生成 slug
@@ -36,6 +40,8 @@ export async function createTag(input: z.infer<typeof createTagSchema>) {
     .values({ name: result.name, slug })
     .returning({ id: tags.id });
 
+  revalidateSiteContent([cacheTags.tags]);
+
   return { id: tag!.id };
 }
 
@@ -53,6 +59,7 @@ export async function createTags(tags: z.infer<typeof createTagSchema>[]) {
 // 查询标签信息
 export async function getTagBySlug(tagSlug: string) {
   "use cache";
+  tagCache(cacheTags.tags, cacheTags.tagSlug(tagSlug));
 
   try {
     const [tag] = await db
@@ -78,6 +85,7 @@ export async function getPostsWithTagsByTagSlug(
   pageNo = 1,
 ) {
   "use cache";
+  tagCache(cacheTags.posts, cacheTags.tags, cacheTags.tagSlug(tagSlug));
 
   try {
     const currentPage = Number.isFinite(pageNo) && pageNo > 0 ? pageNo : 1;
@@ -144,6 +152,9 @@ export async function getTagList({
   page?: number;
   pageSize?: number;
 }) {
+  "use cache";
+  tagCache(cacheTags.tags);
+
   const result = await db
     .select()
     .from(tags)
@@ -154,12 +165,16 @@ export async function getTagList({
 }
 
 export async function getTagCount() {
+  "use cache";
+  tagCache(cacheTags.tags);
+
   const [result] = await db.select({ count: count() }).from(tags);
   return { data: result?.count ?? 0 };
 }
 
 export async function getTagSearchList() {
   "use cache";
+  tagCache(cacheTags.tags);
 
   const result = await db
     .select({
@@ -174,6 +189,9 @@ export async function getTagSearchList() {
 }
 
 export async function findBestTagMatch(keyword: string) {
+  "use cache";
+  tagCache(cacheTags.tags);
+
   const normalizedKeyword = keyword.trim();
 
   if (!normalizedKeyword) {

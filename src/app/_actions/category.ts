@@ -2,17 +2,18 @@
 
 import { db } from "@/server/db";
 import { categories } from "@/server/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { asc, eq, isNull } from "drizzle-orm";
+import { cacheTags, tagCache } from "@/server/cache/tags";
 
 export async function getCategories() {
   "use cache";
+  tagCache(cacheTags.categories);
+
   try {
     const categoriesWithChildren = await db.query.categories.findMany({
-      where: eq(categories.parentId, 0), // 只查询顶级分类
+      where: isNull(categories.parentId),
       orderBy: asc(categories.id),
-      with: {
-        children: true, // 自动获取子分类
-      },
+      with: { children: true },
     });
 
     return { data: categoriesWithChildren };
@@ -23,6 +24,7 @@ export async function getCategories() {
 
 export async function getCategoryBySlug(slug: string) {
   "use cache";
+  tagCache(cacheTags.categories, cacheTags.categorySlug(slug));
 
   try {
     const [category] = await db
@@ -54,6 +56,9 @@ export async function getAllCategories() {
 }
 
 export async function getLeafCategories() {
+  "use cache";
+  tagCache(cacheTags.categories);
+
   try {
     // 获取所有分类
     const allCategories = await db.select().from(categories);
@@ -81,6 +86,9 @@ export async function getLeafCategories() {
 }
 
 export async function getLeafCategoriesAllData() {
+  "use cache";
+  tagCache(cacheTags.categories);
+
   try {
     // 获取所有分类
     const allCategories = await db.select().from(categories);

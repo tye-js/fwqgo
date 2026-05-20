@@ -58,8 +58,7 @@ export default function RegisterPage() {
 
       // 注册成功后跳转到登录页
       router.push("/login");
-    } catch (err) {
-      console.log(err);
+    } catch {
       setError("注册失败，请重试");
     }
   };
