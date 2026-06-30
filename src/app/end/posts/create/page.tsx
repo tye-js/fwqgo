@@ -12,7 +12,8 @@ import { createPost } from "@/app/_actions/creat-post";
 import { getLeafCategories } from "@/app/_actions/category";
 import { AdminPageShell, AdminSectionCard } from "@/app/_components/admin-page-shell";
 import { ScraperForm } from "@/app/_components/scraper-form";
-import { FileText, Tags, Wand2, X } from "lucide-react";
+import { ArticleCoverGenerator } from "@/app/_components/article-cover-generator";
+import { AlertCircle, FileText, Tags, Wand2, X } from "lucide-react";
 
 import {
   Select,
@@ -49,6 +50,21 @@ export default function CreatePost() {
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<Tag[]>([]);
   const [keywords, setKeywords] = useState<string[]>([]);
+  const normalizedKeywords = keywords
+    .map((keyword) => keyword.trim())
+    .filter(Boolean);
+  const seoChecks = buildCreateSeoChecks({
+    title,
+    content,
+    description,
+    keywords: normalizedKeywords,
+    tagCount: tags.length,
+    recommendTagName: recommendTag.name,
+    imageUrl,
+    categoryId,
+  });
+  const seoPassedCount = seoChecks.filter((check) => check.ok).length;
+  const failedSeoChecks = seoChecks.filter((check) => !check.ok);
 
   const handleAddTag = () => {
     if (!tagInput.trim()) return;
@@ -81,15 +97,16 @@ export default function CreatePost() {
     // 添加阻止事件冒泡
     e.stopPropagation();
     e.preventDefault();
-    if (!title || !content || !description) {
-      toast.error("请填写标题、内容和简述");
+    const missingFields = getMissingRequiredFields({ title, content, description });
+    if (missingFields.length > 0) {
+      toast.error(`发布前请补全：${missingFields.join("、")}`);
       return;
     }
 
     try {
       setIsSubmitting(true);
       // 向数据库中插入文章
-      await createPost({
+      const result = await createPost({
         post: {
           title: title.trim(),
           description: description.trim(),
@@ -98,10 +115,15 @@ export default function CreatePost() {
           published: true,
           categoryId: parseInt(categoryId),
           recommendedTagName: recommendTag.name,
-          keywords: keywords.join(",").toString(),
+          keywords: normalizedKeywords.join(","),
         },
         tags,
       });
+
+      if (!result.success) {
+        toast.error(result.message ?? result.error ?? "创建文章失败，请检查表单后重试");
+        return;
+      }
 
       // 跳转到文章详情页
       router.push(`/end/posts/edit/`);
@@ -114,15 +136,16 @@ export default function CreatePost() {
   };
 
   const handleSaveDraft = async () => {
-    if (!title || !content || !description) {
-      toast.error("请填写标题、内容和简述");
+    const missingFields = getMissingRequiredFields({ title, content, description });
+    if (missingFields.length > 0) {
+      toast.error(`保存草稿前请补全：${missingFields.join("、")}`);
       return;
     }
 
     try {
       setIsSaving(true);
 
-      await createPost({
+      const result = await createPost({
         post: {
           title: title.trim(),
           description: description.trim(),
@@ -131,10 +154,15 @@ export default function CreatePost() {
           published: false,
           categoryId: parseInt(categoryId),
           recommendedTagName: recommendTag.name,
-          keywords: keywords.join(",").toString(),
+          keywords: normalizedKeywords.join(","),
         },
         tags,
       });
+
+      if (!result.success) {
+        toast.error(result.message ?? result.error ?? "保存草稿失败，请检查表单后重试");
+        return;
+      }
 
       toast.success("保存文章成功");
     } catch (error) {
@@ -192,10 +220,10 @@ export default function CreatePost() {
             <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
               <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
                 <Wand2 className="size-3.5" />
-                关键词数
+                SEO 完成
               </div>
               <p className="mt-3 text-2xl font-semibold text-foreground">
-                {keywords.filter(Boolean).length}
+                {seoPassedCount}/{seoChecks.length}
               </p>
             </div>
           </div>
@@ -207,18 +235,24 @@ export default function CreatePost() {
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="输入文章标题"
+              placeholder="建议包含商家、地区、套餐或核心优惠点"
               required
             />
+            <p className="text-xs text-muted-foreground">
+              当前 {title.trim().length} 字，建议 12-36 字，避免标题过短或堆关键词。
+            </p>
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">内容简述</label>
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="输入内容简述"
+              placeholder="概括优惠、适用场景、核心配置或购买理由"
               required
             />
+            <p className="text-xs text-muted-foreground">
+              当前 {description.trim().length} 字，建议 80-160 字，方便搜索摘要展示。
+            </p>
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">分类</label>
@@ -296,7 +330,16 @@ export default function CreatePost() {
             </div>
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">封面图片</label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="text-sm font-medium">封面图片</label>
+              <ArticleCoverGenerator
+                title={title}
+                description={description}
+                keywords={normalizedKeywords.join(",")}
+                content={content}
+                onGenerated={setImageUrl}
+              />
+            </div>
             <ImageUpload value={imageUrl} onChange={setImageUrl} />
           </div>
           <div className="space-y-2">
@@ -311,7 +354,7 @@ export default function CreatePost() {
           <div className="flex flex-col gap-2">
             <label className="text-nowrap text-sm font-medium">关键词</label>
             <p className="text-xs text-muted-foreground">
-              建议：关键词之间用逗号分隔，最多支持5个,单个关键词不超过6个汉字
+              建议：关键词之间用逗号分隔，保留 2-6 个核心词，优先覆盖商家、地区、线路、套餐类型。
             </p>
             <Input
               className="w-full"
@@ -320,6 +363,37 @@ export default function CreatePost() {
                 setKeywords(e.target.value.replace(/，/g, ",").split(","))
               }
             />
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold">SEO 检查</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  发布前用于快速发现标题、摘要、关键词和正文结构问题，不会阻止保存草稿。
+                </p>
+              </div>
+              <Badge variant={seoPassedCount === seoChecks.length ? "default" : "secondary"}>
+                {seoPassedCount}/{seoChecks.length}
+              </Badge>
+            </div>
+            <div className="mt-4 space-y-3">
+              {failedSeoChecks.length === 0 ? (
+                <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                  SEO 检查已全部通过。
+                </div>
+              ) : null}
+              {failedSeoChecks.map((check) => (
+                <div key={check.label} className="flex items-start gap-3">
+                  <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">{check.label}</p>
+                    <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                      {check.detail}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
           <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-muted/20 p-4 md:flex-row md:justify-end">
             <Button
@@ -345,4 +419,92 @@ export default function CreatePost() {
       </form>
     </AdminPageShell>
   );
+}
+
+function getMissingRequiredFields(input: {
+  title: string;
+  content: string;
+  description: string;
+}) {
+  const fields: string[] = [];
+  if (!input.title.trim()) fields.push("标题");
+  if (!stripHtml(input.content).trim()) fields.push("正文内容");
+  if (!input.description.trim()) fields.push("内容简述");
+  return fields;
+}
+
+function buildCreateSeoChecks(input: {
+  title: string;
+  content: string;
+  description: string;
+  keywords: string[];
+  tagCount: number;
+  recommendTagName: string;
+  imageUrl: string;
+  categoryId: string;
+}) {
+  const plainText = stripHtml(input.content);
+  const titleLength = input.title.trim().length;
+  const descriptionLength = input.description.trim().length;
+  const keywordCount = input.keywords.length;
+  const hasHeading = /<h[23][^>]*>/i.test(input.content);
+  const hasCoverImage = Boolean(input.imageUrl.trim());
+  const hasCategory = Boolean(input.categoryId && Number.isFinite(Number(input.categoryId)));
+
+  return [
+    {
+      label: "标题可读且包含核心信息",
+      ok: titleLength >= 12 && titleLength <= 36,
+      detail: `当前 ${titleLength} 字，建议 12-36 字，包含商家、地区、套餐或优惠点。`,
+    },
+    {
+      label: "描述适合搜索摘要",
+      ok: descriptionLength >= 80 && descriptionLength <= 160,
+      detail: `当前 ${descriptionLength} 字，建议 80-160 字，说明配置、价格、地区和适用场景。`,
+    },
+    {
+      label: "关键词数量合理",
+      ok: keywordCount >= 2 && keywordCount <= 6,
+      detail: `当前 ${keywordCount} 个，建议 2-6 个，避免过少或堆砌。`,
+    },
+    {
+      label: "正文信息量充足",
+      ok: plainText.length >= 800,
+      detail: `当前正文约 ${plainText.length} 字，建议至少 800 字，包含套餐、价格、线路、购买说明。`,
+    },
+    {
+      label: "正文有小标题结构",
+      ok: hasHeading,
+      detail: hasHeading ? "已检测到 H2/H3 小标题。" : "建议使用 H2/H3 拆分配置、优惠、购买、注意事项等段落。",
+    },
+    {
+      label: "标签覆盖主题",
+      ok: input.tagCount >= 2,
+      detail: `当前 ${input.tagCount} 个标签，建议至少 2 个，覆盖商家、地区或套餐类型。`,
+    },
+    {
+      label: "推荐标签已设置",
+      ok: Boolean(input.recommendTagName.trim()),
+      detail: input.recommendTagName.trim()
+        ? "推荐标签会用于详情页关联推荐。"
+        : "建议填写一个核心推荐标签，提升相关文章联动。",
+    },
+    {
+      label: "封面与分类完整",
+      ok: hasCoverImage && hasCategory,
+      detail: hasCoverImage
+        ? "已设置封面和分类。"
+        : "建议补充封面图，列表页和社交分享会更完整。",
+    },
+  ];
+}
+
+function stripHtml(value: string) {
+  return value
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }

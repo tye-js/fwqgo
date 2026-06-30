@@ -2,20 +2,21 @@ import { type RecommendedPost } from "@/types/post.types";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
+import { getOptimizedImageSrc } from "@/lib/image-src";
 
 export function RecommendedPostCard({ post }: { post: RecommendedPost }) {
   return (
     <Link
       href={`/fwq/posts/${post.slug}`}
-      className="group overflow-hidden rounded-[24px] border border-border/70 bg-background/90 shadow-sm transition-transform duration-300 hover:-translate-y-1 hover:border-accent/30"
+      className="group overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm transition-colors duration-200 hover:border-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
       <div className="relative h-[180px] overflow-hidden">
             {post.imgUrl ? (
               <Image
-                src={process.env.NEXT_PUBLIC_URL + post.imgUrl}
+                src={getOptimizedImageSrc(post.imgUrl)}
                 alt={post.title}
                 fill
-            sizes="(max-width: 768px) 100vw, 320px"
+                sizes="(max-width: 768px) 100vw, 320px"
                 className="object-cover object-center"
               />
             ) : null}
@@ -23,7 +24,7 @@ export function RecommendedPostCard({ post }: { post: RecommendedPost }) {
       </div>
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
-          <h3 className="font-editorial line-clamp-2 text-lg font-semibold leading-7 tracking-[-0.04em] transition-colors group-hover:text-accent">
+          <h3 className="font-editorial line-clamp-2 text-lg font-semibold leading-7 transition-colors group-hover:text-accent">
             {post.title}
           </h3>
           <ArrowUpRight className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />

@@ -21,6 +21,8 @@ next-env.d.ts
 
 # production
 /build
+/.deploy/
+.deploy.env
 
 # misc
 .DS_Store

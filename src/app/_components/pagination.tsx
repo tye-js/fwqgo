@@ -9,7 +9,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { cn } from "@/lib/utils";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 type PaginationItemValue = number | "ellipsis";
 
@@ -59,14 +59,22 @@ export function PaginationComponent({
   queryParam?: string;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const paginationItems = getPaginationItems(pageNo, totalPage);
 
   if (totalPage <= 1) {
     return null;
   }
 
-  const getHref = (page: number) =>
-    basePath ? `${basePath}/page/${page}` : `${pathname}?${queryParam}=${page}`;
+  const getHref = (page: number) => {
+    if (basePath) {
+      return `${basePath}/page/${page}`;
+    }
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set(queryParam, String(page));
+    return `${pathname}?${params.toString()}`;
+  };
 
   return (
     <Pagination>

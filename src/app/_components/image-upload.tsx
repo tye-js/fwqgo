@@ -4,6 +4,9 @@ import { useState } from "react";
 import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { ImageLibraryPicker } from "@/app/_components/image-library-picker";
+import { Button } from "@/components/ui/button";
+import { getOptimizedImageSrc } from "@/lib/image-src";
 
 interface ImageUploadProps {
   onChange: (value: string) => void;
@@ -62,21 +65,30 @@ export function ImageUpload({ onChange, value }: ImageUploadProps) {
               sizes="200px"
               className="object-cover"
               alt="Upload"
-              src={process.env.NEXT_PUBLIC_URL + value}
-              unoptimized={false}
+              src={getOptimizedImageSrc(value)}
             />
           </div>
         ) : (
           <div className="h-[200px] w-[200px] rounded-md border border-dashed"></div>
         )}
       </div>
-      <Input
-        type="file"
-        accept="image/*"
-        onChange={handleUpload}
-        disabled={isUploading}
-        className="w-80 cursor-pointer"
-      />
+      <div className="flex flex-col gap-3">
+        <Input
+          type="file"
+          accept="image/*"
+          onChange={handleUpload}
+          disabled={isUploading}
+          className="w-80 cursor-pointer"
+        />
+        <div className="flex flex-wrap gap-2">
+          <ImageLibraryPicker onSelect={onChange} />
+          {value ? (
+            <Button type="button" variant="ghost" onClick={() => onChange("")}>
+              清除
+            </Button>
+          ) : null}
+        </div>
+      </div>
       {isUploading && (
         <p className="text-sm text-muted-foreground">上传中...</p>
       )}

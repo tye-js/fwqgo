@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Trash2 } from "lucide-react";
-import { toast } from "sonner";
 
 import {
   addAffProvider,
@@ -40,10 +40,107 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  describeAdminResult,
+  notifyError,
+  notifyInfo,
+  notifySuccess,
+} from "@/lib/admin-toast";
 import { type AffManData } from "@/types";
 
-export default function AffManTable({ data }: { data: AffManData[] }) {
-  const [query, setQuery] = useState("");
+type ActionErrorResult = {
+  error: string;
+  message?: string;
+};
+
+const ACTION_TIMEOUT_MS = 15_000;
+
+function isActionError(result: unknown): result is ActionErrorResult {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    "error" in result &&
+    typeof (result as { error?: unknown }).error === "string"
+  );
+}
+
+function normalizeText(value: string) {
+  return value.trim();
+}
+
+function normalizeOfficialUrl(value: string) {
+  return normalizeText(value)
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .replace(/\/.*$/, "")
+    .toLowerCase();
+}
+
+function validateAffProviderForm(input: Omit<AffManData, "id">) {
+  const normalizedInput = {
+    name: normalizeText(input.name),
+    affUrl: normalizeText(input.affUrl),
+    affParam: normalizeText(input.affParam),
+    affValue: normalizeText(input.affValue),
+    officialUrl: normalizeOfficialUrl(input.officialUrl),
+  };
+
+  if (
+    !normalizedInput.name ||
+    !normalizedInput.affUrl ||
+    !normalizedInput.affParam ||
+    !normalizedInput.affValue ||
+    !normalizedInput.officialUrl
+  ) {
+    return { error: "请填写完整信息", data: normalizedInput };
+  }
+
+  try {
+    const parsedUrl = new URL(normalizedInput.affUrl);
+
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      return { error: "返利链接只支持 http 或 https", data: normalizedInput };
+    }
+  } catch {
+    return { error: "返利链接格式不正确，请填写完整 URL", data: normalizedInput };
+  }
+
+  if (
+    normalizedInput.officialUrl.includes(" ") ||
+    !normalizedInput.officialUrl.includes(".")
+  ) {
+    return { error: "商家官网请填写域名，例如 example.com", data: normalizedInput };
+  }
+
+  return { data: normalizedInput };
+}
+
+function withTimeout<T>(promise: Promise<T>, message: string) {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(message));
+    }, ACTION_TIMEOUT_MS);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  });
+}
+
+export default function AffManTable({
+  data,
+  initialQuery,
+}: {
+  data: AffManData[];
+  initialQuery: string;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [query, setQuery] = useState(initialQuery);
   const [filter, setFilter] = useState("all");
   const [sortValue, setSortValue] = useState("id-desc");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -59,23 +156,36 @@ export default function AffManTable({ data }: { data: AffManData[] }) {
   const [isAddSave, setIsAddSave] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      const normalizedQuery = query.trim();
+
+      if (normalizedQuery) {
+        params.set("query", normalizedQuery);
+      } else {
+        params.delete("query");
+      }
+
+      params.delete("pageNo");
+      const nextUrl = params.toString() ? `${pathname}?${params}` : pathname;
+      router.replace(nextUrl, { scroll: false });
+    }, 400);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [pathname, query, router, searchParams]);
+
   const filteredData = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
 
     return data.filter((item) => {
-      const matchesQuery =
-        normalizedQuery.length === 0 ||
-        item.name.toLowerCase().includes(normalizedQuery) ||
-        item.officialUrl.toLowerCase().includes(normalizedQuery);
-
       const matchesFilter =
         filter === "all" ||
         (filter === "with-aff" && item.affUrl.trim().length > 0) ||
         (filter === "empty-aff" && item.affUrl.trim().length === 0);
 
-      return matchesQuery && matchesFilter;
+      return matchesFilter;
     });
-  }, [data, filter, query]);
+  }, [data, filter]);
 
   const sortedData = useMemo(() => {
     const [sortKey, sortDirection] = sortValue.split("-");
@@ -102,79 +212,248 @@ export default function AffManTable({ data }: { data: AffManData[] }) {
     sortedData.every((item) => selectedIds.includes(item.id));
 
   async function handleSave() {
-    setIsSave(true);
-    await updateAffProvider({
-      id: editId!,
+    if (!editId) {
+      notifyError({
+        title: "返利商家保存失败",
+        description: "请先在表格中选择一个商家，再修改返利配置。",
+      });
+      return;
+    }
+
+    const validation = validateAffProviderForm({
       name,
       affUrl,
       affParam,
       affValue,
       officialUrl,
     });
+
+    if (validation.error) {
+      notifyError({
+        title: "返利商家保存失败",
+        description: describeAdminResult([
+          validation.data.name,
+          validation.error,
+        ]),
+      });
+      return;
+    }
+
+    setIsSave(true);
+    const result = await withTimeout(updateAffProvider({
+      id: editId,
+      ...validation.data,
+    }), "保存超时，请稍后重试");
     setIsSave(false);
+
+    if (isActionError(result)) {
+      notifyError({
+        title: "返利商家保存失败",
+        description: describeAdminResult([
+          validation.data.name,
+          validation.data.officialUrl,
+          result.message ?? result.error,
+        ]),
+      });
+      return;
+    }
+
     setEditId(null);
-    toast.success("返利商家已更新");
+    notifySuccess({
+      title: "返利商家已更新",
+      description: describeAdminResult([
+        validation.data.name,
+        validation.data.officialUrl,
+        `${validation.data.affParam}=${validation.data.affValue}`,
+      ]),
+    });
+    router.refresh();
   }
 
   async function handleDelete(id: number) {
+    const provider = data.find((item) => item.id === id);
     setIsDelete(true);
-    await deleteAffProvider(id);
+    try {
+      const result = await withTimeout(deleteAffProvider(id), "删除超时，请稍后重试");
+
+      if (isActionError(result)) {
+        notifyError({
+          title: "返利商家删除失败",
+          description: describeAdminResult([
+            provider?.name,
+            provider?.officialUrl,
+            result.message ?? result.error,
+          ]),
+        });
+        return;
+      }
+
+      setSelectedIds((prev) => prev.filter((item) => item !== id));
+      notifySuccess({
+        title: "返利商家已删除",
+        description: describeAdminResult([
+          provider?.name,
+          provider?.officialUrl,
+          "后续链接替换不会再命中该商家",
+        ]),
+      });
+      router.refresh();
+    } catch (error) {
+      notifyError({
+        title: "返利商家删除失败",
+        description: error instanceof Error ? error.message : "删除失败，请稍后重试",
+      });
+    }
     setIsDelete(false);
-    setSelectedIds((prev) => prev.filter((item) => item !== id));
-    toast.success("返利商家已删除");
   }
 
   async function handleBulkDelete() {
     if (selectedIds.length === 0) {
-      toast.error("请先选择商家");
+      notifyError({
+        title: "批量删除失败",
+        description: "请先勾选需要删除的返利商家。",
+      });
       return;
     }
 
     setIsBulkDeleting(true);
-    const result = await deleteAffProviders(selectedIds);
-    setIsBulkDeleting(false);
+    try {
+      const result = await withTimeout(
+        deleteAffProviders(selectedIds),
+        "批量删除超时，请稍后重试",
+      );
 
-    if ("error" in result && typeof result.error === "string") {
-      toast.error(result.error);
-      return;
+      if (isActionError(result)) {
+        notifyError({
+          title: "批量删除返利商家失败",
+          description: describeAdminResult([
+            `已选择 ${selectedIds.length} 个商家`,
+            result.message ?? result.error,
+          ]),
+        });
+        return;
+      }
+
+      notifySuccess({
+        title: "批量删除完成",
+        description: describeAdminResult([
+          `已删除 ${selectedIds.length} 个返利商家`,
+          "相关历史文章内容不会自动回滚",
+        ]),
+      });
+      setSelectedIds([]);
+      router.refresh();
+    } catch (error) {
+      notifyError({
+        title: "批量删除返利商家失败",
+        description:
+          error instanceof Error ? error.message : "批量删除失败，请稍后重试",
+      });
+    } finally {
+      setIsBulkDeleting(false);
     }
-
-    toast.success(`已删除 ${selectedIds.length} 个商家`);
-    setSelectedIds([]);
   }
 
   async function handleAdd() {
-    if (!name || !affUrl || !affParam || !affValue || !officialUrl) {
-      toast.error("请填写完整信息");
-      return;
-    }
-
-    setIsAddSave(true);
-    await addAffProvider({
+    const validation = validateAffProviderForm({
       name,
       affUrl,
       affParam,
       affValue,
       officialUrl,
     });
-    setName("");
-    setAffUrl("");
-    setAffParam("");
-    setAffValue("");
-    setOfficialUrl("");
-    setIsAddSave(false);
-    setIsAdd(false);
-    toast.success("返利商家已添加");
+
+    if (validation.error) {
+      notifyError({
+        title: "返利商家添加失败",
+        description: describeAdminResult([
+          validation.data.name,
+          validation.error,
+        ]),
+      });
+      return;
+    }
+
+    const duplicatedProvider = data.find((item) => {
+      return (
+        item.name.trim() === validation.data.name ||
+        normalizeOfficialUrl(item.officialUrl) === validation.data.officialUrl
+      );
+    });
+
+    if (duplicatedProvider) {
+      notifyInfo({
+        title: "返利商家已存在",
+        description: describeAdminResult([
+          `${duplicatedProvider.name}（ID ${duplicatedProvider.id}）`,
+          duplicatedProvider.officialUrl,
+          "没有重复新增记录",
+        ]),
+      });
+      return;
+    }
+
+    setIsAddSave(true);
+    try {
+      const result = await withTimeout(
+        addAffProvider(validation.data),
+        "添加超时，请检查网络或稍后重试",
+      );
+
+      if (isActionError(result)) {
+        const message = result.message ?? result.error;
+
+        if (result.error === "返利商家已存在") {
+          notifyInfo({
+            title: "返利商家已存在",
+            description: message,
+          });
+        } else {
+          notifyError({
+            title: "返利商家添加失败",
+            description: describeAdminResult([
+              validation.data.name,
+              validation.data.officialUrl,
+              message,
+            ]),
+          });
+        }
+        return;
+      }
+
+      setName("");
+      setAffUrl("");
+      setAffParam("");
+      setAffValue("");
+      setOfficialUrl("");
+      setIsAdd(false);
+      notifySuccess({
+        title: "返利商家已添加",
+        description: describeAdminResult([
+          validation.data.name,
+          validation.data.officialUrl,
+          `${validation.data.affParam}=${validation.data.affValue}`,
+          "采集和草稿编辑时可命中替换",
+        ]),
+      });
+      router.refresh();
+    } catch (error) {
+      notifyError({
+        title: "返利商家添加失败",
+        description:
+          error instanceof Error ? error.message : "添加失败，请稍后重试",
+      });
+    } finally {
+      setIsAddSave(false);
+    }
   }
 
   return (
     <div className="space-y-5">
       <AdminTableWorkbench
-        title="返利商家工作台"
-        description="支持按商家名和官网检索，快速维护返利参数，并进行批量删除。"
         searchValue={query}
         onSearchChange={setQuery}
-        searchPlaceholder="搜索商家名或官网域名"
+        searchPlaceholder="搜索商家名、官网域名或返利链接"
         selectionCount={selectedIds.length}
         filterSlot={
           <div className="flex items-center gap-3">

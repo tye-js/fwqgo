@@ -14,12 +14,13 @@ import { PaginationComponent } from "@/app/_components/pagination";
 async function AffManList({
   searchParamsPromise,
 }: {
-  searchParamsPromise: Promise<{ pageNo?: string }>;
+  searchParamsPromise: Promise<{ pageNo?: string; query?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
   const pageNo = searchParams.pageNo ? parseInt(searchParams.pageNo) : 1;
-  const { data } = await getAffProviderList({ page: pageNo });
-  const { data: postCount } = await getAffProviderCount();
+  const query = searchParams.query?.trim() ?? "";
+  const { data } = await getAffProviderList({ page: pageNo, query });
+  const { data: postCount } = await getAffProviderCount(query);
   const totalPage = Math.ceil((postCount ?? 0) / 20);
 
   return (
@@ -31,9 +32,9 @@ async function AffManList({
       <AdminSummaryStrip
         items={[
           {
-            label: "商家总数",
+            label: query ? "匹配商家" : "商家总数",
             value: String(postCount ?? 0),
-            note: "返利配置对象",
+            note: query ? `搜索：${query}` : "返利配置对象",
           },
           {
             label: "当前页",
@@ -47,11 +48,8 @@ async function AffManList({
           },
         ]}
       />
-      <AdminSectionCard
-        title="返利商家列表"
-        description="这里的配置会直接影响采集文章中的返利链接替换行为。"
-      >
-        <AffManTable data={data} />
+      <AdminSectionCard>
+        <AffManTable data={data} initialQuery={query} />
         <PaginationComponent pageNo={pageNo} totalPage={totalPage} />
       </AdminSectionCard>
     </AdminPageShell>
@@ -60,7 +58,7 @@ async function AffManList({
 
 export default function AffManPage(
   props: {
-    searchParams: Promise<{ pageNo?: string }>;
+    searchParams: Promise<{ pageNo?: string; query?: string }>;
   }
 ) {
   return (

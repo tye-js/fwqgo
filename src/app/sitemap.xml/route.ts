@@ -1,6 +1,7 @@
 import { db } from "@/server/db";
 import { posts, categories, tags } from "@/server/db/schema";
 import { eq, desc } from "drizzle-orm";
+import { offerTopics } from "@/server/offers/server-offers";
 
 
 
@@ -49,6 +50,24 @@ export async function GET() {
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
+  <url>
+    <loc>${baseUrl}/servers</loc>
+    <lastmod>${new Date().toISOString()}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  ${offerTopics
+      .map(
+        (topic) => `
+    <url>
+      <loc>${baseUrl}/servers/${topic.slug}</loc>
+      <lastmod>${new Date().toISOString()}</lastmod>
+      <changefreq>daily</changefreq>
+      <priority>0.85</priority>
+    </url>
+  `,
+      )
+      .join("")}
   ${postsData
       .map(
         (post) => `

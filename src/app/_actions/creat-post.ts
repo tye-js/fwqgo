@@ -7,8 +7,13 @@ export async function createPost(input: CreatePostParams) {
   const result = await createPostWithTags(input);
 
   if (result.error) {
-    return result;
+    const message = "message" in result ? result.message : undefined;
+
+    return {
+      error: result.error,
+      message: typeof message === "string" ? message : result.error,
+    };
   }
 
-  return { success: true, data: result.data };
+  return { success: true, data: "data" in result ? result.data : undefined };
 }

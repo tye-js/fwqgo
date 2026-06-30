@@ -67,7 +67,7 @@ export default async function FooterComponent() {
   return (
     <footer className="border-t border-border/70 bg-zinc-100 text-gray-950">
       <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-        <div className="rounded-[28px] border border-border/70 bg-white/80 p-6 shadow-sm">
+        <div className="rounded-lg border border-border/70 bg-white/80 p-6 shadow-sm">
           <div className="grid gap-6 md:grid-cols-[220px_1fr]">
             <div>
               <BrandLogo compact className="items-start" textClassName="pt-0.5" />
@@ -81,7 +81,7 @@ export default async function FooterComponent() {
                 <Link
                   key={category.id}
                   href={`/fwq/${category.slug}/page/1`}
-                  className="rounded-2xl border border-border/70 bg-white px-4 py-3 text-sm text-zinc-600 transition-colors hover:border-accent/30 hover:text-foreground"
+                  className="flex min-h-11 items-center rounded-md border border-border/70 bg-white px-4 py-3 text-sm text-zinc-600 transition-colors hover:border-accent/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   {category.name}
                 </Link>
@@ -105,7 +105,7 @@ export default async function FooterComponent() {
                     <li key={link.title}>
                       <Link
                         href={link.href}
-                        className="inline-flex text-sm text-zinc-600 transition-colors hover:text-foreground"
+                        className="inline-flex min-h-8 items-center rounded-sm text-sm text-zinc-600 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
                         {link.title}
                       </Link>
@@ -117,12 +117,12 @@ export default async function FooterComponent() {
           ))}
         </div>
 
-        <div className="mt-8 rounded-[24px] border border-border/70 bg-white/70 px-4 py-5 text-sm text-zinc-500">
+        <div className="mt-8 rounded-lg border border-border/70 bg-white/70 px-4 py-5 text-sm text-zinc-500">
           <div className="flex flex-col items-center justify-between gap-3 md:flex-row">
             <Link
               href="https://beian.miit.gov.cn/"
               target="_blank"
-              className="transition-colors hover:text-foreground"
+              className="rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               沪ICP备2021026034号-5
             </Link>

@@ -172,6 +172,32 @@ export async function getTagCount() {
   return { data: result?.count ?? 0 };
 }
 
+export async function getAdminTagList({
+  page = 1,
+  pageSize = 20,
+}: {
+  page?: number;
+  pageSize?: number;
+}) {
+  await requireAdminSession();
+
+  const result = await db
+    .select()
+    .from(tags)
+    .orderBy(desc(tags.id))
+    .offset((page - 1) * pageSize)
+    .limit(pageSize);
+
+  return { data: result };
+}
+
+export async function getAdminTagCount() {
+  await requireAdminSession();
+
+  const [result] = await db.select({ count: count() }).from(tags);
+  return { data: result?.count ?? 0 };
+}
+
 export async function getTagSearchList() {
   "use cache";
   tagCache(cacheTags.tags);

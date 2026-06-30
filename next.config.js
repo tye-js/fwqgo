@@ -6,7 +6,17 @@ import "./src/env.js";
 
 /** @type {import("next").NextConfig} */
 const config = {
+  output: "standalone",
   images: {
+    localPatterns: [
+      {
+        pathname: "/api/images/source",
+      },
+      {
+        pathname: "/_next/static/media/**",
+        search: "",
+      },
+    ],
     remotePatterns: [
       {
         protocol: "https",
@@ -31,7 +41,10 @@ const config = {
   },
   // 字体优化配置
   compiler: {
-    removeConsole: process.env.NODE_ENV === 'production',
+    removeConsole:
+      process.env.NODE_ENV === "production"
+        ? { exclude: ["error", "warn"] }
+        : false,
   },
 };
 

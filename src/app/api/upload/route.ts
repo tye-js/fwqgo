@@ -1,12 +1,10 @@
-import { sanitizeFileName } from "@/lib/utils";
 import { requireAdminSession } from "@/server/auth/session";
-import { writeFile } from "fs/promises";
+import { createImageAssetFromUpload } from "@/server/images/assets";
 import { type NextRequest, NextResponse } from "next/server";
-import path from "path";
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAdminSession();
+    const session = await requireAdminSession();
 
     const formData = await request.formData();
     const file = formData.get("file") as File;
@@ -15,36 +13,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    // 验证文件类型
-    const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-    if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json({ error: "Invalid file type" }, { status: 400 });
-    }
-
-    // 生成唯一文件名
-    const timestamp = Date.now();
-    const sanitizedName = sanitizeFileName(file.name);
-    const filename = `${timestamp}-${sanitizedName}`;
-
-    // 保存文件
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-
-    // 确保上传目录存在
-    const uploadDir = path.join("/var/www/", "uploads");
-    const filePath = path.join(uploadDir, filename);
-
-    await writeFile(filePath, buffer);
-
-    // 返回文件URL
-    const fileUrl = `/uploads/${filename}`;
+    const asset = await createImageAssetFromUpload({
+      file,
+      uploadedBy: session.userId,
+    });
 
     return NextResponse.json({
       success: true,
-      url: fileUrl,
+      url: asset.path,
+      asset,
     });
   } catch (error) {
     console.error("Upload error:", error);
-    return NextResponse.json({ error: `Upload failed` }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Upload failed",
+      },
+      { status: 500 },
+    );
   }
 }

@@ -4,7 +4,8 @@ import {
   ArrowRight,
   ArrowUpRight,
   CalendarDays,
-  TrendingUp,
+  MapPin,
+  ShoppingCart,
 } from "lucide-react";
 
 import {
@@ -21,10 +22,47 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { Separator } from "@/components/ui/separator";
+import { getOptimizedImageSrc } from "@/lib/image-src";
 import { formatDate, isWithin24Hours } from "@/lib/utils";
+import {
+  getLatestServerOffers,
+  getServerOfferTopicCounts,
+  offerTopics,
+} from "@/server/offers/server-offers";
 
 function formatCount(value: number) {
   return value.toLocaleString("zh-CN");
+}
+
+function formatOfferPrice(offer: Awaited<ReturnType<typeof getLatestServerOffers>>[number]) {
+  if (!offer.priceAmount) return "价格待补充";
+
+  const currency = offer.currency === "CNY" ? "¥" : "$";
+  const cycleMap: Record<string, string> = {
+    monthly: "月付",
+    quarterly: "季付",
+    semiannual: "半年",
+    yearly: "年付",
+  };
+  const cycle = offer.billingCycle
+    ? cycleMap[offer.billingCycle] ?? offer.billingCycle
+    : "周期待确认";
+
+  return `${currency}${Number(offer.priceAmount).toFixed(2)} / ${cycle}`;
+}
+
+function topValues(values: Array<string | null>, limit = 4) {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    const key = value?.trim();
+    if (!key) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, limit)
+    .map(([name, count]) => ({ name, count }));
 }
 
 function HeroArticleTile({
@@ -49,29 +87,30 @@ function HeroArticleTile({
   return (
     <Link
       href={`/fwq/posts/${slug}`}
-      className={`group relative overflow-hidden rounded-[28px] border border-border/70 bg-background/85 shadow-[0_20px_60px_-38px_rgba(15,23,42,0.45)] backdrop-blur ${
-        isLarge ? "min-h-[320px] md:min-h-[520px]" : "min-h-[220px]"
+      className={`glass-card group relative flex flex-col justify-end overflow-hidden rounded-2xl ${
+        isLarge ? "min-h-[300px] md:min-h-[420px]" : "min-h-[180px]"
       }`}
     >
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent,rgba(15,23,42,0.72))]" />
       {imgUrl ? (
         <Image
-          src={`${process.env.NEXT_PUBLIC_URL}${imgUrl}`}
+          src={getOptimizedImageSrc(imgUrl)}
           alt={title}
           fill
           priority={isLarge}
           sizes={
             isLarge
-              ? "(max-width: 1024px) 100vw, 42vw"
-              : "(max-width: 1024px) 100vw, 22vw"
+              ? "(max-width: 1024px) 100vw, 50vw"
+              : "(max-width: 1024px) 100vw, 24vw"
           }
-          className="object-cover transition-transform duration-500 group-hover:scale-105"
+          className="z-0 object-cover transition-transform duration-500 group-hover:scale-105"
         />
       ) : (
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.24),transparent_32%),linear-gradient(135deg,hsl(var(--muted)),hsl(var(--background)))]" />
+        <div className="absolute inset-0 z-0 bg-[linear-gradient(135deg,hsl(var(--muted)),hsl(var(--background)))]" />
       )}
+      <div className="absolute inset-0 z-10 bg-[linear-gradient(180deg,rgba(2,6,23,0.18)_0%,rgba(2,6,23,0.28)_36%,rgba(2,6,23,0.9)_100%)]" />
+      <div className="absolute inset-x-0 bottom-0 z-10 h-2/3 bg-[radial-gradient(circle_at_20%_100%,rgba(37,99,235,0.26),transparent_38%)]" />
 
-      <div className="absolute inset-x-0 bottom-0 p-5 text-white md:p-6">
+      <div className="absolute inset-x-0 bottom-0 z-20 p-4 text-white md:p-5">
         <div className="flex flex-wrap items-center gap-2">
           {isWithin24Hours(createdAt) ? (
             <Badge className="bg-emerald-500 text-white hover:bg-emerald-500">
@@ -83,20 +122,20 @@ function HeroArticleTile({
           </Badge>
         </div>
         <h2
-          className={`font-editorial mt-3 font-semibold leading-tight tracking-[-0.04em] ${
+          className={`font-editorial mt-2 font-semibold leading-tight drop-shadow-[0_2px_10px_rgba(0,0,0,0.55)] ${
             isLarge ? "text-2xl md:text-3xl" : "text-lg md:text-xl"
           }`}
         >
           {title}
         </h2>
         <p
-          className={`mt-3 max-w-2xl text-sm text-white/80 ${
-            isLarge ? "line-clamp-3 leading-7" : "line-clamp-2 leading-6"
+          className={`mt-2 max-w-2xl text-sm text-white/85 drop-shadow ${
+            isLarge ? "line-clamp-2 leading-6" : "line-clamp-2 leading-6"
           }`}
         >
           {description ?? "查看线路、优惠与适用场景详情。"}
         </p>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           {tags.slice(0, isLarge ? 4 : 2).map((tag) => (
             <span
               key={tag.tag.id}
@@ -114,9 +153,16 @@ function HeroArticleTile({
 async function HomeContent() {
   await connection();
 
-  const [{ data: posts }, { data: sidebarData }] = await Promise.all([
+  const [
+    { data: posts },
+    { data: sidebarData },
+    offerCounts,
+    latestOffers,
+  ] = await Promise.all([
     getHomepagePostsWithTags(),
     getHomepageSidebarData(),
+    getServerOfferTopicCounts(),
+    getLatestServerOffers(6),
   ]);
 
   const safePosts = posts ?? [];
@@ -124,32 +170,33 @@ async function HomeContent() {
   const listPosts = safePosts.slice(5);
   const promotedPosts = sidebarData?.promotedPosts ?? [];
   const popularPosts = sidebarData?.popularPosts ?? [];
+  const topProviders = topValues(latestOffers.map((offer) => offer.providerName));
+  const topRegions = topValues(latestOffers.map((offer) => offer.region));
+  const latestPromoOffers = latestOffers.filter((offer) => offer.promoCode).slice(0, 3);
 
   return (
     <main className="flex-1">
       <section className="home-grid-surface relative overflow-hidden border-b border-border/60">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.16),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.12),transparent_26%)]" />
-        <div className="container relative mx-auto px-4 py-10 md:py-14">
-          <div className="grid gap-8 xl:grid-cols-[0.84fr_1.16fr]">
-            <div className="space-y-8">
-              <div className="space-y-4">
+        <div className="container relative mx-auto px-4 py-6 md:py-8">
+          <div className="grid gap-5 xl:grid-cols-[0.68fr_1.32fr] xl:items-start">
+            <div className="space-y-5">
+              <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge className="bg-primary text-primary-foreground">
                     服务器优惠聚合
                   </Badge>
                   <Badge variant="secondary">标签直达</Badge>
                 </div>
-                <h1 className="font-editorial max-w-3xl text-4xl font-semibold leading-tight tracking-[-0.05em] text-foreground md:text-5xl">
-                  先用标签定位方向，再进入最值得先看的服务器内容
+                <h1 className="font-editorial text-gradient max-w-3xl text-3xl font-bold leading-tight tracking-tight md:text-4xl lg:text-5xl">
+                  更快找到合适的服务器优惠和选购文章
                 </h1>
                 <p className="max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">
-                  搜索现在不会即时筛选页面，而是在你点击搜索后直接去 `tags`
-                  表里查询并跳转。Hero 区也集中展示 5 篇文章，让首页像一个真正的内容入口。
+                  按地区、线路、用途和品牌快速进入专题内容，集中查看 VPS、云服务器、独立服务器的优惠与测评信息。
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-3">
-                <Button asChild size="lg" className="rounded-full px-6">
+              <div className="flex flex-wrap gap-2">
+                <Button asChild className="h-10 rounded-md px-5">
                   <Link
                     href={
                       heroPosts[0]
@@ -164,17 +211,19 @@ async function HomeContent() {
                 <Button
                   asChild
                   variant="outline"
-                  size="lg"
-                  className="rounded-full px-6"
+                  className="h-10 rounded-md px-5"
                 >
-                  <Link href="/fwq/export-vps/page/1">看看出海专区</Link>
-                  </Button>
-                </div>
+                  <Link href="/fwq/export-vps/page/1">
+                    出海服务器专区
+                    <ArrowUpRight className="size-4" />
+                  </Link>
+                </Button>
+              </div>
 
               <HeroTagSearch />
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
               {heroPosts[0] ? (
                 <div>
                   <HeroArticleTile
@@ -194,17 +243,17 @@ async function HomeContent() {
                   <Link
                     key={post.id}
                     href={`/fwq/posts/${post.slug}`}
-                    className="group flex items-start gap-4 rounded-[24px] border border-border/70 bg-background/90 p-4 shadow-sm transition-colors hover:border-accent/30 hover:bg-accent/5"
+                    className="glass-card hover-lift group flex min-h-[98px] items-start gap-3 rounded-xl p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-muted/20 px-3 py-1 text-xs text-muted-foreground">
                         <CalendarDays className="size-3" />
                         {post.createdAt.toLocaleDateString("zh-CN")}
                       </div>
-                      <h2 className="font-editorial mt-3 line-clamp-2 text-xl font-semibold leading-tight tracking-[-0.04em] text-foreground transition-colors group-hover:text-accent">
+                      <h2 className="font-editorial mt-2 line-clamp-2 text-base font-semibold leading-snug text-foreground transition-colors group-hover:text-accent">
                         {post.title}
                       </h2>
-                      <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">
+                      <p className="mt-1 line-clamp-1 text-sm leading-6 text-muted-foreground">
                         {post.description ?? "查看这篇文章的线路、优惠与适用场景。"}
                       </p>
                     </div>
@@ -218,6 +267,50 @@ async function HomeContent() {
       </section>
 
       <section className="container mx-auto px-4 py-8 md:py-10">
+        <div className="glass-card mb-8 rounded-2xl p-6 md:p-8">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <Badge className="bg-primary text-primary-foreground">
+                服务器比价
+              </Badge>
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight">
+                按套餐直接比较价格、地区和线路
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                推广文章继续保留，结构化列表用于快速筛选香港服务器、美国服务器和便宜 VPS。
+              </p>
+            </div>
+            <Button asChild variant="outline">
+              <Link href="/servers">
+                查看全部专题
+                <ArrowRight className="size-4" />
+              </Link>
+            </Button>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            {offerTopics.map((topic) => {
+              const count =
+                offerCounts.find((item) => item.slug === topic.slug)?.count ?? 0;
+
+              return (
+                <Link
+                  key={topic.slug}
+                  href={`/servers/${topic.slug}`}
+                  className="glass-card group rounded-xl p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-medium text-foreground">{topic.title}</p>
+                    <Badge variant="secondary">{count} 个</Badge>
+                  </div>
+                  <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">
+                    {topic.description}
+                  </p>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="grid gap-8 xl:grid-cols-[minmax(0,0.8fr)_320px] xl:items-start">
           <div className="space-y-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
@@ -226,7 +319,7 @@ async function HomeContent() {
                   最新优惠与评测
                 </h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  正文区宽度收窄了一些，阅读会更集中，右边留给推广内容和高浏览文章。
+                  按发布时间整理近期内容，适合快速比较线路、价格和使用场景。
                 </p>
               </div>
               <Badge variant="secondary">{formatCount(listPosts.length)} 篇</Badge>
@@ -242,7 +335,7 @@ async function HomeContent() {
                       暂时还没有更多文章内容
                     </p>
                     <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                      稍后刷新看看，或者先从 hero 的标签搜索进入目标聚合页。
+                      稍后刷新看看，或者先通过上方标签搜索进入目标聚合页。
                     </p>
                   </CardContent>
                 </Card>
@@ -251,25 +344,109 @@ async function HomeContent() {
           </div>
 
           <aside className="space-y-4">
-            <Card className="border-border/70 bg-[linear-gradient(145deg,hsl(var(--background)),hsl(var(--muted)/0.45))] shadow-sm">
+            <Card className="glass-card rounded-2xl">
               <CardContent className="p-5">
-                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <TrendingUp className="size-4 text-primary" />
-                  侧栏内容位
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <ShoppingCart className="size-4 text-primary" />
+                    最新可购买套餐
+                  </div>
+                  <Link
+                    href="/servers"
+                    className="text-xs font-medium text-primary hover:underline"
+                  >
+                    全部
+                  </Link>
                 </div>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  右侧现在展示站长选中的推广文章和高浏览量文章，便于你在首页做更明确的内容引导。
-                </p>
+                <div className="mt-4 space-y-3">
+                  {latestOffers.slice(0, 3).map((offer) => (
+                    <Link
+                      key={offer.id}
+                      href={offer.articleUrl ?? "/servers"}
+                      className="glass-card block rounded-xl p-3.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="line-clamp-2 text-sm font-medium leading-5">
+                            {offer.title}
+                          </p>
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {offer.providerName ?? "商家待补充"} ·{" "}
+                            {offer.region ?? "地区待补充"}
+                          </p>
+                        </div>
+                        <p className="shrink-0 text-right text-xs font-semibold text-primary">
+                          {formatOfferPrice(offer)}
+                        </p>
+                      </div>
+                    </Link>
+                  ))}
+                  {latestOffers.length === 0 ? (
+                    <p className="rounded-md border border-dashed border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
+                      暂无结构化套餐。
+                    </p>
+                  ) : null}
+                </div>
               </CardContent>
             </Card>
 
-            <Card className="border-border/70 shadow-sm">
+            <Card className="glass-card rounded-2xl">
+              <CardContent className="space-y-4 p-5">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <MapPin className="size-4 text-primary" />
+                  热门筛选
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">热门商家</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {topProviders.map((item) => (
+                        <Badge key={item.name} variant="secondary">
+                          {item.name} {item.count}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">热门地区</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {topRegions.map((item) => (
+                        <Badge key={item.name} variant="outline">
+                          {item.name} {item.count}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  {latestPromoOffers.length > 0 ? (
+                    <div>
+                      <p className="text-xs text-muted-foreground">最新优惠码</p>
+                      <div className="mt-2 space-y-2">
+                        {latestPromoOffers.map((offer) => (
+                          <Link
+                            key={offer.id}
+                            href={offer.articleUrl ?? "/servers"}
+                            className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-xs hover:bg-muted/30"
+                          >
+                            <span className="line-clamp-1">
+                              {offer.providerName ?? offer.title}
+                            </span>
+                            <Badge>{offer.promoCode}</Badge>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="glass-card rounded-2xl">
               <CardContent className="p-5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-medium text-foreground">站长推荐</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      从独立表 `homepage_promoted_posts` 读取
+                      近期值得优先查看的内容
                     </p>
                   </div>
                   <Badge variant="secondary">推广位</Badge>
@@ -277,14 +454,14 @@ async function HomeContent() {
               </CardContent>
             </Card>
 
-            <Card className="border-border/70 shadow-sm">
+            <Card className="glass-card rounded-2xl">
               <CardContent className="space-y-3 p-5">
                 {promotedPosts.length > 0 ? (
                   promotedPosts.map((post) => (
                     <Link
                       key={post.id}
                       href={`/fwq/posts/${post.slug}`}
-                      className="block rounded-2xl border border-border/70 bg-background/80 p-4 transition-colors hover:border-primary/30 hover:bg-primary/5"
+                      className="glass-card block rounded-xl p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -299,14 +476,13 @@ async function HomeContent() {
                   ))
                 ) : (
                   <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-                    当前还没有配置推广文章。把文章 ID 写入
-                    `homepage_promoted_posts` 表后，这里就会自动展示。
+                    当前还没有推荐文章。
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            <Card className="border-border/70 shadow-sm">
+            <Card className="glass-card rounded-2xl">
               <CardContent className="p-5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -322,13 +498,13 @@ async function HomeContent() {
               </CardContent>
             </Card>
 
-            <Card className="border-border/70 shadow-sm">
+            <Card className="glass-card rounded-2xl">
               <CardContent className="space-y-3 p-5">
                 {popularPosts.map((post, index) => (
                   <Link
                     key={post.id}
                     href={`/fwq/posts/${post.slug}`}
-                    className="block rounded-2xl border border-border/70 p-4 transition-colors hover:border-primary/30 hover:bg-primary/5"
+                    className="glass-card block rounded-xl p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-2">

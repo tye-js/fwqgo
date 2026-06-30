@@ -1,15 +1,47 @@
 "use client";
 import { generateToc } from "@/lib/toc";
 import Link from "next/link";
-import { useState } from "react";
-import { NotebookText } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+
 interface TableOfContentsProps {
   content: string;
 }
 
 export function TableOfContents({ content }: TableOfContentsProps) {
   const [currentId, setCurrentId] = useState<string | null>(null);
-  const toc = generateToc(content);
+  const toc = useMemo(() => generateToc(content), [content]);
+
+  useEffect(() => {
+    if (!toc.length) return;
+
+    const headings = toc
+      .map((item) => document.getElementById(item.id))
+      .filter((element): element is HTMLElement => Boolean(element));
+
+    if (!headings.length) return;
+
+    const updateCurrentHeading = () => {
+      const offset = 112;
+      const currentHeading =
+        [...headings]
+          .reverse()
+          .find((heading) => heading.getBoundingClientRect().top <= offset) ??
+        headings[0];
+
+      if (!currentHeading) return;
+      setCurrentId(currentHeading.id);
+    };
+
+    updateCurrentHeading();
+    window.addEventListener("scroll", updateCurrentHeading, { passive: true });
+    window.addEventListener("resize", updateCurrentHeading);
+
+    return () => {
+      window.removeEventListener("scroll", updateCurrentHeading);
+      window.removeEventListener("resize", updateCurrentHeading);
+    };
+  }, [toc]);
+
   if (!toc.length) return null;
 
   const handleClick = (
@@ -34,12 +66,11 @@ export function TableOfContents({ content }: TableOfContentsProps) {
   };
 
   return (
-    <nav className="toc py-1">
-      <h3 className="flex items-center gap-2 px-1 text-sm font-medium text-foreground">
-        <NotebookText className="size-4 text-accent" />
-        目录
-      </h3>
-      <ul className="mt-4 space-y-1.5">
+    <nav
+      className="toc max-h-[calc(100dvh-170px)] overflow-y-auto pr-1"
+      aria-label="本文目录"
+    >
+      <ul className="space-y-1.5">
         {toc.map((item) => (
           <li
             key={item.text}
@@ -48,10 +79,10 @@ export function TableOfContents({ content }: TableOfContentsProps) {
             <Link
               href={`#${item.id}`}
               onClick={(e) => handleClick(e, `#${item.id}`)}
-              className={`block rounded-xl px-3 py-2 text-sm leading-6 transition-colors ${
+              className={`block rounded-md border-l-2 px-3 py-2 text-sm leading-6 transition-colors ${
                 currentId === item.id
-                  ? "bg-accent/10 text-accent"
-                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                  ? "border-accent bg-accent/10 font-medium text-accent"
+                  : "border-transparent text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground"
               }`}
             >
               {item.text}

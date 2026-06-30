@@ -177,7 +177,7 @@ export default async function Page() {
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 pt-0">
       <section className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
-        <Card className="relative overflow-hidden border-border/70 bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.18),transparent_32%),linear-gradient(135deg,hsl(var(--background)),hsl(var(--muted)/0.65))] shadow-sm">
+        <Card className="relative overflow-hidden rounded-lg border-border/70 bg-background shadow-sm">
           <div className="absolute inset-y-0 right-0 hidden w-1/3 bg-[linear-gradient(135deg,transparent,hsl(var(--primary)/0.06))] lg:block" />
           <CardHeader className="relative gap-5 pb-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -188,10 +188,10 @@ export default async function Page() {
             </div>
             <div className="max-w-2xl space-y-3">
               <CardTitle className="text-3xl font-semibold tracking-tight md:text-4xl">
-                后台概览更像一个真正的运营看板了
+                内容运营概览
               </CardTitle>
               <CardDescription className="max-w-xl text-sm leading-6 text-muted-foreground">
-                这里把发布规模、内容产出、浏览表现和分类分布放进同一个工作台，进入后台后可以先看趋势，再决定去写新文章还是优化旧内容。
+                汇总发布规模、内容产出、浏览表现和分类分布，进入后台后可以先看趋势，再决定去写新文章还是优化旧内容。
               </CardDescription>
             </div>
           </CardHeader>

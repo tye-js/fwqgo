@@ -1,5 +1,6 @@
 import { Suspense } from "react";
-import { getTagCount, getTagList } from "@/app/_actions/tag";
+import { connection } from "next/server";
+import { getAdminTagCount, getAdminTagList } from "@/app/_actions/tag";
 import { AdminPageShell, AdminSectionCard } from "@/app/_components/admin-page-shell";
 import { PaginationComponent } from "@/app/_components/pagination";
 import { Button } from "@/components/ui/button";
@@ -19,8 +20,8 @@ async function TagListWrapper({
 }) {
   const searchParams = await searchParamsPromise;
   const pageNo = searchParams.pageNo ? parseInt(searchParams.pageNo) : 1;
-  const { data } = await getTagList({ page: pageNo, pageSize: 20 });
-  const { data: tagCount } = await getTagCount();
+  const { data } = await getAdminTagList({ page: pageNo, pageSize: 20 });
+  const { data: tagCount } = await getAdminTagCount();
 
   if (!data) {
     return <div>获取标签列表失败</div>;
@@ -75,11 +76,13 @@ async function TagListWrapper({
   );
 }
 
-export default function Page(
+export default async function Page(
   props: {
     searchParams: Promise<{ pageNo?: string }>;
   }
 ) {
+  await connection();
+
   return (
     <Suspense fallback={<div>Loading...</div>}>
       <TagListWrapper searchParamsPromise={props.searchParams} />

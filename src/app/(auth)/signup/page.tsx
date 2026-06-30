@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -32,6 +33,7 @@ type RegisterForm = z.infer<typeof registerSchema>;
 export default function RegisterPage() {
   const router = useRouter();
   const [error, setError] = useState("");
+  const [isPending, setIsPending] = useState(false);
 
   const {
     register,
@@ -42,6 +44,9 @@ export default function RegisterPage() {
   });
 
   const onSubmit = async (data: RegisterForm) => {
+    setIsPending(true);
+    setError("");
+
     try {
       const res = await fetch("/api/auth/signup", {
         method: "POST",
@@ -60,57 +65,95 @@ export default function RegisterPage() {
       router.push("/login");
     } catch {
       setError("注册失败，请重试");
+    } finally {
+      setIsPending(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="w-full max-w-md space-y-4 p-6">
-        <h1 className="text-center text-2xl font-bold">注册</h1>
+    <div className="flex min-h-dvh items-center justify-center px-4 py-10">
+      <div className="w-full max-w-md rounded-lg border border-border/70 bg-background p-6 shadow-sm">
+        <div className="space-y-1.5">
+          <h1 className="text-2xl font-semibold">注册</h1>
+          <p className="text-sm text-muted-foreground">
+            创建管理员账号。公开注册默认关闭，需要服务器开启注册入口。
+          </p>
+        </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div>
-            <Input {...register("username")} placeholder="用户名" type="text" />
+        <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="username">用户名</Label>
+            <Input
+              id="username"
+              {...register("username")}
+              type="text"
+              autoComplete="username"
+              aria-invalid={Boolean(errors.username)}
+              aria-describedby={
+                errors.username ? "signup-username-error" : undefined
+              }
+            />
             {errors.username && (
-              <p className="text-sm text-red-500">{errors.username.message}</p>
+              <p id="signup-username-error" className="text-sm text-destructive">
+                {errors.username.message}
+              </p>
             )}
           </div>
 
-          <div>
+          <div className="grid gap-2">
+            <Label htmlFor="password">密码</Label>
             <Input
+              id="password"
               {...register("password")}
-              placeholder="密码"
               type="password"
+              autoComplete="new-password"
+              aria-invalid={Boolean(errors.password)}
+              aria-describedby={
+                errors.password ? "signup-password-error" : undefined
+              }
             />
             {errors.password && (
-              <p className="text-sm text-red-500">{errors.password.message}</p>
+              <p id="signup-password-error" className="text-sm text-destructive">
+                {errors.password.message}
+              </p>
             )}
           </div>
 
-          <div>
+          <div className="grid gap-2">
+            <Label htmlFor="confirmPassword">确认密码</Label>
             <Input
+              id="confirmPassword"
               {...register("confirmPassword")}
-              placeholder="确认密码"
               type="password"
+              autoComplete="new-password"
+              aria-invalid={Boolean(errors.confirmPassword)}
+              aria-describedby={
+                errors.confirmPassword
+                  ? "signup-confirm-password-error"
+                  : undefined
+              }
             />
             {errors.confirmPassword && (
-              <p className="text-sm text-red-500">
+              <p
+                id="signup-confirm-password-error"
+                className="text-sm text-destructive"
+              >
                 {errors.confirmPassword.message}
               </p>
             )}
           </div>
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-          <Button type="submit" className="w-full">
-            注册
+          <Button type="submit" className="w-full" disabled={isPending}>
+            {isPending ? "注册中..." : "注册"}
           </Button>
 
           <div className="text-center text-sm">
             已有账号？
             <Link
               href="/login"
-              className="ml-1 text-blue-500 hover:text-blue-600"
+              className="ml-1 rounded-sm text-primary underline underline-offset-4 hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               去登录
             </Link>
