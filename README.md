@@ -190,18 +190,123 @@ npm run format:check # 检查代码格式
 | ----------------- | -------------------- | ------------------------------------------ |
 | `DATABASE_URL`    | PostgreSQL连接字符串 | `postgresql://user:pass@localhost:5432/db` |
 | `NEXT_PUBLIC_URL` | 网站公开URL          | `https://fwqgo.com`                        |
+| `NEXT_PUBLIC_CMS_URL` | 后台管理公开URL      | `https://cms.fwqgo.com`                    |
+| `CMS_BASIC_AUTH_USERNAME` | CMS Basic Auth 用户名 | `fwqgo-admin`                              |
+| `CMS_BASIC_AUTH_PASSWORD` | CMS Basic Auth 密码   | `change-this-password`                     |
 | `NODE_ENV`        | 运行环境             | `development` / `production`               |
+
+### 前台和后台域名
+
+当前采用同一个 Next.js 应用、两个域名入口的过渡方案：
+
+- `fwqgo.com` 和 `www.fwqgo.com` 只作为公开前台入口。
+- 访问主站的 `/end/*` 或 `/login` 会自动跳转到 `cms.fwqgo.com`。
+- 访问主站的后台专属 API，例如 `/api/auth/*`、`/api/upload`、`/api/tags/search`，会返回 404。
+- `cms.fwqgo.com` 的 `/` 会自动跳转到 `/end`。
+- 访问 CMS 域名下的公开文章、服务器专题和短链路径，会跳回主站，避免公开内容在 CMS 域名重复收录。
+- 后台登录 Cookie 保持 host-only，不共享到主站域名。
+- 如果配置了 `CMS_BASIC_AUTH_USERNAME` 和 `CMS_BASIC_AUTH_PASSWORD`，CMS 域名会先要求 Basic Auth，再进入后台登录。
+
+服务器反向代理可以先将 `fwqgo.com`、`www.fwqgo.com`、`cms.fwqgo.com` 都转发到同一个 PM2 应用。后续如果要完全拆成两个项目，再把 `src/app/end`、后台 API、认证和共享数据访问层迁移到独立 CMS 项目。
 
 ## 🚀 部署指南
 
 ### 生产环境部署
 
-1. **构建应用**
+推荐使用本地构建、上传 standalone 产物、服务器 PM2 重载的方式部署。
+
+服务器需要先准备：
+
+- Node.js 和 PM2
+- PostgreSQL 连接信息
+- Nginx 或其他反向代理，将站点流量转发到 `127.0.0.1:3000`
+- `/var/www/uploads`，并在反向代理中暴露为 `/uploads/`
+
+1. **配置部署变量**
+```bash
+cp .deploy.env.example .deploy.env
+```
+
+编辑 `.deploy.env`，至少填写：
+
+```env
+DEPLOY_HOST=your-server-ip
+DEPLOY_USER=root
+DEPLOY_PATH=/var/www/fwqgo
+NEXT_PUBLIC_URL=https://fwqgo.com
+NEXT_PUBLIC_CMS_URL=https://cms.fwqgo.com
+CMS_BASIC_AUTH_USERNAME=fwqgo-admin
+CMS_BASIC_AUTH_PASSWORD=change-this-password
+DATABASE_URL=postgresql://user:password@host:5432/fwqgo
+```
+
+无密码自动部署建议配置 `DEPLOY_SSH_KEY`。如果仍使用 root 密码连接，可以不写密码并在命令执行时交互输入；如需完全自动化，可设置 `DEPLOY_PASSWORD`，但本机需要安装 `sshpass`。
+
+2. **准备服务器运行时环境**
+
+首次部署脚本会检查 `/var/www/fwqgo/shared/.env.production`。如果不存在，会在服务器创建 `.env.production.example` 并停止。根据示例补齐生产环境变量后重新执行部署。
+
+3. **自动构建并部署**
+
+```bash
+npm run deploy
+```
+
+脚本会执行：
+
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`
+- 打包 `.next/standalone`、`.next/static`、`public`
+- 上传到服务器 release 目录
+- 更新 `current` 软链接
+- `pm2 startOrReload ecosystem.config.cjs --update-env`
+
+只生成本地部署包：
+
+```bash
+npm run deploy -- --artifact-only
+```
+
+如需在部署前从本机执行数据库迁移：
+
+```bash
+npm run db:migrate
+```
+
+### GitHub Actions 部署
+
+仓库包含 `.github/workflows/deploy.yml`，支持 push 到 `main` 自动部署，也支持在 GitHub Actions 页面手动触发。手动触发时可以选择是否先执行数据库迁移。
+
+需要在 GitHub 仓库配置这些 Secrets：
+
+```text
+DEPLOY_HOST=103.117.136.139
+DEPLOY_USER=root
+DEPLOY_SSH_KEY=<private ssh key>
+DATABASE_URL=<production database url>
+CMS_BASIC_AUTH_USERNAME=<cms basic auth username>
+CMS_BASIC_AUTH_PASSWORD=<cms basic auth password>
+GOOGLE_AI_API_KEY=<optional, only if still used>
+```
+
+可选配置这些 Variables：
+
+```text
+DEPLOY_PORT=22
+DEPLOY_PATH=/var/www/fwqgo
+KEEP_RELEASES=5
+REMOTE_UPLOAD_DIR=/var/www/uploads
+NEXT_PUBLIC_URL=https://fwqgo.com
+NEXT_PUBLIC_CMS_URL=https://cms.fwqgo.com
+```
+
+4. **手动构建应用**
 ```bash
 npm run build
 ```
 
-2. **使用PM2部署**
+5. **使用PM2部署**
 ```bash
 # 安装PM2
 npm install -g pm2
@@ -288,4 +393,3 @@ chore: 构建过程或辅助工具的变动
 Made with ❤️ by 服务器go Team
 
 </div>
-

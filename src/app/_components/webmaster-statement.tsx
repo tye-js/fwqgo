@@ -1,8 +1,8 @@
 import { AiFillQqCircle } from "react-icons/ai";
 export function WebmasterStatement() {
   return (
-    <div className="rounded-[26px] border border-border/70 bg-muted/20 p-5">
-      <div className="font-editorial text-2xl font-semibold tracking-[-0.04em] text-foreground">
+    <div className="rounded-lg border border-border/70 bg-muted/20 p-5">
+      <div className="font-editorial text-2xl font-semibold text-foreground">
         站长声明
       </div>
       <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-center">

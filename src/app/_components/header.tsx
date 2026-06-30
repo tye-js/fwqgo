@@ -13,6 +13,15 @@ import {
   NavigationMenuList,
   NavigationMenuTrigger,
 } from "@/components/ui/navigation-menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Menu } from "lucide-react";
 
 const HeaderComponent = async () => {
   const { data: categories, error } = await getCategories();
@@ -24,12 +33,37 @@ const HeaderComponent = async () => {
       <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-accent/60 to-transparent" />
       <div className="container mx-auto px-4">
         <div className="flex min-h-[72px] items-center justify-between gap-6">
-          <Link href="/" className="min-w-0">
+          <Link
+            href="/"
+            className="min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            aria-label="返回服务器go首页"
+          >
             <BrandLogo className="min-w-0" />
           </Link>
 
           <NavigationMenu className="hidden lg:block">
             <NavigationMenuList className="rounded-full border border-border/70 bg-white/90 p-1 shadow-sm backdrop-blur">
+              <NavigationMenuItem>
+                <NavigationMenuTrigger className="rounded-full">
+                  服务器比价
+                </NavigationMenuTrigger>
+                <NavigationMenuContent>
+                  <ul className="grid w-[420px] gap-3 p-4 md:w-[520px] md:grid-cols-2">
+                    <ListItem title="全部套餐" href="/servers">
+                      按价格、地区、线路和状态集中筛选服务器套餐。
+                    </ListItem>
+                    <ListItem title="香港服务器" href="/servers/hong-kong">
+                      香港 VPS、云服务器、CN2、CMI 和低延迟线路。
+                    </ListItem>
+                    <ListItem title="美国服务器" href="/servers/united-states">
+                      美国 VPS、独立服务器、大带宽和外贸建站套餐。
+                    </ListItem>
+                    <ListItem title="便宜 VPS" href="/servers/cheap-vps">
+                      低价 VPS、月付优惠和适合测试的轻量套餐。
+                    </ListItem>
+                  </ul>
+                </NavigationMenuContent>
+              </NavigationMenuItem>
               {categories.map((category) =>
                 category.children.length > 0 ? (
                   <NavigationMenuItem key={category.id}>
@@ -66,6 +100,73 @@ const HeaderComponent = async () => {
               )}
             </NavigationMenuList>
           </NavigationMenu>
+
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="lg:hidden"
+                aria-label="打开导航菜单"
+              >
+                <Menu className="size-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-[86vw] max-w-sm">
+              <SheetHeader>
+                <SheetTitle>导航</SheetTitle>
+              </SheetHeader>
+              <nav className="mt-6 grid gap-2">
+                <div className="grid gap-1 rounded-lg border border-border/70 p-2">
+                  <Link
+                    href="/servers"
+                    className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    服务器比价
+                  </Link>
+                  {(
+                    [
+                    ["香港服务器", "/servers/hong-kong"],
+                    ["美国服务器", "/servers/united-states"],
+                    ["便宜 VPS", "/servers/cheap-vps"],
+                    ] satisfies Array<[string, string]>
+                  ).map(([label, href]) => (
+                    <Link
+                      key={href}
+                      href={href}
+                      className="flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {label}
+                    </Link>
+                  ))}
+                </div>
+                {categories.map((category) => (
+                  <div key={category.id} className="grid gap-2">
+                    <Link
+                      href={`/fwq/${category.slug}/page/1`}
+                      className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {category.name}
+                    </Link>
+                    {category.children.length > 0 ? (
+                      <div className="grid gap-1 border-l border-border pl-3">
+                        {category.children.map((item) => (
+                          <Link
+                            key={item.id}
+                            href={`/fwq/${item.slug}/page/1`}
+                            className="flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {item.name}
+                          </Link>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </nav>
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
     </header>
@@ -85,7 +186,7 @@ const ListItem = React.forwardRef<
           href={href}
           ref={ref}
           className={cn(
-            "block select-none space-y-2 rounded-2xl border border-transparent p-4 leading-none no-underline outline-none transition-colors hover:border-primary/20 hover:bg-primary/5 focus:border-primary/20 focus:bg-primary/5",
+            "block select-none space-y-2 rounded-md border border-transparent p-4 leading-none no-underline outline-none transition-colors hover:border-primary/20 hover:bg-primary/5 focus:border-primary/20 focus:bg-primary/5 focus-visible:ring-2 focus-visible:ring-ring",
             className,
           )}
           {...props}

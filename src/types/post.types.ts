@@ -49,6 +49,7 @@ export interface PostEditFormData {
     | "content"
     | "views"
     | "description"
+    | "imgUrl"
     | "recommendedTagName"
     | "keywords"
     | "categoryId"

@@ -21,7 +21,7 @@ export default function PageCard({
   pageNo?: number;
 }) {
   return (
-    <Card className="overflow-hidden rounded-[30px] border border-border/70 bg-background/92 shadow-[0_24px_80px_-48px_rgba(15,23,42,0.28)]">
+    <Card className="overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm">
       <CardContent className="p-6 md:p-8">
         <div className="flex flex-wrap items-center gap-2">
           <Badge className="bg-primary text-primary-foreground">{kind}</Badge>
@@ -32,7 +32,7 @@ export default function PageCard({
 
         <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_220px]">
           <div className="space-y-4">
-            <h1 className="font-editorial max-w-4xl text-4xl font-semibold leading-tight tracking-[-0.05em] text-foreground md:text-5xl">
+            <h1 className="font-editorial max-w-4xl text-4xl font-semibold leading-tight text-foreground md:text-5xl">
               {name}
             </h1>
             <p className="max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">
@@ -41,7 +41,7 @@ export default function PageCard({
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-            <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
               <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
                 <Files className="size-3.5" />
                 内容规模
@@ -51,7 +51,7 @@ export default function PageCard({
               </p>
               <p className="mt-1 text-xs text-muted-foreground">已收录文章</p>
             </div>
-            <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
               <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
                 <Compass className="size-3.5" />
                 内容方向
@@ -63,7 +63,7 @@ export default function PageCard({
                 以文章为主的聚合浏览
               </p>
             </div>
-            <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
               <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
                 <Hash className="size-3.5" />
                 浏览建议

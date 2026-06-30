@@ -14,8 +14,8 @@ export function AdminTableWorkbench({
   selectionCount,
   actionSlot,
 }: {
-  title: string;
-  description: string;
+  title?: string;
+  description?: string;
   searchValue: string;
   onSearchChange: (value: string) => void;
   searchPlaceholder: string;
@@ -24,20 +24,28 @@ export function AdminTableWorkbench({
   actionSlot?: ReactNode;
 }) {
   return (
-    <div className="space-y-4 rounded-[24px] border border-border/70 bg-muted/20 p-5">
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-1">
-          <h3 className="text-lg font-semibold text-foreground">{title}</h3>
-          <p className="text-sm leading-6 text-muted-foreground">
-            {description}
-          </p>
+    <div className="space-y-4 rounded-lg border border-border/70 bg-muted/20 p-5">
+      {title || description || (selectionCount && selectionCount > 0) ? (
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          {title || description ? (
+            <div className="space-y-1">
+              {title ? (
+                <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+              ) : null}
+              {description ? (
+                <p className="text-sm leading-6 text-muted-foreground">
+                  {description}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {selectionCount && selectionCount > 0 ? (
+            <Badge className="w-fit bg-primary text-primary-foreground">
+              已选 {selectionCount} 项
+            </Badge>
+          ) : null}
         </div>
-        {selectionCount && selectionCount > 0 ? (
-          <Badge className="w-fit bg-primary text-primary-foreground">
-            已选 {selectionCount} 项
-          </Badge>
-        ) : null}
-      </div>
+      ) : null}
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
         <div className="relative">
@@ -71,7 +79,7 @@ export function AdminTableEmpty({
   actionSlot?: ReactNode;
 }) {
   return (
-    <div className="rounded-[24px] border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center">
+    <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center">
       <p className="text-base font-medium text-foreground">{title}</p>
       <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
         {description}

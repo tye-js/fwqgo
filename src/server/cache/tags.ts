@@ -7,12 +7,14 @@ export const cacheTags = {
   homepage: "homepage",
   sidebar: "sidebar",
   sitemap: "sitemap",
+  serverOffers: "server-offers",
   category: (id: number) => `category:${id}`,
   categorySlug: (slug: string) => `category-slug:${slug}`,
   tag: (id: number) => `tag:${id}`,
   tagSlug: (slug: string) => `tag-slug:${slug}`,
   post: (id: number) => `post:${id}`,
   postSlug: (slug: string) => `post-slug:${slug}`,
+  serverOfferTopic: (slug: string) => `server-offer-topic:${slug}`,
 };
 
 export function tagCache(...tags: string[]) {
@@ -25,6 +27,7 @@ export function revalidateSiteContent(tags: string[] = []) {
     cacheTags.homepage,
     cacheTags.sidebar,
     cacheTags.sitemap,
+    cacheTags.serverOffers,
     ...tags,
   ]);
 

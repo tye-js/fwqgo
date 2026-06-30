@@ -1,6 +1,13 @@
 <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="4" y="4" width="56" height="56" rx="18" fill="#18181B"/>
-  <path d="M18 18H33V24H24V28H32V34H24V46H18V18Z" fill="white"/>
-  <path d="M36 19L46 19L34 45H24L36 19Z" fill="#EC4899"/>
-  <path d="M39.5 33H46V46H40V39H34V33H39.5Z" fill="white"/>
+  <title>服务器go</title>
+  <rect x="4" y="4" width="56" height="56" rx="18" fill="#111827"/>
+  <path d="M17 15H42C45.3137 15 48 17.6863 48 21V23C48 26.3137 45.3137 29 42 29H17C13.6863 29 11 26.3137 11 23V21C11 17.6863 13.6863 15 17 15Z" fill="#F8FAFC"/>
+  <path d="M17 35H42C45.3137 35 48 37.6863 48 41V43C48 46.3137 45.3137 49 42 49H17C13.6863 49 11 46.3137 11 43V41C11 37.6863 13.6863 35 17 35Z" fill="#E0F2FE"/>
+  <path d="M17 25H39C42.3137 25 45 27.6863 45 31V33C45 36.3137 42.3137 39 39 39H17C13.6863 39 11 36.3137 11 33V31C11 27.6863 13.6863 25 17 25Z" fill="#F8FAFC" opacity="0.92"/>
+  <path d="M18 22H30M18 32H28M18 42H31" stroke="#0F172A" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="40" cy="22" r="2.5" fill="#06B6D4"/>
+  <circle cx="37" cy="32" r="2.5" fill="#06B6D4"/>
+  <circle cx="40" cy="42" r="2.5" fill="#06B6D4"/>
+  <path d="M29 47C37 46 45 41 49 31" stroke="#EC4899" stroke-width="6" stroke-linecap="round"/>
+  <path d="M45 30H52V37" stroke="#EC4899" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

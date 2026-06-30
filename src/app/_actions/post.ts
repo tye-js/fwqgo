@@ -1,5 +1,7 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
 import { db } from "@/server/db";
 import { decodeSlug, slugify } from "@/lib/utils";
 import { type CreatePostParams } from "@/types/post.types";
@@ -8,6 +10,16 @@ import { attachTagsToPosts } from "@/server/db/post-tags";
 import { normalizeArticleHtml } from "@/lib/content";
 import { requireAdminSession } from "@/server/auth/session";
 import { cacheTags, revalidateSiteContent, tagCache } from "@/server/cache/tags";
+import { shortenArticleOutboundLinks } from "@/server/links/outbound-short-link";
+import {
+  createPostRecord,
+  getErrorMessage,
+  type CreatePostInput,
+} from "@/server/posts/create-post-record";
+import {
+  deleteImageReferencesForPosts,
+  syncImageReferencesForPost,
+} from "@/server/images/assets";
 import {
   posts,
   categories,
@@ -29,116 +41,25 @@ import {
   sql,
 } from "drizzle-orm";
 
-interface CreatePostInput {
-  title: string;
-  description: string;
-  content: string;
-  imgUrl?: string;
-  published: boolean;
-  categoryId: number;
-  recommendedTagName?: string | null;
-  keywords?: string | null;
+function normalizeTagName(name: string) {
+  return name.trim();
+}
+
+function revalidateImageAssetList() {
+  revalidatePath("/end/images/list");
 }
 
 export async function createPost(input: CreatePostInput | CreatePostParams) {
   try {
     await requireAdminSession();
-    const postInput = "post" in input ? input.post : input;
-    const inputTags = "tags" in input ? input.tags : [];
-
-    const [category] = await db
-      .select({ id: categories.id, slug: categories.slug })
-      .from(categories)
-      .where(eq(categories.id, postInput.categoryId))
-      .limit(1);
-
-    if (!category) {
-      return { error: "分类不存在" };
+    const result = await createPostRecord(input);
+    if (result.data) {
+      revalidateImageAssetList();
     }
-
-    const slug = slugify(postInput.title);
-
-    const [existingPost] = await db
-      .select({ id: posts.id })
-      .from(posts)
-      .where(eq(posts.slug, slug))
-      .limit(1);
-
-    if (existingPost) {
-      return { error: "文章已存在" };
-    }
-
-    const post = await db.transaction(async (tx) => {
-      const tagRows = await Promise.all(
-        inputTags.map(async (tag) => {
-          const tagSlug = slugify(tag.name);
-          const [existingTag] = await tx
-            .select({ id: tags.id, name: tags.name })
-            .from(tags)
-            .where(eq(tags.slug, tagSlug))
-            .limit(1);
-
-          if (existingTag) {
-            return existingTag;
-          }
-
-          const [newTag] = await tx
-            .insert(tags)
-            .values({ name: tag.name, slug: tagSlug })
-            .returning({ id: tags.id, name: tags.name });
-
-          return newTag!;
-        }),
-      );
-      const recommendedTag =
-        postInput.recommendedTagName
-          ? (tagRows.find((tag) => tag.name === postInput.recommendedTagName) ??
-            (
-              await tx
-                .select({ id: tags.id, name: tags.name })
-                .from(tags)
-                .where(eq(tags.name, postInput.recommendedTagName))
-                .limit(1)
-            )[0] ??
-            null)
-          : null;
-
-      const [createdPost] = await tx
-        .insert(posts)
-        .values({
-          ...postInput,
-          slug,
-          content: normalizeArticleHtml(postInput.content),
-          recommendedTagName: recommendedTag?.name ?? null,
-          recommendedTagId: recommendedTag?.id ?? null,
-        })
-        .returning();
-
-      if (createdPost && tagRows.length > 0) {
-        await tx.insert(postTags).values(
-          tagRows.map((tag) => ({
-            postId: createdPost.id,
-            tagId: tag.id,
-          })),
-        );
-      }
-
-      return createdPost;
-    });
-
-    if (post) {
-      revalidateSiteContent([
-        cacheTags.post(post.id),
-        cacheTags.postSlug(post.slug),
-        cacheTags.category(post.categoryId),
-        cacheTags.categorySlug(category.slug),
-        ...(inputTags.length > 0 ? [cacheTags.tags] : []),
-      ]);
-    }
-
-    return { data: post };
+    return result;
   } catch (error) {
-    return { error: "创建文章失败", message: error };
+    console.error("创建文章失败:", error);
+    return { error: "创建文章失败", message: getErrorMessage(error) };
   }
 }
 
@@ -212,6 +133,48 @@ export async function getPosts({
   } catch (error) {
     return { error: "获取文章列表失败", message: error };
   }
+}
+
+export async function getDraftPosts({
+  pageNo = 1,
+  pageSize = 15,
+}: {
+  pageNo?: number;
+  pageSize?: number;
+}) {
+  "use cache";
+  tagCache(cacheTags.posts);
+
+  try {
+    const postsData = await db
+      .select({
+        id: posts.id,
+        title: posts.title,
+        slug: posts.slug,
+        imgUrl: posts.imgUrl,
+        published: posts.published,
+      })
+      .from(posts)
+      .where(eq(posts.published, false))
+      .orderBy(desc(posts.createdAt))
+      .offset((pageNo - 1) * pageSize)
+      .limit(pageSize);
+
+    return { data: postsData };
+  } catch (error) {
+    return { error: "获取草稿列表失败", message: error };
+  }
+}
+
+export async function getDraftPostCount() {
+  "use cache";
+  tagCache(cacheTags.posts);
+
+  const [result] = await db
+    .select({ count: count() })
+    .from(posts)
+    .where(eq(posts.published, false));
+  return { data: result?.count ?? 0 };
 }
 
 // 获取文章总数
@@ -373,6 +336,8 @@ export async function updatePost(input: {
       .returning();
 
     if (post) {
+      await syncImageReferencesForPost(post.id);
+      revalidateImageAssetList();
       revalidateSiteContent([
         cacheTags.post(post.id),
         cacheTags.postSlug(post.slug),
@@ -395,6 +360,7 @@ export async function updatePostContent(input: {
   id: number;
   description: string;
   content: string;
+  imgUrl?: string | null;
   categoryId: number;
   recommendTagName: string;
   keywords: string;
@@ -430,7 +396,10 @@ export async function updatePostContent(input: {
       .update(posts)
       .set({
         description: input.description,
-        content: normalizeArticleHtml(input.content),
+        content: normalizeArticleHtml(
+          await shortenArticleOutboundLinks(input.content),
+        ),
+        imgUrl: input.imgUrl ?? null,
         categoryId: input.categoryId,
         recommendedTagName: recommendedTag?.name ?? null,
         recommendedTagId: recommendedTag?.id ?? null,
@@ -441,6 +410,8 @@ export async function updatePostContent(input: {
       .returning();
 
     if (post) {
+      await syncImageReferencesForPost(post.id);
+      revalidateImageAssetList();
       revalidateSiteContent([
         cacheTags.post(post.id),
         cacheTags.postSlug(post.slug),
@@ -469,6 +440,8 @@ export async function deletePostById(id: number) {
     });
 
     if (deletedPost) {
+      await syncImageReferencesForPost(deletedPost.id);
+      revalidateImageAssetList();
       revalidateSiteContent([
         cacheTags.post(deletedPost.id),
         cacheTags.postSlug(deletedPost.slug),
@@ -495,6 +468,11 @@ export async function deletePostsByIds(ids: number[]) {
       slug: posts.slug,
       categoryId: posts.categoryId,
     });
+
+    if (deletedPosts.length > 0) {
+      await deleteImageReferencesForPosts(deletedPosts.map((post) => post.id));
+      revalidateImageAssetList();
+    }
 
     revalidateSiteContent(
       deletedPosts.flatMap((post) => [
@@ -762,6 +740,7 @@ export async function getPostWithTagsBySlug(slug: string) {
         imgUrl: posts.imgUrl,
         content: posts.content,
         createdAt: posts.createdAt,
+        updatedAt: posts.updatedAt,
         views: posts.views,
         recommendedTagId: posts.recommendedTagId,
         recommendedTagName: posts.recommendedTagName,
@@ -862,17 +841,42 @@ export async function updatePostTags({
 }: UpdatePostTagsParams) {
   try {
     await requireAdminSession();
+    const uniqueNewTags = Array.from(
+      new Map(
+        newTags
+          .map((tag) => {
+            const name = normalizeTagName(tag.tag.name);
+            const slug = tag.tag.slug || slugify(name);
+
+            if (!name || !slug) {
+              return null;
+            }
+
+            return [
+              slug,
+              {
+                tag: {
+                  ...tag.tag,
+                  name,
+                  slug,
+                },
+              },
+            ] as const;
+          })
+          .filter((tag): tag is NonNullable<typeof tag> => tag !== null),
+      ).values(),
+    );
+    const newTagSlugs = new Set(uniqueNewTags.map((tag) => tag.tag.slug));
 
     // 找出需要添加的标签
-    const tagsToAdd = newTags.filter(
+    const tagsToAdd = uniqueNewTags.filter(
       (newTag) =>
-        !oldTags.some((oldTag) => oldTag.tag.name === newTag.tag.name),
+        !oldTags.some((oldTag) => oldTag.tag.slug === newTag.tag.slug),
     );
 
     // 找出需要删除的标签
     const tagsToRemove = oldTags.filter(
-      (oldTag) =>
-        !newTags.some((newTag) => newTag.tag.name === oldTag.tag.name),
+      (oldTag) => !newTagSlugs.has(oldTag.tag.slug),
     );
 
     // 使用事务处理
@@ -892,7 +896,9 @@ export async function updatePostTags({
 
       // 2. 创建新标签并获取它们的ID
       if (tagsToAdd.length > 0) {
-        const createdTagsIdArray = await Promise.all(
+        const createdTagsIdArray = Array.from(
+          new Set(
+            await Promise.all(
           tagsToAdd.map(async (tag) => {
             const slug = slugify(tag.tag.name);
             const [existingTag] = await tx
@@ -915,6 +921,8 @@ export async function updatePostTags({
 
             return newTagResult!.id;
           }),
+            ),
+          ),
         );
 
         // 向数据库中插入文章标签关联
@@ -993,6 +1001,7 @@ export async function getLatestPostsForSidebar() {
       title: posts.title,
       slug: posts.slug,
       imgUrl: posts.imgUrl,
+      createdAt: posts.createdAt,
     })
     .from(posts)
     .where(eq(posts.published, true))

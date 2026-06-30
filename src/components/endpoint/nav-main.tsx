@@ -2,6 +2,7 @@
 
 import { ChevronRight, type LucideIcon } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import {
   Collapsible,
@@ -33,9 +34,28 @@ export function NavMain({
     }[];
   }[];
 }) {
+  const pathname = usePathname();
+  const normalizedPathname =
+    pathname.length > 1 ? pathname.replace(/\/$/, "") : pathname;
+  const activeSubItemUrl = items
+    .flatMap((item) => item.items ?? [])
+    .map((item) => ({
+      ...item,
+      normalizedUrl:
+        item.url.length > 1 ? item.url.replace(/\/$/, "") : item.url,
+    }))
+    .filter((item) =>
+      item.normalizedUrl === "/end"
+        ? normalizedPathname === "/end"
+        : normalizedPathname === item.normalizedUrl ||
+          normalizedPathname.startsWith(`${item.normalizedUrl}/`),
+    )
+    .sort((left, right) => right.normalizedUrl.length - left.normalizedUrl.length)[0]
+    ?.normalizedUrl;
+
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>Platform</SidebarGroupLabel>
+      <SidebarGroupLabel>后台导航</SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) => (
           <Collapsible
@@ -56,7 +76,14 @@ export function NavMain({
                 <SidebarMenuSub>
                   {item.items?.map((subItem) => (
                     <SidebarMenuSubItem key={subItem.title}>
-                      <SidebarMenuSubButton asChild>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={
+                          (subItem.url.length > 1
+                            ? subItem.url.replace(/\/$/, "")
+                            : subItem.url) === activeSubItemUrl
+                        }
+                      >
                         <Link href={subItem.url}>
                           <span>{subItem.title}</span>
                         </Link>

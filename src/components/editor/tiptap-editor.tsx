@@ -28,6 +28,7 @@ export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
           heading: {
             levels: [2, 3, 4, 5, 6],
           },
+          link: false,
         }),
         Table.configure({
           resizable: true,
@@ -72,7 +73,7 @@ export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
   return (
     <Card
       className={cn(
-        "relative overflow-hidden rounded-[26px] border-border/70 bg-background/92 shadow-sm",
+        "relative overflow-hidden rounded-lg border-border/70 bg-background shadow-sm",
         isFullscreen ? "fixed inset-0 z-50 rounded-none" : "min-h-[80vh]",
       )}
     >

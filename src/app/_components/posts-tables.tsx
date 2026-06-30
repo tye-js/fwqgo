@@ -2,12 +2,14 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { CircleCheck, CircleX, Trash2 } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { CircleCheck, CircleX, FileSearch, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { deletePostById, deletePostsByIds, updatePost } from "../_actions/post";
+import { importServerOffersFromPostAction } from "@/app/_actions/server-offers";
 import { AdminTableEmpty, AdminTableWorkbench } from "@/app/_components/admin-table-workbench";
+import { ImageLibraryPicker } from "@/app/_components/image-library-picker";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -44,17 +46,38 @@ type PostListProp = Pick<
   Post,
   "id" | "title" | "published" | "imgUrl" | "slug"
 >;
+type PostStatusFilter = "all" | "published" | "draft";
+type ImportStats = {
+  scannedPosts: number;
+  extracted: number;
+  inserted: number;
+  skipped: number;
+};
 
-export function PostList({ posts }: { posts: PostListProp[] }) {
+function describeImportStats(data: ImportStats) {
+  return `扫描 ${data.scannedPosts} 篇，提取 ${data.extracted} 条，新增 ${data.inserted} 条，跳过 ${data.skipped} 条`;
+}
+
+export function PostList({
+  posts,
+  editBasePath,
+  defaultStatusFilter = "all",
+}: {
+  posts: PostListProp[];
+  editBasePath?: string;
+  defaultStatusFilter?: PostStatusFilter;
+}) {
   const pathname = usePathname();
+  const router = useRouter();
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(defaultStatusFilter);
   const [sortValue, setSortValue] = useState("id-desc");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editPostId, setEditPostId] = useState<number | null>(null);
   const [editPostData, setEditPostData] = useState<PostListProp | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [extractingPostId, setExtractingPostId] = useState<number | null>(null);
 
   const filteredPosts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -157,6 +180,31 @@ export function PostList({ posts }: { posts: PostListProp[] }) {
     setEditPostId(null);
   }
 
+  async function handleExtractOffers(postId: number) {
+    setExtractingPostId(postId);
+
+    try {
+      const result = await importServerOffersFromPostAction(postId);
+      if (!result.success) {
+        toast.error(result.message ?? result.error);
+        return;
+      }
+
+      const data = result.data;
+      if (!data) {
+        toast.error("提取完成但没有返回统计信息");
+        return;
+      }
+
+      toast.success("套餐数据提取完成", {
+        description: describeImportStats(data),
+      });
+      router.refresh();
+    } finally {
+      setExtractingPostId(null);
+    }
+  }
+
   function toggleSelection(id: number, checked: boolean) {
     setSelectedIds((prev) =>
       checked ? [...prev, id] : prev.filter((item) => item !== id),
@@ -178,7 +226,12 @@ export function PostList({ posts }: { posts: PostListProp[] }) {
         selectionCount={selectedIds.length}
         filterSlot={
           <div className="flex items-center gap-3">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select
+              value={statusFilter}
+              onValueChange={(value) =>
+                setStatusFilter(value as PostStatusFilter)
+              }
+            >
               <SelectTrigger className="h-auto w-[132px] border-0 bg-transparent p-0 shadow-none focus:ring-0">
                 <SelectValue placeholder="全部状态" />
               </SelectTrigger>
@@ -274,7 +327,7 @@ export function PostList({ posts }: { posts: PostListProp[] }) {
                     />
                   ) : (
                     <Link
-                      href={`${pathname}/post/${post.slug}`}
+                      href={`${editBasePath ?? pathname}/post/${post.slug}`}
                       className="font-medium transition-colors hover:text-accent"
                     >
                       {post.slug}
@@ -298,11 +351,17 @@ export function PostList({ posts }: { posts: PostListProp[] }) {
                 </TableCell>
                 <TableCell className="max-w-[220px] text-nowrap">
                   {editPostId === post.id ? (
-                    <Input
-                      className="h-8"
-                      value={editPostData?.imgUrl ?? ""}
-                      onChange={(e) => handleInputChange("imgUrl", e.target.value)}
-                    />
+                    <div className="flex min-w-[300px] items-center gap-2">
+                      <Input
+                        className="h-8"
+                        value={editPostData?.imgUrl ?? ""}
+                        onChange={(e) => handleInputChange("imgUrl", e.target.value)}
+                      />
+                      <ImageLibraryPicker
+                        triggerLabel="选择"
+                        onSelect={(value) => handleInputChange("imgUrl", value)}
+                      />
+                    </div>
                   ) : (
                     <span className="block truncate text-muted-foreground">
                       {post.imgUrl ?? "-"}
@@ -326,6 +385,15 @@ export function PostList({ posts }: { posts: PostListProp[] }) {
                       </>
                     ) : (
                       <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={extractingPostId === post.id}
+                          onClick={() => handleExtractOffers(post.id)}
+                        >
+                          <FileSearch className="size-4" />
+                          {extractingPostId === post.id ? "提取中..." : "提取套餐"}
+                        </Button>
                         <Button
                           size="sm"
                           variant="outline"

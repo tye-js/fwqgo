@@ -48,10 +48,11 @@ export default function CreateLayout({
       <Suspense fallback={null}>
         <SessionGuard />
       </Suspense>
-      {/* 添加 Toaster 组件用于消息通知 */}
       <Toaster
-        position="top-center"
-        expand={false}
+        position="top-right"
+        expand
+        closeButton
+        duration={6000}
         richColors
         toastOptions={{
           style: {

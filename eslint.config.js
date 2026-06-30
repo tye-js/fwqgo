@@ -2,6 +2,9 @@ import tseslint from "typescript-eslint";
 import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 
 const config = [
+  {
+    ignores: [".deploy/**", ".next/**", "node_modules/**"],
+  },
   ...nextCoreWebVitals,
   ...tseslint.configs.recommendedTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,

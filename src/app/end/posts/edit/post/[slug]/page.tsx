@@ -1,6 +1,7 @@
 import { getPostBySlug } from "@/app/_actions/post";
 import EditPost from "@/components/endpoint/edit-post/edit-post";
 import { getLeafCategories } from "@/app/_actions/category";
+import { AdminPageShell, AdminSectionCard } from "@/app/_components/admin-page-shell";
 
 export default async function EditPostPage(
   props: {
@@ -13,14 +14,33 @@ export default async function EditPostPage(
   const { data: categories, error: categoriesError } =
     await getLeafCategories();
   if (categoriesError || !categories) {
-    return <div>获取分类失败</div>;
+    return (
+      <AdminPageShell title="修改文章" description="文章编辑页">
+        <AdminSectionCard>
+          <p className="text-sm text-destructive">获取分类失败</p>
+        </AdminSectionCard>
+      </AdminPageShell>
+    );
   }
   if (error || !post) {
-    return <div>获取文章失败</div>;
+    return (
+      <AdminPageShell title="修改文章" description="文章编辑页">
+        <AdminSectionCard>
+          <p className="text-sm text-destructive">获取文章失败</p>
+        </AdminSectionCard>
+      </AdminPageShell>
+    );
   }
   return (
     <>
-      <EditPost post={{ post, tags: post.tags }} categories={categories} />
+      <EditPost
+        post={{ post, tags: post.tags }}
+        categories={categories}
+        postMeta={{
+          title: post.title,
+          slug,
+        }}
+      />
     </>
   );
 }

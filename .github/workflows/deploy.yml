@@ -1,0 +1,246 @@
+name: Deploy fwqgo
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_migrations:
+        description: "Run npm run db:migrate before switching the release"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: fwqgo-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/var/www/fwqgo' }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      KEEP_RELEASES: ${{ vars.KEEP_RELEASES || '5' }}
+      REMOTE_UPLOAD_DIR: ${{ vars.REMOTE_UPLOAD_DIR || '/var/www/uploads' }}
+      RELEASE_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      NEXT_TELEMETRY_DISABLED: "1"
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      NEXT_PUBLIC_URL: ${{ vars.NEXT_PUBLIC_URL || 'https://fwqgo.com' }}
+      NEXT_PUBLIC_CMS_URL: ${{ vars.NEXT_PUBLIC_CMS_URL || 'https://cms.fwqgo.com' }}
+      CMS_BASIC_AUTH_USERNAME: ${{ secrets.CMS_BASIC_AUTH_USERNAME }}
+      CMS_BASIC_AUTH_PASSWORD: ${{ secrets.CMS_BASIC_AUTH_PASSWORD }}
+      GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run database migrations
+        if: ${{ github.event.inputs.run_migrations == 'true' }}
+        run: npm run db:migrate
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            DEPLOY_HOST
+            DEPLOY_USER
+            DEPLOY_SSH_KEY
+            DATABASE_URL
+            CMS_BASIC_AUTH_USERNAME
+            CMS_BASIC_AUTH_PASSWORD
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::$name is required"
+              exit 1
+            fi
+          done
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Build standalone
+        run: |
+          npm run build
+          mkdir -p .next/standalone/.next
+          rm -rf .next/standalone/.next/static .next/standalone/public
+          cp -R .next/static .next/standalone/.next/static
+          cp -R public .next/standalone/public
+
+      - name: Package release
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ".deploy/payload-$RELEASE_ID/.next"
+          rsync -a .next/standalone/ ".deploy/payload-$RELEASE_ID/.next/standalone/"
+          cp ecosystem.config.cjs ".deploy/payload-$RELEASE_ID/ecosystem.config.cjs"
+          cp package.json ".deploy/payload-$RELEASE_ID/package.json"
+          tar --format=gnu -czf ".deploy/fwqgo-$RELEASE_ID.tar.gz" -C ".deploy/payload-$RELEASE_ID" .
+
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/fwqgo_deploy_key
+          chmod 600 ~/.ssh/fwqgo_deploy_key
+          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Upload release
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp -P "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key ".deploy/fwqgo-$RELEASE_ID.tar.gz" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/fwqgo-$RELEASE_ID.tar.gz"
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
+      - name: Activate release
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_script="$(mktemp)"
+          cat > "$remote_script" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          deploy_path="$1"
+          release_id="$2"
+          remote_artifact="$3"
+          keep_releases="$4"
+          upload_dir="$5"
+
+          case "$deploy_path" in
+            ""|"/"|"/var"|"/var/www")
+              echo "Refusing unsafe DEPLOY_PATH: $deploy_path" >&2
+              exit 1
+              ;;
+          esac
+
+          releases_dir="$deploy_path/releases"
+          shared_dir="$deploy_path/shared"
+          release_dir="$releases_dir/$release_id"
+          current_link="$deploy_path/current"
+          previous_release="$(readlink -f "$current_link" 2>/dev/null || true)"
+
+          mkdir -p "$releases_dir" "$shared_dir" "$upload_dir"
+
+          if [[ ! -f "$shared_dir/.env.production" ]]; then
+            echo "Missing $shared_dir/.env.production on server." >&2
+            exit 1
+          fi
+
+          if ! command -v pm2 >/dev/null 2>&1; then
+            echo "pm2 is not installed on the server." >&2
+            exit 1
+          fi
+
+          start_release() {
+            local target_release="$1"
+
+            if [[ ! -f "$target_release/ecosystem.config.cjs" || ! -f "$target_release/.next/standalone/server.js" ]]; then
+              echo "Invalid standalone release: $target_release" >&2
+              return 1
+            fi
+
+            APP_DIR="$target_release/.next/standalone" pm2 start "$target_release/ecosystem.config.cjs" --update-env
+          }
+
+          rollback_previous() {
+            if [[ -n "$previous_release" && -d "$previous_release" ]]; then
+              echo "Activation failed. Rolling back to $previous_release..."
+              ln -sfn "$previous_release" "$current_link"
+              pm2 delete fwqgo >/dev/null 2>&1 || true
+              start_release "$previous_release" || true
+              pm2 save || true
+            fi
+          }
+
+          on_deploy_error() {
+            status=$?
+            trap - ERR
+            rollback_previous
+            exit "$status"
+          }
+
+          trap on_deploy_error ERR
+
+          rm -rf "$release_dir"
+          mkdir -p "$release_dir"
+          tar -xzf "$remote_artifact" -C "$release_dir"
+          ln -sfn "$shared_dir/.env.production" "$release_dir/.env.production"
+
+          [[ -f "$release_dir/.next/standalone/server.js" ]] || {
+            echo "Artifact is missing .next/standalone/server.js" >&2
+            exit 1
+          }
+
+          ln -sfn "$release_dir" "$current_link"
+
+          if pm2 describe fwqgo >/dev/null 2>&1; then
+            pm2 delete fwqgo
+          fi
+
+          start_release "$current_link"
+          pm2 save
+          trap - ERR
+
+          rm -f "$remote_artifact"
+          find "$releases_dir" -mindepth 1 -maxdepth 1 -type d | sort -r | tail -n +"$((keep_releases + 1))" | xargs -r rm -rf
+          REMOTE_SCRIPT
+
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            "bash -s -- '$DEPLOY_PATH' '$RELEASE_ID' '/tmp/fwqgo-$RELEASE_ID.tar.gz' '$KEEP_RELEASES' '$REMOTE_UPLOAD_DIR'" < "$remote_script"
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          homepage="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$NEXT_PUBLIC_URL/")"
+          [[ "$homepage" == "200" ]] || { echo "::error::Homepage returned $homepage"; exit 1; }
+
+          public_admin="$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$NEXT_PUBLIC_URL/end/ai-rewrite/tasks")"
+          [[ "$public_admin" == 307*"${NEXT_PUBLIC_CMS_URL}"* || "$public_admin" == 302*"${NEXT_PUBLIC_CMS_URL}"* ]] || {
+            echo "::error::Unexpected public admin redirect: $public_admin"
+            exit 1
+          }
+
+          cms_unauth="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$NEXT_PUBLIC_CMS_URL/")"
+          [[ "$cms_unauth" == "401" ]] || { echo "::error::CMS Basic Auth returned $cms_unauth"; exit 1; }
+
+          cms_home="$(curl -sS -u "$CMS_BASIC_AUTH_USERNAME:$CMS_BASIC_AUTH_PASSWORD" -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$NEXT_PUBLIC_CMS_URL/")"
+          [[ "$cms_home" == 307*"${NEXT_PUBLIC_CMS_URL}/end"* || "$cms_home" == 302*"${NEXT_PUBLIC_CMS_URL}/end"* ]] || {
+            echo "::error::Unexpected CMS home redirect: $cms_home"
+            exit 1
+          }

@@ -1,5 +1,12 @@
 import { type ReactNode } from "react";
-import { Badge } from "@/components/ui/badge";
+
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 export function AdminPageShell({
   badge,
@@ -15,23 +22,26 @@ export function AdminPageShell({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-1 flex-col gap-6 p-4 pt-0">
-      <section className="rounded-[28px] border border-border/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.88),rgba(255,255,255,0.96))] px-6 py-6 shadow-sm md:px-8 md:py-8">
-        <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-          <div className="max-w-3xl space-y-3">
-            {badge ? (
-              <Badge className="bg-primary text-primary-foreground">{badge}</Badge>
-            ) : null}
-            <h1 className="font-editorial text-4xl font-semibold leading-tight tracking-[-0.05em] text-foreground md:text-5xl">
-              {title}
-            </h1>
-            <p className="text-sm leading-7 text-muted-foreground md:text-base">
-              {description}
-            </p>
-          </div>
-          {actions ? <div className="shrink-0">{actions}</div> : null}
+    <div
+      className="flex flex-1 flex-col gap-5 px-4 py-4 md:px-6"
+      aria-label={title}
+    >
+      <h1 className="sr-only">{title}</h1>
+      {description ? <p className="sr-only">{description}</p> : null}
+      {actions || badge ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {badge ? (
+            <span className="inline-flex items-center rounded-md border border-border bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+              {badge}
+            </span>
+          ) : (
+            <span />
+          )}
+          {actions ? (
+            <div className="flex shrink-0 items-center gap-2">{actions}</div>
+          ) : null}
         </div>
-      </section>
+      ) : null}
       {children}
     </div>
   );
@@ -47,21 +57,21 @@ export function AdminSectionCard({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-[26px] border border-border/70 bg-background/92 shadow-sm">
+    <Card className="rounded-lg border-border/70 shadow-sm">
       {title || description ? (
-        <div className="border-b border-border/70 px-5 py-4 md:px-6">
+        <CardHeader className="border-b border-border/70 px-5 py-4 md:px-6">
           {title ? (
-            <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+            <CardTitle className="text-base font-semibold">{title}</CardTitle>
           ) : null}
           {description ? (
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            <CardDescription className="text-sm leading-6">
               {description}
-            </p>
+            </CardDescription>
           ) : null}
-        </div>
+        </CardHeader>
       ) : null}
-      <div className="px-5 py-5 md:px-6">{children}</div>
-    </section>
+      <CardContent className="px-5 py-5 md:px-6">{children}</CardContent>
+    </Card>
   );
 }
 
@@ -73,22 +83,21 @@ export function AdminSummaryStrip({
   return (
     <div className="grid gap-3 md:grid-cols-3">
       {items.map((item) => (
-        <div
-          key={item.label}
-          className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-4"
-        >
-          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-            {item.label}
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-foreground">
-            {item.value}
-          </p>
-          {item.note ? (
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              {item.note}
+        <Card key={item.label} className="rounded-lg border-border/70 shadow-sm">
+          <CardContent className="px-4 py-4">
+            <p className="text-xs font-medium text-muted-foreground">
+              {item.label}
             </p>
-          ) : null}
-        </div>
+            <p className="mt-2 text-2xl font-semibold text-foreground">
+              {item.value}
+            </p>
+            {item.note ? (
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {item.note}
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
       ))}
     </div>
   );

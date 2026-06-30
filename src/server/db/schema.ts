@@ -11,6 +11,8 @@ import {
   index,
   unique,
   foreignKey,
+  bigint,
+  numeric,
 } from "drizzle-orm/pg-core";
 
 // Post table
@@ -229,6 +231,286 @@ export const homepagePromotedPosts = pgTable(
   }),
 );
 
+export const imageAssets = pgTable(
+  "image_assets",
+  {
+    id: serial("id").primaryKey(),
+    path: text("path").notNull().unique(),
+    originalName: text("originalName").notNull(),
+    mime: varchar("mime", { length: 120 }).notNull(),
+    size: bigint("size", { mode: "number" }).notNull(),
+    width: integer("width"),
+    height: integer("height"),
+    hash: varchar("hash", { length: 128 }),
+    uploadedBy: text("uploadedBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    pathIdx: index("image_assets_path_idx").on(table.path),
+    hashIdx: index("image_assets_hash_idx").on(table.hash),
+    uploadedByIdx: index("image_assets_uploadedBy_idx").on(table.uploadedBy),
+    uploadedByFk: foreignKey({
+      columns: [table.uploadedBy],
+      foreignColumns: [users.id],
+      name: "image_assets_uploadedBy_users_id_fk",
+    }).onDelete("set null"),
+  }),
+);
+
+export const imageAssetReferences = pgTable(
+  "image_asset_references",
+  {
+    id: serial("id").primaryKey(),
+    imageId: integer("imageId").notNull(),
+    sourceType: varchar("sourceType", { length: 40 }).notNull(),
+    sourceId: text("sourceId").notNull(),
+    sourceLabel: text("sourceLabel"),
+    field: varchar("field", { length: 80 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    imageIdx: index("image_asset_references_imageId_idx").on(table.imageId),
+    sourceIdx: index("image_asset_references_source_idx").on(
+      table.sourceType,
+      table.sourceId,
+    ),
+    uniqueReference: unique("image_asset_references_unique_ref").on(
+      table.imageId,
+      table.sourceType,
+      table.sourceId,
+      table.field,
+    ),
+    imageFk: foreignKey({
+      columns: [table.imageId],
+      foreignColumns: [imageAssets.id],
+      name: "image_asset_references_imageId_image_assets_id_fk",
+    }).onDelete("cascade"),
+  }),
+);
+
+export const aiRewriteConfigs = pgTable(
+  "ai_rewrite_configs",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull().unique(),
+    provider: varchar("provider", { length: 40 }).notNull(),
+    baseUrl: text("baseUrl").notNull(),
+    apiKey: text("apiKey"),
+    model: text("model").notNull(),
+    basePrompt: text("basePrompt"),
+    metadataPrompt: text("metadataPrompt"),
+    styleName: text("styleName").notNull(),
+    stylePrompt: text("stylePrompt").notNull(),
+    metadataStylePrompt: text("metadataStylePrompt"),
+    temperature: integer("temperature").default(40).notNull(),
+    maxTokens: integer("maxTokens").default(8192).notNull(),
+    enabled: boolean("enabled").default(false).notNull(),
+    isDefault: boolean("isDefault").default(false).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    providerIdx: index("ai_rewrite_configs_provider_idx").on(table.provider),
+    enabledIdx: index("ai_rewrite_configs_enabled_idx").on(table.enabled),
+    defaultIdx: index("ai_rewrite_configs_isDefault_idx").on(table.isDefault),
+  }),
+);
+
+export const aiRewriteTasks = pgTable(
+  "ai_rewrite_tasks",
+  {
+    id: serial("id").primaryKey(),
+    sourceUrl: text("sourceUrl").notNull(),
+    status: varchar("status", { length: 24 }).default("pending").notNull(),
+    progress: integer("progress").default(0).notNull(),
+    currentStep: text("currentStep"),
+    error: text("error"),
+    categoryId: integer("categoryId").notNull(),
+    rewriteStyleId: integer("rewriteStyleId"),
+    postId: integer("postId"),
+    resultTitle: text("resultTitle"),
+    scrapedTitle: text("scrapedTitle"),
+    scrapedDescription: text("scrapedDescription"),
+    scrapedHtml: text("scrapedHtml"),
+    aiInputLength: integer("aiInputLength"),
+    rewriteOutputLength: integer("rewriteOutputLength"),
+    diagnostics: text("diagnostics"),
+    attempts: integer("attempts").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+    startedAt: timestamp("startedAt"),
+    finishedAt: timestamp("finishedAt"),
+  },
+  (table) => ({
+    statusIdx: index("ai_rewrite_tasks_status_idx").on(table.status),
+    createdAtIdx: index("ai_rewrite_tasks_createdAt_idx").on(table.createdAt),
+    postIdx: index("ai_rewrite_tasks_postId_idx").on(table.postId),
+    categoryFk: foreignKey({
+      columns: [table.categoryId],
+      foreignColumns: [categories.id],
+      name: "ai_rewrite_tasks_categoryId_categories_id_fk",
+    }).onDelete("restrict"),
+    rewriteStyleFk: foreignKey({
+      columns: [table.rewriteStyleId],
+      foreignColumns: [aiRewriteConfigs.id],
+      name: "ai_rewrite_tasks_rewriteStyleId_ai_rewrite_configs_id_fk",
+    }).onDelete("set null"),
+    postFk: foreignKey({
+      columns: [table.postId],
+      foreignColumns: [posts.id],
+      name: "ai_rewrite_tasks_postId_posts_id_fk",
+    }).onDelete("set null"),
+  }),
+);
+
+export const aiSourceSites = pgTable(
+  "ai_source_sites",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    siteUrl: text("siteUrl").notNull().unique(),
+    feedUrl: text("feedUrl"),
+    categoryId: integer("categoryId").notNull(),
+    rewriteStyleId: integer("rewriteStyleId"),
+    limit: integer("limit").default(10).notNull(),
+    enabled: boolean("enabled").default(true).notNull(),
+    lastRunAt: timestamp("lastRunAt"),
+    lastDiscoveredCount: integer("lastDiscoveredCount").default(0).notNull(),
+    lastCreatedCount: integer("lastCreatedCount").default(0).notNull(),
+    lastSkippedCount: integer("lastSkippedCount").default(0).notNull(),
+    lastError: text("lastError"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    enabledIdx: index("ai_source_sites_enabled_idx").on(table.enabled),
+    categoryFk: foreignKey({
+      columns: [table.categoryId],
+      foreignColumns: [categories.id],
+      name: "ai_source_sites_categoryId_categories_id_fk",
+    }).onDelete("restrict"),
+    rewriteStyleFk: foreignKey({
+      columns: [table.rewriteStyleId],
+      foreignColumns: [aiRewriteConfigs.id],
+      name: "ai_source_sites_rewriteStyleId_ai_rewrite_configs_id_fk",
+    }).onDelete("set null"),
+  }),
+);
+
+export const imageGenerationConfigs = pgTable(
+  "image_generation_configs",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull().unique(),
+    provider: varchar("provider", { length: 40 }).default("compatible").notNull(),
+    baseUrl: text("baseUrl").notNull(),
+    apiKey: text("apiKey"),
+    model: text("model").notNull(),
+    promptTemplate: text("promptTemplate").notNull(),
+    size: varchar("size", { length: 40 }).default("1024x576").notNull(),
+    quality: varchar("quality", { length: 40 }).default("standard").notNull(),
+    timeoutSeconds: integer("timeoutSeconds").default(90).notNull(),
+    enabled: boolean("enabled").default(false).notNull(),
+    isDefault: boolean("isDefault").default(false).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    enabledIdx: index("image_generation_configs_enabled_idx").on(table.enabled),
+    defaultIdx: index("image_generation_configs_isDefault_idx").on(
+      table.isDefault,
+    ),
+  }),
+);
+
+export const outboundLinks = pgTable(
+  "outbound_links",
+  {
+    id: serial("id").primaryKey(),
+    slug: varchar("slug", { length: 64 }).notNull().unique(),
+    targetUrl: text("targetUrl").notNull().unique(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    slugIdx: index("outbound_links_slug_idx").on(table.slug),
+    targetUrlIdx: index("outbound_links_targetUrl_idx").on(table.targetUrl),
+  }),
+);
+
+export const serverOffers = pgTable(
+  "server_offers",
+  {
+    id: serial("id").primaryKey(),
+    title: text("title").notNull(),
+    slug: varchar("slug", { length: 360 }).notNull().unique(),
+    providerName: text("providerName"),
+    providerId: integer("providerId"),
+    productType: varchar("productType", { length: 80 }).default("vps"),
+    cpu: text("cpu"),
+    memory: text("memory"),
+    memoryMb: integer("memoryMb"),
+    storage: text("storage"),
+    storageGb: integer("storageGb"),
+    storageType: varchar("storageType", { length: 80 }),
+    bandwidth: text("bandwidth"),
+    bandwidthMbps: integer("bandwidthMbps"),
+    traffic: text("traffic"),
+    trafficGb: integer("trafficGb"),
+    region: text("region"),
+    countryCode: varchar("countryCode", { length: 16 }),
+    city: text("city"),
+    lineType: text("lineType"),
+    network: text("network"),
+    ipv4: text("ipv4"),
+    ipv6: text("ipv6"),
+    priceAmount: numeric("priceAmount", { precision: 12, scale: 2 }),
+    originalPriceAmount: numeric("originalPriceAmount", {
+      precision: 12,
+      scale: 2,
+    }),
+    currency: varchar("currency", { length: 16 }).default("USD"),
+    billingCycle: varchar("billingCycle", { length: 40 }),
+    promoCode: text("promoCode"),
+    purchaseUrl: text(),
+    articleUrl: text(),
+    reviewUrl: text(),
+    sourcePostId: integer("sourcePostId"),
+    status: varchar("status", { length: 24 }).default("in_stock").notNull(),
+    featured: boolean("featured").default(false).notNull(),
+    visible: boolean("visible").default(true).notNull(),
+    sortOrder: integer("sortOrder").default(0).notNull(),
+    rawText: text("rawText"),
+    lastCheckedAt: timestamp("lastCheckedAt"),
+    validUntil: timestamp("validUntil"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    providerIdx: index("server_offers_providerId_idx").on(table.providerId),
+    sourcePostIdx: index("server_offers_sourcePostId_idx").on(
+      table.sourcePostId,
+    ),
+    statusIdx: index("server_offers_status_idx").on(table.status),
+    visibleIdx: index("server_offers_visible_idx").on(table.visible),
+    regionIdx: index("server_offers_region_idx").on(table.region),
+    lineTypeIdx: index("server_offers_lineType_idx").on(table.lineType),
+    priceIdx: index("server_offers_priceAmount_idx").on(table.priceAmount),
+    providerFk: foreignKey({
+      columns: [table.providerId],
+      foreignColumns: [affServiceProviders.id],
+      name: "server_offers_providerId_aff_service_providers_id_fk",
+    }).onDelete("set null"),
+    sourcePostFk: foreignKey({
+      columns: [table.sourcePostId],
+      foreignColumns: [posts.id],
+      name: "server_offers_sourcePostId_posts_id_fk",
+    }).onDelete("set null"),
+  }),
+);
+
 // Relations
 export const postsRelations = relations(posts, ({ one, many }) => ({
   author: one(users, {
@@ -244,6 +526,7 @@ export const postsRelations = relations(posts, ({ one, many }) => ({
     references: [tags.id],
   }),
   tags: many(postTags),
+  serverOffers: many(serverOffers),
 }));
 
 export const categoriesRelations = relations(categories, ({ one, many }) => ({
@@ -288,6 +571,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
   sessions: many(sessions),
   posts: many(posts),
+  uploadedImages: many(imageAssets),
 }));
 
 export const accountsRelations = relations(accounts, ({ one }) => ({
@@ -301,5 +585,34 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, {
     fields: [sessions.userId],
     references: [users.id],
+  }),
+}));
+
+export const imageAssetsRelations = relations(imageAssets, ({ one, many }) => ({
+  uploader: one(users, {
+    fields: [imageAssets.uploadedBy],
+    references: [users.id],
+  }),
+  references: many(imageAssetReferences),
+}));
+
+export const imageAssetReferencesRelations = relations(
+  imageAssetReferences,
+  ({ one }) => ({
+    image: one(imageAssets, {
+      fields: [imageAssetReferences.imageId],
+      references: [imageAssets.id],
+    }),
+  }),
+);
+
+export const serverOffersRelations = relations(serverOffers, ({ one }) => ({
+  provider: one(affServiceProviders, {
+    fields: [serverOffers.providerId],
+    references: [affServiceProviders.id],
+  }),
+  sourcePost: one(posts, {
+    fields: [serverOffers.sourcePostId],
+    references: [posts.id],
   }),
 }));
