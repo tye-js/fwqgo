@@ -12,7 +12,12 @@ import { scrapeArticleWithOptions } from "@/server/scrape/article-scraper";
 
 const runningTaskIds = new Set<number>();
 
-type TaskStatus = "pending" | "running" | "succeeded" | "failed";
+type TaskStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "manual_required";
 
 async function updateTask(
   taskId: number,
@@ -32,6 +37,29 @@ async function failTask(taskId: number, error: unknown) {
     error: getErrorMessage(error),
     finishedAt: new Date(),
   });
+}
+
+function needsManualAffiliateReview(
+  diagnostics: Awaited<ReturnType<typeof scrapeArticleWithOptions>>["diagnostics"],
+) {
+  return (diagnostics.affiliateReport?.unmatchedLinks.length ?? 0) > 0;
+}
+
+function finishedStepText(input: {
+  manualRequired: boolean;
+  offerExtraction: "pending" | "success" | "failed";
+}) {
+  const reviewText = input.manualRequired ? "，存在未命中外链，需人工审核" : "";
+
+  if (input.offerExtraction === "success") {
+    return `草稿已保存，套餐提取完成${reviewText}`;
+  }
+
+  if (input.offerExtraction === "failed") {
+    return `草稿已保存，套餐提取失败，可在套餐数据页重新导入${reviewText}`;
+  }
+
+  return `已保存草稿${reviewText}`;
 }
 
 export async function enqueueAiRewriteTask(taskId: number) {
@@ -87,6 +115,7 @@ export async function runAiRewriteTask(taskId: number) {
         url: claimedTask.sourceUrl,
         rewriteStyleId: claimedTask.rewriteStyleId ?? undefined,
       });
+      const manualRequired = needsManualAffiliateReview(article.diagnostics);
 
       await updateTask(taskId, {
         progress: 82,
@@ -126,9 +155,14 @@ export async function runAiRewriteTask(taskId: number) {
         const [updatedTask] = await tx
           .update(aiRewriteTasks)
           .set({
-            status: "succeeded" satisfies TaskStatus,
+            status: (manualRequired
+              ? "manual_required"
+              : "succeeded") satisfies TaskStatus,
             progress: 100,
-            currentStep: "已保存草稿",
+            currentStep: finishedStepText({
+              manualRequired,
+              offerExtraction: "pending",
+            }),
             postId: result.data.id,
             resultTitle: result.data.title,
             finishedAt: new Date(),
@@ -154,13 +188,19 @@ export async function runAiRewriteTask(taskId: number) {
         await importServerOffersFromPost(post.id);
         await updateTask(taskId, {
           progress: 100,
-          currentStep: "草稿已保存，套餐提取完成",
+          currentStep: finishedStepText({
+            manualRequired,
+            offerExtraction: "success",
+          }),
         });
       } catch (offerError) {
         console.error("Server offer extraction failed:", offerError);
         await updateTask(taskId, {
           progress: 100,
-          currentStep: "草稿已保存，套餐提取失败，可在套餐数据页重新导入",
+          currentStep: finishedStepText({
+            manualRequired,
+            offerExtraction: "failed",
+          }),
         });
       }
     } catch (error) {

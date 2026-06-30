@@ -203,6 +203,9 @@ export async function generateArticleCoverImage(
     mime: image.mime,
     originalName: `${sanitizeFileName(input.title)}-cover.png`,
     uploadedBy: input.uploadedBy,
+    imageType: "ai_cover",
+    altZh: input.title,
+    prompt,
   });
 
   return { asset, prompt };

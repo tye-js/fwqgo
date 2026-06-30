@@ -1,8 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertCircle, ArrowLeft, ExternalLink, RotateCcw } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  CircleDashed,
+  ExternalLink,
+  RotateCcw,
+  XCircle,
+} from "lucide-react";
 
 import { getAiRewriteTaskDetail } from "@/app/_actions/ai-rewrite-task";
+import { AiRewriteTaskRetryButton } from "@/app/_components/ai-rewrite-task-retry-button";
 import { AdminPageShell, AdminSectionCard } from "@/app/_components/admin-page-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,7 +26,37 @@ const statusLabels: Record<string, string> = {
   pending: "等待中",
   running: "处理中",
   succeeded: "已完成",
+  manual_required: "需人工处理",
   failed: "失败",
+};
+
+const stepStatusLabels = {
+  pending: "等待中",
+  running: "处理中",
+  success: "成功",
+  failed: "失败",
+  skipped: "跳过",
+  manual_required: "需人工处理",
+} as const;
+
+const stepStatusVariants: Record<
+  keyof typeof stepStatusLabels,
+  "default" | "secondary" | "destructive" | "outline"
+> = {
+  pending: "outline",
+  running: "secondary",
+  success: "default",
+  failed: "destructive",
+  skipped: "outline",
+  manual_required: "secondary",
+};
+
+type StepStatus = keyof typeof stepStatusLabels;
+
+type TaskStep = {
+  name: string;
+  status: StepStatus;
+  description: string;
 };
 
 function parseDiagnostics(value: string | null) {
@@ -51,6 +90,199 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
+function buildTaskSteps({
+  status,
+  currentStep,
+  postId,
+  scrapedHtml,
+  diagnostics,
+}: {
+  status: string;
+  currentStep: string | null;
+  postId: number | null;
+  scrapedHtml: string | null;
+  diagnostics: ScrapeDiagnostics | null;
+}): TaskStep[] {
+  const hasDiagnostics = Boolean(diagnostics);
+  const hasCleanHtml = Boolean(scrapedHtml);
+  const report = diagnostics?.affiliateReport;
+  const hasUnmatchedLinks = (report?.unmatchedLinks.length ?? 0) > 0;
+  const isFailed = status === "failed";
+  const isRunning = status === "running";
+
+  return [
+    {
+      name: "抓取素材",
+      status: hasDiagnostics ? "success" : isFailed ? "failed" : isRunning ? "running" : "pending",
+      description: hasDiagnostics
+        ? `使用 ${diagnostics?.strategy ?? "未知"} 策略，正文 ${diagnostics?.contentLength ?? 0} 字`
+        : currentStep ?? "等待抓取来源内容",
+    },
+    {
+      name: "清洗正文",
+      status: hasCleanHtml ? "success" : isFailed ? "failed" : hasDiagnostics ? "running" : "pending",
+      description: hasCleanHtml
+        ? `清洗后 HTML ${diagnostics?.cleanedHtmlLength ?? scrapedHtml?.length ?? 0} 字符`
+        : "等待正文清洗结果",
+    },
+    {
+      name: "识别商户与返利链接",
+      status: report
+        ? hasUnmatchedLinks
+          ? "manual_required"
+          : "success"
+        : hasDiagnostics
+          ? "skipped"
+          : "pending",
+      description: report
+        ? `命中 ${report.matchedLinks.length} 条，未命中 ${report.unmatchedLinks.length} 条，移除站内 ${report.internalLinksRemoved} 条`
+        : "暂无返利链接诊断",
+    },
+    {
+      name: "AI 改写文章",
+      status: diagnostics?.usedAiRewrite
+        ? "success"
+        : diagnostics?.aiRewriteError
+          ? "failed"
+          : hasDiagnostics
+            ? "skipped"
+            : "pending",
+      description: diagnostics?.usedAiRewrite
+        ? `输入 ${diagnostics.aiInputLength ?? "-"} 字符，输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符`
+        : diagnostics?.aiRewriteError ?? "等待 AI 改写",
+    },
+    {
+      name: "保存草稿",
+      status: postId ? "success" : isFailed ? "failed" : isRunning ? "running" : "pending",
+      description: postId ? `已生成草稿文章 #${postId}` : currentStep ?? "成功后才会写入草稿",
+    },
+    {
+      name: "等待人工审核",
+      status: postId
+        ? hasUnmatchedLinks
+          ? "manual_required"
+          : "success"
+        : "pending",
+      description: hasUnmatchedLinks
+        ? "存在未命中外链，发布前建议补充返利规则或人工确认"
+        : postId
+          ? "可以进入文章编辑页继续校对并发布"
+          : "草稿生成后进入人工审核",
+    },
+  ];
+}
+
+function StepIcon({ status }: { status: StepStatus }) {
+  if (status === "success") {
+    return <CheckCircle2 className="size-4 text-primary" />;
+  }
+
+  if (status === "failed") {
+    return <XCircle className="size-4 text-destructive" />;
+  }
+
+  if (status === "manual_required") {
+    return <AlertCircle className="size-4 text-amber-600" />;
+  }
+
+  return <CircleDashed className="size-4 text-muted-foreground" />;
+}
+
+function TaskStepTimeline({ steps }: { steps: TaskStep[] }) {
+  return (
+    <div className="grid gap-3 lg:grid-cols-2">
+      {steps.map((step) => (
+        <div
+          key={step.name}
+          className="flex gap-3 rounded-md border border-border/70 bg-background p-3"
+        >
+          <div className="mt-0.5">
+            <StepIcon status={step.status} />
+          </div>
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-medium text-foreground">{step.name}</p>
+              <Badge variant={stepStatusVariants[step.status]}>
+                {stepStatusLabels[step.status]}
+              </Badge>
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">
+              {step.description}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ManualReviewHints({
+  diagnostics,
+  postSlug,
+}: {
+  diagnostics: ScrapeDiagnostics | null;
+  postSlug: string | null;
+}) {
+  const report = diagnostics?.affiliateReport;
+  const unmatchedHosts = [
+    ...new Set(report?.unmatchedLinks.map((item) => item.host).filter(Boolean) ?? []),
+  ];
+  const warnings = diagnostics?.warnings ?? [];
+
+  if (unmatchedHosts.length === 0 && warnings.length === 0 && !postSlug) {
+    return null;
+  }
+
+  return (
+    <AdminSectionCard
+      title="人工处理建议"
+      description="把需要运营介入的事项集中显示，减少发布前漏检。"
+    >
+      <div className="space-y-3">
+        {unmatchedHosts.length > 0 ? (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+            <p className="text-sm font-medium text-amber-700">
+              发现未配置返利规则的外链域名
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {unmatchedHosts.slice(0, 16).map((host) => (
+                <Badge key={host} variant="outline">
+                  {host}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {warnings.length > 0 ? (
+          <div className="rounded-md border border-border/70 bg-muted/20 p-3">
+            <p className="text-sm font-medium text-foreground">采集/改写警告</p>
+            <div className="mt-2 space-y-1 text-sm leading-6 text-muted-foreground">
+              {warnings.map((warning) => (
+                <p key={warning}>{warning}</p>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {unmatchedHosts.length > 0 ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href="/end/collect/aff-man">
+                <RotateCcw className="size-4" />
+                去补返利规则
+              </Link>
+            </Button>
+          ) : null}
+          {postSlug ? (
+            <Button asChild size="sm">
+              <Link href={`/end/posts/edit/post/${postSlug}`}>打开草稿审核</Link>
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </AdminSectionCard>
+  );
+}
+
 export default async function AiRewriteTaskDetailPage({ params }: PageProps) {
   const { id } = await params;
   const taskId = Number(id);
@@ -66,6 +298,13 @@ export default async function AiRewriteTaskDetailPage({ params }: PageProps) {
 
   const diagnostics = parseDiagnostics(task.diagnostics);
   const report = diagnostics?.affiliateReport;
+  const steps = buildTaskSteps({
+    status: task.status,
+    currentStep: task.currentStep,
+    postId: task.postId,
+    scrapedHtml: task.scrapedHtml,
+    diagnostics,
+  });
 
   return (
     <AdminPageShell
@@ -80,6 +319,9 @@ export default async function AiRewriteTaskDetailPage({ params }: PageProps) {
               返回
             </Link>
           </Button>
+          {task.status === "failed" ? (
+            <AiRewriteTaskRetryButton taskId={task.id} />
+          ) : null}
           {task.postSlug ? (
             <Button asChild>
               <Link href={`/end/posts/edit/post/${task.postSlug}`}>
@@ -114,6 +356,15 @@ export default async function AiRewriteTaskDetailPage({ params }: PageProps) {
           ) : null}
         </div>
       </AdminSectionCard>
+
+      <AdminSectionCard
+        title="处理步骤"
+        description="根据当前任务数据推导每一步状态，失败或未命中外链会明确标记。"
+      >
+        <TaskStepTimeline steps={steps} />
+      </AdminSectionCard>
+
+      <ManualReviewHints diagnostics={diagnostics} postSlug={task.postSlug} />
 
       <AdminSectionCard title="来源与结果" description="原始链接、分类、风格和草稿入口。">
         <div className="grid gap-4 lg:grid-cols-2">

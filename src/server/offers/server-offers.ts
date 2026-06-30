@@ -1,5 +1,16 @@
 import * as cheerio from "cheerio";
-import { and, asc, desc, eq, ilike, inArray, isNotNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { slugify } from "@/lib/utils";
 import { cacheTags, revalidateSiteContent, tagCache } from "@/server/cache/tags";
@@ -356,9 +367,31 @@ type OfferSourcePost = {
   content: string;
 };
 
+type ParsedServerOffer = NonNullable<ReturnType<typeof parseOfferText>>;
+
+function nullableEq<T>(column: T, value: string | number | null | undefined) {
+  return value === null || typeof value === "undefined"
+    ? isNull(column as Parameters<typeof isNull>[0])
+    : eq(column as Parameters<typeof eq>[0], value);
+}
+
+function serverOfferConfigWhere(candidate: ParsedServerOffer) {
+  return and(
+    eq(serverOffers.sourcePostId, candidate.sourcePostId),
+    eq(serverOffers.productType, candidate.productType),
+    nullableEq(serverOffers.memoryMb, candidate.memoryMb),
+    nullableEq(serverOffers.storageGb, candidate.storageGb),
+    nullableEq(serverOffers.bandwidthMbps, candidate.bandwidthMbps),
+    nullableEq(serverOffers.trafficGb, candidate.trafficGb),
+    nullableEq(serverOffers.region, candidate.region),
+    nullableEq(serverOffers.lineType, candidate.lineType),
+  );
+}
+
 async function importServerOffersFromPostRows(sourcePosts: OfferSourcePost[]) {
   let extracted = 0;
   let inserted = 0;
+  let updated = 0;
   let skipped = 0;
 
   for (const post of sourcePosts) {
@@ -386,18 +419,43 @@ async function importServerOffersFromPostRows(sourcePosts: OfferSourcePost[]) {
 
       const provider = await resolveProvider(candidate.purchaseUrl);
       const [existing] = await db
-        .select({ id: serverOffers.id })
+        .select({
+          id: serverOffers.id,
+          title: serverOffers.title,
+        })
         .from(serverOffers)
-        .where(
-          and(
-            eq(serverOffers.sourcePostId, candidate.sourcePostId),
-            eq(serverOffers.slug, candidate.slug),
-          ),
-        )
+        .where(serverOfferConfigWhere(candidate))
         .limit(1);
 
       if (existing) {
-        skipped += 1;
+        await db
+          .update(serverOffers)
+          .set({
+            title: candidate.title || existing.title,
+            providerName: provider?.name ?? candidate.providerName,
+            providerId: provider?.id ?? candidate.providerId,
+            cpu: candidate.cpu,
+            memory: candidate.memory,
+            storage: candidate.storage,
+            storageType: candidate.storageType,
+            bandwidth: candidate.bandwidth,
+            traffic: candidate.traffic,
+            network: candidate.network,
+            ipv4: candidate.ipv4,
+            ipv6: candidate.ipv6,
+            priceAmount: candidate.priceAmount,
+            originalPriceAmount: candidate.originalPriceAmount,
+            currency: candidate.currency,
+            billingCycle: candidate.billingCycle,
+            promoCode: candidate.promoCode,
+            purchaseUrl: candidate.purchaseUrl,
+            articleUrl: candidate.articleUrl,
+            reviewUrl: candidate.reviewUrl,
+            rawText: candidate.rawText,
+            updatedAt: new Date(),
+          })
+          .where(eq(serverOffers.id, existing.id));
+        updated += 1;
         continue;
       }
 
@@ -410,7 +468,7 @@ async function importServerOffersFromPostRows(sourcePosts: OfferSourcePost[]) {
     }
   }
 
-  if (inserted > 0) {
+  if (inserted > 0 || updated > 0) {
     revalidateSiteContent([cacheTags.serverOffers]);
   }
 
@@ -418,6 +476,7 @@ async function importServerOffersFromPostRows(sourcePosts: OfferSourcePost[]) {
     scannedPosts: sourcePosts.length,
     extracted,
     inserted,
+    updated,
     skipped,
   };
 }

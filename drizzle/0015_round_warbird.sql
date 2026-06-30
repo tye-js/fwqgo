@@ -1,0 +1,1 @@
+ALTER TABLE "ai_source_sites" ADD COLUMN "lastRunDetails" text;

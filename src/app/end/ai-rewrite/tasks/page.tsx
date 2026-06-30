@@ -24,6 +24,9 @@ export default async function AiRewriteTasksPage() {
     ["pending", "running"].includes(task.status),
   ).length;
   const failedCount = tasks.filter((task) => task.status === "failed").length;
+  const manualRequiredCount = tasks.filter(
+    (task) => task.status === "manual_required",
+  ).length;
   const draftCount = tasks.filter((task) => task.postSlug).length;
 
   return (
@@ -53,7 +56,9 @@ export default async function AiRewriteTasksPage() {
             label: "已生成草稿",
             value: String(draftCount),
             note:
-              failedCount > 0
+              manualRequiredCount > 0
+                ? `${manualRequiredCount} 个草稿需人工处理外链`
+                : failedCount > 0
                 ? `${failedCount} 个失败任务可重新开始`
                 : "可进入草稿箱人工编辑",
           },

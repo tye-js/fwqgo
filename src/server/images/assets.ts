@@ -214,6 +214,11 @@ async function getDimensionsFromFile(filePath: string) {
 export async function createImageAssetFromUpload(input: {
   file: File;
   uploadedBy: string | null;
+  altZh?: string | null;
+  altEn?: string | null;
+  imageType?: string | null;
+  sourceUrl?: string | null;
+  prompt?: string | null;
 }) {
   if (!ALLOWED_UPLOAD_TYPES.has(input.file.type)) {
     throw new Error("Invalid file type");
@@ -255,6 +260,11 @@ export async function createImageAssetFromUpload(input: {
       width: dimensions.width,
       height: dimensions.height,
       hash,
+      imageType: input.imageType ?? "upload",
+      altZh: input.altZh ?? null,
+      altEn: input.altEn ?? null,
+      sourceUrl: input.sourceUrl ?? null,
+      prompt: input.prompt ?? null,
       uploadedBy: input.uploadedBy,
     })
     .returning();
@@ -267,6 +277,11 @@ export async function createImageAssetFromBuffer(input: {
   mime: string;
   originalName: string;
   uploadedBy: string | null;
+  altZh?: string | null;
+  altEn?: string | null;
+  imageType?: string | null;
+  sourceUrl?: string | null;
+  prompt?: string | null;
 }) {
   if (!ALLOWED_UPLOAD_TYPES.has(input.mime)) {
     throw new Error("Invalid file type");
@@ -307,6 +322,11 @@ export async function createImageAssetFromBuffer(input: {
       width: dimensions.width,
       height: dimensions.height,
       hash,
+      imageType: input.imageType ?? "upload",
+      altZh: input.altZh ?? null,
+      altEn: input.altEn ?? null,
+      sourceUrl: input.sourceUrl ?? null,
+      prompt: input.prompt ?? null,
       uploadedBy: input.uploadedBy,
     })
     .returning();
@@ -359,6 +379,41 @@ export async function replaceImageAssetFile(input: {
     .returning();
 
   return updated!;
+}
+
+export async function updateImageAssetMetadata(input: {
+  id: number;
+  imageType?: string | null;
+  status?: string | null;
+  altZh?: string | null;
+  altEn?: string | null;
+  sourceUrl?: string | null;
+  prompt?: string | null;
+}) {
+  const normalizeText = (value: string | null | undefined) => {
+    const trimmed = value?.trim();
+    return trimmed && trimmed.length > 0 ? trimmed : null;
+  };
+
+  const [asset] = await db
+    .update(imageAssets)
+    .set({
+      imageType: normalizeText(input.imageType) ?? "upload",
+      status: normalizeText(input.status) ?? "active",
+      altZh: normalizeText(input.altZh),
+      altEn: normalizeText(input.altEn),
+      sourceUrl: normalizeText(input.sourceUrl),
+      prompt: normalizeText(input.prompt),
+      updatedAt: new Date(),
+    })
+    .where(eq(imageAssets.id, input.id))
+    .returning();
+
+  if (!asset) {
+    return { error: "图片不存在" };
+  }
+
+  return { data: asset };
 }
 
 export async function convertExistingUploadsToWebp() {

@@ -68,6 +68,7 @@ const statusLabels: Record<string, string> = {
   pending: "等待中",
   running: "处理中",
   succeeded: "已完成",
+  manual_required: "需人工处理",
   failed: "失败",
 };
 
@@ -78,6 +79,7 @@ const statusVariants: Record<
   pending: "outline",
   running: "secondary",
   succeeded: "default",
+  manual_required: "secondary",
   failed: "destructive",
 };
 

@@ -11,6 +11,7 @@ import {
   replaceImageAssetFile,
   replaceImageReferences,
   serializeImageAsset,
+  updateImageAssetMetadata,
 } from "@/server/images/assets";
 import { requireAdminSession } from "@/server/auth/session";
 import { revalidateSiteContent, cacheTags } from "@/server/cache/tags";
@@ -80,5 +81,20 @@ export async function replaceImageReferencesAction(input: {
   const result = await replaceImageReferences(input);
   revalidatePath("/end/images/list");
   revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
+  return result;
+}
+
+export async function updateImageAssetMetadataAction(input: {
+  id: number;
+  imageType?: string | null;
+  status?: string | null;
+  altZh?: string | null;
+  altEn?: string | null;
+  sourceUrl?: string | null;
+  prompt?: string | null;
+}) {
+  await requireAdminSession();
+  const result = await updateImageAssetMetadata(input);
+  revalidatePath("/end/images/list");
   return result;
 }
