@@ -28,6 +28,12 @@ export async function generateMetadata(
     title: `${tag.name}-服务器`,
     description: tag.description ?? `${tag.name}的服务器,${tag.name}的VPS`,
     keywords: tag.keywords ?? `${tag.name}的服务器,${tag.name}的VPS`,
+    robots: tag.indexable
+      ? undefined
+      : {
+          index: false,
+          follow: true,
+        },
   };
 }
 

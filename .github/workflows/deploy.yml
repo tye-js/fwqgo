@@ -227,20 +227,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          homepage="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$NEXT_PUBLIC_URL/")"
+          SITE_URL="${NEXT_PUBLIC_URL%/}"
+          CMS_URL="${NEXT_PUBLIC_CMS_URL%/}"
+
+          homepage="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$SITE_URL/")"
           [[ "$homepage" == "200" ]] || { echo "::error::Homepage returned $homepage"; exit 1; }
 
-          public_admin="$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$NEXT_PUBLIC_URL/end/ai-rewrite/tasks")"
-          [[ "$public_admin" == 307*"${NEXT_PUBLIC_CMS_URL}"* || "$public_admin" == 302*"${NEXT_PUBLIC_CMS_URL}"* ]] || {
-            echo "::error::Unexpected public admin redirect: $public_admin"
+          public_admin="$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$SITE_URL/end/ai-rewrite/tasks")"
+          [[ "$public_admin" == 307*"${CMS_URL}"* || "$public_admin" == 302*"${CMS_URL}"* ]] || {
+            echo "::error::Unexpected public admin redirect. Got: $public_admin"
             exit 1
           }
 
-          cms_unauth="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$NEXT_PUBLIC_CMS_URL/")"
+          cms_unauth="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$CMS_URL/")"
           [[ "$cms_unauth" == "401" ]] || { echo "::error::CMS Basic Auth returned $cms_unauth"; exit 1; }
 
-          cms_home="$(curl -sS -u "$CMS_BASIC_AUTH_USERNAME:$CMS_BASIC_AUTH_PASSWORD" -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$NEXT_PUBLIC_CMS_URL/")"
-          [[ "$cms_home" == 307*"${NEXT_PUBLIC_CMS_URL}/end"* || "$cms_home" == 302*"${NEXT_PUBLIC_CMS_URL}/end"* ]] || {
-            echo "::error::Unexpected CMS home redirect: $cms_home"
+          cms_home="$(curl -sS -u "$CMS_BASIC_AUTH_USERNAME:$CMS_BASIC_AUTH_PASSWORD" -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$CMS_URL/")"
+          [[ "$cms_home" == 307*"${CMS_URL}/end"* || "$cms_home" == 302*"${CMS_URL}/end"* || "$cms_home" == 307*" /end"* || "$cms_home" == 302*" /end"* ]] || {
+            echo "::error::Unexpected CMS home redirect. Got: $cms_home"
             exit 1
           }

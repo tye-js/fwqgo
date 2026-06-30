@@ -3,15 +3,7 @@ import { connection } from "next/server";
 import { getAdminTagCount, getAdminTagList } from "@/app/_actions/tag";
 import { AdminPageShell, AdminSectionCard } from "@/app/_components/admin-page-shell";
 import { PaginationComponent } from "@/app/_components/pagination";
-import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { TagSeoTable } from "@/app/_components/tag-seo-table";
 
 async function TagListWrapper({
   searchParamsPromise,
@@ -33,44 +25,14 @@ async function TagListWrapper({
     <AdminPageShell
       badge="SEO / 标签"
       title="标签 SEO 管理"
-      description="查看标签库的 slug、description 和 keywords，方便持续优化聚合页覆盖面。"
+      description="控制标签聚合页是否进入 sitemap，避免低价值、临时或过细标签稀释收录质量。"
     >
       <AdminSectionCard
         title="标签列表"
-        description="当前按分页展示标签，后续可以继续加搜索和批量编辑。"
+        description="适合长尾 SEO 的标签保持收录；临时活动、过细配置和随机标签建议关闭收录。"
       >
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>ID</TableHead>
-            <TableHead>Name</TableHead>
-            <TableHead>Slug</TableHead>
-            <TableHead>Description</TableHead>
-            <TableHead>Keywords</TableHead>
-            <TableHead className="text-center">操作</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {data.map((tag) => (
-            <TableRow key={tag.id}>
-              <TableCell>{tag.id}</TableCell>
-              <TableCell>{tag.name}</TableCell>
-              <TableCell>{tag.slug}</TableCell>
-              <TableCell>{tag.description}</TableCell>
-              <TableCell>{tag.keywords}</TableCell>
-              <TableCell className="flex justify-center gap-2">
-                <Button variant="outline" size="sm">
-                  编辑
-                </Button>
-                <Button variant="destructive" size="sm">
-                  删除
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      <PaginationComponent pageNo={pageNo} totalPage={totalPage} />
+        <TagSeoTable tags={data} />
+        <PaginationComponent pageNo={pageNo} totalPage={totalPage} />
       </AdminSectionCard>
     </AdminPageShell>
   );

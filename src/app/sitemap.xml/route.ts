@@ -39,7 +39,8 @@ export async function GET() {
       slug: tags.slug,
       updatedAt: tags.updatedAt,
     })
-    .from(tags);
+    .from(tags)
+    .where(eq(tags.indexable, true));
 
   // 生成 XML
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
