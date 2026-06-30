@@ -69,7 +69,7 @@ jobs:
           required=(
             DEPLOY_HOST
             DEPLOY_USER
-            DEPLOY_SSH_KEY
+            SSH_PRIVATE_KEY
             DATABASE_URL
             CMS_BASIC_AUTH_USERNAME
             CMS_BASIC_AUTH_PASSWORD
@@ -83,7 +83,7 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Build standalone
         run: |
@@ -108,12 +108,12 @@ jobs:
         run: |
           set -euo pipefail
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/fwqgo_deploy_key
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/fwqgo_deploy_key
           chmod 600 ~/.ssh/fwqgo_deploy_key
           ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Upload release
         shell: bash
