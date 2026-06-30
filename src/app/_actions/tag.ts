@@ -18,6 +18,11 @@ const createTagSchema = z.object({
     .trim(),
 });
 
+const updateTagIndexableSchema = z.object({
+  id: z.number().int().positive(),
+  indexable: z.boolean(),
+});
+
 // 创建新文章时添加的标签，如果标签已经存在，则返回已存在的标签，否则创建新标签
 export async function createTag(input: z.infer<typeof createTagSchema>) {
   await requireAdminSession();
@@ -68,6 +73,7 @@ export async function getTagBySlug(tagSlug: string) {
         name: tags.name,
         description: tags.description,
         keywords: tags.keywords,
+        indexable: tags.indexable,
       })
       .from(tags)
       .where(eq(tags.slug, tagSlug))
@@ -98,6 +104,7 @@ export async function getPostsWithTagsByTagSlug(
         slug: tags.slug,
         description: tags.description,
         keywords: tags.keywords,
+        indexable: tags.indexable,
       })
       .from(tags)
       .where(eq(tags.slug, tagSlug))
@@ -189,6 +196,36 @@ export async function getAdminTagList({
     .limit(pageSize);
 
   return { data: result };
+}
+
+export async function updateTagIndexable(
+  input: z.infer<typeof updateTagIndexableSchema>,
+) {
+  await requireAdminSession();
+
+  const result = updateTagIndexableSchema.parse(input);
+
+  const [tag] = await db
+    .update(tags)
+    .set({
+      indexable: result.indexable,
+      updatedAt: new Date(),
+    })
+    .where(eq(tags.id, result.id))
+    .returning({
+      id: tags.id,
+      name: tags.name,
+      slug: tags.slug,
+      indexable: tags.indexable,
+    });
+
+  if (!tag) {
+    return { error: "没有找到这个标签" };
+  }
+
+  revalidateSiteContent([cacheTags.tags, cacheTags.tagSlug(tag.slug)]);
+
+  return { data: tag };
 }
 
 export async function getAdminTagCount() {

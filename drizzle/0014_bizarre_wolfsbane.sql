@@ -1,0 +1,1 @@
+ALTER TABLE "tags" ADD COLUMN "indexable" boolean DEFAULT true NOT NULL;

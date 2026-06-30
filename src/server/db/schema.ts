@@ -93,6 +93,7 @@ export const tags = pgTable("tags", {
   keywords: varchar("keywords", { length: 800 }),
   description: varchar("description", { length: 800 }),
   slug: text("slug").notNull().unique(),
+  indexable: boolean("indexable").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt"),
 });
