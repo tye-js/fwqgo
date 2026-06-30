@@ -71,6 +71,91 @@ function getUniqueValues(values: Array<string | null>) {
   return [...new Set(values.map((value) => value?.trim()).filter(Boolean))] as string[];
 }
 
+function OfferActions({ offer }: { offer: Offer }) {
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      {offer.purchaseUrl ? (
+        <Button asChild size="sm">
+          <a href={offer.purchaseUrl} target="_blank" rel="nofollow noreferrer">
+            <ShoppingCart className="size-4" />
+            购买
+          </a>
+        </Button>
+      ) : null}
+      {offer.articleUrl ? (
+        <Button asChild size="sm" variant="outline">
+          <Link href={offer.articleUrl}>
+            <FileText className="size-4" />
+            推广
+          </Link>
+        </Button>
+      ) : null}
+      {offer.reviewUrl ? (
+        <Button asChild size="sm" variant="outline">
+          <Link href={offer.reviewUrl}>
+            <FlaskConical className="size-4" />
+            测评
+          </Link>
+        </Button>
+      ) : null}
+      {!offer.purchaseUrl && !offer.articleUrl && !offer.reviewUrl ? (
+        <ArrowUpRight className="mt-2 size-4 text-muted-foreground" />
+      ) : null}
+    </div>
+  );
+}
+
+function OfferMobileCard({ offer }: { offer: Offer }) {
+  return (
+    <article className="space-y-4 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h2 className="min-w-0 flex-1 text-base font-semibold leading-6 text-foreground">
+            {offer.title}
+          </h2>
+          <Badge>{offerStatusLabels[offer.status] ?? offer.status}</Badge>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {offer.providerName ? (
+            <Badge variant="secondary">{offer.providerName}</Badge>
+          ) : null}
+          {offer.productType ? (
+            <Badge variant="outline">{offer.productType}</Badge>
+          ) : null}
+          {offer.promoCode ? (
+            <Badge variant="outline">优惠码 {offer.promoCode}</Badge>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div className="rounded-md bg-muted/30 p-3">
+          <p className="text-xs text-muted-foreground">价格</p>
+          <p className="mt-1 font-semibold text-foreground">{formatPrice(offer)}</p>
+        </div>
+        <div className="rounded-md bg-muted/30 p-3">
+          <p className="text-xs text-muted-foreground">地区 / 线路</p>
+          <p className="mt-1 font-medium text-foreground">
+            {offer.region ?? "地区待补充"}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {offer.lineType ?? "线路待补充"}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-md bg-muted/20 p-3">
+        <p className="text-xs text-muted-foreground">配置</p>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {specsText(offer) || "配置待补充"}
+        </p>
+      </div>
+
+      <OfferActions offer={offer} />
+    </article>
+  );
+}
+
 export function ServerOfferTable({ offers }: { offers: Offer[] }) {
   const [query, setQuery] = useState("");
   const [provider, setProvider] = useState("all");
@@ -228,9 +313,15 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
       <div className="text-sm text-muted-foreground">
         当前显示 {filteredOffers.length} / {offers.length} 个套餐
       </div>
-      <div className="overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm">
+      <div className="grid gap-3 md:hidden">
+        {filteredOffers.map((offer) => (
+          <OfferMobileCard key={offer.id} offer={offer} />
+        ))}
+      </div>
+
+      <div className="hidden overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm md:block">
         <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px] text-sm">
+        <table className="w-full min-w-[900px] text-sm">
           <thead className="border-b border-border/70 bg-muted/30 text-left text-xs uppercase text-muted-foreground">
             <tr>
               <th className="px-4 py-3 font-medium">套餐</th>
@@ -286,33 +377,7 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                   </Badge>
                 </td>
                 <td className="px-4 py-4">
-                  <div className="flex justify-end gap-2">
-                    {offer.purchaseUrl ? (
-                      <Button asChild size="sm">
-                        <a href={offer.purchaseUrl} target="_blank" rel="nofollow noreferrer">
-                          <ShoppingCart className="size-4" />
-                          购买
-                        </a>
-                      </Button>
-                    ) : null}
-                    {offer.articleUrl ? (
-                      <Button asChild size="icon" variant="outline">
-                        <Link href={offer.articleUrl} aria-label="推广文章">
-                          <FileText className="size-4" />
-                        </Link>
-                      </Button>
-                    ) : null}
-                    {offer.reviewUrl ? (
-                      <Button asChild size="icon" variant="outline">
-                        <Link href={offer.reviewUrl} aria-label="测评文章">
-                          <FlaskConical className="size-4" />
-                        </Link>
-                      </Button>
-                    ) : null}
-                    {!offer.purchaseUrl && !offer.articleUrl && !offer.reviewUrl ? (
-                      <ArrowUpRight className="mt-2 size-4 text-muted-foreground" />
-                    ) : null}
-                  </div>
+                  <OfferActions offer={offer} />
                 </td>
               </tr>
             ))}

@@ -31,11 +31,12 @@ type ImportStats = {
   scannedPosts: number;
   extracted: number;
   inserted: number;
+  updated: number;
   skipped: number;
 };
 
 function describeImportStats(data: ImportStats) {
-  return `扫描 ${data.scannedPosts} 篇，提取 ${data.extracted} 条，新增 ${data.inserted} 条，跳过 ${data.skipped} 条`;
+  return `扫描 ${data.scannedPosts} 篇，提取 ${data.extracted} 条，新增 ${data.inserted} 条，更新 ${data.updated} 条，跳过 ${data.skipped} 条`;
 }
 
 export function ServerOfferImporter({ posts }: { posts: ImportPostOption[] }) {

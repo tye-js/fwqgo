@@ -8,6 +8,7 @@ import {
   FileSearch,
   RefreshCw,
   Replace,
+  Save,
   Trash2,
   UploadCloud,
   WandSparkles,
@@ -21,6 +22,7 @@ import {
   rebuildImageReferencesAction,
   replaceImageAssetFileAction,
   replaceImageReferencesAction,
+  updateImageAssetMetadataAction,
 } from "@/app/_actions/images";
 import { AdminTableEmpty, AdminTableWorkbench } from "@/app/_components/admin-table-workbench";
 import { Button } from "@/components/ui/button";
@@ -74,10 +76,23 @@ export type ImageAssetWithReferences = {
   width: number | null;
   height: number | null;
   hash: string | null;
+  imageType: string;
+  status: string;
+  altZh: string | null;
+  altEn: string | null;
+  sourceUrl: string | null;
+  prompt: string | null;
   uploadedBy: string | null;
   createdAt: string;
   updatedAt: string | null;
   references: ImageReference[];
+};
+
+type ImageMetadataDraft = {
+  imageType: string;
+  status: string;
+  altZh: string;
+  altEn: string;
 };
 
 export function ImageAssetManager({
@@ -87,8 +102,13 @@ export function ImageAssetManager({
 }) {
   const [query, setQuery] = useState("");
   const [usageFilter, setUsageFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [isPending, startTransition] = useTransition();
   const [replacementPathById, setReplacementPathById] = useState<Record<number, string>>({});
+  const [metadataById, setMetadataById] = useState<
+    Record<number, ImageMetadataDraft>
+  >({});
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   const filteredImages = useMemo(() => {
@@ -103,7 +123,10 @@ export function ImageAssetManager({
       const matchesQuery =
         normalizedQuery.length === 0 ||
         image.path.toLowerCase().includes(normalizedQuery) ||
-        image.originalName.toLowerCase().includes(normalizedQuery);
+        image.originalName.toLowerCase().includes(normalizedQuery) ||
+        (image.altZh?.toLowerCase().includes(normalizedQuery) ?? false) ||
+        (image.altEn?.toLowerCase().includes(normalizedQuery) ?? false) ||
+        (image.prompt?.toLowerCase().includes(normalizedQuery) ?? false);
 
       const isUsed = image.references.length > 0;
       const qualityIssues = getImageQualityIssues(
@@ -117,11 +140,45 @@ export function ImageAssetManager({
         (usageFilter === "issues" && qualityIssues.length > 0) ||
         (usageFilter === "duplicates" &&
           Boolean(image.hash) &&
-          (counts.get(image.hash ?? "") ?? 0) > 1);
+          (counts.get(image.hash ?? "") ?? 0) > 1) ||
+        (usageFilter === "missing-alt" &&
+          getMissingAltIssues(image).length > 0);
+      const matchesType = typeFilter === "all" || image.imageType === typeFilter;
+      const matchesStatus =
+        statusFilter === "all" || image.status === statusFilter;
 
-      return matchesQuery && matchesUsage;
+      return matchesQuery && matchesUsage && matchesType && matchesStatus;
     });
-  }, [images, query, usageFilter]);
+  }, [images, query, statusFilter, typeFilter, usageFilter]);
+  const imageTypes = useMemo(
+    () => [...new Set(images.map((image) => image.imageType))].sort(),
+    [images],
+  );
+  const imageStatuses = useMemo(
+    () => [...new Set(images.map((image) => image.status))].sort(),
+    [images],
+  );
+  const qualitySummary = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const image of images) {
+      if (!image.hash) continue;
+      counts.set(image.hash, (counts.get(image.hash) ?? 0) + 1);
+    }
+
+    return images.reduce(
+      (summary, image) => {
+        const issues = getImageQualityIssues(
+          image,
+          counts.get(image.hash ?? "") ?? 0,
+        );
+        return {
+          totalIssues: summary.totalIssues + issues.length,
+          missingAlt: summary.missingAlt + getMissingAltIssues(image).length,
+        };
+      },
+      { totalIssues: 0, missingAlt: 0 },
+    );
+  }, [images]);
   const duplicateHashCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const image of images) {
@@ -222,28 +279,100 @@ export function ImageAssetManager({
     toast.success("引用已更新");
   }
 
+  function getMetadataDraft(image: ImageAssetWithReferences) {
+    return (
+      metadataById[image.id] ?? {
+        imageType: image.imageType,
+        status: image.status,
+        altZh: image.altZh ?? "",
+        altEn: image.altEn ?? "",
+      }
+    );
+  }
+
+  function updateMetadataDraft(
+    id: number,
+    patch: Partial<ImageMetadataDraft>,
+    image: ImageAssetWithReferences,
+  ) {
+    setMetadataById((prev) => ({
+      ...prev,
+      [id]: {
+        ...getMetadataDraft(image),
+        ...patch,
+      },
+    }));
+  }
+
+  async function handleUpdateMetadata(image: ImageAssetWithReferences) {
+    const draft = getMetadataDraft(image);
+    const result = await updateImageAssetMetadataAction({
+      id: image.id,
+      imageType: draft.imageType,
+      status: draft.status,
+      altZh: draft.altZh,
+      altEn: draft.altEn,
+    });
+
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
+
+    toast.success("图片 SEO 信息已保存");
+  }
+
   return (
     <div className="space-y-5">
       <AdminTableWorkbench
         title="图片资产库"
-        description="支持搜索文件名、按引用状态筛选，并对未使用图片做清理。"
+        description="支持搜索文件名、URL、alt 和 prompt，按引用、类型、状态筛选，并对未使用图片做清理。"
         searchValue={query}
         onSearchChange={setQuery}
-        searchPlaceholder="搜索文件名或 URL"
+        searchPlaceholder="搜索文件名、URL、alt 或 prompt"
         selectionCount={filteredImages.length}
         filterSlot={
-          <Select value={usageFilter} onValueChange={setUsageFilter}>
-            <SelectTrigger className="h-auto w-[132px] border-0 bg-transparent p-0 shadow-none focus:ring-0">
-              <SelectValue placeholder="引用状态" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部图片</SelectItem>
-              <SelectItem value="used">已使用</SelectItem>
-              <SelectItem value="unused">未使用</SelectItem>
-              <SelectItem value="issues">需优化</SelectItem>
-              <SelectItem value="duplicates">重复图片</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap items-center gap-3">
+            <Select value={usageFilter} onValueChange={setUsageFilter}>
+              <SelectTrigger className="h-auto w-[132px] border-0 bg-transparent p-0 shadow-none focus:ring-0">
+                <SelectValue placeholder="引用状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部图片</SelectItem>
+                <SelectItem value="used">已使用</SelectItem>
+                <SelectItem value="unused">未使用</SelectItem>
+                <SelectItem value="issues">需优化</SelectItem>
+                <SelectItem value="missing-alt">缺少 alt</SelectItem>
+                <SelectItem value="duplicates">重复图片</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger className="h-auto w-[120px] border-0 bg-transparent p-0 shadow-none focus:ring-0">
+                <SelectValue placeholder="图片类型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部类型</SelectItem>
+                {imageTypes.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {imageTypeLabel(type)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-auto w-[104px] border-0 bg-transparent p-0 shadow-none focus:ring-0">
+                <SelectValue placeholder="状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部状态</SelectItem>
+                {imageStatuses.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {imageStatusLabel(status)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         }
         actionSlot={
           <div className="flex flex-wrap gap-2">
@@ -278,6 +407,16 @@ export function ImageAssetManager({
         }
       />
 
+      <div className="flex flex-wrap gap-2">
+        <Badge variant="outline">当前显示 {filteredImages.length} 张</Badge>
+        <Badge variant={qualitySummary.totalIssues > 0 ? "secondary" : "outline"}>
+          优化项 {qualitySummary.totalIssues}
+        </Badge>
+        <Badge variant={qualitySummary.missingAlt > 0 ? "secondary" : "outline"}>
+          缺少 alt {qualitySummary.missingAlt}
+        </Badge>
+      </div>
+
       {filteredImages.length === 0 ? (
         <AdminTableEmpty
           title="没有匹配的图片"
@@ -290,6 +429,7 @@ export function ImageAssetManager({
               <TableHead className="w-[104px]">预览</TableHead>
               <TableHead>文件</TableHead>
               <TableHead>信息</TableHead>
+              <TableHead>SEO / Alt</TableHead>
               <TableHead>引用</TableHead>
               <TableHead>替换引用</TableHead>
               <TableHead className="text-right">操作</TableHead>
@@ -302,6 +442,7 @@ export function ImageAssetManager({
                 image,
                 duplicateHashCounts.get(image.hash ?? "") ?? 0,
               );
+              const metadataDraft = getMetadataDraft(image);
 
               return (
                 <TableRow key={image.id}>
@@ -346,6 +487,12 @@ export function ImageAssetManager({
                             hash {image.hash.slice(0, 8)}
                           </Badge>
                         ) : null}
+                        <Badge variant="outline">
+                          {imageTypeLabel(image.imageType)}
+                        </Badge>
+                        <Badge variant={image.status === "active" ? "outline" : "secondary"}>
+                          {imageStatusLabel(image.status)}
+                        </Badge>
                       </div>
                     </div>
                   </TableCell>
@@ -368,6 +515,83 @@ export function ImageAssetManager({
                           ))}
                         </div>
                       ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell className="min-w-[280px]">
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <Select
+                          value={metadataDraft.imageType}
+                          onValueChange={(value) =>
+                            updateMetadataDraft(
+                              image.id,
+                              { imageType: value },
+                              image,
+                            )
+                          }
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="图片类型" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="upload">上传图片</SelectItem>
+                            <SelectItem value="ai_cover">AI 封面</SelectItem>
+                            <SelectItem value="provider">商家图片</SelectItem>
+                            <SelectItem value="post_cover">文章封面</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          value={metadataDraft.status}
+                          onValueChange={(value) =>
+                            updateMetadataDraft(image.id, { status: value }, image)
+                          }
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="状态" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="active">启用</SelectItem>
+                            <SelectItem value="archived">停用</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Input
+                        className="h-9"
+                        placeholder="中文 alt"
+                        value={metadataDraft.altZh}
+                        onChange={(event) =>
+                          updateMetadataDraft(
+                            image.id,
+                            { altZh: event.target.value },
+                            image,
+                          )
+                        }
+                      />
+                      <div className="flex items-center gap-2">
+                        <Input
+                          className="h-9"
+                          placeholder="English alt"
+                          value={metadataDraft.altEn}
+                          onChange={(event) =>
+                            updateMetadataDraft(
+                              image.id,
+                              { altEn: event.target.value },
+                              image,
+                            )
+                          }
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={isPending}
+                          onClick={() =>
+                            runAction(() => handleUpdateMetadata(image))
+                          }
+                        >
+                          <Save className="size-4" />
+                        </Button>
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell className="min-w-[220px]">
@@ -519,6 +743,26 @@ function referenceLabel(reference: ImageReference) {
   } / ${reference.sourceLabel ?? reference.sourceId}`;
 }
 
+function imageTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    upload: "上传图片",
+    ai_cover: "AI 封面",
+    provider: "商家图片",
+    post_cover: "文章封面",
+  };
+
+  return labels[type] ?? type;
+}
+
+function imageStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    active: "启用",
+    archived: "停用",
+  };
+
+  return labels[status] ?? status;
+}
+
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -549,6 +793,26 @@ function getImageQualityIssues(
 
   if (duplicateHashCount > 1) {
     issues.push("疑似重复");
+  }
+
+  issues.push(...getMissingAltIssues(image));
+
+  return issues;
+}
+
+function getMissingAltIssues(image: ImageAssetWithReferences) {
+  const issues: string[] = [];
+
+  if (image.status !== "active") {
+    return issues;
+  }
+
+  if (!image.altZh?.trim()) {
+    issues.push("缺少中文 alt");
+  }
+
+  if (!image.altEn?.trim()) {
+    issues.push("缺少英文 alt");
   }
 
   return issues;

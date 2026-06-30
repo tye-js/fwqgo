@@ -53,6 +53,8 @@ type RewriteStyleOption = {
 
 type LastRunResult = {
   siteId: number;
+  runAt?: string;
+  error?: string;
   discoveredCount: number;
   createdCount: number;
   skippedCount: number;
@@ -80,6 +82,154 @@ function inputNameFromForm(formData: FormData) {
 function inputLimitFromForm(formData: FormData) {
   const limit = formData.get("limit");
   return typeof limit === "string" ? limit : "-";
+}
+
+function parseLastRunDetails(
+  siteId: number,
+  value: string | null,
+): LastRunResult | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    const data = parsed as Partial<LastRunResult>;
+
+    return {
+      siteId,
+      runAt: typeof data.runAt === "string" ? data.runAt : undefined,
+      error: typeof data.error === "string" ? data.error : undefined,
+      discoveredCount:
+        typeof data.discoveredCount === "number" ? data.discoveredCount : 0,
+      createdCount: typeof data.createdCount === "number" ? data.createdCount : 0,
+      skippedCount:
+        typeof data.skippedCount === "number" ? data.skippedCount : 0,
+      discoveredUrls: Array.isArray(data.discoveredUrls)
+        ? data.discoveredUrls.filter((item): item is string => typeof item === "string")
+        : [],
+      skippedUrls: Array.isArray(data.skippedUrls)
+        ? data.skippedUrls.filter((item): item is string => typeof item === "string")
+        : [],
+      tasks: Array.isArray(data.tasks)
+        ? data.tasks.filter(
+            (item): item is { id: number; sourceUrl: string } =>
+              Boolean(
+                item &&
+                  typeof item === "object" &&
+                  typeof (item as { id?: unknown }).id === "number" &&
+                  typeof (item as { sourceUrl?: unknown }).sourceUrl === "string",
+              ),
+          )
+        : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function SourceRunResultPanel({
+  result,
+  onClose,
+}: {
+  result: LastRunResult;
+  onClose?: () => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-foreground">本次抓取结果</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            发现 {result.discoveredCount} · 新增 {result.createdCount} · 跳过{" "}
+            {result.skippedCount}
+            {result.runAt ? ` · ${formatTime(result.runAt)}` : ""}
+          </p>
+        </div>
+        {onClose ? (
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+            收起
+          </Button>
+        ) : null}
+      </div>
+      {result.error ? (
+        <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          {result.error}
+        </p>
+      ) : null}
+      <div className="grid gap-3 lg:grid-cols-3">
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">已加入任务</p>
+          {result.tasks.length > 0 ? (
+            result.tasks.map((task) => (
+              <Link
+                key={task.id}
+                href={`/end/ai-rewrite/tasks/${task.id}`}
+                className="block rounded-md border border-border/70 px-3 py-2 text-xs hover:bg-muted/30"
+              >
+                <span className="line-clamp-1 break-all">
+                  #{task.id} {task.sourceUrl}
+                </span>
+              </Link>
+            ))
+          ) : (
+            <p className="rounded-md border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
+              没有新任务
+            </p>
+          )}
+        </div>
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">
+            重复或超出数量跳过
+          </p>
+          {result.skippedUrls.length > 0 ? (
+            result.skippedUrls.slice(0, 12).map((url) => (
+              <a
+                key={url}
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-md border border-border/70 px-3 py-2 text-xs text-muted-foreground hover:bg-muted/30"
+              >
+                <span className="line-clamp-1 break-all">{url}</span>
+              </a>
+            ))
+          ) : (
+            <p className="rounded-md border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
+              没有跳过 URL
+            </p>
+          )}
+        </div>
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">
+            发现的最新 URL
+          </p>
+          {result.discoveredUrls.length > 0 ? (
+            result.discoveredUrls.slice(0, 12).map((url) => (
+              <a
+                key={url}
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-md border border-border/70 px-3 py-2 text-xs text-muted-foreground hover:bg-muted/30"
+              >
+                <span className="line-clamp-1 break-all">{url}</span>
+              </a>
+            ))
+          ) : (
+            <p className="rounded-md border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
+              没有发现 URL
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function SourceSiteForm({
@@ -248,6 +398,7 @@ export function AiSourceSiteManager({
   const router = useRouter();
   const [showCreate, setShowCreate] = useState(sites.length === 0);
   const [editId, setEditId] = useState<number | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
   const [runningId, setRunningId] = useState<number | null>(null);
   const [lastRunResult, setLastRunResult] = useState<LastRunResult | null>(null);
 
@@ -346,73 +497,10 @@ export function AiSourceSiteManager({
       ) : null}
 
       {lastRunResult ? (
-        <div className="space-y-3 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium text-foreground">
-                本次抓取结果
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                发现 {lastRunResult.discoveredCount} · 新增{" "}
-                {lastRunResult.createdCount} · 跳过 {lastRunResult.skippedCount}
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setLastRunResult(null)}
-            >
-              收起
-            </Button>
-          </div>
-          <div className="grid gap-3 lg:grid-cols-2">
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">
-                已加入任务
-              </p>
-              {lastRunResult.tasks.length > 0 ? (
-                lastRunResult.tasks.map((task) => (
-                  <Link
-                    key={task.id}
-                    href={`/end/ai-rewrite/tasks/${task.id}`}
-                    className="block rounded-md border border-border/70 px-3 py-2 text-xs hover:bg-muted/30"
-                  >
-                    <span className="line-clamp-1 break-all">
-                      {task.sourceUrl}
-                    </span>
-                  </Link>
-                ))
-              ) : (
-                <p className="rounded-md border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
-                  没有新任务
-                </p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">
-                重复或超出数量跳过
-              </p>
-              {lastRunResult.skippedUrls.length > 0 ? (
-                lastRunResult.skippedUrls.slice(0, 10).map((url) => (
-                  <a
-                    key={url}
-                    href={url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block rounded-md border border-border/70 px-3 py-2 text-xs text-muted-foreground hover:bg-muted/30"
-                  >
-                    <span className="line-clamp-1 break-all">{url}</span>
-                  </a>
-                ))
-              ) : (
-                <p className="rounded-md border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
-                  没有跳过 URL
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
+        <SourceRunResultPanel
+          result={lastRunResult}
+          onClose={() => setLastRunResult(null)}
+        />
       ) : null}
 
       <div className="rounded-lg border border-border/70 bg-background shadow-sm">
@@ -496,6 +584,18 @@ export function AiSourceSiteManager({
                           size="sm"
                           variant="outline"
                           onClick={() =>
+                            setDetailId((value) =>
+                              value === site.id ? null : site.id,
+                            )
+                          }
+                        >
+                          查看结果
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
                             setEditId((value) =>
                               value === site.id ? null : site.id,
                             )
@@ -512,8 +612,30 @@ export function AiSourceSiteManager({
                           <Trash2 className="size-4" />
                         </Button>
                       </div>
-                    </TableCell>
-                  </TableRow>
+                      </TableCell>
+                    </TableRow>
+                  {detailId === site.id
+                    ? (() => {
+                        const details = parseLastRunDetails(
+                          site.id,
+                          site.lastRunDetails,
+                        );
+
+                        return (
+                          <TableRow>
+                            <TableCell colSpan={5} className="bg-muted/20">
+                              {details ? (
+                                <SourceRunResultPanel result={details} />
+                              ) : (
+                                <p className="rounded-md border border-dashed border-border/70 bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+                                  暂无最近一次抓取明细，点击“抓取新页面”后会保存。
+                                </p>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })()
+                    : null}
                   {editId === site.id ? (
                     <TableRow>
                       <TableCell colSpan={5} className="bg-muted/20">

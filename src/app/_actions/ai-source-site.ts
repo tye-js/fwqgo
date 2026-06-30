@@ -98,6 +98,7 @@ export async function getAiSourceSiteList() {
       lastDiscoveredCount: aiSourceSites.lastDiscoveredCount,
       lastCreatedCount: aiSourceSites.lastCreatedCount,
       lastSkippedCount: aiSourceSites.lastSkippedCount,
+      lastRunDetails: aiSourceSites.lastRunDetails,
       lastError: aiSourceSites.lastError,
       createdAt: aiSourceSites.createdAt,
       updatedAt: aiSourceSites.updatedAt,
@@ -209,6 +210,10 @@ export async function runAiSourceSiteAction(id: number) {
         lastDiscoveredCount: result.discoveredCount,
         lastCreatedCount: result.createdCount,
         lastSkippedCount: result.skippedCount,
+        lastRunDetails: JSON.stringify({
+          runAt: new Date().toISOString(),
+          ...result,
+        }),
         lastError: null,
         updatedAt: new Date(),
       })
@@ -224,6 +229,10 @@ export async function runAiSourceSiteAction(id: number) {
       .set({
         lastRunAt: new Date(),
         lastError: getErrorMessage(error),
+        lastRunDetails: JSON.stringify({
+          runAt: new Date().toISOString(),
+          error: getErrorMessage(error),
+        }),
         updatedAt: new Date(),
       })
       .where(eq(aiSourceSites.id, id));
