@@ -1,4 +1,4 @@
-ALTER TABLE "ai_rewrite_configs" ADD COLUMN "basePrompt" text;--> statement-breakpoint
+ALTER TABLE "ai_rewrite_configs" ADD COLUMN IF NOT EXISTS "basePrompt" text;--> statement-breakpoint
 UPDATE "ai_rewrite_configs"
 SET "basePrompt" = '你是一个专业的推广文章写作助手，你了解各种服务器的配置，了解这些配置的优缺点，知道每款服务器能跑通的应用类型，以及服务器适合的人群。
 

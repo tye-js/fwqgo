@@ -1,5 +1,5 @@
-ALTER TABLE "ai_rewrite_configs" ADD COLUMN "metadataPrompt" text;--> statement-breakpoint
-ALTER TABLE "ai_rewrite_configs" ADD COLUMN "metadataStylePrompt" text;--> statement-breakpoint
+ALTER TABLE "ai_rewrite_configs" ADD COLUMN IF NOT EXISTS "metadataPrompt" text;--> statement-breakpoint
+ALTER TABLE "ai_rewrite_configs" ADD COLUMN IF NOT EXISTS "metadataStylePrompt" text;--> statement-breakpoint
 UPDATE "ai_rewrite_configs"
 SET "metadataPrompt" = '你是服务器/VPS推广文章的 SEO 编辑。请根据改写后的 HTML 正文生成文章元信息。
 
