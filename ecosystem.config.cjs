@@ -53,26 +53,50 @@ function parseEnvFile(filePath) {
 }
 
 const productionEnv = parseEnvFile(path.join(__dirname, ".env.production"));
-const appDir = process.env.APP_DIR ?? __dirname;
+const webAppDir =
+  process.env.WEB_APP_DIR ?? process.env.APP_DIR ?? path.join(__dirname, "web");
+const cmsAppDir =
+  process.env.CMS_APP_DIR ?? process.env.APP_DIR ?? path.join(__dirname, "cms");
+
+/**
+ * @param {{ name: string; appDir: string; port: number; portEnvName: string }} options
+ */
+function createApp({ name, appDir, port, portEnvName }) {
+  const resolvedPort =
+    process.env[portEnvName] ?? productionEnv[portEnvName] ?? String(port);
+
+  return {
+    name,
+    cwd: appDir,
+    script: path.join(appDir, "server.js"),
+    instances: "max",
+    exec_mode: "cluster",
+    autorestart: true,
+    watch: false,
+    max_memory_restart: "1G",
+    env: {
+      ...productionEnv,
+      PORT: resolvedPort,
+      NODE_ENV: "production",
+      UPLOAD_DIR:
+        process.env.UPLOAD_DIR ?? productionEnv.UPLOAD_DIR ?? "/var/www/uploads",
+    },
+  };
+}
 
 module.exports = {
   apps: [
-    {
-      name: "fwqgo",
-      cwd: appDir,
-      script: path.join(appDir, "server.js"),
-      instances: "max",
-      exec_mode: "cluster",
-      autorestart: true,
-      watch: false,
-      max_memory_restart: "1G",
-      env: {
-        ...productionEnv,
-        PORT: process.env.PORT ?? productionEnv.PORT ?? 3000,
-        NODE_ENV: "production",
-        UPLOAD_DIR:
-          process.env.UPLOAD_DIR ?? productionEnv.UPLOAD_DIR ?? "/var/www/uploads",
-      },
-    },
+    createApp({
+      name: "fwqgo-web",
+      appDir: webAppDir,
+      port: 3000,
+      portEnvName: "WEB_PORT",
+    }),
+    createApp({
+      name: "fwqgo-cms",
+      appDir: cmsAppDir,
+      port: 3100,
+      portEnvName: "CMS_PORT",
+    }),
   ],
 };
