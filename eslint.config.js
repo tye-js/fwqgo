@@ -3,7 +3,13 @@ import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 
 const config = [
   {
-    ignores: [".deploy/**", ".next/**", "node_modules/**"],
+    ignores: [
+      ".deploy/**",
+      ".next/**",
+      ".next-web/**",
+      ".next-cms/**",
+      "node_modules/**",
+    ],
   },
   ...nextCoreWebVitals,
   ...tseslint.configs.recommendedTypeChecked,

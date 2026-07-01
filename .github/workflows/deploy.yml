@@ -83,20 +83,27 @@ jobs:
       - name: Build standalone
         run: |
           npm run build
-          mkdir -p .next/standalone/.next
-          rm -rf .next/standalone/.next/static .next/standalone/public
-          cp -R .next/static .next/standalone/.next/static
-          cp -R public .next/standalone/public
+          mkdir -p .next-web/standalone/.next .next-cms/standalone/.next
+          rm -rf .next-web/standalone/.next/static .next-web/standalone/public
+          rm -rf .next-cms/standalone/.next/static .next-cms/standalone/public
+          cp -R .next-web/static .next-web/standalone/.next/static
+          cp -R .next-cms/static .next-cms/standalone/.next/static
+          cp -R public .next-web/standalone/public
+          cp -R public .next-cms/standalone/public
 
       - name: Package release
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p ".deploy/payload-$RELEASE_ID/.next" ".deploy/payload-$RELEASE_ID/scripts"
-          rsync -a .next/standalone/ ".deploy/payload-$RELEASE_ID/.next/standalone/"
+          mkdir -p ".deploy/payload-$RELEASE_ID/apps/web" ".deploy/payload-$RELEASE_ID/apps/cms" ".deploy/payload-$RELEASE_ID/scripts"
+          rsync -a .next-web/standalone/ ".deploy/payload-$RELEASE_ID/"
+          rsync -a .next-cms/standalone/ ".deploy/payload-$RELEASE_ID/"
+          rm -rf ".deploy/payload-$RELEASE_ID/apps/web/.next" ".deploy/payload-$RELEASE_ID/apps/cms/.next"
+          ln -sfn "../../.next-web" ".deploy/payload-$RELEASE_ID/apps/web/.next"
+          ln -sfn "../../.next-cms" ".deploy/payload-$RELEASE_ID/apps/cms/.next"
           cp -R drizzle ".deploy/payload-$RELEASE_ID/drizzle"
           cp scripts/migrate-prod.mjs ".deploy/payload-$RELEASE_ID/scripts/migrate-prod.mjs"
-          cp -R node_modules/drizzle-orm node_modules/postgres ".deploy/payload-$RELEASE_ID/.next/standalone/node_modules/" 2>/dev/null || true
+          cp -R node_modules/drizzle-orm node_modules/postgres ".deploy/payload-$RELEASE_ID/apps/cms/node_modules/" 2>/dev/null || true
           cp ecosystem.config.cjs ".deploy/payload-$RELEASE_ID/ecosystem.config.cjs"
           cp package.json ".deploy/payload-$RELEASE_ID/package.json"
           tar --format=gnu -czf ".deploy/fwqgo-$RELEASE_ID.tar.gz" -C ".deploy/payload-$RELEASE_ID" .
@@ -165,12 +172,12 @@ jobs:
           start_release() {
             local target_release="$1"
 
-            if [[ ! -f "$target_release/ecosystem.config.cjs" || ! -f "$target_release/.next/standalone/server.js" ]]; then
+            if [[ ! -f "$target_release/ecosystem.config.cjs" || ! -f "$target_release/apps/web/server.js" || ! -f "$target_release/apps/cms/server.js" ]]; then
               echo "Invalid standalone release: $target_release" >&2
               return 1
             fi
 
-            APP_DIR="$target_release/.next/standalone" pm2 start "$target_release/ecosystem.config.cjs" --update-env
+            WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
           }
 
           rollback_previous() {
@@ -178,6 +185,8 @@ jobs:
               echo "Activation failed. Rolling back to $previous_release..."
               ln -sfn "$previous_release" "$current_link"
               pm2 delete fwqgo >/dev/null 2>&1 || true
+              pm2 delete fwqgo-web >/dev/null 2>&1 || true
+              pm2 delete fwqgo-cms >/dev/null 2>&1 || true
               start_release "$previous_release" || true
               pm2 save || true
             fi
@@ -196,10 +205,10 @@ jobs:
           mkdir -p "$release_dir"
           tar -xzf "$remote_artifact" -C "$release_dir"
           ln -sfn "$shared_dir/.env.production" "$release_dir/.env.production"
-          ln -sfn "$release_dir/.next/standalone/node_modules" "$release_dir/node_modules"
+          ln -sfn "$release_dir/apps/cms/node_modules" "$release_dir/node_modules"
 
-          [[ -f "$release_dir/.next/standalone/server.js" ]] || {
-            echo "Artifact is missing .next/standalone/server.js" >&2
+          [[ -f "$release_dir/apps/web/server.js" && -f "$release_dir/apps/cms/server.js" ]] || {
+            echo "Artifact is missing web or cms standalone server.js" >&2
             exit 1
           }
 
@@ -212,6 +221,12 @@ jobs:
 
           if pm2 describe fwqgo >/dev/null 2>&1; then
             pm2 delete fwqgo
+          fi
+          if pm2 describe fwqgo-web >/dev/null 2>&1; then
+            pm2 delete fwqgo-web
+          fi
+          if pm2 describe fwqgo-cms >/dev/null 2>&1; then
+            pm2 delete fwqgo-cms
           fi
 
           start_release "$current_link"
