@@ -1,1 +1,1 @@
-export { GET } from "@/app/go/[token]/route";
+export { GET } from "@/features/public/routes/go/[token]/route";

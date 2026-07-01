@@ -1,3 +1,3 @@
-import Page from "@/app/end/ai-rewrite/tasks/page";
+import RouteModuleDefault from "@/features/cms/routes/end/ai-rewrite/tasks/page";
 
-export default Page;
+export default RouteModuleDefault;

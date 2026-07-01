@@ -1,14 +1,3 @@
-import { type MetadataRoute } from "next";
+import RouteModuleDefault from "@/features/public/routes/robots";
 
-export default function robots(): MetadataRoute.Robots {
-  const baseUrl = process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com";
-
-  return {
-    rules: {
-      userAgent: "*",
-      allow: "/",
-      disallow: ["/private/", "/admin/", "/api/", "/end/"],
-    },
-    sitemap: `${baseUrl}/sitemap.xml`,
-  };
-}
+export default RouteModuleDefault;

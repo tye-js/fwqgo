@@ -1,9 +1,5 @@
-import RootLayout, { metadata } from "@/app/layout";
+export { metadata } from "@/features/shared/routes/layout";
 
-export { metadata };
+import RouteModuleDefault from "@/features/shared/routes/layout";
 
-export default function WebRootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
-  return <RootLayout>{children}</RootLayout>;
-}
+export default RouteModuleDefault;

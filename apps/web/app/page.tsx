@@ -1,3 +1,3 @@
-import Page from "@/app/page";
+import RouteModuleDefault from "@/features/public/routes/page";
 
-export default Page;
+export default RouteModuleDefault;

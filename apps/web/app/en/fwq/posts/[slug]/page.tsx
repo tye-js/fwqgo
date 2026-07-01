@@ -1,4 +1,5 @@
-import Page, { generateMetadata } from "@/app/en/fwq/posts/[slug]/page";
+export { generateMetadata } from "@/features/public/routes/en/fwq/posts/[slug]/page";
 
-export { generateMetadata };
-export default Page;
+import RouteModuleDefault from "@/features/public/routes/en/fwq/posts/[slug]/page";
+
+export default RouteModuleDefault;

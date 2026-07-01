@@ -1,3 +1,3 @@
-import Page from "@/app/end/collect/ai-rewrite/page";
+import RouteModuleDefault from "@/features/cms/routes/end/collect/ai-rewrite/page";
 
-export default Page;
+export default RouteModuleDefault;

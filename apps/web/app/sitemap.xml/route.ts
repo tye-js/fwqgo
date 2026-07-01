@@ -1,1 +1,1 @@
-export { GET } from "@/app/sitemap.xml/route";
+export { GET } from "@/features/public/routes/sitemap.xml/route";

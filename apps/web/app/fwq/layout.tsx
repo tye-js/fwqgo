@@ -1,3 +1,3 @@
-import Page from "@/app/fwq/layout";
+import RouteModuleDefault from "@/features/public/routes/fwq/layout";
 
-export default Page;
+export default RouteModuleDefault;

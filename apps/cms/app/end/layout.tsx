@@ -1,4 +1,5 @@
-import Layout, { metadata } from "@/app/end/layout";
+export { metadata } from "@/features/cms/routes/end/layout";
 
-export { metadata };
-export default Layout;
+import RouteModuleDefault from "@/features/cms/routes/end/layout";
+
+export default RouteModuleDefault;

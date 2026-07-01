@@ -1,1 +1,1 @@
-export { POST } from "@/app/api/upload/route";
+export { POST } from "@/features/cms/routes/api/upload/route";

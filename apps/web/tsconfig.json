@@ -3,6 +3,9 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
+      "@fwqgo/core/*": ["../../packages/core/*"],
+      "@fwqgo/db": ["../../packages/db/index.ts"],
+      "@fwqgo/db/*": ["../../packages/db/*"],
       "@/*": ["../../src/*"]
     },
     "plugins": [
@@ -17,6 +20,8 @@
     "**/*.tsx",
     "../../src/**/*.ts",
     "../../src/**/*.tsx",
+    "../../packages/**/*.ts",
+    "../../packages/**/*.tsx",
     "../../next-env.d.ts",
     "../../.next-web/types/**/*.ts",
     "../../.next-web/dev/types/**/*.ts"
