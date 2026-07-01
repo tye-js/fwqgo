@@ -20,6 +20,7 @@ import {
   convertUploadImagesToWebpAction,
   importUploadImagesAction,
   rebuildImageReferencesAction,
+  rebuildResponsiveImageVariantsAction,
   replaceImageAssetFileAction,
   replaceImageReferencesAction,
   updateImageAssetMetadataAction,
@@ -70,6 +71,8 @@ type ImageReference = {
 export type ImageAssetWithReferences = {
   id: number;
   path: string;
+  thumbPath: string | null;
+  largePath: string | null;
   originalName: string;
   mime: string;
   size: number;
@@ -232,6 +235,21 @@ export function ImageAssetManager({
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "历史图片转换失败");
     }
+  }
+
+  async function handleRebuildResponsiveImages() {
+    const result = await rebuildResponsiveImageVariantsAction();
+    const failedCount = result.data.failed.length;
+    if (failedCount > 0) {
+      toast.warning(
+        `响应式图片重建完成：成功 ${result.data.rebuilt}，跳过 ${result.data.skipped}，失败 ${failedCount}。首个失败：${result.data.failed[0]?.path} ${result.data.failed[0]?.error}`,
+      );
+      return;
+    }
+
+    toast.success(
+      `响应式图片重建完成：成功 ${result.data.rebuilt}，跳过 ${result.data.skipped}`,
+    );
   }
 
   async function handleDelete(id: number) {
@@ -403,6 +421,15 @@ export function ImageAssetManager({
               <WandSparkles className="size-4" />
               历史转 WebP
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isPending}
+              onClick={() => runAction(handleRebuildResponsiveImages)}
+            >
+              <RefreshCw className="size-4" />
+              重建响应式图
+            </Button>
           </div>
         }
       />
@@ -450,7 +477,7 @@ export function ImageAssetManager({
                     <a href={image.path} target="_blank" rel="noreferrer">
                       <div className="relative h-16 w-20 overflow-hidden rounded-md border border-border/70 bg-muted">
                         <Image
-                          src={getOptimizedImageSrc(image.path)}
+                          src={getOptimizedImageSrc(image.thumbPath ?? image.path)}
                           alt={image.originalName}
                           fill
                           sizes="80px"
@@ -504,6 +531,11 @@ export function ImageAssetManager({
                         {image.width && image.height
                           ? `${image.width} x ${image.height}`
                           : "尺寸未知"}
+                      </p>
+                      <p>
+                        {image.thumbPath ? "缩略图已生成" : "缺少缩略图"}
+                        {" · "}
+                        {image.largePath ? "大图已生成" : "缺少大图"}
                       </p>
                       <p>{formatDate(image.createdAt)}</p>
                       {qualityIssues.length > 0 ? (
@@ -781,6 +813,10 @@ function getImageQualityIssues(
 
   if (image.mime !== "image/webp" && image.mime !== "image/gif") {
     issues.push("建议转 WebP");
+  }
+
+  if (image.mime !== "image/gif" && (!image.thumbPath || !image.largePath)) {
+    issues.push("缺少响应式图");
   }
 
   if (!image.width || !image.height) {

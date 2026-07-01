@@ -12,6 +12,7 @@ import {
 
 import { getAiRewriteTaskDetail } from "@/app/_actions/ai-rewrite-task";
 import { AiRewriteTaskRetryButton } from "@/app/_components/ai-rewrite-task-retry-button";
+import { AiRewriteTaskResolveButton } from "@/app/_components/ai-rewrite-task-resolve-button";
 import { AdminPageShell, AdminSectionCard } from "@/app/_components/admin-page-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -88,6 +89,17 @@ function Stat({ label, value }: { label: string; value: string | number }) {
       <p className="mt-1 text-base font-semibold text-foreground">{value}</p>
     </div>
   );
+}
+
+function sourceTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    url: "网址",
+    text: "手动文本",
+    email: "邮件素材",
+    file: "文件导入",
+  };
+
+  return labels[value] ?? value;
 }
 
 function buildTaskSteps({
@@ -322,6 +334,9 @@ export default async function AiRewriteTaskDetailPage({ params }: PageProps) {
           {task.status === "failed" ? (
             <AiRewriteTaskRetryButton taskId={task.id} />
           ) : null}
+          {task.status === "manual_required" ? (
+            <AiRewriteTaskResolveButton taskId={task.id} />
+          ) : null}
           {task.postSlug ? (
             <Button asChild>
               <Link href={`/end/posts/edit/post/${task.postSlug}`}>
@@ -366,19 +381,27 @@ export default async function AiRewriteTaskDetailPage({ params }: PageProps) {
 
       <ManualReviewHints diagnostics={diagnostics} postSlug={task.postSlug} />
 
-      <AdminSectionCard title="来源与结果" description="原始链接、分类、风格和草稿入口。">
+      <AdminSectionCard title="来源与结果" description="素材来源、分类、风格和草稿入口。">
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-2 text-sm">
-            <p className="text-muted-foreground">来源 URL</p>
-            <a
-              href={task.sourceUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 break-all font-medium hover:underline"
-            >
-              {task.sourceUrl}
-              <ExternalLink className="size-3.5" />
-            </a>
+            <p className="text-muted-foreground">
+              来源 / {sourceTypeLabel(task.sourceType)}
+            </p>
+            {task.sourceType === "url" ? (
+              <a
+                href={task.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 break-all font-medium hover:underline"
+              >
+                {task.sourceUrl}
+                <ExternalLink className="size-3.5" />
+              </a>
+            ) : (
+              <p className="font-medium">
+                {task.sourceTitle ?? task.sourceFileName ?? task.sourceUrl}
+              </p>
+            )}
           </div>
           <div className="grid gap-3 text-sm sm:grid-cols-2">
             <div>
@@ -391,6 +414,14 @@ export default async function AiRewriteTaskDetailPage({ params }: PageProps) {
             </div>
           </div>
         </div>
+        {task.sourceType !== "url" && task.sourceContent ? (
+          <div className="mt-4 space-y-2">
+            <p className="text-sm text-muted-foreground">原始素材预览</p>
+            <pre className="max-h-56 overflow-auto rounded-md bg-muted/40 p-3 text-xs leading-6 whitespace-pre-wrap break-words">
+              {task.sourceContent.slice(0, 5000)}
+            </pre>
+          </div>
+        ) : null}
       </AdminSectionCard>
 
       <AdminSectionCard title="采集质量" description="用于判断来源站规则和清洗结果是否稳定。">

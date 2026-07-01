@@ -594,6 +594,74 @@ export async function getServerOfferTopic(slug: string) {
   return { topic, offers };
 }
 
+function serverOfferPublicSelect() {
+  return {
+    id: serverOffers.id,
+    title: serverOffers.title,
+    slug: serverOffers.slug,
+    providerName: serverOffers.providerName,
+    productType: serverOffers.productType,
+    cpu: serverOffers.cpu,
+    memory: serverOffers.memory,
+    storage: serverOffers.storage,
+    bandwidth: serverOffers.bandwidth,
+    traffic: serverOffers.traffic,
+    region: serverOffers.region,
+    lineType: serverOffers.lineType,
+    priceAmount: serverOffers.priceAmount,
+    currency: serverOffers.currency,
+    billingCycle: serverOffers.billingCycle,
+    promoCode: serverOffers.promoCode,
+    purchaseUrl: serverOffers.purchaseUrl,
+    articleUrl: serverOffers.articleUrl,
+    reviewUrl: serverOffers.reviewUrl,
+    status: serverOffers.status,
+    featured: serverOffers.featured,
+    createdAt: serverOffers.createdAt,
+  };
+}
+
+export async function getServerOfferCollection(input: {
+  kind: "provider" | "region" | "line";
+  value: string;
+}) {
+  "use cache";
+  tagCache(cacheTags.serverOffers);
+
+  const value = input.value.trim();
+  if (!value) return null;
+
+  const field =
+    input.kind === "provider"
+      ? serverOffers.providerName
+      : input.kind === "region"
+        ? serverOffers.region
+        : serverOffers.lineType;
+  const titlePrefix =
+    input.kind === "provider"
+      ? "商家"
+      : input.kind === "region"
+        ? "地区"
+        : "线路";
+
+  const offers = await db
+    .select(serverOfferPublicSelect())
+    .from(serverOffers)
+    .where(and(eq(serverOffers.visible, true), eq(field, value)))
+    .orderBy(
+      desc(serverOffers.featured),
+      asc(serverOffers.priceAmount),
+      desc(serverOffers.createdAt),
+    )
+    .limit(120);
+
+  return {
+    title: `${value}${titlePrefix === "商家" ? "" : titlePrefix}服务器套餐`,
+    description: `集中查看${value}相关服务器套餐，按价格、地区、线路、状态和购买入口筛选。`,
+    offers,
+  };
+}
+
 export async function getServerOfferTopicCounts() {
   "use cache";
   tagCache(cacheTags.serverOffers);

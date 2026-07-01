@@ -105,6 +105,10 @@ function OfferActions({ offer }: { offer: Offer }) {
   );
 }
 
+function collectionHref(kind: "providers" | "regions" | "lines", value: string) {
+  return `/servers/${kind}/${encodeURIComponent(value)}`;
+}
+
 function OfferMobileCard({ offer }: { offer: Offer }) {
   return (
     <article className="space-y-4 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
@@ -117,7 +121,14 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
         </div>
         <div className="flex flex-wrap gap-2">
           {offer.providerName ? (
-            <Badge variant="secondary">{offer.providerName}</Badge>
+            <Badge variant="secondary">
+              <Link
+                href={collectionHref("providers", offer.providerName)}
+                className="hover:underline"
+              >
+                {offer.providerName}
+              </Link>
+            </Badge>
           ) : null}
           {offer.productType ? (
             <Badge variant="outline">{offer.productType}</Badge>
@@ -136,10 +147,28 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
         <div className="rounded-md bg-muted/30 p-3">
           <p className="text-xs text-muted-foreground">地区 / 线路</p>
           <p className="mt-1 font-medium text-foreground">
-            {offer.region ?? "地区待补充"}
+            {offer.region ? (
+              <Link
+                href={collectionHref("regions", offer.region)}
+                className="underline-offset-4 hover:text-primary hover:underline"
+              >
+                {offer.region}
+              </Link>
+            ) : (
+              "地区待补充"
+            )}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {offer.lineType ?? "线路待补充"}
+            {offer.lineType ? (
+              <Link
+                href={collectionHref("lines", offer.lineType)}
+                className="underline-offset-4 hover:text-primary hover:underline"
+              >
+                {offer.lineType}
+              </Link>
+            ) : (
+              "线路待补充"
+            )}
           </p>
         </div>
       </div>
@@ -342,7 +371,14 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {offer.providerName ? (
-                        <Badge variant="secondary">{offer.providerName}</Badge>
+                        <Badge variant="secondary">
+                          <Link
+                            href={collectionHref("providers", offer.providerName)}
+                            className="hover:underline"
+                          >
+                            {offer.providerName}
+                          </Link>
+                        </Badge>
                       ) : null}
                       {offer.productType ? (
                         <Badge variant="outline">{offer.productType}</Badge>
@@ -361,9 +397,29 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                   ) : null}
                 </td>
                 <td className="px-4 py-4">
-                  <p className="font-medium">{offer.region ?? "地区待补充"}</p>
+                  <p className="font-medium">
+                    {offer.region ? (
+                      <Link
+                        href={collectionHref("regions", offer.region)}
+                        className="underline-offset-4 hover:text-primary hover:underline"
+                      >
+                        {offer.region}
+                      </Link>
+                    ) : (
+                      "地区待补充"
+                    )}
+                  </p>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {offer.lineType ?? "线路待补充"}
+                    {offer.lineType ? (
+                      <Link
+                        href={collectionHref("lines", offer.lineType)}
+                        className="underline-offset-4 hover:text-primary hover:underline"
+                      >
+                        {offer.lineType}
+                      </Link>
+                    ) : (
+                      "线路待补充"
+                    )}
                   </p>
                 </td>
                 <td className="px-4 py-4">

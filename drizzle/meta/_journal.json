@@ -120,6 +120,27 @@
       "when": 1782836964466,
       "tag": "0016_faithful_jetstream",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1782839610798,
+      "tag": "0017_thin_eternity",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1782839899149,
+      "tag": "0018_tearful_felicia_hardy",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1782840314778,
+      "tag": "0019_flat_spitfire",
+      "breakpoints": true
     }
   ]
 }
