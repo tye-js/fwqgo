@@ -1,4 +1,5 @@
-import Page, { generateMetadata } from "@/app/servers/regions/[region]/page";
+export { generateMetadata } from "@/features/public/routes/servers/regions/[region]/page";
 
-export { generateMetadata };
-export default Page;
+import RouteModuleDefault from "@/features/public/routes/servers/regions/[region]/page";
+
+export default RouteModuleDefault;

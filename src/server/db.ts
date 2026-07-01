@@ -1,2 +1,2 @@
-// Re-export the Drizzle database connection
-export { db } from "./db/index";
+// Compatibility export for existing imports. Prefer @fwqgo/db in new code.
+export { db } from "@fwqgo/db";

@@ -1,3 +1,3 @@
-import Page from "@/app/end/collect/aff-man/page";
+import RouteModuleDefault from "@/features/cms/routes/end/collect/aff-man/page";
 
-export default Page;
+export default RouteModuleDefault;

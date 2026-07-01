@@ -1,3 +1,3 @@
-import Page from "@/app/(auth)/login/page";
+import RouteModuleDefault from "@/features/cms/routes/(auth)/login/page";
 
-export default Page;
+export default RouteModuleDefault;

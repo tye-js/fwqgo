@@ -1,1 +1,1 @@
-export { GET } from "@/app/api/tags/search/route";
+export { GET } from "@/features/cms/routes/api/tags/search/route";

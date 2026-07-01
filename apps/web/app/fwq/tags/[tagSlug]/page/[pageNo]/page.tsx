@@ -1,4 +1,5 @@
-import Page, { generateMetadata } from "@/app/fwq/tags/[tagSlug]/page/[pageNo]/page";
+export { generateMetadata } from "@/features/public/routes/fwq/tags/[tagSlug]/page/[pageNo]/page";
 
-export { generateMetadata };
-export default Page;
+import RouteModuleDefault from "@/features/public/routes/fwq/tags/[tagSlug]/page/[pageNo]/page";
+
+export default RouteModuleDefault;

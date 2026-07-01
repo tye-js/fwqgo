@@ -1,1 +1,1 @@
-export { GET } from "@/app/api/images/source/route";
+export { GET } from "@/features/shared/routes/api/images/source/route";

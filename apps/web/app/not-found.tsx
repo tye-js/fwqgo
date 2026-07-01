@@ -1,5 +1,3 @@
-import NotFoundPage from "@/app/not-found";
+import RouteModuleDefault from "@/features/public/routes/not-found";
 
-export default function NotFound() {
-  return <NotFoundPage />;
-}
+export default RouteModuleDefault;

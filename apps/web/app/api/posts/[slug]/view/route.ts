@@ -1,1 +1,1 @@
-export { POST } from "@/app/api/posts/[slug]/view/route";
+export { POST } from "@/features/public/routes/api/posts/[slug]/view/route";

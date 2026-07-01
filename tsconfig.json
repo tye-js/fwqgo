@@ -30,6 +30,15 @@
     "incremental": true,
     "allowImportingTsExtensions": true,
     "paths": {
+      "@fwqgo/core/*": [
+        "./packages/core/*"
+      ],
+      "@fwqgo/db": [
+        "./packages/db/index.ts"
+      ],
+      "@fwqgo/db/*": [
+        "./packages/db/*"
+      ],
       "@/*": [
         "./src/*"
       ]

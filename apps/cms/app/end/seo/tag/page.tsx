@@ -1,3 +1,3 @@
-import Page from "@/app/end/seo/tag/page";
+import RouteModuleDefault from "@/features/cms/routes/end/seo/tag/page";
 
-export default Page;
+export default RouteModuleDefault;

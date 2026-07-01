@@ -1,3 +1,3 @@
-import Page from "@/app/end/collect/homepage-promoted/page";
+import RouteModuleDefault from "@/features/cms/routes/end/collect/homepage-promoted/page";
 
-export default Page;
+export default RouteModuleDefault;

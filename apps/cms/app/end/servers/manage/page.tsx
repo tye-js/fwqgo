@@ -1,3 +1,3 @@
-import Page from "@/app/end/servers/manage/page";
+import RouteModuleDefault from "@/features/cms/routes/end/servers/manage/page";
 
-export default Page;
+export default RouteModuleDefault;

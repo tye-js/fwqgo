@@ -1,3 +1,3 @@
-import Page from "@/app/end/settings/image-generation/page";
+import RouteModuleDefault from "@/features/cms/routes/end/settings/image-generation/page";
 
-export default Page;
+export default RouteModuleDefault;
