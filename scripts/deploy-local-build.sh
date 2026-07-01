@@ -111,9 +111,7 @@ require_cmd npm
 require_cmd rsync
 require_cmd tar
 
-if [[ "$RUN_MIGRATIONS" == "1" ]]; then
-  fail "RUN_MIGRATIONS=1 is not supported by standalone artifact deploy. Run migrations separately before deploy."
-fi
+
 
 SSH_ARGS=(-p "$DEPLOY_PORT" -o StrictHostKeyChecking=accept-new)
 SCP_ARGS=(-P "$DEPLOY_PORT" -o StrictHostKeyChecking=accept-new)
@@ -185,8 +183,11 @@ docker run --rm \
 [[ -f "$STAGE_DIR/.next/standalone/server.js" ]] || fail "Docker build did not produce .next/standalone/server.js"
 
 log "Packaging standalone release $RELEASE_ID"
-mkdir -p "$PAYLOAD_DIR/.next"
+mkdir -p "$PAYLOAD_DIR/.next" "$PAYLOAD_DIR/scripts"
 rsync -a "$STAGE_DIR/.next/standalone/" "$PAYLOAD_DIR/.next/standalone/"
+cp -R "$ROOT_DIR/drizzle" "$PAYLOAD_DIR/drizzle"
+cp "$ROOT_DIR/scripts/migrate-prod.mjs" "$PAYLOAD_DIR/scripts/migrate-prod.mjs"
+cp -R "$STAGE_DIR/node_modules/drizzle-orm" "$STAGE_DIR/node_modules/postgres" "$PAYLOAD_DIR/.next/standalone/node_modules/" 2>/dev/null || true
 cp "$STAGE_DIR/ecosystem.config.cjs" "$PAYLOAD_DIR/ecosystem.config.cjs"
 cp "$STAGE_DIR/package.json" "$PAYLOAD_DIR/package.json"
 
@@ -202,7 +203,7 @@ fi
 log "Uploading artifact to $REMOTE:$REMOTE_ARTIFACT"
 "${SCP_BIN[@]}" "${SCP_ARGS[@]}" "$ARTIFACT" "$REMOTE:$REMOTE_ARTIFACT"
 
-REMOTE_COMMAND="bash -s -- $(quote "$DEPLOY_PATH") $(quote "$RELEASE_ID") $(quote "$REMOTE_ARTIFACT") $(quote "$KEEP_RELEASES") $(quote "$REMOTE_UPLOAD_DIR")"
+REMOTE_COMMAND="bash -s -- $(quote "$DEPLOY_PATH") $(quote "$RELEASE_ID") $(quote "$REMOTE_ARTIFACT") $(quote "$KEEP_RELEASES") $(quote "$REMOTE_UPLOAD_DIR") $(quote "$RUN_MIGRATIONS")"
 
 log "Activating standalone release on $REMOTE"
 "${SSH_BIN[@]}" "${SSH_ARGS[@]}" "$REMOTE" "$REMOTE_COMMAND" <<'REMOTE_SCRIPT'
@@ -213,6 +214,7 @@ release_id="$2"
 remote_artifact="$3"
 keep_releases="$4"
 upload_dir="$5"
+run_migrations="$6"
 
 case "$deploy_path" in
   ""|"/"|"/var"|"/var/www")
@@ -283,11 +285,17 @@ rm -rf "$release_dir"
 mkdir -p "$release_dir"
 tar -xzf "$remote_artifact" -C "$release_dir"
 ln -sfn "$shared_dir/.env.production" "$release_dir/.env.production"
+ln -sfn "$release_dir/.next/standalone/node_modules" "$release_dir/node_modules"
 
 [[ -f "$release_dir/.next/standalone/server.js" ]] || {
   echo "Artifact is missing .next/standalone/server.js" >&2
   exit 1
 }
+
+if [[ "$run_migrations" == "1" || "$run_migrations" == "true" ]]; then
+  echo "Running production database migrations on server..."
+  node "$release_dir/scripts/migrate-prod.mjs"
+fi
 
 ln -sfn "$release_dir" "$current_link"
 
