@@ -3,8 +3,8 @@ import { useState } from "react";
 import Link from "next/link";
 
 import { TiptapEditor } from "@/components/editor/tiptap-editor";
-import { ImageUpload } from "@/app/_components/image-upload";
-import { ArticleCoverGenerator } from "@/app/_components/article-cover-generator";
+import { ImageUpload } from "@/features/cms/components/image-upload";
+import { ArticleCoverGenerator } from "@/features/cms/components/article-cover-generator";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -23,12 +23,12 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { type PostEditFormData } from "@/types/post.types";
 import { toast } from "sonner";
-import { rewriteDraftAffiliateLinksAction } from "@/app/_actions/affiliate-rewrite";
-import { updatePostContent, updatePostTags } from "@/app/_actions/post";
+import { rewriteDraftAffiliateLinksAction } from "@/features/cms/actions/affiliate-rewrite";
+import { updatePostContent, updatePostTags } from "@/features/cms/actions/post";
 import { type AffiliateRewriteReport } from "@/server/scrape/affiliate-link-rewriter";
 import { type NewTag } from "@/types";
 import { Separator } from "@/components/ui/separator";
-import { AdminPageShell, AdminSectionCard } from "@/app/_components/admin-page-shell";
+import { AdminPageShell, AdminSectionCard } from "@/features/cms/components/admin-page-shell";
 interface Category {
   id: number;
   name: string;

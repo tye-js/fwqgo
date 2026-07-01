@@ -3,8 +3,8 @@ import { connection } from "next/server";
 import { ArrowRight, Server } from "lucide-react";
 import { Suspense } from "react";
 
-import Header from "@/app/_components/header";
-import Footer from "@/app/_components/footer";
+import Header from "@/features/public/components/header";
+import Footer from "@/features/public/components/footer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";

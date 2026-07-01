@@ -4,9 +4,9 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ArrowLeft, ArrowUpDown, Filter, MapPin } from "lucide-react";
 
-import Header from "@/app/_components/header";
-import Footer from "@/app/_components/footer";
-import { ServerOfferTable } from "@/app/_components/server-offer-table";
+import Header from "@/features/public/components/header";
+import Footer from "@/features/public/components/footer";
+import { ServerOfferTable } from "@/features/public/components/server-offer-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";

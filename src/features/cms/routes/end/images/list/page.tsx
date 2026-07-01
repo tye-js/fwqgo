@@ -1,7 +1,7 @@
 import { getImageAssetList, serializeImageAsset } from "@/server/images/assets";
 import { requireAdminSession } from "@/server/auth/session";
-import { AdminPageShell, AdminSummaryStrip } from "@/app/_components/admin-page-shell";
-import { ImageAssetManager } from "@/app/_components/image-asset-manager";
+import { AdminPageShell, AdminSummaryStrip } from "@/features/cms/components/admin-page-shell";
+import { ImageAssetManager } from "@/features/cms/components/image-asset-manager";
 
 export default async function ImageListPage() {
   await requireAdminSession();

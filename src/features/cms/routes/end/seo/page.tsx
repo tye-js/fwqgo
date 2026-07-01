@@ -1,6 +1,6 @@
-import { getLeafCategoriesAllData } from "@/app/_actions/category";
-import { AdminPageShell, AdminSectionCard } from "@/app/_components/admin-page-shell";
-import { CategorySeoTable } from "@/app/_components/category-seo-table";
+import { getLeafCategoriesAllData } from "@/features/shared/data/category";
+import { AdminPageShell, AdminSectionCard } from "@/features/cms/components/admin-page-shell";
+import { CategorySeoTable } from "@/features/cms/components/category-seo-table";
 export default async function Page() {
   const { data, error } = await getLeafCategoriesAllData();
   if (error) {

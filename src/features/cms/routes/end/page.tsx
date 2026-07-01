@@ -12,7 +12,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 
-import { getDashboardStats } from "@/app/_actions/post";
+import { getDashboardStats } from "@/features/cms/data/post";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {

@@ -6,13 +6,13 @@ import { TiptapEditor } from "@/components/editor/tiptap-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ImageUpload } from "@/app/_components/image-upload";
-import { createPost } from "@/app/_actions/creat-post";
+import { ImageUpload } from "@/features/cms/components/image-upload";
+import { createPost } from "@/features/cms/actions/creat-post";
 
-import { getLeafCategories } from "@/app/_actions/category";
-import { AdminPageShell, AdminSectionCard } from "@/app/_components/admin-page-shell";
-import { ScraperForm } from "@/app/_components/scraper-form";
-import { ArticleCoverGenerator } from "@/app/_components/article-cover-generator";
+import { getLeafCategories } from "@/features/shared/data/category";
+import { AdminPageShell, AdminSectionCard } from "@/features/cms/components/admin-page-shell";
+import { ScraperForm } from "@/features/cms/components/scraper-form";
+import { ArticleCoverGenerator } from "@/features/cms/components/article-cover-generator";
 import { AlertCircle, FileText, Tags, Wand2, X } from "lucide-react";
 
 import {

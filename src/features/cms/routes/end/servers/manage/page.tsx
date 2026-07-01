@@ -5,8 +5,8 @@ import {
   AdminPageShell,
   AdminSectionCard,
   AdminSummaryStrip,
-} from "@/app/_components/admin-page-shell";
-import { ServerOfferAdminTable } from "@/app/_components/server-offer-admin-table";
+} from "@/features/cms/components/admin-page-shell";
+import { ServerOfferAdminTable } from "@/features/cms/components/server-offer-admin-table";
 import {
   getAdminServerOffers,
   getServerOfferTopicCounts,

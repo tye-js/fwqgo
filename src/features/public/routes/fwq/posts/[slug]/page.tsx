@@ -3,7 +3,7 @@ import {
   getPostBySlug,
   getLatestPostsForSidebar,
   getPostsByPostId,
-} from "@/app/_actions/post";
+} from "@/features/public/data/post";
 
 import { getOptimizedImageSrc } from "@/lib/image-src";
 import { decodeSlug, formatDate } from "@/lib/utils";
@@ -20,11 +20,11 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { Suspense } from "react";
-import { PostViewCount } from "@/app/_components/post-view-count";
-import { RecommendedPostCard } from "@/app/_components/recommended-post-card";
-import { LatestPostsSidebar } from "@/app/_components/latest-posts-sidebar";
-import { WebmasterStatement } from "@/app/_components/webmaster-statement";
-import { ArticleShareActions } from "@/app/_components/article-share-actions";
+import { PostViewCount } from "@/features/public/components/post-view-count";
+import { RecommendedPostCard } from "@/features/public/components/recommended-post-card";
+import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
+import { WebmasterStatement } from "@/features/public/components/webmaster-statement";
+import { ArticleShareActions } from "@/features/public/components/article-share-actions";
 import { Card, CardContent } from "@/components/ui/card";
 import { notFound } from "next/navigation";
 import {

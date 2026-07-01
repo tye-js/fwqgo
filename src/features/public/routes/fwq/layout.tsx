@@ -1,7 +1,7 @@
-import Header from "@/app/_components/header";
-import Footer from "@/app/_components/footer";
+import Header from "@/features/public/components/header";
+import Footer from "@/features/public/components/footer";
 import { Separator } from "@/components/ui/separator";
-import { ScrollToTop } from "@/app/_components/scroll-to-top";
+import { ScrollToTop } from "@/features/public/components/scroll-to-top";
 import { Suspense } from "react";
 export default function CreateLayout({
   children,

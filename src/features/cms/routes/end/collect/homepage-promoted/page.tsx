@@ -4,12 +4,12 @@ import {
   AdminPageShell,
   AdminSectionCard,
   AdminSummaryStrip,
-} from "@/app/_components/admin-page-shell";
+} from "@/features/cms/components/admin-page-shell";
 import {
   getHomepagePromotedPostList,
   getPublishedPostOptions,
-} from "@/app/_actions/homepage-promoted-post";
-import { HomepagePromotedPostTable } from "@/app/_components/homepage-promoted-post-table";
+} from "@/features/cms/actions/homepage-promoted-post";
+import { HomepagePromotedPostTable } from "@/features/cms/components/homepage-promoted-post-table";
 
 async function HomepagePromotedPostContent() {
   const [{ data, error }, { data: postOptions }] = await Promise.all([

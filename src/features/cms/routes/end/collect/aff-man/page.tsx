@@ -2,14 +2,14 @@ import { Suspense } from "react";
 import {
   getAffProviderCount,
   getAffProviderList,
-} from "@/app/_actions/aff-provider";
+} from "@/features/cms/actions/aff-provider";
 import {
   AdminPageShell,
   AdminSectionCard,
   AdminSummaryStrip,
-} from "@/app/_components/admin-page-shell";
-import AffManTable from "@/app/_components/affman-tables";
-import { PaginationComponent } from "@/app/_components/pagination";
+} from "@/features/cms/components/admin-page-shell";
+import AffManTable from "@/features/cms/components/affman-tables";
+import { PaginationComponent } from "@/features/shared/components/pagination";
 
 async function AffManList({
   searchParamsPromise,

@@ -1,5 +1,5 @@
-import { AdminPageShell } from "@/app/_components/admin-page-shell";
-import { ImageUploadWorkbench } from "@/app/_components/image-upload-workbench";
+import { AdminPageShell } from "@/features/cms/components/admin-page-shell";
+import { ImageUploadWorkbench } from "@/features/cms/components/image-upload-workbench";
 import { requireAdminSession } from "@/server/auth/session";
 
 export default async function ImageUploadPage() {

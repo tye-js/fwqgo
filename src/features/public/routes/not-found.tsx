@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { ArrowLeft, Compass, Home, SearchCheck, Sparkles } from "lucide-react";
 
-import { getCategories } from "@/app/_actions/category";
-import { getPostsWithTags } from "@/app/_actions/post";
+import { getCategories } from "@/features/shared/data/category";
+import { getPostsWithTags } from "@/features/public/data/post";
 import { BrandLogo } from "@/components/brand/brand-logo";
-import Footer from "@/app/_components/footer";
-import Header from "@/app/_components/header";
+import Footer from "@/features/public/components/footer";
+import Header from "@/features/public/components/header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {

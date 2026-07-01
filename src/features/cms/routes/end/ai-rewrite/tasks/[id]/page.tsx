@@ -10,10 +10,10 @@ import {
   XCircle,
 } from "lucide-react";
 
-import { getAiRewriteTaskDetail } from "@/app/_actions/ai-rewrite-task";
-import { AiRewriteTaskRetryButton } from "@/app/_components/ai-rewrite-task-retry-button";
-import { AiRewriteTaskResolveButton } from "@/app/_components/ai-rewrite-task-resolve-button";
-import { AdminPageShell, AdminSectionCard } from "@/app/_components/admin-page-shell";
+import { getAiRewriteTaskDetail } from "@/features/cms/actions/ai-rewrite-task";
+import { AiRewriteTaskRetryButton } from "@/features/cms/components/ai-rewrite-task-retry-button";
+import { AiRewriteTaskResolveButton } from "@/features/cms/components/ai-rewrite-task-resolve-button";
+import { AdminPageShell, AdminSectionCard } from "@/features/cms/components/admin-page-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";

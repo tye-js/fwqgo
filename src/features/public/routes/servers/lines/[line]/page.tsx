@@ -4,9 +4,9 @@ import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
-import Footer from "@/app/_components/footer";
-import Header from "@/app/_components/header";
-import { ServerOfferTable } from "@/app/_components/server-offer-table";
+import Footer from "@/features/public/components/footer";
+import Header from "@/features/public/components/header";
+import { ServerOfferTable } from "@/features/public/components/server-offer-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";

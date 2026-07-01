@@ -1,14 +1,14 @@
-import { AiRewriteTaskManager } from "@/app/_components/ai-rewrite-task-manager";
-import { AiSourceSiteManager } from "@/app/_components/ai-source-site-manager";
-import { getAiSourceSiteList } from "@/app/_actions/ai-source-site";
-import { getAiRewriteTaskList } from "@/app/_actions/ai-rewrite-task";
-import { getLeafCategories } from "@/app/_actions/category";
-import { getAiRewriteStyleOptions } from "@/app/_actions/scrape";
+import { AiRewriteTaskManager } from "@/features/cms/components/ai-rewrite-task-manager";
+import { AiSourceSiteManager } from "@/features/cms/components/ai-source-site-manager";
+import { getAiSourceSiteList } from "@/features/cms/actions/ai-source-site";
+import { getAiRewriteTaskList } from "@/features/cms/actions/ai-rewrite-task";
+import { getLeafCategories } from "@/features/shared/data/category";
+import { getAiRewriteStyleOptions } from "@/features/cms/actions/scrape";
 import {
   AdminPageShell,
   AdminSectionCard,
   AdminSummaryStrip,
-} from "@/app/_components/admin-page-shell";
+} from "@/features/cms/components/admin-page-shell";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { incrementPostViews } from "@/app/_actions/post-actions";
+import { incrementPostViews } from "@/features/public/actions/post-views";
 import { decodeSlug } from "@/lib/utils";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
