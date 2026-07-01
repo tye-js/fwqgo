@@ -1,6 +1,6 @@
 "use server";
 
-import { getValidSessionById } from "@/server/auth/session";
+import { getValidSessionById } from "@fwqgo/auth/session";
 
 export async function validateSession(sessionId: string) {
   try {

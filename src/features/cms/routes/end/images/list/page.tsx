@@ -1,5 +1,5 @@
 import { getImageAssetList, serializeImageAsset } from "@/server/images/assets";
-import { requireAdminSession } from "@/server/auth/session";
+import { requireAdminSession } from "@fwqgo/auth/session";
 import { AdminPageShell, AdminSummaryStrip } from "@/features/cms/components/admin-page-shell";
 import { ImageAssetManager } from "@/features/cms/components/image-asset-manager";
 

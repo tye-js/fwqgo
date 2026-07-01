@@ -17,7 +17,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { type ImageAssetWithReferences } from "@/features/cms/components/image-asset-manager";
-import { getOptimizedImageSrc } from "@/lib/image-src";
+import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
 
 export function ImageLibraryPicker({
   onSelect,

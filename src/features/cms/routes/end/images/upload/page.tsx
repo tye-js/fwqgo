@@ -1,6 +1,6 @@
 import { AdminPageShell } from "@/features/cms/components/admin-page-shell";
 import { ImageUploadWorkbench } from "@/features/cms/components/image-upload-workbench";
-import { requireAdminSession } from "@/server/auth/session";
+import { requireAdminSession } from "@fwqgo/auth/session";
 
 export default async function ImageUploadPage() {
   await requireAdminSession();

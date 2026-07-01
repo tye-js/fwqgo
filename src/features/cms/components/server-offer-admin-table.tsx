@@ -45,6 +45,16 @@ const offerStatusLabels = {
 
 const statusOptions = Object.entries(offerStatusLabels);
 
+const offerReviewStatusLabels = {
+  pending: "待审核",
+  reviewed: "已审核",
+  needs_fix: "需修正",
+  duplicate: "重复",
+  merged: "已合并",
+} as const;
+
+const reviewStatusOptions = Object.entries(offerReviewStatusLabels);
+
 function formatPrice(offer: Offer) {
   if (!offer.priceAmount) return "待补充";
   return `${offer.currency === "CNY" ? "¥" : "$"}${Number(offer.priceAmount).toFixed(2)}`;
@@ -138,8 +148,29 @@ function OfferEditForm({ offer, onDone }: { offer: Offer; onDone: () => void }) 
           </Select>
         </div>
         <div className="space-y-2">
+          <Label>审核</Label>
+          <Select name="reviewStatus" defaultValue={offer.reviewStatus}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {reviewStatusOptions.map(([key, label]) => (
+                <SelectItem key={key} value={key}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="space-y-2">
           <Label>优惠码</Label>
           <Input name="promoCode" defaultValue={offer.promoCode ?? ""} />
+        </div>
+        <div className="space-y-2">
+          <Label>重复 Key</Label>
+          <Input value={offer.duplicateKey ?? ""} readOnly />
         </div>
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
@@ -181,6 +212,7 @@ export function ServerOfferAdminTable({ offers }: { offers: Offer[] }) {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editId, setEditId] = useState<number | null>(null);
   const [bulkStatus, setBulkStatus] = useState("in_stock");
+  const [bulkReviewStatus, setBulkReviewStatus] = useState("reviewed");
   const [isPending, startTransition] = useTransition();
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -192,7 +224,12 @@ export function ServerOfferAdminTable({ offers }: { offers: Offer[] }) {
     );
   }
 
-  function runBulk(input: { status?: string; visible?: boolean; featured?: boolean }) {
+  function runBulk(input: {
+    status?: string;
+    visible?: boolean;
+    featured?: boolean;
+    reviewStatus?: string;
+  }) {
     if (selectedIds.length === 0) {
       toast.error("请先选择套餐");
       return;
@@ -242,6 +279,27 @@ export function ServerOfferAdminTable({ offers }: { offers: Offer[] }) {
           >
             批量改状态
           </Button>
+          <Select value={bulkReviewStatus} onValueChange={setBulkReviewStatus}>
+            <SelectTrigger className="h-9 w-28">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {reviewStatusOptions.map(([key, label]) => (
+                <SelectItem key={key} value={key}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isPending}
+            onClick={() => runBulk({ reviewStatus: bulkReviewStatus })}
+          >
+            批量审核
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -272,6 +330,7 @@ export function ServerOfferAdminTable({ offers }: { offers: Offer[] }) {
               <TableHead>价格</TableHead>
               <TableHead>地区/线路</TableHead>
               <TableHead>状态</TableHead>
+              <TableHead>审核</TableHead>
               <TableHead>入口</TableHead>
               <TableHead className="text-right">操作</TableHead>
             </TableRow>
@@ -319,6 +378,28 @@ export function ServerOfferAdminTable({ offers }: { offers: Offer[] }) {
                     </Badge>
                   </TableCell>
                   <TableCell>
+                    <div className="space-y-1">
+                      <Badge
+                        variant={
+                          offer.reviewStatus === "reviewed"
+                            ? "default"
+                            : offer.reviewStatus === "needs_fix"
+                              ? "destructive"
+                              : "secondary"
+                        }
+                      >
+                        {offerReviewStatusLabels[
+                          offer.reviewStatus as keyof typeof offerReviewStatusLabels
+                        ] ?? offer.reviewStatus}
+                      </Badge>
+                      {offer.mergedIntoOfferId ? (
+                        <p className="text-xs text-muted-foreground">
+                          合并到 #{offer.mergedIntoOfferId}
+                        </p>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell>
                     <div className="flex gap-2">
                       {offer.purchaseUrl ? (
                         <Button asChild size="icon" variant="outline">
@@ -349,7 +430,7 @@ export function ServerOfferAdminTable({ offers }: { offers: Offer[] }) {
                 </TableRow>
                 {editId === offer.id ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="bg-muted/20">
+                    <TableCell colSpan={8} className="bg-muted/20">
                       <OfferEditForm
                         offer={offer}
                         onDone={() => {

@@ -11,7 +11,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Fragment } from "react";
-import { decodeSlug } from "@/lib/utils";
+import { decodeSlug } from "@fwqgo/core/utils";
 
 export default function AppBreadcrumb() {
   const pathname = usePathname();

@@ -1,8 +1,8 @@
 import { count, desc } from "drizzle-orm";
 
-import { db } from "@/server/db";
-import { tags } from "@/server/db/schema";
-import { requireAdminSession } from "@/server/auth/session";
+import { db } from "@fwqgo/db";
+import { tags } from "@fwqgo/db/schema";
+import { requireAdminSession } from "@fwqgo/auth/session";
 
 export { findBestTagMatch } from "@/features/public/data/tag";
 

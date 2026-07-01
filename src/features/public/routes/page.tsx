@@ -20,10 +20,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Suspense } from "react";
-import { connection } from "next/server";
 import { Separator } from "@/components/ui/separator";
-import { getOptimizedImageSrc } from "@/lib/image-src";
-import { formatDate, isWithin24Hours } from "@/lib/utils";
+import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
+import { formatDate, isWithin24Hours } from "@fwqgo/core/utils";
 import {
   getLatestServerOffers,
   getServerOfferTopicCounts,
@@ -151,8 +150,6 @@ function HeroArticleTile({
 }
 
 async function HomeContent() {
-  await connection();
-
   const [
     { data: posts },
     { data: sidebarData },

@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 
-import { db } from "@/server/db";
-import { imageGenerationConfigs } from "@/server/db/schema";
+import { db } from "@fwqgo/db";
+import { imageGenerationConfigs } from "@fwqgo/db/schema";
 
 export const imageGenerationProviderOptions = [
   "openai",

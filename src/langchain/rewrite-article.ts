@@ -1,7 +1,7 @@
 import {
   rewriteArticleWithAi,
   type ArticleRewriteOutput,
-} from "@/server/ai/article-rewriter";
+} from "@fwqgo/ai/article-rewriter";
 
 export default async function RewriteArticle(
   content: string,

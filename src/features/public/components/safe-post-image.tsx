@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useState } from "react";
 
-import { getOptimizedImageSrc } from "@/lib/image-src";
+import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
 
 export function SafePostImage({
   src,
@@ -20,7 +20,11 @@ export function SafePostImage({
 
   if (!src || failed) {
     return (
-      <div className="h-full w-full bg-[linear-gradient(135deg,hsl(var(--muted)),hsl(var(--background)))]" />
+      <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,hsl(var(--muted)),hsl(var(--background)))] px-4 text-center">
+        <span className="line-clamp-2 text-xs font-medium leading-5 text-muted-foreground">
+          {alt}
+        </span>
+      </div>
     );
   }
 

@@ -9,8 +9,8 @@ import { getEnglishPostWithTagsBySlug } from "@/features/public/data/post";
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
 import { ArticleShareActions } from "@/features/public/components/article-share-actions";
-import { getOptimizedImageSrc } from "@/lib/image-src";
-import { decodeSlug, formatDate } from "@/lib/utils";
+import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
+import { decodeSlug, formatDate } from "@fwqgo/core/utils";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");

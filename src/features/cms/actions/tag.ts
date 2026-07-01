@@ -3,11 +3,11 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { slugify } from "@/lib/utils";
-import { db } from "@/server/db";
-import { tags } from "@/server/db/schema";
-import { requireAdminSession } from "@/server/auth/session";
-import { cacheTags, revalidateSiteContent } from "@/server/cache/tags";
+import { slugify } from "@fwqgo/core/utils";
+import { db } from "@fwqgo/db";
+import { tags } from "@fwqgo/db/schema";
+import { requireAdminSession } from "@fwqgo/auth/session";
+import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 
 const createTagSchema = z.object({
   name: z

@@ -18,8 +18,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getOptimizedImageSrc } from "@/lib/image-src";
-import { cn } from "@/lib/utils";
+import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
+import { cn } from "@fwqgo/core/utils";
 
 type UploadStatus = "pending" | "uploading" | "success" | "error";
 

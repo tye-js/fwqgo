@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight, FileText, FlaskConical, ShoppingCart } from "lucide-react";
+import {
+  ArrowUpRight,
+  FileText,
+  Filter,
+  FlaskConical,
+  ShoppingCart,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -75,7 +81,7 @@ function OfferActions({ offer }: { offer: Offer }) {
   return (
     <div className="flex flex-wrap justify-end gap-2">
       {offer.purchaseUrl ? (
-        <Button asChild size="sm">
+        <Button asChild size="sm" className="min-h-9 px-3">
           <a href={offer.purchaseUrl} target="_blank" rel="nofollow noreferrer">
             <ShoppingCart className="size-4" />
             购买
@@ -83,7 +89,7 @@ function OfferActions({ offer }: { offer: Offer }) {
         </Button>
       ) : null}
       {offer.articleUrl ? (
-        <Button asChild size="sm" variant="outline">
+        <Button asChild size="sm" variant="outline" className="min-h-9 px-3">
           <Link href={offer.articleUrl}>
             <FileText className="size-4" />
             推广
@@ -91,7 +97,7 @@ function OfferActions({ offer }: { offer: Offer }) {
         </Button>
       ) : null}
       {offer.reviewUrl ? (
-        <Button asChild size="sm" variant="outline">
+        <Button asChild size="sm" variant="outline" className="min-h-9 px-3">
           <Link href={offer.reviewUrl}>
             <FlaskConical className="size-4" />
             测评
@@ -139,7 +145,7 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 text-sm">
+      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
         <div className="rounded-md bg-muted/30 p-3">
           <p className="text-xs text-muted-foreground">价格</p>
           <p className="mt-1 font-semibold text-foreground">{formatPrice(offer)}</p>
@@ -180,7 +186,9 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
         </p>
       </div>
 
-      <OfferActions offer={offer} />
+      <div className="border-t border-border/70 pt-3">
+        <OfferActions offer={offer} />
+      </div>
     </article>
   );
 }
@@ -259,13 +267,18 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 rounded-lg border border-border/70 bg-background p-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_145px_145px_145px_145px_145px_145px]">
-        <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="搜索套餐、地区、线路、优惠码"
-          className="min-h-11"
-        />
+      <div className="rounded-lg border border-border/70 bg-background p-4 shadow-sm">
+        <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
+          <Filter className="size-4 text-accent" />
+          筛选套餐
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_145px_145px_145px_145px_145px_145px]">
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索套餐、地区、线路、优惠码"
+            className="min-h-11 md:col-span-2 xl:col-span-1"
+          />
         <Select value={provider} onValueChange={setProvider}>
           <SelectTrigger className="min-h-11">
             <SelectValue placeholder="商家" />
@@ -338,10 +351,28 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
             <SelectItem value="without">无优惠码</SelectItem>
           </SelectContent>
         </Select>
+        </div>
       </div>
-      <div className="text-sm text-muted-foreground">
-        当前显示 {filteredOffers.length} / {offers.length} 个套餐
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+        <span>
+          当前显示 {filteredOffers.length} / {offers.length} 个套餐
+        </span>
+        <span className="rounded-full bg-muted/40 px-3 py-1 text-xs">
+          {sortKey === "price-asc"
+            ? "价格从低到高"
+            : sortKey === "price-desc"
+              ? "价格从高到低"
+              : "最新优先"}
+        </span>
       </div>
+      {filteredOffers.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center">
+          <p className="text-sm font-medium text-foreground">没有匹配的套餐</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            试试减少筛选条件，或改用地区、线路、商家关键词搜索。
+          </p>
+        </div>
+      ) : null}
       <div className="grid gap-3 md:hidden">
         {filteredOffers.map((offer) => (
           <OfferMobileCard key={offer.id} offer={offer} />
@@ -349,24 +380,23 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
       </div>
 
       <div className="hidden overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm md:block">
-        <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-sm">
+        <table className="w-full table-fixed text-[13px] lg:text-sm">
           <thead className="border-b border-border/70 bg-muted/30 text-left text-xs uppercase text-muted-foreground">
             <tr>
-              <th className="px-4 py-3 font-medium">套餐</th>
-              <th className="px-4 py-3 font-medium">价格</th>
-              <th className="px-4 py-3 font-medium">地区/线路</th>
-              <th className="px-4 py-3 font-medium">配置</th>
-              <th className="px-4 py-3 font-medium">状态</th>
-              <th className="px-4 py-3 text-right font-medium">入口</th>
+              <th className="w-[25%] px-3 py-3 font-medium">套餐</th>
+              <th className="w-[15%] px-3 py-3 font-medium">价格</th>
+              <th className="w-[14%] px-3 py-3 font-medium">地区/线路</th>
+              <th className="w-[24%] px-3 py-3 font-medium">配置</th>
+              <th className="w-[9%] px-3 py-3 font-medium">状态</th>
+              <th className="w-[13%] px-3 py-3 text-right font-medium">入口</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/70">
             {filteredOffers.map((offer) => (
               <tr key={offer.id} className="align-top hover:bg-muted/20">
-                <td className="px-4 py-4">
-                  <div className="max-w-[260px] space-y-2">
-                    <p className="font-medium leading-6 text-foreground">
+                <td className="px-3 py-3">
+                  <div className="space-y-2">
+                    <p className="line-clamp-2 font-medium leading-5 text-foreground">
                       {offer.title}
                     </p>
                     <div className="flex flex-wrap gap-2">
@@ -386,8 +416,8 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-4">
-                  <p className="font-semibold text-foreground">
+                <td className="px-3 py-3">
+                  <p className="font-semibold leading-5 text-foreground">
                     {formatPrice(offer)}
                   </p>
                   {offer.promoCode ? (
@@ -396,8 +426,8 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                     </p>
                   ) : null}
                 </td>
-                <td className="px-4 py-4">
-                  <p className="font-medium">
+                <td className="px-3 py-3">
+                  <p className="font-medium leading-5">
                     {offer.region ? (
                       <Link
                         href={collectionHref("regions", offer.region)}
@@ -409,7 +439,7 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                       "地区待补充"
                     )}
                   </p>
-                  <p className="mt-2 text-xs text-muted-foreground">
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
                     {offer.lineType ? (
                       <Link
                         href={collectionHref("lines", offer.lineType)}
@@ -422,24 +452,23 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                     )}
                   </p>
                 </td>
-                <td className="px-4 py-4">
-                  <p className="max-w-[320px] leading-6 text-muted-foreground">
+                <td className="px-3 py-3">
+                  <p className="line-clamp-3 leading-5 text-muted-foreground">
                     {specsText(offer) || "配置待补充"}
                   </p>
                 </td>
-                <td className="px-4 py-4">
+                <td className="px-3 py-3">
                   <Badge>
                     {offerStatusLabels[offer.status] ?? offer.status}
                   </Badge>
                 </td>
-                <td className="px-4 py-4">
+                <td className="px-3 py-3">
                   <OfferActions offer={offer} />
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        </div>
       </div>
     </div>
   );

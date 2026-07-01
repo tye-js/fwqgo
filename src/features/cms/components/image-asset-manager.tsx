@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 
 import {
+  auditAndRepairImageAssetsAction,
   deleteImageAssetAction,
   convertUploadImagesToWebpAction,
   importUploadImagesAction,
@@ -55,7 +56,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { getOptimizedImageSrc } from "@/lib/image-src";
+import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
 
 type ImageReference = {
   id: number;
@@ -252,6 +253,21 @@ export function ImageAssetManager({
     );
   }
 
+  async function handleAuditAndRepairImages() {
+    const result = await auditAndRepairImageAssetsAction();
+    const failedCount = result.data.failed.length;
+    const message = `图片资产体检完成：扫描 ${result.data.scanned}，修复 ${result.data.repaired}，重建规格图 ${result.data.variantsRebuilt}，缺失文件 ${result.data.missing}，引用 ${result.data.references}`;
+
+    if (failedCount > 0) {
+      toast.warning(
+        `${message}，失败 ${failedCount}。首个失败：${result.data.failed[0]?.path} ${result.data.failed[0]?.error}`,
+      );
+      return;
+    }
+
+    toast.success(message);
+  }
+
   async function handleDelete(id: number) {
     const result = await deleteImageAssetAction(id);
     if (result.error) {
@@ -425,6 +441,15 @@ export function ImageAssetManager({
               type="button"
               variant="outline"
               disabled={isPending}
+              onClick={() => runAction(handleAuditAndRepairImages)}
+            >
+              <FileSearch className="size-4" />
+              资产体检
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isPending}
               onClick={() => runAction(handleRebuildResponsiveImages)}
             >
               <RefreshCw className="size-4" />
@@ -584,6 +609,7 @@ export function ImageAssetManager({
                           <SelectContent>
                             <SelectItem value="active">启用</SelectItem>
                             <SelectItem value="archived">停用</SelectItem>
+                            <SelectItem value="missing">文件缺失</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

@@ -1,10 +1,13 @@
 import { findBestTagMatch } from "@/features/cms/data/tag";
+import { requireAdminSession } from "@fwqgo/auth/session";
 import { connection, NextResponse } from "next/server";
 
 export async function GET(request: Request) {
   await connection();
 
   try {
+    await requireAdminSession();
+
     const url = new URL(request.url);
     const query = url.searchParams.get("q")?.trim() ?? "";
 

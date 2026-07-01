@@ -1,5 +1,5 @@
 "use client";
-import { generateToc } from "@/lib/toc";
+import { generateToc } from "@fwqgo/core/toc";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 

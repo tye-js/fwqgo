@@ -1,4 +1,4 @@
-import { type tags } from "@/server/db/schema";
+import { type tags } from "@fwqgo/db/schema";
 
 type Tag = typeof tags.$inferSelect;
 

@@ -32,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate } from "@/lib/utils";
+import { formatDate } from "@fwqgo/core/utils";
 
 function formatNumber(value: number) {
   return value.toLocaleString("zh-CN");

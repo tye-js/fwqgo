@@ -12,14 +12,14 @@ import path from "node:path";
 
 import { and, eq, inArray, sql } from "drizzle-orm";
 
-import { db } from "@/server/db";
+import { db } from "@fwqgo/db";
 import {
   imageAssetReferences,
   imageAssets,
   posts,
   users,
-} from "@/server/db/schema";
-import { sanitizeFileName } from "@/lib/utils";
+} from "@fwqgo/db/schema";
+import { sanitizeFileName } from "@fwqgo/core/utils";
 
 export const UPLOAD_PUBLIC_PREFIX = "/uploads/";
 const MAX_UPLOAD_SIZE = 8 * 1024 * 1024;
@@ -150,6 +150,11 @@ function buildOutputName(originalName: string, mime: string) {
 function buildVariantName(publicPath: string, variant: "thumb" | "large") {
   const parsed = path.parse(path.basename(publicPath));
   return `${parsed.name}_${variant}.webp`;
+}
+
+function isGeneratedVariantFileName(fileName: string) {
+  const parsed = path.parse(fileName);
+  return /_(thumb|large)$/i.test(parsed.name);
 }
 
 async function getAvailablePublicPath(fileName: string) {
@@ -676,6 +681,115 @@ export async function rebuildResponsiveImageVariants() {
   return { rebuilt, skipped, failed };
 }
 
+function variantFileExists(publicPath: string | null) {
+  if (!publicPath) return false;
+
+  try {
+    return existsSync(uploadPathToFilePath(publicPath));
+  } catch {
+    return false;
+  }
+}
+
+export async function auditAndRepairImageAssets() {
+  const assets = await db
+    .select()
+    .from(imageAssets)
+    .orderBy(sql`${imageAssets.createdAt} desc`);
+  let repaired = 0;
+  let variantsRebuilt = 0;
+  let missing = 0;
+  let skipped = 0;
+  const failed: Array<{ path: string; error: string }> = [];
+
+  await mkdir(getUploadDir(), { recursive: true });
+
+  for (const asset of assets) {
+    const currentPath = toUploadPath(asset.path);
+    if (!currentPath) {
+      skipped += 1;
+      continue;
+    }
+
+    try {
+      const filePath = uploadPathToFilePath(currentPath);
+      if (!existsSync(filePath)) {
+        missing += 1;
+        if (asset.status !== "missing") {
+          await db
+            .update(imageAssets)
+            .set({ status: "missing", updatedAt: new Date() })
+            .where(eq(imageAssets.id, asset.id));
+          repaired += 1;
+        }
+        continue;
+      }
+
+      const [fileStat, buffer, dimensions] = await Promise.all([
+        stat(filePath),
+        readFile(filePath),
+        getDimensionsFromFile(filePath),
+      ]);
+      const nextHash = hashBuffer(buffer);
+      const nextMime = inferMimeFromExtension(currentPath);
+      const patch: Partial<typeof imageAssets.$inferInsert> = {};
+
+      if (asset.size !== fileStat.size) patch.size = fileStat.size;
+      if (asset.hash !== nextHash) patch.hash = nextHash;
+      if (asset.mime !== nextMime) patch.mime = nextMime;
+      if (asset.width !== dimensions.width) patch.width = dimensions.width;
+      if (asset.height !== dimensions.height) patch.height = dimensions.height;
+      if (asset.status === "missing") patch.status = "active";
+
+      const shouldRebuildVariants =
+        nextMime !== "image/gif" &&
+        (!asset.thumbPath ||
+          !asset.largePath ||
+          !variantFileExists(asset.thumbPath) ||
+          !variantFileExists(asset.largePath));
+
+      if (shouldRebuildVariants) {
+        await removeVariantFiles(asset);
+        const variants = await createResponsiveVariants({
+          buffer,
+          mime: nextMime,
+          publicPath: currentPath,
+        });
+        patch.thumbPath = variants.thumbPath;
+        patch.largePath = variants.largePath;
+        variantsRebuilt += 1;
+      }
+
+      if (Object.keys(patch).length > 0) {
+        await db
+          .update(imageAssets)
+          .set({ ...patch, updatedAt: new Date() })
+          .where(eq(imageAssets.id, asset.id));
+        repaired += 1;
+      } else {
+        skipped += 1;
+      }
+    } catch (error) {
+      failed.push({
+        path: currentPath,
+        error: error instanceof Error ? error.message : "图片资产体检失败",
+      });
+    }
+  }
+
+  const rebuilt = await rebuildImageReferences();
+
+  return {
+    scanned: assets.length,
+    repaired,
+    variantsRebuilt,
+    missing,
+    skipped,
+    failed,
+    references: rebuilt.references,
+  };
+}
+
 export async function importExistingUploads() {
   const uploadDir = getUploadDir();
   await mkdir(uploadDir, { recursive: true });
@@ -691,7 +805,7 @@ export async function importExistingUploads() {
     }
 
     const ext = path.extname(entry.name).toLowerCase();
-    if (!IMAGE_EXTENSIONS.has(ext)) {
+    if (!IMAGE_EXTENSIONS.has(ext) || isGeneratedVariantFileName(entry.name)) {
       skipped += 1;
       continue;
     }
@@ -830,6 +944,8 @@ function buildPostImageReferences(
     title: string;
     imgUrl: string | null;
     content: string;
+    enImgUrl?: string | null;
+    enContent?: string | null;
   },
   assets: ImageAssetLookup[],
 ) {
@@ -847,6 +963,17 @@ function buildPostImageReferences(
     });
   }
 
+  const englishCoverAsset = findAsset(post.enImgUrl);
+  if (englishCoverAsset) {
+    references.push({
+      imageId: englishCoverAsset.id,
+      sourceType: "post",
+      sourceId: String(post.id),
+      sourceLabel: post.title,
+      field: "enCover",
+    });
+  }
+
   for (const uploadPath of extractUploadPathsFromHtml(post.content)) {
     const asset = findAsset(uploadPath);
     if (asset) {
@@ -860,7 +987,42 @@ function buildPostImageReferences(
     }
   }
 
+  if (post.enContent) {
+    for (const uploadPath of extractUploadPathsFromHtml(post.enContent)) {
+      const asset = findAsset(uploadPath);
+      if (asset) {
+        references.push({
+          imageId: asset.id,
+          sourceType: "post",
+          sourceId: String(post.id),
+          sourceLabel: post.title,
+          field: "enContent",
+        });
+      }
+    }
+  }
+
   return references;
+}
+
+function dedupeImageReferences(references: ImageReference[]) {
+  const seen = new Set<string>();
+
+  return references.filter((reference) => {
+    const key = [
+      reference.imageId,
+      reference.sourceType,
+      reference.sourceId,
+      reference.field,
+    ].join(":");
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
 }
 
 export async function syncImageReferencesForPost(postId: number) {
@@ -873,13 +1035,15 @@ export async function syncImageReferencesForPost(postId: number) {
         title: posts.title,
         imgUrl: posts.imgUrl,
         content: posts.content,
+        enImgUrl: posts.enImgUrl,
+        enContent: posts.enContent,
       })
       .from(posts)
       .where(eq(posts.id, postId))
       .limit(1),
   ]);
   const references = postRows[0]
-    ? buildPostImageReferences(postRows[0], assets)
+    ? dedupeImageReferences(buildPostImageReferences(postRows[0], assets))
     : [];
 
   await db.transaction(async (tx) => {
@@ -934,6 +1098,8 @@ export async function rebuildImageReferences() {
         title: posts.title,
         imgUrl: posts.imgUrl,
         content: posts.content,
+        enImgUrl: posts.enImgUrl,
+        enContent: posts.enContent,
       })
       .from(posts),
     db
@@ -964,12 +1130,13 @@ export async function rebuildImageReferences() {
 
   await db.transaction(async (tx) => {
     await tx.delete(imageAssetReferences);
-    if (references.length > 0) {
-      await tx.insert(imageAssetReferences).values(references);
+    const dedupedReferences = dedupeImageReferences(references);
+    if (dedupedReferences.length > 0) {
+      await tx.insert(imageAssetReferences).values(dedupedReferences);
     }
   });
 
-  return { references: references.length };
+  return { references: dedupeImageReferences(references).length };
 }
 
 export async function deleteImageAsset(id: number) {
@@ -1018,31 +1185,53 @@ export async function replaceImageReferences(input: {
     return { error: "图片不存在" };
   }
 
-  const replacementPath = normalizeUploadPath(input.replacementPath);
+  let replacementPath: string;
+  try {
+    replacementPath = normalizeUploadPath(input.replacementPath);
+  } catch {
+    return { error: "替换图片 URL 必须是 /uploads/ 下的有效图片路径" };
+  }
+  const [replacementAsset] = await db
+    .select({ id: imageAssets.id })
+    .from(imageAssets)
+    .where(eq(imageAssets.path, replacementPath))
+    .limit(1);
+
+  if (!replacementAsset) {
+    return { error: "替换图片不存在，请先上传或导入该图片" };
+  }
+
+  const siteBaseUrl = (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
+    /\/+$/,
+    "",
+  );
+  const absoluteAssetPath = `${siteBaseUrl}${asset.path}`;
+  const absoluteReplacementPath = `${siteBaseUrl}${replacementPath}`;
+
   await db.transaction(async (tx) => {
     await tx
       .update(posts)
       .set({
-        imgUrl: sql`replace(${posts.imgUrl}, ${asset.path}, ${replacementPath})`,
+        imgUrl: sql`replace(replace(${posts.imgUrl}, ${absoluteAssetPath}, ${absoluteReplacementPath}), ${asset.path}, ${replacementPath})`,
         updatedAt: new Date(),
       })
-      .where(sql`${posts.imgUrl} like ${`%${asset.path}%`}`);
+      .where(sql`${posts.imgUrl} like ${`%${asset.path}%`} or ${posts.imgUrl} like ${`%${absoluteAssetPath}%`}`);
 
     await tx
       .update(posts)
       .set({
-        content: sql`replace(${posts.content}, ${asset.path}, ${replacementPath})`,
+        content: sql`replace(replace(${posts.content}, ${absoluteAssetPath}, ${absoluteReplacementPath}), ${asset.path}, ${replacementPath})`,
         updatedAt: new Date(),
       })
-      .where(sql`${posts.content} like ${`%${asset.path}%`}`);
+      .where(sql`${posts.content} like ${`%${asset.path}%`} or ${posts.content} like ${`%${absoluteAssetPath}%`}`);
 
     await tx
       .update(users)
       .set({
-        image: sql`replace(${users.image}, ${asset.path}, ${replacementPath})`,
+        image: sql`replace(replace(${users.image}, ${absoluteAssetPath}, ${absoluteReplacementPath}), ${asset.path}, ${replacementPath})`,
         updatedAt: new Date(),
       })
-      .where(sql`${users.image} like ${`%${asset.path}%`}`);
+      .where(sql`${users.image} like ${`%${asset.path}%`} or ${users.image} like ${`%${absoluteAssetPath}%`}`);
   });
 
   await rebuildImageReferences();

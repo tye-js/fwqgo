@@ -3,7 +3,7 @@ import { ArrowUpRight, CalendarDays, Newspaper } from "lucide-react";
 
 import { SafePostImage } from "@/features/public/components/safe-post-image";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatDate } from "@/lib/utils";
+import { formatDate } from "@fwqgo/core/utils";
 
 type LatestPostItem = {
   id: number;
@@ -21,7 +21,7 @@ export function LatestPostsSidebar({ posts }: { posts: LatestPostItem[] }) {
   const compactPosts = posts.slice(1);
 
   return (
-    <Card className="overflow-hidden rounded-lg border-border/70 bg-background shadow-none">
+    <Card className="overflow-hidden rounded-lg border-border/70 bg-background shadow-sm">
       <CardContent className="p-0">
         <div className="border-b border-border/70 p-5">
           <div className="flex items-center justify-between gap-3">
@@ -31,7 +31,7 @@ export function LatestPostsSidebar({ posts }: { posts: LatestPostItem[] }) {
             </div>
             <Link
               href="/"
-              className="text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="inline-flex min-h-9 items-center rounded-md text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               查看更多
             </Link>
@@ -54,7 +54,7 @@ export function LatestPostsSidebar({ posts }: { posts: LatestPostItem[] }) {
             </span>
           </div>
           <div className="space-y-2 border-b border-border/70 p-5">
-            <h3 className="line-clamp-2 text-base font-semibold leading-6 text-foreground transition-colors group-hover:text-accent">
+            <h3 className="line-clamp-2 text-base font-semibold leading-6 text-foreground underline-offset-4 transition-colors group-hover:text-accent group-hover:underline">
               {featuredPost.title}
             </h3>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -75,7 +75,7 @@ export function LatestPostsSidebar({ posts }: { posts: LatestPostItem[] }) {
                 {index + 2}
               </span>
               <span className="min-w-0">
-                <span className="line-clamp-2 text-sm font-medium leading-5 text-foreground transition-colors group-hover:text-accent">
+                <span className="line-clamp-2 text-sm font-medium leading-5 text-foreground underline-offset-4 transition-colors group-hover:text-accent group-hover:underline">
                   {post.title}
                 </span>
                 <span className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">

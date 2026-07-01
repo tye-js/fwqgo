@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  auditAndRepairImageAssets,
   convertExistingUploadsToWebp,
   deleteImageAsset,
   getImageAssetList,
@@ -14,8 +15,8 @@ import {
   serializeImageAsset,
   updateImageAssetMetadata,
 } from "@/server/images/assets";
-import { requireAdminSession } from "@/server/auth/session";
-import { revalidateSiteContent, cacheTags } from "@/server/cache/tags";
+import { requireAdminSession } from "@fwqgo/auth/session";
+import { revalidateSiteContent, cacheTags } from "@fwqgo/cache/tags";
 
 export async function getImageAssets() {
   await requireAdminSession();
@@ -40,6 +41,15 @@ export async function rebuildImageReferencesAction() {
 export async function rebuildResponsiveImageVariantsAction() {
   await requireAdminSession();
   const data = await rebuildResponsiveImageVariants();
+  revalidatePath("/end/images/list");
+  revalidatePath("/end/images/upload");
+  revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
+  return { data };
+}
+
+export async function auditAndRepairImageAssetsAction() {
+  await requireAdminSession();
+  const data = await auditAndRepairImageAssets();
   revalidatePath("/end/images/list");
   revalidatePath("/end/images/upload");
   revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);

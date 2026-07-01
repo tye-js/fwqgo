@@ -8,7 +8,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { cn } from "@/lib/utils";
+import { cn } from "@fwqgo/core/utils";
 import { usePathname, useSearchParams } from "next/navigation";
 
 type PaginationItemValue = number | "ellipsis";

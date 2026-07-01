@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { asc, desc, eq, inArray } from "drizzle-orm";
 
-import { db } from "@/server/db";
-import { homepagePromotedPosts, posts } from "@/server/db/schema";
-import { requireAdminSession } from "@/server/auth/session";
-import { cacheTags, revalidateSiteContent, tagCache } from "@/server/cache/tags";
+import { db } from "@fwqgo/db";
+import { homepagePromotedPosts, posts } from "@fwqgo/db/schema";
+import { requireAdminSession } from "@fwqgo/auth/session";
+import { cacheTags, revalidateSiteContent, tagCache } from "@fwqgo/cache/tags";
 
 export async function getHomepagePromotedPostList() {
   "use cache";

@@ -31,7 +31,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   defaultCoverPromptTemplate,
-} from "@/lib/image-generation-prompts";
+} from "@fwqgo/core/image-generation-prompts";
 import {
   describeAdminResult,
   notifyError,

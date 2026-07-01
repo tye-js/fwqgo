@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 
-import { normalizeArticleHtml } from "@/lib/content";
-import { slugify } from "@/lib/utils";
-import { cacheTags, revalidateSiteContent } from "@/server/cache/tags";
-import { db } from "@/server/db";
-import { categories, postTags, posts, tags } from "@/server/db/schema";
+import { normalizeArticleHtml } from "@fwqgo/core/content";
+import { slugify } from "@fwqgo/core/utils";
+import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
+import { db } from "@fwqgo/db";
+import { categories, postTags, posts, tags } from "@fwqgo/db/schema";
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import { shortenArticleOutboundLinks } from "@/server/links/outbound-short-link";
 import { type CreatePostParams } from "@/types/post.types";
@@ -60,6 +60,43 @@ function uniqueTagsBySlug<T extends { name: string }>(tagList: T[]) {
   }
 
   return Array.from(uniqueTags.values());
+}
+
+async function getOrCreateTagByName(
+  tx: PostRecordExecutor,
+  input: { name: string; slug: string },
+) {
+  const [existingTag] = await tx
+    .select({ id: tags.id, name: tags.name })
+    .from(tags)
+    .where(eq(tags.slug, input.slug))
+    .limit(1);
+
+  if (existingTag) {
+    return existingTag;
+  }
+
+  const [insertedTag] = await tx
+    .insert(tags)
+    .values({ name: input.name, slug: input.slug })
+    .onConflictDoNothing()
+    .returning({ id: tags.id, name: tags.name });
+
+  if (insertedTag) {
+    return insertedTag;
+  }
+
+  const [createdByConcurrentRequest] = await tx
+    .select({ id: tags.id, name: tags.name })
+    .from(tags)
+    .where(eq(tags.slug, input.slug))
+    .limit(1);
+
+  if (!createdByConcurrentRequest) {
+    throw new Error(`标签创建失败：${input.name}`);
+  }
+
+  return createdByConcurrentRequest;
 }
 
 export async function createPostRecord(
@@ -119,22 +156,7 @@ export async function createPostRecordInTransaction(
   const tagRows = await Promise.all(
     inputTags.map(async (tag) => {
       const tagSlug = slugify(tag.name);
-      const [existingTag] = await tx
-        .select({ id: tags.id, name: tags.name })
-        .from(tags)
-        .where(eq(tags.slug, tagSlug))
-        .limit(1);
-
-      if (existingTag) {
-        return existingTag;
-      }
-
-      const [newTag] = await tx
-        .insert(tags)
-        .values({ name: tag.name, slug: tagSlug })
-        .returning({ id: tags.id, name: tags.name });
-
-      return newTag!;
+      return getOrCreateTagByName(tx, { name: tag.name, slug: tagSlug });
     }),
   );
   const recommendedTag =

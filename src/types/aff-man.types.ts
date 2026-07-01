@@ -1,4 +1,4 @@
-import { type affServiceProviders } from "@/server/db/schema";
+import { type affServiceProviders } from "@fwqgo/db/schema";
 
 type AffServiceProvider = typeof affServiceProviders.$inferSelect;
 
