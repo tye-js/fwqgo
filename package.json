@@ -9,6 +9,7 @@
     "healthcheck:prod": "bash scripts/production-healthcheck.sh",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:migrate:prod": "node scripts/migrate-prod.mjs",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "links:convert": "tsx scripts/convert-post-links-to-short-slugs.ts",

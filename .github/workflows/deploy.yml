@@ -4,13 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       run_migrations:
-        description: "Run npm run db:migrate before switching the release"
+        description: "Run database migrations on server during deploy"
         required: true
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
+        default: "true"
+        type: boolean
   push:
     branches:
       - main
@@ -58,9 +55,7 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Run database migrations
-        if: ${{ github.event.inputs.run_migrations == 'true' }}
-        run: npm run db:migrate
+
 
       - name: Validate required secrets
         shell: bash
@@ -97,8 +92,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p ".deploy/payload-$RELEASE_ID/.next"
+          mkdir -p ".deploy/payload-$RELEASE_ID/.next" ".deploy/payload-$RELEASE_ID/scripts"
           rsync -a .next/standalone/ ".deploy/payload-$RELEASE_ID/.next/standalone/"
+          cp -R drizzle ".deploy/payload-$RELEASE_ID/drizzle"
+          cp scripts/migrate-prod.mjs ".deploy/payload-$RELEASE_ID/scripts/migrate-prod.mjs"
+          cp -R node_modules/drizzle-orm node_modules/postgres ".deploy/payload-$RELEASE_ID/.next/standalone/node_modules/" 2>/dev/null || true
           cp ecosystem.config.cjs ".deploy/payload-$RELEASE_ID/ecosystem.config.cjs"
           cp package.json ".deploy/payload-$RELEASE_ID/package.json"
           tar --format=gnu -czf ".deploy/fwqgo-$RELEASE_ID.tar.gz" -C ".deploy/payload-$RELEASE_ID" .
@@ -137,6 +135,7 @@ jobs:
           remote_artifact="$3"
           keep_releases="$4"
           upload_dir="$5"
+          run_migrations="$6"
 
           case "$deploy_path" in
             ""|"/"|"/var"|"/var/www")
@@ -197,11 +196,17 @@ jobs:
           mkdir -p "$release_dir"
           tar -xzf "$remote_artifact" -C "$release_dir"
           ln -sfn "$shared_dir/.env.production" "$release_dir/.env.production"
+          ln -sfn "$release_dir/.next/standalone/node_modules" "$release_dir/node_modules"
 
           [[ -f "$release_dir/.next/standalone/server.js" ]] || {
             echo "Artifact is missing .next/standalone/server.js" >&2
             exit 1
           }
+
+          if [[ "$run_migrations" != "false" ]]; then
+            echo "Running production database migrations on server..."
+            node "$release_dir/scripts/migrate-prod.mjs"
+          fi
 
           ln -sfn "$release_dir" "$current_link"
 
@@ -218,10 +223,11 @@ jobs:
           REMOTE_SCRIPT
 
           ssh -p "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
-            "bash -s -- '$DEPLOY_PATH' '$RELEASE_ID' '/tmp/fwqgo-$RELEASE_ID.tar.gz' '$KEEP_RELEASES' '$REMOTE_UPLOAD_DIR'" < "$remote_script"
+            "bash -s -- '$DEPLOY_PATH' '$RELEASE_ID' '/tmp/fwqgo-$RELEASE_ID.tar.gz' '$KEEP_RELEASES' '$REMOTE_UPLOAD_DIR' '$RUN_MIGRATIONS'" < "$remote_script"
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          RUN_MIGRATIONS: ${{ github.event.inputs.run_migrations != 'false' }}
 
       - name: Smoke test
         shell: bash
