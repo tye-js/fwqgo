@@ -59,17 +59,42 @@ const cmsAppDir =
   process.env.CMS_APP_DIR ?? process.env.APP_DIR ?? path.join(__dirname, "cms");
 
 /**
- * @param {{ name: string; appDir: string; port: number; portEnvName: string }} options
+ * @param {string | undefined} value
+ * @param {number} fallback
+ * @returns {number}
  */
-function createApp({ name, appDir, port, portEnvName }) {
+function parsePositiveInteger(value, fallback) {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
+ * @param {{ name: string; appDir: string; port: number; portEnvName: string; instancesEnvName: string; defaultInstances: number }} options
+ */
+function createApp({
+  name,
+  appDir,
+  port,
+  portEnvName,
+  instancesEnvName,
+  defaultInstances,
+}) {
   const resolvedPort =
     process.env[portEnvName] ?? productionEnv[portEnvName] ?? String(port);
+  const instances = parsePositiveInteger(
+    process.env[instancesEnvName] ?? productionEnv[instancesEnvName],
+    defaultInstances,
+  );
 
   return {
     name,
     cwd: appDir,
     script: path.join(appDir, "server.js"),
-    instances: "max",
+    instances,
     exec_mode: "cluster",
     autorestart: true,
     watch: false,
@@ -91,12 +116,16 @@ module.exports = {
       appDir: webAppDir,
       port: 3000,
       portEnvName: "WEB_PORT",
+      instancesEnvName: "WEB_INSTANCES",
+      defaultInstances: 2,
     }),
     createApp({
       name: "fwqgo-cms",
       appDir: cmsAppDir,
       port: 3100,
       portEnvName: "CMS_PORT",
+      instancesEnvName: "CMS_INSTANCES",
+      defaultInstances: 1,
     }),
   ],
 };
