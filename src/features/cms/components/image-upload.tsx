@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { ImageLibraryPicker } from "@/features/cms/components/image-library-picker";
 import { Button } from "@/components/ui/button";
-import { getOptimizedImageSrc } from "@/lib/image-src";
+import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
 
 interface ImageUploadProps {
   onChange: (value: string) => void;

@@ -39,7 +39,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { type posts } from "@/server/db/schema";
+import { type posts } from "@fwqgo/db/schema";
 
 type Post = typeof posts.$inferSelect;
 type PostListProp = Pick<
@@ -168,11 +168,14 @@ export function PostList({
   async function handleSave(postId: number) {
     if (editPostData?.id !== postId) return;
     setIsSaving(true);
-    const { error } = await updatePost({ ...editPostData });
+    const { error, message } = await updatePost({ ...editPostData });
     setIsSaving(false);
 
     if (error) {
-      toast.error("更新文章失败");
+      toast.error(error, {
+        description:
+          typeof message === "string" ? message : "请检查文章信息后再保存。",
+      });
       return;
     }
 

@@ -1,9 +1,9 @@
 "use server";
 
-import { db } from "@/server/db";
-import { postTags } from "@/server/db/schema";
-import { requireAdminSession } from "@/server/auth/session";
-import { cacheTags, revalidateSiteContent } from "@/server/cache/tags";
+import { db } from "@fwqgo/db";
+import { postTags } from "@fwqgo/db/schema";
+import { requireAdminSession } from "@fwqgo/auth/session";
+import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 
 interface CreatePostTagsInput {
   postId: number;

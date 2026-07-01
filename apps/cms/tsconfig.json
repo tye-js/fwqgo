@@ -6,6 +6,10 @@
       "@fwqgo/core/*": ["../../packages/core/*"],
       "@fwqgo/db": ["../../packages/db/index.ts"],
       "@fwqgo/db/*": ["../../packages/db/*"],
+      "@fwqgo/auth/*": ["../../packages/auth/*"],
+      "@fwqgo/cache/*": ["../../packages/cache/*"],
+      "@fwqgo/ai/*": ["../../packages/ai/*"],
+      "@fwqgo/scrape/*": ["../../packages/scrape/*"],
       "@/*": ["../../src/*"]
     },
     "plugins": [

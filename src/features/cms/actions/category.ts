@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 
-import { db } from "@/server/db";
-import { categories } from "@/server/db/schema";
-import { requireAdminSession } from "@/server/auth/session";
-import { cacheTags, revalidateSiteContent } from "@/server/cache/tags";
+import { db } from "@fwqgo/db";
+import { categories } from "@fwqgo/db/schema";
+import { requireAdminSession } from "@fwqgo/auth/session";
+import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {

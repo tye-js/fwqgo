@@ -4,20 +4,26 @@ import ArticleCard from "@/features/public/components/article-card";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
 import PageCard from "@/features/public/components/page-card";
 import { PaginationComponent } from "@/features/shared/components/pagination";
-import { decodeSlug } from "@/lib/utils";
+import { decodeSlug } from "@fwqgo/core/utils";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Hash } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
+function getSiteUrl() {
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+}
+
 export async function generateMetadata(
   props: {
-    params: Promise<{ tagSlug: string }>;
+    params: Promise<{ tagSlug: string; pageNo: string }>;
   }
 ): Promise<Metadata> {
   const params = await props.params;
   const decodedTagSlug = decodeSlug(params.tagSlug);
+  const currentPage = Number.parseInt(params.pageNo, 10);
+  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
   const { data: tag, error } = await getTagBySlug(decodedTagSlug);
   if (error || !tag)
     return {
@@ -28,6 +34,9 @@ export async function generateMetadata(
     title: `${tag.name}-服务器`,
     description: tag.description ?? `${tag.name}的服务器,${tag.name}的VPS`,
     keywords: tag.keywords ?? `${tag.name}的服务器,${tag.name}的VPS`,
+    alternates: {
+      canonical: `${getSiteUrl()}/fwq/tags/${encodeURIComponent(tag.slug)}/page/${pageNo}`,
+    },
     robots: tag.indexable
       ? undefined
       : {

@@ -15,12 +15,18 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Compass } from "lucide-react";
 
+function getSiteUrl() {
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+}
+
 export async function generateMetadata(
   props: {
-    params: Promise<{ category: string }>;
+    params: Promise<{ category: string; pageNo: string }>;
   }
 ): Promise<Metadata> {
   const params = await props.params;
+  const currentPage = Number.parseInt(params.pageNo, 10);
+  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
   const { data: category, error } = await CategoryInfo(params.category);
   if (error || !category)
     return {
@@ -31,6 +37,9 @@ export async function generateMetadata(
     title: `${category.name}-服务器go`,
     description: category.description ?? `${category.name}`,
     keywords: category.keywords ?? `${category.name}`,
+    alternates: {
+      canonical: `${getSiteUrl()}/fwq/${encodeURIComponent(category.slug)}/page/${pageNo}`,
+    },
   };
 }
 

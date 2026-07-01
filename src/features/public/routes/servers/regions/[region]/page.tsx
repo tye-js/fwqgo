@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
@@ -10,7 +9,7 @@ import { ServerOfferTable } from "@/features/public/components/server-offer-tabl
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { decodeSlug } from "@/lib/utils";
+import { decodeSlug } from "@fwqgo/core/utils";
 import { getServerOfferCollection } from "@/server/offers/server-offers";
 
 type PageProps = {
@@ -28,7 +27,6 @@ export async function generateMetadata({ params }: PageProps) {
 }
 
 async function RegionContent({ params }: PageProps) {
-  await connection();
   const { region } = await params;
   const value = decodeSlug(region);
   const data = await getServerOfferCollection({ kind: "region", value });

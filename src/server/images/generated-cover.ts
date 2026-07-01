@@ -1,4 +1,4 @@
-import { sanitizeFileName } from "@/lib/utils";
+import { sanitizeFileName } from "@fwqgo/core/utils";
 import {
   createImageAssetFromBuffer,
   type ImageAssetRow,

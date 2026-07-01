@@ -2,10 +2,10 @@
 
 import * as cheerio from "cheerio";
 
-import { normalizeArticleHtml } from "@/lib/content";
-import { requireAdminSession } from "@/server/auth/session";
-import { type AffiliateRewriteReport } from "@/server/scrape/affiliate-link-rewriter";
-import { rewriteAffiliateLinks } from "@/server/scrape/affiliate-link-rewriter";
+import { normalizeArticleHtml } from "@fwqgo/core/content";
+import { requireAdminSession } from "@fwqgo/auth/session";
+import { type AffiliateRewriteReport } from "@fwqgo/scrape/affiliate-link-rewriter";
+import { rewriteAffiliateLinks } from "@fwqgo/scrape/affiliate-link-rewriter";
 
 const siteBaseUrl = "https://fwqgo.com";
 

@@ -1,18 +1,59 @@
-import { db } from "@/server/db";
-import { posts, categories, tags } from "@/server/db/schema";
+import { db } from "@fwqgo/db";
+import { posts, categories, tags } from "@fwqgo/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { offerTopics } from "@/server/offers/server-offers";
 
+function getBaseUrl() {
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+}
 
+function escapeXml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function formatLastmod(value: Date | null | undefined) {
+  return (value ?? new Date()).toISOString();
+}
+
+function urlEntry(input: {
+  loc: string;
+  lastmod?: Date | null;
+  changefreq: "daily" | "weekly" | "monthly";
+  priority: string;
+  alternates?: Array<{ hreflang: string; href: string }>;
+}) {
+  const alternates =
+    input.alternates
+      ?.map(
+        (alternate) =>
+          `<xhtml:link rel="alternate" hreflang="${escapeXml(alternate.hreflang)}" href="${escapeXml(alternate.href)}" />`,
+      )
+      .join("\n    ") ?? "";
+
+  return `
+  <url>
+    <loc>${escapeXml(input.loc)}</loc>
+    ${alternates ? `${alternates}\n    ` : ""}<lastmod>${formatLastmod(input.lastmod)}</lastmod>
+    <changefreq>${input.changefreq}</changefreq>
+    <priority>${input.priority}</priority>
+  </url>`;
+}
 
 export async function GET() {
-  const baseUrl = process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com";
+  const baseUrl = getBaseUrl();
 
   // 获取所有已发布的文章
   const postsData = await db
     .select({
       slug: posts.slug,
+      enSlug: posts.enSlug,
       updatedAt: posts.updatedAt,
+      createdAt: posts.createdAt,
     })
     .from(posts)
     .where(eq(posts.published, true))
@@ -44,65 +85,73 @@ export async function GET() {
 
   // 生成 XML
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>${baseUrl}</loc>
-    <lastmod>${changeDate?.updatedAt?.toISOString()}</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>${baseUrl}/servers</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.9</priority>
-  </url>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  ${urlEntry({
+    loc: baseUrl,
+    lastmod: changeDate?.updatedAt,
+    changefreq: "daily",
+    priority: "1.0",
+  })}
+  ${urlEntry({
+    loc: `${baseUrl}/servers`,
+    lastmod: new Date(),
+    changefreq: "daily",
+    priority: "0.9",
+  })}
   ${offerTopics
       .map(
-        (topic) => `
-    <url>
-      <loc>${baseUrl}/servers/${topic.slug}</loc>
-      <lastmod>${new Date().toISOString()}</lastmod>
-      <changefreq>daily</changefreq>
-      <priority>0.85</priority>
-    </url>
-  `,
+        (topic) =>
+          urlEntry({
+            loc: `${baseUrl}/servers/${topic.slug}`,
+            lastmod: new Date(),
+            changefreq: "daily",
+            priority: "0.85",
+          }),
       )
       .join("")}
   ${postsData
       .map(
-        (post) => `
-    <url>
-      <loc>${baseUrl}/fwq/posts/${post.slug}</loc>
-      <lastmod>${post.updatedAt?.toISOString()}</lastmod>
-      <changefreq>weekly</changefreq>
-      <priority>0.9</priority>
-    </url>
-  `,
+        (post) =>
+          urlEntry({
+            loc: `${baseUrl}/fwq/posts/${encodeURIComponent(post.slug)}`,
+            lastmod: post.updatedAt ?? post.createdAt,
+            changefreq: "weekly",
+            priority: "0.9",
+            alternates: post.enSlug
+              ? [
+                  {
+                    hreflang: "zh-CN",
+                    href: `${baseUrl}/fwq/posts/${encodeURIComponent(post.slug)}`,
+                  },
+                  {
+                    hreflang: "en",
+                    href: `${baseUrl}/en/fwq/posts/${encodeURIComponent(post.enSlug)}`,
+                  },
+                ]
+              : undefined,
+          }),
       )
       .join("")}
   ${categoriesData
       .map(
-        (category) => `
-    <url>
-      <loc>${baseUrl}/fwq/categories/${category.slug}/page/1</loc>
-      <lastmod>${category.updatedAt?.toISOString()}</lastmod>
-      <changefreq>weekly</changefreq>
-      <priority>0.7</priority>
-    </url>
-  `,
+        (category) =>
+          urlEntry({
+            loc: `${baseUrl}/fwq/${encodeURIComponent(category.slug)}/page/1`,
+            lastmod: category.updatedAt,
+            changefreq: "weekly",
+            priority: "0.7",
+          }),
       )
       .join("")}
   ${tagsData
       .map(
-        (tag) => `
-    <url>
-      <loc>${baseUrl}/fwq/tags/${tag.slug}/page/1</loc>
-      <lastmod>${tag.updatedAt?.toISOString()}</lastmod>
-      <changefreq>weekly</changefreq>
-      <priority>0.6</priority>
-    </url>
-  `,
+        (tag) =>
+          urlEntry({
+            loc: `${baseUrl}/fwq/tags/${encodeURIComponent(tag.slug)}/page/1`,
+            lastmod: tag.updatedAt,
+            changefreq: "weekly",
+            priority: "0.6",
+          }),
       )
       .join("")}
 </urlset>`;

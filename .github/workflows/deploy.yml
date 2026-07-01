@@ -207,6 +207,9 @@ jobs:
           on_deploy_error() {
             status=$?
             trap - ERR
+            echo "Deployment failed. Recent PM2 logs:"
+            pm2 logs fwqgo-web --lines 80 --nostream || true
+            pm2 logs fwqgo-cms --lines 80 --nostream || true
             rollback_previous
             exit "$status"
           }
@@ -224,6 +227,23 @@ jobs:
           }
 
           if [[ "$run_migrations" != "false" ]]; then
+            if command -v pg_dump >/dev/null 2>&1; then
+              backup_dir="$shared_dir/backups/db"
+              mkdir -p "$backup_dir"
+              set -a
+              # shellcheck source=/dev/null
+              source "$shared_dir/.env.production"
+              set +a
+              if [[ -n "${DATABASE_URL:-}" ]]; then
+                backup_file="$backup_dir/fwqgo-before-${release_id}.dump"
+                echo "Creating database backup before migrations: $backup_file"
+                pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges --file="$backup_file"
+              else
+                echo "DATABASE_URL is not set; skipping database backup." >&2
+              fi
+            else
+              echo "pg_dump is not installed; skipping database backup before migrations." >&2
+            fi
             echo "Running production database migrations on server..."
             node "$release_dir/scripts/migrate-prod.mjs"
           fi
@@ -242,6 +262,21 @@ jobs:
 
           start_release "$current_link"
           pm2 save
+
+          web_port="$(grep -E "^WEB_PORT=" "$shared_dir/.env.production" 2>/dev/null | tail -n 1 | cut -d= -f2- | tr -d "\"'"'"'" || true)"
+          cms_port="$(grep -E "^CMS_PORT=" "$shared_dir/.env.production" 2>/dev/null | tail -n 1 | cut -d= -f2- | tr -d "\"'"'"'" || true)"
+          web_port="${web_port:-3000}"
+          cms_port="${cms_port:-3100}"
+          web_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 15 "http://127.0.0.1:${web_port}/")"
+          cms_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 15 "http://127.0.0.1:${cms_port}/")"
+          case "$web_status" in
+            2*|3*) ;;
+            *) echo "Web local health check failed: HTTP $web_status" >&2; exit 1 ;;
+          esac
+          case "$cms_status" in
+            2*|3*|401) ;;
+            *) echo "CMS local health check failed: HTTP $cms_status" >&2; exit 1 ;;
+          esac
           trap - ERR
 
           rm -f "$remote_artifact"

@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 
-import { normalizeArticleHtml } from "@/lib/content";
-import { db } from "@/server/db";
-import { posts } from "@/server/db/schema";
+import { normalizeArticleHtml } from "@fwqgo/core/content";
+import { db } from "@fwqgo/db";
+import { posts } from "@fwqgo/db/schema";
 import { shortenArticleOutboundLinks } from "@/server/links/outbound-short-link";
 
 const shouldWrite = process.argv.includes("--write");

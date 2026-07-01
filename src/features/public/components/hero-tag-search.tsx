@@ -72,13 +72,13 @@ export function HeroTagSearch() {
               placeholder="搜索标签，例如：香港 CN2 / 原生IP / RackNerd"
               aria-describedby={errorMessage ? "hero-tag-search-error" : undefined}
               aria-invalid={Boolean(errorMessage)}
-              className="h-10 rounded-md border-border/70 bg-background pl-11"
+              className="min-h-11 rounded-md border-border/70 bg-background pl-11"
             />
           </div>
           <Button
             type="submit"
             disabled={isPending}
-            className="h-10 rounded-md px-5"
+            className="min-h-11 rounded-md px-5"
           >
             {isPending ? "搜索中..." : "搜索"}
           </Button>

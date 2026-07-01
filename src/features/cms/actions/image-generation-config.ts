@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { requireAdminSession } from "@/server/auth/session";
+import { requireAdminSession } from "@fwqgo/auth/session";
 import {
   createImageGenerationConfig,
   deleteImageGenerationConfig,

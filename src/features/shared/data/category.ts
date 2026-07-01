@@ -1,8 +1,8 @@
 "use server";
 
-import { db } from "@/server/db";
-import { categories } from "@/server/db/schema";
-import { cacheTags, tagCache } from "@/server/cache/tags";
+import { db } from "@fwqgo/db";
+import { categories } from "@fwqgo/db/schema";
+import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { asc, eq, isNull } from "drizzle-orm";
 
 export async function getCategories() {

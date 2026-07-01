@@ -4,7 +4,6 @@ import { useActionState, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { type Tag } from "@/features/cms/routes/end/posts/create/page";
 import {
   getAiRewriteStyleOptions,
   scrapeArticleAction,
@@ -25,6 +24,10 @@ const initialState: ScrapeActionState = {
   error: null,
 };
 
+type ScraperTag = {
+  name: string;
+};
+
 export function ScraperForm({
   setContent,
   setTitle,
@@ -37,8 +40,8 @@ export function ScraperForm({
   setTitle: (title: string) => void;
   setDescription: (description: string) => void;
   setKeywords: (keywords: string[]) => void;
-  setRecommendTag: (recommendTag: Tag) => void;
-  setTags: (tags: Tag[]) => void;
+  setRecommendTag: (recommendTag: ScraperTag) => void;
+  setTags: (tags: ScraperTag[]) => void;
 }) {
   const [rewriteStyles, setRewriteStyles] = useState<
     Awaited<ReturnType<typeof getAiRewriteStyleOptions>>

@@ -1,10 +1,10 @@
 import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 
-import { slugify } from "@/lib/utils";
-import { db } from "@/server/db";
-import { attachTagsToPosts } from "@/server/db/post-tags";
-import { cacheTags, tagCache } from "@/server/cache/tags";
-import { postTags, posts, tags } from "@/server/db/schema";
+import { slugify } from "@fwqgo/core/utils";
+import { db } from "@fwqgo/db";
+import { attachTagsToPosts } from "@fwqgo/db/post-tags";
+import { cacheTags, tagCache } from "@fwqgo/cache/tags";
+import { postTags, posts, tags } from "@fwqgo/db/schema";
 
 export async function getTagBySlug(tagSlug: string) {
   "use cache";
@@ -15,6 +15,7 @@ export async function getTagBySlug(tagSlug: string) {
       .select({
         id: tags.id,
         name: tags.name,
+        slug: tags.slug,
         description: tags.description,
         keywords: tags.keywords,
         indexable: tags.indexable,

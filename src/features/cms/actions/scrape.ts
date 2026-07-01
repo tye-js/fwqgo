@@ -5,8 +5,8 @@ import { z } from "zod";
 import {
   scrapeArticleWithOptions,
   type ScrapedArticle,
-} from "@/server/scrape/article-scraper";
-import { getAiRewriteConfigs } from "@/server/ai/rewrite-config";
+} from "@fwqgo/scrape/article-scraper";
+import { getAiRewriteConfigs } from "@fwqgo/ai/rewrite-config";
 
 const urlSchema = z.object({
   url: z.string().url(),

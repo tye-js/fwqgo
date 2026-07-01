@@ -4,14 +4,14 @@ import { asc, desc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { pullSourceSiteToAiTasks } from "@/server/ai/source-site-puller";
-import { requireAdminSession } from "@/server/auth/session";
-import { db } from "@/server/db";
+import { pullSourceSiteToAiTasks } from "@fwqgo/ai/source-site-puller";
+import { requireAdminSession } from "@fwqgo/auth/session";
+import { db } from "@fwqgo/db";
 import {
   aiRewriteConfigs,
   aiSourceSites,
   categories,
-} from "@/server/db/schema";
+} from "@fwqgo/db/schema";
 
 const sourceSiteSchema = z.object({
   name: z.string().trim().min(1, "请输入站点名称").max(120),

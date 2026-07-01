@@ -1,4 +1,4 @@
-import { type posts } from "@/server/db/schema";
+import { type posts } from "@fwqgo/db/schema";
 import { type TagMain, type TagName } from "./tag.types";
 
 // 继承 Drizzle 类型
@@ -53,6 +53,13 @@ export interface PostEditFormData {
     | "recommendedTagName"
     | "keywords"
     | "categoryId"
+    | "enTitle"
+    | "enSlug"
+    | "enContent"
+    | "enKeywords"
+    | "enDescription"
+    | "enImgUrl"
+    | "enUpdatedAt"
   >;
   tags: TagMain[];
 }

@@ -1,11 +1,11 @@
 "use server";
 
-import { db } from "@/server/db";
+import { db } from "@fwqgo/db";
 import { type AffManData } from "@/types";
 import { revalidatePath } from "next/cache";
-import { affServiceProviders } from "@/server/db/schema";
+import { affServiceProviders } from "@fwqgo/db/schema";
 import { eq, desc, inArray, count, or, ilike } from "drizzle-orm";
-import { requireAdminSession } from "@/server/auth/session";
+import { requireAdminSession } from "@fwqgo/auth/session";
 
 type AffProviderActionResult =
   | { data: typeof affServiceProviders.$inferSelect | undefined }

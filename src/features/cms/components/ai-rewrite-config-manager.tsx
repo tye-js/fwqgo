@@ -8,7 +8,7 @@ import {
   deleteAiRewriteConfigAction,
   updateAiRewriteConfigAction,
 } from "@/features/cms/actions/ai-rewrite-config";
-import { type getAiRewriteConfigs } from "@/server/ai/rewrite-config";
+import { type getAiRewriteConfigs } from "@fwqgo/ai/rewrite-config";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,7 +39,7 @@ import {
   defaultBaseRewritePrompt,
   defaultMetadataPrompt,
   defaultMetadataStylePrompt,
-} from "@/lib/ai-rewrite-prompts";
+} from "@fwqgo/core/ai-rewrite-prompts";
 
 type Config = Awaited<ReturnType<typeof getAiRewriteConfigs>>[number];
 

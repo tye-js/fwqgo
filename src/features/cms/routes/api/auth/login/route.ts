@@ -1,9 +1,9 @@
-import { db } from "@/server/db";
+import { db } from "@fwqgo/db";
 import { compare } from "bcryptjs";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { randomUUID } from "crypto";
-import { users, sessions } from "@/server/db/schema";
+import { users, sessions } from "@fwqgo/db/schema";
 import { eq } from "drizzle-orm";
 
 const loginSchema = z.object({

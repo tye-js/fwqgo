@@ -20,7 +20,7 @@ import {
 } from "@/features/cms/actions/ai-rewrite-task";
 import { AiRewriteTaskResolveButton } from "@/features/cms/components/ai-rewrite-task-resolve-button";
 import { type getAiRewriteTaskList } from "@/features/cms/actions/ai-rewrite-task";
-import { type ScrapeDiagnostics } from "@/server/scrape/article-scraper";
+import { type ScrapeDiagnostics } from "@fwqgo/scrape/article-scraper";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -287,7 +287,9 @@ function FailedTaskPanel({
 
 function countSubmittedUrls(formData: FormData) {
   const sourceType = formData.get("sourceType");
-  if (sourceType === "text" || sourceType === "email") return 1;
+  if (sourceType === "text" || sourceType === "email" || sourceType === "file") {
+    return 1;
+  }
 
   const sourceUrls = formData.get("sourceUrls");
   if (typeof sourceUrls !== "string") return 0;
@@ -558,6 +560,7 @@ export function AiRewriteTaskManager({
     <div className="space-y-5">
       <form
         action={handleSubmit}
+        encType="multipart/form-data"
         className="grid gap-3 rounded-lg border border-border/70 bg-background p-4 shadow-sm lg:grid-cols-[150px_minmax(0,1fr)_180px_180px_auto]"
       >
         <Select name="sourceType" value={sourceType} onValueChange={setSourceType}>
@@ -568,6 +571,7 @@ export function AiRewriteTaskManager({
             <SelectItem value="url">网址</SelectItem>
             <SelectItem value="text">手动文本</SelectItem>
             <SelectItem value="email">邮件素材</SelectItem>
+            <SelectItem value="file">文件导入</SelectItem>
           </SelectContent>
         </Select>
         <div className="space-y-2">
@@ -578,6 +582,24 @@ export function AiRewriteTaskManager({
               required
               className="min-h-11 lg:min-h-11"
             />
+          ) : sourceType === "file" ? (
+            <>
+              <Input
+                name="sourceTitle"
+                placeholder="素材标题，可留空使用文件名"
+                className="min-h-11"
+              />
+              <Input
+                name="sourceFile"
+                type="file"
+                accept=".txt,.md,.markdown,.html,.htm,.csv,text/plain,text/markdown,text/html,text/csv"
+                required
+                className="min-h-11"
+              />
+              <p className="text-xs leading-5 text-muted-foreground">
+                支持 txt、md、html、csv，单个文件不超过 2MB。导入后会清洗、替换返利链接并改写为草稿。
+              </p>
+            </>
           ) : (
             <>
               <Input

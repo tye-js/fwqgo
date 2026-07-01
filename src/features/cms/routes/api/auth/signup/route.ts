@@ -1,7 +1,7 @@
-import { db } from "@/server/db";
+import { db } from "@fwqgo/db";
 import { hash } from "bcryptjs";
 import { z } from "zod";
-import { users } from "@/server/db/schema";
+import { users } from "@fwqgo/db/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 

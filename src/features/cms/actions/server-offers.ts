@@ -3,11 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { requireAdminSession } from "@/server/auth/session";
+import { requireAdminSession } from "@fwqgo/auth/session";
 import {
   bulkUpdateServerOffers,
   importServerOffersFromPost,
   importServerOffersFromPosts,
+  offerReviewStatuses,
   offerStatuses,
   updateServerOffer,
 } from "@/server/offers/server-offers";
@@ -33,6 +34,7 @@ const updateOfferSchema = z.object({
   reviewUrl: nullableString,
   visible: z.coerce.boolean(),
   featured: z.coerce.boolean(),
+  reviewStatus: z.enum(offerReviewStatuses),
 });
 
 function getErrorMessage(error: unknown) {
@@ -112,6 +114,7 @@ export async function updateServerOfferAction(id: number, formData: FormData) {
       reviewUrl: formData.get("reviewUrl"),
       visible: formData.get("visible") === "true",
       featured: formData.get("featured") === "true",
+      reviewStatus: formData.get("reviewStatus"),
     });
     const updated = await updateServerOffer(id, input);
 
@@ -132,6 +135,7 @@ export async function bulkUpdateServerOffersAction(input: {
   status?: string;
   visible?: boolean;
   featured?: boolean;
+  reviewStatus?: string;
 }) {
   try {
     await requireAdminSession();
@@ -144,6 +148,13 @@ export async function bulkUpdateServerOffersAction(input: {
       status,
       visible: input.visible,
       featured: input.featured,
+      reviewStatus:
+        input.reviewStatus &&
+        offerReviewStatuses.includes(
+          input.reviewStatus as (typeof offerReviewStatuses)[number],
+        )
+          ? input.reviewStatus
+          : undefined,
     });
 
     revalidateOfferPages();

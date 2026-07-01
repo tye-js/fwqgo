@@ -1,18 +1,20 @@
 "use server";
 
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { requireAdminSession } from "@/server/auth/session";
-import { enqueueAiRewriteTask } from "@/server/ai/rewrite-task-runner";
-import { db } from "@/server/db";
+import { requireAdminSession } from "@fwqgo/auth/session";
+import { enqueueAiRewriteTask } from "@fwqgo/ai/rewrite-task-runner";
+import { db } from "@fwqgo/db";
 import {
   aiRewriteConfigs,
+  aiTaskSteps,
   aiRewriteTasks,
   categories,
   posts,
-} from "@/server/db/schema";
+  sourceMaterials,
+} from "@fwqgo/db/schema";
 
 const taskInputSchema = z.object({
   sourceUrl: z.string().url("请输入有效 URL"),
@@ -24,6 +26,16 @@ const manualTaskInputSchema = z.object({
   sourceType: z.enum(["text", "email"]),
   sourceTitle: z.string().trim().min(1, "请输入素材标题").max(180),
   sourceContent: z.string().trim().min(20, "素材内容至少需要 20 个字符"),
+  categoryId: z.coerce.number().int().positive("请选择分类"),
+  rewriteStyleId: z.coerce.number().int().positive().optional(),
+});
+
+const fileTaskInputSchema = z.object({
+  sourceTitle: z.string().trim().max(180).optional(),
+  sourceContent: z.string().trim().min(20, "文件内容至少需要 20 个字符"),
+  sourceFileName: z.string().trim().min(1, "文件名不能为空").max(260),
+  sourceFileType: z.string().trim().max(120).optional(),
+  sourceFileSize: z.number().int().nonnegative().max(2 * 1024 * 1024),
   categoryId: z.coerce.number().int().positive("请选择分类"),
   rewriteStyleId: z.coerce.number().int().positive().optional(),
 });
@@ -51,9 +63,128 @@ function getErrorMessage(error: unknown) {
   return typeof error === "string" ? error : "未知错误";
 }
 
+async function validateCategoryAndStyle(input: {
+  categoryId: number;
+  rewriteStyleId?: number;
+}) {
+  const [category] = await db
+    .select({ id: categories.id })
+    .from(categories)
+    .where(eq(categories.id, input.categoryId))
+    .limit(1);
+
+  if (!category) {
+    return "分类不存在";
+  }
+
+  if (input.rewriteStyleId) {
+    const [style] = await db
+      .select({ id: aiRewriteConfigs.id })
+      .from(aiRewriteConfigs)
+      .where(eq(aiRewriteConfigs.id, input.rewriteStyleId))
+      .limit(1);
+
+    if (!style) {
+      return "AI 改写配置不存在";
+    }
+  }
+
+  return null;
+}
+
+async function createSourceMaterialAndTask(input: {
+  sourceType: "url" | "text" | "email" | "file";
+  sourceUrl: string;
+  sourceTitle?: string | null;
+  sourceContent?: string | null;
+  sourceFileName?: string | null;
+  sourceFileType?: string | null;
+  sourceFileSize?: number | null;
+  categoryId: number;
+  rewriteStyleId?: number | null;
+  createdBy?: string | null;
+  currentStep: string;
+}) {
+  return db.transaction(async (tx) => {
+    const [material] = await tx
+      .insert(sourceMaterials)
+      .values({
+        materialType: input.sourceType,
+        sourceUrl: input.sourceType === "url" ? input.sourceUrl : null,
+        title: input.sourceTitle ?? null,
+        content: input.sourceContent ?? null,
+        fileName: input.sourceFileName ?? null,
+        mime: input.sourceFileType ?? null,
+        size: input.sourceFileSize ?? null,
+        categoryId: input.categoryId,
+        rewriteStyleId: input.rewriteStyleId ?? null,
+        status: "queued",
+        createdBy: input.createdBy ?? null,
+      })
+      .returning({ id: sourceMaterials.id });
+
+    if (!material) {
+      throw new Error("创建来源素材失败");
+    }
+
+    const [task] = await tx
+      .insert(aiRewriteTasks)
+      .values({
+        sourceMaterialId: material.id,
+        sourceUrl: input.sourceUrl,
+        sourceType: input.sourceType,
+        sourceTitle: input.sourceTitle ?? null,
+        sourceContent: input.sourceContent ?? null,
+        sourceFileName: input.sourceFileName ?? null,
+        categoryId: input.categoryId,
+        rewriteStyleId: input.rewriteStyleId ?? null,
+        status: "pending",
+        progress: 0,
+        currentStep: input.currentStep,
+      })
+      .returning({ id: aiRewriteTasks.id });
+
+    if (!task) {
+      throw new Error("创建任务失败");
+    }
+
+    return task;
+  });
+}
+
+async function readTextFileFromForm(fileValue: FormDataEntryValue | null) {
+  if (!(fileValue instanceof File) || fileValue.size === 0) {
+    return { error: "请选择要导入的文件" };
+  }
+
+  if (fileValue.size > 2 * 1024 * 1024) {
+    return { error: "单个文件不能超过 2MB" };
+  }
+
+  const fileType = fileValue.type || "text/plain";
+  const fileName = fileValue.name || "未命名文件";
+  const isSupported =
+    fileType.startsWith("text/") ||
+    /\.(txt|md|markdown|html|htm|csv)$/i.test(fileName);
+
+  if (!isSupported) {
+    return { error: "当前只支持 txt、md、html、csv 等文本类文件导入" };
+  }
+
+  const sourceContent = await fileValue.text();
+  return {
+    data: {
+      sourceContent,
+      sourceFileName: fileName,
+      sourceFileType: fileType,
+      sourceFileSize: fileValue.size,
+    },
+  };
+}
+
 export async function createAiRewriteTaskAction(formData: FormData) {
   try {
-    await requireAdminSession();
+    const session = await requireAdminSession();
 
     const sourceType = formData.get("sourceType");
     const sourceUrls = parseSourceUrls(formData.get("sourceUrls"));
@@ -77,46 +208,62 @@ export async function createAiRewriteTaskAction(formData: FormData) {
         rewriteStyleId: sharedInput.rewriteStyleId,
       });
 
-      const [category] = await db
-        .select({ id: categories.id })
-        .from(categories)
-        .where(eq(categories.id, input.categoryId))
-        .limit(1);
-
-      if (!category) {
-        return { error: "分类不存在" };
+      const validationError = await validateCategoryAndStyle(input);
+      if (validationError) {
+        return { error: validationError };
       }
 
-      if (input.rewriteStyleId) {
-        const [style] = await db
-          .select({ id: aiRewriteConfigs.id })
-          .from(aiRewriteConfigs)
-          .where(eq(aiRewriteConfigs.id, input.rewriteStyleId))
-          .limit(1);
+      const task = await createSourceMaterialAndTask({
+        sourceType: input.sourceType,
+        sourceUrl: `manual://${input.sourceType}/${Date.now()}`,
+        sourceTitle: input.sourceTitle,
+        sourceContent: input.sourceContent,
+        categoryId: input.categoryId,
+        rewriteStyleId: input.rewriteStyleId ?? null,
+        createdBy: session.userId,
+        currentStep: "手动素材已提交，等待处理",
+      });
 
-        if (!style) {
-          return { error: "AI 改写配置不存在" };
-        }
+      await enqueueAiRewriteTask(task.id);
+      revalidatePath("/end/ai-rewrite/tasks");
+
+      return { data: task, count: 1 };
+    }
+
+    if (sourceType === "file") {
+      const fileResult = await readTextFileFromForm(formData.get("sourceFile"));
+      if ("error" in fileResult) {
+        return { error: fileResult.error };
       }
 
-      const [task] = await db
-        .insert(aiRewriteTasks)
-        .values({
-          sourceUrl: `manual://${input.sourceType}/${Date.now()}`,
-          sourceType: input.sourceType,
-          sourceTitle: input.sourceTitle,
-          sourceContent: input.sourceContent,
-          categoryId: input.categoryId,
-          rewriteStyleId: input.rewriteStyleId ?? null,
-          status: "pending",
-          progress: 0,
-          currentStep: "手动素材已提交，等待处理",
-        })
-        .returning({ id: aiRewriteTasks.id });
+      const input = fileTaskInputSchema.parse({
+        sourceTitle: formData.get("sourceTitle") ?? undefined,
+        sourceContent: fileResult.data.sourceContent,
+        sourceFileName: fileResult.data.sourceFileName,
+        sourceFileType: fileResult.data.sourceFileType,
+        sourceFileSize: fileResult.data.sourceFileSize,
+        categoryId: sharedInput.categoryId,
+        rewriteStyleId: sharedInput.rewriteStyleId,
+      });
 
-      if (!task) {
-        return { error: "创建任务失败" };
+      const validationError = await validateCategoryAndStyle(input);
+      if (validationError) {
+        return { error: validationError };
       }
+
+      const task = await createSourceMaterialAndTask({
+        sourceType: "file",
+        sourceUrl: `file://${Date.now()}/${encodeURIComponent(input.sourceFileName)}`,
+        sourceTitle: input.sourceTitle ?? input.sourceFileName,
+        sourceContent: input.sourceContent,
+        sourceFileName: input.sourceFileName,
+        sourceFileType: input.sourceFileType,
+        sourceFileSize: input.sourceFileSize,
+        categoryId: input.categoryId,
+        rewriteStyleId: input.rewriteStyleId ?? null,
+        createdBy: session.userId,
+        currentStep: "文件素材已导入，等待处理",
+      });
 
       await enqueueAiRewriteTask(task.id);
       revalidatePath("/end/ai-rewrite/tasks");
@@ -141,39 +288,23 @@ export async function createAiRewriteTaskAction(formData: FormData) {
       return { error: "单次最多提交 20 个 URL" };
     }
 
-    const [category] = await db
-      .select({ id: categories.id })
-      .from(categories)
-      .where(eq(categories.id, sharedInput.categoryId))
-      .limit(1);
-
-    if (!category) {
-      return { error: "分类不存在" };
+    const validationError = await validateCategoryAndStyle(sharedInput);
+    if (validationError) {
+      return { error: validationError };
     }
 
-    if (sharedInput.rewriteStyleId) {
-      const [style] = await db
-        .select({ id: aiRewriteConfigs.id })
-        .from(aiRewriteConfigs)
-        .where(eq(aiRewriteConfigs.id, sharedInput.rewriteStyleId))
-        .limit(1);
-
-      if (!style) {
-        return { error: "AI 改写配置不存在" };
-      }
-    }
-
-    const tasks = await db
-      .insert(aiRewriteTasks)
-      .values(parsedUrls.map((input) => ({
+    const tasks = [];
+    for (const input of parsedUrls) {
+      const task = await createSourceMaterialAndTask({
+        sourceType: "url",
         sourceUrl: input.sourceUrl,
         categoryId: sharedInput.categoryId,
         rewriteStyleId: sharedInput.rewriteStyleId ?? null,
-        status: "pending",
-        progress: 0,
+        createdBy: session.userId,
         currentStep: "等待处理",
-      })))
-      .returning({ id: aiRewriteTasks.id });
+      });
+      tasks.push(task);
+    }
 
     if (tasks.length === 0) {
       return { error: "创建任务失败" };
@@ -199,10 +330,8 @@ export async function retryAiRewriteTaskAction(taskId: number) {
       .update(aiRewriteTasks)
       .set({
         status: "pending",
-        progress: 0,
         currentStep: "等待重试",
         error: null,
-        postId: null,
         updatedAt: new Date(),
         startedAt: null,
         finishedAt: null,
@@ -216,6 +345,7 @@ export async function retryAiRewriteTaskAction(taskId: number) {
 
     await enqueueAiRewriteTask(task.id);
     revalidatePath("/end/ai-rewrite/tasks");
+    revalidatePath(`/end/ai-rewrite/tasks/${taskId}`);
 
     return { data: task };
   } catch (error) {
@@ -352,5 +482,30 @@ export async function getAiRewriteTaskDetail(id: number) {
     .where(eq(aiRewriteTasks.id, id))
     .limit(1);
 
-  return task ?? null;
+  if (!task) {
+    return null;
+  }
+
+  const steps = await db
+    .select({
+      id: aiTaskSteps.id,
+      taskId: aiTaskSteps.taskId,
+      stepKey: aiTaskSteps.stepKey,
+      stepName: aiTaskSteps.stepName,
+      attempt: aiTaskSteps.attempt,
+      status: aiTaskSteps.status,
+      progress: aiTaskSteps.progress,
+      message: aiTaskSteps.message,
+      error: aiTaskSteps.error,
+      payload: aiTaskSteps.payload,
+      startedAt: aiTaskSteps.startedAt,
+      finishedAt: aiTaskSteps.finishedAt,
+      createdAt: aiTaskSteps.createdAt,
+      updatedAt: aiTaskSteps.updatedAt,
+    })
+    .from(aiTaskSteps)
+    .where(eq(aiTaskSteps.taskId, id))
+    .orderBy(asc(aiTaskSteps.attempt), asc(aiTaskSteps.id));
+
+  return { ...task, steps };
 }

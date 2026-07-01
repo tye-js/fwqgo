@@ -5,8 +5,8 @@ import {
   getPostsByPostId,
 } from "@/features/public/data/post";
 
-import { getOptimizedImageSrc } from "@/lib/image-src";
-import { decodeSlug, formatDate } from "@/lib/utils";
+import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
+import { decodeSlug, formatDate } from "@fwqgo/core/utils";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { TableOfContents } from "@/components/toc/table-of-contents";

@@ -1,4 +1,4 @@
-import { requireAdminSession } from "@/server/auth/session";
+import { requireAdminSession } from "@fwqgo/auth/session";
 import { createImageAssetFromUpload } from "@/server/images/assets";
 import { type NextRequest, NextResponse } from "next/server";
 
@@ -7,9 +7,9 @@ export async function POST(request: NextRequest) {
     const session = await requireAdminSession();
 
     const formData = await request.formData();
-    const file = formData.get("file") as File;
+    const file = formData.get("file");
 
-    if (!file) {
+    if (!(file instanceof File)) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 

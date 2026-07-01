@@ -10,7 +10,7 @@ import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import { EditorToolbar } from "./editor-toolbar";
 import { useState, useEffect } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@fwqgo/core/utils";
 import { Card, CardContent } from "@/components/ui/card";
 
 interface TiptapEditorProps {

@@ -184,7 +184,7 @@
   }
 
   .article-prose :where(a) {
-    @apply rounded-sm font-semibold text-primary underline decoration-primary/70 decoration-2 underline-offset-4 transition-colors hover:bg-primary/10 hover:text-blue-700 hover:decoration-blue-700;
+    @apply rounded-sm font-semibold text-primary underline decoration-primary/70 decoration-2 underline-offset-4 transition-colors hover:bg-primary/10 hover:text-blue-700 hover:decoration-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
   }
 
   .article-prose :where(table) {
@@ -203,7 +203,7 @@
   }
 
   .article-prose :where(td) {
-    @apply break-words border-b border-border/70 px-2.5 py-2 align-top leading-snug text-foreground md:px-3;
+    @apply break-words border-b border-border/70 px-2 py-1.5 align-top leading-snug text-foreground md:px-2.5 md:py-2;
     overflow-wrap: anywhere;
   }
 

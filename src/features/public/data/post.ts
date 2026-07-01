@@ -1,13 +1,13 @@
-import { db } from "@/server/db";
-import { decodeSlug } from "@/lib/utils";
-import { attachTagsToPosts } from "@/server/db/post-tags";
-import { cacheTags, tagCache } from "@/server/cache/tags";
+import { db } from "@fwqgo/db";
+import { decodeSlug } from "@fwqgo/core/utils";
+import { attachTagsToPosts } from "@fwqgo/db/post-tags";
+import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import {
   posts,
   tags,
   postTags,
   homepagePromotedPosts,
-} from "@/server/db/schema";
+} from "@fwqgo/db/schema";
 import {
   eq,
   desc,
@@ -197,6 +197,11 @@ export async function getPostBySlug(slug: string) {
         id: posts.id,
         enSlug: posts.enSlug,
         enTitle: posts.enTitle,
+        enContent: posts.enContent,
+        enKeywords: posts.enKeywords,
+        enDescription: posts.enDescription,
+        enImgUrl: posts.enImgUrl,
+        enUpdatedAt: posts.enUpdatedAt,
         description: posts.description,
         imgUrl: posts.imgUrl,
         recommendedTagName: posts.recommendedTagName,

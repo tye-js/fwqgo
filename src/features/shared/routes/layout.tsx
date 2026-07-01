@@ -13,7 +13,13 @@ const fontOutfit = Outfit({
   variable: "--font-editorial",
 });
 
+function getMetadataBase() {
+  const value = process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com";
+  return new URL(value.endsWith("/") ? value : `${value}/`);
+}
+
 export const metadata: Metadata = {
+  metadataBase: getMetadataBase(),
   title: "服务器go",
   description:
     "服务器go为您汇总国内国外VPS、云服务器、独立服务器、原生IP云服务器的最新促销信息，更有商家背景、售后服务全面解析，助您轻松选购高性价比服务器！",

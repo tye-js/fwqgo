@@ -3,14 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { requireAdminSession } from "@/server/auth/session";
+import { requireAdminSession } from "@fwqgo/auth/session";
 import {
   aiProviderOptions,
   createAiRewriteConfig,
   deleteAiRewriteConfig,
   getAiRewriteConfigs,
   updateAiRewriteConfig,
-} from "@/server/ai/rewrite-config";
+} from "@fwqgo/ai/rewrite-config";
 
 const configSchema = z.object({
   name: z.string().trim().min(1, "名称不能为空"),

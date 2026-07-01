@@ -1,8 +1,8 @@
 import * as cheerio from "cheerio";
 import { eq } from "drizzle-orm";
 
-import { db } from "@/server/db";
-import { outboundLinks } from "@/server/db/schema";
+import { db } from "@fwqgo/db";
+import { outboundLinks } from "@fwqgo/db/schema";
 
 const siteBaseUrl = "https://fwqgo.com";
 const slugAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";

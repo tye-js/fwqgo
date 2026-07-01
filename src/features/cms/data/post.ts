@@ -1,9 +1,9 @@
-import { db } from "@/server/db";
-import { cacheTags, tagCache } from "@/server/cache/tags";
+import { db } from "@fwqgo/db";
+import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import {
   posts,
   categories,
-} from "@/server/db/schema";
+} from "@fwqgo/db/schema";
 import {
   eq,
   desc,

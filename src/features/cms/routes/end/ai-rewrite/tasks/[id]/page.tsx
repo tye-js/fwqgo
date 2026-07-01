@@ -17,7 +17,7 @@ import { AdminPageShell, AdminSectionCard } from "@/features/cms/components/admi
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { type ScrapeDiagnostics } from "@/server/scrape/article-scraper";
+import { type ScrapeDiagnostics } from "@fwqgo/scrape/article-scraper";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -58,6 +58,8 @@ type TaskStep = {
   name: string;
   status: StepStatus;
   description: string;
+  attempt?: number;
+  time?: Date | string | null;
 };
 
 function parseDiagnostics(value: string | null) {
@@ -184,6 +186,36 @@ function buildTaskSteps({
   ];
 }
 
+type DbTaskStep = NonNullable<
+  Awaited<ReturnType<typeof getAiRewriteTaskDetail>>
+>["steps"][number];
+
+function normalizeStepStatus(value: string): StepStatus {
+  if (value in stepStatusLabels) {
+    return value as StepStatus;
+  }
+
+  return "pending";
+}
+
+function buildStoredTaskSteps(steps: DbTaskStep[]): TaskStep[] {
+  if (steps.length === 0) {
+    return [];
+  }
+
+  const latestAttempt = Math.max(...steps.map((step) => step.attempt));
+
+  return steps
+    .filter((step) => step.attempt === latestAttempt)
+    .map((step) => ({
+      name: step.stepName,
+      status: normalizeStepStatus(step.status),
+      description: step.error ?? step.message ?? "等待处理",
+      attempt: step.attempt,
+      time: step.finishedAt ?? step.updatedAt ?? step.createdAt,
+    }));
+}
+
 function StepIcon({ status }: { status: StepStatus }) {
   if (status === "success") {
     return <CheckCircle2 className="size-4 text-primary" />;
@@ -213,14 +245,22 @@ function TaskStepTimeline({ steps }: { steps: TaskStep[] }) {
           </div>
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-medium text-foreground">{step.name}</p>
+            <p className="text-sm font-medium text-foreground">{step.name}</p>
               <Badge variant={stepStatusVariants[step.status]}>
                 {stepStatusLabels[step.status]}
               </Badge>
+              {step.attempt ? (
+                <Badge variant="outline">第 {step.attempt} 次</Badge>
+              ) : null}
             </div>
             <p className="text-xs leading-5 text-muted-foreground">
               {step.description}
             </p>
+            {step.time ? (
+              <p className="text-xs text-muted-foreground">
+                {formatTime(step.time)}
+              </p>
+            ) : null}
           </div>
         </div>
       ))}
@@ -310,13 +350,17 @@ export default async function AiRewriteTaskDetailPage({ params }: PageProps) {
 
   const diagnostics = parseDiagnostics(task.diagnostics);
   const report = diagnostics?.affiliateReport;
-  const steps = buildTaskSteps({
-    status: task.status,
-    currentStep: task.currentStep,
-    postId: task.postId,
-    scrapedHtml: task.scrapedHtml,
-    diagnostics,
-  });
+  const storedSteps = buildStoredTaskSteps(task.steps);
+  const steps =
+    storedSteps.length > 0
+      ? storedSteps
+      : buildTaskSteps({
+          status: task.status,
+          currentStep: task.currentStep,
+          postId: task.postId,
+          scrapedHtml: task.scrapedHtml,
+          diagnostics,
+        });
 
   return (
     <AdminPageShell
@@ -374,7 +418,11 @@ export default async function AiRewriteTaskDetailPage({ params }: PageProps) {
 
       <AdminSectionCard
         title="处理步骤"
-        description="根据当前任务数据推导每一步状态，失败或未命中外链会明确标记。"
+        description={
+          storedSteps.length > 0
+            ? "展示当前重试轮次的真实步骤记录，失败点会明确标记。"
+            : "历史任务没有步骤记录，按当前任务数据推导每一步状态。"
+        }
       >
         <TaskStepTimeline steps={steps} />
       </AdminSectionCard>

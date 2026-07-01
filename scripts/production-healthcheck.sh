@@ -56,9 +56,17 @@ log "Checking remote release and PM2"
 set -euo pipefail
 printf "current="
 readlink -f /var/www/fwqgo/current
-pm2 describe fwqgo | awk "
-  /status/ || /script path/ || /exec cwd/ || /node.js version/ || /unstable restarts/ { print }
-"
+for app in fwqgo-web fwqgo-cms; do
+  if pm2 describe "$app" >/dev/null 2>&1; then
+    printf "\n[%s]\n" "$app"
+    pm2 describe "$app" | awk "
+      /status/ || /script path/ || /exec cwd/ || /node.js version/ || /unstable restarts/ { print }
+    "
+  else
+    echo "Missing PM2 process: $app" >&2
+    exit 1
+  fi
+done
 '
 
 log "Checking public homepage"

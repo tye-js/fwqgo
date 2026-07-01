@@ -1,8 +1,8 @@
 import { eq, or } from "drizzle-orm";
 
-import { pullSourceSiteToAiTasks } from "@/server/ai/source-site-puller";
-import { db } from "@/server/db";
-import { categories } from "@/server/db/schema";
+import { pullSourceSiteToAiTasks } from "@fwqgo/ai/source-site-puller";
+import { db } from "@fwqgo/db";
+import { categories } from "@fwqgo/db/schema";
 
 function readArg(name: string) {
   const prefix = `--${name}=`;

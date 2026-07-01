@@ -12,14 +12,14 @@ import {
   sql,
 } from "drizzle-orm";
 
-import { slugify } from "@/lib/utils";
-import { cacheTags, revalidateSiteContent, tagCache } from "@/server/cache/tags";
-import { db } from "@/server/db";
+import { slugify } from "@fwqgo/core/utils";
+import { cacheTags, revalidateSiteContent, tagCache } from "@fwqgo/cache/tags";
+import { db } from "@fwqgo/db";
 import {
   affServiceProviders,
   posts,
   serverOffers,
-} from "@/server/db/schema";
+} from "@fwqgo/db/schema";
 
 export const offerStatuses = [
   "in_stock",
@@ -38,6 +38,16 @@ export const offerStatusLabels: Record<OfferStatus, string> = {
   discontinued: "停售",
   preorder: "预售",
 };
+
+export const offerReviewStatuses = [
+  "pending",
+  "reviewed",
+  "needs_fix",
+  "duplicate",
+  "merged",
+] as const;
+
+export type OfferReviewStatus = (typeof offerReviewStatuses)[number];
 
 export type OfferTopicSlug = "hong-kong" | "united-states" | "cheap-vps";
 
@@ -354,7 +364,19 @@ async function resolveProvider(purchaseUrl: string | null | undefined) {
   const providers = await db.select().from(affServiceProviders);
   return (
     providers.find((provider) => {
-      const providerHost = provider.officialUrl.replace(/^www\./i, "").toLowerCase();
+      let providerHost: string;
+      try {
+        providerHost = new URL(provider.officialUrl).hostname
+          .replace(/^www\./i, "")
+          .toLowerCase();
+      } catch {
+        providerHost = provider.officialUrl
+          .replace(/^https?:\/\//i, "")
+          .split("/")[0]!
+          .replace(/^www\./i, "")
+          .toLowerCase();
+      }
+
       return host === providerHost || host.endsWith(`.${providerHost}`);
     }) ?? null
   );
@@ -386,6 +408,27 @@ function serverOfferConfigWhere(candidate: ParsedServerOffer) {
     nullableEq(serverOffers.region, candidate.region),
     nullableEq(serverOffers.lineType, candidate.lineType),
   );
+}
+
+function makeDuplicateKey(
+  candidate: ParsedServerOffer,
+  resolvedProviderName?: string | null,
+) {
+  return [
+    resolvedProviderName ?? candidate.providerName ?? "",
+    candidate.productType ?? "",
+    candidate.memoryMb ?? "",
+    candidate.storageGb ?? "",
+    candidate.bandwidthMbps ?? "",
+    candidate.trafficGb ?? "",
+    candidate.region ?? "",
+    candidate.lineType ?? "",
+    candidate.priceAmount ?? "",
+    candidate.currency ?? "",
+    candidate.billingCycle ?? "",
+  ]
+    .map((item) => String(item).trim().toLowerCase())
+    .join("|");
 }
 
 async function importServerOffersFromPostRows(sourcePosts: OfferSourcePost[]) {
@@ -452,6 +495,9 @@ async function importServerOffersFromPostRows(sourcePosts: OfferSourcePost[]) {
             articleUrl: candidate.articleUrl,
             reviewUrl: candidate.reviewUrl,
             rawText: candidate.rawText,
+            reviewStatus: "merged",
+            duplicateKey: makeDuplicateKey(candidate, provider?.name),
+            mergedIntoOfferId: null,
             updatedAt: new Date(),
           })
           .where(eq(serverOffers.id, existing.id));
@@ -463,6 +509,8 @@ async function importServerOffersFromPostRows(sourcePosts: OfferSourcePost[]) {
         ...candidate,
         providerName: provider?.name ?? null,
         providerId: provider?.id ?? null,
+        reviewStatus: "pending",
+        duplicateKey: makeDuplicateKey(candidate, provider?.name),
       });
       inserted += 1;
     }
@@ -557,41 +605,46 @@ export async function getServerOfferTopic(slug: string) {
   const topic = offerTopics.find((item) => item.slug === slug);
   if (!topic) return null;
 
-  const offers = await db
-    .select({
-      id: serverOffers.id,
-      title: serverOffers.title,
-      slug: serverOffers.slug,
-      providerName: serverOffers.providerName,
-      productType: serverOffers.productType,
-      cpu: serverOffers.cpu,
-      memory: serverOffers.memory,
-      storage: serverOffers.storage,
-      bandwidth: serverOffers.bandwidth,
-      traffic: serverOffers.traffic,
-      region: serverOffers.region,
-      lineType: serverOffers.lineType,
-      priceAmount: serverOffers.priceAmount,
-      currency: serverOffers.currency,
-      billingCycle: serverOffers.billingCycle,
-      promoCode: serverOffers.promoCode,
-      purchaseUrl: serverOffers.purchaseUrl,
-      articleUrl: serverOffers.articleUrl,
-      reviewUrl: serverOffers.reviewUrl,
-      status: serverOffers.status,
-      featured: serverOffers.featured,
-      createdAt: serverOffers.createdAt,
-    })
-    .from(serverOffers)
-    .where(topicWhere(topic))
-    .orderBy(
-      desc(serverOffers.featured),
-      asc(serverOffers.priceAmount),
-      desc(serverOffers.createdAt),
-    )
-    .limit(80);
+  try {
+    const offers = await db
+      .select({
+        id: serverOffers.id,
+        title: serverOffers.title,
+        slug: serverOffers.slug,
+        providerName: serverOffers.providerName,
+        productType: serverOffers.productType,
+        cpu: serverOffers.cpu,
+        memory: serverOffers.memory,
+        storage: serverOffers.storage,
+        bandwidth: serverOffers.bandwidth,
+        traffic: serverOffers.traffic,
+        region: serverOffers.region,
+        lineType: serverOffers.lineType,
+        priceAmount: serverOffers.priceAmount,
+        currency: serverOffers.currency,
+        billingCycle: serverOffers.billingCycle,
+        promoCode: serverOffers.promoCode,
+        purchaseUrl: serverOffers.purchaseUrl,
+        articleUrl: serverOffers.articleUrl,
+        reviewUrl: serverOffers.reviewUrl,
+        status: serverOffers.status,
+        featured: serverOffers.featured,
+        createdAt: serverOffers.createdAt,
+      })
+      .from(serverOffers)
+      .where(topicWhere(topic))
+      .orderBy(
+        desc(serverOffers.featured),
+        asc(serverOffers.priceAmount),
+        desc(serverOffers.createdAt),
+      )
+      .limit(80);
 
-  return { topic, offers };
+    return { topic, offers };
+  } catch (error) {
+    console.error("Failed to load server offer topic:", error);
+    return { topic, offers: [] };
+  }
 }
 
 function serverOfferPublicSelect() {
@@ -644,64 +697,83 @@ export async function getServerOfferCollection(input: {
         ? "地区"
         : "线路";
 
-  const offers = await db
-    .select(serverOfferPublicSelect())
-    .from(serverOffers)
-    .where(and(eq(serverOffers.visible, true), eq(field, value)))
-    .orderBy(
-      desc(serverOffers.featured),
-      asc(serverOffers.priceAmount),
-      desc(serverOffers.createdAt),
-    )
-    .limit(120);
+  try {
+    const offers = await db
+      .select(serverOfferPublicSelect())
+      .from(serverOffers)
+      .where(and(eq(serverOffers.visible, true), eq(field, value)))
+      .orderBy(
+        desc(serverOffers.featured),
+        asc(serverOffers.priceAmount),
+        desc(serverOffers.createdAt),
+      )
+      .limit(120);
 
-  return {
-    title: `${value}${titlePrefix === "商家" ? "" : titlePrefix}服务器套餐`,
-    description: `集中查看${value}相关服务器套餐，按价格、地区、线路、状态和购买入口筛选。`,
-    offers,
-  };
+    return {
+      title: `${value}${titlePrefix === "商家" ? "" : titlePrefix}服务器套餐`,
+      description: `集中查看${value}相关服务器套餐，按价格、地区、线路、状态和购买入口筛选。`,
+      offers,
+    };
+  } catch (error) {
+    console.error("Failed to load server offer collection:", error);
+    return {
+      title: `${value}${titlePrefix === "商家" ? "" : titlePrefix}服务器套餐`,
+      description: `集中查看${value}相关服务器套餐，按价格、地区、线路、状态和购买入口筛选。`,
+      offers: [],
+    };
+  }
 }
 
 export async function getServerOfferTopicCounts() {
   "use cache";
   tagCache(cacheTags.serverOffers);
 
-  const result = await Promise.all(
-    offerTopics.map(async (topic) => {
-      const [row] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(serverOffers)
-        .where(topicWhere(topic));
-      return { slug: topic.slug, count: Number(row?.count ?? 0) };
-    }),
-  );
+  try {
+    const result = await Promise.all(
+      offerTopics.map(async (topic) => {
+        const [row] = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(serverOffers)
+          .where(topicWhere(topic));
+        return { slug: topic.slug, count: Number(row?.count ?? 0) };
+      }),
+    );
 
-  return result;
+    return result;
+  } catch (error) {
+    console.error("Failed to load server offer topic counts:", error);
+    return offerTopics.map((topic) => ({ slug: topic.slug, count: 0 }));
+  }
 }
 
 export async function getLatestServerOffers(limit = 8) {
   "use cache";
   tagCache(cacheTags.serverOffers);
 
-  return db
-    .select({
-      id: serverOffers.id,
-      title: serverOffers.title,
-      providerName: serverOffers.providerName,
-      region: serverOffers.region,
-      lineType: serverOffers.lineType,
-      priceAmount: serverOffers.priceAmount,
-      currency: serverOffers.currency,
-      billingCycle: serverOffers.billingCycle,
-      promoCode: serverOffers.promoCode,
-      purchaseUrl: serverOffers.purchaseUrl,
-      articleUrl: serverOffers.articleUrl,
-      status: serverOffers.status,
-    })
-    .from(serverOffers)
-    .where(and(eq(serverOffers.visible, true), inArray(serverOffers.status, ["in_stock", "preorder", "restocking"])))
-    .orderBy(desc(serverOffers.featured), desc(serverOffers.createdAt))
-    .limit(limit);
+  try {
+    return await db
+      .select({
+        id: serverOffers.id,
+        title: serverOffers.title,
+        providerName: serverOffers.providerName,
+        region: serverOffers.region,
+        lineType: serverOffers.lineType,
+        priceAmount: serverOffers.priceAmount,
+        currency: serverOffers.currency,
+        billingCycle: serverOffers.billingCycle,
+        promoCode: serverOffers.promoCode,
+        purchaseUrl: serverOffers.purchaseUrl,
+        articleUrl: serverOffers.articleUrl,
+        status: serverOffers.status,
+      })
+      .from(serverOffers)
+      .where(and(eq(serverOffers.visible, true), inArray(serverOffers.status, ["in_stock", "preorder", "restocking"])))
+      .orderBy(desc(serverOffers.featured), desc(serverOffers.createdAt))
+      .limit(limit);
+  } catch (error) {
+    console.error("Failed to load latest server offers:", error);
+    return [];
+  }
 }
 
 export async function getAdminServerOffers(limit = 80) {
@@ -726,6 +798,10 @@ export async function getAdminServerOffers(limit = 80) {
       sourcePostId: serverOffers.sourcePostId,
       createdAt: serverOffers.createdAt,
       updatedAt: serverOffers.updatedAt,
+      reviewStatus: serverOffers.reviewStatus,
+      duplicateKey: serverOffers.duplicateKey,
+      mergedIntoOfferId: serverOffers.mergedIntoOfferId,
+      reviewedAt: serverOffers.reviewedAt,
     })
     .from(serverOffers)
     .orderBy(desc(serverOffers.createdAt))
@@ -747,6 +823,7 @@ export type ServerOfferUpdateInput = {
   reviewUrl?: string | null;
   visible: boolean;
   featured: boolean;
+  reviewStatus?: string | null;
 };
 
 export async function updateServerOffer(
@@ -757,6 +834,8 @@ export async function updateServerOffer(
     .update(serverOffers)
     .set({
       ...input,
+      reviewStatus: input.reviewStatus ?? "reviewed",
+      reviewedAt: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(serverOffers.id, id))
@@ -774,6 +853,7 @@ export async function bulkUpdateServerOffers(input: {
   status?: OfferStatus;
   visible?: boolean;
   featured?: boolean;
+  reviewStatus?: string;
 }) {
   if (input.ids.length === 0) {
     return { updated: 0 };
@@ -786,6 +866,10 @@ export async function bulkUpdateServerOffers(input: {
   if (input.status) values.status = input.status;
   if (typeof input.visible === "boolean") values.visible = input.visible;
   if (typeof input.featured === "boolean") values.featured = input.featured;
+  if (input.reviewStatus) {
+    values.reviewStatus = input.reviewStatus;
+    values.reviewedAt = new Date();
+  }
 
   const rows = await db
     .update(serverOffers)

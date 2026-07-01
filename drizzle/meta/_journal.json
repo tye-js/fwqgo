@@ -141,6 +141,27 @@
       "when": 1782840314778,
       "tag": "0019_flat_spitfire",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1782928123210,
+      "tag": "0020_misty_shinko_yamashiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1782928731840,
+      "tag": "0021_pale_korg",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1782928937324,
+      "tag": "0022_dashing_zzzax",
+      "breakpoints": true
     }
   ]
 }

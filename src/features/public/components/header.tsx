@@ -3,7 +3,7 @@ import React from "react";
 
 import { getCategories } from "@/features/shared/data/category";
 import { BrandLogo } from "@/components/brand/brand-logo";
-import { cn } from "@/lib/utils";
+import { cn } from "@fwqgo/core/utils";
 import { navigationMenuTriggerStyle } from "@/components/ui/navigation-menu";
 import {
   NavigationMenu,
@@ -21,12 +21,11 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Menu } from "lucide-react";
+import { Menu, Server } from "lucide-react";
 
 const HeaderComponent = async () => {
   const { data: categories, error } = await getCategories();
-  if (error) return <div>加载失败: {error}</div>;
-  if (!categories) return <div>加载中...</div>;
+  const safeCategories = categories ?? [];
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/60 bg-background/90 backdrop-blur-xl">
@@ -64,7 +63,7 @@ const HeaderComponent = async () => {
                   </ul>
                 </NavigationMenuContent>
               </NavigationMenuItem>
-              {categories.map((category) =>
+              {safeCategories.map((category) =>
                 category.children.length > 0 ? (
                   <NavigationMenuItem key={category.id}>
                     <NavigationMenuTrigger className="rounded-full">
@@ -98,6 +97,19 @@ const HeaderComponent = async () => {
                   </NavigationMenuItem>
                 ),
               )}
+              {error ? (
+                <NavigationMenuItem>
+                  <NavigationMenuLink
+                    href="/servers"
+                    className={cn(
+                      navigationMenuTriggerStyle(),
+                      "rounded-full bg-transparent text-muted-foreground",
+                    )}
+                  >
+                    分类暂不可用
+                  </NavigationMenuLink>
+                </NavigationMenuItem>
+              ) : null}
             </NavigationMenuList>
           </NavigationMenu>
 
@@ -117,8 +129,12 @@ const HeaderComponent = async () => {
               <SheetHeader>
                 <SheetTitle>导航</SheetTitle>
               </SheetHeader>
-              <nav className="mt-6 grid gap-2">
+              <nav className="mt-6 grid gap-4">
                 <div className="grid gap-1 rounded-lg border border-border/70 p-2">
+                  <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium uppercase text-muted-foreground">
+                    <Server className="size-3.5" />
+                    套餐专题
+                  </div>
                   <Link
                     href="/servers"
                     className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -141,7 +157,12 @@ const HeaderComponent = async () => {
                     </Link>
                   ))}
                 </div>
-                {categories.map((category) => (
+                {safeCategories.length > 0 ? (
+                  <div className="px-3 text-xs font-medium uppercase text-muted-foreground">
+                    文章分类
+                  </div>
+                ) : null}
+                {safeCategories.map((category) => (
                   <div key={category.id} className="grid gap-2">
                     <Link
                       href={`/fwq/${category.slug}/page/1`}
@@ -164,6 +185,11 @@ const HeaderComponent = async () => {
                     ) : null}
                   </div>
                 ))}
+                {error ? (
+                  <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-4 text-sm leading-6 text-muted-foreground">
+                    分类暂时加载失败，可以先进入服务器比价或稍后刷新页面。
+                  </div>
+                ) : null}
               </nav>
             </SheetContent>
           </Sheet>
