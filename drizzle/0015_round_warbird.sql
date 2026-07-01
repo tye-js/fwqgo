@@ -1,1 +1,1 @@
-ALTER TABLE "ai_source_sites" ADD COLUMN "lastRunDetails" text;
+ALTER TABLE "ai_source_sites" ADD COLUMN IF NOT EXISTS "lastRunDetails" text;

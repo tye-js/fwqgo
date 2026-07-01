@@ -1,1 +1,1 @@
-ALTER TABLE "tags" ADD COLUMN "indexable" boolean DEFAULT true NOT NULL;
+ALTER TABLE "tags" ADD COLUMN IF NOT EXISTS "indexable" boolean DEFAULT true NOT NULL;

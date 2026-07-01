@@ -1,2 +1,2 @@
-ALTER TABLE "image_assets" ADD COLUMN "thumbPath" text;--> statement-breakpoint
-ALTER TABLE "image_assets" ADD COLUMN "largePath" text;
+ALTER TABLE "image_assets" ADD COLUMN IF NOT EXISTS "thumbPath" text;--> statement-breakpoint
+ALTER TABLE "image_assets" ADD COLUMN IF NOT EXISTS "largePath" text;
