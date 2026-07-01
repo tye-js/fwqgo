@@ -11,11 +11,11 @@ import {
 import {
   getHomepagePostsWithTags,
   getHomepageSidebarData,
-} from "@/app/_actions/post";
-import { HeroTagSearch } from "@/app/_components/hero-tag-search";
-import ArticleCard from "@/app/_components/article-card";
-import Footer from "@/app/_components/footer";
-import Header from "@/app/_components/header";
+} from "@/features/public/data/post";
+import { HeroTagSearch } from "@/features/public/components/hero-tag-search";
+import ArticleCard from "@/features/public/components/article-card";
+import Footer from "@/features/public/components/footer";
+import Header from "@/features/public/components/header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";

@@ -1,9 +1,9 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { getAdminTagCount, getAdminTagList } from "@/app/_actions/tag";
-import { AdminPageShell, AdminSectionCard } from "@/app/_components/admin-page-shell";
-import { PaginationComponent } from "@/app/_components/pagination";
-import { TagSeoTable } from "@/app/_components/tag-seo-table";
+import { getAdminTagCount, getAdminTagList } from "@/features/cms/data/tag";
+import { AdminPageShell, AdminSectionCard } from "@/features/cms/components/admin-page-shell";
+import { PaginationComponent } from "@/features/shared/components/pagination";
+import { TagSeoTable } from "@/features/cms/components/tag-seo-table";
 
 async function TagListWrapper({
   searchParamsPromise,

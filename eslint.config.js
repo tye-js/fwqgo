@@ -16,6 +16,11 @@ const config = [
   ...tseslint.configs.stylisticTypeChecked,
   {
     files: ["**/*.{js,jsx,ts,tsx,cjs,mjs}"],
+    settings: {
+      next: {
+        rootDir: ["apps/web/", "apps/cms/"],
+      },
+    },
     languageOptions: {
       parserOptions: {
         projectService: true,

@@ -12,7 +12,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import AppBreadcrumb from "@/components/endpoint/app-breadcrumb";
-import { validateSession } from "@/app/_actions/validate-session";
+import { validateSession } from "@/features/cms/actions/validate-session";
 
 
 

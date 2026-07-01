@@ -1,4 +1,4 @@
-import { findBestTagMatch } from "@/app/_actions/tag";
+import { findBestTagMatch } from "@/features/cms/data/tag";
 import { connection, NextResponse } from "next/server";
 
 export async function GET(request: Request) {

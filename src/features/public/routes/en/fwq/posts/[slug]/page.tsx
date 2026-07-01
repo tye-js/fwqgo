@@ -5,10 +5,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Clock, Tags } from "lucide-react";
 
-import { getEnglishPostWithTagsBySlug } from "@/app/_actions/post";
-import Footer from "@/app/_components/footer";
-import Header from "@/app/_components/header";
-import { ArticleShareActions } from "@/app/_components/article-share-actions";
+import { getEnglishPostWithTagsBySlug } from "@/features/public/data/post";
+import Footer from "@/features/public/components/footer";
+import Header from "@/features/public/components/header";
+import { ArticleShareActions } from "@/features/public/components/article-share-actions";
 import { getOptimizedImageSrc } from "@/lib/image-src";
 import { decodeSlug, formatDate } from "@/lib/utils";
 

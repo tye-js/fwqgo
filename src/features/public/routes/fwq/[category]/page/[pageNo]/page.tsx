@@ -1,13 +1,13 @@
-import { getCategoryBySlug } from "@/app/_actions/category";
+import { getCategoryBySlug } from "@/features/shared/data/category";
 import {
   getPostsWithTagsByCategoryId,
   getLatestPostsForSidebar,
   getPublishedPostCountByCategoryId,
-} from "@/app/_actions/post";
-import ArticleCard from "@/app/_components/article-card";
-import { LatestPostsSidebar } from "@/app/_components/latest-posts-sidebar";
-import PageCard from "@/app/_components/page-card";
-import { PaginationComponent } from "@/app/_components/pagination";
+} from "@/features/public/data/post";
+import ArticleCard from "@/features/public/components/article-card";
+import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
+import PageCard from "@/features/public/components/page-card";
+import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 

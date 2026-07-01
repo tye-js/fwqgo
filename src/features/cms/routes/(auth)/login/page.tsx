@@ -1,6 +1,6 @@
 "use client";
 
-import { LoginForm } from "@/app/_components/login-form";
+import { LoginForm } from "@/features/cms/components/login-form";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 

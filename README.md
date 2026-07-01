@@ -2,9 +2,9 @@
 
 > 专业的服务器优惠信息聚合平台，为用户提供最全面、最新的VPS、云服务器、独立服务器等优惠信息
 
-[![Next.js](https://img.shields.io/badge/Next.js-15.3.4-black?style=flat-square&logo=next.js)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19.1.0-blue?style=flat-square&logo=react)](https://reactjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.5.3-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16.2-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19.2-blue?style=flat-square&logo=react)](https://reactjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4.3-38B2AC?style=flat-square&logo=tailwind-css)](https://tailwindcss.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Latest-336791?style=flat-square&logo=postgresql)](https://www.postgresql.org/)
 
@@ -20,8 +20,8 @@
 ## 🏗️ 技术架构
 
 ### 前端技术栈
-- **框架**: Next.js 15.3.4 (App Router)
-- **UI库**: React 19.1.0 + Radix UI + shadcn/ui
+- **框架**: Next.js 16 App Router，`apps/web` 和 `apps/cms` 双应用
+- **UI库**: React 19 + Radix UI + shadcn/ui
 - **样式**: Tailwind CSS + CSS Variables
 - **状态管理**: React Hook Form + Zod
 - **构建工具**: Turbopack (默认) + Webpack (备用)
@@ -81,28 +81,33 @@ npm run db:seed
 
 5. **启动开发服务器**
 ```bash
-npm run dev
+npm run dev:web
+npm run dev:cms
 ```
 
-访问 [http://localhost:3000](http://localhost:3000) 查看应用。
+访问 [http://localhost:3000](http://localhost:3000) 查看前台，访问 [http://localhost:3100](http://localhost:3100) 查看 CMS。
 
 ## 📁 项目结构
 
 ```
+apps/
+├── web/                   # 公开前台 Next 应用，运行在 3000
+└── cms/                   # CMS 后台 Next 应用，运行在 3100
 src/
-├── app/                    # Next.js App Router
-│   ├── (auth)/            # 认证相关页面
-│   ├── _actions/          # Server Actions
-│   ├── _components/       # 共享组件
-│   ├── api/              # API 路由
-│   ├── end/              # 后台管理系统
-│   └── fwq/              # 前台展示页面
-├── components/            # UI 组件库 (shadcn/ui)
-├── lib/                  # 工具函数和配置
-├── server/               # 服务器端代码
-│   └── db/               # 数据库配置和Schema
-├── styles/               # 全局样式
-└── types/                # TypeScript 类型定义
+├── features/
+│   ├── public/            # 前台 routes、components、data、actions
+│   ├── cms/               # 后台 routes、components、data、actions
+│   └── shared/            # 前后台共享 routes/data/components
+├── components/            # shadcn/ui 和跨功能 UI 组件
+├── lib/                   # 兼容工具导出
+├── server/                # 服务端业务能力：auth/cache/scrape/ai/images 等
+├── styles/                # 全局样式
+└── types/                 # TypeScript 类型定义
+packages/
+├── core/                  # 可复用核心工具
+└── db/                    # Drizzle schema、数据库连接和 DB helper
+drizzle/                   # 数据库迁移
+public/                    # 静态资产
 ```
 
 ## 🎯 核心功能
@@ -197,17 +202,15 @@ npm run format:check # 检查代码格式
 
 ### 前台和后台域名
 
-当前采用同一个 Next.js 应用、两个域名入口的过渡方案：
+当前采用同仓库双 Next 应用部署：
 
-- `fwqgo.com` 和 `www.fwqgo.com` 只作为公开前台入口。
-- 访问主站的 `/end/*` 或 `/login` 会自动跳转到 `cms.fwqgo.com`。
-- 访问主站的后台专属 API，例如 `/api/auth/*`、`/api/upload`、`/api/tags/search`，会返回 404。
-- `cms.fwqgo.com` 的 `/` 会自动跳转到 `/end`。
-- 访问 CMS 域名下的公开文章、服务器专题和短链路径，会跳回主站，避免公开内容在 CMS 域名重复收录。
-- 后台登录 Cookie 保持 host-only，不共享到主站域名。
-- 如果配置了 `CMS_BASIC_AUTH_USERNAME` 和 `CMS_BASIC_AUTH_PASSWORD`，CMS 域名会先要求 Basic Auth，再进入后台登录。
+- `fwqgo.com` 和 `www.fwqgo.com` 代理到 `fwqgo-web`，端口 `3000`。
+- `cms.fwqgo.com` 代理到 `fwqgo-cms`，端口 `3100`。
+- 主站访问 `/end/*` 或 `/login` 会跳转到 CMS 域名。
+- CMS 域名访问公开文章、服务器专题和短链路径会跳回主站，避免重复收录。
+- CMS 域名支持 Basic Auth + 管理员登录双层保护。
 
-服务器反向代理可以先将 `fwqgo.com`、`www.fwqgo.com`、`cms.fwqgo.com` 都转发到同一个 PM2 应用。后续如果要完全拆成两个项目，再把 `src/app/end`、后台 API、认证和共享数据访问层迁移到独立 CMS 项目。
+PM2 使用 `ecosystem.config.cjs` 同时运行 `fwqgo-web` 和 `fwqgo-cms`。
 
 ## 🚀 部署指南
 

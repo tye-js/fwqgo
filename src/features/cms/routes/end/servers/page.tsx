@@ -1,8 +1,8 @@
 import { connection } from "next/server";
 import { Suspense } from "react";
 
-import { AdminPageShell, AdminSectionCard, AdminSummaryStrip } from "@/app/_components/admin-page-shell";
-import { ServerOfferImporter } from "@/app/_components/server-offer-importer";
+import { AdminPageShell, AdminSectionCard, AdminSummaryStrip } from "@/features/cms/components/admin-page-shell";
+import { ServerOfferImporter } from "@/features/cms/components/server-offer-importer";
 import {
   getServerOfferImportPostOptions,
   getServerOfferTopicCounts,

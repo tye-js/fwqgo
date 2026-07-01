@@ -1,7 +1,7 @@
-import { getPostBySlug } from "@/app/_actions/post";
+import { getPostBySlug } from "@/features/cms/data/post";
 import EditPost from "@/components/endpoint/edit-post/edit-post";
-import { getLeafCategories } from "@/app/_actions/category";
-import { AdminPageShell, AdminSectionCard } from "@/app/_components/admin-page-shell";
+import { getLeafCategories } from "@/features/shared/data/category";
+import { AdminPageShell, AdminSectionCard } from "@/features/cms/components/admin-page-shell";
 
 export default async function EditPostPage(
   props: {

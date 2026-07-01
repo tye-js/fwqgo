@@ -1,14 +1,14 @@
 import { Suspense } from "react";
 import Link from "next/link";
 
-import { getDraftPostCount, getDraftPosts } from "@/app/_actions/post";
+import { getDraftPostCount, getDraftPosts } from "@/features/cms/data/post";
 import {
   AdminPageShell,
   AdminSectionCard,
   AdminSummaryStrip,
-} from "@/app/_components/admin-page-shell";
-import { PaginationComponent } from "@/app/_components/pagination";
-import { PostList } from "@/app/_components/posts-tables";
+} from "@/features/cms/components/admin-page-shell";
+import { PaginationComponent } from "@/features/shared/components/pagination";
+import { PostList } from "@/features/cms/components/posts-tables";
 import { Button } from "@/components/ui/button";
 
 async function DraftListWrapper({

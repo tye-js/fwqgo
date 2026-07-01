@@ -1,4 +1,4 @@
-import { getAffValueByHref } from "@/app/_actions/aff-provider";
+import { getAffValueByHref } from "@/features/cms/actions/aff-provider";
 
 export async function handleAffUrl(href: string) {
   try {

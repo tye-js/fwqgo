@@ -4,7 +4,7 @@ This file gives coding agents the local project rules for `fwqgo`.
 
 ## Project Overview
 
-`fwqgo` is a Next.js App Router application for server/VPS deal content, admin publishing, SEO pages, affiliate links, and content scraping.
+`fwqgo` is a monorepo-style Next.js App Router project for server/VPS deal content, a separate CMS, SEO pages, affiliate links, and content scraping.
 
 Core stack:
 
@@ -17,12 +17,14 @@ Core stack:
 
 ## Repository Layout
 
-- `src/app`: Next.js routes, API routes, server actions, frontend/admin pages.
-- `src/app/end`: admin backend pages.
-- `src/app/fwq`: public content pages.
-- `src/app/_actions`: server actions. Mutating admin actions should require admin session validation.
+- `apps/web`: public frontend Next.js app, served on port 3000.
+- `apps/cms`: CMS backend Next.js app, served on port 3100.
+- `src/features/public`: public frontend route implementations, components, data loaders, and public actions.
+- `src/features/cms`: CMS route implementations, components, data loaders, and admin server actions. Mutating admin actions should require admin session validation.
+- `src/features/shared`: shared route implementations, data, and components used by both apps.
 - `src/components`: shared UI components.
-- `src/server/db`: Drizzle database schema and database client.
+- `packages/db`: Drizzle schema, database client, and DB helper APIs.
+- `packages/core`: reusable core utilities.
 - `src/server/auth`: server-side authentication/session helpers.
 - `src/server/cache`: cache tag/revalidation helpers.
 - `src/server/scrape`: scraping implementation.
@@ -36,6 +38,8 @@ Use npm scripts unless the user explicitly asks for another package manager.
 
 ```bash
 npm run dev
+npm run dev:web
+npm run dev:cms
 npm run dev:webpack
 npm run build
 npm run start
@@ -107,7 +111,7 @@ For database changes, create migrations with `npm run db:generate` and apply the
 
 ## Database Notes
 
-- Schema source: `src/server/db/schema.ts`.
+- Schema source: `packages/db/schema.ts`.
 - Migration output: `drizzle`.
 - Drizzle config: `drizzle.config.ts`.
 - Maintain foreign keys and indexes in schema plus generated migrations.

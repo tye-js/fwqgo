@@ -51,11 +51,12 @@
     "**/*.tsx",
     "**/*.cjs",
     "**/*.mjs",
-    "**/*.js",
-    ".next/dev/types/**/*.ts",
-    ".next/types/**/*.ts"
+    "**/*.js"
   ],
   "exclude": [
+    ".next",
+    ".next-web",
+    ".next-cms",
     "node_modules"
   ]
 }

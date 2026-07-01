@@ -2,9 +2,9 @@ import {
   AdminPageShell,
   AdminSectionCard,
   AdminSummaryStrip,
-} from "@/app/_components/admin-page-shell";
-import { AiRewriteConfigManager } from "@/app/_components/ai-rewrite-config-manager";
-import { getAiRewriteConfigList } from "@/app/_actions/ai-rewrite-config";
+} from "@/features/cms/components/admin-page-shell";
+import { AiRewriteConfigManager } from "@/features/cms/components/ai-rewrite-config-manager";
+import { getAiRewriteConfigList } from "@/features/cms/actions/ai-rewrite-config";
 
 export default async function AiRewriteConfigPage() {
   const configs = await getAiRewriteConfigList();

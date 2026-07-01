@@ -1,9 +1,9 @@
-import { getPostsWithTagsByTagSlug, getTagBySlug } from "@/app/_actions/tag";
-import { getLatestPostsForSidebar } from "@/app/_actions/post";
-import ArticleCard from "@/app/_components/article-card";
-import { LatestPostsSidebar } from "@/app/_components/latest-posts-sidebar";
-import PageCard from "@/app/_components/page-card";
-import { PaginationComponent } from "@/app/_components/pagination";
+import { getPostsWithTagsByTagSlug, getTagBySlug } from "@/features/public/data/tag";
+import { getLatestPostsForSidebar } from "@/features/public/data/post";
+import ArticleCard from "@/features/public/components/article-card";
+import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
+import PageCard from "@/features/public/components/page-card";
+import { PaginationComponent } from "@/features/shared/components/pagination";
 import { decodeSlug } from "@/lib/utils";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";

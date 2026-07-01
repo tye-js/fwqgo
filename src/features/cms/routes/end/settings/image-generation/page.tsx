@@ -2,9 +2,9 @@ import {
   AdminPageShell,
   AdminSectionCard,
   AdminSummaryStrip,
-} from "@/app/_components/admin-page-shell";
-import { ImageGenerationConfigManager } from "@/app/_components/image-generation-config-manager";
-import { getImageGenerationConfigList } from "@/app/_actions/image-generation-config";
+} from "@/features/cms/components/admin-page-shell";
+import { ImageGenerationConfigManager } from "@/features/cms/components/image-generation-config-manager";
+import { getImageGenerationConfigList } from "@/features/cms/actions/image-generation-config";
 
 export default async function ImageGenerationSettingsPage() {
   const configs = await getImageGenerationConfigList();
