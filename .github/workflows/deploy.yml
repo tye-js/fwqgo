@@ -103,7 +103,8 @@ jobs:
           ln -sfn "../../.next-cms" ".deploy/payload-$RELEASE_ID/apps/cms/.next"
           cp -R drizzle ".deploy/payload-$RELEASE_ID/drizzle"
           cp scripts/migrate-prod.mjs ".deploy/payload-$RELEASE_ID/scripts/migrate-prod.mjs"
-          cp -R node_modules/drizzle-orm node_modules/postgres ".deploy/payload-$RELEASE_ID/apps/cms/node_modules/" 2>/dev/null || true
+          mkdir -p ".deploy/payload-$RELEASE_ID/node_modules"
+          cp -R node_modules/drizzle-orm node_modules/postgres ".deploy/payload-$RELEASE_ID/node_modules/"
           cp ecosystem.config.cjs ".deploy/payload-$RELEASE_ID/ecosystem.config.cjs"
           cp package.json ".deploy/payload-$RELEASE_ID/package.json"
           tar --format=gnu -czf ".deploy/fwqgo-$RELEASE_ID.tar.gz" -C ".deploy/payload-$RELEASE_ID" .
@@ -172,12 +173,23 @@ jobs:
           start_release() {
             local target_release="$1"
 
-            if [[ ! -f "$target_release/ecosystem.config.cjs" || ! -f "$target_release/apps/web/server.js" || ! -f "$target_release/apps/cms/server.js" ]]; then
-              echo "Invalid standalone release: $target_release" >&2
+            if [[ ! -f "$target_release/ecosystem.config.cjs" ]]; then
+              echo "Invalid release: missing ecosystem.config.cjs in $target_release" >&2
               return 1
             fi
 
-            WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
+            if [[ -f "$target_release/apps/web/server.js" && -f "$target_release/apps/cms/server.js" ]]; then
+              WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
+              return
+            fi
+
+            if [[ -f "$target_release/.next/standalone/server.js" ]]; then
+              APP_DIR="$target_release/.next/standalone" pm2 start "$target_release/ecosystem.config.cjs" --update-env
+              return
+            fi
+
+            echo "Invalid standalone release: $target_release" >&2
+            return 1
           }
 
           rollback_previous() {
@@ -205,7 +217,6 @@ jobs:
           mkdir -p "$release_dir"
           tar -xzf "$remote_artifact" -C "$release_dir"
           ln -sfn "$shared_dir/.env.production" "$release_dir/.env.production"
-          ln -sfn "$release_dir/apps/cms/node_modules" "$release_dir/node_modules"
 
           [[ -f "$release_dir/apps/web/server.js" && -f "$release_dir/apps/cms/server.js" ]] || {
             echo "Artifact is missing web or cms standalone server.js" >&2
