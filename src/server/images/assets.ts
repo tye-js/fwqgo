@@ -147,6 +147,11 @@ function buildOutputName(originalName: string, mime: string) {
   return `${Date.now()}-${base}${ext}`;
 }
 
+function buildVariantName(publicPath: string, variant: "thumb" | "large") {
+  const parsed = path.parse(path.basename(publicPath));
+  return `${parsed.name}_${variant}.webp`;
+}
+
 async function getAvailablePublicPath(fileName: string) {
   const uploadDir = getUploadDir();
   const parsed = path.parse(fileName);
@@ -183,6 +188,65 @@ async function optimizeUpload(buffer: Buffer, mime: string) {
     .toBuffer();
 
   return { buffer: optimized, mime: "image/webp" };
+}
+
+async function createResponsiveVariants(input: {
+  buffer: Buffer;
+  mime: string;
+  publicPath: string;
+}) {
+  if (input.mime === "image/gif") {
+    return { thumbPath: null, largePath: null };
+  }
+
+  const sharp = await loadSharp();
+  if (!sharp) {
+    throw new Error("生成响应式图片需要 sharp，请先确认服务器构建产物包含 sharp。");
+  }
+
+  const [thumbPath, largePath] = await Promise.all([
+    getAvailablePublicPath(buildVariantName(input.publicPath, "thumb")),
+    getAvailablePublicPath(buildVariantName(input.publicPath, "large")),
+  ]);
+
+  const [thumbBuffer, largeBuffer] = await Promise.all([
+    sharp(input.buffer)
+      .resize({
+        width: 400,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .webp({ quality: 78, effort: 4 })
+      .toBuffer(),
+    sharp(input.buffer)
+      .resize({
+        width: 1200,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .webp({ quality: 82, effort: 4 })
+      .toBuffer(),
+  ]);
+
+  await Promise.all([
+    writeFile(uploadPathToFilePath(thumbPath), thumbBuffer),
+    writeFile(uploadPathToFilePath(largePath), largeBuffer),
+  ]);
+
+  return { thumbPath, largePath };
+}
+
+async function removeVariantFiles(asset: {
+  thumbPath: string | null;
+  largePath: string | null;
+}) {
+  for (const publicPath of [asset.thumbPath, asset.largePath]) {
+    if (!publicPath) continue;
+    const filePath = uploadPathToFilePath(publicPath);
+    if (existsSync(filePath)) {
+      await unlink(filePath);
+    }
+  }
 }
 
 async function getDimensions(buffer: Buffer) {
@@ -249,11 +313,18 @@ export async function createImageAssetFromUpload(input: {
 
   await mkdir(getUploadDir(), { recursive: true });
   await writeFile(filePath, optimized.buffer);
+  const variants = await createResponsiveVariants({
+    buffer: optimized.buffer,
+    mime: optimized.mime,
+    publicPath,
+  });
 
   const [asset] = await db
     .insert(imageAssets)
     .values({
       path: publicPath,
+      thumbPath: variants.thumbPath,
+      largePath: variants.largePath,
       originalName: input.file.name,
       mime: optimized.mime,
       size: optimized.buffer.length,
@@ -311,11 +382,18 @@ export async function createImageAssetFromBuffer(input: {
 
   await mkdir(getUploadDir(), { recursive: true });
   await writeFile(filePath, optimized.buffer);
+  const variants = await createResponsiveVariants({
+    buffer: optimized.buffer,
+    mime: optimized.mime,
+    publicPath,
+  });
 
   const [asset] = await db
     .insert(imageAssets)
     .values({
       path: publicPath,
+      thumbPath: variants.thumbPath,
+      largePath: variants.largePath,
       originalName: input.originalName,
       mime: optimized.mime,
       size: optimized.buffer.length,
@@ -363,10 +441,18 @@ export async function replaceImageAssetFile(input: {
 
   await mkdir(getUploadDir(), { recursive: true });
   await writeFile(filePath, optimized.buffer);
+  await removeVariantFiles(asset);
+  const variants = await createResponsiveVariants({
+    buffer: optimized.buffer,
+    mime: optimized.mime,
+    publicPath: asset.path,
+  });
 
   const [updated] = await db
     .update(imageAssets)
     .set({
+      thumbPath: variants.thumbPath,
+      largePath: variants.largePath,
       originalName: input.file.name,
       mime: optimized.mime,
       size: optimized.buffer.length,
@@ -471,12 +557,20 @@ export async function convertExistingUploadsToWebp() {
       const dimensions = await getDimensions(optimized);
 
       await writeFile(nextFilePath, optimized);
+      await removeVariantFiles(asset);
+      const variants = await createResponsiveVariants({
+        buffer: optimized,
+        mime: "image/webp",
+        publicPath: nextPublicPath,
+      });
 
       await db.transaction(async (tx) => {
         await tx
           .update(imageAssets)
           .set({
             path: nextPublicPath,
+            thumbPath: variants.thumbPath,
+            largePath: variants.largePath,
             mime: "image/webp",
             size: optimized.length,
             width: dimensions.width,
@@ -525,6 +619,63 @@ export async function convertExistingUploadsToWebp() {
   return { converted, skipped, failed, references: rebuilt.references };
 }
 
+export async function rebuildResponsiveImageVariants() {
+  const assets = await db
+    .select()
+    .from(imageAssets)
+    .orderBy(sql`${imageAssets.createdAt} desc`);
+  let rebuilt = 0;
+  let skipped = 0;
+  const failed: Array<{ path: string; error: string }> = [];
+
+  for (const asset of assets) {
+    if (asset.mime === "image/gif") {
+      skipped += 1;
+      continue;
+    }
+
+    try {
+      const currentPath = toUploadPath(asset.path);
+      if (!currentPath) {
+        skipped += 1;
+        continue;
+      }
+
+      const filePath = uploadPathToFilePath(currentPath);
+      if (!existsSync(filePath)) {
+        failed.push({ path: currentPath, error: "服务器文件不存在" });
+        continue;
+      }
+
+      const buffer = await readFile(filePath);
+      await removeVariantFiles(asset);
+      const variants = await createResponsiveVariants({
+        buffer,
+        mime: asset.mime,
+        publicPath: asset.path,
+      });
+
+      await db
+        .update(imageAssets)
+        .set({
+          thumbPath: variants.thumbPath,
+          largePath: variants.largePath,
+          updatedAt: new Date(),
+        })
+        .where(eq(imageAssets.id, asset.id));
+
+      rebuilt += 1;
+    } catch (error) {
+      failed.push({
+        path: asset.path,
+        error: error instanceof Error ? error.message : "重建失败",
+      });
+    }
+  }
+
+  return { rebuilt, skipped, failed };
+}
+
 export async function importExistingUploads() {
   const uploadDir = getUploadDir();
   await mkdir(uploadDir, { recursive: true });
@@ -563,11 +714,19 @@ export async function importExistingUploads() {
       readFile(filePath),
       getDimensionsFromFile(filePath),
     ]);
+    const mime = inferMimeFromExtension(entry.name);
+    const variants = await createResponsiveVariants({
+      buffer,
+      mime,
+      publicPath,
+    });
 
     await db.insert(imageAssets).values({
       path: publicPath,
+      thumbPath: variants.thumbPath,
+      largePath: variants.largePath,
       originalName: entry.name.replace(/^\d+-/, ""),
-      mime: inferMimeFromExtension(entry.name),
+      mime,
       size: fileStat.size,
       width: dimensions.width,
       height: dimensions.height,
@@ -840,6 +999,7 @@ export async function deleteImageAsset(id: number) {
   if (existsSync(filePath)) {
     await unlink(filePath);
   }
+  await removeVariantFiles(asset);
 
   return { data: asset };
 }

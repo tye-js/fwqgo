@@ -20,6 +20,14 @@ const taskInputSchema = z.object({
   rewriteStyleId: z.coerce.number().int().positive().optional(),
 });
 
+const manualTaskInputSchema = z.object({
+  sourceType: z.enum(["text", "email"]),
+  sourceTitle: z.string().trim().min(1, "请输入素材标题").max(180),
+  sourceContent: z.string().trim().min(20, "素材内容至少需要 20 个字符"),
+  categoryId: z.coerce.number().int().positive("请选择分类"),
+  rewriteStyleId: z.coerce.number().int().positive().optional(),
+});
+
 function parseSourceUrls(value: FormDataEntryValue | null) {
   if (typeof value !== "string") {
     return [];
@@ -47,6 +55,7 @@ export async function createAiRewriteTaskAction(formData: FormData) {
   try {
     await requireAdminSession();
 
+    const sourceType = formData.get("sourceType");
     const sourceUrls = parseSourceUrls(formData.get("sourceUrls"));
     const rewriteStyleIdValue = formData.get("rewriteStyleId");
     const sharedInput = taskInputSchema
@@ -58,6 +67,63 @@ export async function createAiRewriteTaskAction(formData: FormData) {
           ? rewriteStyleIdValue
           : undefined,
     });
+
+    if (sourceType === "text" || sourceType === "email") {
+      const input = manualTaskInputSchema.parse({
+        sourceType,
+        sourceTitle: formData.get("sourceTitle"),
+        sourceContent: formData.get("sourceContent"),
+        categoryId: sharedInput.categoryId,
+        rewriteStyleId: sharedInput.rewriteStyleId,
+      });
+
+      const [category] = await db
+        .select({ id: categories.id })
+        .from(categories)
+        .where(eq(categories.id, input.categoryId))
+        .limit(1);
+
+      if (!category) {
+        return { error: "分类不存在" };
+      }
+
+      if (input.rewriteStyleId) {
+        const [style] = await db
+          .select({ id: aiRewriteConfigs.id })
+          .from(aiRewriteConfigs)
+          .where(eq(aiRewriteConfigs.id, input.rewriteStyleId))
+          .limit(1);
+
+        if (!style) {
+          return { error: "AI 改写配置不存在" };
+        }
+      }
+
+      const [task] = await db
+        .insert(aiRewriteTasks)
+        .values({
+          sourceUrl: `manual://${input.sourceType}/${Date.now()}`,
+          sourceType: input.sourceType,
+          sourceTitle: input.sourceTitle,
+          sourceContent: input.sourceContent,
+          categoryId: input.categoryId,
+          rewriteStyleId: input.rewriteStyleId ?? null,
+          status: "pending",
+          progress: 0,
+          currentStep: "手动素材已提交，等待处理",
+        })
+        .returning({ id: aiRewriteTasks.id });
+
+      if (!task) {
+        return { error: "创建任务失败" };
+      }
+
+      await enqueueAiRewriteTask(task.id);
+      revalidatePath("/end/ai-rewrite/tasks");
+
+      return { data: task, count: 1 };
+    }
+
     const urls = sourceUrls.length > 0 ? sourceUrls : parseSourceUrls(formData.get("sourceUrl"));
     const parsedUrls = urls.map((sourceUrl) =>
       taskInputSchema.parse({
@@ -158,6 +224,54 @@ export async function retryAiRewriteTaskAction(taskId: number) {
   }
 }
 
+export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
+  try {
+    await requireAdminSession();
+
+    const [task] = await db
+      .select({
+        id: aiRewriteTasks.id,
+        status: aiRewriteTasks.status,
+        postId: aiRewriteTasks.postId,
+      })
+      .from(aiRewriteTasks)
+      .where(eq(aiRewriteTasks.id, taskId))
+      .limit(1);
+
+    if (!task) {
+      return { error: "任务不存在" };
+    }
+
+    if (task.status !== "manual_required") {
+      return { error: "只有需人工处理的任务才能标记完成" };
+    }
+
+    if (!task.postId) {
+      return { error: "任务还没有生成草稿，不能标记完成" };
+    }
+
+    const [updated] = await db
+      .update(aiRewriteTasks)
+      .set({
+        status: "succeeded",
+        currentStep: "人工审核已完成",
+        error: null,
+        finishedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(aiRewriteTasks.id, taskId))
+      .returning({ id: aiRewriteTasks.id });
+
+    revalidatePath("/end/ai-rewrite/tasks");
+    revalidatePath(`/end/ai-rewrite/tasks/${taskId}`);
+
+    return { data: updated };
+  } catch (error) {
+    console.error("标记 AI 改写任务人工处理完成失败:", error);
+    return { error: getErrorMessage(error) };
+  }
+}
+
 export async function getAiRewriteTaskList() {
   await requireAdminSession();
 
@@ -165,6 +279,8 @@ export async function getAiRewriteTaskList() {
     .select({
       id: aiRewriteTasks.id,
       sourceUrl: aiRewriteTasks.sourceUrl,
+      sourceType: aiRewriteTasks.sourceType,
+      sourceTitle: aiRewriteTasks.sourceTitle,
       status: aiRewriteTasks.status,
       progress: aiRewriteTasks.progress,
       currentStep: aiRewriteTasks.currentStep,
@@ -200,6 +316,10 @@ export async function getAiRewriteTaskDetail(id: number) {
     .select({
       id: aiRewriteTasks.id,
       sourceUrl: aiRewriteTasks.sourceUrl,
+      sourceType: aiRewriteTasks.sourceType,
+      sourceTitle: aiRewriteTasks.sourceTitle,
+      sourceContent: aiRewriteTasks.sourceContent,
+      sourceFileName: aiRewriteTasks.sourceFileName,
       status: aiRewriteTasks.status,
       progress: aiRewriteTasks.progress,
       currentStep: aiRewriteTasks.currentStep,

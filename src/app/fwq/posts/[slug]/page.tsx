@@ -63,6 +63,9 @@ export async function generateMetadata(props: {
       description: "查看所有服务器相关的文章",
     };
   const canonicalUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`;
+  const englishUrl = post.enSlug
+    ? `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(post.enSlug)}`
+    : undefined;
   const description = post.description ?? `${post.title}`;
   const imageUrl = toAbsoluteUrl(post.imgUrl);
 
@@ -72,6 +75,12 @@ export async function generateMetadata(props: {
     keywords: post.keywords ?? `${post.title}`,
     alternates: {
       canonical: canonicalUrl,
+      languages: englishUrl
+        ? {
+            "zh-CN": canonicalUrl,
+            en: englishUrl,
+          }
+        : undefined,
     },
     openGraph: {
       type: "article",

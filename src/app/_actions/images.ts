@@ -8,6 +8,7 @@ import {
   getImageAssetList,
   importExistingUploads,
   rebuildImageReferences,
+  rebuildResponsiveImageVariants,
   replaceImageAssetFile,
   replaceImageReferences,
   serializeImageAsset,
@@ -33,6 +34,15 @@ export async function rebuildImageReferencesAction() {
   await requireAdminSession();
   const data = await rebuildImageReferences();
   revalidatePath("/end/images/list");
+  return { data };
+}
+
+export async function rebuildResponsiveImageVariantsAction() {
+  await requireAdminSession();
+  const data = await rebuildResponsiveImageVariants();
+  revalidatePath("/end/images/list");
+  revalidatePath("/end/images/upload");
+  revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
   return { data };
 }
 

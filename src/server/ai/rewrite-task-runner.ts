@@ -1,5 +1,8 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
+import * as cheerio from "cheerio";
 
+import RewriteArticle from "@/langchain/rewrite-article";
+import { normalizeArticleHtml } from "@/lib/content";
 import {
   createPostRecordInTransaction,
   getErrorMessage,
@@ -8,7 +11,12 @@ import { db } from "@/server/db";
 import { aiRewriteTasks } from "@/server/db/schema";
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import { importServerOffersFromPost } from "@/server/offers/server-offers";
-import { scrapeArticleWithOptions } from "@/server/scrape/article-scraper";
+import {
+  scrapeArticleWithOptions,
+  type ScrapedArticle,
+  type ScrapeDiagnostics,
+} from "@/server/scrape/article-scraper";
+import { rewriteAffiliateLinks } from "@/server/scrape/affiliate-link-rewriter";
 
 const runningTaskIds = new Set<number>();
 
@@ -40,7 +48,7 @@ async function failTask(taskId: number, error: unknown) {
 }
 
 function needsManualAffiliateReview(
-  diagnostics: Awaited<ReturnType<typeof scrapeArticleWithOptions>>["diagnostics"],
+  diagnostics: ScrapeDiagnostics,
 ) {
   return (diagnostics.affiliateReport?.unmatchedLinks.length ?? 0) > 0;
 }
@@ -60,6 +68,125 @@ function finishedStepText(input: {
   }
 
   return `已保存草稿${reviewText}`;
+}
+
+function looksLikeHtml(value: string) {
+  return /<\/?[a-z][\s\S]*>/i.test(value);
+}
+
+function textToHtml(value: string) {
+  const escapeHtml = (text: string) =>
+    text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  return value
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`)
+    .join("");
+}
+
+async function createArticleFromManualTask(input: {
+  sourceTitle: string | null;
+  sourceContent: string | null;
+  sourceUrl: string;
+  rewriteStyleId?: number;
+}): Promise<ScrapedArticle> {
+  const rawContent = input.sourceContent?.trim();
+  if (!rawContent) {
+    throw new Error("手动素材内容为空");
+  }
+
+  const trimmedTitle = input.sourceTitle?.trim();
+  const sourceTitle =
+    typeof trimmedTitle === "string" && trimmedTitle.length > 0
+      ? trimmedTitle
+      : "手动素材";
+  const html = normalizeArticleHtml(
+    looksLikeHtml(rawContent) ? rawContent : textToHtml(rawContent),
+  );
+  const $ = cheerio.load(html, null, false);
+  const baseUrl = process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com";
+  const affiliateReport = await rewriteAffiliateLinks({
+    $,
+    baseUrl,
+    sourceHost: new URL(baseUrl).hostname,
+    removeInternal: false,
+  });
+  const cleanedHtml = $.html();
+  const diagnostics: ScrapeDiagnostics = {
+    sourceHost: input.sourceUrl,
+    strategy: "manual-material",
+    usedPuppeteer: false,
+    usedFallback: false,
+    usedAiRewrite: false,
+    contentLength: cleanedHtml.length,
+    scrapedTitle: sourceTitle,
+    scrapedDescription: $.text().trim().slice(0, 160),
+    cleanedHtmlLength: cleanedHtml.length,
+    aiInputLength: cleanedHtml.length,
+    aiInputTruncated: false,
+    removedSelectors: [],
+    affiliateReport,
+    warnings: [],
+  };
+
+  try {
+    const rewritten = await RewriteArticle(cleanedHtml, {
+      styleId: input.rewriteStyleId,
+    });
+    diagnostics.usedAiRewrite = true;
+    diagnostics.rewriteOutputLength = rewritten.htmlContent.length;
+
+    return {
+      title: rewritten.title || sourceTitle,
+      content: normalizeArticleHtml(rewritten.htmlContent),
+      htmlContent: normalizeArticleHtml(rewritten.htmlContent),
+      description: rewritten.description,
+      keywords: rewritten.keywords,
+      recommendTagName: rewritten.recommendTagName,
+      tagsName: rewritten.tagsName,
+      diagnostics,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "AI 改写失败";
+    diagnostics.aiRewriteError = message;
+    diagnostics.warnings.push(`AI 改写失败，已回退为原始素材内容：${message}`);
+
+    return {
+      title: sourceTitle,
+      content: cleanedHtml,
+      htmlContent: cleanedHtml,
+      description: diagnostics.scrapedDescription ?? sourceTitle,
+      keywords: [],
+      recommendTagName: "",
+      tagsName: [],
+      diagnostics,
+    };
+  }
+}
+
+async function loadTaskArticle(
+  claimedTask: typeof aiRewriteTasks.$inferSelect,
+) {
+  if (claimedTask.sourceType === "text" || claimedTask.sourceType === "email") {
+    return createArticleFromManualTask({
+      sourceTitle: claimedTask.sourceTitle,
+      sourceContent: claimedTask.sourceContent,
+      sourceUrl: claimedTask.sourceUrl,
+      rewriteStyleId: claimedTask.rewriteStyleId ?? undefined,
+    });
+  }
+
+  return scrapeArticleWithOptions({
+    url: claimedTask.sourceUrl,
+    rewriteStyleId: claimedTask.rewriteStyleId ?? undefined,
+  });
 }
 
 export async function enqueueAiRewriteTask(taskId: number) {
@@ -111,10 +238,7 @@ export async function runAiRewriteTask(taskId: number) {
         currentStep: "抓取文章并执行 AI 改写",
       });
 
-      const article = await scrapeArticleWithOptions({
-        url: claimedTask.sourceUrl,
-        rewriteStyleId: claimedTask.rewriteStyleId ?? undefined,
-      });
+      const article = await loadTaskArticle(claimedTask);
       const manualRequired = needsManualAffiliateReview(article.diagnostics);
 
       await updateTask(taskId, {

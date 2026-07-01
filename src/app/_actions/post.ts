@@ -653,6 +653,8 @@ export async function getPostBySlug(slug: string) {
         title: posts.title,
         content: posts.content,
         id: posts.id,
+        enSlug: posts.enSlug,
+        enTitle: posts.enTitle,
         description: posts.description,
         imgUrl: posts.imgUrl,
         recommendedTagName: posts.recommendedTagName,
@@ -738,6 +740,9 @@ export async function getPostWithTagsBySlug(slug: string) {
         description: posts.description,
         keywords: posts.keywords,
         imgUrl: posts.imgUrl,
+        enSlug: posts.enSlug,
+        enTitle: posts.enTitle,
+        enContent: posts.enContent,
         content: posts.content,
         createdAt: posts.createdAt,
         updatedAt: posts.updatedAt,
@@ -791,6 +796,63 @@ export async function getPostWithTagsBySlug(slug: string) {
     };
   } catch (error) {
     return { error: "通过slug获取文章失败", message: error };
+  }
+}
+
+export async function getEnglishPostWithTagsBySlug(slug: string) {
+  "use cache";
+  tagCache(cacheTags.posts, cacheTags.postSlug(decodeSlug(slug)));
+
+  try {
+    const decodedSlug = decodeSlug(slug);
+    const [postRow] = await db
+      .select({
+        id: posts.id,
+        title: posts.enTitle,
+        slug: posts.slug,
+        enSlug: posts.enSlug,
+        description: posts.enDescription,
+        keywords: posts.enKeywords,
+        imgUrl: posts.enImgUrl,
+        fallbackImgUrl: posts.imgUrl,
+        content: posts.enContent,
+        createdAt: posts.createdAt,
+        updatedAt: posts.enUpdatedAt,
+        views: posts.views,
+        recommendedTagId: posts.recommendedTagId,
+        recommendedTagName: posts.recommendedTagName,
+      })
+      .from(posts)
+      .where(and(eq(posts.enSlug, decodedSlug), eq(posts.published, true)))
+      .limit(1);
+
+    if (!postRow?.title || !postRow.content || !postRow.enSlug) {
+      return { data: { post: null } };
+    }
+
+    const postTagsData = await db
+      .select({
+        tag: {
+          id: tags.id,
+          name: tags.name,
+          slug: tags.slug,
+        },
+      })
+      .from(postTags)
+      .innerJoin(tags, eq(postTags.tagId, tags.id))
+      .where(eq(postTags.postId, postRow.id));
+
+    return {
+      data: {
+        post: {
+          ...postRow,
+          imgUrl: postRow.imgUrl ?? postRow.fallbackImgUrl,
+          tags: postTagsData,
+        },
+      },
+    };
+  } catch (error) {
+    return { error: "通过英文 slug 获取文章失败", message: error };
   }
 }
 

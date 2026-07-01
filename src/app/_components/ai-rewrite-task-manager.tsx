@@ -18,10 +18,12 @@ import {
   createAiRewriteTaskAction,
   retryAiRewriteTaskAction,
 } from "@/app/_actions/ai-rewrite-task";
+import { AiRewriteTaskResolveButton } from "@/app/_components/ai-rewrite-task-resolve-button";
 import { type getAiRewriteTaskList } from "@/app/_actions/ai-rewrite-task";
 import { type ScrapeDiagnostics } from "@/server/scrape/article-scraper";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -284,6 +286,9 @@ function FailedTaskPanel({
 }
 
 function countSubmittedUrls(formData: FormData) {
+  const sourceType = formData.get("sourceType");
+  if (sourceType === "text" || sourceType === "email") return 1;
+
   const sourceUrls = formData.get("sourceUrls");
   if (typeof sourceUrls !== "string") return 0;
 
@@ -291,6 +296,25 @@ function countSubmittedUrls(formData: FormData) {
     .split(/\r?\n|,|\s+/)
     .map((item) => item.trim())
     .filter(Boolean).length;
+}
+
+function taskSourceTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    url: "网址",
+    text: "手动文本",
+    email: "邮件素材",
+    file: "文件导入",
+  };
+
+  return labels[value] ?? value;
+}
+
+function taskSourceTitle(task: RewriteTask) {
+  if (task.sourceType === "url") {
+    return task.sourceUrl;
+  }
+
+  return task.sourceTitle ?? task.sourceUrl;
 }
 
 function AffiliateDiagnosticsSummary({
@@ -457,6 +481,7 @@ export function AiRewriteTaskManager({
   const router = useRouter();
   const [isSubmitting, startSubmitTransition] = useTransition();
   const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [sourceType, setSourceType] = useState("url");
   const defaultCategoryId = categories[0]?.id ? String(categories[0].id) : "";
   const defaultRewriteStyleId = useMemo(
     () => rewriteStyles.find((style) => style.isDefault)?.id ?? rewriteStyles[0]?.id,
@@ -484,7 +509,7 @@ export function AiRewriteTaskManager({
           title: "AI 改写任务创建失败",
           description: describeAdminResult([
             result.error,
-            "请检查 URL、分类和改写配置后再提交",
+            "请检查素材来源、分类和改写配置后再提交",
           ]),
         });
         return;
@@ -493,7 +518,7 @@ export function AiRewriteTaskManager({
       notifySuccess({
         title: "AI 改写任务已加入队列",
         description: describeAdminResult([
-          `提交 ${countSubmittedUrls(formData)} 个 URL`,
+          `提交 ${countSubmittedUrls(formData)} 个素材`,
           `创建 ${result.count ?? 1} 个任务`,
           "任务成功后才会保存为草稿",
         ]),
@@ -533,14 +558,47 @@ export function AiRewriteTaskManager({
     <div className="space-y-5">
       <form
         action={handleSubmit}
-        className="grid gap-3 rounded-lg border border-border/70 bg-background p-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_180px_180px_auto]"
+        className="grid gap-3 rounded-lg border border-border/70 bg-background p-4 shadow-sm lg:grid-cols-[150px_minmax(0,1fr)_180px_180px_auto]"
       >
-        <Textarea
-          name="sourceUrls"
-          placeholder="输入要采集并改写的文章 URL，支持一行一个批量提交"
-          required
-          className="min-h-11 lg:min-h-11"
-        />
+        <Select name="sourceType" value={sourceType} onValueChange={setSourceType}>
+          <SelectTrigger className="min-h-11">
+            <SelectValue placeholder="素材类型" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="url">网址</SelectItem>
+            <SelectItem value="text">手动文本</SelectItem>
+            <SelectItem value="email">邮件素材</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="space-y-2">
+          {sourceType === "url" ? (
+            <Textarea
+              name="sourceUrls"
+              placeholder="输入要采集并改写的文章 URL，支持一行一个批量提交"
+              required
+              className="min-h-11 lg:min-h-11"
+            />
+          ) : (
+            <>
+              <Input
+                name="sourceTitle"
+                placeholder={sourceType === "email" ? "邮件标题" : "素材标题"}
+                required
+                className="min-h-11"
+              />
+              <Textarea
+                name="sourceContent"
+                placeholder={
+                  sourceType === "email"
+                    ? "粘贴邮件正文，系统会清洗、替换返利链接并改写为草稿"
+                    : "粘贴活动文案、商家素材或配置表，系统会改写为草稿"
+                }
+                required
+                className="min-h-28"
+              />
+            </>
+          )}
+        </div>
         <Select name="categoryId" defaultValue={defaultCategoryId} required>
           <SelectTrigger className="min-h-11">
             <SelectValue placeholder="选择分类" />
@@ -629,15 +687,24 @@ export function AiRewriteTaskManager({
                               {task.rewriteStyleName}
                             </Badge>
                           ) : null}
+                          <Badge variant="outline">
+                            {taskSourceTypeLabel(task.sourceType)}
+                          </Badge>
                         </div>
-                        <a
-                          href={task.sourceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="line-clamp-2 break-all text-sm font-medium text-foreground hover:underline"
-                        >
-                          {task.sourceUrl}
-                        </a>
+                        {task.sourceType === "url" ? (
+                          <a
+                            href={task.sourceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="line-clamp-2 break-all text-sm font-medium text-foreground hover:underline"
+                          >
+                            {taskSourceTitle(task)}
+                          </a>
+                        ) : (
+                          <p className="line-clamp-2 break-all text-sm font-medium text-foreground">
+                            {taskSourceTitle(task)}
+                          </p>
+                        )}
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span className="inline-flex items-center gap-1">
                             <Clock3 className="size-3.5" />
@@ -709,6 +776,12 @@ export function AiRewriteTaskManager({
                             <RotateCcw className="size-4" />
                             {retryingId === task.id ? "启动中" : "重试"}
                           </Button>
+                        ) : null}
+                        {task.status === "manual_required" ? (
+                          <AiRewriteTaskResolveButton
+                            taskId={task.id}
+                            size="sm"
+                          />
                         ) : null}
                       </div>
                     </TableCell>
