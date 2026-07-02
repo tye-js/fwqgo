@@ -8,6 +8,12 @@ export const env = createEnv({
    */
   server: {
     DATABASE_URL: z.string().url(),
+    CMS_DATABASE_URL: z.string().url().optional(),
+    READ_DATABASE_URL: z.string().url().optional(),
+    CMS_USERNAME: z.string().min(1).optional(),
+    READ_USERNAME: z.string().min(1).optional(),
+    CMS_PASSWORD: z.string().min(1).optional(),
+    READ_PASSWORD: z.string().min(1).optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -28,6 +34,12 @@ export const env = createEnv({
    */
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
+    CMS_DATABASE_URL: process.env.CMS_DATABASE_URL,
+    READ_DATABASE_URL: process.env.READ_DATABASE_URL,
+    CMS_USERNAME: process.env.CMS_USERNAME,
+    READ_USERNAME: process.env.READ_USERNAME,
+    CMS_PASSWORD: process.env.CMS_PASSWORD,
+    READ_PASSWORD: process.env.READ_PASSWORD,
     NODE_ENV: process.env.NODE_ENV,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },

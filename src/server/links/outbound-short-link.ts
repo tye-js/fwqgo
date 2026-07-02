@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import { eq } from "drizzle-orm";
 
-import { db } from "@fwqgo/db";
+import { db, readDb } from "@fwqgo/db";
 import { outboundLinks } from "@fwqgo/db/schema";
 
 const siteBaseUrl = "https://fwqgo.com";
@@ -95,7 +95,7 @@ export async function readOutboundShortTarget(slug: string) {
     return null;
   }
 
-  const [link] = await db
+  const [link] = await readDb
     .select({ targetUrl: outboundLinks.targetUrl })
     .from(outboundLinks)
     .where(eq(outboundLinks.slug, normalizedSlug))

@@ -30,6 +30,12 @@ jobs:
       NEXT_TELEMETRY_DISABLED: "1"
       PUPPETEER_SKIP_DOWNLOAD: "true"
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CMS_DATABASE_URL: ${{ secrets.CMS_DATABASE_URL }}
+      READ_DATABASE_URL: ${{ secrets.READ_DATABASE_URL }}
+      CMS_USERNAME: ${{ secrets.CMS_USERNAME }}
+      READ_USERNAME: ${{ secrets.READ_USERNAME }}
+      CMS_PASSWORD: ${{ secrets.CMS_PASSWORD }}
+      READ_PASSWORD: ${{ secrets.READ_PASSWORD }}
       NEXT_PUBLIC_URL: ${{ vars.NEXT_PUBLIC_URL || 'https://fwqgo.com' }}
       NEXT_PUBLIC_CMS_URL: ${{ vars.NEXT_PUBLIC_CMS_URL || 'https://cms.fwqgo.com' }}
       CMS_BASIC_AUTH_USERNAME: ${{ secrets.CMS_BASIC_AUTH_USERNAME }}
@@ -66,6 +72,7 @@ jobs:
             DEPLOY_USER
             SSH_PRIVATE_KEY
             DATABASE_URL
+            READ_DATABASE_URL
             CMS_BASIC_AUTH_USERNAME
             CMS_BASIC_AUTH_PASSWORD
           )
