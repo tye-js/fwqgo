@@ -86,13 +86,26 @@ const cmsRoutes = getRoutes(".next-cms");
 assertNoRoutes({
   appName: "web",
   routes: webRoutes,
-  blockedPrefixes: ["/end", "/login", "/signup", "/api/auth", "/api/upload", "/api/tags/search"],
+  blockedPrefixes: [
+    "/login",
+    "/signup",
+    "/api/auth",
+    "/api/upload",
+    "/api/tags/search",
+    "/ai-rewrite",
+    "/ai-tasks",
+    "/collect",
+    "/images",
+    "/posts",
+    "/seo",
+    "/settings",
+  ],
 });
 
 assertNoRoutes({
   appName: "cms",
   routes: cmsRoutes,
-  blockedPrefixes: ["/fwq", "/servers", "/go", "/en/fwq", "/sitemap.xml"],
+  blockedPrefixes: ["/fwq", "/go", "/en/fwq", "/sitemap.xml"],
 });
 
 console.log(

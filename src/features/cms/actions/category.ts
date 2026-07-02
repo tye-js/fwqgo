@@ -52,8 +52,8 @@ export async function updateCategorySeo(input: {
       cacheTags.category(category.id),
       cacheTags.categorySlug(category.slug),
     ]);
-    revalidatePath("/end/seo");
-    revalidatePath("/end/seo/category");
+    revalidatePath("/seo");
+    revalidatePath("/seo/category");
 
     return { data: category };
   } catch (error) {

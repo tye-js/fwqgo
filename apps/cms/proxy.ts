@@ -1,7 +1,18 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_CONTENT_MATCHERS = ["/fwq", "/servers", "/go/"];
+const PUBLIC_CONTENT_MATCHERS = ["/fwq", "/go/"];
+const ADMIN_PAGE_PREFIXES = [
+  "/ai-rewrite",
+  "/ai-tasks",
+  "/collect",
+  "/images",
+  "/posts",
+  "/seo",
+  "/servers",
+  "/settings",
+];
+const PROTECTED_API_PATHS = new Set(["/api/tags/search", "/api/upload"]);
 const DEFAULT_PUBLIC_ORIGIN = "https://fwqgo.com";
 
 function getPublicOrigin() {
@@ -68,6 +79,16 @@ function isPublicContentPath(pathname: string) {
   return PUBLIC_CONTENT_MATCHERS.some((prefix) => pathname.startsWith(prefix));
 }
 
+function isProtectedCmsPath(pathname: string) {
+  return (
+    pathname === "/" ||
+    ADMIN_PAGE_PREFIXES.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+    ) ||
+    PROTECTED_API_PATHS.has(pathname)
+  );
+}
+
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const basicAuthResponse = enforceCmsBasicAuth(request);
@@ -80,7 +101,7 @@ export function proxy(request: NextRequest) {
     return redirectToPublic(request);
   }
 
-  if (pathname.startsWith("/end")) {
+  if (isProtectedCmsPath(pathname)) {
     const sessionId = request.cookies.get("session_id")?.value;
 
     if (!sessionId) {
@@ -104,9 +125,15 @@ export const config = {
     "/",
     "/login",
     "/signup",
-    "/end/:path*",
-    "/fwq/:path*",
+    "/ai-rewrite/:path*",
+    "/ai-tasks/:path*",
+    "/collect/:path*",
+    "/images/:path*",
+    "/posts/:path*",
+    "/seo/:path*",
     "/servers/:path*",
+    "/settings/:path*",
+    "/fwq/:path*",
     "/go/:path*",
     "/api/auth/:path*",
     "/api/tags/search",

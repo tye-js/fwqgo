@@ -5,6 +5,16 @@ const PUBLIC_HOSTS = new Set(["fwqgo.com", "www.fwqgo.com"]);
 const DEFAULT_PUBLIC_ORIGIN = "https://fwqgo.com";
 const DEFAULT_CMS_ORIGIN = "https://cms.fwqgo.com";
 const AUTH_PAGES = new Set(["/login", "/signup"]);
+const CMS_ROUTE_PREFIXES = [
+  "/ai-rewrite",
+  "/ai-tasks",
+  "/collect",
+  "/images",
+  "/posts",
+  "/seo",
+  "/settings",
+];
+const CMS_HOST_ADMIN_PREFIXES = [...CMS_ROUTE_PREFIXES, "/servers"];
 const CMS_API_PATHS = new Set([
   "/api/auth/login",
   "/api/auth/signup",
@@ -52,11 +62,7 @@ function redirectToPublic(request: NextRequest) {
 }
 
 function isPublicContentPath(pathname: string) {
-  return (
-    pathname.startsWith("/fwq") ||
-    pathname.startsWith("/servers") ||
-    pathname.startsWith("/go/")
-  );
+  return pathname.startsWith("/fwq") || pathname.startsWith("/go/");
 }
 
 function getCmsBasicAuthConfig() {
@@ -119,15 +125,32 @@ function enforceCmsBasicAuth(request: NextRequest) {
   return unauthorizedBasicAuthResponse();
 }
 
+function isCmsAdminPath(pathname: string) {
+  return (
+    pathname === "/" ||
+    CMS_HOST_ADMIN_PREFIXES.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+    ) ||
+    pathname === "/api/tags/search" ||
+    pathname === "/api/upload"
+  );
+}
+
+function isPublicHostCmsPath(pathname: string) {
+  return (
+    AUTH_PAGES.has(pathname) ||
+    CMS_ROUTE_PREFIXES.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+    )
+  );
+}
+
 export function proxy(request: NextRequest) {
   const sessionId = request.cookies.get("session_id")?.value;
   const pathname = request.nextUrl.pathname;
   const hostname = normalizeHostname(request.headers.get("host"));
 
-  if (
-    PUBLIC_HOSTS.has(hostname) &&
-    (pathname.startsWith("/end") || AUTH_PAGES.has(pathname))
-  ) {
+  if (PUBLIC_HOSTS.has(hostname) && isPublicHostCmsPath(pathname)) {
     return redirectToCms(request);
   }
 
@@ -143,15 +166,11 @@ export function proxy(request: NextRequest) {
     }
   }
 
-  if (isCmsHost(hostname) && pathname === "/") {
-    return NextResponse.redirect(new URL("/end", request.url));
-  }
-
   if (isCmsHost(hostname) && isPublicContentPath(pathname)) {
     return redirectToPublic(request);
   }
 
-  if (pathname.startsWith("/end")) {
+  if (isCmsHost(hostname) && isCmsAdminPath(pathname)) {
     if (!sessionId) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
@@ -173,9 +192,15 @@ export const config = {
     "/",
     "/login",
     "/signup",
-    "/end/:path*",
-    "/fwq/:path*",
+    "/ai-rewrite/:path*",
+    "/ai-tasks/:path*",
+    "/collect/:path*",
+    "/images/:path*",
+    "/posts/:path*",
+    "/seo/:path*",
     "/servers/:path*",
+    "/settings/:path*",
+    "/fwq/:path*",
     "/go/:path*",
     "/api/auth/:path*",
     "/api/tags/search",

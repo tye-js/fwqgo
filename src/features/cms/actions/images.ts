@@ -19,10 +19,10 @@ import { requireAdminSession } from "@fwqgo/auth/session";
 import { revalidateSiteContent, cacheTags } from "@fwqgo/cache/tags";
 
 function revalidateImageWorkbenches() {
-  revalidatePath("/end/images/list");
-  revalidatePath("/end/images/upload");
-  revalidatePath("/end/images/ai-generate");
-  revalidatePath("/end/images/covers");
+  revalidatePath("/images/list");
+  revalidatePath("/images/upload");
+  revalidatePath("/images/ai-generate");
+  revalidatePath("/images/covers");
 }
 
 export async function getImageAssets() {

@@ -27,8 +27,8 @@ export async function generateCustomImageAction(input: {
       uploadedBy: session.userId,
     });
 
-    revalidatePath("/end/images/ai-generate");
-    revalidatePath("/end/images/list");
+    revalidatePath("/images/ai-generate");
+    revalidatePath("/images/list");
 
     return {
       success: true,

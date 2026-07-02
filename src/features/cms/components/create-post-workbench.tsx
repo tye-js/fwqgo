@@ -131,7 +131,7 @@ export function CreatePostWorkbench({
       }
 
       // 跳转到文章详情页
-      router.push(`/end/posts/edit/`);
+      router.push(`/posts/edit/`);
     } catch (error) {
       console.error("创建文章失败:", error);
       toast.error("创建文章失败，请重试");

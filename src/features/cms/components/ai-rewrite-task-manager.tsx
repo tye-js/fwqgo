@@ -485,7 +485,7 @@ export function AiRewriteTaskManager({
   tasks,
   categories,
   rewriteStyles,
-  basePath = "/end/ai-rewrite/tasks",
+  basePath = "/ai-rewrite/tasks",
   showCreateForm = true,
 }: {
   tasks: RewriteTask[];
@@ -771,7 +771,7 @@ export function AiRewriteTaskManager({
                     <TableCell>
                       {task.postSlug ? (
                         <Link
-                          href={`/end/posts/edit/post/${task.postSlug}`}
+                          href={`/posts/edit/post/${task.postSlug}`}
                           className="inline-flex max-w-[260px] items-start gap-2 text-sm font-medium text-primary hover:underline"
                         >
                           <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
@@ -799,7 +799,7 @@ export function AiRewriteTaskManager({
                         </Button>
                         {task.postSlug ? (
                           <Button asChild size="sm" variant="outline">
-                            <Link href={`/end/posts/edit/post/${task.postSlug}`}>
+                            <Link href={`/posts/edit/post/${task.postSlug}`}>
                               <ExternalLink className="size-4" />
                               编辑
                             </Link>

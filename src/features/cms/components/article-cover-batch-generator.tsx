@@ -324,7 +324,7 @@ export function ArticleCoverBatchGenerator({
                   </TableCell>
                   <TableCell className="text-right">
                     <Button asChild variant="outline" size="sm">
-                      <Link href={`/end/posts/edit/post/${post.slug}`}>
+                      <Link href={`/posts/edit/post/${post.slug}`}>
                         <ExternalLink className="size-4" />
                       </Link>
                     </Button>

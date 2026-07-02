@@ -35,8 +35,8 @@ function getErrorMessage(error: unknown) {
 }
 
 function revalidateAiTaskPages() {
-  revalidatePath("/end/ai-rewrite/tasks");
-  revalidatePath("/end/ai-tasks");
+  revalidatePath("/ai-rewrite/tasks");
+  revalidatePath("/ai-tasks");
 }
 
 function parseSourceSiteFormData(formData: FormData) {

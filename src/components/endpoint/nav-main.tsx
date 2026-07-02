@@ -48,8 +48,8 @@ export function NavMain({
       normalizedUrl: normalizeUrl(item.url),
     }))
     .filter((item) =>
-      item.normalizedUrl === "/end"
-        ? normalizedPathname === "/end"
+      item.normalizedUrl === "/"
+        ? normalizedPathname === "/"
         : normalizedPathname === item.normalizedUrl ||
           normalizedPathname.startsWith(`${item.normalizedUrl}/`),
     )

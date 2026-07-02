@@ -286,7 +286,7 @@ export function HomepagePromotedPostTable({
                   {item.post ? (
                     <div className="space-y-1">
                       <Link
-                        href={`/end/posts/edit/post/${item.post.slug}`}
+                        href={`/posts/edit/post/${item.post.slug}`}
                         className="font-medium transition-colors hover:text-accent"
                       >
                         {item.post.title}

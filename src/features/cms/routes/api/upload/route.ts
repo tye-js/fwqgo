@@ -19,8 +19,8 @@ export async function POST(request: NextRequest) {
       uploadedBy: session.userId,
     });
 
-    revalidatePath("/end/images/list");
-    revalidatePath("/end/images/upload");
+    revalidatePath("/images/list");
+    revalidatePath("/images/upload");
 
     return NextResponse.json({
       success: true,

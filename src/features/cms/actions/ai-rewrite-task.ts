@@ -64,12 +64,12 @@ function getErrorMessage(error: unknown) {
 }
 
 function revalidateAiTaskPages(taskId?: number) {
-  revalidatePath("/end/ai-rewrite/tasks");
-  revalidatePath("/end/ai-tasks");
+  revalidatePath("/ai-rewrite/tasks");
+  revalidatePath("/ai-tasks");
 
   if (taskId) {
-    revalidatePath(`/end/ai-rewrite/tasks/${taskId}`);
-    revalidatePath(`/end/ai-tasks/${taskId}`);
+    revalidatePath(`/ai-rewrite/tasks/${taskId}`);
+    revalidatePath(`/ai-tasks/${taskId}`);
   }
 }
 

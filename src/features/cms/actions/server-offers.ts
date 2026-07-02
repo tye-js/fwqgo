@@ -46,8 +46,8 @@ function getErrorMessage(error: unknown) {
 }
 
 function revalidateOfferPages() {
-  revalidatePath("/end/servers");
-  revalidatePath("/end/servers/manage");
+  revalidatePath("/servers");
+  revalidatePath("/servers/manage");
   revalidatePath("/servers");
   revalidatePath("/servers/hong-kong");
   revalidatePath("/servers/united-states");

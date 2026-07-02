@@ -40,18 +40,18 @@ export async function createAiRewriteConfigAction(formData: FormData) {
   await requireAdminSession();
   const input = configSchema.parse(Object.fromEntries(formData));
   await createAiRewriteConfig(input);
-  revalidatePath("/end/collect/ai-rewrite");
+  revalidatePath("/collect/ai-rewrite");
 }
 
 export async function updateAiRewriteConfigAction(id: number, formData: FormData) {
   await requireAdminSession();
   const input = configSchema.parse(Object.fromEntries(formData));
   await updateAiRewriteConfig(id, input);
-  revalidatePath("/end/collect/ai-rewrite");
+  revalidatePath("/collect/ai-rewrite");
 }
 
 export async function deleteAiRewriteConfigAction(id: number) {
   await requireAdminSession();
   await deleteAiRewriteConfig(id);
-  revalidatePath("/end/collect/ai-rewrite");
+  revalidatePath("/collect/ai-rewrite");
 }

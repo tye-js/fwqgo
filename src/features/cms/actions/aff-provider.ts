@@ -226,7 +226,7 @@ export async function updateAffProvider(
       .where(eq(affServiceProviders.id, data.id))
       .returning();
 
-    revalidatePath("/end/collect/aff-man");
+    revalidatePath("/collect/aff-man");
     return { data: result };
   } catch (error) {
     console.error("更新返利商家失败:", error);
@@ -249,7 +249,7 @@ export async function deleteAffProvider(
       .where(eq(affServiceProviders.id, id))
       .returning();
 
-    revalidatePath("/end/collect/aff-man");
+    revalidatePath("/collect/aff-man");
     return { data: result };
   } catch (error) {
     console.error("删除返利商家失败:", error);
@@ -274,7 +274,7 @@ export async function deleteAffProviders(
       .where(inArray(affServiceProviders.id, validIds))
       .returning({ id: affServiceProviders.id });
 
-    revalidatePath("/end/collect/aff-man");
+    revalidatePath("/collect/aff-man");
     return { data: result.length };
   } catch (error) {
     console.error("批量删除返利商家失败:", error);
@@ -325,7 +325,7 @@ export async function addAffProvider(
       .values(normalizedData)
       .returning();
 
-    revalidatePath("/end/collect/aff-man");
+    revalidatePath("/collect/aff-man");
     return { data: result };
   } catch (error) {
     console.error("新增返利商家失败:", error);
