@@ -56,7 +56,14 @@ const offerReviewStatusLabels = {
 const reviewStatusOptions = Object.entries(offerReviewStatusLabels);
 
 function formatPrice(offer: Offer) {
-  if (!offer.priceAmount) return "待补充";
+  if (
+    offer.priceAmount === null ||
+    offer.priceAmount === undefined ||
+    offer.priceAmount === ""
+  ) {
+    return "待补充";
+  }
+
   return `${offer.currency === "CNY" ? "¥" : "$"}${Number(offer.priceAmount).toFixed(2)}`;
 }
 

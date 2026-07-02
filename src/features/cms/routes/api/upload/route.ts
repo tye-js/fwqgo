@@ -1,6 +1,7 @@
 import { isUnauthorizedError, requireAdminSession } from "@fwqgo/auth/session";
 import { createImageAssetFromUpload } from "@/server/images/assets";
 import { type NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,6 +18,9 @@ export async function POST(request: NextRequest) {
       file,
       uploadedBy: session.userId,
     });
+
+    revalidatePath("/end/images/list");
+    revalidatePath("/end/images/upload");
 
     return NextResponse.json({
       success: true,

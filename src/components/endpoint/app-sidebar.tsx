@@ -99,8 +99,8 @@ const data = {
           url: "/end/posts/edit",
         },
         {
-          title: "新建文章",
-          url: "/end/posts/create",
+          title: "内容生产台",
+          url: "/end/ai-rewrite/tasks",
         },
       ],
     },

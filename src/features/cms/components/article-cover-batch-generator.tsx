@@ -96,9 +96,10 @@ export function ArticleCoverBatchGenerator({
   }, [coverFilter, posts, query]);
 
   const selectedSet = new Set(selectedIds);
+  const selectableFilteredPosts = filteredPosts.slice(0, 20);
   const allFilteredSelected =
-    filteredPosts.length > 0 &&
-    filteredPosts.every((post) => selectedSet.has(post.id));
+    selectableFilteredPosts.length > 0 &&
+    selectableFilteredPosts.every((post) => selectedSet.has(post.id));
   const selectedPosts = posts.filter((post) => selectedSet.has(post.id));
   const selectedWithoutCoverCount = selectedPosts.filter((post) => !post.imgUrl).length;
 
@@ -117,7 +118,7 @@ export function ArticleCoverBatchGenerator({
     }
 
     setSelectedIds((current) => [
-      ...new Set([...current, ...filteredPosts.map((post) => post.id)]),
+      ...new Set([...current, ...selectableFilteredPosts.map((post) => post.id)]),
     ].slice(0, 20));
   }
 

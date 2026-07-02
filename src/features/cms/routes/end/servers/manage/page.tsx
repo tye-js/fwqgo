@@ -20,6 +20,8 @@ async function ServerOfferManageContent() {
     getAdminServerOffers(),
   ]);
   const total = counts.reduce((sum, item) => sum + item.count, 0);
+  const hasMissingPrice = (priceAmount: unknown) =>
+    priceAmount === null || priceAmount === undefined || priceAmount === "";
   const qualityIssues = [
     {
       label: "待审核",
@@ -33,7 +35,7 @@ async function ServerOfferManageContent() {
     },
     {
       label: "缺价格",
-      value: offers.filter((offer) => !offer.priceAmount).length,
+      value: offers.filter((offer) => hasMissingPrice(offer.priceAmount)).length,
       note: "影响前台比价排序",
     },
     {

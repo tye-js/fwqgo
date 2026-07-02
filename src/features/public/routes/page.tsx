@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { connection } from "next/server";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -152,6 +153,8 @@ function HeroArticleTile({
 }
 
 async function HomeContent() {
+  await connection();
+
   const [
     { data: posts },
     { data: sidebarData },

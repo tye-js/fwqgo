@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
@@ -116,7 +116,7 @@ export async function batchGenerateArticleCoverImagesAction(input: {
             imgUrl: generated.asset.path,
             updatedAt: new Date(),
           })
-          .where(inArray(posts.id, [post.id]))
+          .where(eq(posts.id, post.id))
           .returning({
             id: posts.id,
             slug: posts.slug,
@@ -151,6 +151,7 @@ export async function batchGenerateArticleCoverImagesAction(input: {
     }
 
     revalidatePath("/end/images/covers");
+    revalidatePath("/end/images/ai-generate");
     revalidatePath("/end/images/list");
     revalidatePath("/end/posts/edit");
     revalidatePath("/end/posts/drafts");
