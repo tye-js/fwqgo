@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import { ArrowRight, Server } from "lucide-react";
 import { Suspense } from "react";
 
@@ -16,6 +17,8 @@ export const metadata = {
 };
 
 async function ServersContent() {
+  await connection();
+
   const counts = await getServerOfferTopicCounts();
 
   return (

@@ -21,6 +21,9 @@ import { type ScrapeDiagnostics } from "@fwqgo/scrape/article-scraper";
 
 type PageProps = {
   params: Promise<{ id: string }>;
+};
+
+type AiRewriteTaskDetailPageContentProps = PageProps & {
   basePath?: string;
 };
 
@@ -100,6 +103,7 @@ function sourceTypeLabel(value: string) {
     text: "手动文本",
     email: "邮件素材",
     file: "文件导入",
+    english: "英文 SEO 生成",
   };
 
   return labels[value] ?? value;
@@ -339,7 +343,7 @@ function ManualReviewHints({
 export async function AiRewriteTaskDetailPageContent({
   params,
   basePath = "/end/ai-rewrite/tasks",
-}: PageProps) {
+}: AiRewriteTaskDetailPageContentProps) {
   const { id } = await params;
   const taskId = Number(id);
 

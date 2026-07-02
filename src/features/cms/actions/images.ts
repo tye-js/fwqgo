@@ -18,6 +18,13 @@ import {
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { revalidateSiteContent, cacheTags } from "@fwqgo/cache/tags";
 
+function revalidateImageWorkbenches() {
+  revalidatePath("/end/images/list");
+  revalidatePath("/end/images/upload");
+  revalidatePath("/end/images/ai-generate");
+  revalidatePath("/end/images/covers");
+}
+
 export async function getImageAssets() {
   await requireAdminSession();
   const images = await getImageAssetList();
@@ -27,22 +34,21 @@ export async function getImageAssets() {
 export async function importUploadImagesAction() {
   await requireAdminSession();
   const data = await importExistingUploads();
-  revalidatePath("/end/images/list");
+  revalidateImageWorkbenches();
   return { data };
 }
 
 export async function rebuildImageReferencesAction() {
   await requireAdminSession();
   const data = await rebuildImageReferences();
-  revalidatePath("/end/images/list");
+  revalidateImageWorkbenches();
   return { data };
 }
 
 export async function rebuildResponsiveImageVariantsAction() {
   await requireAdminSession();
   const data = await rebuildResponsiveImageVariants();
-  revalidatePath("/end/images/list");
-  revalidatePath("/end/images/upload");
+  revalidateImageWorkbenches();
   revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
   return { data };
 }
@@ -50,8 +56,7 @@ export async function rebuildResponsiveImageVariantsAction() {
 export async function auditAndRepairImageAssetsAction() {
   await requireAdminSession();
   const data = await auditAndRepairImageAssets();
-  revalidatePath("/end/images/list");
-  revalidatePath("/end/images/upload");
+  revalidateImageWorkbenches();
   revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
   return { data };
 }
@@ -59,8 +64,7 @@ export async function auditAndRepairImageAssetsAction() {
 export async function convertUploadImagesToWebpAction() {
   await requireAdminSession();
   const data = await convertExistingUploadsToWebp();
-  revalidatePath("/end/images/list");
-  revalidatePath("/end/images/upload");
+  revalidateImageWorkbenches();
   revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
   return { data };
 }
@@ -68,7 +72,7 @@ export async function convertUploadImagesToWebpAction() {
 export async function deleteImageAssetAction(id: number) {
   await requireAdminSession();
   const result = await deleteImageAsset(id);
-  revalidatePath("/end/images/list");
+  revalidateImageWorkbenches();
   return result;
 }
 
@@ -82,7 +86,7 @@ export async function replaceImageAssetFileAction(formData: FormData) {
   }
 
   const data = await replaceImageAssetFile({ id, file });
-  revalidatePath("/end/images/list");
+  revalidateImageWorkbenches();
   revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
   return {
     data: {
@@ -99,7 +103,7 @@ export async function replaceImageReferencesAction(input: {
 }) {
   await requireAdminSession();
   const result = await replaceImageReferences(input);
-  revalidatePath("/end/images/list");
+  revalidateImageWorkbenches();
   revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
   return result;
 }
@@ -115,6 +119,6 @@ export async function updateImageAssetMetadataAction(input: {
 }) {
   await requireAdminSession();
   const result = await updateImageAssetMetadata(input);
-  revalidatePath("/end/images/list");
+  revalidateImageWorkbenches();
   return result;
 }

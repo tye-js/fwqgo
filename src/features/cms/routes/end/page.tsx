@@ -221,8 +221,8 @@ export default async function Page() {
 
             <div className="flex flex-wrap gap-3">
               <Button asChild>
-                <Link href="/end/posts/create">
-                  新建文章
+                <Link href="/end/ai-rewrite/tasks#single-task">
+                  内容生产
                   <ArrowRight className="size-4" />
                 </Link>
               </Button>

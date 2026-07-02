@@ -33,7 +33,7 @@ async function PostListWrapper({
       description="在这里集中查看、编辑、删除和校对文章基础信息。列表区沿用统一的后台视觉风格，更适合高频运营操作。"
       actions={
         <Button asChild>
-          <Link href="/end/posts/create">新建文章</Link>
+          <Link href="/end/ai-rewrite/tasks#single-task">内容生产</Link>
         </Button>
       }
     >

@@ -169,7 +169,7 @@ function SourceRunResultPanel({
             result.tasks.map((task) => (
               <Link
                 key={task.id}
-                href={`/end/ai-rewrite/tasks/${task.id}`}
+                href={`/end/ai-tasks/${task.id}`}
                 className="block rounded-md border border-border/70 px-3 py-2 text-xs hover:bg-muted/30"
               >
                 <span className="line-clamp-1 break-all">

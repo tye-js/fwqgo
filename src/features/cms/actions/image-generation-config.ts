@@ -26,6 +26,12 @@ const configSchema = z.object({
   isDefault: z.preprocess((value) => value === "true" || value === true, z.boolean()),
 });
 
+function revalidateImageGenerationPages() {
+  revalidatePath("/end/settings/image-generation");
+  revalidatePath("/end/images/ai-generate");
+  revalidatePath("/end/images/covers");
+}
+
 export async function getImageGenerationConfigList() {
   await requireAdminSession();
   return getImageGenerationConfigs();
@@ -35,7 +41,7 @@ export async function createImageGenerationConfigAction(formData: FormData) {
   await requireAdminSession();
   const input = configSchema.parse(Object.fromEntries(formData));
   await createImageGenerationConfig(input);
-  revalidatePath("/end/settings/image-generation");
+  revalidateImageGenerationPages();
 }
 
 export async function updateImageGenerationConfigAction(
@@ -45,11 +51,11 @@ export async function updateImageGenerationConfigAction(
   await requireAdminSession();
   const input = configSchema.parse(Object.fromEntries(formData));
   await updateImageGenerationConfig(id, input);
-  revalidatePath("/end/settings/image-generation");
+  revalidateImageGenerationPages();
 }
 
 export async function deleteImageGenerationConfigAction(id: number) {
   await requireAdminSession();
   await deleteImageGenerationConfig(id);
-  revalidatePath("/end/settings/image-generation");
+  revalidateImageGenerationPages();
 }

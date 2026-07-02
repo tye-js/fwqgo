@@ -210,7 +210,7 @@ export function PostList({
 
   function toggleSelection(id: number, checked: boolean) {
     setSelectedIds((prev) =>
-      checked ? [...prev, id] : prev.filter((item) => item !== id),
+      checked ? [...new Set([...prev, id])] : prev.filter((item) => item !== id),
     );
   }
 

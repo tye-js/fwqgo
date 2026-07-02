@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { ArrowLeft, ArrowUpDown, Filter, MapPin } from "lucide-react";
 
@@ -39,6 +40,8 @@ async function ServerTopicContent({
 }: {
   params: Promise<{ topic: string }>;
 }) {
+  await connection();
+
   const { topic } = await params;
   const data = await getServerOfferTopic(topic);
 
