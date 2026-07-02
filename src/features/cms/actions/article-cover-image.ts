@@ -11,6 +11,8 @@ const coverSchema = z.object({
   description: z.string().trim().optional(),
   keywords: z.string().trim().optional(),
   content: z.string().optional(),
+  fileSlug: z.string().trim().optional(),
+  language: z.enum(["zh", "en"]).default("zh"),
   configId: z.coerce.number().int().positive().optional(),
 });
 
@@ -19,6 +21,8 @@ export async function generateArticleCoverImageAction(input: {
   description?: string | null;
   keywords?: string | null;
   content?: string | null;
+  fileSlug?: string | null;
+  language?: "zh" | "en";
   configId?: number;
 }) {
   try {

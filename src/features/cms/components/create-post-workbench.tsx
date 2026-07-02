@@ -354,6 +354,8 @@ export function CreatePostWorkbench({
                 description={description}
                 keywords={normalizedKeywords.join(",")}
                 content={content}
+                fileSlug={title}
+                language="zh"
                 onGenerated={setImageUrl}
               />
             </div>

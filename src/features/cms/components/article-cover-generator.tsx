@@ -16,12 +16,16 @@ export function ArticleCoverGenerator({
   description,
   keywords,
   content,
+  fileSlug,
+  language = "zh",
   onGenerated,
 }: {
   title: string;
   description?: string | null;
   keywords?: string | null;
   content?: string | null;
+  fileSlug?: string | null;
+  language?: "zh" | "en";
   onGenerated: (url: string) => void;
 }) {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -42,6 +46,8 @@ export function ArticleCoverGenerator({
         description,
         keywords,
         content,
+        fileSlug,
+        language,
       });
 
       if (!result.success || !result.url) {

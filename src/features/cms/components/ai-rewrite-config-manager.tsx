@@ -226,20 +226,16 @@ function ConfigForm({
       </div>
 
       <div id="prompt-template" className="scroll-mt-24 space-y-2">
-        <Label>正文改写 Prompt 模板</Label>
-        <Textarea
+        <input
+          type="hidden"
           name="basePrompt"
-          className="min-h-64 font-mono text-xs leading-5"
-          defaultValue={config?.basePrompt ?? defaultBaseRewritePrompt}
-          required
+          value={config?.basePrompt ?? defaultBaseRewritePrompt}
         />
-        <p className="text-xs leading-5 text-muted-foreground">
-          只控制正文 HTML 改写。用 <code>{"{stylePrompt}"}</code> 插入正文风格，用{" "}
-          <code>{"{content}"}</code> 插入清洗后的原文。留着占位符，后续改写才会包含对应内容。
-        </p>
-      </div>
-
-      <div className="space-y-2">
+        <input
+          type="hidden"
+          name="metadataPrompt"
+          value={config?.metadataPrompt ?? defaultMetadataPrompt}
+        />
         <Label>正文改写风格</Label>
         <Textarea
           name="stylePrompt"
@@ -249,35 +245,19 @@ function ConfigForm({
         />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)]">
-        <div className="space-y-2">
-          <Label>标题 / SEO 元信息 Prompt 模板</Label>
-          <Textarea
-            name="metadataPrompt"
-            className="min-h-56 font-mono text-xs leading-5"
-            defaultValue={config?.metadataPrompt ?? defaultMetadataPrompt}
-            required
-          />
-          <p className="text-xs leading-5 text-muted-foreground">
-            只控制标题、摘要、关键词、标签和推荐标签。用{" "}
-            <code>{"{metadataStylePrompt}"}</code> 插入元信息风格，用{" "}
-            <code>{"{htmlContent}"}</code> 插入已改写正文。
-          </p>
-        </div>
-        <div className="space-y-2">
-          <Label>标题 / SEO 生成风格</Label>
-          <Textarea
-            name="metadataStylePrompt"
-            className="min-h-56"
-            defaultValue={
-              config?.metadataStylePrompt ?? defaultMetadataStylePrompt
-            }
-            required
-          />
-          <p className="text-xs leading-5 text-muted-foreground">
-            这里只影响元信息，不会改变正文语气、结构或段落表达。
-          </p>
-        </div>
+      <div className="space-y-2">
+        <Label>标题 / SEO 生成风格</Label>
+        <Textarea
+          name="metadataStylePrompt"
+          className="min-h-32"
+          defaultValue={
+            config?.metadataStylePrompt ?? defaultMetadataStylePrompt
+          }
+          required
+        />
+        <p className="text-xs leading-5 text-muted-foreground">
+          这里只影响标题、摘要、关键词、标签和英文 SEO 元信息，不会改变正文语气、结构或段落表达。
+        </p>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-4">
