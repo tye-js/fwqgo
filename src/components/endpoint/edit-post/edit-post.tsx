@@ -228,7 +228,7 @@ export default function EditPost({
       actions={
         <>
           <Button asChild variant="outline" size="sm" className="h-9">
-            <Link href="/end/posts/edit">
+            <Link href="/posts/edit">
               <ArrowLeft className="size-4" />
               返回列表
             </Link>
@@ -315,7 +315,7 @@ export default function EditPost({
                   </Badge>
                 </div>
                 <Button asChild variant="outline" size="sm" className="h-9">
-                  <Link href="/end/collect/aff-man">补返利规则</Link>
+                  <Link href="/collect/aff-man">补返利规则</Link>
                 </Button>
               </div>
 

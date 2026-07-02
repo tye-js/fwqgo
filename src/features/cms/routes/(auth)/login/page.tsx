@@ -23,7 +23,7 @@ export default function Page() {
       });
 
       if (res.ok) {
-        router.push("/end");
+        router.push("/");
         router.refresh();
         return;
       }

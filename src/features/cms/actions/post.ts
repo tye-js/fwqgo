@@ -38,12 +38,12 @@ function normalizeTagName(name: string) {
 }
 
 function revalidateImageAssetList() {
-  revalidatePath("/end/images/list");
+  revalidatePath("/images/list");
 }
 
 function revalidatePostWorkbenches() {
-  revalidatePath("/end/posts/edit");
-  revalidatePath("/end/posts/drafts");
+  revalidatePath("/posts/edit");
+  revalidatePath("/posts/drafts");
 }
 
 async function auditAffiliateLinksForPublish(content: string) {

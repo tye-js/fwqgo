@@ -343,7 +343,7 @@ jobs:
           homepage="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$SITE_URL/")"
           [[ "$homepage" == "200" ]] || { echo "::error::Homepage returned $homepage"; exit 1; }
 
-          public_admin_result="$(read_curl_status_redirect "$SITE_URL/end/ai-rewrite/tasks")"
+          public_admin_result="$(read_curl_status_redirect "$SITE_URL/ai-rewrite/tasks")"
           public_admin_status="$(printf '%s\n' "$public_admin_result" | sed -n '1p')"
           public_admin_redirect="$(printf '%s\n' "$public_admin_result" | sed -n '2p')"
           public_admin_host="$(redirect_host "$public_admin_redirect")"
@@ -360,7 +360,7 @@ jobs:
           cms_home_redirect="$(printf '%s\n' "$cms_home_result" | sed -n '2p')"
           cms_home_path="$(redirect_path "$cms_home_redirect")"
           cms_home_host="$(redirect_host "$cms_home_redirect")"
-          [[ ( "$cms_home_status" == "307" || "$cms_home_status" == "302" ) && "$cms_home_path" == "/end" && ( -z "$cms_home_host" || "$cms_home_host" == "$CMS_HOST" ) ]] || {
-            echo "::error::Unexpected CMS home redirect. Status: $cms_home_status Path: ${cms_home_path:-none} Host: ${cms_home_host:-relative}"
+          [[ ( "$cms_home_status" == "307" || "$cms_home_status" == "302" ) && "$cms_home_path" == "/login" && ( -z "$cms_home_host" || "$cms_home_host" == "$CMS_HOST" ) ]] || {
+            echo "::error::Unexpected CMS home auth redirect. Status: $cms_home_status Path: ${cms_home_path:-none} Host: ${cms_home_host:-relative}"
             exit 1
           }

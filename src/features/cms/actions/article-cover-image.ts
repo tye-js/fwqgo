@@ -42,7 +42,7 @@ export async function generateArticleCoverImageAction(input: {
       uploadedBy: session.userId,
     });
 
-    revalidatePath("/end/images/list");
+    revalidatePath("/images/list");
 
     return {
       success: true,
@@ -150,11 +150,11 @@ export async function batchGenerateArticleCoverImagesAction(input: {
       }
     }
 
-    revalidatePath("/end/images/covers");
-    revalidatePath("/end/images/ai-generate");
-    revalidatePath("/end/images/list");
-    revalidatePath("/end/posts/edit");
-    revalidatePath("/end/posts/drafts");
+    revalidatePath("/images/covers");
+    revalidatePath("/images/ai-generate");
+    revalidatePath("/images/list");
+    revalidatePath("/posts/edit");
+    revalidatePath("/posts/drafts");
 
     return {
       success: true,

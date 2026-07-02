@@ -70,7 +70,7 @@ export async function addHomepagePromotedPost(input: {
       .returning();
 
     revalidateSiteContent([cacheTags.homepage, cacheTags.post(input.postId)]);
-    revalidatePath("/end/collect/homepage-promoted");
+    revalidatePath("/collect/homepage-promoted");
 
     return { data: result };
   } catch (error) {
@@ -94,7 +94,7 @@ export async function updateHomepagePromotedPost(input: {
       .returning();
 
     revalidateSiteContent([cacheTags.homepage]);
-    revalidatePath("/end/collect/homepage-promoted");
+    revalidatePath("/collect/homepage-promoted");
 
     return { data: result };
   } catch (error) {
@@ -112,7 +112,7 @@ export async function deleteHomepagePromotedPost(id: number) {
       .returning();
 
     revalidateSiteContent([cacheTags.homepage]);
-    revalidatePath("/end/collect/homepage-promoted");
+    revalidatePath("/collect/homepage-promoted");
 
     return { data: result };
   } catch (error) {
@@ -134,7 +134,7 @@ export async function deleteHomepagePromotedPosts(ids: number[]) {
       .returning({ id: homepagePromotedPosts.id });
 
     revalidateSiteContent([cacheTags.homepage]);
-    revalidatePath("/end/collect/homepage-promoted");
+    revalidatePath("/collect/homepage-promoted");
 
     return { data: result.length };
   } catch (error) {

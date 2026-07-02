@@ -75,7 +75,7 @@ home_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$SITE_URL/
 printf 'homepage=%s\n' "$home_status"
 
 log "Checking public admin redirect to CMS"
-public_admin_status="$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$SITE_URL/end/ai-rewrite/tasks")"
+public_admin_status="$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$SITE_URL/ai-rewrite/tasks")"
 printf 'public_admin=%s\n' "$public_admin_status"
 case "$public_admin_status" in
   307*\ "$CMS_URL"*|302*\ "$CMS_URL"*) ;;
@@ -97,20 +97,20 @@ fi
 cms_home_status="$(curl -sS "${CMS_AUTH_CURL_ARGS[@]}" -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$CMS_URL/")"
 printf 'cms_home=%s\n' "$cms_home_status"
 case "$cms_home_status" in
-  307*\ "$CMS_URL/end"*|302*\ "$CMS_URL/end"*|200*) ;;
+  307*\ "$CMS_URL/login"*|302*\ "$CMS_URL/login"*|200*) ;;
   *) fail "Unexpected CMS home response: $cms_home_status" ;;
 esac
 
 log "Checking CMS public content redirect"
-cms_public_status="$(curl -sS "${CMS_AUTH_CURL_ARGS[@]}" -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$CMS_URL/servers")"
+cms_public_status="$(curl -sS "${CMS_AUTH_CURL_ARGS[@]}" -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$CMS_URL/fwq/vps/page/1")"
 printf 'cms_public=%s\n' "$cms_public_status"
 case "$cms_public_status" in
-  307*\ "$SITE_URL/servers"*|302*\ "$SITE_URL/servers"*) ;;
+  307*\ "$SITE_URL/fwq/vps/page/1"*|302*\ "$SITE_URL/fwq/vps/page/1"*) ;;
   *) fail "CMS public content did not redirect to public site: $cms_public_status" ;;
 esac
 
 log "Checking CMS admin auth redirect"
-admin_status="$(curl -sS "${CMS_AUTH_CURL_ARGS[@]}" -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$CMS_URL/end/ai-rewrite/tasks")"
+admin_status="$(curl -sS "${CMS_AUTH_CURL_ARGS[@]}" -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$CMS_URL/ai-rewrite/tasks")"
 printf 'cms_admin=%s\n' "$admin_status"
 case "$admin_status" in
   307*|302*|200*) ;;

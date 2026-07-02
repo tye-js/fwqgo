@@ -27,9 +27,9 @@ const configSchema = z.object({
 });
 
 function revalidateImageGenerationPages() {
-  revalidatePath("/end/settings/image-generation");
-  revalidatePath("/end/images/ai-generate");
-  revalidatePath("/end/images/covers");
+  revalidatePath("/settings/image-generation");
+  revalidatePath("/images/ai-generate");
+  revalidatePath("/images/covers");
 }
 
 export async function getImageGenerationConfigList() {
