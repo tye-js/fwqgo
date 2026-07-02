@@ -1,4 +1,5 @@
 import * as React from "react";
+import Link, { type LinkProps } from "next/link";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -41,26 +42,52 @@ PaginationItem.displayName = "PaginationItem";
 type PaginationLinkProps = {
   isActive?: boolean;
 } & Pick<ButtonProps, "size"> &
-  React.ComponentProps<"a">;
+  Omit<React.ComponentProps<"a">, "href"> & {
+    href?: LinkProps["href"];
+    prefetch?: LinkProps["prefetch"];
+  };
 
 const PaginationLink = ({
   className,
+  children,
+  href,
   isActive,
+  prefetch = true,
   size = "icon",
   ...props
-}: PaginationLinkProps) => (
-  <a
-    aria-current={isActive ? "page" : undefined}
-    className={cn(
-      buttonVariants({
-        variant: isActive ? "outline" : "ghost",
-        size,
-      }),
-      className,
-    )}
-    {...props}
-  />
-);
+}: PaginationLinkProps) => {
+  const linkClassName = cn(
+    buttonVariants({
+      variant: isActive ? "outline" : "ghost",
+      size,
+    }),
+    className,
+  );
+
+  if (!href) {
+    return (
+      <span
+        aria-current={isActive ? "page" : undefined}
+        className={linkClassName}
+        {...props}
+      >
+        {children}
+      </span>
+    );
+  }
+
+  return (
+    <Link
+      href={href}
+      prefetch={prefetch}
+      aria-current={isActive ? "page" : undefined}
+      className={linkClassName}
+      {...props}
+    >
+      {children}
+    </Link>
+  );
+};
 PaginationLink.displayName = "PaginationLink";
 
 const PaginationPrevious = ({

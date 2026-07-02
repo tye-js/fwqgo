@@ -15,6 +15,7 @@ function ArticleCard({ post }: { post: PostWithTags }) {
       <div className="grid md:grid-cols-[240px_1fr] lg:grid-cols-[260px_1fr]">
         <Link
           href={`/fwq/posts/${post.slug}`}
+          prefetch
           className="relative aspect-[16/9] overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:aspect-auto md:min-h-[210px]"
         >
           <SafePostImage
@@ -37,6 +38,7 @@ function ArticleCard({ post }: { post: PostWithTags }) {
             <div className="space-y-2.5">
               <Link
                 href={`/fwq/posts/${post.slug}`}
+                prefetch
                 className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <h3 className="font-editorial line-clamp-2 text-xl font-semibold leading-snug text-foreground transition-colors group-hover:text-accent md:text-2xl">
@@ -55,6 +57,7 @@ function ArticleCard({ post }: { post: PostWithTags }) {
                 <Link
                   key={tag.tag.id}
                   href={`/fwq/tags/${tag.tag.slug}/page/1`}
+                  prefetch
                   className="inline-flex min-h-8 items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   #{tag.tag.name}
@@ -64,6 +67,7 @@ function ArticleCard({ post }: { post: PostWithTags }) {
 
             <Link
               href={`/fwq/posts/${post.slug}`}
+              prefetch
               className="inline-flex min-h-11 w-fit items-center gap-2 rounded-md text-sm font-medium text-accent underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               阅读全文

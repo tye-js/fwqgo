@@ -62,7 +62,7 @@ export default async function NotFound() {
               <CardContent className="space-y-6">
                 <div className="flex flex-wrap gap-3">
                   <Button asChild size="lg" className="rounded-md px-6">
-                    <Link href="/">
+                    <Link href="/" prefetch>
                       返回首页
                       <Home className="size-4" />
                     </Link>
@@ -73,7 +73,7 @@ export default async function NotFound() {
                     variant="outline"
                     className="rounded-md px-6"
                   >
-                    <Link href="/fwq/vps/page/1">
+                    <Link href="/fwq/vps/page/1" prefetch>
                       去看服务器分类
                       <Compass className="size-4" />
                     </Link>
@@ -119,6 +119,7 @@ export default async function NotFound() {
                     <Link
                       key={category.id}
                       href={`/fwq/${category.slug}/page/1`}
+                      prefetch
                       className="inline-flex min-h-11 items-center rounded-md border border-border/70 bg-background px-4 py-2 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     >
                       {category.name}
@@ -139,6 +140,7 @@ export default async function NotFound() {
                     <Link
                       key={post.id}
                       href={`/fwq/posts/${post.slug}`}
+                      prefetch
                       className="block rounded-md border border-border/70 p-4 transition-colors hover:border-primary/30 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     >
                       <p className="line-clamp-2 font-medium">{post.title}</p>

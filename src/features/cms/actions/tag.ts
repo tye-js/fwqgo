@@ -43,15 +43,22 @@ export async function createTag(input: z.infer<typeof createTagSchema>) {
     .values({ name: result.name, slug })
     .returning({ id: tags.id });
 
+  if (!tag) {
+    return { error: "标签创建失败" };
+  }
+
   revalidateSiteContent([cacheTags.tags]);
 
-  return { id: tag!.id };
+  return { id: tag.id };
 }
 
 export async function createTags(tags: z.infer<typeof createTagSchema>[]) {
   const resultTags = await Promise.all(
     tags.map(async (tag) => {
       const resultTag = await createTag(tag);
+      if ("error" in resultTag) {
+        throw new Error(resultTag.error);
+      }
       return { id: resultTag.id };
     }),
   );

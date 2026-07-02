@@ -37,11 +37,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const message = error instanceof Error ? error.message : "Upload failed";
+    const status = message.includes("too large")
+      ? 413
+      : message.includes("Invalid file type")
+        ? 415
+        : message.includes("Invalid upload path")
+          ? 400
+          : 500;
+
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Upload failed",
+        error: message,
       },
-      { status: 500 },
+      { status },
     );
   }
 }

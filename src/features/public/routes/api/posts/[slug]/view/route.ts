@@ -12,7 +12,12 @@ export async function POST(
 ) {
   try {
     const params = await context.params;
-    const slug = decodeSlug(params.slug);
+    let slug: string;
+    try {
+      slug = decodeSlug(params.slug);
+    } catch {
+      return NextResponse.json({ counted: false }, { status: 400 });
+    }
     const viewedPostCookie = `viewed_post_${createHash("sha256")
       .update(slug)
       .digest("hex")

@@ -8,7 +8,6 @@ import {
   createPostRecordInTransaction,
   getErrorMessage,
 } from "@/server/posts/create-post-record";
-import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { db } from "@fwqgo/db";
 import {
   aiRewriteTasks,
@@ -449,10 +448,6 @@ async function runEnglishSeoTask(
       .where(eq(posts.id, post.id));
 
     await syncImageReferencesForPost(post.id);
-    revalidateSiteContent([
-      cacheTags.post(post.id),
-      cacheTags.postSlug(enSlug),
-    ]);
 
     await upsertTaskStep({
       taskId: claimedTask.id,
@@ -461,7 +456,7 @@ async function runEnglishSeoTask(
       stepName: "写入英文草稿",
       status: "success",
       progress: 100,
-      message: `英文 SEO 版本已写入：/en/fwq/posts/${enSlug}`,
+      message: `英文 SEO 版本已写入草稿：/en/fwq/posts/${enSlug}`,
       payload: { postId: post.id, enSlug },
     });
     await updateTask(claimedTask.id, {
@@ -856,7 +851,7 @@ export async function runAiRewriteTask(taskId: number) {
           progress: 96,
           message: "正在从草稿内容提取套餐数据",
         });
-        await importServerOffersFromPost(post.id);
+        await importServerOffersFromPost(post.id, { revalidate: false });
         await upsertTaskStep({
           taskId,
           attempt,

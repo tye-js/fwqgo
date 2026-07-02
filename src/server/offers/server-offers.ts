@@ -431,7 +431,11 @@ function makeDuplicateKey(
     .join("|");
 }
 
-async function importServerOffersFromPostRows(sourcePosts: OfferSourcePost[]) {
+async function importServerOffersFromPostRows(
+  sourcePosts: OfferSourcePost[],
+  options: { revalidate?: boolean } = {},
+) {
+  const shouldRevalidate = options.revalidate ?? true;
   let extracted = 0;
   let inserted = 0;
   let updated = 0;
@@ -516,7 +520,7 @@ async function importServerOffersFromPostRows(sourcePosts: OfferSourcePost[]) {
     }
   }
 
-  if (inserted > 0 || updated > 0) {
+  if (shouldRevalidate && (inserted > 0 || updated > 0)) {
     revalidateSiteContent([cacheTags.serverOffers]);
   }
 
@@ -529,7 +533,10 @@ async function importServerOffersFromPostRows(sourcePosts: OfferSourcePost[]) {
   };
 }
 
-export async function importServerOffersFromPost(postId: number) {
+export async function importServerOffersFromPost(
+  postId: number,
+  options: { revalidate?: boolean } = {},
+) {
   const sourcePosts = await db
     .select({
       id: posts.id,
@@ -541,7 +548,7 @@ export async function importServerOffersFromPost(postId: number) {
     .where(eq(posts.id, postId))
     .limit(1);
 
-  return importServerOffersFromPostRows(sourcePosts);
+  return importServerOffersFromPostRows(sourcePosts, options);
 }
 
 export async function getServerOfferImportPostOptions(limit = 120) {
@@ -558,7 +565,9 @@ export async function getServerOfferImportPostOptions(limit = 120) {
     .limit(limit);
 }
 
-export async function importServerOffersFromPosts() {
+export async function importServerOffersFromPosts(
+  options: { revalidate?: boolean } = {},
+) {
   const sourcePosts = await db
     .select({
       id: posts.id,
@@ -570,7 +579,7 @@ export async function importServerOffersFromPosts() {
     .where(eq(posts.published, true))
     .orderBy(desc(posts.createdAt));
 
-  return importServerOffersFromPostRows(sourcePosts);
+  return importServerOffersFromPostRows(sourcePosts, options);
 }
 
 function topicWhere(topic: (typeof offerTopics)[number]) {

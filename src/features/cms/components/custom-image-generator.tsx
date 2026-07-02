@@ -140,7 +140,11 @@ export function CustomImageGenerator() {
                 <Copy className="size-4" />
               </Button>
               <Button asChild variant="outline" size="sm">
-                <Link href={generated.url} target="_blank">
+                <Link
+                  href={generated.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   <ExternalLink className="size-4" />
                 </Link>
               </Button>

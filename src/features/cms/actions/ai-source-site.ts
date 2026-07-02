@@ -15,10 +15,22 @@ import {
 
 const sourceSiteSchema = z.object({
   name: z.string().trim().min(1, "请输入站点名称").max(120),
-  siteUrl: z.string().trim().url("请输入有效站点 URL"),
+  siteUrl: z
+    .string()
+    .trim()
+    .url("请输入有效站点 URL")
+    .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+      message: "站点 URL 只支持 http 或 https",
+    }),
   feedUrl: z.preprocess(
     (value) => (typeof value === "string" && value.trim() ? value.trim() : null),
-    z.string().url("请输入有效 Feed URL").nullable(),
+    z
+      .string()
+      .url("请输入有效 Feed URL")
+      .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+        message: "Feed URL 只支持 http 或 https",
+      })
+      .nullable(),
   ),
   categoryId: z.coerce.number().int().positive("请选择分类"),
   rewriteStyleId: z.coerce.number().int().positive().optional().nullable(),

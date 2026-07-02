@@ -64,9 +64,13 @@ export async function getOrCreateOutboundShortLink(targetUrl: string) {
         .values({ slug, targetUrl: normalizedTargetUrl })
         .returning({ slug: outboundLinks.slug });
 
+      if (!created) {
+        continue;
+      }
+
       return {
-        slug: created!.slug,
-        path: `/go/${created!.slug}`,
+        slug: created.slug,
+        path: `/go/${created.slug}`,
         targetUrl: normalizedTargetUrl,
       };
     } catch {

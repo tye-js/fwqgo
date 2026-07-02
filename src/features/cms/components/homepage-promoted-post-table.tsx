@@ -202,9 +202,9 @@ export function HomepagePromotedPostTable({
         }
       />
 
-      <div className="rounded-2xl border border-border/70 bg-muted/20 p-5">
+      <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
         <p className="text-sm font-medium text-foreground">添加推荐文章</p>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
           通过文章 ID 把已发布文章加入首页右侧“站长推荐”区域，`sortOrder` 越小越靠前。
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-[1fr_140px_auto]">
@@ -230,7 +230,7 @@ export function HomepagePromotedPostTable({
                 key={post.id}
                 type="button"
                 onClick={() => setNewPostId(String(post.id))}
-                className="rounded-2xl border border-border/70 bg-background px-4 py-3 text-left transition-colors hover:border-accent/30 hover:bg-accent/5"
+                className="rounded-md border border-border/70 bg-background px-4 py-3 text-left transition-colors hover:border-foreground/20 hover:bg-muted/60"
               >
                 <p className="text-sm font-medium">{post.title}</p>
                 <p className="mt-1 text-xs text-muted-foreground">

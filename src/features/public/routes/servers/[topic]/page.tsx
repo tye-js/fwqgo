@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { connection } from "next/server";
 import { Suspense } from "react";
 import { ArrowLeft, ArrowUpDown, Filter, MapPin } from "lucide-react";
 
@@ -40,8 +39,6 @@ async function ServerTopicContent({
 }: {
   params: Promise<{ topic: string }>;
 }) {
-  await connection();
-
   const { topic } = await params;
   const data = await getServerOfferTopic(topic);
 
@@ -56,7 +53,7 @@ async function ServerTopicContent({
         <section className="border-b border-border/60 bg-muted/20">
           <div className="container mx-auto px-4 py-8 md:py-10">
             <Button asChild variant="ghost" className="mb-5 px-0">
-              <Link href="/servers">
+              <Link href="/servers" prefetch>
                 <ArrowLeft className="size-4" />
                 服务器比价
               </Link>

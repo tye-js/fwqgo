@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { isInternalHref } from "@fwqgo/core/utils";
 
 type Offer = {
   id: number;
@@ -60,17 +61,26 @@ const billingCycleLabels: Record<string, string> = {
 
 function formatPrice(offer: Offer) {
   if (!offer.priceAmount) return "待补充";
+  const amount = Number(offer.priceAmount);
+  if (!Number.isFinite(amount)) return "待确认";
+
   const currency = offer.currency === "CNY" ? "¥" : "$";
   const cycle = offer.billingCycle
     ? billingCycleLabels[offer.billingCycle] ?? offer.billingCycle
     : "周期待确认";
-  return `${currency}${Number(offer.priceAmount).toFixed(2)} / ${cycle}`;
+  return `${currency}${amount.toFixed(2)} / ${cycle}`;
 }
 
 function specsText(offer: Offer) {
   return [offer.cpu, offer.memory, offer.storage, offer.bandwidth, offer.traffic]
     .filter(Boolean)
     .join(" · ");
+}
+
+function priceSortValue(value: string | null) {
+  if (!value) return Infinity;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : Infinity;
 }
 
 function getUniqueValues(values: Array<string | null>) {
@@ -90,18 +100,40 @@ function OfferActions({ offer }: { offer: Offer }) {
       ) : null}
       {offer.articleUrl ? (
         <Button asChild size="sm" variant="outline" className="min-h-9 px-3">
-          <Link href={offer.articleUrl}>
-            <FileText className="size-4" />
-            推广
-          </Link>
+          {isInternalHref(offer.articleUrl) ? (
+            <Link href={offer.articleUrl} prefetch>
+              <FileText className="size-4" />
+              推广
+            </Link>
+          ) : (
+            <a
+              href={offer.articleUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <FileText className="size-4" />
+              推广
+            </a>
+          )}
         </Button>
       ) : null}
       {offer.reviewUrl ? (
         <Button asChild size="sm" variant="outline" className="min-h-9 px-3">
-          <Link href={offer.reviewUrl}>
-            <FlaskConical className="size-4" />
-            测评
-          </Link>
+          {isInternalHref(offer.reviewUrl) ? (
+            <Link href={offer.reviewUrl} prefetch>
+              <FlaskConical className="size-4" />
+              测评
+            </Link>
+          ) : (
+            <a
+              href={offer.reviewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <FlaskConical className="size-4" />
+              测评
+            </a>
+          )}
         </Button>
       ) : null}
       {!offer.purchaseUrl && !offer.articleUrl && !offer.reviewUrl ? (
@@ -130,6 +162,7 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
             <Badge variant="secondary">
               <Link
                 href={collectionHref("providers", offer.providerName)}
+                prefetch
                 className="hover:underline"
               >
                 {offer.providerName}
@@ -156,6 +189,7 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
             {offer.region ? (
               <Link
                 href={collectionHref("regions", offer.region)}
+                prefetch
                 className="underline-offset-4 hover:text-primary hover:underline"
               >
                 {offer.region}
@@ -168,6 +202,7 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
             {offer.lineType ? (
               <Link
                 href={collectionHref("lines", offer.lineType)}
+                prefetch
                 className="underline-offset-4 hover:text-primary hover:underline"
               >
                 {offer.lineType}
@@ -243,14 +278,14 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
       })
       .sort((left, right) => {
         if (sortKey === "price-desc") {
-          return Number(right.priceAmount ?? Infinity) - Number(left.priceAmount ?? Infinity);
+          return priceSortValue(right.priceAmount) - priceSortValue(left.priceAmount);
         }
 
         if (sortKey === "new-desc") {
           return right.id - left.id;
         }
 
-        return Number(left.priceAmount ?? Infinity) - Number(right.priceAmount ?? Infinity);
+        return priceSortValue(left.priceAmount) - priceSortValue(right.priceAmount);
       });
   }, [lineType, offers, promoFilter, provider, query, region, sortKey, status]);
 
@@ -404,6 +439,7 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                         <Badge variant="secondary">
                           <Link
                             href={collectionHref("providers", offer.providerName)}
+                            prefetch
                             className="hover:underline"
                           >
                             {offer.providerName}
@@ -431,6 +467,7 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                     {offer.region ? (
                       <Link
                         href={collectionHref("regions", offer.region)}
+                        prefetch
                         className="underline-offset-4 hover:text-primary hover:underline"
                       >
                         {offer.region}
@@ -443,6 +480,7 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                     {offer.lineType ? (
                       <Link
                         href={collectionHref("lines", offer.lineType)}
+                        prefetch
                         className="underline-offset-4 hover:text-primary hover:underline"
                       >
                         {offer.lineType}

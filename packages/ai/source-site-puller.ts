@@ -20,6 +20,7 @@ type DiscoveredSourceUrl = {
 };
 
 const MAX_CHILD_SITEMAPS = 8;
+const FETCH_TIMEOUT_MS = 15_000;
 
 export type SourceSitePullInput = {
   siteUrl: string;
@@ -30,13 +31,29 @@ export type SourceSitePullInput = {
 };
 
 async function fetchText(url: string) {
-  const response = await fetch(url, { headers: browserHeaders });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-  if (!response.ok) {
-    throw new Error(`抓取失败 ${response.status}: ${url}`);
+  try {
+    const response = await fetch(url, {
+      headers: browserHeaders,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`抓取失败 ${response.status}: ${url}`);
+    }
+
+    return await response.text();
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`抓取超时：${url}`);
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return response.text();
 }
 
 function normalizeUrl(href: string, baseUrl: string) {

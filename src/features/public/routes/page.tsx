@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { connection } from "next/server";
+import type { ReactNode } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -23,7 +23,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Suspense } from "react";
 import { Separator } from "@/components/ui/separator";
 import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
-import { formatDate } from "@fwqgo/core/utils";
+import { formatDate, isInternalHref } from "@fwqgo/core/utils";
 import {
   getLatestServerOffers,
   getServerOfferTopicCounts,
@@ -36,6 +36,8 @@ function formatCount(value: number) {
 
 function formatOfferPrice(offer: Awaited<ReturnType<typeof getLatestServerOffers>>[number]) {
   if (!offer.priceAmount) return "价格待补充";
+  const amount = Number(offer.priceAmount);
+  if (!Number.isFinite(amount)) return "价格待确认";
 
   const currency = offer.currency === "CNY" ? "¥" : "$";
   const cycleMap: Record<string, string> = {
@@ -48,7 +50,36 @@ function formatOfferPrice(offer: Awaited<ReturnType<typeof getLatestServerOffers
     ? cycleMap[offer.billingCycle] ?? offer.billingCycle
     : "周期待确认";
 
-  return `${currency}${Number(offer.priceAmount).toFixed(2)} / ${cycle}`;
+  return `${currency}${amount.toFixed(2)} / ${cycle}`;
+}
+
+function OfferArticleLink({
+  href,
+  children,
+  className,
+}: {
+  href: string;
+  children: ReactNode;
+  className: string;
+}) {
+  if (isInternalHref(href)) {
+    return (
+      <Link href={href} prefetch className={className}>
+        {children}
+      </Link>
+    );
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={className}
+    >
+      {children}
+    </a>
+  );
 }
 
 function topValues(values: Array<string | null>, limit = 4) {
@@ -89,6 +120,7 @@ function HeroArticleTile({
   return (
     <Link
       href={`/fwq/posts/${slug}`}
+      prefetch
       className={`glass-card group relative flex flex-col justify-end overflow-hidden rounded-2xl ${
         isLarge ? "min-h-[300px] md:min-h-[420px]" : "min-h-[180px]"
       }`}
@@ -153,8 +185,6 @@ function HeroArticleTile({
 }
 
 async function HomeContent() {
-  await connection();
-
   const [
     { data: posts },
     { data: sidebarData },
@@ -205,6 +235,7 @@ async function HomeContent() {
                         ? `/fwq/posts/${heroPosts[0].slug}`
                         : "/fwq/vps/page/1"
                     }
+                    prefetch
                   >
                     开始浏览
                     <ArrowRight className="size-4" />
@@ -215,7 +246,7 @@ async function HomeContent() {
                   variant="outline"
                   className="h-10 rounded-md px-5"
                 >
-                  <Link href="/fwq/export-vps/page/1">
+                  <Link href="/fwq/export-vps/page/1" prefetch>
                     出海服务器专区
                     <ArrowUpRight className="size-4" />
                   </Link>
@@ -246,6 +277,7 @@ async function HomeContent() {
                   <Link
                     key={post.id}
                     href={`/fwq/posts/${post.slug}`}
+                    prefetch
                     className="glass-card hover-lift group flex min-h-[98px] items-start gap-3 rounded-xl p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     <div className="min-w-0 flex-1">
@@ -284,7 +316,7 @@ async function HomeContent() {
               </p>
             </div>
             <Button asChild variant="outline">
-              <Link href="/servers">
+              <Link href="/servers" prefetch>
                 查看全部专题
                 <ArrowRight className="size-4" />
               </Link>
@@ -299,6 +331,7 @@ async function HomeContent() {
                 <Link
                   key={topic.slug}
                   href={`/servers/${topic.slug}`}
+                  prefetch
                   className="glass-card group rounded-xl p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -356,6 +389,7 @@ async function HomeContent() {
                   </div>
                   <Link
                     href="/servers"
+                    prefetch
                     className="text-xs font-medium text-primary hover:underline"
                   >
                     全部
@@ -363,7 +397,7 @@ async function HomeContent() {
                 </div>
                 <div className="mt-4 space-y-3">
                   {latestOffers.slice(0, 3).map((offer) => (
-                    <Link
+                    <OfferArticleLink
                       key={offer.id}
                       href={offer.articleUrl ?? "/servers"}
                       className="glass-card block rounded-xl p-3.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -382,7 +416,7 @@ async function HomeContent() {
                           {formatOfferPrice(offer)}
                         </p>
                       </div>
-                    </Link>
+                    </OfferArticleLink>
                   ))}
                   {latestOffers.length === 0 ? (
                     <p className="rounded-md border border-dashed border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
@@ -425,7 +459,7 @@ async function HomeContent() {
                       <p className="text-xs text-muted-foreground">最新优惠码</p>
                       <div className="mt-2 space-y-2">
                         {latestPromoOffers.map((offer) => (
-                          <Link
+                          <OfferArticleLink
                             key={offer.id}
                             href={offer.articleUrl ?? "/servers"}
                             className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-xs hover:bg-muted/30"
@@ -434,7 +468,7 @@ async function HomeContent() {
                               {offer.providerName ?? offer.title}
                             </span>
                             <Badge>{offer.promoCode}</Badge>
-                          </Link>
+                          </OfferArticleLink>
                         ))}
                       </div>
                     </div>
@@ -464,6 +498,7 @@ async function HomeContent() {
                     <Link
                       key={post.id}
                       href={`/fwq/posts/${post.slug}`}
+                      prefetch
                       className="glass-card block rounded-xl p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -507,6 +542,7 @@ async function HomeContent() {
                   <Link
                     key={post.id}
                     href={`/fwq/posts/${post.slug}`}
+                    prefetch
                     className="glass-card block rounded-xl p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     <div className="flex items-start justify-between gap-3">

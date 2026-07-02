@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
+import { isHttpHref, isInternalHref } from "@fwqgo/core/utils";
 import {
   bulkUpdateServerOffers,
   importServerOffersFromPost,
@@ -19,19 +20,34 @@ const nullableString = z
     z.string().nullable(),
   );
 
+const nullablePrice = nullableString.refine(
+  (value) => value === null || Number.isFinite(Number(value)),
+  "价格必须是数字",
+);
+
+const nullableHttpUrl = nullableString.refine(
+  (value) => value === null || isHttpHref(value),
+  "链接必须是 http 或 https URL",
+);
+
+const nullableInternalOrHttpUrl = nullableString.refine(
+  (value) => value === null || isInternalHref(value) || isHttpHref(value),
+  "链接必须是站内路径或 http/https URL",
+);
+
 const updateOfferSchema = z.object({
   title: z.string().trim().min(1, "请输入套餐标题"),
   providerName: nullableString,
-  priceAmount: nullableString,
+  priceAmount: nullablePrice,
   currency: nullableString,
   billingCycle: nullableString,
   region: nullableString,
   lineType: nullableString,
   status: z.enum(offerStatuses),
-  purchaseUrl: nullableString,
+  purchaseUrl: nullableHttpUrl,
   promoCode: nullableString,
-  articleUrl: nullableString,
-  reviewUrl: nullableString,
+  articleUrl: nullableInternalOrHttpUrl,
+  reviewUrl: nullableInternalOrHttpUrl,
   visible: z.coerce.boolean(),
   featured: z.coerce.boolean(),
   reviewStatus: z.enum(offerReviewStatuses),

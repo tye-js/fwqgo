@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { getValidSessionById } from "@fwqgo/auth/session";
+import { cookies } from "next/headers";
 
-export async function POST(request: Request) {
+export async function POST() {
   try {
-    const { sessionId } = (await request.json()) as { sessionId: string };
+    const sessionId = (await cookies()).get("session_id")?.value;
 
     if (!sessionId) return NextResponse.json({ valid: false });
 

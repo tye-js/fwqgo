@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { connection } from "next/server";
 import { ArrowRight, Server } from "lucide-react";
 import { Suspense } from "react";
 
@@ -17,8 +16,6 @@ export const metadata = {
 };
 
 async function ServersContent() {
-  await connection();
-
   const counts = await getServerOfferTopicCounts();
 
   return (
@@ -49,6 +46,7 @@ async function ServersContent() {
                 <Link
                   key={topic.slug}
                   href={`/servers/${topic.slug}`}
+                  prefetch
                   className="group rounded-lg border border-border/70 bg-background p-5 shadow-sm transition-colors hover:border-primary/30 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <div className="flex items-start justify-between gap-4">
@@ -78,7 +76,7 @@ async function ServersContent() {
               比价列表负责高效率比较和购买转化，推广文章和测评文章继续负责 SEO、背景说明、商家活动细节和使用场景。两个入口互相链接，避免原有文章导航权重被破坏。
             </p>
             <Button asChild variant="outline" className="mt-5">
-              <Link href="/fwq/vps/page/1">
+              <Link href="/fwq/vps/page/1" prefetch>
                 继续查看文章分类
                 <ArrowRight className="size-4" />
               </Link>

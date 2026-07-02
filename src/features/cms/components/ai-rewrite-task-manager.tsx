@@ -43,6 +43,7 @@ import {
   notifyError,
   notifySuccess,
 } from "@/lib/admin-toast";
+import { isHttpHref } from "@fwqgo/core/utils";
 import { AdminTableEmpty } from "@/features/cms/components/admin-table-workbench";
 import {
   Table,
@@ -255,14 +256,20 @@ function FailedTaskPanel({
               <p className="truncate text-sm font-medium text-foreground">
                 #{task.id} {getSourceHost(task.sourceUrl)}
               </p>
-              <a
-                href={task.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block truncate text-xs text-muted-foreground hover:text-primary"
-              >
-                {task.sourceUrl}
-              </a>
+              {isHttpHref(task.sourceUrl) ? (
+                <a
+                  href={task.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block truncate text-xs text-muted-foreground hover:text-primary"
+                >
+                  {task.sourceUrl}
+                </a>
+              ) : (
+                <p className="block truncate text-xs text-muted-foreground">
+                  {task.sourceUrl}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
                 {formatTime(task.updatedAt)} · 尝试 {task.attempts} 次
               </p>
@@ -576,7 +583,7 @@ export function AiRewriteTaskManager({
         <form
           action={handleSubmit}
           encType="multipart/form-data"
-          className="grid gap-3 rounded-lg border border-border/70 bg-background p-4 shadow-sm lg:grid-cols-[150px_minmax(0,1fr)_180px_180px_auto]"
+          className="grid gap-3 rounded-md border border-border/70 bg-card px-4 py-3 lg:grid-cols-[150px_minmax(0,1fr)_180px_180px_auto]"
         >
           <Select name="sourceType" value={sourceType} onValueChange={setSourceType}>
             <SelectTrigger className="min-h-11">
@@ -688,7 +695,7 @@ export function AiRewriteTaskManager({
 
       <div
         id="task-table"
-        className="scroll-mt-24 rounded-lg border border-border/70 bg-background shadow-sm"
+        className="scroll-mt-24 overflow-hidden rounded-md border border-border/70 bg-card"
       >
         {tasks.length === 0 ? (
           <AdminTableEmpty
@@ -733,7 +740,7 @@ export function AiRewriteTaskManager({
                             {taskSourceTypeLabel(task.sourceType)}
                           </Badge>
                         </div>
-                        {task.sourceType === "url" ? (
+                        {task.sourceType === "url" && isHttpHref(task.sourceUrl) ? (
                           <a
                             href={task.sourceUrl}
                             target="_blank"
