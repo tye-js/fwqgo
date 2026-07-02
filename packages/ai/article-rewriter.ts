@@ -1,7 +1,5 @@
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import {
-  defaultBaseRewritePrompt,
-  defaultMetadataPrompt,
   defaultMetadataStylePrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
 import * as cheerio from "cheerio";
@@ -10,6 +8,7 @@ const DEFAULT_AI_REWRITE_TIMEOUT_MS = 300_000;
 const MIN_AI_INPUT_LENGTH = 80;
 const MIN_REWRITTEN_HTML_LENGTH = 120;
 const MAX_METADATA_INPUT_LENGTH = 28_000;
+const MAX_ENGLISH_CONTENT_INPUT_LENGTH = 22_000;
 
 function getAiRewriteTimeoutMs() {
   const configured = Number(process.env.AI_REWRITE_TIMEOUT_MS);
@@ -104,109 +103,84 @@ function parseJsonResponse<T>(text: string): T {
   }
 }
 
-function stripLegacyJsonInstruction(template: string) {
-  return template
-    .replace(/\n请严格按照以下 JSON 格式返回[\s\S]*$/i, "")
-    .replace(/\n```json[\s\S]*$/i, "")
-    .trim();
-}
-
-function ensurePromptPlaceholders(template: string) {
-  if (template.includes("{content}") || template.includes("{stylePrompt}")) {
-    return template;
-  }
-
-  return `${template}
-
-改写风格：
-{stylePrompt}
-
-原文：
-{content}`;
-}
-
-function fillPromptPlaceholders(
-  template: string,
-  values: Record<string, string>,
-) {
-  return Object.entries(values).reduce(
-    (current, [key, value]) => current.replaceAll(`{${key}}`, value),
-    template,
-  );
-}
-
 function buildHtmlRewritePrompt(
   content: string,
   stylePrompt: string,
-  basePrompt?: string | null,
 ) {
-  const trimmedBasePrompt = basePrompt?.trim();
-  const baseTemplate =
-    trimmedBasePrompt && trimmedBasePrompt.length > 0
-      ? trimmedBasePrompt
-      : defaultBaseRewritePrompt;
-  const template = ensurePromptPlaceholders(stripLegacyJsonInstruction(baseTemplate));
+  return `你是一个专业的服务器/VPS 推广文章中文编辑。请把清洗后的原文改写成更适合发布的中文正文 HTML。
 
-  return `${fillPromptPlaceholders(template, { stylePrompt, content })}
+正文改写风格：
+${stylePrompt}
 
-输出要求：
-1. 本次只输出改写后的正文 HTML 片段。
-2. 不要输出标题、摘要、关键词、标签或 JSON。
-3. 不要使用 Markdown 代码块，不要添加解释文字。
-4. HTML 中的标题从 h2 开始，保留表格、列表、链接和关键配置。`;
+硬性规则：
+1. 只输出改写后的正文 HTML 片段，不要输出标题、摘要、关键词、标签、JSON、Markdown 代码块、解释或额外文本。
+2. HTML 中的标题从 h2 开始，第一段不需要标题。
+3. 保留表格、列表、链接、商家名、价格、CPU、内存、存储、流量、地区、线路、优惠码、库存、购买链接等事实信息。
+4. 可以优化段落顺序、表达和小标题，但不要编造原文没有的价格、配置、优惠码、库存、线路或商家承诺。
+5. 如果有官网、优惠码、套餐表格、网络线路、适用场景等信息，尽量清晰分段展示。
+
+清洗后的原文 HTML：
+${content}`;
+}
+
+function getMetadataStylePrompt(value?: string | null) {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : defaultMetadataStylePrompt;
 }
 
 function buildMetadataPrompt(
   htmlContent: string,
   metadataStylePrompt?: string | null,
-  metadataPrompt?: string | null,
 ) {
-  const trimmedMetadataStylePrompt = metadataStylePrompt?.trim();
-  const template =
-    metadataPrompt?.trim() && metadataPrompt.trim().length > 0
-      ? metadataPrompt.trim()
-      : defaultMetadataPrompt;
+  const style = getMetadataStylePrompt(metadataStylePrompt);
 
-  return fillPromptPlaceholders(
-    ensureMetadataPromptPlaceholders(template),
-    {
-      htmlContent: htmlContent.slice(0, MAX_METADATA_INPUT_LENGTH),
-      metadataStylePrompt:
-        trimmedMetadataStylePrompt && trimmedMetadataStylePrompt.length > 0
-          ? trimmedMetadataStylePrompt
-          : defaultMetadataStylePrompt,
-    },
-  );
+  return `你是服务器/VPS 推广文章的 SEO 编辑。请根据已改写的中文 HTML 正文生成文章元信息。
+
+输出要求：
+1. 只输出 JSON 对象，不要输出 Markdown、解释或额外文本。
+2. title 要偏 SEO 长尾词，尽量包含商家、价格、配置、线路或适用场景；原文没有的信息不要编造。
+3. description 控制在 120 字以内，准确概括商家、价格、配置、线路和适用场景。
+4. keywords 生成 5 个适合 SEO 的关键词。
+5. tagsName 生成 8 到 10 个相关标签，第一个标签优先为商家名，其余是长尾 SEO 关键词。
+6. recommendTagName 是商家名；无法判断商家名时使用最核心的服务商品牌词。
+
+标题 / SEO 生成风格：
+${style}
+
+JSON 格式：
+{
+  "title": "文章标题",
+  "description": "120字以内的文章摘要",
+  "keywords": ["关键词1", "关键词2", "关键词3"],
+  "tagsName": ["标签1", "标签2"],
+  "recommendTagName": "推荐标签"
 }
 
-function buildEnglishSeoVersionPrompt(input: {
+已改写的 HTML 正文：
+${htmlContent.slice(0, MAX_METADATA_INPUT_LENGTH)}`;
+}
+
+function buildEnglishContentPrompt(input: {
   title: string;
   description: string | null;
   keywords: string | null;
   htmlContent: string;
+  stylePrompt: string;
 }) {
-  return `You are an SEO editor for an English VPS/server deals website.
+  return `You are an English editor for a VPS/server deals website.
 
-Translate and localize this Chinese hosting deal article into an English SEO version.
+Translate and localize the Chinese hosting deal article into English HTML content.
+
+Writing style:
+${input.stylePrompt}
 
 Requirements:
-1. Return only a valid JSON object.
-2. Do not use Markdown code fences.
-3. Keep the HTML structure in enContent. Use headings starting from h2.
+1. Output only the translated/localized English HTML body fragment.
+2. Do not output JSON, Markdown code fences, explanations, title, meta description or keywords.
+3. Preserve the HTML structure where useful. Use headings starting from h2.
 4. Preserve factual details: provider names, prices, CPU, RAM, storage, bandwidth, locations, routes, promo codes, coupons and URLs.
-5. Do not invent missing specs, prices, discounts or claims.
+5. Do not invent missing specs, prices, discounts, stock status or claims.
 6. Keep affiliate links and short links unchanged.
-7. enSlug must be short, lowercase, ASCII only, words separated by hyphens.
-8. enKeywords should contain 5 to 10 English SEO keywords.
-
-JSON shape:
-{
-  "enTitle": "English SEO title",
-  "enSlug": "english-seo-slug",
-  "enDescription": "English meta description, within 160 characters",
-  "enKeywords": ["keyword 1", "keyword 2"],
-  "enContent": "<p>English HTML content...</p>"
-}
 
 Chinese title:
 ${input.title}
@@ -218,24 +192,53 @@ Chinese keywords:
 ${input.keywords ?? ""}
 
 Chinese HTML:
-${input.htmlContent.slice(0, MAX_METADATA_INPUT_LENGTH)}`;
+${input.htmlContent.slice(0, MAX_ENGLISH_CONTENT_INPUT_LENGTH)}`;
 }
 
-function ensureMetadataPromptPlaceholders(template: string) {
-  if (
-    template.includes("{htmlContent}") ||
-    template.includes("{metadataStylePrompt}")
-  ) {
-    return template;
-  }
+function buildEnglishMetadataPrompt(input: {
+  title: string;
+  description: string | null;
+  keywords: string | null;
+  enContent: string;
+  metadataStylePrompt?: string | null;
+}) {
+  const style = getMetadataStylePrompt(input.metadataStylePrompt);
 
-  return `${template}
+  return `You are an SEO editor for an English VPS/server deals website.
 
-元信息生成风格：
-{metadataStylePrompt}
+Generate English SEO metadata from the translated English HTML body.
 
-HTML 正文：
-{htmlContent}`;
+Requirements:
+1. Return only a valid JSON object.
+2. Do not use Markdown code fences or explanations.
+3. enTitle should be an English SEO title.
+4. enSlug must be short, lowercase, ASCII only, words separated by hyphens.
+5. enDescription should be within 160 characters.
+6. enKeywords should contain 5 to 10 English SEO keywords.
+7. Do not invent missing specs, prices, discounts or claims.
+
+SEO style:
+${style}
+
+JSON shape:
+{
+  "enTitle": "English SEO title",
+  "enSlug": "english-seo-slug",
+  "enDescription": "English meta description, within 160 characters",
+  "enKeywords": ["keyword 1", "keyword 2"]
+}
+
+Original Chinese title:
+${input.title}
+
+Original Chinese description:
+${input.description ?? ""}
+
+Original Chinese keywords:
+${input.keywords ?? ""}
+
+English HTML:
+${input.enContent.slice(0, MAX_METADATA_INPUT_LENGTH)}`;
 }
 
 function cleanHtmlText(text: string) {
@@ -605,7 +608,6 @@ export async function rewriteArticleWithAi(
       userPrompt: buildHtmlRewritePrompt(
         normalizedContent,
         config.stylePrompt,
-        config.basePrompt,
       ),
     }),
   );
@@ -636,7 +638,6 @@ export async function rewriteArticleWithAi(
     userPrompt: buildMetadataPrompt(
       htmlContent,
       config.metadataStylePrompt,
-      config.metadataPrompt,
     ),
   });
   const metadata = normalizeMetadata(
@@ -686,26 +687,63 @@ export async function generateEnglishSeoVersion(
   }
 
   const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/v1/chat/completions`;
-  const responseText = await requestChatCompletion({
+  const enContent = cleanHtmlText(
+    await requestChatCompletion({
+      config,
+      endpoint,
+      timeoutMs,
+      maxTokens: config.maxTokens,
+      stepName: "英文正文生成",
+      systemPrompt:
+        "You are a professional English editor. Output only the English HTML body fragment.",
+      userPrompt: buildEnglishContentPrompt({
+        ...input,
+        htmlContent: normalizedContent,
+        stylePrompt: config.stylePrompt,
+      }),
+    }),
+  );
+
+  if (!enContent) {
+    throw createReadableError(
+      "英文正文生成失败：模型返回为空",
+      "请检查模型输出、额度和第三方接口兼容性",
+    );
+  }
+
+  if (enContent.length < MIN_REWRITTEN_HTML_LENGTH) {
+    throw createReadableError(
+      "英文正文生成失败：返回内容过短",
+      `只返回 ${enContent.length} 个字符，可能被模型拒绝或输出异常`,
+    );
+  }
+
+  const metadataText = await requestChatCompletion({
     config,
     endpoint,
     timeoutMs,
-    maxTokens: Math.min(config.maxTokens, 8192),
+    maxTokens: Math.min(config.maxTokens, 4096),
     responseFormat: { type: "json_object" },
-    stepName: "英文 SEO 版本生成",
+    stepName: "英文 SEO 元信息生成",
     systemPrompt:
       "You only output one valid JSON object. Do not output Markdown, explanations or extra text.",
-    userPrompt: buildEnglishSeoVersionPrompt({
-      ...input,
-      htmlContent: normalizedContent,
+    userPrompt: buildEnglishMetadataPrompt({
+      title: input.title,
+      description: input.description,
+      keywords: input.keywords,
+      enContent,
+      metadataStylePrompt: config.metadataStylePrompt,
     }),
   });
   const output = normalizeEnglishSeoVersion(
-    parseJsonResponse<EnglishSeoVersionRawOutput>(responseText),
+    {
+      ...parseJsonResponse<EnglishSeoVersionRawOutput>(metadataText),
+      enContent,
+    },
     {
       title: input.title,
       description: input.description,
-      htmlContent: normalizedContent,
+      htmlContent: enContent,
     },
   );
   validateEnglishSeoVersion(output);

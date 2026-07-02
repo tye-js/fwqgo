@@ -391,6 +391,8 @@ export default function EditPost({
                     description={description ?? ""}
                     keywords={keywords}
                     content={content}
+                    fileSlug={postMeta.slug}
+                    language="zh"
                     onGenerated={setImageUrl}
                   />
                 </div>
@@ -602,7 +604,18 @@ export default function EditPost({
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">英文封面</label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-sm font-medium">英文封面</label>
+                  <ArticleCoverGenerator
+                    title={enTitle || postMeta.title}
+                    description={enDescription}
+                    keywords={enKeywords}
+                    content={enContent || content}
+                    fileSlug={enSlug || postMeta.slug}
+                    language="en"
+                    onGenerated={setEnImageUrl}
+                  />
+                </div>
                 <ImageUpload value={enImageUrl} onChange={setEnImageUrl} />
               </div>
 

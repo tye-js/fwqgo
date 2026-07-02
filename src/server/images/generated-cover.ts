@@ -13,6 +13,8 @@ type GenerateCoverInput = {
   description?: string | null;
   keywords?: string | null;
   content?: string | null;
+  fileSlug?: string | null;
+  language?: "zh" | "en";
   uploadedBy: string | null;
   configId?: number;
 };
@@ -117,6 +119,29 @@ function normalizeBase64(value: string) {
   return commaIndex >= 0 ? value.slice(commaIndex + 1) : value;
 }
 
+function toEnglishFileSlug(value: string | null | undefined) {
+  const slug = value
+    ?.trim()
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+
+  return slug ?? "";
+}
+
+function buildCoverOriginalName(
+  input: Pick<GenerateCoverInput, "title" | "fileSlug" | "language">,
+) {
+  const language = input.language === "en" ? "en" : "zh";
+  const baseSlug = toEnglishFileSlug(input.fileSlug) || toEnglishFileSlug(input.title);
+  return `${baseSlug || "article-cover"}-${language}-cover.png`;
+}
+
 async function downloadImage(url: string, timeoutSeconds: number) {
   const response = await fetch(url, {
     signal: AbortSignal.timeout(timeoutSeconds * 1000),
@@ -201,7 +226,7 @@ export async function generateArticleCoverImage(
   const asset = await createImageAssetFromBuffer({
     buffer: image.buffer,
     mime: image.mime,
-    originalName: `${sanitizeFileName(input.title)}-cover.png`,
+    originalName: sanitizeFileName(buildCoverOriginalName(input)),
     uploadedBy: input.uploadedBy,
     imageType: "ai_cover",
     altZh: input.title,
