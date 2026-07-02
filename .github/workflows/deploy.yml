@@ -83,11 +83,11 @@ jobs:
       - name: Build standalone
         run: |
           npm run build
-          mkdir -p .next-web/standalone/.next .next-cms/standalone/.next
-          rm -rf .next-web/standalone/.next/static .next-web/standalone/public
-          rm -rf .next-cms/standalone/.next/static .next-cms/standalone/public
-          cp -R .next-web/static .next-web/standalone/.next/static
-          cp -R .next-cms/static .next-cms/standalone/.next/static
+          mkdir -p .next-web/standalone/.next-web .next-cms/standalone/.next-cms
+          rm -rf .next-web/standalone/.next-web/static .next-web/standalone/public
+          rm -rf .next-cms/standalone/.next-cms/static .next-cms/standalone/public
+          cp -R .next-web/static .next-web/standalone/.next-web/static
+          cp -R .next-cms/static .next-cms/standalone/.next-cms/static
           cp -R public .next-web/standalone/public
           cp -R public .next-cms/standalone/public
 

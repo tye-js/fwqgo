@@ -225,7 +225,7 @@ function ConfigForm({
         </div>
       </div>
 
-      <div className="space-y-2">
+      <div id="prompt-template" className="scroll-mt-24 space-y-2">
         <Label>正文改写 Prompt 模板</Label>
         <Textarea
           name="basePrompt"
