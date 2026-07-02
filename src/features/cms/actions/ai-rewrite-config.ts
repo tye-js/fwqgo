@@ -15,7 +15,13 @@ import {
 const configSchema = z.object({
   name: z.string().trim().min(1, "名称不能为空"),
   provider: z.enum(aiProviderOptions),
-  baseUrl: z.string().trim().url("Base URL 必须是有效 URL"),
+  baseUrl: z
+    .string()
+    .trim()
+    .url("Base URL 必须是有效 URL")
+    .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+      message: "Base URL 只支持 http 或 https",
+    }),
   apiKey: z.string().trim().optional(),
   model: z.string().trim().min(1, "模型不能为空"),
   basePrompt: z.string().trim().min(1, "正文改写 Prompt 不能为空"),

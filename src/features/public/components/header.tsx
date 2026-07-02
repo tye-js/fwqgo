@@ -34,6 +34,7 @@ const HeaderComponent = async () => {
         <div className="flex min-h-[72px] items-center justify-between gap-6">
           <Link
             href="/"
+            prefetch
             className="min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             aria-label="返回服务器go首页"
           >
@@ -85,28 +86,34 @@ const HeaderComponent = async () => {
                   </NavigationMenuItem>
                 ) : (
                   <NavigationMenuItem key={category.id}>
-                    <NavigationMenuLink
-                      href={`/fwq/${category.slug}/page/1`}
-                      className={cn(
-                        navigationMenuTriggerStyle(),
-                        "rounded-full bg-transparent",
-                      )}
-                    >
-                      {category.name}
+                    <NavigationMenuLink asChild>
+                      <Link
+                        href={`/fwq/${category.slug}/page/1`}
+                        prefetch
+                        className={cn(
+                          navigationMenuTriggerStyle(),
+                          "rounded-full bg-transparent",
+                        )}
+                      >
+                        {category.name}
+                      </Link>
                     </NavigationMenuLink>
                   </NavigationMenuItem>
                 ),
               )}
               {error ? (
                 <NavigationMenuItem>
-                  <NavigationMenuLink
-                    href="/servers"
-                    className={cn(
-                      navigationMenuTriggerStyle(),
-                      "rounded-full bg-transparent text-muted-foreground",
-                    )}
-                  >
-                    分类暂不可用
+                  <NavigationMenuLink asChild>
+                    <Link
+                      href="/servers"
+                      prefetch
+                      className={cn(
+                        navigationMenuTriggerStyle(),
+                        "rounded-full bg-transparent text-muted-foreground",
+                      )}
+                    >
+                      分类暂不可用
+                    </Link>
                   </NavigationMenuLink>
                 </NavigationMenuItem>
               ) : null}
@@ -137,6 +144,7 @@ const HeaderComponent = async () => {
                   </div>
                   <Link
                     href="/servers"
+                    prefetch
                     className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     服务器比价
@@ -151,6 +159,7 @@ const HeaderComponent = async () => {
                     <Link
                       key={href}
                       href={href}
+                      prefetch
                       className="flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {label}
@@ -166,6 +175,7 @@ const HeaderComponent = async () => {
                   <div key={category.id} className="grid gap-2">
                     <Link
                       href={`/fwq/${category.slug}/page/1`}
+                      prefetch
                       className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {category.name}
@@ -176,6 +186,7 @@ const HeaderComponent = async () => {
                           <Link
                             key={item.id}
                             href={`/fwq/${item.slug}/page/1`}
+                            prefetch
                             className="flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             {item.name}
@@ -210,6 +221,7 @@ const ListItem = React.forwardRef<
       <NavigationMenuLink asChild>
         <Link
           href={href}
+          prefetch
           ref={ref}
           className={cn(
             "block select-none space-y-2 rounded-md border border-transparent p-4 leading-none no-underline outline-none transition-colors hover:border-primary/20 hover:bg-primary/5 focus:border-primary/20 focus:bg-primary/5 focus-visible:ring-2 focus-visible:ring-ring",

@@ -73,7 +73,7 @@ export function TableOfContents({ content }: TableOfContentsProps) {
       <ul className="space-y-1.5">
         {toc.map((item) => (
           <li
-            key={item.text}
+            key={item.id}
             style={{ paddingLeft: `${(item.level - 2) * 0.85}rem` }}
           >
             <Link

@@ -5,6 +5,10 @@ interface TocItem {
   level: number;
   text: string;
 }
+
+function stripInlineHtml(value: string) {
+  return value.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+}
 // 添加一个生成唯一ID的辅助函数
 export function generateUniqueId(text: string): string {
   return text
@@ -30,7 +34,7 @@ export function generateToc(content: string): TocItem[] {
     toc.push({
       level: parseInt(level!),
       id: id ?? "",
-      text: text ?? "", // 移除HTML标签
+      text: stripInlineHtml(text ?? ""),
     });
   }
 

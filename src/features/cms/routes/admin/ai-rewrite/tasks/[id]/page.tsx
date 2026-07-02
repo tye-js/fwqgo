@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { type ScrapeDiagnostics } from "@fwqgo/scrape/article-scraper";
+import { isHttpHref } from "@fwqgo/core/utils";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -208,7 +209,10 @@ function buildStoredTaskSteps(steps: DbTaskStep[]): TaskStep[] {
     return [];
   }
 
-  const latestAttempt = Math.max(...steps.map((step) => step.attempt));
+  const latestAttempt = steps.reduce(
+    (maxAttempt, step) => Math.max(maxAttempt, step.attempt),
+    0,
+  );
 
   return steps
     .filter((step) => step.attempt === latestAttempt)
@@ -443,7 +447,7 @@ export async function AiRewriteTaskDetailPageContent({
             <p className="text-muted-foreground">
               来源 / {sourceTypeLabel(task.sourceType)}
             </p>
-            {task.sourceType === "url" ? (
+            {task.sourceType === "url" && isHttpHref(task.sourceUrl) ? (
               <a
                 href={task.sourceUrl}
                 target="_blank"

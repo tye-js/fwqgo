@@ -8,6 +8,7 @@ export function RecommendedPostCard({ post }: { post: RecommendedPost }) {
   return (
     <Link
       href={`/fwq/posts/${post.slug}`}
+      prefetch
       className="group overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm transition-colors duration-200 hover:border-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
       <div className="relative aspect-[16/10] overflow-hidden bg-muted">

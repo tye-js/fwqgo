@@ -66,10 +66,33 @@ function resolveReadDatabaseUrl() {
   });
 }
 
+function isBuildProcess() {
+  return (
+    process.env.NEXT_PHASE === "phase-production-build" ||
+    process.env.npm_lifecycle_event?.startsWith("build")
+  );
+}
+
+function resolveMaxConnections() {
+  const fallback = isBuildProcess() ? 1 : 4;
+  const parsed = Number.parseInt(
+    process.env.DB_MAX_CONNECTIONS ?? String(fallback),
+    10,
+  );
+
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const connectionOptions = {
+  connect_timeout: 10,
+  idle_timeout: 20,
+  max: resolveMaxConnections(),
+};
+
 const writeConn =
-  globalForDb.writeConn ?? postgres(resolveWriteDatabaseUrl());
+  globalForDb.writeConn ?? postgres(resolveWriteDatabaseUrl(), connectionOptions);
 const readConn =
-  globalForDb.readConn ?? postgres(resolveReadDatabaseUrl());
+  globalForDb.readConn ?? postgres(resolveReadDatabaseUrl(), connectionOptions);
 
 if (env.NODE_ENV !== "production") {
   globalForDb.writeConn = writeConn;

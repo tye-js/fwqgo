@@ -46,7 +46,26 @@ export function formatDate(date: Date) {
 }
 
 export function decodeSlug(url: string) {
-  return decodeURIComponent(url);
+  try {
+    return decodeURIComponent(url);
+  } catch {
+    return url;
+  }
+}
+
+export function isInternalHref(href: string | null | undefined) {
+  return Boolean(href?.startsWith("/") && !href.startsWith("//"));
+}
+
+export function isHttpHref(href: string | null | undefined) {
+  if (!href) return false;
+
+  try {
+    const url = new URL(href);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 export function sanitizeFileName(fileName: string) {

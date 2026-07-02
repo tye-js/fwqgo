@@ -6,7 +6,7 @@ import {
 } from "@/features/public/data/post";
 
 import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
-import { decodeSlug, formatDate } from "@fwqgo/core/utils";
+import { decodeSlug, formatDate, isInternalHref } from "@fwqgo/core/utils";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { TableOfContents } from "@/components/toc/table-of-contents";
@@ -35,7 +35,9 @@ import { Badge } from "@/components/ui/badge";
 
 function formatOfferPrice(offer: Awaited<ReturnType<typeof getRelatedServerOffersForPost>>[number]) {
   if (!offer.priceAmount) return "价格待补充";
-  return `${offer.currency === "CNY" ? "¥" : "$"}${Number(offer.priceAmount).toFixed(2)}`;
+  const amount = Number(offer.priceAmount);
+  if (!Number.isFinite(amount)) return "价格待确认";
+  return `${offer.currency === "CNY" ? "¥" : "$"}${amount.toFixed(2)}`;
 }
 
 function getSiteUrl() {
@@ -232,6 +234,7 @@ async function PostPageContent({
                 {post.recommendedTagName ? (
                   <Link
                     href={`/fwq/tags/${post.recommendedTagSlug ?? post.recommendedTagName}/page/1`}
+                    prefetch
                     className="inline-flex min-h-8 items-center gap-2 rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     <Tags className="size-4" />
@@ -278,6 +281,7 @@ async function PostPageContent({
                         <Link
                           key={tag.tag.id}
                           href={`/fwq/tags/${tag.tag.slug}/page/1`}
+                          prefetch
                           className="inline-flex min-h-9 items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         >
                           #{tag.tag.name}
@@ -295,6 +299,7 @@ async function PostPageContent({
                     {prevPost ? (
                       <Link
                         href={`/fwq/posts/${prevPost.slug}`}
+                        prefetch
                         className="group flex min-h-24 items-start gap-3 rounded-lg border border-border/70 bg-muted/20 px-4 py-4 transition-colors hover:border-accent/30 hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
                         <ArrowLeftToLine className="mt-1 size-4 shrink-0 text-muted-foreground" />
@@ -313,6 +318,7 @@ async function PostPageContent({
                     {nextPost ? (
                       <Link
                         href={`/fwq/posts/${nextPost.slug}`}
+                        prefetch
                         className="group flex min-h-24 items-start justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 px-4 py-4 text-left transition-colors hover:border-accent/30 hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:text-right"
                       >
                         <div>
@@ -341,6 +347,7 @@ async function PostPageContent({
                           <Link
                             key={topic.slug}
                             href={`/servers/${topic.slug}`}
+                            prefetch
                             className="inline-flex min-h-9 items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                           >
                             {topic.title}
@@ -348,6 +355,7 @@ async function PostPageContent({
                         ))}
                         <Link
                           href="/servers"
+                          prefetch
                           className="inline-flex min-h-9 items-center rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         >
                           全部服务器比价
@@ -376,20 +384,32 @@ async function PostPageContent({
                             </div>
                             <div className="mt-3 flex flex-wrap gap-2">
                               {offer.purchaseUrl ? (
-                                <Link
+                                <a
                                   href={offer.purchaseUrl}
+                                  target="_blank"
+                                  rel="nofollow noopener noreferrer"
                                   className="text-xs font-medium text-primary hover:underline"
                                 >
                                   购买链接
-                                </Link>
+                                </a>
                               ) : null}
-                              {offer.articleUrl ? (
+                              {offer.articleUrl && isInternalHref(offer.articleUrl) ? (
                                 <Link
                                   href={offer.articleUrl}
+                                  prefetch
                                   className="text-xs font-medium text-muted-foreground hover:text-foreground"
                                 >
                                   推广文章
                                 </Link>
+                              ) : offer.articleUrl ? (
+                                <a
+                                  href={offer.articleUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs font-medium text-muted-foreground hover:text-foreground"
+                                >
+                                  推广文章
+                                </a>
                               ) : null}
                             </div>
                           </div>

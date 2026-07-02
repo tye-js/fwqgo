@@ -55,10 +55,17 @@ async function TagPageContent({
 }) {
   const params = await paramsPromise;
   const decodedTagSlug = decodeSlug(params.tagSlug);
+  const currentPage = Number.parseInt(params.pageNo, 10);
+  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : null;
+
+  if (!pageNo) {
+    notFound();
+  }
+
   const { data: postsWithTag, error } =
     await getPostsWithTagsByTagSlug(
       decodedTagSlug,
-      Number.parseInt(params.pageNo, 10),
+      pageNo,
     );
   const { data: latestPosts } = await getLatestPostsForSidebar();
   if (error || !postsWithTag?.posts)

@@ -40,7 +40,7 @@ async function LineContent({ params }: PageProps) {
       <section className="border-b border-border/60 bg-muted/20">
         <div className="container mx-auto px-4 py-8 md:py-10">
           <Button asChild variant="ghost" className="mb-5 px-0">
-            <Link href="/servers">
+            <Link href="/servers" prefetch>
               <ArrowLeft className="size-4" />
               服务器比价
             </Link>

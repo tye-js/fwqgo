@@ -204,30 +204,30 @@ export function CreatePostWorkbench({
             <TiptapEditor content={content} onChange={setContent} />
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+            <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
               <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
                 <FileText className="size-3.5" />
                 正文字数
               </div>
-              <p className="mt-3 text-2xl font-semibold text-foreground">
+              <p className="mt-2 text-xl font-semibold text-foreground">
                 {content.length}
               </p>
             </div>
-            <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+            <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
               <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
                 <Tags className="size-3.5" />
                 当前标签
               </div>
-              <p className="mt-3 text-2xl font-semibold text-foreground">
+              <p className="mt-2 text-xl font-semibold text-foreground">
                 {tags.length}
               </p>
             </div>
-            <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+            <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
               <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
                 <Wand2 className="size-3.5" />
                 SEO 完成
               </div>
-              <p className="mt-3 text-2xl font-semibold text-foreground">
+              <p className="mt-2 text-xl font-semibold text-foreground">
                 {seoPassedCount}/{seoChecks.length}
               </p>
             </div>
@@ -383,7 +383,7 @@ export function CreatePostWorkbench({
               }
             />
           </div>
-          <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+          <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-semibold">SEO 检查</h3>
@@ -414,7 +414,7 @@ export function CreatePostWorkbench({
               ))}
             </div>
           </div>
-          <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-muted/20 p-4 md:flex-row md:justify-end">
+          <div className="flex flex-col gap-3 rounded-md border border-border/70 bg-muted/20 px-4 py-3 md:flex-row md:justify-end">
             <Button
               type="button"
               variant="secondary"

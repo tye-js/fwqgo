@@ -31,6 +31,7 @@ export function LatestPostsSidebar({ posts }: { posts: LatestPostItem[] }) {
             </div>
             <Link
               href="/"
+              prefetch
               className="inline-flex min-h-9 items-center rounded-md text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               查看更多
@@ -40,6 +41,7 @@ export function LatestPostsSidebar({ posts }: { posts: LatestPostItem[] }) {
 
         <Link
           href={`/fwq/posts/${featuredPost.slug}`}
+          prefetch
           className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <div className="relative aspect-[16/10] overflow-hidden bg-muted">
@@ -69,6 +71,7 @@ export function LatestPostsSidebar({ posts }: { posts: LatestPostItem[] }) {
             <Link
               key={post.id}
               href={`/fwq/posts/${post.slug}`}
+              prefetch
               className="group grid min-h-16 grid-cols-[28px_1fr_auto] items-center gap-3 px-5 py-3 transition-colors hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <span className="flex size-7 items-center justify-center rounded-full bg-muted text-xs font-semibold tabular-nums text-muted-foreground transition-colors group-hover:bg-accent/10 group-hover:text-accent">

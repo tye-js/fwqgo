@@ -52,7 +52,11 @@ const CategoryPageContent = async ({
 }) => {
   const params = await paramsPromise;
   const currentPage = Number.parseInt(params.pageNo, 10);
-  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
+  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : null;
+  if (!pageNo) {
+    notFound();
+  }
+
   const { data: category, error: categoryError } = await CategoryInfo(
     params.category,
   );

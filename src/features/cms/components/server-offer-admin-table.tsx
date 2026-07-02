@@ -32,6 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { type getAdminServerOffers } from "@/server/offers/server-offers";
+import { isInternalHref } from "@fwqgo/core/utils";
 
 type Offer = Awaited<ReturnType<typeof getAdminServerOffers>>[number];
 
@@ -64,7 +65,12 @@ function formatPrice(offer: Offer) {
     return "待补充";
   }
 
-  return `${offer.currency === "CNY" ? "¥" : "$"}${Number(offer.priceAmount).toFixed(2)}`;
+  const amount = Number(offer.priceAmount);
+  if (!Number.isFinite(amount)) {
+    return "待确认";
+  }
+
+  return `${offer.currency === "CNY" ? "¥" : "$"}${amount.toFixed(2)}`;
 }
 
 function OfferEditForm({ offer, onDone }: { offer: Offer; onDone: () => void }) {
@@ -417,7 +423,17 @@ export function ServerOfferAdminTable({ offers }: { offers: Offer[] }) {
                       ) : null}
                       {offer.articleUrl ? (
                         <Button asChild size="sm" variant="outline">
-                          <Link href={offer.articleUrl}>文章</Link>
+                          {isInternalHref(offer.articleUrl) ? (
+                            <Link href={offer.articleUrl}>文章</Link>
+                          ) : (
+                            <a
+                              href={offer.articleUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              文章
+                            </a>
+                          )}
                         </Button>
                       ) : null}
                     </div>

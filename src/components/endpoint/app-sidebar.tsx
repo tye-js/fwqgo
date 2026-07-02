@@ -78,14 +78,6 @@ const data = {
           title: "任务看板",
           url: "/ai-tasks",
         },
-        {
-          title: "失败诊断",
-          url: "/ai-tasks#failed-tasks",
-        },
-        {
-          title: "任务列表",
-          url: "/ai-tasks#task-table",
-        },
       ],
     },
     {
@@ -97,10 +89,6 @@ const data = {
         {
           title: "文章列表",
           url: "/posts/edit",
-        },
-        {
-          title: "内容生产台",
-          url: "/ai-rewrite/tasks",
         },
       ],
     },
@@ -135,15 +123,15 @@ const data = {
       items: [
         {
           title: "主页 SEO",
-          url: "/seo/",
+          url: "/seo",
         },
         {
           title: "分类 SEO",
-          url: "/seo/category/",
+          url: "/seo/category",
         },
         {
           title: "标签 SEO",
-          url: "/seo/tag/",
+          url: "/seo/tag",
         },
       ],
     },
@@ -153,7 +141,7 @@ const data = {
       icon: Server,
       items: [
         {
-          title: "套餐提取",
+          title: "套餐数据",
           url: "/servers",
         },
         {

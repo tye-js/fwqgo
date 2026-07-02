@@ -49,7 +49,10 @@ export function ShortLinkTable({ links }: { links: ShortLinkRow[] }) {
   }, [links, query]);
 
   async function copyShortLink(slug: string) {
-    const url = `${window.location.origin.replace(/^https:\/\/cms\./, "https://")}/go/${slug}`;
+    const publicOrigin =
+      process.env.NEXT_PUBLIC_URL?.replace(/\/+$/, "") ??
+      window.location.origin.replace(/^https:\/\/cms\./, "https://");
+    const url = `${publicOrigin}/go/${slug}`;
     await navigator.clipboard.writeText(url);
     toast.success("短链已复制", {
       description: url,

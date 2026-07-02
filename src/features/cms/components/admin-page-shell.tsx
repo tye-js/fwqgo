@@ -23,25 +23,33 @@ export function AdminPageShell({
 }) {
   return (
     <div
-      className="flex flex-1 flex-col gap-5 px-4 py-4 md:px-6"
+      className="flex flex-1 flex-col gap-5 px-4 py-5 md:px-6 lg:px-8"
       aria-label={title}
     >
-      <h1 className="sr-only">{title}</h1>
-      {description ? <p className="sr-only">{description}</p> : null}
-      {actions || badge ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {badge ? (
-            <span className="inline-flex items-center rounded-md border border-border bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-              {badge}
-            </span>
-          ) : (
-            <span />
-          )}
-          {actions ? (
-            <div className="flex shrink-0 items-center gap-2">{actions}</div>
+      <div className="flex flex-col gap-3 border-b border-border/70 pb-4 md:flex-row md:items-end md:justify-between">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground md:text-2xl">
+              {title}
+            </h1>
+            {badge ? (
+              <span className="inline-flex items-center rounded-md border border-border bg-muted/60 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                {badge}
+              </span>
+            ) : null}
+          </div>
+          {description ? (
+            <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+              {description}
+            </p>
           ) : null}
         </div>
-      ) : null}
+        {actions ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {actions}
+          </div>
+        ) : null}
+      </div>
       {children}
     </div>
   );
@@ -57,20 +65,24 @@ export function AdminSectionCard({
   children: ReactNode;
 }) {
   return (
-    <Card className="rounded-lg border-border/70 shadow-sm">
+    <Card className="rounded-md border-border/70 bg-card shadow-none">
       {title || description ? (
-        <CardHeader className="border-b border-border/70 px-5 py-4 md:px-6">
-          {title ? (
-            <CardTitle className="text-base font-semibold">{title}</CardTitle>
-          ) : null}
-          {description ? (
-            <CardDescription className="text-sm leading-6">
-              {description}
-            </CardDescription>
-          ) : null}
+        <CardHeader className="border-b border-border/60 px-4 py-3 md:px-5">
+          <div className="space-y-1">
+            {title ? (
+              <CardTitle className="text-sm font-semibold tracking-normal">
+                {title}
+              </CardTitle>
+            ) : null}
+            {description ? (
+              <CardDescription className="text-xs leading-5">
+                {description}
+              </CardDescription>
+            ) : null}
+          </div>
         </CardHeader>
       ) : null}
-      <CardContent className="px-5 py-5 md:px-6">{children}</CardContent>
+      <CardContent className="px-4 py-4 md:px-5">{children}</CardContent>
     </Card>
   );
 }
@@ -81,23 +93,27 @@ export function AdminSummaryStrip({
   items: Array<{ label: string; value: string; note?: string }>;
 }) {
   return (
-    <div className="grid gap-3 md:grid-cols-3">
-      {items.map((item) => (
-        <Card key={item.label} className="rounded-lg border-border/70 shadow-sm">
-          <CardContent className="px-4 py-4">
-            <p className="text-xs font-medium text-muted-foreground">
-              {item.label}
+    <div className="grid overflow-hidden rounded-md border border-border/70 bg-card md:grid-cols-3">
+      {items.map((item, index) => (
+        <div
+          key={item.label}
+          className="border-b border-border/60 px-4 py-3 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0"
+        >
+          <p className="text-xs font-medium text-muted-foreground">
+            {item.label}
+          </p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">
+            {item.value}
+          </p>
+          {item.note ? (
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {item.note}
             </p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">
-              {item.value}
-            </p>
-            {item.note ? (
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                {item.note}
-              </p>
-            ) : null}
-          </CardContent>
-        </Card>
+          ) : null}
+          {index === items.length - 1 ? null : (
+            <span className="sr-only">分隔</span>
+          )}
+        </div>
       ))}
     </div>
   );

@@ -492,9 +492,9 @@ export default function AffManTable({
         }
       />
 
-      <div className="rounded-2xl border border-border/70 bg-muted/20 p-5">
+      <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
         <p className="text-sm font-medium text-foreground">添加商家</p>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
           新增商家后，这里的返利配置会直接影响采集文章中的返利链接替换逻辑。
         </p>
         {isAdd ? (

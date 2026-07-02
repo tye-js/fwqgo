@@ -104,6 +104,7 @@ async function EnglishPostContent({ params }: PageProps) {
       <article className="container mx-auto max-w-4xl px-4 py-6 md:py-10">
         <Link
           href={`/fwq/posts/${post.slug}`}
+          prefetch
           className="inline-flex items-center gap-2 text-sm text-muted-foreground underline-offset-4 hover:text-primary hover:underline"
         >
           <ArrowLeft className="size-4" />
@@ -158,6 +159,7 @@ async function EnglishPostContent({ params }: PageProps) {
                 <Link
                   key={tag.tag.id}
                   href={`/fwq/tags/${tag.tag.slug}/page/1`}
+                  prefetch
                   className="inline-flex min-h-9 items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/15"
                 >
                   #{tag.tag.name}
