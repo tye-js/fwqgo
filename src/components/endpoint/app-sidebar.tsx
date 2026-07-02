@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Megaphone,
   Bot,
+  ListChecks,
 } from "lucide-react";
 
 import { BrandMarkIcon } from "@/components/brand/brand-logo";
@@ -62,20 +63,28 @@ const data = {
           url: "/end/ai-rewrite/tasks",
         },
         {
-          title: "来源站配置",
-          url: "/end/ai-rewrite/tasks#source-sites",
-        },
-        {
-          title: "单篇采集",
-          url: "/end/ai-rewrite/tasks#single-task",
-        },
-        {
-          title: "改写接口配置",
-          url: "/end/collect/ai-rewrite",
-        },
-        {
           title: "草稿箱",
           url: "/end/posts/drafts",
+        },
+      ],
+    },
+    {
+      title: "AI任务中心",
+      url: "/end/ai-tasks",
+      icon: ListChecks,
+      isActive: false,
+      items: [
+        {
+          title: "任务看板",
+          url: "/end/ai-tasks",
+        },
+        {
+          title: "失败诊断",
+          url: "/end/ai-tasks#failed-tasks",
+        },
+        {
+          title: "任务列表",
+          url: "/end/ai-tasks#task-table",
         },
       ],
     },
@@ -105,12 +114,16 @@ const data = {
           url: "/end/images/upload",
         },
         {
-          title: "图片资产",
-          url: "/end/images/list",
+          title: "AI生图",
+          url: "/end/images/ai-generate",
         },
         {
-          title: "未引用图片",
-          url: "/end/images/list?filter=unused",
+          title: "封面生图",
+          url: "/end/images/covers",
+        },
+        {
+          title: "图片资产",
+          url: "/end/images/list",
         },
       ],
     },
@@ -147,10 +160,6 @@ const data = {
           title: "套餐校正",
           url: "/end/servers/manage",
         },
-        {
-          title: "数据质量检查",
-          url: "/end/servers/manage#quality",
-        },
       ],
     },
     {
@@ -182,8 +191,8 @@ const data = {
           url: "/end/settings/image-generation",
         },
         {
-          title: "AI Prompt 模板",
-          url: "/end/collect/ai-rewrite#prompt-template",
+          title: "改写接口配置",
+          url: "/end/collect/ai-rewrite",
         },
       ],
     },

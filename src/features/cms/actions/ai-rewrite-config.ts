@@ -23,6 +23,8 @@ const configSchema = z.object({
   styleName: z.string().trim().min(1, "风格名称不能为空"),
   stylePrompt: z.string().trim().min(1, "正文改写风格不能为空"),
   metadataStylePrompt: z.string().trim().min(1, "元信息生成风格不能为空"),
+  englishStylePrompt: z.string().trim().min(1, "英文正文生成风格不能为空"),
+  englishMetadataStylePrompt: z.string().trim().min(1, "英文 SEO 生成风格不能为空"),
   temperature: z.coerce.number().int().min(0).max(200),
   maxTokens: z.coerce.number().int().min(1000).max(64000),
   enabled: z.preprocess((value) => value === "true" || value === true, z.boolean()),

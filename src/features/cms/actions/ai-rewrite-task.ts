@@ -63,6 +63,16 @@ function getErrorMessage(error: unknown) {
   return typeof error === "string" ? error : "未知错误";
 }
 
+function revalidateAiTaskPages(taskId?: number) {
+  revalidatePath("/end/ai-rewrite/tasks");
+  revalidatePath("/end/ai-tasks");
+
+  if (taskId) {
+    revalidatePath(`/end/ai-rewrite/tasks/${taskId}`);
+    revalidatePath(`/end/ai-tasks/${taskId}`);
+  }
+}
+
 async function validateCategoryAndStyle(input: {
   categoryId: number;
   rewriteStyleId?: number;
@@ -225,7 +235,7 @@ export async function createAiRewriteTaskAction(formData: FormData) {
       });
 
       await enqueueAiRewriteTask(task.id);
-      revalidatePath("/end/ai-rewrite/tasks");
+      revalidateAiTaskPages();
 
       return { data: task, count: 1 };
     }
@@ -266,7 +276,7 @@ export async function createAiRewriteTaskAction(formData: FormData) {
       });
 
       await enqueueAiRewriteTask(task.id);
-      revalidatePath("/end/ai-rewrite/tasks");
+      revalidateAiTaskPages();
 
       return { data: task, count: 1 };
     }
@@ -313,7 +323,7 @@ export async function createAiRewriteTaskAction(formData: FormData) {
     for (const task of tasks) {
       await enqueueAiRewriteTask(task.id);
     }
-    revalidatePath("/end/ai-rewrite/tasks");
+    revalidateAiTaskPages();
 
     return { data: tasks[0], count: tasks.length };
   } catch (error) {
@@ -344,8 +354,7 @@ export async function retryAiRewriteTaskAction(taskId: number) {
     }
 
     await enqueueAiRewriteTask(task.id);
-    revalidatePath("/end/ai-rewrite/tasks");
-    revalidatePath(`/end/ai-rewrite/tasks/${taskId}`);
+    revalidateAiTaskPages(taskId);
 
     return { data: task };
   } catch (error) {
@@ -392,8 +401,7 @@ export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
       .where(eq(aiRewriteTasks.id, taskId))
       .returning({ id: aiRewriteTasks.id });
 
-    revalidatePath("/end/ai-rewrite/tasks");
-    revalidatePath(`/end/ai-rewrite/tasks/${taskId}`);
+    revalidateAiTaskPages(taskId);
 
     return { data: updated };
   } catch (error) {

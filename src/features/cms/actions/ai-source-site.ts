@@ -34,6 +34,11 @@ function getErrorMessage(error: unknown) {
   return typeof error === "string" ? error : "未知错误";
 }
 
+function revalidateAiTaskPages() {
+  revalidatePath("/end/ai-rewrite/tasks");
+  revalidatePath("/end/ai-tasks");
+}
+
 function parseSourceSiteFormData(formData: FormData) {
   const rewriteStyleId = formData.get("rewriteStyleId");
 
@@ -126,7 +131,7 @@ export async function createAiSourceSiteAction(formData: FormData) {
       feedUrl: input.feedUrl ? new URL(input.feedUrl).toString() : null,
     });
 
-    revalidatePath("/end/ai-rewrite/tasks");
+    revalidateAiTaskPages();
     return { data: true };
   } catch (error) {
     console.error("创建来源站配置失败:", error);
@@ -157,7 +162,7 @@ export async function updateAiSourceSiteAction(id: number, formData: FormData) {
       return { error: "来源站配置不存在" };
     }
 
-    revalidatePath("/end/ai-rewrite/tasks");
+    revalidateAiTaskPages();
     return { data: updated };
   } catch (error) {
     console.error("更新来源站配置失败:", error);
@@ -169,7 +174,7 @@ export async function deleteAiSourceSiteAction(id: number) {
   try {
     await requireAdminSession();
     await db.delete(aiSourceSites).where(eq(aiSourceSites.id, id));
-    revalidatePath("/end/ai-rewrite/tasks");
+    revalidateAiTaskPages();
     return { data: true };
   } catch (error) {
     console.error("删除来源站配置失败:", error);
@@ -219,7 +224,7 @@ export async function runAiSourceSiteAction(id: number) {
       })
       .where(eq(aiSourceSites.id, id));
 
-    revalidatePath("/end/ai-rewrite/tasks");
+    revalidateAiTaskPages();
 
     return { data: result };
   } catch (error) {
@@ -236,7 +241,7 @@ export async function runAiSourceSiteAction(id: number) {
         updatedAt: new Date(),
       })
       .where(eq(aiSourceSites.id, id));
-    revalidatePath("/end/ai-rewrite/tasks");
+    revalidateAiTaskPages();
     return { error: getErrorMessage(error) };
   }
 }

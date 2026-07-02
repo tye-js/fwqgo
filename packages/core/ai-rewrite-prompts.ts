@@ -20,6 +20,12 @@ export const defaultBaseRewritePrompt = `你是一个专业的推广文章写作
 export const defaultMetadataStylePrompt =
   "标题要偏 SEO 长尾词，摘要要准确概括商家、价格、配置、线路和适用场景。关键词和标签服务于搜索流量，不要影响正文写作风格。";
 
+export const defaultEnglishStylePrompt =
+  "Use a clear English hosting deal review style. Preserve provider names, prices, specs, routes, promo codes, stock status and affiliate links. Localize wording for English readers without inventing missing information.";
+
+export const defaultEnglishMetadataStylePrompt =
+  "Write concise English SEO metadata for VPS/server deal readers. Prioritize provider name, price, specs, location, network route and buying intent. Keep the slug short and readable.";
+
 export const defaultMetadataPrompt = `你是服务器/VPS推广文章的 SEO 编辑。请根据改写后的 HTML 正文生成文章元信息。
 
 元信息生成风格：
