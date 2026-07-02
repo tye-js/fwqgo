@@ -92,6 +92,68 @@
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
+
+  .cms-theme {
+    --background: 220 20% 98%;
+    --foreground: 222 32% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 32% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 32% 12%;
+    --primary: 218 24% 24%;
+    --primary-foreground: 210 32% 98%;
+    --secondary: 216 18% 94%;
+    --secondary-foreground: 222 24% 18%;
+    --muted: 216 18% 94%;
+    --muted-foreground: 220 11% 42%;
+    --accent: 216 18% 90%;
+    --accent-foreground: 222 24% 18%;
+    --destructive: 0 58% 42%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 216 16% 86%;
+    --input: 216 16% 86%;
+    --ring: 218 24% 32%;
+
+    --sidebar-background: 220 20% 97%;
+    --sidebar-foreground: 222 22% 20%;
+    --sidebar-primary: 218 24% 24%;
+    --sidebar-primary-foreground: 210 32% 98%;
+    --sidebar-accent: 216 18% 90%;
+    --sidebar-accent-foreground: 222 24% 18%;
+    --sidebar-border: 216 16% 86%;
+    --sidebar-ring: 218 24% 32%;
+  }
+
+  .dark .cms-theme {
+    --background: 222 24% 10%;
+    --foreground: 210 24% 94%;
+    --card: 222 22% 12%;
+    --card-foreground: 210 24% 94%;
+    --popover: 222 22% 12%;
+    --popover-foreground: 210 24% 94%;
+    --primary: 214 18% 78%;
+    --primary-foreground: 222 24% 10%;
+    --secondary: 222 18% 18%;
+    --secondary-foreground: 210 24% 94%;
+    --muted: 222 18% 18%;
+    --muted-foreground: 215 14% 70%;
+    --accent: 222 18% 22%;
+    --accent-foreground: 210 24% 94%;
+    --destructive: 0 46% 44%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 222 16% 24%;
+    --input: 222 16% 24%;
+    --ring: 214 18% 72%;
+
+    --sidebar-background: 222 24% 9%;
+    --sidebar-foreground: 210 20% 90%;
+    --sidebar-primary: 214 18% 78%;
+    --sidebar-primary-foreground: 222 24% 10%;
+    --sidebar-accent: 222 18% 20%;
+    --sidebar-accent-foreground: 210 20% 92%;
+    --sidebar-border: 222 16% 22%;
+    --sidebar-ring: 214 18% 72%;
+  }
 }
 
 @layer base {

@@ -75,12 +75,18 @@ export default function EditPost({
   const [enImageUrl, setEnImageUrl] = useState(post.post.enImgUrl ?? "");
   const [isSavingEnglish, setIsSavingEnglish] = useState(false);
   const handleAddTag = (tagInput: string) => {
-    if (!tagInput.trim()) return;
+    const name = tagInput.trim();
+    if (!name) return;
+
+    if (tags.some((tag) => tag.tag.name.trim() === name)) {
+      toast.info("这个标签已经添加过了");
+      return;
+    }
 
     const newTag = {
       tag: {
-        name: tagInput.trim(),
-        slug: tagInput.trim(),
+        name,
+        slug: "",
       },
     };
 
@@ -228,7 +234,11 @@ export default function EditPost({
             </Link>
           </Button>
           <Button asChild variant="outline" size="sm" className="h-9">
-            <Link href={`/fwq/posts/${postMeta.slug}`} target="_blank">
+            <Link
+              href={`/fwq/posts/${postMeta.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               <ExternalLink className="size-4" />
               查看前台
             </Link>
@@ -457,7 +467,10 @@ export default function EditPost({
                             e.preventDefault();
                             handleAddTag(tagInput);
                           }
-                          if (e.key === "Escape") setIsAddingTag(false);
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setIsAddingTag(false);
+                          }
                         }}
                         autoFocus
                       />
@@ -645,6 +658,7 @@ export default function EditPost({
                       <Link
                         href={`/en/fwq/posts/${encodeURIComponent(enSlug.trim())}`}
                         target="_blank"
+                        rel="noopener noreferrer"
                       >
                         <ExternalLink className="size-4" />
                         查看英文页

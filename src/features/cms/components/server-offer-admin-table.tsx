@@ -403,7 +403,7 @@ export function ServerOfferAdminTable({ offers }: { offers: Offer[] }) {
                     <div className="flex gap-2">
                       {offer.purchaseUrl ? (
                         <Button asChild size="icon" variant="outline">
-                          <a href={offer.purchaseUrl} target="_blank" rel="noreferrer">
+                          <a href={offer.purchaseUrl} target="_blank" rel="noopener noreferrer">
                             <ExternalLink className="size-4" />
                           </a>
                         </Button>

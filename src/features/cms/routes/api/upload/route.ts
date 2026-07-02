@@ -1,4 +1,4 @@
-import { requireAdminSession } from "@fwqgo/auth/session";
+import { isUnauthorizedError, requireAdminSession } from "@fwqgo/auth/session";
 import { createImageAssetFromUpload } from "@/server/images/assets";
 import { type NextRequest, NextResponse } from "next/server";
 
@@ -25,6 +25,14 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Upload error:", error);
+
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json(
+        { error: "请先登录后再上传图片" },
+        { status: 401 },
+      );
+    }
+
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Upload failed",

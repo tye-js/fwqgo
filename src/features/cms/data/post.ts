@@ -3,6 +3,8 @@ import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import {
   posts,
   categories,
+  postTags,
+  tags,
 } from "@fwqgo/db/schema";
 import {
   eq,
@@ -13,8 +15,59 @@ import {
   count,
   sql,
 } from "drizzle-orm";
+import { decodeSlug } from "@fwqgo/core/utils";
 
-export { getPostBySlug } from "@/features/public/data/post";
+export async function getPostBySlug(slug: string) {
+  "use cache";
+  tagCache(cacheTags.posts, cacheTags.postSlug(decodeSlug(slug)));
+
+  try {
+    const decodedSlug = decodeSlug(slug);
+    const [post] = await db
+      .select({
+        id: posts.id,
+        content: posts.content,
+        views: posts.views,
+        description: posts.description,
+        imgUrl: posts.imgUrl,
+        recommendedTagName: posts.recommendedTagName,
+        keywords: posts.keywords,
+        categoryId: posts.categoryId,
+        enTitle: posts.enTitle,
+        enSlug: posts.enSlug,
+        enContent: posts.enContent,
+        enKeywords: posts.enKeywords,
+        enDescription: posts.enDescription,
+        enImgUrl: posts.enImgUrl,
+        enUpdatedAt: posts.enUpdatedAt,
+        title: posts.title,
+        slug: posts.slug,
+      })
+      .from(posts)
+      .where(eq(posts.slug, decodedSlug))
+      .limit(1);
+
+    if (!post) {
+      return { data: null };
+    }
+
+    const postTagsData = await db
+      .select({
+        tag: {
+          id: tags.id,
+          name: tags.name,
+          slug: tags.slug,
+        },
+      })
+      .from(postTags)
+      .innerJoin(tags, eq(postTags.tagId, tags.id))
+      .where(eq(postTags.postId, post.id));
+
+    return { data: { ...post, tags: postTagsData } };
+  } catch (error) {
+    return { error: "通过slug获取文章失败", message: error };
+  }
+}
 
 export async function getPosts({
   pageNo = 1,

@@ -29,8 +29,18 @@ export async function POST(request: Request) {
       return Response.json({ error: "注册入口已关闭" }, { status: 403 });
     }
 
-    const body = (await request.json()) as z.infer<typeof registerSchema>;
-    const { username, password } = registerSchema.parse(body);
+    const body = registerSchema.safeParse(
+      await request.json().catch(() => null),
+    );
+
+    if (!body.success) {
+      return Response.json(
+        { error: body.error.issues[0]?.message ?? "注册信息格式不正确" },
+        { status: 400 },
+      );
+    }
+
+    const { username, password } = body.data;
 
     // 检查用户名是否已存在
     const [existingUser] = await db
@@ -55,14 +65,7 @@ export async function POST(request: Request) {
     });
 
     return Response.json({ success: true });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return Response.json(
-        { error: error.issues[0]?.message },
-        { status: 400 },
-      );
-    }
-
+  } catch {
     return Response.json({ error: "注册失败，请重试" }, { status: 500 });
   }
 }

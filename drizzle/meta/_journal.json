@@ -162,6 +162,13 @@
       "when": 1782928937324,
       "tag": "0022_dashing_zzzax",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1782935574120,
+      "tag": "0023_yielding_blade",
+      "breakpoints": true
     }
   ]
 }

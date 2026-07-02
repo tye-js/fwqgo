@@ -82,7 +82,7 @@ function OfferActions({ offer }: { offer: Offer }) {
     <div className="flex flex-wrap justify-end gap-2">
       {offer.purchaseUrl ? (
         <Button asChild size="sm" className="min-h-9 px-3">
-          <a href={offer.purchaseUrl} target="_blank" rel="nofollow noreferrer">
+          <a href={offer.purchaseUrl} target="_blank" rel="nofollow noopener noreferrer">
             <ShoppingCart className="size-4" />
             购买
           </a>

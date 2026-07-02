@@ -160,7 +160,7 @@ export async function getPostByCategoryId(id: number) {
         createdAt: posts.createdAt,
       })
       .from(posts)
-      .where(eq(posts.categoryId, id))
+      .where(and(eq(posts.categoryId, id), eq(posts.published, true)))
       .orderBy(desc(posts.createdAt));
 
     // 获取每个文章的标签
@@ -211,7 +211,7 @@ export async function getPostBySlug(slug: string) {
         views: posts.views,
       })
       .from(posts)
-      .where(eq(posts.slug, decodedSlug))
+      .where(and(eq(posts.slug, decodedSlug), eq(posts.published, true)))
       .limit(1);
 
     if (!post) {

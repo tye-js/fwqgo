@@ -13,8 +13,16 @@ const loginSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as z.infer<typeof loginSchema>;
-    const { username, password } = loginSchema.parse(body);
+    const body = loginSchema.safeParse(await request.json().catch(() => null));
+
+    if (!body.success) {
+      return Response.json(
+        { error: "请输入有效的用户名和密码" },
+        { status: 400 },
+      );
+    }
+
+    const { username, password } = body.data;
 
     const [user] = await db
       .select()

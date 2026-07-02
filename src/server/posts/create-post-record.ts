@@ -159,17 +159,26 @@ export async function createPostRecordInTransaction(
       return getOrCreateTagByName(tx, { name: tag.name, slug: tagSlug });
     }),
   );
+  const recommendedTagName = normalizeTagName(
+    postInput.recommendedTagName ?? "",
+  );
+  const recommendedTagSlug = recommendedTagName
+    ? slugify(recommendedTagName)
+    : "";
   const recommendedTag =
-    postInput.recommendedTagName
-      ? (tagRows.find((tag) => tag.name === postInput.recommendedTagName) ??
+    recommendedTagName && recommendedTagSlug
+      ? (tagRows.find((tag) => tag.name === recommendedTagName) ??
         (
           await tx
             .select({ id: tags.id, name: tags.name })
             .from(tags)
-            .where(eq(tags.name, postInput.recommendedTagName))
+            .where(eq(tags.slug, recommendedTagSlug))
             .limit(1)
         )[0] ??
-        null)
+        (await getOrCreateTagByName(tx, {
+          name: recommendedTagName,
+          slug: recommendedTagSlug,
+        })))
       : null;
 
   const [post] = await tx

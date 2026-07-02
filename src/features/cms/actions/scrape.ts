@@ -7,6 +7,7 @@ import {
   type ScrapedArticle,
 } from "@fwqgo/scrape/article-scraper";
 import { getAiRewriteConfigs } from "@fwqgo/ai/rewrite-config";
+import { requireAdminSession } from "@fwqgo/auth/session";
 
 const urlSchema = z.object({
   url: z.string().url(),
@@ -40,6 +41,8 @@ export async function scrapeArticleAction(
   formData: FormData,
 ): Promise<ScrapeActionState> {
   try {
+    await requireAdminSession();
+
     const urlString = formData.get("url") as string;
     const rewriteStyleIdString = formData.get("rewriteStyleId");
     const { url, rewriteStyleId } = urlSchema.parse({
@@ -69,6 +72,8 @@ export async function scrapeArticleAction(
 }
 
 export async function getAiRewriteStyleOptions() {
+  await requireAdminSession();
+
   const configs = await getAiRewriteConfigs();
   return configs
     .filter((config) => config.enabled)

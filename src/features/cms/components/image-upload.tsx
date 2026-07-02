@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ interface ImageUploadProps {
 }
 
 export function ImageUpload({ onChange, value }: ImageUploadProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
@@ -42,16 +43,24 @@ export function ImageUpload({ onChange, value }: ImageUploadProps) {
         body: formData,
       });
 
-      if (!response.ok) throw new Error("上传失败");
-      const data = (await response.json()) as { url: string };
+      const data = (await response.json().catch(() => null)) as
+        | { url?: string; error?: string }
+        | null;
+
+      if (!response.ok || !data?.url) {
+        throw new Error(data?.error ?? `上传失败，HTTP ${response.status}`);
+      }
 
       // const data = await response.json();
       onChange(data.url);
     } catch (error) {
       console.error("上传错误:", error);
-      toast.error("上传失败，请重试");
+      toast.error(error instanceof Error ? error.message : "上传失败，请重试");
     } finally {
       setIsUploading(false);
+      if (inputRef.current) {
+        inputRef.current.value = "";
+      }
     }
   };
 
@@ -74,6 +83,7 @@ export function ImageUpload({ onChange, value }: ImageUploadProps) {
       </div>
       <div className="flex flex-col gap-3">
         <Input
+          ref={inputRef}
           type="file"
           accept="image/*"
           onChange={handleUpload}

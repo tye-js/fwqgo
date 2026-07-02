@@ -439,7 +439,7 @@ export default async function AiRewriteTaskDetailPage({ params }: PageProps) {
               <a
                 href={task.sourceUrl}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 break-all font-medium hover:underline"
               >
                 {task.sourceUrl}
