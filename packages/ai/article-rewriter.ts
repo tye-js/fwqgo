@@ -4,13 +4,13 @@ import {
   defaultEnglishStylePrompt,
   defaultMetadataStylePrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
-import * as cheerio from "cheerio";
+import { htmlToArticleMarkdown } from "@fwqgo/core/content";
 
 const DEFAULT_AI_REWRITE_TIMEOUT_MS = 300_000;
 const MIN_AI_INPUT_LENGTH = 80;
-const MIN_REWRITTEN_HTML_LENGTH = 120;
+const MIN_REWRITTEN_MARKDOWN_LENGTH = 120;
 const MAX_METADATA_INPUT_LENGTH = 28_000;
-const MAX_ENGLISH_CONTENT_INPUT_LENGTH = 22_000;
+const MAX_ENGLISH_MARKDOWN_INPUT_LENGTH = 14_000;
 
 function getAiRewriteTimeoutMs() {
   const configured = Number(process.env.AI_REWRITE_TIMEOUT_MS);
@@ -26,7 +26,7 @@ export interface ArticleRewriteOutput {
   title: string;
   description: string;
   keywords: string[];
-  htmlContent: string;
+  markdownContent: string;
   tagsName: string[];
   recommendTagName: string;
 }
@@ -39,7 +39,14 @@ export interface EnglishSeoVersionOutput {
   enContent: string;
 }
 
-type ArticleMetadataOutput = Omit<ArticleRewriteOutput, "htmlContent">;
+export interface EnglishMetadataOutput {
+  enTitle: string;
+  enSlug: string;
+  enDescription: string;
+  enKeywords: string[];
+}
+
+type ArticleMetadataOutput = Omit<ArticleRewriteOutput, "markdownContent">;
 
 type EnglishSeoVersionRawOutput = Partial<{
   enTitle: string;
@@ -109,19 +116,19 @@ function buildHtmlRewritePrompt(
   content: string,
   stylePrompt: string,
 ) {
-  return `你是一个专业的服务器/VPS 推广文章中文编辑。请把清洗后的原文改写成更适合发布的中文正文 HTML。
+  return `你是一个专业的服务器/VPS 推广文章中文编辑。请把清洗后的原文 Markdown 改写成更适合发布的中文正文 Markdown。
 
 正文改写风格：
 ${stylePrompt}
 
 硬性规则：
-1. 只输出改写后的正文 HTML 片段，不要输出标题、摘要、关键词、标签、JSON、Markdown 代码块、解释或额外文本。
-2. HTML 中的标题从 h2 开始，第一段不需要标题。
-3. 保留表格、列表、链接、商家名、价格、CPU、内存、存储、流量、地区、线路、优惠码、库存、购买链接等事实信息。
+1. 只输出改写后的正文 Markdown，不要输出标题、摘要、关键词、标签、JSON、代码块围栏、解释或额外文本。
+2. 正文小标题从 ## 开始，第一段不需要标题。
+3. 保留 Markdown 表格、列表、链接、商家名、价格、CPU、内存、存储、流量、地区、线路、优惠码、库存、购买链接等事实信息。
 4. 可以优化段落顺序、表达和小标题，但不要编造原文没有的价格、配置、优惠码、库存、线路或商家承诺。
 5. 如果有官网、优惠码、套餐表格、网络线路、适用场景等信息，尽量清晰分段展示。
 
-清洗后的原文 HTML：
+清洗后的原文 Markdown：
 ${content}`;
 }
 
@@ -143,12 +150,12 @@ function getEnglishMetadataStylePrompt(value?: string | null) {
 }
 
 function buildMetadataPrompt(
-  htmlContent: string,
+  markdownContent: string,
   metadataStylePrompt?: string | null,
 ) {
   const style = getMetadataStylePrompt(metadataStylePrompt);
 
-  return `你是服务器/VPS 推广文章的 SEO 编辑。请根据已改写的中文 HTML 正文生成文章元信息。
+  return `你是服务器/VPS 推广文章的 SEO 编辑。请根据已改写的中文 Markdown 正文生成文章元信息。
 
 输出要求：
 1. 只输出 JSON 对象，不要输出 Markdown、解释或额外文本。
@@ -170,28 +177,28 @@ JSON 格式：
   "recommendTagName": "推荐标签"
 }
 
-已改写的 HTML 正文：
-${htmlContent.slice(0, MAX_METADATA_INPUT_LENGTH)}`;
+已改写的 Markdown 正文：
+${markdownContent.slice(0, MAX_METADATA_INPUT_LENGTH)}`;
 }
 
 function buildEnglishContentPrompt(input: {
   title: string;
   description: string | null;
   keywords: string | null;
-  htmlContent: string;
+  markdownContent: string;
   stylePrompt: string;
 }) {
   return `You are an English editor for a VPS/server deals website.
 
-Translate and localize the Chinese hosting deal article into English HTML content.
+Translate and localize the Chinese hosting deal article from compact Markdown into English Markdown content.
 
 Writing style:
 ${input.stylePrompt}
 
 Requirements:
-1. Output only the translated/localized English HTML body fragment.
-2. Do not output JSON, Markdown code fences, explanations, title, meta description or keywords.
-3. Preserve the HTML structure where useful. Use headings starting from h2.
+1. Output only the translated/localized English Markdown body.
+2. Do not output JSON, code fences, explanations, title, meta description or keywords.
+3. Preserve Markdown structure. Use headings starting from ##.
 4. Preserve factual details: provider names, prices, CPU, RAM, storage, bandwidth, locations, routes, promo codes, coupons and URLs.
 5. Do not invent missing specs, prices, discounts, stock status or claims.
 6. Keep affiliate links and short links unchanged.
@@ -205,8 +212,8 @@ ${input.description ?? ""}
 Chinese keywords:
 ${input.keywords ?? ""}
 
-Chinese HTML:
-${input.htmlContent.slice(0, MAX_ENGLISH_CONTENT_INPUT_LENGTH)}`;
+Chinese article Markdown:
+${input.markdownContent.slice(0, MAX_ENGLISH_MARKDOWN_INPUT_LENGTH)}`;
 }
 
 function buildEnglishMetadataPrompt(input: {
@@ -220,7 +227,7 @@ function buildEnglishMetadataPrompt(input: {
 
   return `You are an SEO editor for an English VPS/server deals website.
 
-Generate English SEO metadata from the translated English HTML body.
+Generate English SEO metadata from the translated English Markdown body.
 
 Requirements:
 1. Return only a valid JSON object.
@@ -251,13 +258,13 @@ ${input.description ?? ""}
 Original Chinese keywords:
 ${input.keywords ?? ""}
 
-English HTML:
+English Markdown:
 ${input.enContent.slice(0, MAX_METADATA_INPUT_LENGTH)}`;
 }
 
-function cleanHtmlText(text: string) {
+function cleanMarkdownText(text: string) {
   return text
-    .replace(/^```(?:html)?/i, "")
+    .replace(/^```(?:markdown|md)?/i, "")
     .replace(/```$/i, "")
     .trim();
 }
@@ -281,9 +288,13 @@ function normalizeStringArray(value: unknown) {
 
 function normalizeMetadata(
   metadata: Partial<ArticleMetadataOutput>,
-  htmlContent: string,
+  markdownContent: string,
 ): ArticleMetadataOutput {
-  const text = htmlContent.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const text = markdownContent
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[#*_`>|-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const fallbackTitle = text.slice(0, 48) || "未命名采集文章";
 
   return {
@@ -344,33 +355,32 @@ function normalizeComparableTitle(value: string) {
     .trim();
 }
 
-function removeDuplicatedTitleFromHtml(htmlContent: string, title: string) {
-  const $ = cheerio.load(htmlContent, null, false);
+function removeDuplicatedTitleFromMarkdown(markdownContent: string, title: string) {
   const normalizedTitle = normalizeComparableTitle(title);
+  const lines = markdownContent.split(/\r?\n/);
+  const firstContentIndex = lines.findIndex((line) => line.trim().length > 0);
 
-  if (!normalizedTitle) {
-    return $.html();
+  if (!normalizedTitle || firstContentIndex < 0) {
+    return markdownContent;
   }
 
-  const firstElement = $.root().children().first();
-  const firstTag = String(firstElement.prop("tagName") ?? "").toLowerCase();
-
-  if (!["h1", "h2", "h3"].includes(firstTag)) {
-    return $.html();
+  const firstLine = lines[firstContentIndex]?.trim() ?? "";
+  const headingMatch = /^#{1,6}\s+(.+)$/.exec(firstLine);
+  if (!headingMatch) {
+    return markdownContent;
   }
 
-  const firstHeadingText = firstElement.text().trim();
-  const normalizedHeading = normalizeComparableTitle(firstHeadingText);
-
+  const headingText = headingMatch[1]?.trim() ?? "";
+  const normalizedHeading = normalizeComparableTitle(headingText);
   if (
     normalizedHeading === normalizedTitle ||
     normalizedTitle.includes(normalizedHeading) ||
     normalizedHeading.includes(normalizedTitle)
   ) {
-    firstElement.remove();
+    lines.splice(firstContentIndex, 1);
   }
 
-  return $.html();
+  return lines.join("\n").trim();
 }
 
 function normalizeEnglishSlug(value: string, fallback: string) {
@@ -388,22 +398,17 @@ function normalizeEnglishSlug(value: string, fallback: string) {
   return slug || "server-deal";
 }
 
-function normalizeEnglishSeoVersion(
+function normalizeEnglishMetadata(
   raw: EnglishSeoVersionRawOutput,
   fallback: {
     title: string;
     description: string | null;
-    htmlContent: string;
   },
-): EnglishSeoVersionOutput {
+): EnglishMetadataOutput {
   const enTitle =
     typeof raw.enTitle === "string" && raw.enTitle.trim()
       ? raw.enTitle.trim()
       : fallback.title;
-  const enContent =
-    typeof raw.enContent === "string" && raw.enContent.trim()
-      ? cleanHtmlText(raw.enContent)
-      : fallback.htmlContent;
   const enDescription =
     typeof raw.enDescription === "string" && raw.enDescription.trim()
       ? raw.enDescription.trim().slice(0, 180)
@@ -417,11 +422,10 @@ function normalizeEnglishSeoVersion(
     ),
     enDescription,
     enKeywords: normalizeStringArray(raw.enKeywords).slice(0, 10),
-    enContent: removeDuplicatedTitleFromHtml(enContent, enTitle),
   };
 }
 
-function validateEnglishSeoVersion(output: EnglishSeoVersionOutput) {
+function validateEnglishMetadata(output: EnglishMetadataOutput) {
   const issues: string[] = [];
 
   if (output.enTitle.length < 8) {
@@ -438,10 +442,6 @@ function validateEnglishSeoVersion(output: EnglishSeoVersionOutput) {
 
   if (output.enKeywords.length === 0) {
     issues.push("英文关键词为空");
-  }
-
-  if (output.enContent.length < MIN_REWRITTEN_HTML_LENGTH) {
-    issues.push("英文正文过短");
   }
 
   if (issues.length > 0) {
@@ -610,7 +610,7 @@ export async function rewriteArticleWithAi(
   }
 
   const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/v1/chat/completions`;
-  const htmlContent = cleanHtmlText(
+  const markdownContent = cleanMarkdownText(
     await requestChatCompletion({
       config,
       endpoint,
@@ -618,7 +618,7 @@ export async function rewriteArticleWithAi(
       maxTokens: config.maxTokens,
       stepName: "正文改写",
       systemPrompt:
-        "你是专业中文编辑。你只输出正文 HTML 片段，不输出 JSON、Markdown 代码块、解释或额外文本。",
+        "你是专业中文编辑。你只输出正文 Markdown，不输出 JSON、代码块围栏、解释或额外文本。",
       userPrompt: buildHtmlRewritePrompt(
         normalizedContent,
         config.stylePrompt,
@@ -626,17 +626,17 @@ export async function rewriteArticleWithAi(
     }),
   );
 
-  if (!htmlContent) {
+  if (!markdownContent) {
     throw createReadableError(
       "正文改写失败：模型返回为空",
       "请检查模型输出、额度和第三方接口兼容性",
     );
   }
 
-  if (htmlContent.length < MIN_REWRITTEN_HTML_LENGTH) {
+  if (markdownContent.length < MIN_REWRITTEN_MARKDOWN_LENGTH) {
     throw createReadableError(
       "正文改写失败：返回内容过短",
-      `只返回 ${htmlContent.length} 个字符，可能被模型拒绝或输出异常`,
+      `只返回 ${markdownContent.length} 个字符，可能被模型拒绝或输出异常`,
     );
   }
 
@@ -650,37 +650,34 @@ export async function rewriteArticleWithAi(
     systemPrompt:
       "你只输出符合要求的 JSON 对象，不输出 Markdown、解释或额外文本。",
     userPrompt: buildMetadataPrompt(
-      htmlContent,
+      markdownContent,
       config.metadataStylePrompt,
     ),
   });
   const metadata = normalizeMetadata(
     parseJsonResponse<Partial<ArticleMetadataOutput>>(metadataText),
-    htmlContent,
+    markdownContent,
   );
   validateMetadata(metadata);
 
   return {
     ...metadata,
-    htmlContent: removeDuplicatedTitleFromHtml(htmlContent, metadata.title),
+    markdownContent: removeDuplicatedTitleFromMarkdown(
+      markdownContent,
+      metadata.title,
+    ),
   };
 }
 
-export async function generateEnglishSeoVersion(
-  input: {
-    title: string;
-    description: string | null;
-    keywords: string | null;
-    htmlContent: string;
-  },
+async function getVerifiedAiConfig(
+  purpose: string,
   options: { styleId?: number } = {},
-): Promise<EnglishSeoVersionOutput> {
+) {
   const config = await getActiveAiRewriteConfig(options.styleId);
-  const timeoutMs = getAiRewriteTimeoutMs();
 
   if (!config) {
     throw createReadableError(
-      "英文 SEO 生成未启用",
+      `${purpose}未启用`,
       "请先在后台「内容生产 - 改写接口配置」启用一套默认配置",
     );
   }
@@ -692,16 +689,31 @@ export async function generateEnglishSeoVersion(
     );
   }
 
-  const normalizedContent = input.htmlContent.trim();
+  return config;
+}
+
+export async function generateEnglishArticleContent(
+  input: {
+    title: string;
+    description: string | null;
+    keywords: string | null;
+    markdownContent: string;
+  },
+  options: { styleId?: number } = {},
+): Promise<string> {
+  const config = await getVerifiedAiConfig("英文正文生成", options);
+  const timeoutMs = getAiRewriteTimeoutMs();
+
+  const normalizedContent = input.markdownContent.trim();
   if (normalizedContent.length < MIN_AI_INPUT_LENGTH) {
     throw createReadableError(
       "英文 SEO 生成输入过短",
-      `中文正文只有 ${normalizedContent.length} 个字符`,
+      `中文正文 Markdown 只有 ${normalizedContent.length} 个字符`,
     );
   }
 
   const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/v1/chat/completions`;
-  const enContent = cleanHtmlText(
+  const enContent = cleanMarkdownText(
     await requestChatCompletion({
       config,
       endpoint,
@@ -709,10 +721,10 @@ export async function generateEnglishSeoVersion(
       maxTokens: config.maxTokens,
       stepName: "英文正文生成",
       systemPrompt:
-        "You are a professional English editor. Output only the English HTML body fragment.",
+        "You are a professional English editor. Output only the English Markdown body.",
       userPrompt: buildEnglishContentPrompt({
         ...input,
-        htmlContent: normalizedContent,
+        markdownContent: normalizedContent,
         stylePrompt: getEnglishStylePrompt(config.englishStylePrompt),
       }),
     }),
@@ -725,13 +737,28 @@ export async function generateEnglishSeoVersion(
     );
   }
 
-  if (enContent.length < MIN_REWRITTEN_HTML_LENGTH) {
+  if (enContent.length < MIN_REWRITTEN_MARKDOWN_LENGTH) {
     throw createReadableError(
       "英文正文生成失败：返回内容过短",
       `只返回 ${enContent.length} 个字符，可能被模型拒绝或输出异常`,
     );
   }
 
+  return enContent;
+}
+
+export async function generateEnglishMetadata(
+  input: {
+    title: string;
+    description: string | null;
+    keywords: string | null;
+    enContent: string;
+  },
+  options: { styleId?: number } = {},
+): Promise<EnglishMetadataOutput> {
+  const config = await getVerifiedAiConfig("英文 SEO 生成", options);
+  const timeoutMs = getAiRewriteTimeoutMs();
+  const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/v1/chat/completions`;
   const metadataText = await requestChatCompletion({
     config,
     endpoint,
@@ -745,22 +772,52 @@ export async function generateEnglishSeoVersion(
       title: input.title,
       description: input.description,
       keywords: input.keywords,
-      enContent,
+      enContent: input.enContent,
       metadataStylePrompt: config.englishMetadataStylePrompt,
     }),
   });
-  const output = normalizeEnglishSeoVersion(
-    {
-      ...parseJsonResponse<EnglishSeoVersionRawOutput>(metadataText),
-      enContent,
-    },
+  const output = normalizeEnglishMetadata(
+    parseJsonResponse<EnglishSeoVersionRawOutput>(metadataText),
+    { title: input.title, description: input.description },
+  );
+  validateEnglishMetadata(output);
+
+  return output;
+}
+
+export async function generateEnglishSeoVersion(
+  input: {
+    title: string;
+    description: string | null;
+    keywords: string | null;
+    htmlContent: string;
+  },
+  options: { styleId?: number } = {},
+): Promise<EnglishSeoVersionOutput> {
+  const markdown = htmlToArticleMarkdown(input.htmlContent, {
+    maxLength: MAX_ENGLISH_MARKDOWN_INPUT_LENGTH,
+  });
+  const enContent = await generateEnglishArticleContent(
     {
       title: input.title,
       description: input.description,
-      htmlContent: enContent,
+      keywords: input.keywords,
+      markdownContent: markdown.markdown,
     },
+    options,
   );
-  validateEnglishSeoVersion(output);
+  const metadata = await generateEnglishMetadata(
+    {
+      title: input.title,
+      description: input.description,
+      keywords: input.keywords,
+      enContent,
+    },
+    options,
+  );
 
-  return output;
+  return {
+    ...metadata,
+    enContent: removeDuplicatedTitleFromMarkdown(enContent, metadata.enTitle),
+  };
 }

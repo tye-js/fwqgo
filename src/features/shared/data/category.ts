@@ -23,9 +23,6 @@ export async function getCategories() {
 }
 
 export async function getCategoryBySlug(slug: string) {
-  "use cache";
-  tagCache(cacheTags.categories, cacheTags.categorySlug(slug));
-
   try {
     const [category] = await readDb
       .select()
@@ -56,9 +53,6 @@ export async function getAllCategories() {
 }
 
 export async function getLeafCategories() {
-  "use cache";
-  tagCache(cacheTags.categories);
-
   try {
     // 获取所有分类
     const allCategories = await readDb.select().from(categories);
@@ -86,9 +80,6 @@ export async function getLeafCategories() {
 }
 
 export async function getLeafCategoriesAllData() {
-  "use cache";
-  tagCache(cacheTags.categories);
-
   try {
     // 获取所有分类
     const allCategories = await readDb.select().from(categories);

@@ -10,10 +10,12 @@ import PageCard from "@/features/public/components/page-card";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { decodeSlug } from "@fwqgo/core/utils";
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Compass } from "lucide-react";
+import { connection } from "next/server";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
@@ -27,18 +29,13 @@ export async function generateMetadata(
   const params = await props.params;
   const currentPage = Number.parseInt(params.pageNo, 10);
   const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
-  const { data: category, error } = await CategoryInfo(params.category);
-  if (error || !category)
-    return {
-      title: "服务器go",
-      description: "查看所有服务器相关的文章",
-    };
+  const readableName = decodeSlug(params.category).replace(/[-_]+/g, " ");
   return {
-    title: `${category.name}-服务器go`,
-    description: category.description ?? `${category.name}`,
-    keywords: category.keywords ?? `${category.name}`,
+    title: `${readableName}-服务器go`,
+    description: `${readableName}相关的服务器优惠、评测与选购文章。`,
+    keywords: readableName,
     alternates: {
-      canonical: `${getSiteUrl()}/fwq/${encodeURIComponent(category.slug)}/page/${pageNo}`,
+      canonical: `${getSiteUrl()}/fwq/${encodeURIComponent(params.category)}/page/${pageNo}`,
     },
   };
 }
@@ -50,6 +47,8 @@ const CategoryPageContent = async ({
 }: {
   paramsPromise: Promise<{ category: string; pageNo: string }>;
 }) => {
+  await connection();
+
   const params = await paramsPromise;
   const currentPage = Number.parseInt(params.pageNo, 10);
   const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : null;

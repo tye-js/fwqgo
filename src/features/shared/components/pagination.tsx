@@ -83,7 +83,7 @@ export function PaginationComponent({
           <PaginationPrevious
             aria-disabled={pageNo === 1}
             className={cn(pageNo === 1 && "hidden")}
-            href={getHref(pageNo - 1)}
+            href={pageNo === 1 ? undefined : getHref(pageNo - 1)}
           />
         </PaginationItem>
         {paginationItems.map((item, index) => (
@@ -101,7 +101,7 @@ export function PaginationComponent({
           <PaginationNext
             aria-disabled={pageNo === totalPage}
             className={cn(pageNo === totalPage && "hidden")}
-            href={getHref(pageNo + 1)}
+            href={pageNo === totalPage ? undefined : getHref(pageNo + 1)}
           />
         </PaginationItem>
       </PaginationContent>

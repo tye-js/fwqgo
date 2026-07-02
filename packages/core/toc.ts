@@ -1,4 +1,4 @@
-import { normalizeArticleHtml } from "@fwqgo/core/content";
+import { renderArticleContentHtml } from "@fwqgo/core/content";
 
 interface TocItem {
   id: string;
@@ -20,7 +20,7 @@ export function generateUniqueId(text: string): string {
 }
 // 为标题添加id
 export function addIdsToHeadings(content: string): string {
-  return normalizeArticleHtml(content);
+  return renderArticleContentHtml(content);
 }
 
 export function generateToc(content: string): TocItem[] {

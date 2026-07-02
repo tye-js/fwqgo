@@ -9,6 +9,7 @@ const registerSchema = z
   .object({
     username: z
       .string()
+      .trim()
       .min(3, "用户名至少3个字符")
       .max(20, "用户名最多20个字符")
       .regex(/^[a-zA-Z0-9_]+$/, "用户名只能包含字母、数字和下划线"),

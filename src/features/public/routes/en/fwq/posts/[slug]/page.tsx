@@ -3,26 +3,22 @@ import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { ArrowLeft, Clock, Tags } from "lucide-react";
 
 import { getEnglishPostWithTagsBySlug } from "@/features/public/data/post";
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
 import { ArticleShareActions } from "@/features/public/components/article-share-actions";
-import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
+import {
+  getOptimizedImageSrc,
+  isRenderableImageSrc,
+} from "@fwqgo/core/image-src";
+import { renderArticleContentHtml } from "@fwqgo/core/content";
 import { decodeSlug, formatDate } from "@fwqgo/core/utils";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
-}
-
-function toAbsoluteUrl(value: string | null | undefined) {
-  if (!value) return undefined;
-  try {
-    return new URL(value, getSiteUrl()).toString();
-  } catch {
-    return undefined;
-  }
 }
 
 type PageProps = {
@@ -32,59 +28,30 @@ type PageProps = {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const decodedSlug = decodeSlug(slug);
-  const { data, error } = await getEnglishPostWithTagsBySlug(decodedSlug);
-
-  if (error || !data?.post) {
-    return {
-      title: "Server deals - fwqgo",
-      description: "Server and VPS deal articles.",
-    };
-  }
-
-  const post = data.post;
-  if (!post.title || !post.content) {
-    return {
-      title: "Server deals - fwqgo",
-      description: "Server and VPS deal articles.",
-    };
-  }
   const canonicalUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(decodedSlug)}`;
-  const zhUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(post.slug)}`;
-  const description = post.description ?? post.title;
-  const imageUrl = toAbsoluteUrl(post.imgUrl);
+  const readableTitle = decodedSlug.replace(/[-_]+/g, " ");
+  const description = `${readableTitle} server and VPS deal article.`;
 
   return {
-    title: post.title,
+    title: `${readableTitle} - fwqgo`,
     description,
-    keywords: post.keywords ?? post.title,
+    keywords: readableTitle,
     alternates: {
       canonical: canonicalUrl,
-      languages: {
-        "zh-CN": zhUrl,
-        en: canonicalUrl,
-      },
     },
     openGraph: {
       type: "article",
-      title: post.title,
+      title: `${readableTitle} - fwqgo`,
       description,
       url: canonicalUrl,
       siteName: "fwqgo",
-      images: imageUrl
-        ? [
-            {
-              url: imageUrl,
-              width: 1200,
-              height: 630,
-              alt: post.title,
-            },
-          ]
-        : undefined,
     },
   };
 }
 
 async function EnglishPostContent({ params }: PageProps) {
+  await connection();
+
   const { slug } = await params;
   const decodedSlug = decodeSlug(slug);
   const { data, error } = await getEnglishPostWithTagsBySlug(decodedSlug);
@@ -129,7 +96,7 @@ async function EnglishPostContent({ params }: PageProps) {
           </div>
         </header>
 
-        {post.imgUrl ? (
+        {isRenderableImageSrc(post.imgUrl) ? (
           <div className="relative mt-6 aspect-[16/9] overflow-hidden rounded-lg border border-border/70 bg-muted/20 md:aspect-[21/9]">
             <Image
               src={getOptimizedImageSrc(post.imgUrl)}
@@ -144,8 +111,10 @@ async function EnglishPostContent({ params }: PageProps) {
         ) : null}
 
         <div
-          className="article-prose font-ui prose prose-zinc mt-8 max-w-none prose-headings:font-editorial prose-p:text-[17px] prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-accent prose-strong:text-foreground"
-          dangerouslySetInnerHTML={{ __html: post.content }}
+          className="article-prose font-ui prose prose-zinc mt-8 max-w-none prose-headings:font-editorial prose-p:text-[17px] prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-accent prose-a:underline prose-a:decoration-accent/55 prose-a:underline-offset-4 prose-a:transition-colors hover:prose-a:text-primary hover:prose-a:decoration-primary prose-strong:text-foreground"
+          dangerouslySetInnerHTML={{
+            __html: renderArticleContentHtml(post.content),
+          }}
         />
 
         {post.tags.length > 0 ? (

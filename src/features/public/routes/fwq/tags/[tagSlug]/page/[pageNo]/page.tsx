@@ -1,4 +1,4 @@
-import { getPostsWithTagsByTagSlug, getTagBySlug } from "@/features/public/data/tag";
+import { getPostsWithTagsByTagSlug } from "@/features/public/data/tag";
 import { getLatestPostsForSidebar } from "@/features/public/data/post";
 import ArticleCard from "@/features/public/components/article-card";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
@@ -10,6 +10,7 @@ import { notFound } from "next/navigation";
 import { Hash } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { connection } from "next/server";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
@@ -24,25 +25,14 @@ export async function generateMetadata(
   const decodedTagSlug = decodeSlug(params.tagSlug);
   const currentPage = Number.parseInt(params.pageNo, 10);
   const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
-  const { data: tag, error } = await getTagBySlug(decodedTagSlug);
-  if (error || !tag)
-    return {
-      title: "服务器go",
-      description: "查看所有服务器相关的文章",
-    };
+  const readableName = decodedTagSlug.replace(/[-_]+/g, " ");
   return {
-    title: `${tag.name}-服务器`,
-    description: tag.description ?? `${tag.name}的服务器,${tag.name}的VPS`,
-    keywords: tag.keywords ?? `${tag.name}的服务器,${tag.name}的VPS`,
+    title: `${readableName}-服务器`,
+    description: `${readableName}相关服务器、VPS、优惠和测评文章。`,
+    keywords: `${readableName}的服务器,${readableName}的VPS`,
     alternates: {
-      canonical: `${getSiteUrl()}/fwq/tags/${encodeURIComponent(tag.slug)}/page/${pageNo}`,
+      canonical: `${getSiteUrl()}/fwq/tags/${encodeURIComponent(decodedTagSlug)}/page/${pageNo}`,
     },
-    robots: tag.indexable
-      ? undefined
-      : {
-          index: false,
-          follow: true,
-        },
   };
 }
 
@@ -53,6 +43,8 @@ async function TagPageContent({
 }: {
   paramsPromise: Promise<{ tagSlug: string; pageNo: string }>;
 }) {
+  await connection();
+
   const params = await paramsPromise;
   const decodedTagSlug = decodeSlug(params.tagSlug);
   const currentPage = Number.parseInt(params.pageNo, 10);

@@ -3,7 +3,10 @@
 import Image from "next/image";
 import { useState } from "react";
 
-import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
+import {
+  getOptimizedImageSrc,
+  isRenderableImageSrc,
+} from "@fwqgo/core/image-src";
 
 export function SafePostImage({
   src,
@@ -18,7 +21,7 @@ export function SafePostImage({
 }) {
   const [failed, setFailed] = useState(false);
 
-  if (!src || failed) {
+  if (!isRenderableImageSrc(src) || failed) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,hsl(var(--muted)),hsl(var(--background)))] px-4 text-center">
         <span className="line-clamp-2 text-xs font-medium leading-5 text-muted-foreground">

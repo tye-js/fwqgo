@@ -1,7 +1,11 @@
 import * as cheerio from "cheerio";
 import puppeteer, { type Browser } from "puppeteer";
 
-import { normalizeArticleHtml } from "@fwqgo/core/content";
+import {
+  htmlToArticleMarkdown,
+  looksLikeHtmlContent,
+  normalizeArticleHtml,
+} from "@fwqgo/core/content";
 import RewriteArticle from "@/langchain/rewrite-article";
 import {
   mergeAffiliateReports,
@@ -64,7 +68,7 @@ const browserHeaders = {
   "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
 };
 const FETCH_TIMEOUT_MS = 15_000;
-const MAX_AI_INPUT_HTML_LENGTH = 20_000;
+const MAX_AI_INPUT_MARKDOWN_LENGTH = 14_000;
 
 const commonRemoveSelectors = [
   "script",
@@ -82,59 +86,6 @@ const commonRemoveSelectors = [
 
 const invisibleTextPattern =
   /[\u034f\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\ue000-\uf8ff\ufeff]/g;
-const whitespacePattern = /[ \t\f\v\u00a0]+/g;
-const allowedAiInputTags = new Set([
-  "a",
-  "blockquote",
-  "br",
-  "code",
-  "div",
-  "em",
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "li",
-  "ol",
-  "p",
-  "pre",
-  "strong",
-  "table",
-  "tbody",
-  "td",
-  "th",
-  "thead",
-  "tr",
-  "ul",
-]);
-const removeForAiSelectors = [
-  "img",
-  "picture",
-  "source",
-  "svg",
-  "video",
-  "audio",
-  "canvas",
-  "figure",
-  "figcaption",
-  "script",
-  "style",
-  "iframe",
-  "noscript",
-  "form",
-  "button",
-  "input",
-  "select",
-  "textarea",
-  ".wp-block-image",
-  ".gallery",
-  ".aligncenter",
-  ".alignleft",
-  ".alignright",
-  ".wp-caption",
-];
 
 const siteRules: SiteRule[] = [
   {
@@ -224,7 +175,10 @@ function createArticle(input: {
   recommendTagName?: string;
   diagnostics: ScrapeDiagnostics;
 }): ScrapedArticle {
-  const htmlContent = normalizeArticleHtml(input.htmlContent ?? "");
+  const content = input.htmlContent ?? "";
+  const htmlContent = looksLikeHtmlContent(content)
+    ? normalizeArticleHtml(content)
+    : content.trim();
 
   return {
     title: input.title ?? "",
@@ -290,95 +244,6 @@ function cleanInvisibleText($: cheerio.CheerioAPI) {
 
       node.data = node.data.replace(invisibleTextPattern, "");
     });
-}
-
-function normalizeTextNode(value: string) {
-  return value.replace(invisibleTextPattern, "").replace(whitespacePattern, " ");
-}
-
-function prepareHtmlForAiRewrite(content: string) {
-  const $ = cheerio.load(content, null, false);
-
-  $(removeForAiSelectors.join(",")).remove();
-  $("h1").remove();
-
-  $("*").each((_, element) => {
-    const $element = $(element);
-    const tagName = String($element.prop("tagName") ?? "").toLowerCase();
-
-    if (!tagName) {
-      return;
-    }
-
-    if (!allowedAiInputTags.has(tagName)) {
-      $element.replaceWith($element.contents());
-      return;
-    }
-
-    const href = tagName === "a" ? $element.attr("href") : undefined;
-    for (const attribute of Object.keys($element.attr() ?? {})) {
-      $element.removeAttr(attribute);
-    }
-
-    if (href) {
-      $element.attr("href", href);
-    }
-  });
-
-  $("*")
-    .contents()
-    .each((_, node) => {
-      if (!("data" in node) || typeof node.data !== "string") {
-        return;
-      }
-
-      node.data = normalizeTextNode(node.data);
-    });
-
-  $("br").replaceWith("\n");
-
-  $("*").each((_, element) => {
-    const $element = $(element);
-    const tagName = String($element.prop("tagName") ?? "").toLowerCase();
-    const text = $element.text().replace(/\s+/g, "").trim();
-
-    if (!text && tagName !== "br") {
-      $element.remove();
-    }
-  });
-
-  return ($.html() ?? "").replace(/\n{3,}/g, "\n\n").trim();
-}
-
-function limitHtmlForAiRewrite(content: string) {
-  if (content.length <= MAX_AI_INPUT_HTML_LENGTH) {
-    return { html: content, truncated: false };
-  }
-
-  const $ = cheerio.load(content, null, false);
-  const output: string[] = [];
-  let length = 0;
-
-  for (const element of $.root().children().toArray()) {
-    const html = $.html(element);
-    if (!html) {
-      continue;
-    }
-
-    if (length + html.length > MAX_AI_INPUT_HTML_LENGTH) {
-      break;
-    }
-
-    output.push(html);
-    length += html.length;
-  }
-
-  const html = output.join("").trim();
-
-  return {
-    html: html || content.slice(0, MAX_AI_INPUT_HTML_LENGTH),
-    truncated: true,
-  };
 }
 
 async function fetchWithCheerio(url: string) {
@@ -583,9 +448,9 @@ async function scrapeByRule(input: {
     diagnostics.affiliateReport = affiliateReport;
 
     const rawHtml = $content.html() ?? "";
-    const preparedAiInput = limitHtmlForAiRewrite(
-      prepareHtmlForAiRewrite(rawHtml),
-    );
+    const preparedAiInput = htmlToArticleMarkdown(rawHtml, {
+      maxLength: MAX_AI_INPUT_MARKDOWN_LENGTH,
+    });
     const scrapedTitle =
       selectedText(page$, input.rule.titleSelector) ||
       selectedText(page$, "title") ||
@@ -597,22 +462,22 @@ async function scrapeByRule(input: {
     diagnostics.scrapedTitle = scrapedTitle;
     diagnostics.scrapedDescription = scrapedDescription;
     diagnostics.cleanedHtmlLength = rawHtml.length;
-    diagnostics.aiInputLength = preparedAiInput.html.length;
+    diagnostics.aiInputLength = preparedAiInput.markdown.length;
     diagnostics.aiInputTruncated = preparedAiInput.truncated;
 
     if (preparedAiInput.truncated) {
-      diagnostics.warnings.push("AI 输入过长，已截取前半部分核心内容改写");
+      diagnostics.warnings.push("AI Markdown 输入过长，已按正文结构截取前半部分核心内容改写");
     }
 
-    if (preparedAiInput.html.trim()) {
+    if (preparedAiInput.markdown.trim()) {
       try {
-        const rewritten = await RewriteArticle(preparedAiInput.html, {
+        const rewritten = await RewriteArticle(preparedAiInput.markdown, {
           styleId: input.rewriteStyleId,
         });
         diagnostics.usedAiRewrite = true;
-        diagnostics.rewriteOutputLength = rewritten.htmlContent.length;
+        diagnostics.rewriteOutputLength = rewritten.markdownContent.length;
         return createArticle({
-          htmlContent: rewritten.htmlContent,
+          htmlContent: rewritten.markdownContent,
           title: rewritten.title,
           description: rewritten.description,
           keywords: rewritten.keywords,

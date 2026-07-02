@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Server } from "lucide-react";
 import { Suspense } from "react";
+import { connection } from "next/server";
 
 import Header from "@/features/public/components/header";
 import Footer from "@/features/public/components/footer";
@@ -16,6 +17,8 @@ export const metadata = {
 };
 
 async function ServersContent() {
+  await connection();
+
   const counts = await getServerOfferTopicCounts();
 
   return (

@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { ArrowLeft } from "lucide-react";
 
 import Footer from "@/features/public/components/footer";
@@ -27,6 +28,8 @@ export async function generateMetadata({ params }: PageProps) {
 }
 
 async function RegionContent({ params }: PageProps) {
+  await connection();
+
   const { region } = await params;
   const value = decodeSlug(region);
   const data = await getServerOfferCollection({ kind: "region", value });

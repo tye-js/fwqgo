@@ -7,7 +7,7 @@ import { users, sessions } from "@fwqgo/db/schema";
 import { eq } from "drizzle-orm";
 
 const loginSchema = z.object({
-  username: z.string().min(3),
+  username: z.string().trim().min(3),
   password: z.string().min(6),
 });
 

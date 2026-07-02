@@ -1,12 +1,15 @@
 import { eq } from "drizzle-orm";
 
-import { normalizeArticleHtml } from "@fwqgo/core/content";
+import { looksLikeHtmlContent, normalizeArticleHtml } from "@fwqgo/core/content";
 import { slugify } from "@fwqgo/core/utils";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { db } from "@fwqgo/db";
 import { categories, postTags, posts, tags } from "@fwqgo/db/schema";
 import { syncImageReferencesForPost } from "@/server/images/assets";
-import { shortenArticleOutboundLinks } from "@/server/links/outbound-short-link";
+import {
+  shortenArticleOutboundLinks,
+  shortenMarkdownOutboundLinks,
+} from "@/server/links/outbound-short-link";
 import { type CreatePostParams } from "@/types/post.types";
 
 export interface CreatePostInput {
@@ -39,6 +42,22 @@ export function getErrorMessage(error: unknown) {
   }
 
   return typeof error === "string" ? error : "未知错误";
+}
+
+export async function prepareArticleContentForStorage(content: string) {
+  const trimmedContent = content.trim();
+
+  if (!trimmedContent) {
+    return "";
+  }
+
+  if (looksLikeHtmlContent(trimmedContent)) {
+    return normalizeArticleHtml(
+      await shortenArticleOutboundLinks(trimmedContent),
+    );
+  }
+
+  return shortenMarkdownOutboundLinks(trimmedContent);
 }
 
 function normalizeTagName(name: string) {
@@ -139,8 +158,8 @@ export async function createPostRecordInTransaction(
   }
 
   const slug = slugify(postInput.title);
-  const normalizedContent = normalizeArticleHtml(
-    await shortenArticleOutboundLinks(postInput.content),
+  const normalizedContent = await prepareArticleContentForStorage(
+    postInput.content,
   );
 
   const [existingPost] = await tx
