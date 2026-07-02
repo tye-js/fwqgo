@@ -1,5 +1,5 @@
 import { type TagMain } from "@/types";
-import { db } from "@fwqgo/db";
+import { readDb } from "@fwqgo/db";
 import { postTags, tags } from "@fwqgo/db/schema";
 import { asc, eq, inArray } from "drizzle-orm";
 
@@ -10,7 +10,7 @@ export async function getTagsByPostIds(postIds: number[]) {
     return new Map<number, TagMain[]>();
   }
 
-  const rows = await db
+  const rows = await readDb
     .select({
       postId: postTags.postId,
       tag: {

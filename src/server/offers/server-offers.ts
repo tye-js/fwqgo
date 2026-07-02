@@ -14,7 +14,7 @@ import {
 
 import { slugify } from "@fwqgo/core/utils";
 import { cacheTags, revalidateSiteContent, tagCache } from "@fwqgo/cache/tags";
-import { db } from "@fwqgo/db";
+import { db, readDb } from "@fwqgo/db";
 import {
   affServiceProviders,
   posts,
@@ -606,7 +606,7 @@ export async function getServerOfferTopic(slug: string) {
   if (!topic) return null;
 
   try {
-    const offers = await db
+    const offers = await readDb
       .select({
         id: serverOffers.id,
         title: serverOffers.title,
@@ -698,7 +698,7 @@ export async function getServerOfferCollection(input: {
         : "线路";
 
   try {
-    const offers = await db
+    const offers = await readDb
       .select(serverOfferPublicSelect())
       .from(serverOffers)
       .where(and(eq(serverOffers.visible, true), eq(field, value)))
@@ -731,7 +731,7 @@ export async function getServerOfferTopicCounts() {
   try {
     const result = await Promise.all(
       offerTopics.map(async (topic) => {
-        const [row] = await db
+        const [row] = await readDb
           .select({ count: sql<number>`count(*)` })
           .from(serverOffers)
           .where(topicWhere(topic));
@@ -751,7 +751,7 @@ export async function getLatestServerOffers(limit = 8) {
   tagCache(cacheTags.serverOffers);
 
   try {
-    return await db
+    return await readDb
       .select({
         id: serverOffers.id,
         title: serverOffers.title,
@@ -777,7 +777,7 @@ export async function getLatestServerOffers(limit = 8) {
 }
 
 export async function getAdminServerOffers(limit = 80) {
-  return db
+  return readDb
     .select({
       id: serverOffers.id,
       title: serverOffers.title,
@@ -907,7 +907,7 @@ export async function getRelatedServerOffersForPost(input: {
     ),
   ].filter(Boolean);
 
-  return db
+  return readDb
     .select({
       id: serverOffers.id,
       title: serverOffers.title,

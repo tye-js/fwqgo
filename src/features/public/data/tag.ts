@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 
 import { slugify } from "@fwqgo/core/utils";
-import { db } from "@fwqgo/db";
+import { readDb } from "@fwqgo/db";
 import { attachTagsToPosts } from "@fwqgo/db/post-tags";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { postTags, posts, tags } from "@fwqgo/db/schema";
@@ -11,7 +11,7 @@ export async function getTagBySlug(tagSlug: string) {
   tagCache(cacheTags.tags, cacheTags.tagSlug(tagSlug));
 
   try {
-    const [tag] = await db
+    const [tag] = await readDb
       .select({
         id: tags.id,
         name: tags.name,
@@ -41,7 +41,7 @@ export async function getPostsWithTagsByTagSlug(
     const currentPage = Number.isFinite(pageNo) && pageNo > 0 ? pageNo : 1;
 
     // 首先获取标签信息
-    const [tag] = await db
+    const [tag] = await readDb
       .select({
         id: tags.id,
         name: tags.name,
@@ -58,14 +58,14 @@ export async function getPostsWithTagsByTagSlug(
       return { data: null };
     }
 
-    const [countResult] = await db
+    const [countResult] = await readDb
       .select({ count: count() })
       .from(postTags)
       .innerJoin(posts, eq(posts.id, postTags.postId))
       .where(and(eq(postTags.tagId, tag.id), eq(posts.published, true)));
 
     // 获取该标签下的文章
-    const tagPosts = await db
+    const tagPosts = await readDb
       .select({
         id: posts.id,
         title: posts.title,
@@ -106,7 +106,7 @@ export async function getTagList({
   "use cache";
   tagCache(cacheTags.tags);
 
-  const result = await db
+  const result = await readDb
     .select()
     .from(tags)
     .offset((page - 1) * pageSize)
@@ -119,7 +119,7 @@ export async function getTagCount() {
   "use cache";
   tagCache(cacheTags.tags);
 
-  const [result] = await db.select({ count: count() }).from(tags);
+  const [result] = await readDb.select({ count: count() }).from(tags);
   return { data: result?.count ?? 0 };
 }
 
@@ -127,7 +127,7 @@ export async function getTagSearchList() {
   "use cache";
   tagCache(cacheTags.tags);
 
-  const result = await db
+  const result = await readDb
     .select({
       id: tags.id,
       name: tags.name,
@@ -151,7 +151,7 @@ export async function findBestTagMatch(keyword: string) {
 
   const normalizedSlug = slugify(normalizedKeyword);
 
-  const [tag] = await db
+  const [tag] = await readDb
     .select({
       id: tags.id,
       name: tags.name,

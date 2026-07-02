@@ -1,6 +1,6 @@
 "use server";
 
-import { db } from "@fwqgo/db";
+import { readDb } from "@fwqgo/db";
 import { categories } from "@fwqgo/db/schema";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { asc, eq, isNull } from "drizzle-orm";
@@ -10,7 +10,7 @@ export async function getCategories() {
   tagCache(cacheTags.categories);
 
   try {
-    const categoriesWithChildren = await db.query.categories.findMany({
+    const categoriesWithChildren = await readDb.query.categories.findMany({
       where: isNull(categories.parentId),
       orderBy: asc(categories.id),
       with: { children: true },
@@ -27,7 +27,7 @@ export async function getCategoryBySlug(slug: string) {
   tagCache(cacheTags.categories, cacheTags.categorySlug(slug));
 
   try {
-    const [category] = await db
+    const [category] = await readDb
       .select()
       .from(categories)
       .where(eq(categories.slug, slug))
@@ -41,7 +41,7 @@ export async function getCategoryBySlug(slug: string) {
 
 export async function getAllCategories() {
   try {
-    const categoriesData = await db
+    const categoriesData = await readDb
       .select({
         id: categories.id,
         name: categories.name,
@@ -61,7 +61,7 @@ export async function getLeafCategories() {
 
   try {
     // 获取所有分类
-    const allCategories = await db.select().from(categories);
+    const allCategories = await readDb.select().from(categories);
 
     // 找出所有有子分类的分类ID
     const parentIds = new Set(
@@ -91,7 +91,7 @@ export async function getLeafCategoriesAllData() {
 
   try {
     // 获取所有分类
-    const allCategories = await db.select().from(categories);
+    const allCategories = await readDb.select().from(categories);
 
     // 找出所有有子分类的分类ID
     const parentIds = new Set(

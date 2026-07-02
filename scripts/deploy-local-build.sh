@@ -242,6 +242,8 @@ mkdir -p "$releases_dir" "$shared_dir" "$upload_dir"
 if [[ ! -f "$shared_dir/.env.production" ]]; then
   cat > "$shared_dir/.env.production.example" <<EOF
 DATABASE_URL=postgresql://user:password@127.0.0.1:5432/fwqgo
+CMS_PASSWORD=change-me
+READ_PASSWORD=change-me
 NEXT_PUBLIC_URL=https://fwqgo.com
 NEXT_PUBLIC_CMS_URL=https://cms.fwqgo.com
 CMS_BASIC_AUTH_USERNAME=change-me

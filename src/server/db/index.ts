@@ -1,1 +1,1 @@
-export { db } from "@fwqgo/db";
+export { db, readDb, writeDb } from "@fwqgo/db";

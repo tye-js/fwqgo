@@ -1,4 +1,4 @@
-import { db } from "@fwqgo/db";
+import { readDb } from "@fwqgo/db";
 import { posts, categories, tags } from "@fwqgo/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { offerTopics } from "@/server/offers/server-offers";
@@ -48,7 +48,7 @@ export async function GET() {
   const baseUrl = getBaseUrl();
 
   // 获取所有已发布的文章
-  const postsData = await db
+  const postsData = await readDb
     .select({
       slug: posts.slug,
       enSlug: posts.enSlug,
@@ -59,7 +59,7 @@ export async function GET() {
     .where(eq(posts.published, true))
     .orderBy(desc(posts.createdAt));
 
-  const [changeDate] = await db
+  const [changeDate] = await readDb
     .select({ updatedAt: posts.updatedAt })
     .from(posts)
     .where(eq(posts.published, true))
@@ -67,7 +67,7 @@ export async function GET() {
     .limit(1);
 
   // 获取所有分类
-  const categoriesData = await db
+  const categoriesData = await readDb
     .select({
       slug: categories.slug,
       updatedAt: categories.updatedAt,
@@ -75,7 +75,7 @@ export async function GET() {
     .from(categories);
 
   // 获取所有标签
-  const tagsData = await db
+  const tagsData = await readDb
     .select({
       slug: tags.slug,
       updatedAt: tags.updatedAt,

@@ -1,12 +1,12 @@
 "use server";
 
-import { db } from "@fwqgo/db";
+import { writeDb } from "@fwqgo/db";
 import { posts } from "@fwqgo/db/schema";
 import { eq, sql } from "drizzle-orm";
 
 export async function incrementPostViews({ slug }: { slug: string }) {
   try {
-    const updatedPosts = await db
+    const updatedPosts = await writeDb
       .update(posts)
       .set({
         views: sql`${posts.views} + 1`,
