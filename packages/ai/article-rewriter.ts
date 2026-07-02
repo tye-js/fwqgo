@@ -30,7 +30,23 @@ export interface ArticleRewriteOutput {
   recommendTagName: string;
 }
 
+export interface EnglishSeoVersionOutput {
+  enTitle: string;
+  enSlug: string;
+  enDescription: string;
+  enKeywords: string[];
+  enContent: string;
+}
+
 type ArticleMetadataOutput = Omit<ArticleRewriteOutput, "htmlContent">;
+
+type EnglishSeoVersionRawOutput = Partial<{
+  enTitle: string;
+  enSlug: string;
+  enDescription: string;
+  enKeywords: unknown;
+  enContent: string;
+}>;
 
 type ChatCompletionResponse = {
   choices?: Array<{
@@ -161,6 +177,48 @@ function buildMetadataPrompt(
           : defaultMetadataStylePrompt,
     },
   );
+}
+
+function buildEnglishSeoVersionPrompt(input: {
+  title: string;
+  description: string | null;
+  keywords: string | null;
+  htmlContent: string;
+}) {
+  return `You are an SEO editor for an English VPS/server deals website.
+
+Translate and localize this Chinese hosting deal article into an English SEO version.
+
+Requirements:
+1. Return only a valid JSON object.
+2. Do not use Markdown code fences.
+3. Keep the HTML structure in enContent. Use headings starting from h2.
+4. Preserve factual details: provider names, prices, CPU, RAM, storage, bandwidth, locations, routes, promo codes, coupons and URLs.
+5. Do not invent missing specs, prices, discounts or claims.
+6. Keep affiliate links and short links unchanged.
+7. enSlug must be short, lowercase, ASCII only, words separated by hyphens.
+8. enKeywords should contain 5 to 10 English SEO keywords.
+
+JSON shape:
+{
+  "enTitle": "English SEO title",
+  "enSlug": "english-seo-slug",
+  "enDescription": "English meta description, within 160 characters",
+  "enKeywords": ["keyword 1", "keyword 2"],
+  "enContent": "<p>English HTML content...</p>"
+}
+
+Chinese title:
+${input.title}
+
+Chinese description:
+${input.description ?? ""}
+
+Chinese keywords:
+${input.keywords ?? ""}
+
+Chinese HTML:
+${input.htmlContent.slice(0, MAX_METADATA_INPUT_LENGTH)}`;
 }
 
 function ensureMetadataPromptPlaceholders(template: string) {
@@ -296,6 +354,82 @@ function removeDuplicatedTitleFromHtml(htmlContent: string, title: string) {
   }
 
   return $.html();
+}
+
+function normalizeEnglishSlug(value: string, fallback: string) {
+  const raw = value.trim() || fallback;
+  const slug = raw
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 100);
+
+  return slug || "server-deal";
+}
+
+function normalizeEnglishSeoVersion(
+  raw: EnglishSeoVersionRawOutput,
+  fallback: {
+    title: string;
+    description: string | null;
+    htmlContent: string;
+  },
+): EnglishSeoVersionOutput {
+  const enTitle =
+    typeof raw.enTitle === "string" && raw.enTitle.trim()
+      ? raw.enTitle.trim()
+      : fallback.title;
+  const enContent =
+    typeof raw.enContent === "string" && raw.enContent.trim()
+      ? cleanHtmlText(raw.enContent)
+      : fallback.htmlContent;
+  const enDescription =
+    typeof raw.enDescription === "string" && raw.enDescription.trim()
+      ? raw.enDescription.trim().slice(0, 180)
+      : (fallback.description ?? enTitle).slice(0, 180);
+
+  return {
+    enTitle,
+    enSlug: normalizeEnglishSlug(
+      typeof raw.enSlug === "string" ? raw.enSlug : "",
+      enTitle,
+    ),
+    enDescription,
+    enKeywords: normalizeStringArray(raw.enKeywords).slice(0, 10),
+    enContent: removeDuplicatedTitleFromHtml(enContent, enTitle),
+  };
+}
+
+function validateEnglishSeoVersion(output: EnglishSeoVersionOutput) {
+  const issues: string[] = [];
+
+  if (output.enTitle.length < 8) {
+    issues.push("英文标题过短");
+  }
+
+  if (!/^[a-z0-9-]+$/.test(output.enSlug)) {
+    issues.push("英文 slug 必须为小写字母、数字和连字符");
+  }
+
+  if (output.enDescription.length < 30) {
+    issues.push("英文摘要过短");
+  }
+
+  if (output.enKeywords.length === 0) {
+    issues.push("英文关键词为空");
+  }
+
+  if (output.enContent.length < MIN_REWRITTEN_HTML_LENGTH) {
+    issues.push("英文正文过短");
+  }
+
+  if (issues.length > 0) {
+    throw createReadableError("英文 SEO 版本生成失败：返回字段不完整", issues.join("、"));
+  }
 }
 
 function getAiProviderErrorMessage(input: {
@@ -515,4 +649,66 @@ export async function rewriteArticleWithAi(
     ...metadata,
     htmlContent: removeDuplicatedTitleFromHtml(htmlContent, metadata.title),
   };
+}
+
+export async function generateEnglishSeoVersion(
+  input: {
+    title: string;
+    description: string | null;
+    keywords: string | null;
+    htmlContent: string;
+  },
+  options: { styleId?: number } = {},
+): Promise<EnglishSeoVersionOutput> {
+  const config = await getActiveAiRewriteConfig(options.styleId);
+  const timeoutMs = getAiRewriteTimeoutMs();
+
+  if (!config) {
+    throw createReadableError(
+      "英文 SEO 生成未启用",
+      "请先在后台「内容生产 - 改写接口配置」启用一套默认配置",
+    );
+  }
+
+  if (!config.apiKey) {
+    throw createReadableError(
+      "AI 改写配置不完整",
+      `「${config.name}」缺少 API Key`,
+    );
+  }
+
+  const normalizedContent = input.htmlContent.trim();
+  if (normalizedContent.length < MIN_AI_INPUT_LENGTH) {
+    throw createReadableError(
+      "英文 SEO 生成输入过短",
+      `中文正文只有 ${normalizedContent.length} 个字符`,
+    );
+  }
+
+  const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/v1/chat/completions`;
+  const responseText = await requestChatCompletion({
+    config,
+    endpoint,
+    timeoutMs,
+    maxTokens: Math.min(config.maxTokens, 8192),
+    responseFormat: { type: "json_object" },
+    stepName: "英文 SEO 版本生成",
+    systemPrompt:
+      "You only output one valid JSON object. Do not output Markdown, explanations or extra text.",
+    userPrompt: buildEnglishSeoVersionPrompt({
+      ...input,
+      htmlContent: normalizedContent,
+    }),
+  });
+  const output = normalizeEnglishSeoVersion(
+    parseJsonResponse<EnglishSeoVersionRawOutput>(responseText),
+    {
+      title: input.title,
+      description: input.description,
+      htmlContent: normalizedContent,
+    },
+  );
+  validateEnglishSeoVersion(output);
+
+  return output;
 }

@@ -3,14 +3,17 @@ import * as cheerio from "cheerio";
 
 import RewriteArticle from "@/langchain/rewrite-article";
 import { normalizeArticleHtml } from "@fwqgo/core/content";
+import { slugify } from "@fwqgo/core/utils";
 import {
   createPostRecordInTransaction,
   getErrorMessage,
 } from "@/server/posts/create-post-record";
+import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { db } from "@fwqgo/db";
 import {
   aiRewriteTasks,
   aiTaskSteps,
+  posts,
   sourceMaterials,
 } from "@fwqgo/db/schema";
 import { syncImageReferencesForPost } from "@/server/images/assets";
@@ -21,6 +24,8 @@ import {
   type ScrapeDiagnostics,
 } from "@fwqgo/scrape/article-scraper";
 import { rewriteAffiliateLinks } from "@fwqgo/scrape/affiliate-link-rewriter";
+import { generateEnglishSeoVersion } from "@fwqgo/ai/article-rewriter";
+import { shortenArticleOutboundLinks } from "@/server/links/outbound-short-link";
 
 const runningTaskIds = new Set<number>();
 
@@ -263,6 +268,222 @@ function articleFromTaskSnapshot(
   };
 }
 
+async function getUniqueEnglishSlug(baseSlug: string, postId: number) {
+  const normalizedBaseSlug = slugify(baseSlug) || "server-deal";
+
+  for (let index = 0; index < 20; index += 1) {
+    const candidate =
+      index === 0 ? normalizedBaseSlug : `${normalizedBaseSlug}-${index + 1}`;
+    const [existing] = await db
+      .select({ id: posts.id })
+      .from(posts)
+      .where(and(eq(posts.enSlug, candidate), sql`${posts.id} <> ${postId}`))
+      .limit(1);
+
+    if (!existing) {
+      return candidate;
+    }
+  }
+
+  return `${normalizedBaseSlug}-${postId}`;
+}
+
+async function createEnglishSeoTask(input: {
+  parentTask: typeof aiRewriteTasks.$inferSelect;
+  post: { id: number; title: string };
+}) {
+  const sourceUrl = `post://${input.post.id}/english`;
+  const [existing] = await db
+    .select({ id: aiRewriteTasks.id })
+    .from(aiRewriteTasks)
+    .where(
+      and(
+        eq(aiRewriteTasks.sourceType, "english"),
+        eq(aiRewriteTasks.postId, input.post.id),
+        inArray(aiRewriteTasks.status, ["pending", "running", "succeeded"]),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    return existing.id;
+  }
+
+  const [task] = await db
+    .insert(aiRewriteTasks)
+    .values({
+      sourceMaterialId: null,
+      sourceUrl,
+      sourceType: "english",
+      sourceTitle: input.post.title,
+      status: "pending",
+      progress: 0,
+      currentStep: "等待生成英文 SEO 版本",
+      categoryId: input.parentTask.categoryId,
+      rewriteStyleId: input.parentTask.rewriteStyleId,
+      postId: input.post.id,
+      resultTitle: input.post.title,
+    })
+    .returning({ id: aiRewriteTasks.id });
+
+  if (!task) {
+    throw new Error("英文 SEO 任务创建失败");
+  }
+
+  return task.id;
+}
+
+async function runEnglishSeoTask(
+  claimedTask: typeof aiRewriteTasks.$inferSelect,
+) {
+  const attempt = claimedTask.attempts;
+  let activeStep = {
+    key: "english_generate",
+    name: "生成英文 SEO 版本",
+    attempt,
+    progress: 20,
+  };
+
+  try {
+    if (!claimedTask.postId) {
+      throw new Error("英文 SEO 任务缺少关联草稿文章");
+    }
+
+    const [post] = await db
+      .select({
+        id: posts.id,
+        title: posts.title,
+        description: posts.description,
+        keywords: posts.keywords,
+        content: posts.content,
+        enSlug: posts.enSlug,
+      })
+      .from(posts)
+      .where(eq(posts.id, claimedTask.postId))
+      .limit(1);
+
+    if (!post) {
+      throw new Error("关联草稿文章不存在");
+    }
+
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "english_generate",
+      stepName: "生成英文 SEO 版本",
+      status: "running",
+      progress: 25,
+      message: "正在调用 AI 生成英文标题、摘要、关键词和正文",
+    });
+    await updateTask(claimedTask.id, {
+      progress: 35,
+      currentStep: "生成英文 SEO 版本",
+      resultTitle: post.title,
+      scrapedTitle: post.title,
+      scrapedDescription: post.description,
+      scrapedHtml: post.content.slice(0, 60_000),
+      aiInputLength: post.content.length,
+    });
+
+    const english = await generateEnglishSeoVersion(
+      {
+        title: post.title,
+        description: post.description,
+        keywords: post.keywords,
+        htmlContent: post.content,
+      },
+      { styleId: claimedTask.rewriteStyleId ?? undefined },
+    );
+    const enSlug = await getUniqueEnglishSlug(english.enSlug, post.id);
+    const enContent = normalizeArticleHtml(
+      await shortenArticleOutboundLinks(english.enContent),
+    );
+
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "english_generate",
+      stepName: "生成英文 SEO 版本",
+      status: "success",
+      progress: 72,
+      message: `英文输出 ${enContent.length} 字符`,
+      payload: {
+        enTitle: english.enTitle,
+        enSlug,
+        enKeywords: english.enKeywords,
+      },
+    });
+
+    activeStep = {
+      key: "english_save",
+      name: "写入英文草稿",
+      attempt,
+      progress: 82,
+    };
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "english_save",
+      stepName: "写入英文草稿",
+      status: "running",
+      progress: 82,
+      message: "正在写入文章英文 SEO 字段",
+    });
+    await updateTask(claimedTask.id, {
+      progress: 82,
+      currentStep: "写入英文 SEO 草稿",
+      rewriteOutputLength: enContent.length,
+    });
+
+    await db
+      .update(posts)
+      .set({
+        enTitle: english.enTitle,
+        enSlug,
+        enDescription: english.enDescription,
+        enKeywords: english.enKeywords.join(","),
+        enContent,
+        enUpdatedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(posts.id, post.id));
+
+    await syncImageReferencesForPost(post.id);
+    revalidateSiteContent([
+      cacheTags.post(post.id),
+      cacheTags.postSlug(enSlug),
+    ]);
+
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "english_save",
+      stepName: "写入英文草稿",
+      status: "success",
+      progress: 100,
+      message: `英文 SEO 版本已写入：/en/fwq/posts/${enSlug}`,
+      payload: { postId: post.id, enSlug },
+    });
+    await updateTask(claimedTask.id, {
+      status: "succeeded",
+      progress: 100,
+      currentStep: "英文 SEO 版本已生成",
+      resultTitle: english.enTitle,
+      diagnostics: JSON.stringify({
+        sourceHost: "english-seo",
+        strategy: "english-seo-version",
+        usedAiRewrite: true,
+        aiInputLength: post.content.length,
+        rewriteOutputLength: enContent.length,
+        warnings: [],
+      }),
+      finishedAt: new Date(),
+    });
+  } catch (error) {
+    await failTask(claimedTask, error, activeStep);
+  }
+}
+
 async function createArticleFromManualTask(input: {
   sourceTitle: string | null;
   sourceContent: string | null;
@@ -405,6 +626,11 @@ export async function runAiRewriteTask(taskId: number) {
       .returning();
 
     if (!claimedTask) {
+      return;
+    }
+
+    if (claimedTask.sourceType === "english") {
+      await runEnglishSeoTask(claimedTask);
       return;
     }
 
@@ -613,6 +839,7 @@ export async function runAiRewriteTask(taskId: number) {
         message: "图片引用同步完成",
       });
 
+      let offerExtractionStatus: "pending" | "success" | "failed" = "pending";
       try {
         activeStep = {
           key: "offer_extract",
@@ -646,6 +873,7 @@ export async function runAiRewriteTask(taskId: number) {
             offerExtraction: "success",
           }),
         });
+        offerExtractionStatus = "success";
       } catch (offerError) {
         console.error("Server offer extraction failed:", offerError);
         await upsertTaskStep({
@@ -664,6 +892,42 @@ export async function runAiRewriteTask(taskId: number) {
             manualRequired,
             offerExtraction: "failed",
           }),
+        });
+        offerExtractionStatus = "failed";
+      }
+      try {
+        const englishTaskId = await createEnglishSeoTask({
+          parentTask: claimedTask,
+          post,
+        });
+        await upsertTaskStep({
+          taskId,
+          attempt,
+          stepKey: "english_enqueue",
+          stepName: "派生英文 SEO 任务",
+          status: "success",
+          progress: 100,
+          message: `英文 SEO 任务已创建 #${englishTaskId}`,
+          payload: { taskId: englishTaskId, postId: post.id },
+        });
+        await updateTask(taskId, {
+          currentStep: `${finishedStepText({
+            manualRequired,
+            offerExtraction: offerExtractionStatus,
+          })}，英文 SEO 任务已创建`,
+        });
+        await enqueueAiRewriteTask(englishTaskId);
+      } catch (englishTaskError) {
+        console.error("English SEO task creation failed:", englishTaskError);
+        await upsertTaskStep({
+          taskId,
+          attempt,
+          stepKey: "english_enqueue",
+          stepName: "派生英文 SEO 任务",
+          status: "failed",
+          progress: 100,
+          message: "中文草稿已保存，但英文 SEO 任务创建失败",
+          error: getErrorMessage(englishTaskError),
         });
       }
       await updateSourceMaterialStatus(

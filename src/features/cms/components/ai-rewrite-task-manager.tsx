@@ -306,6 +306,7 @@ function taskSourceTypeLabel(value: string) {
     text: "手动文本",
     email: "邮件素材",
     file: "文件导入",
+    english: "英文生成",
   };
 
   return labels[value] ?? value;
@@ -314,6 +315,10 @@ function taskSourceTypeLabel(value: string) {
 function taskSourceTitle(task: RewriteTask) {
   if (task.sourceType === "url") {
     return task.sourceUrl;
+  }
+
+  if (task.sourceType === "english") {
+    return `英文 SEO 版本：${task.postTitle ?? task.resultTitle ?? task.sourceTitle ?? task.sourceUrl}`;
   }
 
   return task.sourceTitle ?? task.sourceUrl;
