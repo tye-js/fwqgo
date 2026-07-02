@@ -169,6 +169,13 @@
       "when": 1782935574120,
       "tag": "0023_yielding_blade",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1783000163769,
+      "tag": "0024_ambitious_captain_cross",
+      "breakpoints": true
     }
   ]
 }

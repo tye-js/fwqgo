@@ -1,5 +1,7 @@
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import {
+  defaultEnglishMetadataStylePrompt,
+  defaultEnglishStylePrompt,
   defaultMetadataStylePrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
 import * as cheerio from "cheerio";
@@ -128,6 +130,18 @@ function getMetadataStylePrompt(value?: string | null) {
   return trimmed && trimmed.length > 0 ? trimmed : defaultMetadataStylePrompt;
 }
 
+function getEnglishStylePrompt(value?: string | null) {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : defaultEnglishStylePrompt;
+}
+
+function getEnglishMetadataStylePrompt(value?: string | null) {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0
+    ? trimmed
+    : defaultEnglishMetadataStylePrompt;
+}
+
 function buildMetadataPrompt(
   htmlContent: string,
   metadataStylePrompt?: string | null,
@@ -202,7 +216,7 @@ function buildEnglishMetadataPrompt(input: {
   enContent: string;
   metadataStylePrompt?: string | null;
 }) {
-  const style = getMetadataStylePrompt(input.metadataStylePrompt);
+  const style = getEnglishMetadataStylePrompt(input.metadataStylePrompt);
 
   return `You are an SEO editor for an English VPS/server deals website.
 
@@ -699,7 +713,7 @@ export async function generateEnglishSeoVersion(
       userPrompt: buildEnglishContentPrompt({
         ...input,
         htmlContent: normalizedContent,
-        stylePrompt: config.stylePrompt,
+        stylePrompt: getEnglishStylePrompt(config.englishStylePrompt),
       }),
     }),
   );
@@ -732,7 +746,7 @@ export async function generateEnglishSeoVersion(
       description: input.description,
       keywords: input.keywords,
       enContent,
-      metadataStylePrompt: config.metadataStylePrompt,
+      metadataStylePrompt: config.englishMetadataStylePrompt,
     }),
   });
   const output = normalizeEnglishSeoVersion(

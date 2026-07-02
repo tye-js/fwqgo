@@ -37,6 +37,8 @@ import {
 } from "@/lib/admin-toast";
 import {
   defaultBaseRewritePrompt,
+  defaultEnglishMetadataStylePrompt,
+  defaultEnglishStylePrompt,
   defaultMetadataPrompt,
   defaultMetadataStylePrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
@@ -236,7 +238,7 @@ function ConfigForm({
           name="metadataPrompt"
           value={config?.metadataPrompt ?? defaultMetadataPrompt}
         />
-        <Label>正文改写风格</Label>
+        <Label>中文正文改写风格</Label>
         <Textarea
           name="stylePrompt"
           className="min-h-28"
@@ -246,7 +248,7 @@ function ConfigForm({
       </div>
 
       <div className="space-y-2">
-        <Label>标题 / SEO 生成风格</Label>
+        <Label>中文标题 / SEO 生成风格</Label>
         <Textarea
           name="metadataStylePrompt"
           className="min-h-32"
@@ -256,8 +258,40 @@ function ConfigForm({
           required
         />
         <p className="text-xs leading-5 text-muted-foreground">
-          这里只影响标题、摘要、关键词、标签和英文 SEO 元信息，不会改变正文语气、结构或段落表达。
+          这里只影响中文标题、摘要、关键词、标签和推荐标签，不会改变正文语气、结构或段落表达。
         </p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-2">
+          <Label>英文正文生成风格</Label>
+          <Textarea
+            name="englishStylePrompt"
+            className="min-h-32"
+            defaultValue={
+              config?.englishStylePrompt ?? defaultEnglishStylePrompt
+            }
+            required
+          />
+          <p className="text-xs leading-5 text-muted-foreground">
+            只影响英文正文翻译和本地化表达，不影响中文正文。
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Label>英文标题 / SEO 生成风格</Label>
+          <Textarea
+            name="englishMetadataStylePrompt"
+            className="min-h-32"
+            defaultValue={
+              config?.englishMetadataStylePrompt ??
+              defaultEnglishMetadataStylePrompt
+            }
+            required
+          />
+          <p className="text-xs leading-5 text-muted-foreground">
+            只影响英文标题、slug、摘要和关键词，不影响中文 SEO。
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-4">

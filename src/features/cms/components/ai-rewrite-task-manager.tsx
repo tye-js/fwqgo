@@ -217,10 +217,12 @@ function FailedTaskPanel({
   tasks,
   retryingId,
   onRetry,
+  basePath,
 }: {
   tasks: RewriteTask[];
   retryingId: number | null;
   onRetry: (taskId: number) => void;
+  basePath: string;
 }) {
   const failedTasks = tasks.filter((task) => task.status === "failed").slice(0, 4);
 
@@ -229,7 +231,10 @@ function FailedTaskPanel({
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-destructive/25 bg-destructive/5 p-4">
+    <div
+      id="failed-tasks"
+      className="scroll-mt-24 space-y-3 rounded-lg border border-destructive/25 bg-destructive/5 p-4"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
           <p className="text-sm font-semibold text-destructive">最近失败任务</p>
@@ -265,7 +270,7 @@ function FailedTaskPanel({
             <TaskFailureMessage error={task.error} />
             <div className="flex items-center justify-end gap-2">
               <Button asChild size="sm" variant="outline">
-                <Link href={`/end/ai-rewrite/tasks/${task.id}`}>详情</Link>
+                <Link href={`${basePath}/${task.id}`}>详情</Link>
               </Button>
               <Button
                 type="button"
@@ -480,10 +485,14 @@ export function AiRewriteTaskManager({
   tasks,
   categories,
   rewriteStyles,
+  basePath = "/end/ai-rewrite/tasks",
+  showCreateForm = true,
 }: {
   tasks: RewriteTask[];
   categories: Option[];
   rewriteStyles: RewriteStyleOption[];
+  basePath?: string;
+  showCreateForm?: boolean;
 }) {
   const router = useRouter();
   const [isSubmitting, startSubmitTransition] = useTransition();
@@ -563,118 +572,124 @@ export function AiRewriteTaskManager({
 
   return (
     <div className="space-y-5">
-      <form
-        action={handleSubmit}
-        encType="multipart/form-data"
-        className="grid gap-3 rounded-lg border border-border/70 bg-background p-4 shadow-sm lg:grid-cols-[150px_minmax(0,1fr)_180px_180px_auto]"
-      >
-        <Select name="sourceType" value={sourceType} onValueChange={setSourceType}>
-          <SelectTrigger className="min-h-11">
-            <SelectValue placeholder="素材类型" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="url">网址</SelectItem>
-            <SelectItem value="text">手动文本</SelectItem>
-            <SelectItem value="email">邮件素材</SelectItem>
-            <SelectItem value="file">文件导入</SelectItem>
-          </SelectContent>
-        </Select>
-        <div className="space-y-2">
-          {sourceType === "url" ? (
-            <Textarea
-              name="sourceUrls"
-              placeholder="输入要采集并改写的文章 URL，支持一行一个批量提交"
-              required
-              className="min-h-11 lg:min-h-11"
-            />
-          ) : sourceType === "file" ? (
-            <>
-              <Input
-                name="sourceTitle"
-                placeholder="素材标题，可留空使用文件名"
-                className="min-h-11"
-              />
-              <Input
-                name="sourceFile"
-                type="file"
-                accept=".txt,.md,.markdown,.html,.htm,.csv,text/plain,text/markdown,text/html,text/csv"
-                required
-                className="min-h-11"
-              />
-              <p className="text-xs leading-5 text-muted-foreground">
-                支持 txt、md、html、csv，单个文件不超过 2MB。导入后会清洗、替换返利链接并改写为草稿。
-              </p>
-            </>
-          ) : (
-            <>
-              <Input
-                name="sourceTitle"
-                placeholder={sourceType === "email" ? "邮件标题" : "素材标题"}
-                required
-                className="min-h-11"
-              />
+      {showCreateForm ? (
+        <form
+          action={handleSubmit}
+          encType="multipart/form-data"
+          className="grid gap-3 rounded-lg border border-border/70 bg-background p-4 shadow-sm lg:grid-cols-[150px_minmax(0,1fr)_180px_180px_auto]"
+        >
+          <Select name="sourceType" value={sourceType} onValueChange={setSourceType}>
+            <SelectTrigger className="min-h-11">
+              <SelectValue placeholder="素材类型" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="url">网址</SelectItem>
+              <SelectItem value="text">手动文本</SelectItem>
+              <SelectItem value="email">邮件素材</SelectItem>
+              <SelectItem value="file">文件导入</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="space-y-2">
+            {sourceType === "url" ? (
               <Textarea
-                name="sourceContent"
-                placeholder={
-                  sourceType === "email"
-                    ? "粘贴邮件正文，系统会清洗、替换返利链接并改写为草稿"
-                    : "粘贴活动文案、商家素材或配置表，系统会改写为草稿"
-                }
+                name="sourceUrls"
+                placeholder="输入要采集并改写的文章 URL，支持一行一个批量提交"
                 required
-                className="min-h-28"
+                className="min-h-11 lg:min-h-11"
               />
-            </>
-          )}
-        </div>
-        <Select name="categoryId" defaultValue={defaultCategoryId} required>
-          <SelectTrigger className="min-h-11">
-            <SelectValue placeholder="选择分类" />
-          </SelectTrigger>
-          <SelectContent>
-            {categories.map((category) => (
-              <SelectItem key={category.id} value={String(category.id)}>
-                {category.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          name="rewriteStyleId"
-          defaultValue={
-            defaultRewriteStyleId ? String(defaultRewriteStyleId) : undefined
-          }
-          disabled={rewriteStyles.length === 0}
-        >
-          <SelectTrigger className="min-h-11">
-            <SelectValue
-              placeholder={rewriteStyles.length > 0 ? "改写风格" : "未配置 AI"}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {rewriteStyles.map((style) => (
-              <SelectItem key={style.id} value={String(style.id)}>
-                {style.styleName}
-                {style.isDefault ? "（默认）" : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button
-          type="submit"
-          disabled={isSubmitting || categories.length === 0}
-          className="min-h-11"
-        >
-          {isSubmitting ? "加入中..." : "采集并改写"}
-        </Button>
-      </form>
+            ) : sourceType === "file" ? (
+              <>
+                <Input
+                  name="sourceTitle"
+                  placeholder="素材标题，可留空使用文件名"
+                  className="min-h-11"
+                />
+                <Input
+                  name="sourceFile"
+                  type="file"
+                  accept=".txt,.md,.markdown,.html,.htm,.csv,text/plain,text/markdown,text/html,text/csv"
+                  required
+                  className="min-h-11"
+                />
+                <p className="text-xs leading-5 text-muted-foreground">
+                  支持 txt、md、html、csv，单个文件不超过 2MB。导入后会清洗、替换返利链接并改写为草稿。
+                </p>
+              </>
+            ) : (
+              <>
+                <Input
+                  name="sourceTitle"
+                  placeholder={sourceType === "email" ? "邮件标题" : "素材标题"}
+                  required
+                  className="min-h-11"
+                />
+                <Textarea
+                  name="sourceContent"
+                  placeholder={
+                    sourceType === "email"
+                      ? "粘贴邮件正文，系统会清洗、替换返利链接并改写为草稿"
+                      : "粘贴活动文案、商家素材或配置表，系统会改写为草稿"
+                  }
+                  required
+                  className="min-h-28"
+                />
+              </>
+            )}
+          </div>
+          <Select name="categoryId" defaultValue={defaultCategoryId} required>
+            <SelectTrigger className="min-h-11">
+              <SelectValue placeholder="选择分类" />
+            </SelectTrigger>
+            <SelectContent>
+              {categories.map((category) => (
+                <SelectItem key={category.id} value={String(category.id)}>
+                  {category.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            name="rewriteStyleId"
+            defaultValue={
+              defaultRewriteStyleId ? String(defaultRewriteStyleId) : undefined
+            }
+            disabled={rewriteStyles.length === 0}
+          >
+            <SelectTrigger className="min-h-11">
+              <SelectValue
+                placeholder={rewriteStyles.length > 0 ? "改写风格" : "未配置 AI"}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {rewriteStyles.map((style) => (
+                <SelectItem key={style.id} value={String(style.id)}>
+                  {style.styleName}
+                  {style.isDefault ? "（默认）" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            type="submit"
+            disabled={isSubmitting || categories.length === 0}
+            className="min-h-11"
+          >
+            {isSubmitting ? "加入中..." : "采集并改写"}
+          </Button>
+        </form>
+      ) : null}
 
       <FailedTaskPanel
         tasks={tasks}
         retryingId={retryingId}
         onRetry={(taskId) => void handleRetry(taskId)}
+        basePath={basePath}
       />
 
-      <div className="rounded-lg border border-border/70 bg-background shadow-sm">
+      <div
+        id="task-table"
+        className="scroll-mt-24 rounded-lg border border-border/70 bg-background shadow-sm"
+      >
         {tasks.length === 0 ? (
           <AdminTableEmpty
             title="暂无 AI 改写任务"
@@ -780,9 +795,7 @@ export function AiRewriteTaskManager({
                     <TableCell className="text-right">
                       <div className="flex flex-wrap justify-end gap-2">
                         <Button asChild size="sm" variant="outline">
-                          <Link href={`/end/ai-rewrite/tasks/${task.id}`}>
-                            详情
-                          </Link>
+                          <Link href={`${basePath}/${task.id}`}>详情</Link>
                         </Button>
                         {task.postSlug ? (
                           <Button asChild size="sm" variant="outline">

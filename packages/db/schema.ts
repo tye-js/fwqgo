@@ -378,6 +378,8 @@ export const aiRewriteConfigs = pgTable(
     styleName: text("styleName").notNull(),
     stylePrompt: text("stylePrompt").notNull(),
     metadataStylePrompt: text("metadataStylePrompt"),
+    englishStylePrompt: text("englishStylePrompt"),
+    englishMetadataStylePrompt: text("englishMetadataStylePrompt"),
     temperature: integer("temperature").default(40).notNull(),
     maxTokens: integer("maxTokens").default(8192).notNull(),
     enabled: boolean("enabled").default(false).notNull(),

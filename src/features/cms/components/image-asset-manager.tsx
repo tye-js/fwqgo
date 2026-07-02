@@ -595,6 +595,7 @@ export function ImageAssetManager({
                           <SelectContent>
                             <SelectItem value="upload">上传图片</SelectItem>
                             <SelectItem value="ai_cover">AI 封面</SelectItem>
+                            <SelectItem value="ai_generated">AI 生图</SelectItem>
                             <SelectItem value="provider">商家图片</SelectItem>
                             <SelectItem value="post_cover">文章封面</SelectItem>
                           </SelectContent>
@@ -807,6 +808,7 @@ function imageTypeLabel(type: string) {
   const labels: Record<string, string> = {
     upload: "上传图片",
     ai_cover: "AI 封面",
+    ai_generated: "AI 生图",
     provider: "商家图片",
     post_cover: "文章封面",
   };

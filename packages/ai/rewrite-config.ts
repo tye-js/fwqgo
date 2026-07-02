@@ -4,6 +4,8 @@ import { db } from "@fwqgo/db";
 import { aiRewriteConfigs } from "@fwqgo/db/schema";
 import {
   defaultBaseRewritePrompt,
+  defaultEnglishMetadataStylePrompt,
+  defaultEnglishStylePrompt,
   defaultMetadataPrompt,
   defaultMetadataStylePrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
@@ -22,6 +24,8 @@ export type AiRewriteConfigInput = {
   styleName: string;
   stylePrompt: string;
   metadataStylePrompt: string;
+  englishStylePrompt: string;
+  englishMetadataStylePrompt: string;
   temperature: number;
   maxTokens: number;
   enabled: boolean;
@@ -53,6 +57,8 @@ export async function getAiRewriteConfigs() {
       styleName: aiRewriteConfigs.styleName,
       stylePrompt: aiRewriteConfigs.stylePrompt,
       metadataStylePrompt: aiRewriteConfigs.metadataStylePrompt,
+      englishStylePrompt: aiRewriteConfigs.englishStylePrompt,
+      englishMetadataStylePrompt: aiRewriteConfigs.englishMetadataStylePrompt,
       temperature: aiRewriteConfigs.temperature,
       maxTokens: aiRewriteConfigs.maxTokens,
       enabled: aiRewriteConfigs.enabled,
@@ -71,6 +77,9 @@ export async function getAiRewriteConfigs() {
     metadataPrompt: row.metadataPrompt ?? defaultMetadataPrompt,
     metadataStylePrompt:
       row.metadataStylePrompt ?? defaultMetadataStylePrompt,
+    englishStylePrompt: row.englishStylePrompt ?? defaultEnglishStylePrompt,
+    englishMetadataStylePrompt:
+      row.englishMetadataStylePrompt ?? defaultEnglishMetadataStylePrompt,
     hasApiKey: Boolean(row.apiKey),
     apiKeyPreview: maskApiKey(row.apiKey),
     apiKey: undefined,
@@ -123,6 +132,8 @@ export async function createAiRewriteConfig(input: AiRewriteConfigInput) {
       basePrompt: input.basePrompt,
       metadataPrompt: input.metadataPrompt,
       metadataStylePrompt: input.metadataStylePrompt,
+      englishStylePrompt: input.englishStylePrompt,
+      englishMetadataStylePrompt: input.englishMetadataStylePrompt,
     })
     .returning({ id: aiRewriteConfigs.id });
 
@@ -147,6 +158,8 @@ export async function updateAiRewriteConfig(
     styleName: input.styleName,
     stylePrompt: input.stylePrompt,
     metadataStylePrompt: input.metadataStylePrompt,
+    englishStylePrompt: input.englishStylePrompt,
+    englishMetadataStylePrompt: input.englishMetadataStylePrompt,
     temperature: input.temperature,
     maxTokens: input.maxTokens,
     enabled: input.enabled,

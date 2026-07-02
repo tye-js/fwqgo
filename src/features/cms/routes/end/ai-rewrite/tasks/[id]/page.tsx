@@ -21,6 +21,7 @@ import { type ScrapeDiagnostics } from "@fwqgo/scrape/article-scraper";
 
 type PageProps = {
   params: Promise<{ id: string }>;
+  basePath?: string;
 };
 
 const statusLabels: Record<string, string> = {
@@ -335,7 +336,10 @@ function ManualReviewHints({
   );
 }
 
-export default async function AiRewriteTaskDetailPage({ params }: PageProps) {
+export async function AiRewriteTaskDetailPageContent({
+  params,
+  basePath = "/end/ai-rewrite/tasks",
+}: PageProps) {
   const { id } = await params;
   const taskId = Number(id);
 
@@ -370,7 +374,7 @@ export default async function AiRewriteTaskDetailPage({ params }: PageProps) {
       actions={
         <div className="flex gap-2">
           <Button asChild variant="outline">
-            <Link href="/end/ai-rewrite/tasks">
+            <Link href={basePath}>
               <ArrowLeft className="size-4" />
               返回
             </Link>
@@ -570,4 +574,8 @@ export default async function AiRewriteTaskDetailPage({ params }: PageProps) {
       </AdminSectionCard>
     </AdminPageShell>
   );
+}
+
+export default async function AiRewriteTaskDetailPage({ params }: PageProps) {
+  return <AiRewriteTaskDetailPageContent params={params} />;
 }
