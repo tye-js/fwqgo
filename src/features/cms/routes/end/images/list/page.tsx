@@ -3,8 +3,13 @@ import { requireAdminSession } from "@fwqgo/auth/session";
 import { AdminPageShell, AdminSummaryStrip } from "@/features/cms/components/admin-page-shell";
 import { ImageAssetManager } from "@/features/cms/components/image-asset-manager";
 
-export default async function ImageListPage() {
+export default async function ImageListPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ filter?: string }>;
+}) {
   await requireAdminSession();
+  const params = await searchParams;
   const images = await getImageAssetList();
   const usedCount = images.filter((image) => image.references.length > 0).length;
   const needsWebpCount = images.filter(
@@ -39,6 +44,7 @@ export default async function ImageListPage() {
       />
       <ImageAssetManager
         images={images.map(serializeImageAsset)}
+        initialUsageFilter={params.filter === "unused" ? "unused" : "all"}
       />
     </AdminPageShell>
   );

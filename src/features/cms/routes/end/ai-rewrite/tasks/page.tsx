@@ -64,26 +64,30 @@ export default async function AiRewriteTasksPage() {
           },
         ]}
       />
-      <AdminSectionCard
-        title="来源站"
-        description="保存常用中文来源站，需要时点击抓取新页面，系统会自动创建 AI 改写任务并在成功后保存为草稿。"
-      >
+      <div id="source-sites" className="scroll-mt-24">
+        <AdminSectionCard
+          title="来源站"
+          description="保存常用中文来源站，需要时点击抓取新页面，系统会自动创建 AI 改写任务并在成功后保存为草稿。"
+        >
         <AiSourceSiteManager
           sites={sourceSites}
           categories={categories}
           rewriteStyles={rewriteStyles}
         />
-      </AdminSectionCard>
-      <AdminSectionCard
-        title="单篇采集"
-        description="临时输入一个或多个文章 URL，直接加入采集改写队列。"
-      >
-      <AiRewriteTaskManager
-        tasks={tasks}
-        categories={categories}
-        rewriteStyles={rewriteStyles}
-      />
-      </AdminSectionCard>
+        </AdminSectionCard>
+      </div>
+      <div id="single-task" className="scroll-mt-24">
+        <AdminSectionCard
+          title="单篇采集"
+          description="临时输入一个或多个文章 URL，直接加入采集改写队列。"
+        >
+          <AiRewriteTaskManager
+            tasks={tasks}
+            categories={categories}
+            rewriteStyles={rewriteStyles}
+          />
+        </AdminSectionCard>
+      </div>
     </AdminPageShell>
   );
 }

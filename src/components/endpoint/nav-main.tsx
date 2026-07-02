@@ -35,14 +35,17 @@ export function NavMain({
   }[];
 }) {
   const pathname = usePathname();
+  const normalizeUrl = (url: string) => {
+    const path = url.split("#")[0]?.split("?")[0] ?? url;
+    return path.length > 1 ? path.replace(/\/$/, "") : path;
+  };
   const normalizedPathname =
     pathname.length > 1 ? pathname.replace(/\/$/, "") : pathname;
   const activeSubItemUrl = items
     .flatMap((item) => item.items ?? [])
     .map((item) => ({
       ...item,
-      normalizedUrl:
-        item.url.length > 1 ? item.url.replace(/\/$/, "") : item.url,
+      normalizedUrl: normalizeUrl(item.url),
     }))
     .filter((item) =>
       item.normalizedUrl === "/end"
@@ -51,7 +54,7 @@ export function NavMain({
           normalizedPathname.startsWith(`${item.normalizedUrl}/`),
     )
     .sort((left, right) => right.normalizedUrl.length - left.normalizedUrl.length)[0]
-    ?.normalizedUrl;
+    ?.url;
 
   return (
     <SidebarGroup>
@@ -78,11 +81,7 @@ export function NavMain({
                     <SidebarMenuSubItem key={subItem.title}>
                       <SidebarMenuSubButton
                         asChild
-                        isActive={
-                          (subItem.url.length > 1
-                            ? subItem.url.replace(/\/$/, "")
-                            : subItem.url) === activeSubItemUrl
-                        }
+                        isActive={subItem.url === activeSubItemUrl}
                       >
                         <Link href={subItem.url}>
                           <span>{subItem.title}</span>

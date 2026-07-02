@@ -9,6 +9,7 @@ import {
   SquareTerminal,
   LayoutDashboard,
   Megaphone,
+  Bot,
 } from "lucide-react";
 
 import { BrandMarkIcon } from "@/components/brand/brand-logo";
@@ -51,22 +52,46 @@ const data = {
       ],
     },
     {
-      title: "文章",
+      title: "内容生产",
+      url: "/end/ai-rewrite",
+      icon: Bot,
+      isActive: false,
+      items: [
+        {
+          title: "生产工作台",
+          url: "/end/ai-rewrite/tasks",
+        },
+        {
+          title: "来源站配置",
+          url: "/end/ai-rewrite/tasks#source-sites",
+        },
+        {
+          title: "单篇采集",
+          url: "/end/ai-rewrite/tasks#single-task",
+        },
+        {
+          title: "改写接口配置",
+          url: "/end/collect/ai-rewrite",
+        },
+        {
+          title: "草稿箱",
+          url: "/end/posts/drafts",
+        },
+      ],
+    },
+    {
+      title: "文章管理",
       url: "/end/posts",
       icon: SquareTerminal,
       isActive: false,
       items: [
         {
-          title: "内容生产台",
-          url: "/end/ai-rewrite/tasks",
-        },
-        {
-          title: "修改",
+          title: "文章列表",
           url: "/end/posts/edit",
         },
         {
-          title: "草稿箱",
-          url: "/end/posts/drafts",
+          title: "新建文章",
+          url: "/end/posts/create",
         },
       ],
     },
@@ -83,6 +108,10 @@ const data = {
           title: "图片资产",
           url: "/end/images/list",
         },
+        {
+          title: "未引用图片",
+          url: "/end/images/list?filter=unused",
+        },
       ],
     },
 
@@ -92,27 +121,35 @@ const data = {
       icon: Globe,
       items: [
         {
-          title: "主页",
+          title: "主页 SEO",
           url: "/end/seo/",
         },
         {
-          title: "分类",
+          title: "分类 SEO",
           url: "/end/seo/category/",
         },
         {
-          title: "标签",
+          title: "标签 SEO",
           url: "/end/seo/tag/",
         },
       ],
     },
     {
       title: "服务器",
-      url: "/end/servers/manage",
+      url: "/end/servers",
       icon: Server,
       items: [
         {
-          title: "人工修正数据",
+          title: "套餐提取",
+          url: "/end/servers",
+        },
+        {
+          title: "套餐校正",
           url: "/end/servers/manage",
+        },
+        {
+          title: "数据质量检查",
+          url: "/end/servers/manage#quality",
         },
       ],
     },
@@ -129,6 +166,10 @@ const data = {
           title: "首页推荐",
           url: "/end/collect/homepage-promoted",
         },
+        {
+          title: "短链跳转",
+          url: "/end/collect/short-links",
+        },
       ],
     },
     {
@@ -137,31 +178,54 @@ const data = {
       icon: Settings,
       items: [
         {
-          title: "接口配置",
-          url: "/end/collect/ai-rewrite",
+          title: "生图接口配置",
+          url: "/end/settings/image-generation",
         },
         {
-          title: "生图配置",
-          url: "/end/settings/image-generation",
+          title: "AI Prompt 模板",
+          url: "/end/collect/ai-rewrite#prompt-template",
         },
       ],
     },
   ],
 };
 
+function normalizeNavUrl(url: string) {
+  const path = url.split("#")[0]?.split("?")[0] ?? url;
+  return path.length > 1 ? path.replace(/\/$/, "") : path;
+}
+
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname();
+  const normalizedPathname = normalizeNavUrl(pathname);
   const navItems = data.navMain.map((item) => ({
     ...item,
-    isActive:
-      item.url === "/end"
-        ? pathname === "/end"
-        : pathname === item.url ||
-          pathname.startsWith(`${item.url}/`) ||
-          (item.items ?? []).some(
-            (subItem) =>
-              pathname === subItem.url || pathname.startsWith(`${subItem.url}/`),
-          ),
+    isActive: (() => {
+      const itemUrl = normalizeNavUrl(item.url);
+      const subItems = item.items ?? [];
+
+      if (itemUrl === "/end") {
+        return normalizedPathname === "/end";
+      }
+
+      if (subItems.length > 0) {
+        return (
+          normalizedPathname === itemUrl ||
+          subItems.some((subItem) => {
+            const subItemUrl = normalizeNavUrl(subItem.url);
+            return (
+              normalizedPathname === subItemUrl ||
+              normalizedPathname.startsWith(`${subItemUrl}/`)
+            );
+          })
+        );
+      }
+
+      return (
+        normalizedPathname === itemUrl ||
+        normalizedPathname.startsWith(`${itemUrl}/`)
+      );
+    })(),
   }));
 
   return (

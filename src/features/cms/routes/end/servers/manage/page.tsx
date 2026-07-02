@@ -20,6 +20,35 @@ async function ServerOfferManageContent() {
     getAdminServerOffers(),
   ]);
   const total = counts.reduce((sum, item) => sum + item.count, 0);
+  const qualityIssues = [
+    {
+      label: "待审核",
+      value: offers.filter((offer) => offer.reviewStatus === "pending").length,
+      note: "需要人工确认字段",
+    },
+    {
+      label: "需修正",
+      value: offers.filter((offer) => offer.reviewStatus === "needs_fix").length,
+      note: "提取结果可能不完整",
+    },
+    {
+      label: "缺价格",
+      value: offers.filter((offer) => !offer.priceAmount).length,
+      note: "影响前台比价排序",
+    },
+    {
+      label: "缺地区",
+      value: offers.filter((offer) => !offer.region).length,
+      note: "影响地区专题归类",
+    },
+    {
+      label: "重复/合并",
+      value: offers.filter((offer) =>
+        ["duplicate", "merged"].includes(offer.reviewStatus),
+      ).length,
+      note: "需要确认是否隐藏",
+    },
+  ];
 
   return (
     <AdminPageShell
@@ -50,6 +79,31 @@ async function ServerOfferManageContent() {
           },
         ]}
       />
+      <div id="quality" className="scroll-mt-24">
+        <AdminSectionCard
+          title="数据质量检查"
+          description="快速查看结构化套餐里最影响前台展示和比价体验的问题。"
+        >
+          <div className="grid gap-3 md:grid-cols-5">
+            {qualityIssues.map((item) => (
+              <div
+                key={item.label}
+                className="rounded-lg border border-border/70 bg-muted/20 p-4"
+              >
+                <p className="text-xs font-medium text-muted-foreground">
+                  {item.label}
+                </p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">
+                  {item.value}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {item.note}
+                </p>
+              </div>
+            ))}
+          </div>
+        </AdminSectionCard>
+      </div>
       <AdminSectionCard
         title="套餐校正"
         description="对提取后的结构化套餐做人工审核、补字段、改状态和控制前台展示。"

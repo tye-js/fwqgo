@@ -180,7 +180,7 @@ docker run --rm \
   -v "$STAGE_DIR:/workspace" \
   -w /workspace \
   "$DOCKER_IMAGE" \
-  bash -lc 'npm ci --include=optional && npm run build && mkdir -p .next-web/standalone/.next .next-cms/standalone/.next && rm -rf .next-web/standalone/.next/static .next-web/standalone/public .next-cms/standalone/.next/static .next-cms/standalone/public && cp -R .next-web/static .next-web/standalone/.next/static && cp -R .next-cms/static .next-cms/standalone/.next/static && cp -R public .next-web/standalone/public && cp -R public .next-cms/standalone/public'
+  bash -lc 'npm ci --include=optional && npm run build && mkdir -p .next-web/standalone/.next-web .next-cms/standalone/.next-cms && rm -rf .next-web/standalone/.next-web/static .next-web/standalone/public .next-cms/standalone/.next-cms/static .next-cms/standalone/public && cp -R .next-web/static .next-web/standalone/.next-web/static && cp -R .next-cms/static .next-cms/standalone/.next-cms/static && cp -R public .next-web/standalone/public && cp -R public .next-cms/standalone/public'
 
 [[ -f "$STAGE_DIR/.next-web/standalone/apps/web/server.js" ]] || fail "Docker build did not produce web standalone server.js"
 [[ -f "$STAGE_DIR/.next-cms/standalone/apps/cms/server.js" ]] || fail "Docker build did not produce cms standalone server.js"

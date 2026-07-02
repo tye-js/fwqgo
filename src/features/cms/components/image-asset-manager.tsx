@@ -101,11 +101,13 @@ type ImageMetadataDraft = {
 
 export function ImageAssetManager({
   images,
+  initialUsageFilter = "all",
 }: {
   images: ImageAssetWithReferences[];
+  initialUsageFilter?: string;
 }) {
   const [query, setQuery] = useState("");
-  const [usageFilter, setUsageFilter] = useState("all");
+  const [usageFilter, setUsageFilter] = useState(initialUsageFilter);
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isPending, startTransition] = useTransition();
