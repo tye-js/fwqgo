@@ -1,15 +1,12 @@
 import Link from "next/link";
 import { ArrowUpRight, CalendarDays } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatDate, isWithin24Hours } from "@fwqgo/core/utils";
+import { formatDate } from "@fwqgo/core/utils";
 import { type PostWithTags } from "@/types";
 import { SafePostImage } from "@/features/public/components/safe-post-image";
 
 function ArticleCard({ post }: { post: PostWithTags }) {
-  const isNewPost = isWithin24Hours(post.createdAt);
-
   return (
     <Card
       key={post.id}
@@ -31,11 +28,6 @@ function ArticleCard({ post }: { post: PostWithTags }) {
         <CardContent className="flex flex-col justify-between p-5 md:p-6">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              {isNewPost ? (
-                <Badge className="bg-emerald-500 text-white hover:bg-emerald-500">
-                  新上架
-                </Badge>
-              ) : null}
               <span className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-muted/30 px-3 py-1 text-xs text-muted-foreground">
                 <CalendarDays className="size-3" />
                 {formatDate(post.createdAt)}

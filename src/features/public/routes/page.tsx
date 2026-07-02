@@ -22,7 +22,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Suspense } from "react";
 import { Separator } from "@/components/ui/separator";
 import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
-import { formatDate, isWithin24Hours } from "@fwqgo/core/utils";
+import { formatDate } from "@fwqgo/core/utils";
 import {
   getLatestServerOffers,
   getServerOfferTopicCounts,
@@ -71,6 +71,7 @@ function HeroArticleTile({
   description,
   imgUrl,
   tags,
+  showNewBadge = false,
   variant = "small",
 }: {
   slug: string;
@@ -79,6 +80,7 @@ function HeroArticleTile({
   description: string | null;
   imgUrl: string | null;
   tags: Array<{ tag: { id: number; name: string; slug: string } }>;
+  showNewBadge?: boolean;
   variant?: "large" | "small";
 }) {
   const isLarge = variant === "large";
@@ -111,7 +113,7 @@ function HeroArticleTile({
 
       <div className="absolute inset-x-0 bottom-0 z-20 p-4 text-white md:p-5">
         <div className="flex flex-wrap items-center gap-2">
-          {isWithin24Hours(createdAt) ? (
+          {showNewBadge ? (
             <Badge className="bg-emerald-500 text-white hover:bg-emerald-500">
               新上架
             </Badge>
@@ -230,6 +232,7 @@ async function HomeContent() {
                     imgUrl={heroPosts[0].imgUrl}
                     createdAt={heroPosts[0].createdAt}
                     tags={heroPosts[0].tags}
+                    showNewBadge
                     variant="large"
                   />
                 </div>

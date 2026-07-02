@@ -274,8 +274,29 @@ jobs:
           cms_port="$(read_env_value CMS_PORT)"
           web_port="${web_port:-3000}"
           cms_port="${cms_port:-3100}"
-          web_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 15 "http://127.0.0.1:${web_port}/")"
-          cms_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 15 "http://127.0.0.1:${cms_port}/")"
+
+          wait_for_http_status() {
+            local name="$1"
+            local url="$2"
+            local allowed_pattern="$3"
+            local status="000"
+
+            for attempt in $(seq 1 20); do
+              status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 10 "$url" 2>/dev/null || printf "000")"
+              if [[ "$status" =~ $allowed_pattern ]]; then
+                printf "%s" "$status"
+                return 0
+              fi
+              echo "$name local health check attempt $attempt/20 returned HTTP $status; retrying..." >&2
+              sleep 2
+            done
+
+            echo "$name local health check failed after retries: HTTP $status" >&2
+            return 1
+          }
+
+          web_status="$(wait_for_http_status "Web" "http://127.0.0.1:${web_port}/" '^(2|3)[0-9][0-9]$')"
+          cms_status="$(wait_for_http_status "CMS" "http://127.0.0.1:${cms_port}/" '^(2|3)[0-9][0-9]$|^401$')"
           case "$web_status" in
             2*|3*) ;;
             *) echo "Web local health check failed: HTTP $web_status" >&2; exit 1 ;;
