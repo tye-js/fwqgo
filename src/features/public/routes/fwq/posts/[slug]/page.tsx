@@ -1,14 +1,17 @@
 import {
   getPostWithTagsBySlug,
-  getPostBySlug,
   getLatestPostsForSidebar,
   getPostsByPostId,
 } from "@/features/public/data/post";
 
-import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
+import {
+  getOptimizedImageSrc,
+  isRenderableImageSrc,
+} from "@fwqgo/core/image-src";
 import { decodeSlug, formatDate, isInternalHref } from "@fwqgo/core/utils";
 import Link from "next/link";
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { TableOfContents } from "@/components/toc/table-of-contents";
 import {
   BookOpenText,
@@ -45,6 +48,7 @@ function getSiteUrl() {
 }
 
 function toAbsoluteUrl(value: string | null | undefined) {
+  if (!isRenderableImageSrc(value)) return undefined;
   if (!value) return undefined;
   try {
     return new URL(value, getSiteUrl()).toString();
@@ -58,54 +62,28 @@ export async function generateMetadata(props: {
 }): Promise<Metadata> {
   const params = await props.params;
   const decodedSlug = decodeSlug(params.slug);
-  const { data: post, error } = await postInfo(decodedSlug);
-  if (error || !post)
-    return {
-      title: "服务器go",
-      description: "查看所有服务器相关的文章",
-    };
   const canonicalUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`;
-  const englishUrl = post.enSlug
-    ? `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(post.enSlug)}`
-    : undefined;
-  const description = post.description ?? `${post.title}`;
-  const imageUrl = toAbsoluteUrl(post.imgUrl);
+  const readableTitle = decodedSlug.replace(/[-_]+/g, " ");
+  const description = `${readableTitle}相关的服务器优惠、VPS 活动、线路和购买建议。`;
 
   return {
-    title: post.title,
+    title: `${readableTitle} - 服务器go`,
     description,
-    keywords: post.keywords ?? `${post.title}`,
+    keywords: readableTitle,
     alternates: {
       canonical: canonicalUrl,
-      languages: englishUrl
-        ? {
-            "zh-CN": canonicalUrl,
-            en: englishUrl,
-          }
-        : undefined,
     },
     openGraph: {
       type: "article",
-      title: post.title,
+      title: `${readableTitle} - 服务器go`,
       description,
       url: canonicalUrl,
       siteName: "服务器go",
-      images: imageUrl
-        ? [
-            {
-              url: imageUrl,
-              width: 1200,
-              height: 630,
-              alt: post.title,
-            },
-          ]
-        : undefined,
     },
     twitter: {
-      card: imageUrl ? "summary_large_image" : "summary",
-      title: post.title,
+      card: "summary",
+      title: `${readableTitle} - 服务器go`,
       description,
-      images: imageUrl ? [imageUrl] : undefined,
     },
   };
 }
@@ -115,6 +93,8 @@ async function PostPageContent({
 }: {
   paramsPromise: Promise<{ slug: string }>;
 }) {
+  await connection();
+
   const params = await paramsPromise;
   const decodedSlug = decodeSlug(params.slug);
   const { data, error } = await getPostWithTagsBySlug(decodedSlug);
@@ -247,7 +227,7 @@ async function PostPageContent({
 
             <div className="px-5 pb-8 pt-4 sm:px-6 md:px-8 md:pb-10 md:pt-5">
               <div className="relative aspect-[16/9] max-h-[360px] overflow-hidden rounded-lg border border-border/70 bg-muted/20 md:aspect-[21/9]">
-                {post.imgUrl ? (
+                {isRenderableImageSrc(post.imgUrl) ? (
                   <Image
                     src={getOptimizedImageSrc(post.imgUrl)}
                     alt={post.title}
@@ -264,7 +244,7 @@ async function PostPageContent({
 
               <div className="mt-6 space-y-10">
                 <div
-                  className="article-prose font-ui prose prose-zinc max-w-none prose-headings:font-editorial prose-p:text-[17px] prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-accent prose-strong:text-foreground prose-img:rounded-lg prose-blockquote:border-l-4 prose-blockquote:border-accent prose-blockquote:bg-accent/5 prose-blockquote:px-6 prose-blockquote:py-3 prose-blockquote:font-ui prose-blockquote:text-base prose-li:my-2 prose-li:text-foreground/90 prose-code:rounded prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:font-ui prose-code:text-sm"
+                  className="article-prose font-ui prose prose-zinc max-w-none prose-headings:font-editorial prose-p:text-[17px] prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-accent prose-a:underline prose-a:decoration-accent/55 prose-a:underline-offset-4 prose-a:transition-colors hover:prose-a:text-primary hover:prose-a:decoration-primary prose-strong:text-foreground prose-img:rounded-lg prose-blockquote:border-l-4 prose-blockquote:border-accent prose-blockquote:bg-accent/5 prose-blockquote:px-6 prose-blockquote:py-3 prose-blockquote:font-ui prose-blockquote:text-base prose-li:my-2 prose-li:text-foreground/90 prose-code:rounded prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:font-ui prose-code:text-sm"
                   dangerouslySetInnerHTML={{ __html: contentWithIds }}
                 />
 
@@ -449,10 +429,6 @@ async function PostPageContent({
       </div>
     </div>
   );
-}
-
-async function postInfo(slug: string) {
-  return await getPostBySlug(slug);
 }
 
 export default function PostPage(props: { params: Promise<{ slug: string }> }) {

@@ -142,7 +142,7 @@ function buildTaskSteps({
       name: "清洗正文",
       status: hasCleanHtml ? "success" : isFailed ? "failed" : hasDiagnostics ? "running" : "pending",
       description: hasCleanHtml
-        ? `清洗后 HTML ${diagnostics?.cleanedHtmlLength ?? scrapedHtml?.length ?? 0} 字符`
+        ? `清洗后正文 ${diagnostics?.cleanedHtmlLength ?? scrapedHtml?.length ?? 0} 字符，AI Markdown 输入 ${diagnostics?.aiInputLength ?? "-"} 字符`
         : "等待正文清洗结果",
     },
     {
@@ -487,10 +487,11 @@ export async function AiRewriteTaskDetailPageContent({
       <AdminSectionCard title="采集质量" description="用于判断来源站规则和清洗结果是否稳定。">
         {diagnostics ? (
           <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-5">
               <Stat label="策略" value={diagnostics.strategy} />
               <Stat label="正文长度" value={diagnostics.contentLength} />
-              <Stat label="清洗 HTML" value={diagnostics.cleanedHtmlLength ?? "-"} />
+              <Stat label="清洗正文" value={diagnostics.cleanedHtmlLength ?? "-"} />
+              <Stat label="AI Markdown 输入" value={diagnostics.aiInputLength ?? "-"} />
               <Stat
                 label="AI 截断"
                 value={diagnostics.aiInputTruncated ? "是" : "否"}

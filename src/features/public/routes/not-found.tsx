@@ -1,8 +1,7 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { ArrowLeft, Compass, Home, SearchCheck, Sparkles } from "lucide-react";
 
-import { getCategories } from "@/features/shared/data/category";
-import { getPostsWithTags } from "@/features/public/data/post";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
@@ -17,22 +16,21 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
-export default async function NotFound() {
-  const [{ data: categories }, { data: posts }] = await Promise.all([
-    getCategories(),
-    getPostsWithTags(),
-  ]);
+const quickCategories = [
+  { id: 1, name: "香港服务器", slug: "hk-vps" },
+  { id: 2, name: "美国服务器", slug: "usa-vps" },
+  { id: 3, name: "便宜 VPS", slug: "cheap-vps" },
+  { id: 4, name: "高防服务器", slug: "ddos-vps" },
+  { id: 5, name: "出海服务器", slug: "export-vps" },
+  { id: 6, name: "原生 IP 服务器", slug: "isp-vps" },
+];
 
-  const quickCategories = (categories ?? [])
-    .flatMap((category) =>
-      category.children.length > 0 ? category.children : [category],
-    )
-    .slice(0, 6);
-  const recentPosts = (posts ?? []).slice(0, 4);
-
+export default function NotFound() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Header />
+      <Suspense fallback={<div className="h-[73px] border-b border-border/60" />}>
+        <Header />
+      </Suspense>
       <Separator />
 
       <main className="not-found-surface relative flex-1 overflow-hidden">
@@ -130,23 +128,25 @@ export default async function NotFound() {
 
               <Card className="rounded-lg border-border/70 bg-background shadow-sm">
                 <CardHeader>
-                  <CardTitle className="text-xl">最近更新的文章</CardTitle>
+                  <CardTitle className="text-xl">继续浏览</CardTitle>
                   <CardDescription>
-                    如果你只是想继续看内容，可以从这里直接进入。
+                    如果不确定原链接对应的内容，可以从这些稳定入口重新筛选。
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {recentPosts.map((post) => (
+                  {[
+                    { title: "服务器比价", href: "/servers" },
+                    { title: "香港服务器专题", href: "/servers/hong-kong" },
+                    { title: "美国服务器专题", href: "/servers/united-states" },
+                    { title: "便宜 VPS 专题", href: "/servers/cheap-vps" },
+                  ].map((item) => (
                     <Link
-                      key={post.id}
-                      href={`/fwq/posts/${post.slug}`}
+                      key={item.href}
+                      href={item.href}
                       prefetch
                       className="block rounded-md border border-border/70 p-4 transition-colors hover:border-primary/30 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     >
-                      <p className="line-clamp-2 font-medium">{post.title}</p>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {post.createdAt.toLocaleDateString("zh-CN")}
-                      </p>
+                      <p className="line-clamp-2 font-medium">{item.title}</p>
                     </Link>
                   ))}
                 </CardContent>
@@ -157,7 +157,9 @@ export default async function NotFound() {
       </main>
 
       <Separator className="mt-4" />
-      <Footer />
+      <Suspense fallback={null}>
+        <Footer />
+      </Suspense>
     </div>
   );
 }

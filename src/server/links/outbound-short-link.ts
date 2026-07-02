@@ -105,7 +105,11 @@ export async function readOutboundShortTarget(slug: string) {
     .where(eq(outboundLinks.slug, normalizedSlug))
     .limit(1);
 
-  return link?.targetUrl ?? null;
+  if (!link?.targetUrl) {
+    return null;
+  }
+
+  return normalizeTargetUrl(link.targetUrl);
 }
 
 function isInternalUrl(url: URL) {
@@ -153,4 +157,49 @@ export async function shortenArticleOutboundLinks(html: string) {
   }
 
   return $.html();
+}
+
+export async function shortenMarkdownOutboundLinks(markdown: string) {
+  const linkPattern = /\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  const replacements: Array<{
+    original: string;
+    replacement: string;
+  }> = [];
+
+  for (const match of markdown.matchAll(linkPattern)) {
+    const [original, label, href] = match;
+    if (!label || !href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) {
+      continue;
+    }
+
+    let url: URL;
+    try {
+      url = new URL(href, siteBaseUrl);
+    } catch {
+      continue;
+    }
+
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      isShortLink(url) ||
+      isInternalUrl(url)
+    ) {
+      continue;
+    }
+
+    const shortLink = await getOrCreateOutboundShortLink(url.toString());
+    if (!shortLink) {
+      continue;
+    }
+
+    replacements.push({
+      original,
+      replacement: `[${label}](${shortLink.path})`,
+    });
+  }
+
+  return replacements.reduce(
+    (content, item) => content.replace(item.original, item.replacement),
+    markdown,
+  );
 }

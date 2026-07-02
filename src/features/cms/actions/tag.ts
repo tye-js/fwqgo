@@ -22,13 +22,16 @@ const updateTagIndexableSchema = z.object({
   indexable: z.boolean(),
 });
 
-export async function createTag(input: z.infer<typeof createTagSchema>) {
-  await requireAdminSession();
-
-  // 验证输入
+async function createTagRecord(
+  input: z.infer<typeof createTagSchema>,
+  options: { revalidate?: boolean } = {},
+) {
   const result = createTagSchema.parse(input);
-  // 生成 slug
-  const slug = slugify(input.name);
+  const slug = slugify(result.name);
+
+  if (!slug) {
+    return { error: "标签名称需要包含中文、英文或数字" };
+  }
 
   const [existingTag] = await db
     .select({ id: tags.id })
@@ -41,27 +44,50 @@ export async function createTag(input: z.infer<typeof createTagSchema>) {
   const [tag] = await db
     .insert(tags)
     .values({ name: result.name, slug })
+    .onConflictDoNothing({ target: tags.slug })
     .returning({ id: tags.id });
 
   if (!tag) {
+    const [raceExistingTag] = await db
+      .select({ id: tags.id })
+      .from(tags)
+      .where(eq(tags.slug, slug))
+      .limit(1);
+
+    if (raceExistingTag) {
+      return { id: raceExistingTag.id };
+    }
+
     return { error: "标签创建失败" };
   }
 
-  revalidateSiteContent([cacheTags.tags]);
+  if (options.revalidate !== false) {
+    revalidateSiteContent([cacheTags.tags]);
+  }
 
   return { id: tag.id };
 }
 
-export async function createTags(tags: z.infer<typeof createTagSchema>[]) {
+export async function createTag(input: z.infer<typeof createTagSchema>) {
+  await requireAdminSession();
+  return createTagRecord(input);
+}
+
+export async function createTags(inputTags: z.infer<typeof createTagSchema>[]) {
+  await requireAdminSession();
+
   const resultTags = await Promise.all(
-    tags.map(async (tag) => {
-      const resultTag = await createTag(tag);
+    inputTags.map(async (tag) => {
+      const resultTag = await createTagRecord(tag, { revalidate: false });
       if ("error" in resultTag) {
         throw new Error(resultTag.error);
       }
       return { id: resultTag.id };
     }),
   );
+
+  revalidateSiteContent([cacheTags.tags]);
+
   return { data: resultTags };
 }
 

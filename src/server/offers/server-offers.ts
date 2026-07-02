@@ -13,7 +13,8 @@ import {
 } from "drizzle-orm";
 
 import { slugify } from "@fwqgo/core/utils";
-import { cacheTags, revalidateSiteContent, tagCache } from "@fwqgo/cache/tags";
+import { renderArticleContentHtml } from "@fwqgo/core/content";
+import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { db, readDb } from "@fwqgo/db";
 import {
   affServiceProviders,
@@ -291,7 +292,7 @@ function candidateTextsFromPost(post: {
   slug: string;
   content: string;
 }) {
-  const $ = cheerio.load(post.content);
+  const $ = cheerio.load(renderArticleContentHtml(post.content));
   const candidates: Array<{ text: string; purchaseUrl?: string | null }> = [];
 
   $("table").each((_, table) => {
@@ -608,9 +609,6 @@ function topicWhere(topic: (typeof offerTopics)[number]) {
 }
 
 export async function getServerOfferTopic(slug: string) {
-  "use cache";
-  tagCache(cacheTags.serverOffers, cacheTags.serverOfferTopic(slug));
-
   const topic = offerTopics.find((item) => item.slug === slug);
   if (!topic) return null;
 
@@ -687,9 +685,6 @@ export async function getServerOfferCollection(input: {
   kind: "provider" | "region" | "line";
   value: string;
 }) {
-  "use cache";
-  tagCache(cacheTags.serverOffers);
-
   const value = input.value.trim();
   if (!value) return null;
 
@@ -734,9 +729,6 @@ export async function getServerOfferCollection(input: {
 }
 
 export async function getServerOfferTopicCounts() {
-  "use cache";
-  tagCache(cacheTags.serverOffers);
-
   try {
     const result = await Promise.all(
       offerTopics.map(async (topic) => {
@@ -756,9 +748,6 @@ export async function getServerOfferTopicCounts() {
 }
 
 export async function getLatestServerOffers(limit = 8) {
-  "use cache";
-  tagCache(cacheTags.serverOffers);
-
   try {
     return await readDb
       .select({
@@ -898,9 +887,6 @@ export async function getRelatedServerOffersForPost(input: {
   tagNames: string[];
   limit?: number;
 }) {
-  "use cache";
-  tagCache(cacheTags.serverOffers);
-
   const tagText = input.tagNames.join(" ");
   const conditions = [
     eq(serverOffers.visible, true),

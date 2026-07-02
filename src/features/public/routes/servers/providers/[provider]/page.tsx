@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { ArrowLeft } from "lucide-react";
 
 import Footer from "@/features/public/components/footer";
@@ -27,6 +28,8 @@ export async function generateMetadata({ params }: PageProps) {
 }
 
 async function ProviderContent({ params }: PageProps) {
+  await connection();
+
   const { provider } = await params;
   const value = decodeSlug(provider);
   const data = await getServerOfferCollection({ kind: "provider", value });

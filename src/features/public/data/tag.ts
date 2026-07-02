@@ -3,13 +3,9 @@ import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { slugify } from "@fwqgo/core/utils";
 import { readDb } from "@fwqgo/db";
 import { attachTagsToPosts } from "@fwqgo/db/post-tags";
-import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { postTags, posts, tags } from "@fwqgo/db/schema";
 
 export async function getTagBySlug(tagSlug: string) {
-  "use cache";
-  tagCache(cacheTags.tags, cacheTags.tagSlug(tagSlug));
-
   try {
     const [tag] = await readDb
       .select({
@@ -34,9 +30,6 @@ export async function getPostsWithTagsByTagSlug(
   tagSlug: string,
   pageNo = 1,
 ) {
-  "use cache";
-  tagCache(cacheTags.posts, cacheTags.tags, cacheTags.tagSlug(tagSlug));
-
   try {
     const currentPage = Number.isFinite(pageNo) && pageNo > 0 ? pageNo : 1;
 
@@ -103,9 +96,6 @@ export async function getTagList({
   page?: number;
   pageSize?: number;
 }) {
-  "use cache";
-  tagCache(cacheTags.tags);
-
   const result = await readDb
     .select()
     .from(tags)
@@ -116,17 +106,11 @@ export async function getTagList({
 }
 
 export async function getTagCount() {
-  "use cache";
-  tagCache(cacheTags.tags);
-
   const [result] = await readDb.select({ count: count() }).from(tags);
   return { data: result?.count ?? 0 };
 }
 
 export async function getTagSearchList() {
-  "use cache";
-  tagCache(cacheTags.tags);
-
   const result = await readDb
     .select({
       id: tags.id,
@@ -140,9 +124,6 @@ export async function getTagSearchList() {
 }
 
 export async function findBestTagMatch(keyword: string) {
-  "use cache";
-  tagCache(cacheTags.tags);
-
   const normalizedKeyword = keyword.trim();
 
   if (!normalizedKeyword) {

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { connection } from "next/server";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -22,7 +23,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Suspense } from "react";
 import { Separator } from "@/components/ui/separator";
-import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
+import {
+  getOptimizedImageSrc,
+  isRenderableImageSrc,
+} from "@fwqgo/core/image-src";
 import { formatDate, isInternalHref } from "@fwqgo/core/utils";
 import {
   getLatestServerOffers,
@@ -125,7 +129,7 @@ function HeroArticleTile({
         isLarge ? "min-h-[300px] md:min-h-[420px]" : "min-h-[180px]"
       }`}
     >
-      {imgUrl ? (
+      {isRenderableImageSrc(imgUrl) ? (
         <Image
           src={getOptimizedImageSrc(imgUrl)}
           alt={title}
@@ -185,6 +189,8 @@ function HeroArticleTile({
 }
 
 async function HomeContent() {
+  await connection();
+
   const [
     { data: posts },
     { data: sidebarData },

@@ -1,7 +1,6 @@
 import { readDb } from "@fwqgo/db";
 import { decodeSlug } from "@fwqgo/core/utils";
 import { attachTagsToPosts } from "@fwqgo/db/post-tags";
-import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import {
   posts,
   tags,
@@ -20,9 +19,6 @@ import {
 } from "drizzle-orm";
 
 export async function getPublishedPostCountByCategoryId(categoryId: number) {
-  "use cache";
-  tagCache(cacheTags.posts, cacheTags.category(categoryId));
-
   const [result] = await readDb
     .select({ count: count() })
     .from(posts)
@@ -32,9 +28,6 @@ export async function getPublishedPostCountByCategoryId(categoryId: number) {
 }
 
 export async function getPostsWithTags(limit = 15) {
-  "use cache";
-  tagCache(cacheTags.posts, cacheTags.homepage);
-
   try {
     const postsData = await readDb.query.posts.findMany({
       where: eq(posts.published, true),
@@ -64,9 +57,6 @@ export async function getPostsWithTags(limit = 15) {
 }
 
 export async function getHomepagePostsWithTags() {
-  "use cache";
-  tagCache(cacheTags.posts, cacheTags.homepage);
-
   try {
     return await getPostsWithTags(40);
   } catch (error) {
@@ -76,9 +66,6 @@ export async function getHomepagePostsWithTags() {
 }
 
 export async function getHomepageSidebarData() {
-  "use cache";
-  tagCache(cacheTags.posts, cacheTags.homepage, cacheTags.sidebar);
-
   const promotedPostsPromise = (async () => {
     try {
       return await readDb
@@ -146,9 +133,6 @@ export async function getHomepageSidebarData() {
 }
 
 export async function getPostByCategoryId(id: number) {
-  "use cache";
-  tagCache(cacheTags.posts, cacheTags.category(id));
-
   try {
     const postsData = await readDb
       .select({
@@ -163,20 +147,7 @@ export async function getPostByCategoryId(id: number) {
       .where(and(eq(posts.categoryId, id), eq(posts.published, true)))
       .orderBy(desc(posts.createdAt));
 
-    // 获取每个文章的标签
-    const postsWithTags = await Promise.all(
-      postsData.map(async (post) => {
-        const postTagsData = await readDb
-          .select()
-          .from(postTags)
-          .where(eq(postTags.postId, post.id));
-
-        return {
-          ...post,
-          tags: postTagsData,
-        };
-      }),
-    );
+    const postsWithTags = await attachTagsToPosts(postsData);
 
     return { data: postsWithTags };
   } catch (error) {
@@ -185,9 +156,6 @@ export async function getPostByCategoryId(id: number) {
 }
 
 export async function getPostBySlug(slug: string) {
-  "use cache";
-  tagCache(cacheTags.posts, cacheTags.postSlug(decodeSlug(slug)));
-
   try {
     const decodedSlug = decodeSlug(slug);
     const [post] = await readDb
@@ -241,11 +209,6 @@ export async function getRecommendedPosts(
   tagId: number | null,
   currentPostId: number,
 ) {
-  "use cache";
-  if (tagId) {
-    tagCache(cacheTags.posts, cacheTags.tag(tagId));
-  }
-
   try {
     if (!tagId) return { data: [] };
 
@@ -274,9 +237,6 @@ export async function getRecommendedPosts(
 }
 
 export async function getPostWithTagsBySlug(slug: string) {
-  "use cache";
-  tagCache(cacheTags.posts, cacheTags.postSlug(decodeSlug(slug)));
-
   try {
     const decodedSlug = decodeSlug(slug);
     const [postRow] = await readDb
@@ -307,8 +267,7 @@ export async function getPostWithTagsBySlug(slug: string) {
     }
     const { recommendedTagSlug, ...post } = postRow;
 
-    // 获取文章的标签
-    const postTagsData = await readDb
+    const postTagsPromise = readDb
       .select({
         tag: {
           id: tags.id,
@@ -320,15 +279,16 @@ export async function getPostWithTagsBySlug(slug: string) {
       .innerJoin(tags, eq(postTags.tagId, tags.id))
       .where(eq(postTags.postId, post.id));
 
-    // 如果文章存在且有推荐标签，获取推荐文章
-    let recommendedPosts = null;
-    if (post?.recommendedTagId) {
-      const recommended = await getRecommendedPosts(
-        post.recommendedTagId,
-        post.id,
-      );
-      recommendedPosts = recommended.data;
-    }
+    const recommendedPostsPromise = post.recommendedTagId
+      ? getRecommendedPosts(post.recommendedTagId, post.id).then(
+          (recommended) => recommended.data,
+        )
+      : Promise.resolve(null);
+
+    const [postTagsData, recommendedPosts] = await Promise.all([
+      postTagsPromise,
+      recommendedPostsPromise,
+    ]);
 
     return {
       data: {
@@ -346,9 +306,6 @@ export async function getPostWithTagsBySlug(slug: string) {
 }
 
 export async function getEnglishPostWithTagsBySlug(slug: string) {
-  "use cache";
-  tagCache(cacheTags.posts, cacheTags.postSlug(decodeSlug(slug)));
-
   try {
     const decodedSlug = decodeSlug(slug);
     const [postRow] = await readDb
@@ -403,9 +360,6 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
 }
 
 export async function getPostsWithTagsByCategoryId(id: number, pageNo: number) {
-  "use cache";
-  tagCache(cacheTags.posts, cacheTags.category(id));
-
   try {
     const postsData = await readDb
       .select({
@@ -431,34 +385,29 @@ export async function getPostsWithTagsByCategoryId(id: number, pageNo: number) {
 }
 
 export async function getPostsByPostId(id: number) {
-  "use cache";
-  tagCache(cacheTags.posts);
-
   try {
-    const [prevPost] = await readDb
-      .select()
-      .from(posts)
-      .where(and(lt(posts.id, id), eq(posts.published, true)))
-      .orderBy(desc(posts.id))
-      .limit(1);
+    const [prevRows, nextRows] = await Promise.all([
+      readDb
+        .select()
+        .from(posts)
+        .where(and(lt(posts.id, id), eq(posts.published, true)))
+        .orderBy(desc(posts.id))
+        .limit(1),
+      readDb
+        .select()
+        .from(posts)
+        .where(and(gt(posts.id, id), eq(posts.published, true)))
+        .orderBy(asc(posts.id))
+        .limit(1),
+    ]);
 
-    const [nextPost] = await readDb
-      .select()
-      .from(posts)
-      .where(and(gt(posts.id, id), eq(posts.published, true)))
-      .orderBy(asc(posts.id))
-      .limit(1);
-
-    return { data: [prevPost ?? null, nextPost ?? null] };
+    return { data: [prevRows[0] ?? null, nextRows[0] ?? null] };
   } catch (error) {
     return { error: "获取上下篇文章失败", message: error };
   }
 }
 
 export async function getLatestPostsForSidebar() {
-  "use cache";
-  tagCache(cacheTags.posts, cacheTags.sidebar);
-
   const postsData = await readDb
     .select({
       id: posts.id,

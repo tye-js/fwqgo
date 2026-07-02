@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import * as cheerio from "cheerio";
 
 import RewriteArticle from "@/langchain/rewrite-article";
-import { normalizeArticleHtml } from "@fwqgo/core/content";
+import { htmlToArticleMarkdown, normalizeArticleHtml } from "@fwqgo/core/content";
 import { slugify } from "@fwqgo/core/utils";
 import {
   createPostRecordInTransaction,
@@ -23,10 +23,14 @@ import {
   type ScrapeDiagnostics,
 } from "@fwqgo/scrape/article-scraper";
 import { rewriteAffiliateLinks } from "@fwqgo/scrape/affiliate-link-rewriter";
-import { generateEnglishSeoVersion } from "@fwqgo/ai/article-rewriter";
-import { shortenArticleOutboundLinks } from "@/server/links/outbound-short-link";
+import {
+  generateEnglishArticleContent,
+  generateEnglishMetadata,
+} from "@fwqgo/ai/article-rewriter";
+import { shortenMarkdownOutboundLinks } from "@/server/links/outbound-short-link";
 
 const runningTaskIds = new Set<number>();
+const MAX_AI_MARKDOWN_INPUT_LENGTH = 14_000;
 
 type TaskStatus =
   | "pending"
@@ -338,7 +342,7 @@ async function runEnglishSeoTask(
   const attempt = claimedTask.attempts;
   let activeStep = {
     key: "english_generate",
-    name: "生成英文 SEO 版本",
+    name: "生成英文正文",
     attempt,
     progress: 20,
   };
@@ -365,47 +369,98 @@ async function runEnglishSeoTask(
       throw new Error("关联草稿文章不存在");
     }
 
+    const markdownInput = htmlToArticleMarkdown(post.content, {
+      maxLength: MAX_AI_MARKDOWN_INPUT_LENGTH,
+    });
+
     await upsertTaskStep({
       taskId: claimedTask.id,
       attempt,
       stepKey: "english_generate",
-      stepName: "生成英文 SEO 版本",
+      stepName: "生成英文正文",
       status: "running",
       progress: 25,
-      message: "正在调用 AI 生成英文标题、摘要、关键词和正文",
+      message: markdownInput.truncated
+        ? `正在调用 AI 生成英文正文，Markdown 输入 ${markdownInput.markdown.length} 字符，已截断`
+        : `正在调用 AI 生成英文正文，Markdown 输入 ${markdownInput.markdown.length} 字符`,
     });
     await updateTask(claimedTask.id, {
       progress: 35,
-      currentStep: "生成英文 SEO 版本",
+      currentStep: "生成英文正文",
       resultTitle: post.title,
       scrapedTitle: post.title,
       scrapedDescription: post.description,
       scrapedHtml: post.content.slice(0, 60_000),
-      aiInputLength: post.content.length,
+      aiInputLength: markdownInput.markdown.length,
     });
 
-    const english = await generateEnglishSeoVersion(
+    const generatedEnglishContent = await generateEnglishArticleContent(
       {
         title: post.title,
         description: post.description,
         keywords: post.keywords,
-        htmlContent: post.content,
+        markdownContent: markdownInput.markdown,
       },
       { styleId: claimedTask.rewriteStyleId ?? undefined },
     );
-    const enSlug = await getUniqueEnglishSlug(english.enSlug, post.id);
-    const enContent = normalizeArticleHtml(
-      await shortenArticleOutboundLinks(english.enContent),
+    const enContent = await shortenMarkdownOutboundLinks(
+      generatedEnglishContent,
     );
 
     await upsertTaskStep({
       taskId: claimedTask.id,
       attempt,
       stepKey: "english_generate",
-      stepName: "生成英文 SEO 版本",
+      stepName: "生成英文正文",
       status: "success",
-      progress: 72,
+      progress: 58,
       message: `英文输出 ${enContent.length} 字符`,
+      payload: {
+        markdownInputLength: markdownInput.markdown.length,
+        markdownInputTruncated: markdownInput.truncated,
+      },
+    });
+
+    activeStep = {
+      key: "english_metadata",
+      name: "生成英文 SEO 信息",
+      attempt,
+      progress: 68,
+    };
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "english_metadata",
+      stepName: "生成英文 SEO 信息",
+      status: "running",
+      progress: 68,
+      message: "正在根据英文正文生成标题、slug、摘要和关键词",
+    });
+    await updateTask(claimedTask.id, {
+      progress: 68,
+      currentStep: "生成英文 SEO 信息",
+      rewriteOutputLength: enContent.length,
+    });
+
+    const english = await generateEnglishMetadata(
+      {
+        title: post.title,
+        description: post.description,
+        keywords: post.keywords,
+        enContent,
+      },
+      { styleId: claimedTask.rewriteStyleId ?? undefined },
+    );
+    const enSlug = await getUniqueEnglishSlug(english.enSlug, post.id);
+
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "english_metadata",
+      stepName: "生成英文 SEO 信息",
+      status: "success",
+      progress: 78,
+      message: `英文标题：${english.enTitle}`,
       payload: {
         enTitle: english.enTitle,
         enSlug,
@@ -468,9 +523,15 @@ async function runEnglishSeoTask(
         sourceHost: "english-seo",
         strategy: "english-seo-version",
         usedAiRewrite: true,
-        aiInputLength: post.content.length,
+        aiInputLength: markdownInput.markdown.length,
         rewriteOutputLength: enContent.length,
-        warnings: [],
+        markdownInputLength: markdownInput.markdown.length,
+        markdownInputTruncated: markdownInput.truncated,
+        sourceHtmlLength: markdownInput.document.sourceHtmlLength,
+        semanticBlockCount: markdownInput.document.blocks.length,
+        warnings: markdownInput.truncated
+          ? ["英文生成使用的中文 Markdown 输入过长，已按正文结构截断"]
+          : [],
       }),
       finishedAt: new Date(),
     });
@@ -507,6 +568,9 @@ async function createArticleFromManualTask(input: {
     removeInternal: false,
   });
   const cleanedHtml = $.html();
+  const markdownInput = htmlToArticleMarkdown(cleanedHtml, {
+    maxLength: MAX_AI_MARKDOWN_INPUT_LENGTH,
+  });
   const diagnostics: ScrapeDiagnostics = {
     sourceHost: input.sourceUrl,
     strategy: "manual-material",
@@ -517,24 +581,26 @@ async function createArticleFromManualTask(input: {
     scrapedTitle: sourceTitle,
     scrapedDescription: $.text().trim().slice(0, 160),
     cleanedHtmlLength: cleanedHtml.length,
-    aiInputLength: cleanedHtml.length,
-    aiInputTruncated: false,
+    aiInputLength: markdownInput.markdown.length,
+    aiInputTruncated: markdownInput.truncated,
     removedSelectors: [],
     affiliateReport,
-    warnings: [],
+    warnings: markdownInput.truncated
+      ? ["AI Markdown 输入过长，已按正文结构截取前半部分核心内容改写"]
+      : [],
   };
 
   try {
-    const rewritten = await RewriteArticle(cleanedHtml, {
+    const rewritten = await RewriteArticle(markdownInput.markdown, {
       styleId: input.rewriteStyleId,
     });
     diagnostics.usedAiRewrite = true;
-    diagnostics.rewriteOutputLength = rewritten.htmlContent.length;
+    diagnostics.rewriteOutputLength = rewritten.markdownContent.length;
 
     return {
       title: rewritten.title || sourceTitle,
-      content: normalizeArticleHtml(rewritten.htmlContent),
-      htmlContent: normalizeArticleHtml(rewritten.htmlContent),
+      content: rewritten.markdownContent,
+      htmlContent: rewritten.markdownContent,
       description: rewritten.description,
       keywords: rewritten.keywords,
       recommendTagName: rewritten.recommendTagName,
@@ -681,7 +747,7 @@ export async function runAiRewriteTask(taskId: number) {
         stepName: "清洗正文结构",
         status: "success",
         progress: 45,
-        message: `清洗后 HTML ${article.diagnostics.cleanedHtmlLength ?? article.htmlContent.length} 字符`,
+        message: `清洗后正文 ${article.diagnostics.cleanedHtmlLength ?? article.htmlContent.length} 字符，AI Markdown 输入 ${article.diagnostics.aiInputLength ?? "-"} 字符`,
         payload: {
           removedSelectors: article.diagnostics.removedSelectors,
           aiInputTruncated: article.diagnostics.aiInputTruncated,

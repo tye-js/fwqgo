@@ -78,6 +78,7 @@ export async function batchGenerateArticleCoverImagesAction(input: {
       .from(posts)
       .where(inArray(posts.id, uniquePostIds));
     const postById = new Map(postRows.map((post) => [post.id, post]));
+    const revalidateTags = new Set<string>();
     const results: Array<{
       postId: number;
       title?: string;
@@ -128,11 +129,9 @@ export async function batchGenerateArticleCoverImagesAction(input: {
         }
 
         await syncImageReferencesForPost(updatedPost.id);
-        revalidateSiteContent([
-          cacheTags.post(updatedPost.id),
-          cacheTags.postSlug(updatedPost.slug),
-          cacheTags.category(updatedPost.categoryId),
-        ]);
+        revalidateTags.add(cacheTags.post(updatedPost.id));
+        revalidateTags.add(cacheTags.postSlug(updatedPost.slug));
+        revalidateTags.add(cacheTags.category(updatedPost.categoryId));
         results.push({
           postId: post.id,
           title: post.title,
@@ -148,6 +147,10 @@ export async function batchGenerateArticleCoverImagesAction(input: {
           error: error instanceof Error ? error.message : "生成封面图失败",
         });
       }
+    }
+
+    if (revalidateTags.size > 0) {
+      revalidateSiteContent([...revalidateTags]);
     }
 
     revalidatePath("/images/covers");

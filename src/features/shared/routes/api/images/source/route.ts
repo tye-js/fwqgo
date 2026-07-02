@@ -34,6 +34,11 @@ export async function GET(request: NextRequest) {
 
   try {
     const filePath = uploadPathToFilePath(publicPath);
+    const contentType = getMimeType(filePath);
+    if (!contentType.startsWith("image/")) {
+      return new NextResponse("Unsupported image type", { status: 415 });
+    }
+
     const fileStat = await stat(filePath);
 
     if (!fileStat.isFile()) {
@@ -46,7 +51,7 @@ export async function GET(request: NextRequest) {
       headers: {
         "Cache-Control": "public, max-age=31536000, immutable",
         "Content-Length": fileStat.size.toString(),
-        "Content-Type": getMimeType(filePath),
+        "Content-Type": contentType,
       },
     });
   } catch {

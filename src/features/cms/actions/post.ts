@@ -7,14 +7,13 @@ import { db } from "@fwqgo/db";
 import { slugify } from "@fwqgo/core/utils";
 import { type CreatePostParams } from "@/types/post.types";
 import { type NewTag, type TagMain } from "@/types";
-import { normalizeArticleHtml } from "@fwqgo/core/content";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { rewriteAffiliateLinks } from "@fwqgo/scrape/affiliate-link-rewriter";
-import { shortenArticleOutboundLinks } from "@/server/links/outbound-short-link";
 import {
   createPostRecord,
   getErrorMessage,
+  prepareArticleContentForStorage,
   type CreatePostInput,
 } from "@/server/posts/create-post-record";
 import {
@@ -285,9 +284,7 @@ export async function updatePostContent(input: {
       .update(posts)
       .set({
         description: input.description,
-        content: normalizeArticleHtml(
-          await shortenArticleOutboundLinks(input.content),
-        ),
+        content: await prepareArticleContentForStorage(input.content),
         imgUrl: input.imgUrl ?? null,
         categoryId: input.categoryId,
         recommendedTagName: recommendedTag?.name ?? null,
@@ -383,9 +380,7 @@ export async function updatePostEnglishContent(input: {
         enSlug: normalizedSlug,
         enDescription:
           normalizedDescription.length > 0 ? normalizedDescription : null,
-        enContent: normalizeArticleHtml(
-          await shortenArticleOutboundLinks(normalizedContent),
-        ),
+        enContent: await prepareArticleContentForStorage(normalizedContent),
         enKeywords: normalizedKeywords.length > 0 ? normalizedKeywords : null,
         enImgUrl:
           input.enImgUrl && input.enImgUrl.trim().length > 0

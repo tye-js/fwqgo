@@ -1,5 +1,22 @@
 const DEFAULT_SITE_URL = "https://fwqgo.com";
 
+export function isRenderableImageSrc(
+  src: string | null | undefined,
+): src is string {
+  if (!src) return false;
+
+  if (src.startsWith("/")) {
+    return !src.startsWith("//");
+  }
+
+  try {
+    const url = new URL(src);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function getImageSrc(src: string) {
   if (!src.startsWith("/uploads/")) {
     return src;
