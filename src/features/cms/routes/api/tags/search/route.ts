@@ -1,5 +1,5 @@
 import { findBestTagMatch } from "@/features/cms/data/tag";
-import { requireAdminSession } from "@fwqgo/auth/session";
+import { isUnauthorizedError, requireAdminSession } from "@fwqgo/auth/session";
 import { connection, NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -28,6 +28,11 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("Tag search failed:", error);
+
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json({ found: false }, { status: 401 });
+    }
+
     return NextResponse.json({ found: false }, { status: 500 });
   }
 }

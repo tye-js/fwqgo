@@ -1,0 +1,21 @@
+CREATE INDEX IF NOT EXISTS "aff_service_providers_officialUrl_idx" ON "aff_service_providers" USING btree ("officialUrl");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "ai_rewrite_tasks_status_createdAt_idx" ON "ai_rewrite_tasks" USING btree ("status","createdAt");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "ai_rewrite_tasks_sourceUrl_createdAt_idx" ON "ai_rewrite_tasks" USING btree ("sourceUrl","createdAt");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "ai_source_sites_enabled_id_idx" ON "ai_source_sites" USING btree ("enabled","id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "ai_task_steps_taskId_attempt_id_idx" ON "ai_task_steps" USING btree ("taskId","attempt","id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "homepage_promoted_posts_sortOrder_createdAt_idx" ON "homepage_promoted_posts" USING btree ("sortOrder","createdAt");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "image_assets_createdAt_idx" ON "image_assets" USING btree ("createdAt");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "image_assets_status_createdAt_idx" ON "image_assets" USING btree ("status","createdAt");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "image_assets_imageType_createdAt_idx" ON "image_assets" USING btree ("imageType","createdAt");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "posts_published_createdAt_idx" ON "posts" USING btree ("published","createdAt");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "posts_published_updatedAt_idx" ON "posts" USING btree ("published","updatedAt");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "posts_published_views_createdAt_idx" ON "posts" USING btree ("published","views","createdAt");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "posts_categoryId_published_createdAt_idx" ON "posts" USING btree ("categoryId","published","createdAt");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "posts_published_id_idx" ON "posts" USING btree ("published","id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "posts_enSlug_published_idx" ON "posts" USING btree ("enSlug","published");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "server_offers_visible_status_featured_createdAt_idx" ON "server_offers" USING btree ("visible","status","featured","createdAt");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "server_offers_visible_region_price_idx" ON "server_offers" USING btree ("visible","region","priceAmount");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "server_offers_visible_providerName_price_idx" ON "server_offers" USING btree ("visible","providerName","priceAmount");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "server_offers_visible_lineType_price_idx" ON "server_offers" USING btree ("visible","lineType","priceAmount");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "source_materials_status_createdAt_idx" ON "source_materials" USING btree ("status","createdAt");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "tags_indexable_idx" ON "tags" USING btree ("indexable");

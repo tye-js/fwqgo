@@ -77,14 +77,15 @@ export function CreatePostWorkbench({
   const failedSeoChecks = seoChecks.filter((check) => !check.ok);
 
   const handleAddTag = () => {
-    if (!tagInput.trim()) return;
+    const name = tagInput.trim();
+    if (!name) return;
 
-    const newTag = {
-      id: Date.now().toString(),
-      name: tagInput.trim(),
-    };
+    if (tags.some((tag) => tag.name.trim() === name)) {
+      toast.info("这个标签已经添加过了");
+      return;
+    }
 
-    setTags([...tags, newTag]);
+    setTags([...tags, { name }]);
     setTagInput("");
     setIsAddingTag(false);
   };
@@ -313,8 +314,14 @@ export function CreatePostWorkbench({
                     placeholder="输入标签名称"
                     className="w-32"
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") handleAddTag();
-                      if (e.key === "Escape") setIsAddingTag(false);
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddTag();
+                      }
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        setIsAddingTag(false);
+                      }
                     }}
                     autoFocus
                   />

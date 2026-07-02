@@ -499,7 +499,7 @@ export function ImageAssetManager({
               return (
                 <TableRow key={image.id}>
                   <TableCell>
-                    <a href={image.path} target="_blank" rel="noreferrer">
+                    <a href={image.path} target="_blank" rel="noopener noreferrer">
                       <div className="relative h-16 w-20 overflow-hidden rounded-md border border-border/70 bg-muted">
                         <Image
                           src={getOptimizedImageSrc(image.thumbPath ?? image.path)}
@@ -711,7 +711,7 @@ export function ImageAssetManager({
                         <Copy className="size-4" />
                       </Button>
                       <Button asChild variant="outline" size="icon" title="打开原图">
-                        <a href={image.path} target="_blank" rel="noreferrer">
+                        <a href={image.path} target="_blank" rel="noopener noreferrer">
                           <ExternalLink className="size-4" />
                         </a>
                       </Button>

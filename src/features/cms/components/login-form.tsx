@@ -70,7 +70,6 @@ export function LoginForm({
           <Button
             type="submit"
             className="w-full"
-            onClick={handleLogin}
             disabled={isPending}
           >
             {isPending ? "登录中..." : "登录"}

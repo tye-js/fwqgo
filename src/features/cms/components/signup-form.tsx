@@ -23,27 +23,43 @@ export function SignupForm() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4">
+        <form className="grid gap-4">
           <div className="grid gap-2">
             <Label htmlFor="username">用户名</Label>
-            <Input id="username" type="text" placeholder="tye" required />
+            <Input
+              id="username"
+              type="text"
+              autoComplete="username"
+              placeholder="tye"
+              required
+            />
           </div>
           <div className="grid gap-2">
             <div className="flex items-center">
               <Label htmlFor="password">密码</Label>
             </div>
-            <Input id="password" type="password" required />
+            <Input
+              id="password"
+              type="password"
+              autoComplete="new-password"
+              required
+            />
           </div>
           <div className="grid gap-2">
             <div className="flex items-center">
-              <Label htmlFor="password">确认密码</Label>
+              <Label htmlFor="confirmPassword">确认密码</Label>
             </div>
-            <Input id="password" type="password" required />
+            <Input
+              id="confirmPassword"
+              type="password"
+              autoComplete="new-password"
+              required
+            />
           </div>
           <Button type="submit" className="w-full">
-            Signup
+            注册
           </Button>
-        </div>
+        </form>
         <div className="mt-4 text-center text-sm">
           已经有账号？{" "}
           <Link href="/login" className="underline">

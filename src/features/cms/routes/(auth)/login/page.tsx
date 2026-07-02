@@ -38,7 +38,7 @@ export default function Page() {
   };
 
   return (
-    <div className="flex min-h-dvh w-full items-center justify-center px-4 py-10">
+    <div className="cms-theme editorial-surface flex min-h-dvh w-full items-center justify-center bg-background px-4 py-10">
       <LoginForm
         handleLogin={handleLogin}
         username={username}

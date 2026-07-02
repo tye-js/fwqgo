@@ -71,7 +71,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="flex min-h-dvh items-center justify-center px-4 py-10">
+    <div className="cms-theme editorial-surface flex min-h-dvh items-center justify-center bg-background px-4 py-10">
       <div className="w-full max-w-md rounded-lg border border-border/70 bg-background p-6 shadow-sm">
         <div className="space-y-1.5">
           <h1 className="text-2xl font-semibold">注册</h1>

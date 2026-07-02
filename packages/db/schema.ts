@@ -60,6 +60,30 @@ export const posts = pgTable(
     affiliateReviewStatusIdx: index("posts_affiliateReviewStatus_idx").on(
       table.affiliateReviewStatus,
     ),
+    publishedCreatedAtIdx: index("posts_published_createdAt_idx").on(
+      table.published,
+      table.createdAt,
+    ),
+    publishedUpdatedAtIdx: index("posts_published_updatedAt_idx").on(
+      table.published,
+      table.updatedAt,
+    ),
+    publishedViewsCreatedAtIdx: index("posts_published_views_createdAt_idx").on(
+      table.published,
+      table.views,
+      table.createdAt,
+    ),
+    categoryPublishedCreatedAtIdx: index(
+      "posts_categoryId_published_createdAt_idx",
+    ).on(table.categoryId, table.published, table.createdAt),
+    publishedIdIdx: index("posts_published_id_idx").on(
+      table.published,
+      table.id,
+    ),
+    enSlugPublishedIdx: index("posts_enSlug_published_idx").on(
+      table.enSlug,
+      table.published,
+    ),
     categoryFk: foreignKey({
       columns: [table.categoryId],
       foreignColumns: [categories.id],
@@ -102,16 +126,22 @@ export const categories = pgTable(
 );
 
 // Tag table
-export const tags = pgTable("tags", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull().unique(),
-  keywords: varchar("keywords", { length: 800 }),
-  description: varchar("description", { length: 800 }),
-  slug: text("slug").notNull().unique(),
-  indexable: boolean("indexable").default(true).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt"),
-});
+export const tags = pgTable(
+  "tags",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull().unique(),
+    keywords: varchar("keywords", { length: 800 }),
+    description: varchar("description", { length: 800 }),
+    slug: text("slug").notNull().unique(),
+    indexable: boolean("indexable").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    indexableIdx: index("tags_indexable_idx").on(table.indexable),
+  }),
+);
 
 // PostTag junction table
 export const postTags = pgTable(
@@ -216,16 +246,24 @@ export const verificationTokens = pgTable(
 );
 
 // AffServiceProvider table
-export const affServiceProviders = pgTable("aff_service_providers", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull().unique(),
-  affUrl: text("affUrl").notNull(),
-  affParam: text("affParam").notNull(),
-  affValue: text("affValue").notNull(),
-  officialUrl: text("officialUrl").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt"),
-});
+export const affServiceProviders = pgTable(
+  "aff_service_providers",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull().unique(),
+    affUrl: text("affUrl").notNull(),
+    affParam: text("affParam").notNull(),
+    affValue: text("affValue").notNull(),
+    officialUrl: text("officialUrl").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    officialUrlIdx: index("aff_service_providers_officialUrl_idx").on(
+      table.officialUrl,
+    ),
+  }),
+);
 
 // Homepage promoted posts table
 export const homepagePromotedPosts = pgTable(
@@ -239,6 +277,9 @@ export const homepagePromotedPosts = pgTable(
   (table) => ({
     postIdx: index("homepage_promoted_posts_postId_idx").on(table.postId),
     sortIdx: index("homepage_promoted_posts_sortOrder_idx").on(table.sortOrder),
+    sortCreatedAtIdx: index(
+      "homepage_promoted_posts_sortOrder_createdAt_idx",
+    ).on(table.sortOrder, table.createdAt),
     postFk: foreignKey({
       columns: [table.postId],
       foreignColumns: [posts.id],
@@ -274,6 +315,15 @@ export const imageAssets = pgTable(
     pathIdx: index("image_assets_path_idx").on(table.path),
     hashIdx: index("image_assets_hash_idx").on(table.hash),
     uploadedByIdx: index("image_assets_uploadedBy_idx").on(table.uploadedBy),
+    createdAtIdx: index("image_assets_createdAt_idx").on(table.createdAt),
+    statusCreatedAtIdx: index("image_assets_status_createdAt_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+    imageTypeCreatedAtIdx: index("image_assets_imageType_createdAt_idx").on(
+      table.imageType,
+      table.createdAt,
+    ),
     uploadedByFk: foreignKey({
       columns: [table.uploadedBy],
       foreignColumns: [users.id],
@@ -368,6 +418,10 @@ export const sourceMaterials = pgTable(
     sourceUrlIdx: index("source_materials_sourceUrl_idx").on(table.sourceUrl),
     statusIdx: index("source_materials_status_idx").on(table.status),
     createdAtIdx: index("source_materials_createdAt_idx").on(table.createdAt),
+    statusCreatedAtIdx: index("source_materials_status_createdAt_idx").on(
+      table.status,
+      table.createdAt,
+    ),
     categoryFk: foreignKey({
       columns: [table.categoryId],
       foreignColumns: [categories.id],
@@ -423,6 +477,14 @@ export const aiRewriteTasks = pgTable(
     statusIdx: index("ai_rewrite_tasks_status_idx").on(table.status),
     createdAtIdx: index("ai_rewrite_tasks_createdAt_idx").on(table.createdAt),
     postIdx: index("ai_rewrite_tasks_postId_idx").on(table.postId),
+    statusCreatedAtIdx: index("ai_rewrite_tasks_status_createdAt_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+    sourceUrlCreatedAtIdx: index("ai_rewrite_tasks_sourceUrl_createdAt_idx").on(
+      table.sourceUrl,
+      table.createdAt,
+    ),
     sourceMaterialFk: foreignKey({
       columns: [table.sourceMaterialId],
       foreignColumns: [sourceMaterials.id],
@@ -467,6 +529,11 @@ export const aiTaskSteps = pgTable(
   (table) => ({
     taskIdx: index("ai_task_steps_taskId_idx").on(table.taskId),
     statusIdx: index("ai_task_steps_status_idx").on(table.status),
+    taskAttemptIdIdx: index("ai_task_steps_taskId_attempt_id_idx").on(
+      table.taskId,
+      table.attempt,
+      table.id,
+    ),
     stepAttemptUnique: unique("ai_task_steps_task_step_attempt_unique").on(
       table.taskId,
       table.stepKey,
@@ -502,6 +569,10 @@ export const aiSourceSites = pgTable(
   },
   (table) => ({
     enabledIdx: index("ai_source_sites_enabled_idx").on(table.enabled),
+    enabledIdIdx: index("ai_source_sites_enabled_id_idx").on(
+      table.enabled,
+      table.id,
+    ),
     categoryFk: foreignKey({
       columns: [table.categoryId],
       foreignColumns: [categories.id],
@@ -626,6 +697,22 @@ export const serverOffers = pgTable(
     regionIdx: index("server_offers_region_idx").on(table.region),
     lineTypeIdx: index("server_offers_lineType_idx").on(table.lineType),
     priceIdx: index("server_offers_priceAmount_idx").on(table.priceAmount),
+    visibleStatusFeaturedCreatedAtIdx: index(
+      "server_offers_visible_status_featured_createdAt_idx",
+    ).on(table.visible, table.status, table.featured, table.createdAt),
+    visibleRegionPriceIdx: index("server_offers_visible_region_price_idx").on(
+      table.visible,
+      table.region,
+      table.priceAmount,
+    ),
+    visibleProviderPriceIdx: index(
+      "server_offers_visible_providerName_price_idx",
+    ).on(table.visible, table.providerName, table.priceAmount),
+    visibleLinePriceIdx: index("server_offers_visible_lineType_price_idx").on(
+      table.visible,
+      table.lineType,
+      table.priceAmount,
+    ),
     providerFk: foreignKey({
       columns: [table.providerId],
       foreignColumns: [affServiceProviders.id],

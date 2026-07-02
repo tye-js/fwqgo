@@ -263,8 +263,15 @@ jobs:
           start_release "$current_link"
           pm2 save
 
-          web_port="$(grep -E "^WEB_PORT=" "$shared_dir/.env.production" 2>/dev/null | tail -n 1 | cut -d= -f2- | tr -d "\"'"'"'" || true)"
-          cms_port="$(grep -E "^CMS_PORT=" "$shared_dir/.env.production" 2>/dev/null | tail -n 1 | cut -d= -f2- | tr -d "\"'"'"'" || true)"
+          read_env_value() {
+            local key="$1"
+            local value
+            value="$(grep -E "^${key}=" "$shared_dir/.env.production" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+            printf "%s" "$value" | sed -e "s/^[\"']//" -e "s/[\"']$//"
+          }
+
+          web_port="$(read_env_value WEB_PORT)"
+          cms_port="$(read_env_value CMS_PORT)"
           web_port="${web_port:-3000}"
           cms_port="${cms_port:-3100}"
           web_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 15 "http://127.0.0.1:${web_port}/")"

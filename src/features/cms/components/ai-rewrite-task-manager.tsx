@@ -253,7 +253,7 @@ function FailedTaskPanel({
               <a
                 href={task.sourceUrl}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="block truncate text-xs text-muted-foreground hover:text-primary"
               >
                 {task.sourceUrl}
@@ -717,7 +717,7 @@ export function AiRewriteTaskManager({
                           <a
                             href={task.sourceUrl}
                             target="_blank"
-                            rel="noreferrer"
+                            rel="noopener noreferrer"
                             className="line-clamp-2 break-all text-sm font-medium text-foreground hover:underline"
                           >
                             {taskSourceTitle(task)}

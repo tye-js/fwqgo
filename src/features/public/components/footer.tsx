@@ -122,6 +122,7 @@ export default async function FooterComponent() {
             <Link
               href="https://beian.miit.gov.cn/"
               target="_blank"
+              rel="noopener noreferrer"
               className="rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               沪ICP备2021026034号-5

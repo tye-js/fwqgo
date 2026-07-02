@@ -193,7 +193,7 @@ function SourceRunResultPanel({
                 key={url}
                 href={url}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="block rounded-md border border-border/70 px-3 py-2 text-xs text-muted-foreground hover:bg-muted/30"
               >
                 <span className="line-clamp-1 break-all">{url}</span>
@@ -215,7 +215,7 @@ function SourceRunResultPanel({
                 key={url}
                 href={url}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="block rounded-md border border-border/70 px-3 py-2 text-xs text-muted-foreground hover:bg-muted/30"
               >
                 <span className="line-clamp-1 break-all">{url}</span>
@@ -534,7 +534,7 @@ export function AiSourceSiteManager({
                         <a
                           href={site.siteUrl}
                           target="_blank"
-                          rel="noreferrer"
+                          rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 break-all text-sm text-muted-foreground hover:text-foreground"
                         >
                           {site.siteUrl}

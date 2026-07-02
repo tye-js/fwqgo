@@ -296,7 +296,7 @@ export function ImageUploadWorkbench() {
                             <Copy className="size-4" />
                           </Button>
                           <Button asChild variant="outline" size="icon" title="打开原图">
-                            <a href={item.url} target="_blank" rel="noreferrer">
+                            <a href={item.url} target="_blank" rel="noopener noreferrer">
                               <ExternalLink className="size-4" />
                             </a>
                           </Button>

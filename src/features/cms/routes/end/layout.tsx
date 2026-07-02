@@ -44,7 +44,7 @@ export default function CreateLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="editorial-surface min-h-screen bg-background">
+    <div className="cms-theme editorial-surface min-h-screen bg-background">
       <Suspense fallback={null}>
         <SessionGuard />
       </Suspense>
@@ -73,7 +73,7 @@ export default function CreateLayout({
               <div className="flex items-center gap-3 px-4">
                 <SidebarTrigger className="-ml-1 rounded-full border border-border/70 bg-background/90" />
                 <Separator orientation="vertical" className="mr-1 h-4" />
-                <BookMarked className="size-4 text-accent" />
+                <BookMarked className="size-4 text-primary" />
                 <Suspense fallback={null}>
                   <AppBreadcrumb />
                 </Suspense>
