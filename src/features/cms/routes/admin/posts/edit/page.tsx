@@ -10,13 +10,18 @@ import { PostList } from "@/features/cms/components/posts-tables";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
+function parsePageNo(value: string | undefined) {
+  const parsed = value ? Number.parseInt(value, 10) : 1;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+}
+
 async function PostListWrapper({
   searchParamsPromise,
 }: {
   searchParamsPromise: Promise<{ pageNo?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const pageNo = searchParams.pageNo ? parseInt(searchParams.pageNo) : 1;
+  const pageNo = parsePageNo(searchParams.pageNo);
   const { data: posts, error } = await getPosts({ pageNo, pageSize: 15 });
 
   if (error || !posts) {

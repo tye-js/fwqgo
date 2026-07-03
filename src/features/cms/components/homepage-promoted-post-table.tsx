@@ -38,6 +38,18 @@ type PublishedPostOption = {
   slug: string;
 };
 
+function getActionErrorMessage(result: { error?: string; message?: unknown }) {
+  if (!result.error) {
+    return null;
+  }
+
+  if (typeof result.message === "string" && result.message.trim()) {
+    return `${result.error}：${result.message}`;
+  }
+
+  return result.error;
+}
+
 export function HomepagePromotedPostTable({
   data,
   postOptions,
@@ -109,8 +121,9 @@ export function HomepagePromotedPostTable({
     const result = await addHomepagePromotedPost({ postId, sortOrder });
     setIsSubmitting(false);
 
-    if ("error" in result && typeof result.error === "string") {
-      toast.error(result.error);
+    const errorMessage = getActionErrorMessage(result);
+    if (errorMessage) {
+      toast.error(errorMessage);
       return;
     }
 
@@ -128,8 +141,9 @@ export function HomepagePromotedPostTable({
     }
 
     const result = await updateHomepagePromotedPost({ id, sortOrder });
-    if ("error" in result && typeof result.error === "string") {
-      toast.error(result.error);
+    const errorMessage = getActionErrorMessage(result);
+    if (errorMessage) {
+      toast.error(errorMessage);
       return;
     }
 
@@ -140,8 +154,9 @@ export function HomepagePromotedPostTable({
 
   async function handleDelete(id: number) {
     const result = await deleteHomepagePromotedPost(id);
-    if ("error" in result && typeof result.error === "string") {
-      toast.error(result.error);
+    const errorMessage = getActionErrorMessage(result);
+    if (errorMessage) {
+      toast.error(errorMessage);
       return;
     }
 
@@ -159,8 +174,9 @@ export function HomepagePromotedPostTable({
     const result = await deleteHomepagePromotedPosts(selectedIds);
     setIsBulkDeleting(false);
 
-    if ("error" in result && typeof result.error === "string") {
-      toast.error(result.error);
+    const errorMessage = getActionErrorMessage(result);
+    if (errorMessage) {
+      toast.error(errorMessage);
       return;
     }
 

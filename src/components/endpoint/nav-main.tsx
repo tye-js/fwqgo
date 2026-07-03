@@ -57,9 +57,11 @@ export function NavMain({
     ?.url;
 
   return (
-    <SidebarGroup>
-      <SidebarGroupLabel>后台导航</SidebarGroupLabel>
-      <SidebarMenu>
+    <SidebarGroup className="p-1.5">
+      <SidebarGroupLabel className="h-6 px-2 text-[11px] uppercase tracking-wide text-sidebar-foreground/50">
+        菜单
+      </SidebarGroupLabel>
+      <SidebarMenu className="gap-0.5">
         {items.map((item) => (
           <Collapsible
             key={item.title}
@@ -69,7 +71,7 @@ export function NavMain({
           >
             <SidebarMenuItem>
               <CollapsibleTrigger asChild>
-                <SidebarMenuButton tooltip={item.title}>
+                <SidebarMenuButton tooltip={item.title} className="h-8">
                   {item.icon && <item.icon />}
                   <span>{item.title}</span>
                   <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
@@ -82,6 +84,7 @@ export function NavMain({
                       <SidebarMenuSubButton
                         asChild
                         isActive={subItem.url === activeSubItemUrl}
+                        size="sm"
                       >
                         <Link href={subItem.url}>
                           <span>{subItem.title}</span>

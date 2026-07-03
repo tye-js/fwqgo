@@ -23,23 +23,23 @@ export function AdminPageShell({
 }) {
   return (
     <div
-      className="flex flex-1 flex-col gap-5 px-4 py-5 md:px-6 lg:px-8"
+      className="flex flex-1 flex-col gap-4 px-3 py-3 md:px-5 md:py-4"
       aria-label={title}
     >
-      <div className="flex flex-col gap-3 border-b border-border/70 pb-4 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-2 border-b border-border/70 pb-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-foreground md:text-2xl">
+            <h1 className="text-lg font-semibold tracking-tight text-foreground md:text-xl">
               {title}
             </h1>
             {badge ? (
-              <span className="inline-flex items-center rounded-md border border-border bg-muted/60 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              <span className="inline-flex h-6 items-center rounded-sm border border-border bg-muted/50 px-2 text-xs font-medium text-muted-foreground">
                 {badge}
               </span>
             ) : null}
           </div>
           {description ? (
-            <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+            <p className="line-clamp-2 max-w-4xl text-xs leading-5 text-muted-foreground md:text-sm">
               {description}
             </p>
           ) : null}
@@ -67,7 +67,7 @@ export function AdminSectionCard({
   return (
     <Card className="rounded-md border-border/70 bg-card shadow-none">
       {title || description ? (
-        <CardHeader className="border-b border-border/60 px-4 py-3 md:px-5">
+        <CardHeader className="border-b border-border/60 px-3 py-2.5 md:px-4">
           <div className="space-y-1">
             {title ? (
               <CardTitle className="text-sm font-semibold tracking-normal">
@@ -75,14 +75,14 @@ export function AdminSectionCard({
               </CardTitle>
             ) : null}
             {description ? (
-              <CardDescription className="text-xs leading-5">
+              <CardDescription className="line-clamp-2 text-xs leading-5">
                 {description}
               </CardDescription>
             ) : null}
           </div>
         </CardHeader>
       ) : null}
-      <CardContent className="px-4 py-4 md:px-5">{children}</CardContent>
+      <CardContent className="px-3 py-3 md:px-4">{children}</CardContent>
     </Card>
   );
 }
@@ -97,16 +97,16 @@ export function AdminSummaryStrip({
       {items.map((item, index) => (
         <div
           key={item.label}
-          className="border-b border-border/60 px-4 py-3 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0"
+          className="border-b border-border/60 px-3 py-2.5 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0"
         >
-          <p className="text-xs font-medium text-muted-foreground">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             {item.label}
           </p>
-          <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">
+          <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">
             {item.value}
           </p>
           {item.note ? (
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            <p className="mt-0.5 line-clamp-1 text-xs leading-5 text-muted-foreground">
               {item.note}
             </p>
           ) : null}

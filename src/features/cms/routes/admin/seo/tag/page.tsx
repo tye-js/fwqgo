@@ -5,13 +5,18 @@ import { AdminPageShell, AdminSectionCard } from "@/features/cms/components/admi
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { TagSeoTable } from "@/features/cms/components/tag-seo-table";
 
+function parsePageNo(value: string | undefined) {
+  const parsed = value ? Number.parseInt(value, 10) : 1;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+}
+
 async function TagListWrapper({
   searchParamsPromise,
 }: {
   searchParamsPromise: Promise<{ pageNo?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const pageNo = searchParams.pageNo ? parseInt(searchParams.pageNo) : 1;
+  const pageNo = parsePageNo(searchParams.pageNo);
   const { data } = await getAdminTagList({ page: pageNo, pageSize: 20 });
   const { data: tagCount } = await getAdminTagCount();
 

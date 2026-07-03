@@ -24,41 +24,41 @@ export function AdminTableWorkbench({
   actionSlot?: ReactNode;
 }) {
   return (
-    <div className="space-y-4 rounded-lg border border-border/70 bg-muted/20 p-4 md:p-5">
+    <div className="space-y-3 rounded-md border border-border/70 bg-muted/15 p-3">
       {title || description || (selectionCount && selectionCount > 0) ? (
-        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           {title || description ? (
             <div className="space-y-1">
               {title ? (
-                <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+                <h3 className="text-sm font-semibold text-foreground">{title}</h3>
               ) : null}
               {description ? (
-                <p className="text-sm leading-6 text-muted-foreground">
+                <p className="line-clamp-1 text-xs leading-5 text-muted-foreground">
                   {description}
                 </p>
               ) : null}
             </div>
           ) : null}
           {selectionCount && selectionCount > 0 ? (
-            <Badge className="w-fit bg-primary text-primary-foreground">
+            <Badge variant="secondary" className="w-fit rounded-sm">
               已选 {selectionCount} 项
             </Badge>
           ) : null}
         </div>
       ) : null}
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto_auto] xl:items-center">
+      <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto_auto] xl:items-center">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={searchValue}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={searchPlaceholder}
-            className="h-11 rounded-full border-border/70 bg-background pl-11"
+            className="h-10 rounded-md border-border/70 bg-background pl-9 text-sm shadow-none"
           />
         </div>
         {filterSlot ? (
-          <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border/70 bg-background px-3 py-3 text-sm text-muted-foreground md:flex-row md:items-center md:px-4 md:py-2.5 xl:rounded-full">
+          <div className="flex min-w-0 flex-col gap-2 rounded-md border border-border/70 bg-background px-3 py-2 text-sm text-muted-foreground md:flex-row md:items-center">
             <Filter className="size-4" />
             {filterSlot}
           </div>
@@ -83,12 +83,12 @@ export function AdminTableEmpty({
   actionSlot?: ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center">
-      <p className="text-base font-medium text-foreground">{title}</p>
-      <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+    <div className="rounded-md border border-dashed border-border/70 bg-muted/15 px-4 py-6 text-center">
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      <p className="mx-auto mt-2 max-w-xl text-xs leading-5 text-muted-foreground">
         {description}
       </p>
-      {actionSlot ? <div className="mt-5">{actionSlot}</div> : null}
+      {actionSlot ? <div className="mt-4">{actionSlot}</div> : null}
     </div>
   );
 }

@@ -22,6 +22,7 @@ import {
 } from "@/server/images/assets";
 import {
   posts,
+  categories,
   tags,
   postTags,
 } from "@fwqgo/db/schema";
@@ -275,12 +276,34 @@ export async function updatePostContent(input: {
       return { error: "文章不存在" };
     }
 
+    const normalizedDescription = input.description.trim();
+    const normalizedContent = input.content.trim();
+    const normalizedRecommendTagName = input.recommendTagName.trim();
+
+    if (!normalizedDescription || !normalizedContent) {
+      return { error: "文章简述和正文不能为空" };
+    }
+
+    if (!Number.isInteger(input.categoryId) || input.categoryId <= 0) {
+      return { error: "文章分类不正确" };
+    }
+
+    const [category] = await db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(eq(categories.id, input.categoryId))
+      .limit(1);
+
+    if (!category) {
+      return { error: "文章分类不存在，请重新选择分类" };
+    }
+
     let recommendedTag: { id: number; name: string } | null = null;
-    if (input.recommendTagName) {
+    if (normalizedRecommendTagName) {
       const [existingTag] = await db
         .select({ id: tags.id, name: tags.name })
         .from(tags)
-        .where(eq(tags.name, input.recommendTagName))
+        .where(eq(tags.name, normalizedRecommendTagName))
         .limit(1);
 
       if (!existingTag) {
@@ -290,12 +313,14 @@ export async function updatePostContent(input: {
       recommendedTag = existingTag;
     }
 
+    const normalizedImgUrl = input.imgUrl?.trim() ?? "";
+
     const [post] = await db
       .update(posts)
       .set({
-        description: input.description,
-        content: await prepareArticleContentForStorage(input.content),
-        imgUrl: input.imgUrl ?? null,
+        description: normalizedDescription,
+        content: await prepareArticleContentForStorage(normalizedContent),
+        imgUrl: normalizedImgUrl.length > 0 ? normalizedImgUrl : null,
         categoryId: input.categoryId,
         recommendedTagName: recommendedTag?.name ?? null,
         recommendedTagId: recommendedTag?.id ?? null,
@@ -443,16 +468,18 @@ export async function deletePostById(id: number) {
       categoryId: posts.categoryId,
     });
 
-    if (deletedPost) {
-      await syncImageReferencesForPost(deletedPost.id);
-      revalidateImageAssetList();
-      revalidatePostWorkbenches();
-      revalidateSiteContent([
-        cacheTags.post(deletedPost.id),
-        cacheTags.postSlug(deletedPost.slug),
-        cacheTags.category(deletedPost.categoryId),
-      ]);
+    if (!deletedPost) {
+      return { error: "文章不存在或已被删除" };
     }
+
+    await syncImageReferencesForPost(deletedPost.id);
+    revalidateImageAssetList();
+    revalidatePostWorkbenches();
+    revalidateSiteContent([
+      cacheTags.post(deletedPost.id),
+      cacheTags.postSlug(deletedPost.slug),
+      cacheTags.category(deletedPost.categoryId),
+    ]);
 
     return { data: "删除文章成功" };
   } catch (error) {
@@ -464,11 +491,13 @@ export async function deletePostsByIds(ids: number[]) {
   try {
     await requireAdminSession();
 
-    if (ids.length === 0) {
+    const validIds = ids.filter((id) => Number.isInteger(id) && id > 0);
+
+    if (validIds.length === 0) {
       return { data: 0 };
     }
 
-    const deletedPosts = await db.delete(posts).where(inArray(posts.id, ids)).returning({
+    const deletedPosts = await db.delete(posts).where(inArray(posts.id, validIds)).returning({
       id: posts.id,
       slug: posts.slug,
       categoryId: posts.categoryId,

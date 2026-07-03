@@ -11,13 +11,18 @@ import {
 import AffManTable from "@/features/cms/components/affman-tables";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 
+function parsePageNo(value: string | undefined) {
+  const parsed = value ? Number.parseInt(value, 10) : 1;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+}
+
 async function AffManList({
   searchParamsPromise,
 }: {
   searchParamsPromise: Promise<{ pageNo?: string; query?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const pageNo = searchParams.pageNo ? parseInt(searchParams.pageNo) : 1;
+  const pageNo = parsePageNo(searchParams.pageNo);
   const query = searchParams.query?.trim() ?? "";
   const { data } = await getAffProviderList({ page: pageNo, query });
   const { data: postCount } = await getAffProviderCount(query);

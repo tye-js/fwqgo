@@ -6,13 +6,12 @@ import { asc, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@fwqgo/db";
 import { homepagePromotedPosts, posts } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
-import { cacheTags, revalidateSiteContent, tagCache } from "@fwqgo/cache/tags";
+import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 
 export async function getHomepagePromotedPostList() {
-  "use cache";
-  tagCache(cacheTags.homepage);
-
   try {
+    await requireAdminSession();
+
     const result = await db.query.homepagePromotedPosts.findMany({
       orderBy: [
         asc(homepagePromotedPosts.sortOrder),
@@ -43,9 +42,18 @@ export async function addHomepagePromotedPost(input: {
   try {
     await requireAdminSession();
 
+    if (!Number.isInteger(input.postId) || input.postId <= 0) {
+      return { error: "文章 ID 不正确" };
+    }
+
+    if (!Number.isInteger(input.sortOrder)) {
+      return { error: "排序值不正确" };
+    }
+
     const [post] = await db
       .select({
         id: posts.id,
+        published: posts.published,
       })
       .from(posts)
       .where(eq(posts.id, input.postId))
@@ -53,6 +61,10 @@ export async function addHomepagePromotedPost(input: {
 
     if (!post) {
       return { error: "文章不存在" };
+    }
+
+    if (!post.published) {
+      return { error: "首页推荐只能添加已发布文章" };
     }
 
     const [result] = await db
@@ -85,6 +97,14 @@ export async function updateHomepagePromotedPost(input: {
   try {
     await requireAdminSession();
 
+    if (!Number.isInteger(input.id) || input.id <= 0) {
+      return { error: "推荐位 ID 不正确" };
+    }
+
+    if (!Number.isInteger(input.sortOrder)) {
+      return { error: "排序值不正确" };
+    }
+
     const [result] = await db
       .update(homepagePromotedPosts)
       .set({
@@ -92,6 +112,10 @@ export async function updateHomepagePromotedPost(input: {
       })
       .where(eq(homepagePromotedPosts.id, input.id))
       .returning();
+
+    if (!result) {
+      return { error: "推荐位不存在或已被删除" };
+    }
 
     revalidateSiteContent([cacheTags.homepage]);
     revalidatePath("/collect/homepage-promoted");
@@ -106,10 +130,18 @@ export async function deleteHomepagePromotedPost(id: number) {
   try {
     await requireAdminSession();
 
+    if (!Number.isInteger(id) || id <= 0) {
+      return { error: "推荐位 ID 不正确" };
+    }
+
     const [result] = await db
       .delete(homepagePromotedPosts)
       .where(eq(homepagePromotedPosts.id, id))
       .returning();
+
+    if (!result) {
+      return { error: "推荐位不存在或已被删除" };
+    }
 
     revalidateSiteContent([cacheTags.homepage]);
     revalidatePath("/collect/homepage-promoted");
@@ -124,13 +156,15 @@ export async function deleteHomepagePromotedPosts(ids: number[]) {
   try {
     await requireAdminSession();
 
-    if (ids.length === 0) {
+    const validIds = ids.filter((id) => Number.isInteger(id) && id > 0);
+
+    if (validIds.length === 0) {
       return { data: 0 };
     }
 
     const result = await db
       .delete(homepagePromotedPosts)
-      .where(inArray(homepagePromotedPosts.id, ids))
+      .where(inArray(homepagePromotedPosts.id, validIds))
       .returning({ id: homepagePromotedPosts.id });
 
     revalidateSiteContent([cacheTags.homepage]);
@@ -143,10 +177,9 @@ export async function deleteHomepagePromotedPosts(ids: number[]) {
 }
 
 export async function getPublishedPostOptions() {
-  "use cache";
-  tagCache(cacheTags.posts);
-
   try {
+    await requireAdminSession();
+
     const result = await db
       .select({
         id: posts.id,
