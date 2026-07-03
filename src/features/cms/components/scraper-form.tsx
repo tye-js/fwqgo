@@ -64,7 +64,7 @@ export function ScraperForm({
       setContent(state.data.htmlContent);
       setTitle(state.data.title);
       setDescription(state.data.description);
-      setKeywords(state.data.keywords);
+      setKeywords(state.data.keywords.slice(0, 6));
       setRecommendTag({ name: state.data.recommendTagName });
       setTags(state.data.tagsName.map((name: string) => ({ name })));
       toast.success("文章抓取成功");

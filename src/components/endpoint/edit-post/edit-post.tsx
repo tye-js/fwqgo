@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 
-import { TiptapEditor } from "@/components/editor/tiptap-editor";
+import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { ImageUpload } from "@/features/cms/components/image-upload";
 import { ArticleCoverGenerator } from "@/features/cms/components/article-cover-generator";
 import { Button } from "@/components/ui/button";
@@ -64,14 +64,18 @@ export default function EditPost({
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<NewTag[]>(post.tags);
-  const [keywords, setKeywords] = useState<string>(post.post.keywords ?? "");
+  const [keywords, setKeywords] = useState<string>(
+    limitKeywordInput(post.post.keywords ?? ""),
+  );
   const [enTitle, setEnTitle] = useState(post.post.enTitle ?? "");
   const [enSlug, setEnSlug] = useState(post.post.enSlug ?? "");
   const [enDescription, setEnDescription] = useState(
     post.post.enDescription ?? "",
   );
   const [enContent, setEnContent] = useState(post.post.enContent ?? "");
-  const [enKeywords, setEnKeywords] = useState(post.post.enKeywords ?? "");
+  const [enKeywords, setEnKeywords] = useState(
+    limitKeywordInput(post.post.enKeywords ?? ""),
+  );
   const [enImageUrl, setEnImageUrl] = useState(post.post.enImgUrl ?? "");
   const [isSavingEnglish, setIsSavingEnglish] = useState(false);
   const handleAddTag = (tagInput: string) => {
@@ -132,7 +136,7 @@ export default function EditPost({
         imgUrl: imageUrl,
         categoryId: parseInt(categoryId),
         recommendTagName,
-        keywords: keywords.toString(),
+        keywords: limitKeywordInput(keywords),
       });
       if (result.error) {
         throw new Error(result.error);
@@ -187,7 +191,7 @@ export default function EditPost({
         enSlug,
         enDescription,
         enContent,
-        enKeywords,
+        enKeywords: limitKeywordInput(enKeywords),
         enImgUrl: enImageUrl,
       });
 
@@ -263,7 +267,7 @@ export default function EditPost({
                 {isRewritingLinks ? "替换中..." : "替换返利链接"}
               </Button>
             </div>
-            <TiptapEditor content={content} onChange={setContent} />
+            <MarkdownEditor content={content} onChange={setContent} />
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -515,7 +519,7 @@ export default function EditPost({
                   className="h-10 w-full"
                   value={keywords}
                   onChange={(e) =>
-                    setKeywords(e.target.value.replace(/，/g, ",").toString())
+                    setKeywords(limitKeywordInput(e.target.value))
                   }
                   placeholder="香港服务器,独立服务器,CN2"
                 />
@@ -597,7 +601,7 @@ export default function EditPost({
                   className="h-10"
                   value={enKeywords}
                   onChange={(e) =>
-                    setEnKeywords(e.target.value.replace(/，/g, ","))
+                    setEnKeywords(limitKeywordInput(e.target.value))
                   }
                   placeholder="hong kong vps, cheap server, cn2 gia"
                 />
@@ -621,7 +625,11 @@ export default function EditPost({
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">英文正文</label>
-                <TiptapEditor content={enContent} onChange={setEnContent} />
+                <MarkdownEditor
+                  content={enContent}
+                  onChange={setEnContent}
+                  minHeightClassName="min-h-[420px]"
+                />
               </div>
 
               <div className="space-y-2">
@@ -715,8 +723,23 @@ export default function EditPost({
   );
 }
 
-function stripHtml(value: string) {
-  return value.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+function limitKeywordInput(value: string) {
+  return value
+    .replace(/，/g, ",")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+    .join(",");
+}
+
+function markdownToPlainText(value: string) {
+  return value
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[#*_`>|-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function buildSeoChecks(input: {
@@ -726,7 +749,7 @@ function buildSeoChecks(input: {
   tagCount: number;
   recommendTagName: string;
 }) {
-  const plainText = stripHtml(input.content);
+  const plainText = markdownToPlainText(input.content);
   const keywordList = input.keywords
     .split(",")
     .map((item) => item.trim())
@@ -762,8 +785,8 @@ function buildSeoChecks(input: {
     },
     {
       label: "标题结构",
-      ok: /<h2|<h3/i.test(input.content),
-      note: /<h2|<h3/i.test(input.content)
+      ok: /^#{2,3}\s+\S+/m.test(input.content),
+      note: /^#{2,3}\s+\S+/m.test(input.content)
         ? "正文包含小标题。"
         : "建议增加 H2/H3 小标题。",
     },

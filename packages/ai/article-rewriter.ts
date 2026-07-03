@@ -161,7 +161,7 @@ function buildMetadataPrompt(
 1. 只输出 JSON 对象，不要输出 Markdown、解释或额外文本。
 2. title 要偏 SEO 长尾词，尽量包含商家、价格、配置、线路或适用场景；原文没有的信息不要编造。
 3. description 控制在 120 字以内，准确概括商家、价格、配置、线路和适用场景。
-4. keywords 生成 5 个适合 SEO 的关键词。
+4. keywords 生成 2 到 6 个适合 SEO 的关键词，不要超过 6 个。
 5. tagsName 生成 8 到 10 个相关标签，第一个标签优先为商家名，其余是长尾 SEO 关键词。
 6. recommendTagName 是商家名；无法判断商家名时使用最核心的服务商品牌词。
 
@@ -235,7 +235,7 @@ Requirements:
 3. enTitle should be an English SEO title.
 4. enSlug must be short, lowercase, ASCII only, words separated by hyphens.
 5. enDescription should be within 160 characters.
-6. enKeywords should contain 5 to 10 English SEO keywords.
+6. enKeywords should contain 2 to 6 English SEO keywords.
 7. Do not invent missing specs, prices, discounts or claims.
 
 SEO style:
@@ -306,7 +306,7 @@ function normalizeMetadata(
       typeof metadata.description === "string" && metadata.description.trim()
         ? metadata.description.trim().slice(0, 180)
         : text.slice(0, 120),
-    keywords: normalizeStringArray(metadata.keywords).slice(0, 8),
+    keywords: normalizeStringArray(metadata.keywords).slice(0, 6),
     tagsName: normalizeStringArray(metadata.tagsName).slice(0, 12),
     recommendTagName:
       typeof metadata.recommendTagName === "string" &&
@@ -421,7 +421,7 @@ function normalizeEnglishMetadata(
       enTitle,
     ),
     enDescription,
-    enKeywords: normalizeStringArray(raw.enKeywords).slice(0, 10),
+    enKeywords: normalizeStringArray(raw.enKeywords).slice(0, 6),
   };
 }
 

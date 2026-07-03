@@ -12,10 +12,12 @@ import {
   FileText,
   Link2,
   RotateCcw,
+  Trash2,
 } from "lucide-react";
 
 import {
   createAiRewriteTaskAction,
+  deleteAiRewriteTaskAction,
   retryAiRewriteTaskAction,
 } from "@/features/cms/actions/ai-rewrite-task";
 import { AiRewriteTaskResolveButton } from "@/features/cms/components/ai-rewrite-task-resolve-button";
@@ -53,6 +55,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 type RewriteTask = Awaited<ReturnType<typeof getAiRewriteTaskList>>[number];
 
@@ -217,12 +230,16 @@ function TaskDiagnosticsDisclosure({
 function FailedTaskPanel({
   tasks,
   retryingId,
+  deletingId,
   onRetry,
+  onDelete,
   basePath,
 }: {
   tasks: RewriteTask[];
   retryingId: number | null;
+  deletingId: number | null;
   onRetry: (taskId: number) => void;
+  onDelete: (task: RewriteTask) => void;
   basePath: string;
 }) {
   const failedTasks = tasks.filter((task) => task.status === "failed").slice(0, 4);
@@ -289,6 +306,33 @@ function FailedTaskPanel({
                 <RotateCcw className="size-4" />
                 {retryingId === task.id ? "启动中" : "重试"}
               </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={deletingId === task.id}
+                  >
+                    <Trash2 className="size-4" />
+                    {deletingId === task.id ? "删除中" : "删除"}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>删除这个 AI 任务？</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      只会删除任务记录和步骤日志，不会删除已经生成的草稿文章。任务删除后无法恢复。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>取消</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => onDelete(task)}>
+                      确定删除
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
         ))}
@@ -504,6 +548,7 @@ export function AiRewriteTaskManager({
   const router = useRouter();
   const [isSubmitting, startSubmitTransition] = useTransition();
   const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [sourceType, setSourceType] = useState("url");
   const defaultCategoryId = categories[0]?.id ? String(categories[0].id) : "";
   const defaultRewriteStyleId = useMemo(
@@ -572,6 +617,37 @@ export function AiRewriteTaskManager({
       description: describeAdminResult([
         `任务 ID ${taskId}`,
         "系统会重新抓取、清洗、改写，成功后再保存草稿",
+      ]),
+    });
+    router.refresh();
+  }
+
+  async function handleDelete(task: RewriteTask) {
+    setDeletingId(task.id);
+    const result = await deleteAiRewriteTaskAction(task.id);
+    setDeletingId(null);
+
+    if (result.error) {
+      notifyError({
+        title: "AI 任务删除失败",
+        description: describeAdminResult([
+          `任务 ID ${task.id}`,
+          result.error,
+          task.status === "running"
+            ? "处理中任务需要等待结束后再删除"
+            : "请刷新页面后确认任务状态",
+        ]),
+      });
+      return;
+    }
+
+    notifySuccess({
+      title: "AI 任务已删除",
+      description: describeAdminResult([
+        `任务 ID ${task.id}`,
+        task.postSlug
+          ? "已生成的草稿文章保留，可继续在草稿箱编辑"
+          : "未生成草稿，仅清理任务记录和步骤日志",
       ]),
     });
     router.refresh();
@@ -689,7 +765,9 @@ export function AiRewriteTaskManager({
       <FailedTaskPanel
         tasks={tasks}
         retryingId={retryingId}
+        deletingId={deletingId}
         onRetry={(taskId) => void handleRetry(taskId)}
+        onDelete={(task) => void handleDelete(task)}
         basePath={basePath}
       />
 
@@ -830,6 +908,45 @@ export function AiRewriteTaskManager({
                             size="sm"
                           />
                         ) : null}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={
+                                deletingId === task.id ||
+                                task.status === "running"
+                              }
+                              title={
+                                task.status === "running"
+                                  ? "处理中任务不能删除"
+                                  : "删除任务"
+                              }
+                            >
+                              <Trash2 className="size-4" />
+                              {deletingId === task.id ? "删除中" : "删除"}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                删除 AI 任务 #{task.id}？
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                只会删除任务记录和步骤日志，不会删除已经生成的草稿文章。任务删除后无法恢复。
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>取消</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => void handleDelete(task)}
+                              >
+                                确定删除
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </TableCell>
                   </TableRow>
