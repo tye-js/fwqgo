@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useMemo, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   Copy,
   ExternalLink,
@@ -24,6 +25,7 @@ import {
   rebuildResponsiveImageVariantsAction,
   replaceImageAssetFileAction,
   replaceImageReferencesAction,
+  renameImageAssetFileAction,
   updateImageAssetMetadataAction,
 } from "@/features/cms/actions/images";
 import { AdminTableEmpty, AdminTableWorkbench } from "@/features/cms/components/admin-table-workbench";
@@ -106,12 +108,14 @@ export function ImageAssetManager({
   images: ImageAssetWithReferences[];
   initialUsageFilter?: string;
 }) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [usageFilter, setUsageFilter] = useState(initialUsageFilter);
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isPending, startTransition] = useTransition();
   const [replacementPathById, setReplacementPathById] = useState<Record<number, string>>({});
+  const [fileNameById, setFileNameById] = useState<Record<number, string>>({});
   const [metadataById, setMetadataById] = useState<
     Record<number, ImageMetadataDraft>
   >({});
@@ -313,6 +317,47 @@ export function ImageAssetManager({
     }
 
     toast.success("引用已更新");
+  }
+
+  function getFileNameDraft(image: ImageAssetWithReferences) {
+    return fileNameById[image.id] ?? image.path.split("/").pop() ?? image.originalName;
+  }
+
+  async function handleRenameFile(image: ImageAssetWithReferences) {
+    const fileName = getFileNameDraft(image).trim();
+    if (!fileName) {
+      toast.error("请输入图片名称");
+      return;
+    }
+
+    const currentFileName = image.path.split("/").pop() ?? image.originalName;
+    if (fileName === currentFileName) {
+      toast.info("图片名称没有变化");
+      return;
+    }
+
+    const result = await renameImageAssetFileAction({
+      id: image.id,
+      fileName,
+    });
+
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
+
+    if (!result.data) {
+      toast.error("图片重命名失败：没有返回更新后的图片信息");
+      return;
+    }
+
+    toast.success(`图片已重命名：${result.data.path}`);
+    setFileNameById((prev) => {
+      const next = { ...prev };
+      delete next[image.id];
+      return next;
+    });
+    router.refresh();
   }
 
   function getMetadataDraft(image: ImageAssetWithReferences) {
@@ -525,6 +570,29 @@ export function ImageAssetManager({
                       >
                         {image.path}
                       </button>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          className="h-9"
+                          value={getFileNameDraft(image)}
+                          placeholder="图片文件名.webp"
+                          onChange={(event) =>
+                            setFileNameById((prev) => ({
+                              ...prev,
+                              [image.id]: event.target.value,
+                            }))
+                          }
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={isPending}
+                          onClick={() => runAction(() => handleRenameFile(image))}
+                        >
+                          <Save className="size-4" />
+                          改名
+                        </Button>
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         <Badge variant={isUsed ? "default" : "secondary"}>
                           {isUsed ? "已使用" : "未使用"}

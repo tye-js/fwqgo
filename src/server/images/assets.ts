@@ -4,6 +4,7 @@ import {
   mkdir,
   readdir,
   readFile,
+  rename,
   stat,
   unlink,
   writeFile,
@@ -179,6 +180,27 @@ async function getAvailablePublicPath(fileName: string) {
   }
 
   return `${UPLOAD_PUBLIC_PREFIX}${candidate}`;
+}
+
+function buildRenamedPublicPath(input: {
+  currentPath: string;
+  nextName: string;
+}) {
+  const current = path.parse(path.basename(normalizeUploadPath(input.currentPath)));
+  const sanitized = sanitizeFileName(input.nextName.trim());
+  const parsed = path.parse(path.basename(sanitized));
+  const baseName = (parsed.name || current.name).trim();
+  const ext = (parsed.ext || current.ext).toLowerCase();
+
+  if (!baseName || baseName === "." || baseName === "..") {
+    throw new Error("图片名称不能为空");
+  }
+
+  if (!IMAGE_EXTENSIONS.has(ext)) {
+    throw new Error("图片名称只支持 jpg、jpeg、png、gif、webp 后缀");
+  }
+
+  return `${UPLOAD_PUBLIC_PREFIX}${baseName}${ext}`;
 }
 
 async function optimizeUpload(buffer: Buffer, mime: string) {
@@ -515,6 +537,160 @@ export async function updateImageAssetMetadata(input: {
   }
 
   return { data: asset };
+}
+
+async function renameUploadFileIfPresent(input: {
+  fromPath: string | null;
+  toPath: string | null;
+}) {
+  if (!input.fromPath || !input.toPath || input.fromPath === input.toPath) {
+    return;
+  }
+
+  const fromFile = uploadPathToFilePath(input.fromPath);
+  const toFile = uploadPathToFilePath(input.toPath);
+
+  if (!existsSync(fromFile)) {
+    throw new Error(`服务器文件不存在：${input.fromPath}`);
+  }
+
+  if (existsSync(toFile)) {
+    throw new Error(`目标文件已存在：${input.toPath}`);
+  }
+
+  await rename(fromFile, toFile);
+}
+
+export async function renameImageAssetFile(input: {
+  id: number;
+  fileName: string;
+}) {
+  const [asset] = await db
+    .select()
+    .from(imageAssets)
+    .where(eq(imageAssets.id, input.id))
+    .limit(1);
+
+  if (!asset) {
+    return { error: "图片不存在" };
+  }
+
+  let nextPath: string;
+  try {
+    nextPath = buildRenamedPublicPath({
+      currentPath: asset.path,
+      nextName: input.fileName,
+    });
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "图片名称无效" };
+  }
+
+  if (nextPath === asset.path) {
+    return { data: asset };
+  }
+
+  const [existing] = await db
+    .select({ id: imageAssets.id })
+    .from(imageAssets)
+    .where(eq(imageAssets.path, nextPath))
+    .limit(1);
+
+  if (existing) {
+    return { error: "目标图片名称已存在，请换一个名称" };
+  }
+
+  const nextThumbPath = asset.thumbPath
+    ? `${UPLOAD_PUBLIC_PREFIX}${buildVariantName(nextPath, "thumb")}`
+    : null;
+  const nextLargePath = asset.largePath
+    ? `${UPLOAD_PUBLIC_PREFIX}${buildVariantName(nextPath, "large")}`
+    : null;
+
+  const renamedFiles: Array<{ fromPath: string | null; toPath: string | null }> = [];
+
+  try {
+    await renameUploadFileIfPresent({ fromPath: asset.path, toPath: nextPath });
+    renamedFiles.push({ fromPath: nextPath, toPath: asset.path });
+    await renameUploadFileIfPresent({
+      fromPath: asset.thumbPath,
+      toPath: nextThumbPath,
+    });
+    renamedFiles.push({ fromPath: nextThumbPath, toPath: asset.thumbPath });
+    await renameUploadFileIfPresent({
+      fromPath: asset.largePath,
+      toPath: nextLargePath,
+    });
+    renamedFiles.push({ fromPath: nextLargePath, toPath: asset.largePath });
+
+    const [updated] = await db.transaction(async (tx) => {
+      const [updatedAsset] = await tx
+        .update(imageAssets)
+        .set({
+          path: nextPath,
+          thumbPath: nextThumbPath,
+          largePath: nextLargePath,
+          originalName: path.basename(nextPath),
+          updatedAt: new Date(),
+        })
+        .where(eq(imageAssets.id, asset.id))
+        .returning();
+
+      const siteBaseUrl = (
+        process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com"
+      ).replace(/\/+$/, "");
+      const absoluteAssetPath = `${siteBaseUrl}${asset.path}`;
+      const absoluteNextPath = `${siteBaseUrl}${nextPath}`;
+
+      await tx
+        .update(posts)
+        .set({
+          imgUrl: sql`replace(replace(${posts.imgUrl}, ${absoluteAssetPath}, ${absoluteNextPath}), ${asset.path}, ${nextPath})`,
+          enImgUrl: sql`replace(replace(${posts.enImgUrl}, ${absoluteAssetPath}, ${absoluteNextPath}), ${asset.path}, ${nextPath})`,
+          updatedAt: new Date(),
+        })
+        .where(
+          sql`${posts.imgUrl} like ${`%${asset.path}%`} or ${posts.imgUrl} like ${`%${absoluteAssetPath}%`} or ${posts.enImgUrl} like ${`%${asset.path}%`} or ${posts.enImgUrl} like ${`%${absoluteAssetPath}%`}`,
+        );
+
+      await tx
+        .update(posts)
+        .set({
+          content: sql`replace(replace(${posts.content}, ${absoluteAssetPath}, ${absoluteNextPath}), ${asset.path}, ${nextPath})`,
+          enContent: sql`replace(replace(${posts.enContent}, ${absoluteAssetPath}, ${absoluteNextPath}), ${asset.path}, ${nextPath})`,
+          updatedAt: new Date(),
+        })
+        .where(
+          sql`${posts.content} like ${`%${asset.path}%`} or ${posts.content} like ${`%${absoluteAssetPath}%`} or ${posts.enContent} like ${`%${asset.path}%`} or ${posts.enContent} like ${`%${absoluteAssetPath}%`}`,
+        );
+
+      await tx
+        .update(users)
+        .set({
+          image: sql`replace(replace(${users.image}, ${absoluteAssetPath}, ${absoluteNextPath}), ${asset.path}, ${nextPath})`,
+          updatedAt: new Date(),
+        })
+        .where(
+          sql`${users.image} like ${`%${asset.path}%`} or ${users.image} like ${`%${absoluteAssetPath}%`}`,
+        );
+
+      return [updatedAsset];
+    });
+    await rebuildImageReferences();
+
+    return { data: updated! };
+  } catch (error) {
+    for (const file of renamedFiles.reverse()) {
+      try {
+        await renameUploadFileIfPresent(file);
+      } catch {
+        // Best-effort rollback only. Return the original failure below.
+      }
+    }
+
+    return {
+      error: error instanceof Error ? error.message : "图片重命名失败",
+    };
+  }
 }
 
 export async function convertExistingUploadsToWebp() {
