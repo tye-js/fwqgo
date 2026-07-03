@@ -67,11 +67,113 @@ type TaskStep = {
   time?: Date | string | null;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function stringValue(value: unknown, fallback = "") {
+  return typeof value === "string" ? value : fallback;
+}
+
+function numberValue(value: unknown, fallback = 0) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function booleanValue(value: unknown, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function arrayValue<T>(
+  value: unknown,
+  normalizeItem: (item: unknown) => T,
+): T[] {
+  return Array.isArray(value) ? value.map(normalizeItem) : [];
+}
+
+function normalizeAffiliateReport(value: unknown): ScrapeDiagnostics["affiliateReport"] {
+  const report = isRecord(value) ? value : {};
+  const normalizeMatch = (
+    item: unknown,
+  ): ScrapeDiagnostics["affiliateReport"]["matchedLinks"][number] => {
+    const match = isRecord(item) ? item : {};
+    return {
+      originalHref: stringValue(match.originalHref),
+      resolvedHref: stringValue(match.resolvedHref),
+      finalHref: stringValue(match.finalHref),
+      matchedDomain: stringValue(match.matchedDomain),
+      providerName: stringValue(match.providerName, "未知商家"),
+      mode: match.mode === "replace" ? "replace" : "param",
+    };
+  };
+  const normalizeMiss = (
+    item: unknown,
+  ): ScrapeDiagnostics["affiliateReport"]["unmatchedLinks"][number] => {
+    const miss = isRecord(item) ? item : {};
+    const reason = stringValue(miss.reason);
+    return {
+      href: stringValue(miss.href),
+      host: typeof miss.host === "string" ? miss.host : null,
+      reason:
+        reason === "invalid-url" || reason === "internal" || reason === "no-provider"
+          ? reason
+          : "no-provider",
+    };
+  };
+
+  return {
+    totalLinks: numberValue(report.totalLinks),
+    internalLinksRemoved: numberValue(report.internalLinksRemoved),
+    matchedLinks: arrayValue(report.matchedLinks, normalizeMatch),
+    unmatchedLinks: arrayValue(report.unmatchedLinks, normalizeMiss),
+    invalidLinks: arrayValue(report.invalidLinks, normalizeMiss),
+  };
+}
+
 function parseDiagnostics(value: string | null) {
   if (!value) return null;
 
   try {
-    return JSON.parse(value) as ScrapeDiagnostics;
+    const parsed: unknown = JSON.parse(value);
+    if (!isRecord(parsed)) {
+      return null;
+    }
+
+    return {
+      sourceHost: stringValue(parsed.sourceHost),
+      strategy: stringValue(parsed.strategy, "未知"),
+      usedPuppeteer: booleanValue(parsed.usedPuppeteer),
+      usedFallback: booleanValue(parsed.usedFallback),
+      usedAiRewrite: booleanValue(parsed.usedAiRewrite),
+      contentLength: numberValue(parsed.contentLength),
+      scrapedTitle:
+        typeof parsed.scrapedTitle === "string" ? parsed.scrapedTitle : undefined,
+      scrapedDescription:
+        typeof parsed.scrapedDescription === "string"
+          ? parsed.scrapedDescription
+          : undefined,
+      cleanedHtmlLength:
+        typeof parsed.cleanedHtmlLength === "number"
+          ? parsed.cleanedHtmlLength
+          : undefined,
+      aiInputLength:
+        typeof parsed.aiInputLength === "number" ? parsed.aiInputLength : undefined,
+      rewriteOutputLength:
+        typeof parsed.rewriteOutputLength === "number"
+          ? parsed.rewriteOutputLength
+          : undefined,
+      aiInputTruncated: booleanValue(parsed.aiInputTruncated),
+      removedSelectors: arrayValue(parsed.removedSelectors, (item) =>
+        stringValue(item),
+      ).filter(Boolean),
+      affiliateReport: normalizeAffiliateReport(parsed.affiliateReport),
+      warnings: arrayValue(parsed.warnings, (item) => stringValue(item)).filter(
+        Boolean,
+      ),
+      aiRewriteError:
+        typeof parsed.aiRewriteError === "string"
+          ? parsed.aiRewriteError
+          : undefined,
+    } satisfies ScrapeDiagnostics;
   } catch {
     return null;
   }
@@ -79,6 +181,8 @@ function parseDiagnostics(value: string | null) {
 
 function formatTime(value: Date | string | null) {
   if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
 
   return new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",
@@ -86,7 +190,7 @@ function formatTime(value: Date | string | null) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function Stat({ label, value }: { label: string; value: string | number }) {
