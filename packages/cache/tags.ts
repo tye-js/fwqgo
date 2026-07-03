@@ -37,4 +37,9 @@ export function revalidateSiteContent(tags: string[] = []) {
 
   revalidatePath("/");
   revalidatePath("/sitemap.xml");
+  revalidatePath("/sitemap-posts.xml");
+  revalidatePath("/sitemap-en.xml");
+  revalidatePath("/sitemap-categories.xml");
+  revalidatePath("/sitemap-tags.xml");
+  revalidatePath("/sitemap-servers.xml");
 }

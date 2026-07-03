@@ -12,6 +12,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getServerOfferTopic, offerTopics } from "@/server/offers/server-offers";
 
+function getSiteUrl() {
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+}
+
 export function generateStaticParams() {
   return offerTopics.map((topic) => ({ topic: topic.slug }));
 }
@@ -28,10 +32,21 @@ export async function generateMetadata({
     return {};
   }
 
+  const canonicalUrl = `${getSiteUrl()}/servers/${topic}`;
+
   return {
-    title: `${topicInfo.title}优惠套餐对比 - 服务器go`,
+    title: `${topicInfo.seoTitle} - 服务器go`,
     description: topicInfo.description,
     keywords: topicInfo.keywords.join(","),
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    openGraph: {
+      title: `${topicInfo.seoTitle} - 服务器go`,
+      description: topicInfo.description,
+      url: canonicalUrl,
+      siteName: "服务器go",
+    },
   };
 }
 
@@ -50,9 +65,68 @@ async function ServerTopicContent({
   }
 
   const { topic: topicInfo, offers } = data;
+  const pageUrl = `${getSiteUrl()}/servers/${topicInfo.slug}`;
+  const itemListJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    name: topicInfo.seoTitle,
+    description: topicInfo.description,
+    url: pageUrl,
+    numberOfItems: offers.length,
+    itemListElement: offers.slice(0, 30).map((offer, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      url: offer.articleUrl
+        ? new URL(offer.articleUrl, getSiteUrl()).toString()
+        : pageUrl,
+      item: {
+        "@type": "Product",
+        name: offer.title,
+        brand: offer.providerName
+          ? {
+              "@type": "Brand",
+              name: offer.providerName,
+            }
+          : undefined,
+        category: "VPS and Server Hosting",
+        offers: {
+          "@type": "Offer",
+          url: offer.purchaseUrl
+            ? new URL(offer.purchaseUrl, getSiteUrl()).toString()
+            : pageUrl,
+          price: offer.priceAmount ? String(offer.priceAmount) : undefined,
+          priceCurrency: offer.currency ?? undefined,
+          availability:
+            offer.status === "in_stock"
+              ? "https://schema.org/InStock"
+              : offer.status === "preorder"
+                ? "https://schema.org/PreOrder"
+                : "https://schema.org/OutOfStock",
+        },
+      },
+    })),
+  };
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: topicInfo.faq.map((item) => ({
+      "@type": "Question",
+      name: item.question,
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: item.answer,
+      },
+    })),
+  };
 
   return (
     <main className="flex-1">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify([itemListJsonLd, faqJsonLd]),
+          }}
+        />
         <section className="border-b border-border/60 bg-muted/20">
           <div className="container mx-auto px-4 py-8 md:py-10">
             <Button asChild variant="ghost" className="mb-5 px-0">
@@ -70,10 +144,10 @@ async function ServerTopicContent({
                   <Badge variant="secondary">按价格排序</Badge>
                 </div>
                 <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-                  {topicInfo.title}优惠套餐
+                  {topicInfo.h1}
                 </h1>
                 <p className="max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">
-                  {topicInfo.description}
+                  {topicInfo.intro}
                 </p>
               </div>
               <div className="grid gap-3 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
@@ -100,17 +174,14 @@ async function ServerTopicContent({
 
         <section className="container mx-auto px-4 pb-12">
           <div className="rounded-lg border border-border/70 bg-background p-5 shadow-sm">
-            <h2 className="text-xl font-semibold">怎么使用这个列表</h2>
-            <div className="mt-4 grid gap-4 text-sm leading-7 text-muted-foreground md:grid-cols-3">
-              <p>
-                价格字段优先使用文章里提取到的标准化金额，部分套餐可能需要人工确认周期和币种。
-              </p>
-              <p>
-                地区和线路来自文章原文，适合先做初筛，最终购买前仍建议查看推广文章和商家页面。
-              </p>
-              <p>
-                状态支持有货、没货、补货、停售、预售，后续可以接入手工维护和定期复查。
-              </p>
+            <h2 className="text-xl font-semibold">常见问题</h2>
+            <div className="mt-4 grid gap-4 text-sm leading-7 text-muted-foreground md:grid-cols-2">
+              {topicInfo.faq.map((item) => (
+                <div key={item.question} className="rounded-lg bg-muted/30 p-4">
+                  <h3 className="font-medium text-foreground">{item.question}</h3>
+                  <p className="mt-2">{item.answer}</p>
+                </div>
+              ))}
             </div>
           </div>
         </section>

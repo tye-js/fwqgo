@@ -230,6 +230,7 @@ export async function generateArticleCoverImage(
     uploadedBy: input.uploadedBy,
     imageType: "ai_cover",
     altZh: input.title,
+    altEn: input.language === "en" ? input.title : toEnglishFileSlug(input.title),
     prompt,
   });
 
