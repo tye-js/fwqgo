@@ -38,6 +38,14 @@ interface Category {
   name: string;
 }
 
+function formatActionError(error: string, message: unknown) {
+  if (typeof message === "string" && message.trim()) {
+    return message;
+  }
+
+  return error;
+}
+
 export default function EditPost({
   post,
   categories,
@@ -82,7 +90,13 @@ export default function EditPost({
     const name = tagInput.trim();
     if (!name) return;
 
-    if (tags.some((tag) => tag.tag.name.trim() === name)) {
+    if (name.length > 40) {
+      toast.error("标签名称不能超过 40 个字符");
+      return;
+    }
+
+    const normalizedName = name.toLowerCase();
+    if (tags.some((tag) => tag.tag.name.trim().toLowerCase() === normalizedName)) {
       toast.info("这个标签已经添加过了");
       return;
     }
@@ -108,16 +122,47 @@ export default function EditPost({
     // 添加阻止事件冒泡
     e.stopPropagation();
     e.preventDefault();
-    if (!content || !description) {
+    const normalizedContent = content.trim();
+    const normalizedDescription = (description ?? "").trim();
+    const parsedCategoryId = Number.parseInt(categoryId, 10);
+
+    if (!normalizedContent || !normalizedDescription) {
       toast.error("请填写内容和简述");
       return;
     }
-    if (!tags) {
+    if (!Number.isInteger(parsedCategoryId) || parsedCategoryId <= 0) {
+      toast.error("请选择正确的文章分类");
+      return;
+    }
+    if (!categories.some((category) => category.id === parsedCategoryId)) {
+      toast.error("当前分类不存在，请重新选择分类");
+      return;
+    }
+    if (tags.length === 0) {
       toast.error("请添加标签");
       return;
     }
     try {
       setIsSubmitting(true);
+      // 更新文章内容
+      const result = await updatePostContent({
+        id: post.post.id,
+        description: normalizedDescription,
+        content: normalizedContent,
+        imgUrl: imageUrl,
+        categoryId: parsedCategoryId,
+        recommendTagName: recommendTagName.trim(),
+        keywords: limitKeywordInput(keywords),
+      });
+      if ("error" in result && result.error) {
+        throw new Error(
+          formatActionError(
+            result.error,
+            "message" in result ? result.message : undefined,
+          ),
+        );
+      }
+
       // 更新文章标签
       const tagsResult = await updatePostTags({
         postId: post.post.id,
@@ -125,26 +170,18 @@ export default function EditPost({
         newTags: tags,
       });
 
-      if (tagsResult.error) {
-        throw new Error(tagsResult.error);
-      }
-      // 更新文章内容
-      const result = await updatePostContent({
-        id: post.post.id,
-        description,
-        content,
-        imgUrl: imageUrl,
-        categoryId: parseInt(categoryId),
-        recommendTagName,
-        keywords: limitKeywordInput(keywords),
-      });
-      if (result.error) {
-        throw new Error(result.error);
+      if ("error" in tagsResult && tagsResult.error) {
+        throw new Error(
+          formatActionError(
+            tagsResult.error,
+            "message" in tagsResult ? tagsResult.message : undefined,
+          ),
+        );
       }
       toast.success("更新文章成功");
     } catch (error) {
       console.error("更新文章失败:", error);
-      toast.error("更新文章失败，请重试");
+      toast.error(error instanceof Error ? error.message : "更新文章失败，请重试");
     } finally {
       setIsSubmitting(false);
     }
@@ -250,7 +287,7 @@ export default function EditPost({
         </>
       }
     >
-      <form className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
+      <form className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
         <AdminSectionCard title="正文编辑" description={postMeta.title}>
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -259,7 +296,7 @@ export default function EditPost({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9"
+                className="h-8 min-h-0 px-2"
                 disabled={isRewritingLinks}
                 onClick={handleRewriteAffiliateLinks}
               >
@@ -270,38 +307,38 @@ export default function EditPost({
             <MarkdownEditor content={content} onChange={setContent} />
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <div className="rounded-md border border-border/70 bg-muted/15 px-3 py-2">
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <FileText className="size-3.5" />
                 正文字数
               </div>
-              <p className="mt-2 text-2xl font-semibold text-foreground">
+              <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
                 {content.length}
               </p>
             </div>
-            <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+            <div className="rounded-md border border-border/70 bg-muted/15 px-3 py-2">
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <Tags className="size-3.5" />
                 当前标签
               </div>
-              <p className="mt-2 text-2xl font-semibold text-foreground">
+              <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
                 {tags.length}
               </p>
             </div>
-            <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+            <div className="rounded-md border border-border/70 bg-muted/15 px-3 py-2">
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <Save className="size-3.5" />
                 SEO 通过
               </div>
-              <p className="mt-2 text-2xl font-semibold text-foreground">
+              <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
                 {seoChecks.filter((item) => item.ok).length}/{seoChecks.length}
               </p>
             </div>
           </div>
 
           {affiliateReport ? (
-            <div className="mt-4 space-y-3 rounded-lg border border-border/70 bg-muted/20 p-4 text-sm">
+            <div className="mt-3 space-y-3 rounded-md border border-border/70 bg-muted/15 p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="outline">总链接 {affiliateReport.totalLinks}</Badge>

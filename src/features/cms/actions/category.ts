@@ -16,6 +16,16 @@ function getErrorMessage(error: unknown) {
   return typeof error === "string" ? error : "未知错误";
 }
 
+function normalizeSeoKeywords(value: string) {
+  return value
+    .replace(/，/g, ",")
+    .split(",")
+    .map((keyword) => keyword.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+    .join(",");
+}
+
 export async function updateCategorySeo(input: {
   id: number;
   description: string;
@@ -32,7 +42,7 @@ export async function updateCategorySeo(input: {
       .update(categories)
       .set({
         description: input.description.trim() || null,
-        keywords: input.keywords.trim() || null,
+        keywords: normalizeSeoKeywords(input.keywords) || null,
         updatedAt: new Date(),
       })
       .where(eq(categories.id, input.id))

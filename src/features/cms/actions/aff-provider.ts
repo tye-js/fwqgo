@@ -136,7 +136,12 @@ export async function getAffProviderList({
   pageSize?: number;
   query?: string;
 }) {
+  await requireAdminSession();
+
   const normalizedQuery = query.trim();
+  const normalizedPage = Number.isInteger(page) && page > 0 ? page : 1;
+  const normalizedPageSize =
+    Number.isInteger(pageSize) && pageSize > 0 ? Math.min(pageSize, 100) : 20;
   const whereCondition = normalizedQuery
     ? or(
         ilike(affServiceProviders.name, `%${normalizedQuery}%`),
@@ -151,19 +156,21 @@ export async function getAffProviderList({
         .from(affServiceProviders)
         .where(whereCondition)
         .orderBy(desc(affServiceProviders.id))
-        .offset((page - 1) * pageSize)
-        .limit(pageSize)
+        .offset((normalizedPage - 1) * normalizedPageSize)
+        .limit(normalizedPageSize)
     : await db
         .select()
         .from(affServiceProviders)
         .orderBy(desc(affServiceProviders.id))
-        .offset((page - 1) * pageSize)
-        .limit(pageSize);
+        .offset((normalizedPage - 1) * normalizedPageSize)
+        .limit(normalizedPageSize);
 
   return { data: result };
 }
 
 export async function getAffProviderCount(query = "") {
+  await requireAdminSession();
+
   const normalizedQuery = query.trim();
   const whereCondition = normalizedQuery
     ? or(

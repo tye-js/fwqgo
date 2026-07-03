@@ -1,6 +1,6 @@
 "use server";
 
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -56,6 +56,10 @@ function parseSourceUrls(value: FormDataEntryValue | null) {
 }
 
 function getErrorMessage(error: unknown) {
+  if (error instanceof z.ZodError) {
+    return error.issues[0]?.message ?? "输入信息不正确";
+  }
+
   if (error instanceof Error) {
     return error.message;
   }
@@ -282,13 +286,23 @@ export async function createAiRewriteTaskAction(formData: FormData) {
     }
 
     const urls = sourceUrls.length > 0 ? sourceUrls : parseSourceUrls(formData.get("sourceUrl"));
-    const parsedUrls = urls.map((sourceUrl) =>
-      taskInputSchema.parse({
+    const parsedUrls: Array<z.infer<typeof taskInputSchema>> = [];
+
+    for (const [index, sourceUrl] of urls.entries()) {
+      const parsed = taskInputSchema.safeParse({
         sourceUrl,
         categoryId: sharedInput.categoryId,
         rewriteStyleId: sharedInput.rewriteStyleId,
-      }),
-    );
+      });
+
+      if (!parsed.success) {
+        return {
+          error: `第 ${index + 1} 个 URL 无效：${parsed.error.issues[0]?.message ?? sourceUrl}`,
+        };
+      }
+
+      parsedUrls.push(parsed.data);
+    }
 
     if (parsedUrls.length === 0) {
       return { error: "请输入至少一个有效 URL" };
@@ -346,11 +360,26 @@ export async function retryAiRewriteTaskAction(taskId: number) {
         startedAt: null,
         finishedAt: null,
       })
-      .where(eq(aiRewriteTasks.id, taskId))
-      .returning({ id: aiRewriteTasks.id });
+      .where(
+        and(
+          eq(aiRewriteTasks.id, taskId),
+          inArray(aiRewriteTasks.status, ["failed", "manual_required"]),
+        ),
+      )
+      .returning({
+        id: aiRewriteTasks.id,
+        sourceMaterialId: aiRewriteTasks.sourceMaterialId,
+      });
 
     if (!task) {
-      return { error: "任务不存在" };
+      return { error: "任务不存在，或当前状态不能重试" };
+    }
+
+    if (task.sourceMaterialId) {
+      await db
+        .update(sourceMaterials)
+        .set({ status: "queued", updatedAt: new Date() })
+        .where(eq(sourceMaterials.id, task.sourceMaterialId));
     }
 
     await enqueueAiRewriteTask(task.id);

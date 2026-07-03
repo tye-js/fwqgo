@@ -23,6 +23,7 @@ import {
 import { AiRewriteTaskResolveButton } from "@/features/cms/components/ai-rewrite-task-resolve-button";
 import { type getAiRewriteTaskList } from "@/features/cms/actions/ai-rewrite-task";
 import { type ScrapeDiagnostics } from "@fwqgo/scrape/article-scraper";
+import { type AffiliateRewriteReport } from "@fwqgo/scrape/affiliate-link-rewriter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -122,10 +123,85 @@ function parseTaskDiagnostics(value: string | null) {
       return null;
     }
 
-    return parsed as ScrapeDiagnostics;
+    return normalizeTaskDiagnostics(parsed);
   } catch {
     return null;
   }
+}
+
+function normalizeTextArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function normalizeRequiredNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function normalizeOptionalNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizeBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : false;
+}
+
+function normalizeAffiliateReport(
+  report: Partial<AffiliateRewriteReport> | null | undefined,
+): AffiliateRewriteReport {
+  return {
+    totalLinks: normalizeRequiredNumber(report?.totalLinks),
+    internalLinksRemoved: normalizeRequiredNumber(report?.internalLinksRemoved),
+    matchedLinks: Array.isArray(report?.matchedLinks)
+      ? report.matchedLinks
+      : [],
+    unmatchedLinks: Array.isArray(report?.unmatchedLinks)
+      ? report.unmatchedLinks
+      : [],
+    invalidLinks: Array.isArray(report?.invalidLinks)
+      ? report.invalidLinks
+      : [],
+  };
+}
+
+function normalizeTaskDiagnostics(
+  diagnostics: Partial<ScrapeDiagnostics>,
+): ScrapeDiagnostics {
+  return {
+    sourceHost:
+      typeof diagnostics.sourceHost === "string" ? diagnostics.sourceHost : "",
+    strategy:
+      typeof diagnostics.strategy === "string" ? diagnostics.strategy : "未知规则",
+    usedPuppeteer: normalizeBoolean(diagnostics.usedPuppeteer),
+    usedFallback: normalizeBoolean(diagnostics.usedFallback),
+    usedAiRewrite: normalizeBoolean(diagnostics.usedAiRewrite),
+    contentLength: normalizeRequiredNumber(diagnostics.contentLength),
+    scrapedTitle:
+      typeof diagnostics.scrapedTitle === "string"
+        ? diagnostics.scrapedTitle
+        : undefined,
+    scrapedDescription:
+      typeof diagnostics.scrapedDescription === "string"
+        ? diagnostics.scrapedDescription
+        : undefined,
+    cleanedHtmlLength: normalizeOptionalNumber(diagnostics.cleanedHtmlLength),
+    aiInputLength: normalizeOptionalNumber(diagnostics.aiInputLength),
+    rewriteOutputLength: normalizeOptionalNumber(diagnostics.rewriteOutputLength),
+    aiInputTruncated:
+      typeof diagnostics.aiInputTruncated === "boolean"
+        ? diagnostics.aiInputTruncated
+        : undefined,
+    removedSelectors: normalizeTextArray(diagnostics.removedSelectors),
+    affiliateReport: normalizeAffiliateReport(diagnostics.affiliateReport),
+    warnings: normalizeTextArray(diagnostics.warnings),
+    aiRewriteError:
+      typeof diagnostics.aiRewriteError === "string"
+        ? diagnostics.aiRewriteError
+        : undefined,
+  };
 }
 
 function shortUrl(value: string) {

@@ -57,17 +57,19 @@ function CompactMetric({
   icon: LucideIcon;
 }) {
   return (
-    <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
+    <div className="rounded-md border border-border/70 bg-muted/15 px-3 py-2.5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-medium text-muted-foreground">{title}</p>
-          <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">
+          <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">
             {value}
           </p>
         </div>
         <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
       </div>
-      <p className="mt-2 text-xs leading-5 text-muted-foreground">{note}</p>
+      <p className="mt-1 line-clamp-1 text-xs leading-5 text-muted-foreground">
+        {note}
+      </p>
     </div>
   );
 }
@@ -84,11 +86,11 @@ function HealthBar({
   description: string;
 }) {
   return (
-    <div className="space-y-2 rounded-md border border-border/70 bg-muted/20 px-4 py-3">
+    <div className="space-y-2 rounded-md border border-border/70 bg-muted/15 px-3 py-2.5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-sm font-medium text-foreground">{title}</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
             {description}
           </p>
         </div>

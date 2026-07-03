@@ -41,7 +41,7 @@ export default function CreateLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="cms-theme min-h-screen bg-muted/20">
+    <div className="cms-theme min-h-screen bg-background">
       <Suspense fallback={null}>
         <SessionGuard />
       </Suspense>
@@ -66,10 +66,10 @@ export default function CreateLayout({
             <AppSidebar />
           </Suspense>
           <SidebarInset>
-            <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/95 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
-              <div className="flex items-center gap-3 px-4">
+            <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background/95 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-11">
+              <div className="flex items-center gap-2 px-3">
                 <SidebarTrigger className="-ml-1" />
-                <Separator orientation="vertical" className="mr-1 h-4" />
+                <Separator orientation="vertical" className="h-4" />
                 <Suspense fallback={null}>
                   <AppBreadcrumb />
                 </Suspense>

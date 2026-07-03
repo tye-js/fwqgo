@@ -1,5 +1,5 @@
 import { db } from "@fwqgo/db";
-import { cacheTags, tagCache } from "@fwqgo/cache/tags";
+import { requireAdminSession } from "@fwqgo/auth/session";
 import {
   posts,
   categories,
@@ -17,11 +17,32 @@ import {
 } from "drizzle-orm";
 import { decodeSlug } from "@fwqgo/core/utils";
 
-export async function getPostBySlug(slug: string) {
-  "use cache";
-  tagCache(cacheTags.posts, cacheTags.postSlug(decodeSlug(slug)));
+function normalizePagination({
+  pageNo,
+  pageSize,
+  defaultPageSize,
+}: {
+  pageNo: number;
+  pageSize: number;
+  defaultPageSize: number;
+}) {
+  const normalizedPageNo = Number.isInteger(pageNo) && pageNo > 0 ? pageNo : 1;
+  const normalizedPageSize =
+    Number.isInteger(pageSize) && pageSize > 0
+      ? Math.min(pageSize, 100)
+      : defaultPageSize;
 
+  return {
+    pageNo: normalizedPageNo,
+    pageSize: normalizedPageSize,
+    offset: (normalizedPageNo - 1) * normalizedPageSize,
+  };
+}
+
+export async function getPostBySlug(slug: string) {
   try {
+    await requireAdminSession();
+
     const decodedSlug = decodeSlug(slug);
     const [post] = await db
       .select({
@@ -76,10 +97,15 @@ export async function getPosts({
   pageNo?: number;
   pageSize?: number;
 }) {
-  "use cache";
-  tagCache(cacheTags.posts);
-
   try {
+    await requireAdminSession();
+
+    const pagination = normalizePagination({
+      pageNo,
+      pageSize,
+      defaultPageSize: 10,
+    });
+
     const postsData = await db
       .select({
         id: posts.id,
@@ -90,8 +116,8 @@ export async function getPosts({
       })
       .from(posts)
       .orderBy(desc(posts.createdAt))
-      .offset((pageNo - 1) * pageSize)
-      .limit(pageSize);
+      .offset(pagination.offset)
+      .limit(pagination.pageSize);
 
     return { data: postsData };
   } catch (error) {
@@ -106,10 +132,15 @@ export async function getDraftPosts({
   pageNo?: number;
   pageSize?: number;
 }) {
-  "use cache";
-  tagCache(cacheTags.posts);
-
   try {
+    await requireAdminSession();
+
+    const pagination = normalizePagination({
+      pageNo,
+      pageSize,
+      defaultPageSize: 15,
+    });
+
     const postsData = await db
       .select({
         id: posts.id,
@@ -121,8 +152,8 @@ export async function getDraftPosts({
       .from(posts)
       .where(eq(posts.published, false))
       .orderBy(desc(posts.createdAt))
-      .offset((pageNo - 1) * pageSize)
-      .limit(pageSize);
+      .offset(pagination.offset)
+      .limit(pagination.pageSize);
 
     return { data: postsData };
   } catch (error) {
@@ -131,8 +162,7 @@ export async function getDraftPosts({
 }
 
 export async function getDraftPostCount() {
-  "use cache";
-  tagCache(cacheTags.posts);
+  await requireAdminSession();
 
   const [result] = await db
     .select({ count: count() })
@@ -142,14 +172,15 @@ export async function getDraftPostCount() {
 }
 
 export async function getPostCount() {
-  "use cache";
-  tagCache(cacheTags.posts);
+  await requireAdminSession();
 
   const [result] = await db.select({ count: count() }).from(posts);
   return { data: result?.count ?? 0 };
 }
 
 export async function getDashboardStats() {
+  await requireAdminSession();
+
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const publishedCountExpr = sql<number>`count(${posts.id})`;

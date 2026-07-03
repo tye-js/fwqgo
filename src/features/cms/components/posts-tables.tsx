@@ -219,7 +219,7 @@ export function PostList({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <AdminTableWorkbench
         title="文章工作台"
         description="支持快速搜索标题与 slug，按发布状态筛选，并可批量删除文章。"
@@ -228,7 +228,7 @@ export function PostList({
         searchPlaceholder="搜索文章标题或 slug"
         selectionCount={selectedIds.length}
         filterSlot={
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <Select
               value={statusFilter}
               onValueChange={(value) =>
@@ -263,6 +263,7 @@ export function PostList({
             variant="destructive"
             disabled={selectedIds.length === 0 || isBulkDeleting}
             onClick={handleBulkDelete}
+            className="min-h-0"
           >
             <Trash2 className="size-4" />
             {isBulkDeleting ? "删除中..." : "批量删除"}
@@ -279,7 +280,7 @@ export function PostList({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[44px]">
+              <TableHead className="w-[40px]">
                 <Checkbox
                   checked={allFilteredSelected}
                   onCheckedChange={(checked) =>
@@ -288,17 +289,17 @@ export function PostList({
                   aria-label="全选当前筛选结果"
                 />
               </TableHead>
-              <TableHead>ID</TableHead>
-              <TableHead className="text-nowrap">文章标题</TableHead>
+              <TableHead className="w-[64px]">ID</TableHead>
+              <TableHead className="text-nowrap">标题</TableHead>
               <TableHead className="text-nowrap">slug</TableHead>
               <TableHead className="text-nowrap text-center">发布</TableHead>
-              <TableHead className="text-nowrap">图片链接</TableHead>
+              <TableHead className="text-nowrap">封面</TableHead>
               <TableHead className="text-center">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {sortedPosts.map((post) => (
-              <TableRow key={post.id} className="hover:bg-muted/30">
+              <TableRow key={post.id} className="text-xs hover:bg-muted/30">
                 <TableCell>
                   <Checkbox
                     checked={selectedIds.includes(post.id)}
@@ -308,8 +309,10 @@ export function PostList({
                     aria-label={`选择文章 ${post.title}`}
                   />
                 </TableCell>
-                <TableCell>{post.id}</TableCell>
-                <TableCell className="min-w-[240px]">
+                <TableCell className="tabular-nums text-muted-foreground">
+                  {post.id}
+                </TableCell>
+                <TableCell className="min-w-[220px] max-w-[360px]">
                   {editPostId === post.id ? (
                     <Input
                       className="h-8"
@@ -318,7 +321,9 @@ export function PostList({
                       onChange={(e) => handleInputChange("title", e.target.value)}
                     />
                   ) : (
-                    <span className="line-clamp-2">{post.title}</span>
+                    <span className="line-clamp-2 text-sm leading-5">
+                      {post.title}
+                    </span>
                   )}
                 </TableCell>
                 <TableCell className="text-nowrap">
@@ -352,7 +357,7 @@ export function PostList({
                     <CircleX className="mx-auto text-muted-foreground" size={20} />
                   )}
                 </TableCell>
-                <TableCell className="max-w-[220px] text-nowrap">
+                <TableCell className="max-w-[200px] text-nowrap">
                   {editPostId === post.id ? (
                     <div className="flex min-w-[300px] items-center gap-2">
                       <Input
@@ -372,17 +377,22 @@ export function PostList({
                   )}
                 </TableCell>
                 <TableCell className="text-center">
-                  <div className="flex justify-center gap-2">
+                  <div className="flex justify-center gap-1.5">
                     {editPostId === post.id ? (
                       <>
                         <Button
                           variant="secondary"
                           size="sm"
+                          className="h-8 min-h-0 px-2"
                           onClick={() => setEditPostId(null)}
                         >
                           取消
                         </Button>
-                        <Button size="sm" onClick={() => handleSave(post.id)}>
+                        <Button
+                          size="sm"
+                          className="h-8 min-h-0 px-2"
+                          onClick={() => handleSave(post.id)}
+                        >
                           {isSaving ? "保存中..." : "保存"}
                         </Button>
                       </>
@@ -391,6 +401,7 @@ export function PostList({
                         <Button
                           size="sm"
                           variant="outline"
+                          className="h-8 min-h-0 px-2"
                           disabled={extractingPostId === post.id}
                           onClick={() => handleExtractOffers(post.id)}
                         >
@@ -400,6 +411,7 @@ export function PostList({
                         <Button
                           size="sm"
                           variant="outline"
+                          className="h-8 min-h-0 px-2"
                           onClick={() => {
                             setEditPostId(post.id);
                             setEditPostData(post);
@@ -409,7 +421,11 @@ export function PostList({
                         </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="destructive" size="sm">
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="h-8 min-h-0 px-2"
+                            >
                               删除
                             </Button>
                           </AlertDialogTrigger>
