@@ -60,6 +60,26 @@ function normalizeProviderDomain(value: string) {
   }
 }
 
+function isGenericMarkdownLinkLabel(label: string) {
+  return [
+    "链接",
+    "点击链接",
+    "点击这里",
+    "查看详情",
+    "点此查看",
+    "link",
+    "here",
+    "click here",
+    "learn more",
+  ].includes(
+    label
+      .replace(/[*_`]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase(),
+  );
+}
+
 async function loadProvidersForHosts(hostnames: string[]) {
   const domains = [
     ...new Set(hostnames.flatMap((hostname) => candidateDomains(hostname))),
@@ -104,6 +124,12 @@ function rewriteHref(href: string, provider: Provider) {
   const url = new URL(href);
   url.searchParams.set(provider.affParam, provider.affValue);
   return { href: url.toString(), mode: "param" as const };
+}
+
+function isLikelyAffiliateRedirectPath(pathname: string) {
+  return /\/(go|out|goto|link|links|redirect|refer|recommend|aff)(\/|$)/i.test(
+    pathname,
+  );
 }
 
 function collectAbsoluteHosts(
@@ -176,6 +202,11 @@ export async function rewriteAffiliateLinks(input: {
 
     const finalHost = normalizeHost(finalUrl.hostname);
     if (finalHost === sourceHost || finalHost.endsWith(`.${sourceHost}`)) {
+      if (isLikelyAffiliateRedirectPath(finalUrl.pathname)) {
+        $link.attr("href", finalUrl.toString());
+        continue;
+      }
+
       report.internalLinksRemoved += 1;
       if (input.removeInternal) {
         $link.remove();
@@ -230,4 +261,87 @@ export function mergeAffiliateReports(
     unmatchedLinks: [...merged.unmatchedLinks, ...report.unmatchedLinks],
     invalidLinks: [...merged.invalidLinks, ...report.invalidLinks],
   }), emptyReport());
+}
+
+function tryNormalizeUrlHost(value: string) {
+  try {
+    return normalizeHost(new URL(value).hostname);
+  } catch {
+    return null;
+  }
+}
+
+export function repairMarkdownAffiliateLinks(
+  markdown: string,
+  report: AffiliateRewriteReport,
+) {
+  if (report.matchedLinks.length === 0 || !markdown.trim()) {
+    return markdown;
+  }
+
+  const linkPattern = /\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  const usedFinalHrefs = new Set<string>();
+  const replacements: Array<{ original: string; replacement: string }> = [];
+
+  for (const match of markdown.matchAll(linkPattern)) {
+    const [original, label, href] = match;
+    if (!label || !href) continue;
+
+    let url: URL;
+    try {
+      url = new URL(href);
+    } catch {
+      continue;
+    }
+
+    const host = normalizeHost(url.hostname);
+    const matched = report.matchedLinks.find((item) => {
+      const domains = [
+        item.matchedDomain,
+        tryNormalizeUrlHost(item.resolvedHref),
+        tryNormalizeUrlHost(item.finalHref),
+      ].filter((domain): domain is string => Boolean(domain));
+
+      return domains.some(
+        (domain) => host === domain || host.endsWith(`.${domain}`),
+      );
+    });
+
+    if (!matched) {
+      continue;
+    }
+
+    usedFinalHrefs.add(matched.finalHref);
+    replacements.push({
+      original,
+      replacement: `[${
+        isGenericMarkdownLinkLabel(label) ? matched.providerName : label
+      }](${matched.finalHref})`,
+    });
+  }
+
+  let repaired = replacements.reduce(
+    (content, item) => content.replace(item.original, item.replacement),
+    markdown,
+  );
+
+  for (const matched of report.matchedLinks) {
+    if (
+      usedFinalHrefs.has(matched.finalHref) ||
+      repaired.includes(matched.finalHref)
+    ) {
+      continue;
+    }
+
+    const sectionTitle = "## 官方购买入口";
+    if (!repaired.includes(sectionTitle)) {
+      repaired = `${repaired.trim()}\n\n${sectionTitle}\n\n`;
+    } else if (!repaired.endsWith("\n")) {
+      repaired = `${repaired}\n`;
+    }
+
+    repaired = `${repaired}- [${matched.providerName}](${matched.finalHref})\n`;
+  }
+
+  return repaired.trim();
 }
