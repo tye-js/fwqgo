@@ -242,7 +242,7 @@ async function PostPageContent({
   };
   return (
     <div className="py-4 md:py-6">
-      <div className="grid items-start gap-8 xl:grid-cols-[260px_minmax(0,1fr)_300px] 2xl:grid-cols-[280px_minmax(0,920px)_320px]">
+      <div className="grid items-start gap-6 xl:grid-cols-[250px_minmax(0,1fr)_300px] 2xl:grid-cols-[270px_minmax(0,900px)_320px]">
         <aside className="sticky top-20 hidden max-h-[calc(100dvh-96px)] self-start xl:block">
           <div>
             <Card className="rounded-lg border-border/70 bg-background shadow-sm">
@@ -272,8 +272,8 @@ async function PostPageContent({
                 ]),
               }}
             />
-            <div className="border-b border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.28),rgba(255,255,255,0.92))] px-5 py-5 sm:px-6 md:px-8 md:py-6">
-              <h1 className="font-editorial max-w-4xl text-3xl font-semibold leading-tight text-foreground md:text-4xl">
+            <div className="border-b border-border/70 bg-muted/20 px-5 py-5 sm:px-6 md:px-8">
+              <h1 className="font-editorial max-w-4xl text-2xl font-semibold leading-tight text-foreground md:text-4xl">
                 {post.title}
               </h1>
               <p className="mt-3 line-clamp-2 max-w-3xl text-sm leading-6 text-muted-foreground md:text-base">
@@ -317,16 +317,16 @@ async function PostPageContent({
                 )}
               </div>
 
-              <div className="mt-6 space-y-10">
+              <div className="mt-6 space-y-8">
                 <div
-                  className="article-prose font-ui prose prose-zinc max-w-none prose-headings:font-editorial prose-p:text-[17px] prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-accent prose-a:underline prose-a:decoration-accent/55 prose-a:underline-offset-4 prose-a:transition-colors hover:prose-a:text-primary hover:prose-a:decoration-primary prose-strong:text-foreground prose-img:rounded-lg prose-blockquote:border-l-4 prose-blockquote:border-accent prose-blockquote:bg-accent/5 prose-blockquote:px-6 prose-blockquote:py-3 prose-blockquote:font-ui prose-blockquote:text-base prose-li:my-2 prose-li:text-foreground/90 prose-code:rounded prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:font-ui prose-code:text-sm"
+                  className="article-prose font-ui prose prose-zinc max-w-none prose-headings:font-editorial prose-p:text-base prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-accent prose-a:underline prose-a:decoration-accent/55 prose-a:underline-offset-4 prose-a:transition-colors hover:prose-a:text-primary hover:prose-a:decoration-primary prose-strong:text-foreground prose-img:rounded-lg prose-blockquote:border-l-4 prose-blockquote:border-accent prose-blockquote:bg-accent/5 prose-blockquote:px-5 prose-blockquote:py-3 prose-blockquote:font-ui prose-blockquote:text-base prose-li:my-2 prose-li:text-foreground/90 prose-code:rounded prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:font-ui prose-code:text-sm"
                   dangerouslySetInnerHTML={{ __html: contentWithIds }}
                 />
 
                 <WebmasterStatement />
 
                 {post.tags && post.tags.length > 0 ? (
-                  <section className="border-t border-border/70 pt-6">
+                  <section className="border-t border-border/70 pt-5">
                     <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                       <Tags className="size-4 text-accent" />
                       本文标签
@@ -337,7 +337,7 @@ async function PostPageContent({
                           key={tag.tag.id}
                           href={`/fwq/tags/${tag.tag.slug}/page/1`}
                           prefetch
-                          className="inline-flex min-h-9 items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          className="inline-flex min-h-8 items-center rounded-full border border-border/70 px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/10 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         >
                           #{tag.tag.name}
                         </Link>
@@ -349,13 +349,13 @@ async function PostPageContent({
                 {prevPost || nextPost ? (
                   <nav
                     aria-label="上下篇文章"
-                    className="grid gap-3 border-t border-border/70 pt-6 md:grid-cols-2"
+                    className="grid gap-3 border-t border-border/70 pt-5 md:grid-cols-2"
                   >
                     {prevPost ? (
                       <Link
                         href={`/fwq/posts/${prevPost.slug}`}
                         prefetch
-                        className="group flex min-h-24 items-start gap-3 rounded-lg border border-border/70 bg-muted/20 px-4 py-4 transition-colors hover:border-accent/30 hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        className="group flex min-h-20 items-start gap-3 rounded-lg border border-border/70 bg-muted/20 px-4 py-3.5 transition-colors hover:border-accent/30 hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
                         <ArrowLeftToLine className="mt-1 size-4 shrink-0 text-muted-foreground" />
                         <div>
@@ -374,7 +374,7 @@ async function PostPageContent({
                       <Link
                         href={`/fwq/posts/${nextPost.slug}`}
                         prefetch
-                        className="group flex min-h-24 items-start justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 px-4 py-4 text-left transition-colors hover:border-accent/30 hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:text-right"
+                        className="group flex min-h-20 items-start justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 px-4 py-3.5 text-left transition-colors hover:border-accent/30 hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:text-right"
                       >
                         <div>
                           <p className="text-xs text-muted-foreground">
@@ -391,7 +391,7 @@ async function PostPageContent({
                 ) : null}
 
                 {(matchedTopics.length > 0 || relatedOffers.length > 0) ? (
-                  <section className="space-y-4 border-t border-border/70 pt-6">
+                  <section className="space-y-4 border-t border-border/70 pt-5">
                     <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                       <SquareLibrary className="size-4 text-accent" />
                       相关专题与套餐
@@ -403,7 +403,7 @@ async function PostPageContent({
                             key={topic.slug}
                             href={`/servers/${topic.slug}`}
                             prefetch
-                            className="inline-flex min-h-9 items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                            className="inline-flex min-h-8 items-center rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                           >
                             {topic.title}
                           </Link>
@@ -411,7 +411,7 @@ async function PostPageContent({
                         <Link
                           href="/servers"
                           prefetch
-                          className="inline-flex min-h-9 items-center rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          className="inline-flex min-h-8 items-center rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         >
                           全部服务器比价
                         </Link>
@@ -487,7 +487,7 @@ async function PostPageContent({
                     : "推荐阅读"}
                 </h3>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {recommendedPosts.map((post) => (
                   <RecommendedPostCard key={post.id} post={post} />
                 ))}

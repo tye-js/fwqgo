@@ -44,7 +44,7 @@ export function LatestPostsSidebar({ posts }: { posts: LatestPostItem[] }) {
           prefetch
           className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
-          <div className="relative aspect-[16/10] overflow-hidden bg-muted">
+          <div className="relative aspect-[16/9] overflow-hidden bg-muted">
             <SafePostImage
               src={featuredPost.imgUrl}
               alt={featuredPost.title}

@@ -33,7 +33,9 @@ import {
 import {
   generateEnglishArticleContent,
   generateEnglishMetadata,
+  getAiRewriteContentLimit,
 } from "@fwqgo/ai/article-rewriter";
+import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import { shortenMarkdownOutboundLinks } from "@/server/links/outbound-short-link";
 
 const runningTaskIds = new Set<number>();
@@ -171,13 +173,12 @@ async function failTask(
   await updateSourceMaterialStatus(task, "failed");
 }
 
-function needsManualAffiliateReview(
-  diagnostics: ScrapeDiagnostics,
-) {
+function needsManualAffiliateReview(diagnostics: ScrapeDiagnostics) {
   const report = diagnostics.affiliateReport;
   return (
-    (report?.unmatchedLinks.length ?? 0) + (report?.invalidLinks.length ?? 0)
-  ) > 0;
+    (report?.unmatchedLinks.length ?? 0) + (report?.invalidLinks.length ?? 0) >
+    0
+  );
 }
 
 function finishedStepText(input: {
@@ -214,7 +215,9 @@ function textToHtml(value: string) {
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())
     .filter(Boolean)
-    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`)
+    .map(
+      (paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`,
+    )
     .join("");
 }
 
@@ -233,6 +236,13 @@ function parseDiagnosticsSnapshot(value: string | null) {
   } catch {
     return null;
   }
+}
+
+async function getTaskAiInputMaxLength(styleId?: number | null) {
+  const config = await getActiveAiRewriteConfig(styleId ?? undefined);
+  return config
+    ? getAiRewriteContentLimit(config.maxTokens)
+    : MAX_AI_MARKDOWN_INPUT_LENGTH;
 }
 
 function articleFromTaskSnapshot(
@@ -377,7 +387,7 @@ async function runEnglishSeoTask(
     }
 
     const markdownInput = contentToArticleMarkdown(post.content, {
-      maxLength: MAX_AI_MARKDOWN_INPUT_LENGTH,
+      maxLength: await getTaskAiInputMaxLength(claimedTask.rewriteStyleId),
     });
 
     await upsertTaskStep({
@@ -552,6 +562,7 @@ async function createArticleFromManualTask(input: {
   sourceContent: string | null;
   sourceUrl: string;
   rewriteStyleId?: number;
+  aiInputMaxLength: number;
 }): Promise<ScrapedArticle> {
   const rawContent = input.sourceContent?.trim();
   if (!rawContent) {
@@ -576,7 +587,7 @@ async function createArticleFromManualTask(input: {
   });
   const cleanedHtml = $.html();
   const markdownInput = htmlToArticleMarkdown(cleanedHtml, {
-    maxLength: MAX_AI_MARKDOWN_INPUT_LENGTH,
+    maxLength: input.aiInputMaxLength,
   });
   const diagnostics: ScrapeDiagnostics = {
     sourceHost: input.sourceUrl,
@@ -639,6 +650,10 @@ async function createArticleFromManualTask(input: {
 async function loadTaskArticle(
   claimedTask: typeof aiRewriteTasks.$inferSelect,
 ) {
+  const aiInputMaxLength = await getTaskAiInputMaxLength(
+    claimedTask.rewriteStyleId,
+  );
+
   if (
     claimedTask.sourceType === "text" ||
     claimedTask.sourceType === "email" ||
@@ -649,12 +664,14 @@ async function loadTaskArticle(
       sourceContent: claimedTask.sourceContent,
       sourceUrl: claimedTask.sourceUrl,
       rewriteStyleId: claimedTask.rewriteStyleId ?? undefined,
+      aiInputMaxLength,
     });
   }
 
   return scrapeArticleWithOptions({
     url: claimedTask.sourceUrl,
     rewriteStyleId: claimedTask.rewriteStyleId ?? undefined,
+    aiInputMaxLength,
   });
 }
 
@@ -784,7 +801,8 @@ export async function runAiRewriteTask(taskId: number) {
         progress: 72,
         message: article.diagnostics.usedAiRewrite
           ? `AI 输出 ${article.diagnostics.rewriteOutputLength ?? article.htmlContent.length} 字符`
-          : (article.diagnostics.aiRewriteError ?? "AI 未改写，使用原始采集内容"),
+          : (article.diagnostics.aiRewriteError ??
+            "AI 未改写，使用原始采集内容"),
       });
       activeStep = {
         key: "save_draft",
@@ -797,7 +815,8 @@ export async function runAiRewriteTask(taskId: number) {
         currentStep: "保存为草稿文章",
         resultTitle: article.title,
         scrapedTitle: article.diagnostics.scrapedTitle ?? article.title,
-        scrapedDescription: article.diagnostics.scrapedDescription ?? article.description,
+        scrapedDescription:
+          article.diagnostics.scrapedDescription ?? article.description,
         scrapedHtml: article.htmlContent.slice(0, 60_000),
         aiInputLength: article.diagnostics.aiInputLength ?? null,
         rewriteOutputLength:

@@ -6,7 +6,11 @@ import {
   scrapeArticleWithOptions,
   type ScrapedArticle,
 } from "@fwqgo/scrape/article-scraper";
-import { getAiRewriteConfigs } from "@fwqgo/ai/rewrite-config";
+import { getAiRewriteContentLimit } from "@fwqgo/ai/article-rewriter";
+import {
+  getActiveAiRewriteConfig,
+  getAiRewriteConfigs,
+} from "@fwqgo/ai/rewrite-config";
 import { requireAdminSession } from "@fwqgo/auth/session";
 
 const urlSchema = z.object({
@@ -52,10 +56,14 @@ export async function scrapeArticleAction(
           ? rewriteStyleIdString
           : undefined,
     });
+    const config = await getActiveAiRewriteConfig(rewriteStyleId);
     const article = await withTimeout(
       scrapeArticleWithOptions({
         url,
         rewriteStyleId,
+        aiInputMaxLength: config
+          ? getAiRewriteContentLimit(config.maxTokens)
+          : undefined,
       }),
       "抓取改写超时，请稍后重试或换一个内容更短的来源",
     );

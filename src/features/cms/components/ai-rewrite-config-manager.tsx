@@ -82,9 +82,9 @@ function ConfigForm({
   config?: Config;
   onDone?: () => void;
 }) {
-  const [provider, setProvider] = useState<"deepseek" | "openai" | "compatible">(
-    config?.provider ?? "deepseek",
-  );
+  const [provider, setProvider] = useState<
+    "deepseek" | "openai" | "compatible"
+  >(config?.provider ?? "deepseek");
   const [enabled, setEnabled] = useState(config?.enabled ?? false);
   const [isDefault, setIsDefault] = useState(config?.isDefault ?? false);
   const [isSaving, setIsSaving] = useState(false);
@@ -189,7 +189,11 @@ function ConfigForm({
           <Input
             name="apiKey"
             type="password"
-            placeholder={config?.hasApiKey ? `已配置 ${config.apiKeyPreview ?? ""}，留空保留` : "sk-..."}
+            placeholder={
+              config?.hasApiKey
+                ? `已配置 ${config.apiKeyPreview ?? ""}，留空保留`
+                : "sk-..."
+            }
           />
         </div>
       </div>
@@ -215,7 +219,7 @@ function ConfigForm({
           />
         </div>
         <div className="space-y-2">
-          <Label>Max Tokens</Label>
+          <Label>Max Tokens（中文 / 英文）</Label>
           <Input
             name="maxTokens"
             type="number"
@@ -224,6 +228,10 @@ function ConfigForm({
             defaultValue={config?.maxTokens ?? 8192}
             required
           />
+          <p className="text-xs leading-5 text-muted-foreground">
+            同时限制中文正文改写、英文正文生成的 Markdown 输入长度和模型输出
+            max_tokens。
+          </p>
         </div>
       </div>
 
@@ -414,7 +422,10 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
               {editId === config.id ? (
                 <TableRow>
                   <TableCell colSpan={7} className="bg-muted/20">
-                    <ConfigForm config={config} onDone={() => setEditId(null)} />
+                    <ConfigForm
+                      config={config}
+                      onDone={() => setEditId(null)}
+                    />
                   </TableCell>
                 </TableRow>
               ) : null}

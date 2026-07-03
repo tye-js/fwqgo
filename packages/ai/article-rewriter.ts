@@ -10,7 +10,7 @@ const DEFAULT_AI_REWRITE_TIMEOUT_MS = 300_000;
 const MIN_AI_INPUT_LENGTH = 80;
 const MIN_REWRITTEN_MARKDOWN_LENGTH = 120;
 const MAX_METADATA_INPUT_LENGTH = 28_000;
-const MAX_ENGLISH_MARKDOWN_INPUT_LENGTH = 14_000;
+const MAX_ENGLISH_CONTINUATION_ATTEMPTS = 3;
 
 function getAiRewriteTimeoutMs() {
   const configured = Number(process.env.AI_REWRITE_TIMEOUT_MS);
@@ -63,6 +63,11 @@ type ChatCompletionResponse = {
       content?: string | null;
     };
   }>;
+  usage?: {
+    completion_tokens?: number;
+    prompt_tokens?: number;
+    total_tokens?: number;
+  };
   error?: {
     code?: string | number;
     message?: string;
@@ -75,10 +80,28 @@ type AiRewriteHttpResult = {
   data: ChatCompletionResponse | null;
 };
 
-type AiRewriteConfig = NonNullable<Awaited<ReturnType<typeof getActiveAiRewriteConfig>>>;
+type ChatCompletionTextResult = {
+  text: string;
+  finishReason: string | null;
+  completionTokens: number | null;
+};
+
+type AiRewriteConfig = NonNullable<
+  Awaited<ReturnType<typeof getActiveAiRewriteConfig>>
+>;
 
 function createReadableError(message: string, detail?: string) {
   return new Error(detail ? `${message}；原因：${detail}` : message);
+}
+
+export function getAiRewriteContentLimit(maxTokens: number) {
+  return Number.isFinite(maxTokens) && maxTokens > 0
+    ? Math.floor(maxTokens)
+    : 8192;
+}
+
+function estimateEnglishTokens(text: string) {
+  return Math.ceil(text.length / 4);
 }
 
 function cleanJsonText(text: string) {
@@ -112,10 +135,7 @@ function parseJsonResponse<T>(text: string): T {
   }
 }
 
-function buildHtmlRewritePrompt(
-  content: string,
-  stylePrompt: string,
-) {
+function buildHtmlRewritePrompt(content: string, stylePrompt: string) {
   return `你是一个专业的服务器/VPS 推广文章中文编辑。请把清洗后的原文 Markdown 改写成更适合发布的中文正文 Markdown。
 
 正文改写风格：
@@ -188,6 +208,7 @@ function buildEnglishContentPrompt(input: {
   keywords: string | null;
   markdownContent: string;
   stylePrompt: string;
+  maxMarkdownLength: number;
 }) {
   return `You are an English editor for a VPS/server deals website.
 
@@ -214,7 +235,23 @@ Chinese keywords:
 ${input.keywords ?? ""}
 
 Chinese article Markdown:
-${input.markdownContent.slice(0, MAX_ENGLISH_MARKDOWN_INPUT_LENGTH)}`;
+${input.markdownContent.slice(0, input.maxMarkdownLength)}`;
+}
+
+function buildEnglishContinuationPrompt(input: {
+  originalPrompt: string;
+  generatedContent: string;
+}) {
+  return `${input.originalPrompt}
+
+The previous response was cut off before the article was complete.
+
+Continue the same English Markdown article exactly where it stopped.
+Do not repeat sections that were already written.
+Do not add explanations, JSON, code fences, title, meta description or keywords.
+
+Already generated English Markdown tail:
+${input.generatedContent.slice(-2_000)}`;
 }
 
 function buildEnglishMetadataPrompt(input: {
@@ -272,9 +309,7 @@ function cleanMarkdownText(text: string) {
 
 function normalizeStringArray(value: unknown) {
   if (Array.isArray(value)) {
-    return value
-      .map((item) => String(item).trim())
-      .filter(Boolean);
+    return value.map((item) => String(item).trim()).filter(Boolean);
   }
 
   if (typeof value === "string") {
@@ -313,7 +348,7 @@ function normalizeMetadata(
       typeof metadata.recommendTagName === "string" &&
       metadata.recommendTagName.trim()
         ? metadata.recommendTagName.trim()
-        : normalizeStringArray(metadata.tagsName)[0] ?? "",
+        : (normalizeStringArray(metadata.tagsName)[0] ?? ""),
   };
 }
 
@@ -356,7 +391,10 @@ function normalizeComparableTitle(value: string) {
     .trim();
 }
 
-function removeDuplicatedTitleFromMarkdown(markdownContent: string, title: string) {
+function removeDuplicatedTitleFromMarkdown(
+  markdownContent: string,
+  title: string,
+) {
   const normalizedTitle = normalizeComparableTitle(title);
   const lines = markdownContent.split(/\r?\n/);
   const firstContentIndex = lines.findIndex((line) => line.trim().length > 0);
@@ -446,7 +484,10 @@ function validateEnglishMetadata(output: EnglishMetadataOutput) {
   }
 
   if (issues.length > 0) {
-    throw createReadableError("英文 SEO 版本生成失败：返回字段不完整", issues.join("、"));
+    throw createReadableError(
+      "英文 SEO 版本生成失败：返回字段不完整",
+      issues.join("、"),
+    );
   }
 }
 
@@ -477,7 +518,7 @@ function getAiProviderErrorMessage(input: {
   return message ? `${prefix}，${message}` : prefix;
 }
 
-async function requestChatCompletion(input: {
+async function requestChatCompletionResult(input: {
   config: AiRewriteConfig;
   endpoint: string;
   timeoutMs: number;
@@ -486,7 +527,8 @@ async function requestChatCompletion(input: {
   systemPrompt: string;
   userPrompt: string;
   stepName: string;
-}) {
+  allowLengthFinishReason?: boolean;
+}): Promise<ChatCompletionTextResult> {
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -518,9 +560,9 @@ async function requestChatCompletion(input: {
           ],
         }),
       });
-      const data = (await response.json().catch(() => null)) as
-        | ChatCompletionResponse
-        | null;
+      const data = (await response
+        .json()
+        .catch(() => null)) as ChatCompletionResponse | null;
 
       return { response, data };
     };
@@ -550,14 +592,14 @@ async function requestChatCompletion(input: {
     }
 
     const choice = result.data?.choices?.[0];
-    if (choice?.finish_reason === "length") {
+    const text = choice?.message?.content;
+    if (choice?.finish_reason === "length" && !input.allowLengthFinishReason) {
       throw createReadableError(
         `${input.stepName}失败：模型输出被截断`,
         "请调大 Max Tokens，或缩短抓取正文/提示词",
       );
     }
 
-    const text = choice?.message?.content;
     if (!text) {
       throw createReadableError(
         `${input.stepName}失败：模型返回为空`,
@@ -565,7 +607,14 @@ async function requestChatCompletion(input: {
       );
     }
 
-    return text;
+    return {
+      text,
+      finishReason: choice?.finish_reason ?? null,
+      completionTokens:
+        typeof result.data?.usage?.completion_tokens === "number"
+          ? result.data.usage.completion_tokens
+          : null,
+    };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error(
@@ -579,6 +628,42 @@ async function requestChatCompletion(input: {
       clearTimeout(timeout);
     }
   }
+}
+
+async function requestChatCompletion(input: {
+  config: AiRewriteConfig;
+  endpoint: string;
+  timeoutMs: number;
+  maxTokens: number;
+  responseFormat?: { type: "json_object" };
+  systemPrompt: string;
+  userPrompt: string;
+  stepName: string;
+}) {
+  const result = await requestChatCompletionResult(input);
+  return result.text;
+}
+
+function appendMarkdownContinuation(content: string, continuation: string) {
+  const base = content.trimEnd();
+  const next = continuation.trimStart();
+
+  if (!base) {
+    return next;
+  }
+
+  for (
+    let length = Math.min(1_000, base.length, next.length);
+    length >= 80;
+    length -= 20
+  ) {
+    const suffix = base.slice(-length);
+    if (next.startsWith(suffix)) {
+      return `${base}${next.slice(length)}`;
+    }
+  }
+
+  return `${base}\n\n${next}`;
 }
 
 export async function rewriteArticleWithAi(
@@ -620,10 +705,7 @@ export async function rewriteArticleWithAi(
       stepName: "正文改写",
       systemPrompt:
         "你是专业中文编辑。你只输出正文 Markdown，不输出 JSON、代码块围栏、解释或额外文本。",
-      userPrompt: buildHtmlRewritePrompt(
-        normalizedContent,
-        config.stylePrompt,
-      ),
+      userPrompt: buildHtmlRewritePrompt(normalizedContent, config.stylePrompt),
     }),
   );
 
@@ -714,22 +796,68 @@ export async function generateEnglishArticleContent(
   }
 
   const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/v1/chat/completions`;
-  const enContent = cleanMarkdownText(
-    await requestChatCompletion({
+  const contentLimit = getAiRewriteContentLimit(config.maxTokens);
+  const userPrompt = buildEnglishContentPrompt({
+    ...input,
+    markdownContent: normalizedContent,
+    stylePrompt: getEnglishStylePrompt(config.englishStylePrompt),
+    maxMarkdownLength: contentLimit,
+  });
+  const firstResult = await requestChatCompletionResult({
+    config,
+    endpoint,
+    timeoutMs,
+    maxTokens: config.maxTokens,
+    stepName: "英文正文生成",
+    systemPrompt:
+      "You are a professional English editor. Output only the English Markdown body.",
+    userPrompt,
+    allowLengthFinishReason: true,
+  });
+  let enContent = cleanMarkdownText(firstResult.text);
+  let finishReason = firstResult.finishReason;
+  let continuationAttempt = 0;
+  let usedCompletionTokens =
+    firstResult.completionTokens ?? estimateEnglishTokens(enContent);
+
+  while (
+    finishReason === "length" &&
+    continuationAttempt < MAX_ENGLISH_CONTINUATION_ATTEMPTS
+  ) {
+    const remainingTokens = config.maxTokens - usedCompletionTokens;
+    if (remainingTokens <= 0) {
+      break;
+    }
+
+    continuationAttempt += 1;
+
+    const continuationResult = await requestChatCompletionResult({
       config,
       endpoint,
       timeoutMs,
-      maxTokens: config.maxTokens,
-      stepName: "英文正文生成",
+      maxTokens: remainingTokens,
+      stepName: `英文正文续写 ${continuationAttempt}`,
       systemPrompt:
-        "You are a professional English editor. Output only the English Markdown body.",
-      userPrompt: buildEnglishContentPrompt({
-        ...input,
-        markdownContent: normalizedContent,
-        stylePrompt: getEnglishStylePrompt(config.englishStylePrompt),
+        "You are a professional English editor. Output only the English Markdown body continuation.",
+      userPrompt: buildEnglishContinuationPrompt({
+        originalPrompt: userPrompt,
+        generatedContent: enContent,
       }),
-    }),
-  );
+      allowLengthFinishReason: true,
+    });
+    const continuation = cleanMarkdownText(continuationResult.text);
+
+    enContent = appendMarkdownContinuation(enContent, continuation);
+    usedCompletionTokens +=
+      continuationResult.completionTokens ??
+      estimateEnglishTokens(continuation);
+    finishReason =
+      continuation.length > 0 ? continuationResult.finishReason : null;
+
+    if (!continuation || finishReason !== "length") {
+      break;
+    }
+  }
 
   if (!enContent) {
     throw createReadableError(
@@ -795,8 +923,9 @@ export async function generateEnglishSeoVersion(
   },
   options: { styleId?: number } = {},
 ): Promise<EnglishSeoVersionOutput> {
+  const config = await getVerifiedAiConfig("英文 SEO 生成", options);
   const markdown = contentToArticleMarkdown(input.htmlContent, {
-    maxLength: MAX_ENGLISH_MARKDOWN_INPUT_LENGTH,
+    maxLength: getAiRewriteContentLimit(config.maxTokens),
   });
   const enContent = await generateEnglishArticleContent(
     {

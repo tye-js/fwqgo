@@ -65,14 +65,14 @@ export default async function FooterComponent() {
   ];
 
   return (
-    <footer className="border-t border-border/70 bg-zinc-100 text-gray-950">
+    <footer className="border-t border-border/70 bg-background text-foreground">
       <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-        <div className="rounded-lg border border-border/70 bg-white/80 p-6 shadow-sm">
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-5 shadow-sm">
           <div className="grid gap-6 md:grid-cols-[220px_1fr]">
             <div>
               <BrandLogo compact className="items-start" textClassName="pt-0.5" />
               <p className="mt-4 text-sm font-medium text-foreground">快速进入</p>
-              <p className="mt-2 text-sm leading-6 text-zinc-600">
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 快速入口统一放到底部，继续往下浏览时也能直接切换方向。
               </p>
             </div>
@@ -82,7 +82,7 @@ export default async function FooterComponent() {
                   key={category.id}
                   href={`/fwq/${category.slug}/page/1`}
                   prefetch
-                  className="flex min-h-11 items-center rounded-md border border-border/70 bg-white px-4 py-3 text-sm text-zinc-600 transition-colors hover:border-accent/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="flex min-h-11 items-center rounded-md border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   {category.name}
                 </Link>
@@ -94,11 +94,13 @@ export default async function FooterComponent() {
         <div className="mt-8 grid grid-cols-1 gap-8 md:grid-cols-4">
           {footerData.map((item) => (
             <div key={item.title}>
-              <h3 className="mb-4 text-sm font-semibold tracking-wide text-zinc-900">
+              <h3 className="mb-4 text-sm font-semibold tracking-wide text-foreground">
                 {item.title}
               </h3>
               {item.content ? (
-                <p className="text-sm leading-7 text-zinc-600">{item.content}</p>
+                <p className="text-sm leading-7 text-muted-foreground">
+                  {item.content}
+                </p>
               ) : null}
               {item.links ? (
                 <ul className="flex flex-col gap-3">
@@ -107,7 +109,7 @@ export default async function FooterComponent() {
                       <Link
                         href={link.href}
                         prefetch
-                        className="inline-flex min-h-8 items-center rounded-sm text-sm text-zinc-600 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        className="inline-flex min-h-8 items-center rounded-sm text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
                         {link.title}
                       </Link>
@@ -119,7 +121,7 @@ export default async function FooterComponent() {
           ))}
         </div>
 
-        <div className="mt-8 rounded-lg border border-border/70 bg-white/70 px-4 py-5 text-sm text-zinc-500">
+        <div className="mt-8 rounded-lg border border-border/70 bg-muted/20 px-4 py-5 text-sm text-muted-foreground">
           <div className="flex flex-col items-center justify-between gap-3 md:flex-row">
             <p>&copy; 2020-2026 服务器go 保留所有权利。</p>
           </div>

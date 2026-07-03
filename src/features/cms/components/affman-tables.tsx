@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 
 import {
@@ -10,7 +10,10 @@ import {
   deleteAffProviders,
   updateAffProvider,
 } from "@/features/cms/actions/aff-provider";
-import { AdminTableEmpty, AdminTableWorkbench } from "@/features/cms/components/admin-table-workbench";
+import {
+  AdminTableEmpty,
+  AdminTableWorkbench,
+} from "@/features/cms/components/admin-table-workbench";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -102,14 +105,20 @@ function validateAffProviderForm(input: Omit<AffManData, "id">) {
       return { error: "返利链接只支持 http 或 https", data: normalizedInput };
     }
   } catch {
-    return { error: "返利链接格式不正确，请填写完整 URL", data: normalizedInput };
+    return {
+      error: "返利链接格式不正确，请填写完整 URL",
+      data: normalizedInput,
+    };
   }
 
   if (
     normalizedInput.officialUrl.includes(" ") ||
     !normalizedInput.officialUrl.includes(".")
   ) {
-    return { error: "商家官网请填写域名，例如 example.com", data: normalizedInput };
+    return {
+      error: "商家官网请填写域名，例如 example.com",
+      data: normalizedInput,
+    };
   }
 
   return { data: normalizedInput };
@@ -139,7 +148,6 @@ export default function AffManTable({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [query, setQuery] = useState(initialQuery);
   const [filter, setFilter] = useState("all");
   const [sortValue, setSortValue] = useState("id-desc");
@@ -157,9 +165,15 @@ export default function AffManTable({
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   useEffect(() => {
+    const normalizedInitialQuery = initialQuery.trim();
+    const normalizedQuery = query.trim();
+
+    if (normalizedQuery === normalizedInitialQuery) {
+      return;
+    }
+
     const timeoutId = window.setTimeout(() => {
-      const params = new URLSearchParams(searchParams.toString());
-      const normalizedQuery = query.trim();
+      const params = new URLSearchParams(window.location.search);
 
       if (normalizedQuery) {
         params.set("query", normalizedQuery);
@@ -173,10 +187,9 @@ export default function AffManTable({
     }, 400);
 
     return () => window.clearTimeout(timeoutId);
-  }, [pathname, query, router, searchParams]);
+  }, [initialQuery, pathname, query, router]);
 
   const filteredData = useMemo(() => {
-
     return data.filter((item) => {
       const matchesFilter =
         filter === "all" ||
@@ -240,10 +253,13 @@ export default function AffManTable({
     }
 
     setIsSave(true);
-    const result = await withTimeout(updateAffProvider({
-      id: editId,
-      ...validation.data,
-    }), "保存超时，请稍后重试");
+    const result = await withTimeout(
+      updateAffProvider({
+        id: editId,
+        ...validation.data,
+      }),
+      "保存超时，请稍后重试",
+    );
     setIsSave(false);
 
     if (isActionError(result)) {
@@ -274,7 +290,10 @@ export default function AffManTable({
     const provider = data.find((item) => item.id === id);
     setIsDelete(true);
     try {
-      const result = await withTimeout(deleteAffProvider(id), "删除超时，请稍后重试");
+      const result = await withTimeout(
+        deleteAffProvider(id),
+        "删除超时，请稍后重试",
+      );
 
       if (isActionError(result)) {
         notifyError({
@@ -301,7 +320,8 @@ export default function AffManTable({
     } catch (error) {
       notifyError({
         title: "返利商家删除失败",
-        description: error instanceof Error ? error.message : "删除失败，请稍后重试",
+        description:
+          error instanceof Error ? error.message : "删除失败，请稍后重试",
       });
     }
     setIsDelete(false);
@@ -499,11 +519,31 @@ export default function AffManTable({
         </p>
         {isAdd ? (
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_140px_140px_1fr_auto]">
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="商家名" />
-            <Input value={affUrl} onChange={(e) => setAffUrl(e.target.value)} placeholder="返利链接" />
-            <Input value={affParam} onChange={(e) => setAffParam(e.target.value)} placeholder="返利参数" />
-            <Input value={affValue} onChange={(e) => setAffValue(e.target.value)} placeholder="返利值" />
-            <Input value={officialUrl} onChange={(e) => setOfficialUrl(e.target.value)} placeholder="商家官网" />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="商家名"
+            />
+            <Input
+              value={affUrl}
+              onChange={(e) => setAffUrl(e.target.value)}
+              placeholder="返利链接"
+            />
+            <Input
+              value={affParam}
+              onChange={(e) => setAffParam(e.target.value)}
+              placeholder="返利参数"
+            />
+            <Input
+              value={affValue}
+              onChange={(e) => setAffValue(e.target.value)}
+              placeholder="返利值"
+            />
+            <Input
+              value={officialUrl}
+              onChange={(e) => setOfficialUrl(e.target.value)}
+              placeholder="商家官网"
+            />
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => setIsAdd(false)}>
                 取消
@@ -535,7 +575,9 @@ export default function AffManTable({
                 <Checkbox
                   checked={allFilteredSelected}
                   onCheckedChange={(checked) =>
-                    setSelectedIds(Boolean(checked) ? sortedData.map((item) => item.id) : [])
+                    setSelectedIds(
+                      Boolean(checked) ? sortedData.map((item) => item.id) : [],
+                    )
                   }
                 />
               </TableHead>
@@ -567,26 +609,54 @@ export default function AffManTable({
                   <>
                     <TableCell>{item.id}</TableCell>
                     <TableCell>
-                      <Input className="h-8" value={name} onChange={(e) => setName(e.target.value)} />
+                      <Input
+                        className="h-8"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                      />
                     </TableCell>
                     <TableCell>
-                      <Input className="h-8" value={affUrl} onChange={(e) => setAffUrl(e.target.value)} />
+                      <Input
+                        className="h-8"
+                        value={affUrl}
+                        onChange={(e) => setAffUrl(e.target.value)}
+                      />
                     </TableCell>
                     <TableCell>
-                      <Input className="h-8" value={affParam} onChange={(e) => setAffParam(e.target.value)} />
+                      <Input
+                        className="h-8"
+                        value={affParam}
+                        onChange={(e) => setAffParam(e.target.value)}
+                      />
                     </TableCell>
                     <TableCell>
-                      <Input className="h-8" value={affValue} onChange={(e) => setAffValue(e.target.value)} />
+                      <Input
+                        className="h-8"
+                        value={affValue}
+                        onChange={(e) => setAffValue(e.target.value)}
+                      />
                     </TableCell>
                     <TableCell>
-                      <Input className="h-8" value={officialUrl} onChange={(e) => setOfficialUrl(e.target.value)} />
+                      <Input
+                        className="h-8"
+                        value={officialUrl}
+                        onChange={(e) => setOfficialUrl(e.target.value)}
+                      />
                     </TableCell>
                     <TableCell className="text-center">
                       <div className="flex justify-center gap-2">
-                        <Button variant="secondary" size="sm" onClick={() => setEditId(null)}>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setEditId(null)}
+                        >
                           取消
                         </Button>
-                        <Button disabled={isSave} size="sm" onClick={handleSave}>
+                        <Button
+                          disabled={isSave}
+                          size="sm"
+                          onClick={handleSave}
+                        >
                           {isSave ? "保存中..." : "保存"}
                         </Button>
                       </div>
@@ -630,7 +700,9 @@ export default function AffManTable({
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>确定删除这个商家吗？</AlertDialogTitle>
+                              <AlertDialogTitle>
+                                确定删除这个商家吗？
+                              </AlertDialogTitle>
                               <AlertDialogDescription>
                                 删除后将无法恢复，当前商家为
                                 <p className="mt-2 text-red-500">{item.name}</p>
@@ -638,7 +710,9 @@ export default function AffManTable({
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>取消</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => handleDelete(item.id)}>
+                              <AlertDialogAction
+                                onClick={() => handleDelete(item.id)}
+                              >
                                 {isDelete ? "删除中..." : "确定删除"}
                               </AlertDialogAction>
                             </AlertDialogFooter>

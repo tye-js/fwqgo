@@ -59,6 +59,18 @@ const billingCycleLabels: Record<string, string> = {
   yearly: "年付",
 };
 
+function getStatusClassName(status: string) {
+  if (status === "in_stock") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50";
+  }
+
+  if (status === "preorder" || status === "restocking") {
+    return "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50";
+  }
+
+  return "border-zinc-200 bg-zinc-100 text-zinc-600 hover:bg-zinc-100";
+}
+
 function formatPrice(offer: Offer) {
   if (!offer.priceAmount) return "待补充";
   const amount = Number(offer.priceAmount);
@@ -155,7 +167,9 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
           <h2 className="min-w-0 flex-1 text-base font-semibold leading-6 text-foreground">
             {offer.title}
           </h2>
-          <Badge>{offerStatusLabels[offer.status] ?? offer.status}</Badge>
+          <Badge variant="outline" className={getStatusClassName(offer.status)}>
+            {offerStatusLabels[offer.status] ?? offer.status}
+          </Badge>
         </div>
         <div className="flex flex-wrap gap-2">
           {offer.providerName ? (
@@ -303,11 +317,16 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-border/70 bg-background p-4 shadow-sm">
-        <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
-          <Filter className="size-4 text-accent" />
-          筛选套餐
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <Filter className="size-4 text-accent" />
+            筛选套餐
+          </div>
+          <span className="text-xs text-muted-foreground">
+            显示 {filteredOffers.length} / {offers.length}
+          </span>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_145px_145px_145px_145px_145px_145px]">
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_145px_145px_145px_145px_145px_145px]">
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -415,7 +434,7 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
       </div>
 
       <div className="hidden overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm md:block">
-        <table className="w-full table-fixed text-[13px] lg:text-sm">
+        <table className="w-full table-fixed text-[13px]">
           <thead className="border-b border-border/70 bg-muted/30 text-left text-xs uppercase text-muted-foreground">
             <tr>
               <th className="w-[25%] px-3 py-3 font-medium">套餐</th>
@@ -496,7 +515,7 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                   </p>
                 </td>
                 <td className="px-3 py-3">
-                  <Badge>
+                  <Badge variant="outline" className={getStatusClassName(offer.status)}>
                     {offerStatusLabels[offer.status] ?? offer.status}
                   </Badge>
                 </td>
