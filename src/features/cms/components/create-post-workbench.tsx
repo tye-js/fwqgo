@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { TiptapEditor } from "@/components/editor/tiptap-editor";
+import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -62,7 +62,8 @@ export function CreatePostWorkbench({
     categories.some((category) => category.id === selectedCategoryId);
   const normalizedKeywords = keywords
     .map((keyword) => keyword.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, 6);
   const seoChecks = buildCreateSeoChecks({
     title,
     content,
@@ -201,7 +202,7 @@ export function CreatePostWorkbench({
         <AdminSectionCard title="正文编辑器" description="文章主体内容会在这里完成。">
           <div className="space-y-2">
             <label className="text-sm font-medium">文章内容</label>
-            <TiptapEditor content={content} onChange={setContent} />
+            <MarkdownEditor content={content} onChange={setContent} />
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
@@ -379,7 +380,9 @@ export function CreatePostWorkbench({
               className="w-full"
               value={keywords.join(",")}
               onChange={(e) =>
-                setKeywords(e.target.value.replace(/，/g, ",").split(","))
+                setKeywords(
+                  e.target.value.replace(/，/g, ",").split(",").slice(0, 6),
+                )
               }
             />
           </div>
@@ -447,7 +450,7 @@ function getMissingRequiredFields(input: {
 }) {
   const fields: string[] = [];
   if (!input.title.trim()) fields.push("标题");
-  if (!stripHtml(input.content).trim()) fields.push("正文内容");
+  if (!markdownToPlainText(input.content).trim()) fields.push("正文内容");
   if (!input.description.trim()) fields.push("内容简述");
   return fields;
 }
@@ -462,11 +465,11 @@ function buildCreateSeoChecks(input: {
   imageUrl: string;
   categoryId: string;
 }) {
-  const plainText = stripHtml(input.content);
+  const plainText = markdownToPlainText(input.content);
   const titleLength = input.title.trim().length;
   const descriptionLength = input.description.trim().length;
   const keywordCount = input.keywords.length;
-  const hasHeading = /<h[23][^>]*>/i.test(input.content);
+  const hasHeading = /^#{2,3}\s+\S+/m.test(input.content);
   const hasCoverImage = Boolean(input.imageUrl.trim());
   const hasCategory = Boolean(input.categoryId && Number.isFinite(Number(input.categoryId)));
 
@@ -518,12 +521,11 @@ function buildCreateSeoChecks(input: {
   ];
 }
 
-function stripHtml(value: string) {
+function markdownToPlainText(value: string) {
   return value
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[#*_`>|-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

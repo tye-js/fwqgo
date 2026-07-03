@@ -36,6 +36,16 @@ function normalizeTagName(name: string) {
   return name.trim();
 }
 
+function normalizeSeoKeywords(value: string) {
+  return value
+    .replace(/，/g, ",")
+    .split(",")
+    .map((keyword) => keyword.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+    .join(",");
+}
+
 function revalidateImageAssetList() {
   revalidatePath("/images/list");
 }
@@ -289,7 +299,7 @@ export async function updatePostContent(input: {
         categoryId: input.categoryId,
         recommendedTagName: recommendedTag?.name ?? null,
         recommendedTagId: recommendedTag?.id ?? null,
-        keywords: input.keywords,
+        keywords: normalizeSeoKeywords(input.keywords),
         affiliateReviewStatus: "pending",
         affiliateReviewDetails: null,
         affiliateReviewUpdatedAt: null,
@@ -338,7 +348,7 @@ export async function updatePostEnglishContent(input: {
     const normalizedContent = input.enContent.trim();
     const normalizedSlug = slugify(input.enSlug.trim() || normalizedTitle);
     const normalizedDescription = input.enDescription.trim();
-    const normalizedKeywords = input.enKeywords.replace(/，/g, ",").trim();
+    const normalizedKeywords = normalizeSeoKeywords(input.enKeywords);
 
     if (!normalizedTitle || !normalizedSlug || !normalizedContent) {
       return { error: "英文标题、slug 和正文不能为空" };

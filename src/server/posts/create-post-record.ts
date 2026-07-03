@@ -64,6 +64,18 @@ function normalizeTagName(name: string) {
   return name.trim();
 }
 
+function normalizeSeoKeywords(value?: string | null) {
+  const normalized = value
+    ?.replace(/，/g, ",")
+    .split(",")
+    .map((keyword) => keyword.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+    .join(",");
+
+  return normalized ?? "";
+}
+
 function uniqueTagsBySlug<T extends { name: string }>(tagList: T[]) {
   const uniqueTags = new Map<string, T & { name: string }>();
 
@@ -206,6 +218,7 @@ export async function createPostRecordInTransaction(
       ...postInput,
       slug,
       content: normalizedContent,
+      keywords: normalizeSeoKeywords(postInput.keywords),
       recommendedTagName: recommendedTag?.name ?? null,
       recommendedTagId: recommendedTag?.id ?? null,
     })

@@ -363,6 +363,57 @@ export async function retryAiRewriteTaskAction(taskId: number) {
   }
 }
 
+export async function deleteAiRewriteTaskAction(taskId: number) {
+  try {
+    await requireAdminSession();
+
+    const [task] = await db
+      .select({
+        id: aiRewriteTasks.id,
+        status: aiRewriteTasks.status,
+        sourceMaterialId: aiRewriteTasks.sourceMaterialId,
+        postId: aiRewriteTasks.postId,
+      })
+      .from(aiRewriteTasks)
+      .where(eq(aiRewriteTasks.id, taskId))
+      .limit(1);
+
+    if (!task) {
+      return { error: "任务不存在或已被删除" };
+    }
+
+    if (task.status === "running") {
+      return { error: "任务正在处理中，不能删除。请等待任务结束后再删除。" };
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.delete(aiRewriteTasks).where(eq(aiRewriteTasks.id, taskId));
+
+      if (task.sourceMaterialId) {
+        await tx
+          .update(sourceMaterials)
+          .set({
+            status: "deleted",
+            updatedAt: new Date(),
+          })
+          .where(eq(sourceMaterials.id, task.sourceMaterialId));
+      }
+    });
+
+    revalidateAiTaskPages(taskId);
+
+    return {
+      data: {
+        id: task.id,
+        postId: task.postId,
+      },
+    };
+  } catch (error) {
+    console.error("删除 AI 改写任务失败:", error);
+    return { error: getErrorMessage(error) };
+  }
+}
+
 export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
   try {
     await requireAdminSession();

@@ -2,6 +2,7 @@ import { getPostBySlug } from "@/features/cms/data/post";
 import EditPost from "@/components/endpoint/edit-post/edit-post";
 import { getLeafCategories } from "@/features/shared/data/category";
 import { AdminPageShell, AdminSectionCard } from "@/features/cms/components/admin-page-shell";
+import { contentToArticleMarkdown } from "@fwqgo/core/content";
 
 export default async function EditPostPage(
   props: {
@@ -31,10 +32,18 @@ export default async function EditPostPage(
       </AdminPageShell>
     );
   }
+  const markdownPost = {
+    ...post,
+    content: contentToArticleMarkdown(post.content).markdown,
+    enContent: post.enContent
+      ? contentToArticleMarkdown(post.enContent).markdown
+      : post.enContent,
+  };
+
   return (
     <>
       <EditPost
-        post={{ post, tags: post.tags }}
+        post={{ post: markdownPost, tags: post.tags }}
         categories={categories}
         postMeta={{
           title: post.title,
