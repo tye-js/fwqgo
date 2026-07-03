@@ -28,10 +28,9 @@ const HeaderComponent = async () => {
   const safeCategories = categories ?? [];
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/60 bg-background/90 backdrop-blur-xl">
-      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-accent/60 to-transparent" />
+    <header className="sticky top-0 z-50 border-b border-border/70 bg-background/95 backdrop-blur-xl">
       <div className="container mx-auto px-4">
-        <div className="flex min-h-[72px] items-center justify-between gap-6">
+        <div className="flex min-h-16 items-center justify-between gap-5">
           <Link
             href="/"
             prefetch
@@ -42,9 +41,9 @@ const HeaderComponent = async () => {
           </Link>
 
           <NavigationMenu className="hidden lg:block">
-            <NavigationMenuList className="rounded-full border border-border/70 bg-white/90 p-1 shadow-sm backdrop-blur">
+            <NavigationMenuList className="rounded-md border border-border/70 bg-background p-1 shadow-sm">
               <NavigationMenuItem>
-                <NavigationMenuTrigger className="rounded-full">
+                <NavigationMenuTrigger className="rounded-md">
                   服务器比价
                 </NavigationMenuTrigger>
                 <NavigationMenuContent>
@@ -67,7 +66,7 @@ const HeaderComponent = async () => {
               {safeCategories.map((category) =>
                 category.children.length > 0 ? (
                   <NavigationMenuItem key={category.id}>
-                    <NavigationMenuTrigger className="rounded-full">
+                    <NavigationMenuTrigger className="rounded-md">
                       {category.name}
                     </NavigationMenuTrigger>
                     <NavigationMenuContent>
@@ -92,7 +91,7 @@ const HeaderComponent = async () => {
                         prefetch
                         className={cn(
                           navigationMenuTriggerStyle(),
-                          "rounded-full bg-transparent",
+                          "rounded-md bg-transparent",
                         )}
                       >
                         {category.name}
@@ -109,7 +108,7 @@ const HeaderComponent = async () => {
                       prefetch
                       className={cn(
                         navigationMenuTriggerStyle(),
-                        "rounded-full bg-transparent text-muted-foreground",
+                        "rounded-md bg-transparent text-muted-foreground",
                       )}
                     >
                       分类暂不可用
@@ -145,7 +144,7 @@ const HeaderComponent = async () => {
                   <Link
                     href="/servers"
                     prefetch
-                    className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     服务器比价
                   </Link>
@@ -160,7 +159,7 @@ const HeaderComponent = async () => {
                       key={href}
                       href={href}
                       prefetch
-                      className="flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {label}
                     </Link>
@@ -176,7 +175,7 @@ const HeaderComponent = async () => {
                     <Link
                       href={`/fwq/${category.slug}/page/1`}
                       prefetch
-                      className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {category.name}
                     </Link>
@@ -187,7 +186,7 @@ const HeaderComponent = async () => {
                             key={item.id}
                             href={`/fwq/${item.slug}/page/1`}
                             prefetch
-                            className="flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             {item.name}
                           </Link>
@@ -224,7 +223,7 @@ const ListItem = React.forwardRef<
           prefetch
           ref={ref}
           className={cn(
-            "block select-none space-y-2 rounded-md border border-transparent p-4 leading-none no-underline outline-none transition-colors hover:border-primary/20 hover:bg-primary/5 focus:border-primary/20 focus:bg-primary/5 focus-visible:ring-2 focus-visible:ring-ring",
+            "block select-none space-y-2 rounded-md border border-transparent p-3.5 leading-none no-underline outline-none transition-colors hover:border-border hover:bg-muted/60 focus:border-border focus:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring",
             className,
           )}
           {...props}

@@ -230,7 +230,7 @@
 
 @layer components {
   .article-prose :where(h2) {
-    @apply relative mt-12 scroll-mt-28 border-b border-border pb-3 pl-4 text-2xl font-semibold leading-tight text-foreground;
+    @apply relative mt-10 scroll-mt-28 border-b border-border pb-2.5 pl-4 text-2xl font-semibold leading-tight text-foreground;
   }
 
   .article-prose :where(h2)::before {
@@ -239,7 +239,7 @@
   }
 
   .article-prose :where(h3) {
-    @apply mt-9 scroll-mt-28 rounded-md bg-muted/70 px-4 py-2 text-xl font-semibold leading-snug text-foreground;
+    @apply mt-8 scroll-mt-28 rounded-md border border-border/70 bg-muted/45 px-4 py-2 text-xl font-semibold leading-snug text-foreground;
   }
 
   .article-prose :where(h4) {
@@ -251,7 +251,7 @@
   }
 
   .article-prose :where(table) {
-    @apply my-6 w-full table-fixed rounded-lg border border-border bg-background text-xs shadow-sm md:text-[13px];
+    @apply my-6 w-full table-fixed rounded-lg border border-border bg-background text-[12px] shadow-sm md:text-[13px];
     border-collapse: separate;
     border-spacing: 0;
   }
@@ -261,12 +261,12 @@
   }
 
   .article-prose :where(th) {
-    @apply break-words border-b border-border px-2.5 py-2 text-left font-semibold leading-snug text-foreground md:px-3;
+    @apply break-words border-b border-border px-2 py-2 text-left font-semibold leading-snug text-foreground md:px-2.5;
     overflow-wrap: anywhere;
   }
 
   .article-prose :where(td) {
-    @apply break-words border-b border-border/70 px-2 py-1.5 align-top leading-snug text-foreground md:px-2.5 md:py-2;
+    @apply break-words border-b border-border/70 px-2 py-1.5 align-top leading-snug text-foreground md:py-2;
     overflow-wrap: anywhere;
   }
 

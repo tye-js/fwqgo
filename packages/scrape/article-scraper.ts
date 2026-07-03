@@ -228,7 +228,10 @@ function removeNoise(
 
   $("p").each((_, element) => {
     const $p = $(element);
-    const text = $p.text().replace(/\u00a0/g, " ").trim();
+    const text = $p
+      .text()
+      .replace(/\u00a0/g, " ")
+      .trim();
     if (!text && $p.children().length === 0) {
       $p.remove();
     }
@@ -373,6 +376,7 @@ async function scrapeByRule(input: {
   rule: SiteRule;
   rewriteStyleId?: number;
   allowAiFallback?: boolean;
+  aiInputMaxLength?: number;
 }) {
   const parsedUrl = new URL(input.url);
   const diagnostics = createEmptyDiagnostics({
@@ -450,7 +454,7 @@ async function scrapeByRule(input: {
 
     const rawHtml = $content.html() ?? "";
     const preparedAiInput = htmlToArticleMarkdown(rawHtml, {
-      maxLength: MAX_AI_INPUT_MARKDOWN_LENGTH,
+      maxLength: input.aiInputMaxLength ?? MAX_AI_INPUT_MARKDOWN_LENGTH,
     });
     const scrapedTitle =
       selectedText(page$, input.rule.titleSelector) ||
@@ -467,7 +471,9 @@ async function scrapeByRule(input: {
     diagnostics.aiInputTruncated = preparedAiInput.truncated;
 
     if (preparedAiInput.truncated) {
-      diagnostics.warnings.push("AI Markdown 输入过长，已按正文结构截取前半部分核心内容改写");
+      diagnostics.warnings.push(
+        "AI Markdown 输入过长，已按正文结构截取前半部分核心内容改写",
+      );
     }
 
     if (preparedAiInput.markdown.trim()) {
@@ -491,8 +497,7 @@ async function scrapeByRule(input: {
           diagnostics,
         });
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "AI 改写失败";
+        const message = error instanceof Error ? error.message : "AI 改写失败";
         console.error("AI rewrite failed:", error);
         diagnostics.usedAiRewrite = false;
         diagnostics.aiRewriteError = message;
@@ -501,7 +506,9 @@ async function scrapeByRule(input: {
           throw new Error(message);
         }
 
-        diagnostics.warnings.push(`AI 改写失败，已回退为原始采集内容：${message}`);
+        diagnostics.warnings.push(
+          `AI 改写失败，已回退为原始采集内容：${message}`,
+        );
       }
     }
 
@@ -529,6 +536,7 @@ export async function scrapeArticleWithOptions(input: {
   url: string;
   rewriteStyleId?: number;
   allowAiFallback?: boolean;
+  aiInputMaxLength?: number;
 }) {
   const parsedUrl = new URL(input.url);
   const rule = findRule(parsedUrl);
@@ -537,5 +545,6 @@ export async function scrapeArticleWithOptions(input: {
     rule,
     rewriteStyleId: input.rewriteStyleId,
     allowAiFallback: input.allowAiFallback,
+    aiInputMaxLength: input.aiInputMaxLength,
   });
 }

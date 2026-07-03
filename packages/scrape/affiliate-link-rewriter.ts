@@ -56,7 +56,9 @@ function normalizeProviderDomain(value: string) {
   try {
     return normalizeHost(new URL(value).hostname);
   } catch {
-    return normalizeHost(value.replace(/^https?:\/\//, "").split("/")[0] ?? value);
+    return normalizeHost(
+      value.replace(/^https?:\/\//, "").split("/")[0] ?? value,
+    );
   }
 }
 
@@ -72,11 +74,7 @@ function isGenericMarkdownLinkLabel(label: string) {
     "click here",
     "learn more",
   ].includes(
-    label
-      .replace(/[*_`]/g, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase(),
+    label.replace(/[*_`]/g, "").replace(/\s+/g, " ").trim().toLowerCase(),
   );
 }
 
@@ -96,7 +94,10 @@ async function loadProvidersForHosts(hostnames: string[]) {
 
   const providerByDomain = new Map<string, Provider>();
   for (const provider of rows) {
-    providerByDomain.set(normalizeProviderDomain(provider.officialUrl), provider);
+    providerByDomain.set(
+      normalizeProviderDomain(provider.officialUrl),
+      provider,
+    );
   }
 
   return providerByDomain;
@@ -132,25 +133,22 @@ function isLikelyAffiliateRedirectPath(pathname: string) {
   );
 }
 
-function collectAbsoluteHosts(
-  $: cheerio.CheerioAPI,
-  selector: string,
-  baseUrl: string,
+function uniqueHosts(hostnames: string[]) {
+  return [...new Set(hostnames.map(normalizeHost))];
+}
+
+function selectArticleProvider(
+  providerByDomain: Map<string, Provider>,
+  hostnames: string[],
 ) {
-  const hosts: string[] = [];
-
-  for (const element of $(selector).toArray()) {
-    const href = $(element).attr("href");
-    if (!href) continue;
-
-    try {
-      hosts.push(new URL(href, baseUrl).hostname);
-    } catch {
-      continue;
+  for (const hostname of uniqueHosts(hostnames)) {
+    const match = findProvider(providerByDomain, hostname);
+    if (match) {
+      return match;
     }
   }
 
-  return [...new Set(hosts.map(normalizeHost))];
+  return null;
 }
 
 export async function rewriteAffiliateLinks(input: {
@@ -163,12 +161,16 @@ export async function rewriteAffiliateLinks(input: {
 }) {
   const selector = input.selector ?? "a";
   const report = emptyReport();
-  const providerByDomain = await loadProvidersForHosts(
-    collectAbsoluteHosts(input.$, selector, input.baseUrl),
-  );
   const sourceHost = normalizeHost(input.sourceHost);
+  const elements = input.$(selector).toArray();
+  const links: Array<{
+    element: (typeof elements)[number];
+    href: string;
+    finalUrl: URL;
+    isInternal: boolean;
+  }> = [];
 
-  for (const element of input.$(selector).toArray()) {
+  for (const element of elements) {
     const $link = input.$(element);
     const href = $link.attr("href");
 
@@ -201,9 +203,33 @@ export async function rewriteAffiliateLinks(input: {
     }
 
     const finalHost = normalizeHost(finalUrl.hostname);
-    if (finalHost === sourceHost || finalHost.endsWith(`.${sourceHost}`)) {
-      if (isLikelyAffiliateRedirectPath(finalUrl.pathname)) {
-        $link.attr("href", finalUrl.toString());
+    links.push({
+      element,
+      href,
+      finalUrl,
+      isInternal:
+        finalHost === sourceHost || finalHost.endsWith(`.${sourceHost}`),
+    });
+  }
+
+  const providerByDomain = await loadProvidersForHosts(
+    links
+      .filter((link) => !link.isInternal)
+      .map((link) => link.finalUrl.hostname),
+  );
+  const articleProvider = selectArticleProvider(
+    providerByDomain,
+    links
+      .filter((link) => !link.isInternal)
+      .map((link) => link.finalUrl.hostname),
+  );
+
+  for (const link of links) {
+    const $link = input.$(link.element);
+
+    if (link.isInternal) {
+      if (isLikelyAffiliateRedirectPath(link.finalUrl.pathname)) {
+        $link.attr("href", link.finalUrl.toString());
         continue;
       }
 
@@ -216,33 +242,38 @@ export async function rewriteAffiliateLinks(input: {
       continue;
     }
 
-    const loadedProvider = findProvider(providerByDomain, finalUrl.hostname);
-    if (!loadedProvider) {
-      const finalProviderByDomain = await loadProvidersForHosts([finalUrl.hostname]);
-      for (const [domain, provider] of finalProviderByDomain) {
-        providerByDomain.set(domain, provider);
-      }
-    }
-
-    const match = findProvider(providerByDomain, finalUrl.hostname);
-    if (!match) {
+    if (!articleProvider) {
       report.unmatchedLinks.push({
-        href: finalUrl.toString(),
-        host: normalizeHost(finalUrl.hostname),
+        href: link.finalUrl.toString(),
+        host: normalizeHost(link.finalUrl.hostname),
         reason: "no-provider",
       });
-      $link.attr("href", finalUrl.toString());
+      $link.attr("href", link.finalUrl.toString());
       continue;
     }
 
-    const rewritten = rewriteHref(finalUrl.toString(), match.provider);
+    const match = findProvider(providerByDomain, link.finalUrl.hostname);
+    if (match?.provider.id !== articleProvider.provider.id) {
+      report.unmatchedLinks.push({
+        href: link.finalUrl.toString(),
+        host: normalizeHost(link.finalUrl.hostname),
+        reason: "no-provider",
+      });
+      $link.attr("href", link.finalUrl.toString());
+      continue;
+    }
+
+    const rewritten = rewriteHref(
+      link.finalUrl.toString(),
+      articleProvider.provider,
+    );
     $link.attr("href", rewritten.href);
     report.matchedLinks.push({
-      originalHref: href,
-      resolvedHref: finalUrl.toString(),
+      originalHref: link.href,
+      resolvedHref: link.finalUrl.toString(),
       finalHref: rewritten.href,
-      matchedDomain: match.matchedDomain,
-      providerName: match.provider.name,
+      matchedDomain: articleProvider.matchedDomain,
+      providerName: articleProvider.provider.name,
       mode: rewritten.mode,
     });
   }
@@ -253,14 +284,17 @@ export async function rewriteAffiliateLinks(input: {
 export function mergeAffiliateReports(
   reports: AffiliateRewriteReport[],
 ): AffiliateRewriteReport {
-  return reports.reduce((merged, report) => ({
-    totalLinks: merged.totalLinks + report.totalLinks,
-    internalLinksRemoved:
-      merged.internalLinksRemoved + report.internalLinksRemoved,
-    matchedLinks: [...merged.matchedLinks, ...report.matchedLinks],
-    unmatchedLinks: [...merged.unmatchedLinks, ...report.unmatchedLinks],
-    invalidLinks: [...merged.invalidLinks, ...report.invalidLinks],
-  }), emptyReport());
+  return reports.reduce(
+    (merged, report) => ({
+      totalLinks: merged.totalLinks + report.totalLinks,
+      internalLinksRemoved:
+        merged.internalLinksRemoved + report.internalLinksRemoved,
+      matchedLinks: [...merged.matchedLinks, ...report.matchedLinks],
+      unmatchedLinks: [...merged.unmatchedLinks, ...report.unmatchedLinks],
+      invalidLinks: [...merged.invalidLinks, ...report.invalidLinks],
+    }),
+    emptyReport(),
+  );
 }
 
 function tryNormalizeUrlHost(value: string) {
@@ -280,7 +314,6 @@ export function repairMarkdownAffiliateLinks(
   }
 
   const linkPattern = /\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
-  const usedFinalHrefs = new Set<string>();
   const replacements: Array<{ original: string; replacement: string }> = [];
 
   for (const match of markdown.matchAll(linkPattern)) {
@@ -311,7 +344,6 @@ export function repairMarkdownAffiliateLinks(
       continue;
     }
 
-    usedFinalHrefs.add(matched.finalHref);
     replacements.push({
       original,
       replacement: `[${
@@ -320,28 +352,10 @@ export function repairMarkdownAffiliateLinks(
     });
   }
 
-  let repaired = replacements.reduce(
+  const repaired = replacements.reduce(
     (content, item) => content.replace(item.original, item.replacement),
     markdown,
   );
-
-  for (const matched of report.matchedLinks) {
-    if (
-      usedFinalHrefs.has(matched.finalHref) ||
-      repaired.includes(matched.finalHref)
-    ) {
-      continue;
-    }
-
-    const sectionTitle = "## 官方购买入口";
-    if (!repaired.includes(sectionTitle)) {
-      repaired = `${repaired.trim()}\n\n${sectionTitle}\n\n`;
-    } else if (!repaired.endsWith("\n")) {
-      repaired = `${repaired}\n`;
-    }
-
-    repaired = `${repaired}- [${matched.providerName}](${matched.finalHref})\n`;
-  }
 
   return repaired.trim();
 }

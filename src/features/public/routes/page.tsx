@@ -16,6 +16,7 @@ import {
 } from "@/features/public/data/post";
 import { HeroTagSearch } from "@/features/public/components/hero-tag-search";
 import ArticleCard from "@/features/public/components/article-card";
+import { SafePostImage } from "@/features/public/components/safe-post-image";
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
 import { Badge } from "@/components/ui/badge";
@@ -284,21 +285,28 @@ async function HomeContent() {
                     key={post.id}
                     href={`/fwq/posts/${post.slug}`}
                     prefetch
-                    className="glass-card hover-lift group flex min-h-[98px] items-start gap-3 rounded-xl p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    className="group grid min-h-[100px] grid-cols-[96px_minmax(0,1fr)_auto] items-start gap-3 rounded-lg border border-border/70 bg-background p-2.5 shadow-sm transition-colors hover:border-accent/35 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:grid-cols-[112px_minmax(0,1fr)_auto]"
                   >
+                    <div className="relative aspect-[16/9] overflow-hidden rounded-md bg-muted">
+                      <SafePostImage
+                        src={post.imgUrl}
+                        alt={post.title}
+                        sizes="112px"
+                      />
+                    </div>
                     <div className="min-w-0 flex-1">
-                      <div className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-muted/20 px-3 py-1 text-xs text-muted-foreground">
+                      <div className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                         <CalendarDays className="size-3" />
                         {post.createdAt.toLocaleDateString("zh-CN")}
                       </div>
-                      <h2 className="font-editorial mt-2 line-clamp-2 text-base font-semibold leading-snug text-foreground transition-colors group-hover:text-accent">
+                      <h2 className="font-editorial mt-1.5 line-clamp-2 text-sm font-semibold leading-snug text-foreground underline-offset-4 transition-colors group-hover:text-accent group-hover:underline md:text-base">
                         {post.title}
                       </h2>
-                      <p className="mt-1 line-clamp-1 text-sm leading-6 text-muted-foreground">
+                      <p className="mt-1 line-clamp-1 text-xs leading-5 text-muted-foreground">
                         {post.description ?? "查看这篇文章的线路、优惠与适用场景。"}
                       </p>
                     </div>
-                    <ArrowUpRight className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                    <ArrowUpRight className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-accent" />
                   </Link>
                 ))}
               </div>

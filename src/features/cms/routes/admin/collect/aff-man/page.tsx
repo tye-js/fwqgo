@@ -54,18 +54,16 @@ async function AffManList({
         ]}
       />
       <AdminSectionCard>
-        <AffManTable data={data} initialQuery={query} />
+        <AffManTable key={query} data={data} initialQuery={query} />
         <PaginationComponent pageNo={pageNo} totalPage={totalPage} />
       </AdminSectionCard>
     </AdminPageShell>
   );
 }
 
-export default function AffManPage(
-  props: {
-    searchParams: Promise<{ pageNo?: string; query?: string }>;
-  }
-) {
+export default function AffManPage(props: {
+  searchParams: Promise<{ pageNo?: string; query?: string }>;
+}) {
   return (
     <Suspense fallback={<div>Loading...</div>}>
       <AffManList searchParamsPromise={props.searchParams} />
