@@ -9,6 +9,7 @@ import {
 import RewriteArticle from "@/langchain/rewrite-article";
 import {
   mergeAffiliateReports,
+  repairMarkdownAffiliateLinks,
   rewriteAffiliateLinks,
   type AffiliateRewriteReport,
 } from "@fwqgo/scrape/affiliate-link-rewriter";
@@ -474,10 +475,14 @@ async function scrapeByRule(input: {
         const rewritten = await RewriteArticle(preparedAiInput.markdown, {
           styleId: input.rewriteStyleId,
         });
+        const repairedMarkdown = repairMarkdownAffiliateLinks(
+          rewritten.markdownContent,
+          affiliateReport,
+        );
         diagnostics.usedAiRewrite = true;
-        diagnostics.rewriteOutputLength = rewritten.markdownContent.length;
+        diagnostics.rewriteOutputLength = repairedMarkdown.length;
         return createArticle({
-          htmlContent: rewritten.markdownContent,
+          htmlContent: repairedMarkdown,
           title: rewritten.title,
           description: rewritten.description,
           keywords: rewritten.keywords,

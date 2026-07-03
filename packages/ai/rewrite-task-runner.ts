@@ -26,7 +26,10 @@ import {
   type ScrapedArticle,
   type ScrapeDiagnostics,
 } from "@fwqgo/scrape/article-scraper";
-import { rewriteAffiliateLinks } from "@fwqgo/scrape/affiliate-link-rewriter";
+import {
+  repairMarkdownAffiliateLinks,
+  rewriteAffiliateLinks,
+} from "@fwqgo/scrape/affiliate-link-rewriter";
 import {
   generateEnglishArticleContent,
   generateEnglishMetadata,
@@ -598,13 +601,17 @@ async function createArticleFromManualTask(input: {
     const rewritten = await RewriteArticle(markdownInput.markdown, {
       styleId: input.rewriteStyleId,
     });
+    const repairedMarkdown = repairMarkdownAffiliateLinks(
+      rewritten.markdownContent,
+      affiliateReport,
+    );
     diagnostics.usedAiRewrite = true;
-    diagnostics.rewriteOutputLength = rewritten.markdownContent.length;
+    diagnostics.rewriteOutputLength = repairedMarkdown.length;
 
     return {
       title: rewritten.title || sourceTitle,
-      content: rewritten.markdownContent,
-      htmlContent: rewritten.markdownContent,
+      content: repairedMarkdown,
+      htmlContent: repairedMarkdown,
       description: rewritten.description,
       keywords: rewritten.keywords,
       recommendTagName: rewritten.recommendTagName,

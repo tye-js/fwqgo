@@ -6,7 +6,7 @@ import { affServiceProviders, outboundLinks } from "@fwqgo/db/schema";
 
 const siteBaseUrl = "https://fwqgo.com";
 const slugAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-let providerLabelCache:
+let providerCache:
   | Promise<Array<typeof affServiceProviders.$inferSelect>>
   | null = null;
 
@@ -53,35 +53,10 @@ function normalizeProviderDomain(value: string) {
   }
 }
 
-function isGenericMarkdownLinkLabel(label: string) {
-  const normalized = label
-    .replace(/[*_`]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-
-  return [
-    "链接",
-    "点击链接",
-    "点击这里",
-    "查看详情",
-    "点此查看",
-    "link",
-    "here",
-    "click here",
-    "learn more",
-  ].includes(normalized);
-}
-
-async function getReadableLinkLabel(url: URL, currentLabel: string) {
-  if (!isGenericMarkdownLinkLabel(currentLabel)) {
-    return currentLabel;
-  }
-
+async function getAffiliateTargetUrl(url: URL) {
+  providerCache ??= db.select().from(affServiceProviders);
+  const providers = await providerCache;
   const targetHost = normalizeHost(url.hostname);
-  providerLabelCache ??= db.select().from(affServiceProviders);
-  const providers = await providerLabelCache;
-
   const matchedProvider = providers.find((provider) => {
     const officialDomain = normalizeProviderDomain(provider.officialUrl);
     const affDomain = normalizeProviderDomain(provider.affUrl);
@@ -93,7 +68,48 @@ async function getReadableLinkLabel(url: URL, currentLabel: string) {
     );
   });
 
-  return matchedProvider?.name ?? targetHost;
+  if (!matchedProvider) {
+    return null;
+  }
+
+  if (matchedProvider.affParam === "href") {
+    return matchedProvider.affUrl;
+  }
+
+  const affiliateUrl = new URL(url.toString());
+  affiliateUrl.searchParams.set(
+    matchedProvider.affParam,
+    matchedProvider.affValue,
+  );
+  return affiliateUrl.toString();
+}
+
+function isGenericMarkdownLinkLabel(label: string) {
+  return [
+    "链接",
+    "点击链接",
+    "点击这里",
+    "查看详情",
+    "点此查看",
+    "link",
+    "here",
+    "click here",
+    "learn more",
+  ].includes(
+    label
+      .replace(/[*_`]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase(),
+  );
+}
+
+function getReadableFallbackLabel(url: URL, label: string) {
+  if (!isGenericMarkdownLinkLabel(label)) {
+    return label;
+  }
+
+  return normalizeHost(url.hostname);
 }
 
 function isShortLink(url: URL) {
@@ -205,15 +221,16 @@ export async function shortenArticleOutboundLinks(html: string) {
       continue;
     }
 
-    if (
-      !["http:", "https:"].includes(url.protocol) ||
-      isShortLink(url) ||
-      isInternalUrl(url)
-    ) {
+    if (!["http:", "https:"].includes(url.protocol) || isShortLink(url)) {
       continue;
     }
 
-    const shortLink = await getOrCreateOutboundShortLink(url.toString());
+    const affiliateTargetUrl = await getAffiliateTargetUrl(url);
+    if (!affiliateTargetUrl) {
+      continue;
+    }
+
+    const shortLink = await getOrCreateOutboundShortLink(affiliateTargetUrl);
     if (!shortLink) {
       continue;
     }
@@ -246,25 +263,43 @@ export async function shortenMarkdownOutboundLinks(markdown: string) {
       continue;
     }
 
-    if (
-      !["http:", "https:"].includes(url.protocol) ||
-      isShortLink(url) ||
-      isInternalUrl(url)
-    ) {
+    if (!["http:", "https:"].includes(url.protocol)) {
       continue;
     }
 
-    const [shortLink, readableLabel] = await Promise.all([
-      getOrCreateOutboundShortLink(url.toString()),
-      getReadableLinkLabel(url, label),
-    ]);
+    if (isShortLink(url)) {
+      if (!isGenericMarkdownLinkLabel(label)) {
+        continue;
+      }
+
+      const targetUrl = await readOutboundShortTarget(
+        url.pathname.replace(/^\/go\//, ""),
+      );
+      if (!targetUrl) {
+        continue;
+      }
+
+      const target = new URL(targetUrl);
+      replacements.push({
+        original,
+        replacement: `[${getReadableFallbackLabel(target, label)}](${url.pathname})`,
+      });
+      continue;
+    }
+
+    const affiliateTargetUrl = await getAffiliateTargetUrl(url);
+    if (!affiliateTargetUrl) {
+      continue;
+    }
+
+    const shortLink = await getOrCreateOutboundShortLink(affiliateTargetUrl);
     if (!shortLink) {
       continue;
     }
 
     replacements.push({
       original,
-      replacement: `[${readableLabel}](${shortLink.path})`,
+      replacement: `[${getReadableFallbackLabel(url, label)}](${shortLink.path})`,
     });
   }
 
