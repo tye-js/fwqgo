@@ -4,7 +4,7 @@ import {
   defaultEnglishStylePrompt,
   defaultMetadataStylePrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
-import { htmlToArticleMarkdown } from "@fwqgo/core/content";
+import { contentToArticleMarkdown } from "@fwqgo/core/content";
 
 const DEFAULT_AI_REWRITE_TIMEOUT_MS = 300_000;
 const MIN_AI_INPUT_LENGTH = 80;
@@ -794,7 +794,7 @@ export async function generateEnglishSeoVersion(
   },
   options: { styleId?: number } = {},
 ): Promise<EnglishSeoVersionOutput> {
-  const markdown = htmlToArticleMarkdown(input.htmlContent, {
+  const markdown = contentToArticleMarkdown(input.htmlContent, {
     maxLength: MAX_ENGLISH_MARKDOWN_INPUT_LENGTH,
   });
   const enContent = await generateEnglishArticleContent(

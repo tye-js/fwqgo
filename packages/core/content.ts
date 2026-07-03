@@ -589,3 +589,42 @@ export function htmlToArticleMarkdown(
     ...articleDocumentToMarkdown(document, options),
   };
 }
+
+export function contentToArticleMarkdown(
+  content: string,
+  options: { maxLength?: number } = {},
+) {
+  const trimmed = content.trim();
+
+  if (!trimmed) {
+    return {
+      document: {
+        blocks: [],
+        sourceHtmlLength: 0,
+        textLength: 0,
+      } satisfies ArticleDocument,
+      markdown: "",
+      truncated: false,
+      length: 0,
+    };
+  }
+
+  if (looksLikeHtmlContent(trimmed)) {
+    return htmlToArticleMarkdown(trimmed, options);
+  }
+
+  const maxLength = options.maxLength ?? Infinity;
+  const truncated = trimmed.length > maxLength;
+  const markdown = truncated ? trimmed.slice(0, maxLength) : trimmed;
+
+  return {
+    document: {
+      blocks: [{ type: "paragraph", text: markdown }],
+      sourceHtmlLength: 0,
+      textLength: markdown.length,
+    } satisfies ArticleDocument,
+    markdown,
+    truncated,
+    length: markdown.length,
+  };
+}
