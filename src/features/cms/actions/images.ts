@@ -12,6 +12,7 @@ import {
   rebuildResponsiveImageVariants,
   replaceImageAssetFile,
   replaceImageReferences,
+  renameImageAssetFile,
   serializeImageAsset,
   updateImageAssetMetadata,
 } from "@/server/images/assets";
@@ -103,6 +104,17 @@ export async function replaceImageReferencesAction(input: {
 }) {
   await requireAdminSession();
   const result = await replaceImageReferences(input);
+  revalidateImageWorkbenches();
+  revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
+  return result;
+}
+
+export async function renameImageAssetFileAction(input: {
+  id: number;
+  fileName: string;
+}) {
+  await requireAdminSession();
+  const result = await renameImageAssetFile(input);
   revalidateImageWorkbenches();
   revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
   return result;

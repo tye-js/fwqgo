@@ -2,10 +2,13 @@ import * as cheerio from "cheerio";
 import { eq } from "drizzle-orm";
 
 import { db, readDb } from "@fwqgo/db";
-import { outboundLinks } from "@fwqgo/db/schema";
+import { affServiceProviders, outboundLinks } from "@fwqgo/db/schema";
 
 const siteBaseUrl = "https://fwqgo.com";
 const slugAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+let providerLabelCache:
+  | Promise<Array<typeof affServiceProviders.$inferSelect>>
+  | null = null;
 
 function makeSlug(seed: number) {
   let value = seed;
@@ -27,6 +30,70 @@ function normalizeTargetUrl(targetUrl: string) {
   }
 
   return url.toString();
+}
+
+function normalizeHost(hostname: string) {
+  return hostname.toLowerCase().replace(/^www\./, "");
+}
+
+function candidateDomains(hostname: string) {
+  const normalizedHost = normalizeHost(hostname);
+  const parts = normalizedHost.split(".");
+
+  return parts
+    .map((_, index) => parts.slice(index).join("."))
+    .filter((domain) => domain.includes("."));
+}
+
+function normalizeProviderDomain(value: string) {
+  try {
+    return normalizeHost(new URL(value).hostname);
+  } catch {
+    return normalizeHost(value.replace(/^https?:\/\//, "").split("/")[0] ?? value);
+  }
+}
+
+function isGenericMarkdownLinkLabel(label: string) {
+  const normalized = label
+    .replace(/[*_`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+  return [
+    "链接",
+    "点击链接",
+    "点击这里",
+    "查看详情",
+    "点此查看",
+    "link",
+    "here",
+    "click here",
+    "learn more",
+  ].includes(normalized);
+}
+
+async function getReadableLinkLabel(url: URL, currentLabel: string) {
+  if (!isGenericMarkdownLinkLabel(currentLabel)) {
+    return currentLabel;
+  }
+
+  const targetHost = normalizeHost(url.hostname);
+  providerLabelCache ??= db.select().from(affServiceProviders);
+  const providers = await providerLabelCache;
+
+  const matchedProvider = providers.find((provider) => {
+    const officialDomain = normalizeProviderDomain(provider.officialUrl);
+    const affDomain = normalizeProviderDomain(provider.affUrl);
+
+    return (
+      candidateDomains(targetHost).includes(officialDomain) ||
+      targetHost === affDomain ||
+      targetHost.endsWith(`.${affDomain}`)
+    );
+  });
+
+  return matchedProvider?.name ?? targetHost;
 }
 
 function isShortLink(url: URL) {
@@ -187,14 +254,17 @@ export async function shortenMarkdownOutboundLinks(markdown: string) {
       continue;
     }
 
-    const shortLink = await getOrCreateOutboundShortLink(url.toString());
+    const [shortLink, readableLabel] = await Promise.all([
+      getOrCreateOutboundShortLink(url.toString()),
+      getReadableLinkLabel(url, label),
+    ]);
     if (!shortLink) {
       continue;
     }
 
     replacements.push({
       original,
-      replacement: `[${label}](${shortLink.path})`,
+      replacement: `[${readableLabel}](${shortLink.path})`,
     });
   }
 
