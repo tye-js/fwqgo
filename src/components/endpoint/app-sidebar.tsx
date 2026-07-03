@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   Megaphone,
   Bot,
-  ListChecks,
 } from "lucide-react";
 
 import { BrandMarkIcon } from "@/components/brand/brand-logo";
@@ -41,26 +40,22 @@ const data = {
   ],
   navMain: [
     {
-      title: "概览",
+      title: "数据面板",
       url: "/",
       icon: LayoutDashboard,
-      isActive: false,
-      items: [
-        {
-          title: "数据面板",
-          url: "/",
-        },
-      ],
     },
     {
       title: "内容生产",
       url: "/ai-rewrite",
       icon: Bot,
-      isActive: false,
       items: [
         {
-          title: "生产工作台",
+          title: "AI生产台",
           url: "/ai-rewrite/tasks",
+        },
+        {
+          title: "AI任务中心",
+          url: "/ai-tasks",
         },
         {
           title: "草稿箱",
@@ -69,22 +64,9 @@ const data = {
       ],
     },
     {
-      title: "AI任务中心",
-      url: "/ai-tasks",
-      icon: ListChecks,
-      isActive: false,
-      items: [
-        {
-          title: "任务看板",
-          url: "/ai-tasks",
-        },
-      ],
-    },
-    {
       title: "文章管理",
       url: "/posts",
       icon: SquareTerminal,
-      isActive: false,
       items: [
         {
           title: "文章列表",
@@ -93,10 +75,14 @@ const data = {
       ],
     },
     {
-      title: "媒体",
+      title: "媒体中心",
       url: "/images",
       icon: Images,
       items: [
+        {
+          title: "图片资产",
+          url: "/images/list",
+        },
         {
           title: "上传图片",
           url: "/images/upload",
@@ -109,15 +95,26 @@ const data = {
           title: "封面生图",
           url: "/images/covers",
         },
-        {
-          title: "图片资产",
-          url: "/images/list",
-        },
       ],
     },
 
     {
-      title: "SEO",
+      title: "服务器套餐",
+      url: "/servers",
+      icon: Server,
+      items: [
+        {
+          title: "套餐看板",
+          url: "/servers",
+        },
+        {
+          title: "人工校正",
+          url: "/servers/manage",
+        },
+      ],
+    },
+    {
+      title: "SEO运营",
       url: "/seo",
       icon: Globe,
       items: [
@@ -136,51 +133,36 @@ const data = {
       ],
     },
     {
-      title: "服务器",
-      url: "/servers",
-      icon: Server,
-      items: [
-        {
-          title: "套餐数据",
-          url: "/servers",
-        },
-        {
-          title: "套餐校正",
-          url: "/servers/manage",
-        },
-      ],
-    },
-    {
-      title: "推广运营",
+      title: "推广链接",
       url: "/collect",
       icon: Megaphone,
       items: [
         {
-          title: "返利设定",
+          title: "返利商家",
           url: "/collect/aff-man",
-        },
-        {
-          title: "首页推荐",
-          url: "/collect/homepage-promoted",
         },
         {
           title: "短链跳转",
           url: "/collect/short-links",
         },
+        {
+          title: "首页推荐",
+          url: "/collect/homepage-promoted",
+        },
       ],
     },
     {
-      title: "设置",
+      title: "系统设置",
       url: "/settings",
       icon: Settings,
       items: [
         {
-          title: "生图接口配置",
-          url: "/settings/image-generation",
+          title: "AI改写配置",
+          url: "/collect/ai-rewrite",
         },
         {
-          title: "改写接口配置",
-          url: "/collect/ai-rewrite",
+          title: "生图接口配置",
+          url: "/settings/image-generation",
         },
       ],
     },

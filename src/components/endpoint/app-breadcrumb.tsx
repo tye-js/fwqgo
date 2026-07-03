@@ -13,6 +13,42 @@ import {
 import { Fragment } from "react";
 import { decodeSlug } from "@fwqgo/core/utils";
 
+const breadcrumbTitleMap: Record<string, string> = {
+  "ai-rewrite": "内容生产",
+  "ai-tasks": "AI任务中心",
+  tasks: "AI生产台",
+  collect: "推广链接",
+  "aff-man": "返利商家",
+  "short-links": "短链跳转",
+  "homepage-promoted": "首页推荐",
+  images: "媒体中心",
+  list: "图片资产",
+  upload: "上传图片",
+  covers: "封面生图",
+  "ai-generate": "AI生图",
+  posts: "文章管理",
+  drafts: "草稿箱",
+  edit: "文章列表",
+  post: "编辑文章",
+  seo: "SEO运营",
+  category: "分类SEO",
+  tag: "标签SEO",
+  servers: "服务器套餐",
+  manage: "人工校正",
+  settings: "系统设置",
+  "image-generation": "生图接口配置",
+};
+
+const breadcrumbPathTitleMap: Record<string, string> = {
+  "/collect/ai-rewrite": "AI改写配置",
+};
+
+function formatBreadcrumbTitle(value: string, path: string) {
+  return (
+    breadcrumbPathTitleMap[path] ?? breadcrumbTitleMap[value] ?? decodeSlug(value)
+  );
+}
+
 export default function AppBreadcrumb() {
   const pathname = usePathname();
   const breadcrumbItems = pathname
@@ -33,7 +69,9 @@ export default function AppBreadcrumb() {
           if (index === breadcrumbItems.length - 1) {
             return (
               <BreadcrumbItem key={item.title} className="hidden md:block">
-                <BreadcrumbPage>{decodeSlug(item.title)}</BreadcrumbPage>
+                <BreadcrumbPage>
+                  {formatBreadcrumbTitle(item.title, breadcrumbUrl)}
+                </BreadcrumbPage>
               </BreadcrumbItem>
             );
           }
@@ -41,7 +79,7 @@ export default function AppBreadcrumb() {
             <Fragment key={item.title}>
               <BreadcrumbItem key={item.title} className="hidden md:block">
                 <BreadcrumbLink href={breadcrumbUrl}>
-                  {decodeSlug(item.title)}
+                  {formatBreadcrumbTitle(item.title, breadcrumbUrl)}
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator className="hidden md:block" />
