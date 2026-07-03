@@ -26,25 +26,44 @@ type PageProps = {
 };
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  await connection();
+
   const { slug } = await params;
   const decodedSlug = decodeSlug(slug);
-  const canonicalUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(decodedSlug)}`;
+  const { data } = await getEnglishPostWithTagsBySlug(decodedSlug);
+  const post = data?.post;
+  const canonicalSlug = post?.enSlug ?? decodedSlug;
+  const canonicalUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(canonicalSlug)}`;
+  const chineseUrl = post?.slug
+    ? `${getSiteUrl()}/fwq/posts/${encodeURIComponent(post.slug)}`
+    : undefined;
   const readableTitle = decodedSlug.replace(/[-_]+/g, " ");
-  const description = `${readableTitle} server and VPS deal article.`;
+  const title = post?.title ?? readableTitle;
+  const description =
+    post?.description ?? `${readableTitle} server and VPS deal article.`;
+  const image = post?.imgUrl
+    ? new URL(post.imgUrl, getSiteUrl()).toString()
+    : undefined;
 
   return {
-    title: `${readableTitle} - fwqgo`,
+    title: `${title} - fwqgo`,
     description,
-    keywords: readableTitle,
+    keywords: post?.keywords ?? readableTitle,
     alternates: {
       canonical: canonicalUrl,
+      languages: {
+        ...(chineseUrl ? { "zh-CN": chineseUrl } : {}),
+        en: canonicalUrl,
+        "x-default": chineseUrl ?? canonicalUrl,
+      },
     },
     openGraph: {
       type: "article",
-      title: `${readableTitle} - fwqgo`,
+      title: `${title} - fwqgo`,
       description,
       url: canonicalUrl,
       siteName: "fwqgo",
+      images: image ? [{ url: image, alt: title }] : undefined,
     },
   };
 }
@@ -65,10 +84,62 @@ async function EnglishPostContent({ params }: PageProps) {
     notFound();
   }
   const articleUrl = `${getSiteUrl()}/en/fwq/posts/${decodedSlug}`;
+  const blogPostingJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    headline: post.title,
+    image: post.imgUrl ? new URL(post.imgUrl, getSiteUrl()).toString() : undefined,
+    description: post.description,
+    inLanguage: "en",
+    datePublished: post.createdAt,
+    dateModified: post.updatedAt ?? post.createdAt,
+    author: {
+      "@type": "Organization",
+      name: "fwqgo",
+    },
+    publisher: {
+      "@type": "Organization",
+      name: "fwqgo",
+    },
+    mainEntityOfPage: {
+      "@type": "WebPage",
+      "@id": articleUrl,
+    },
+  };
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Home",
+        item: getSiteUrl(),
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: "English articles",
+        item: articleUrl,
+      },
+      {
+        "@type": "ListItem",
+        position: 3,
+        name: post.title,
+        item: articleUrl,
+      },
+    ],
+  };
 
   return (
     <main className="flex-1">
       <article className="container mx-auto max-w-4xl px-4 py-6 md:py-10">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify([blogPostingJsonLd, breadcrumbJsonLd]),
+          }}
+        />
         <Link
           href={`/fwq/posts/${post.slug}`}
           prefetch

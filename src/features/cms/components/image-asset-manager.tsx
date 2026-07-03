@@ -855,6 +855,16 @@ function getImageQualityIssues(
     issues.push("尺寸偏大");
   } else if (image.width < 320 || image.height < 180) {
     issues.push("尺寸偏小");
+  } else if (
+    ["ai_cover", "post_cover"].includes(image.imageType ?? "") &&
+    (image.width < 960 || image.height < 420)
+  ) {
+    issues.push("封面尺寸偏小");
+  } else if (["ai_cover", "post_cover"].includes(image.imageType ?? "")) {
+    const ratio = image.width / image.height;
+    if (ratio < 1.55 || ratio > 2.45) {
+      issues.push("封面比例不适合文章首屏");
+    }
   }
 
   if (duplicateHashCount > 1) {

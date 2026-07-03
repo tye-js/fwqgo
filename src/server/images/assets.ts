@@ -147,6 +147,16 @@ function buildOutputName(originalName: string, mime: string) {
   return `${Date.now()}-${base}${ext}`;
 }
 
+function fallbackImageAlt(originalName: string) {
+  const base = path
+    .basename(originalName, path.extname(originalName))
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return base || "server deal image";
+}
+
 function buildVariantName(publicPath: string, variant: "thumb" | "large") {
   const parsed = path.parse(path.basename(publicPath));
   return `${parsed.name}_${variant}.webp`;
@@ -337,8 +347,8 @@ export async function createImageAssetFromUpload(input: {
       height: dimensions.height,
       hash,
       imageType: input.imageType ?? "upload",
-      altZh: input.altZh ?? null,
-      altEn: input.altEn ?? null,
+      altZh: input.altZh ?? fallbackImageAlt(input.file.name),
+      altEn: input.altEn ?? fallbackImageAlt(input.file.name),
       sourceUrl: input.sourceUrl ?? null,
       prompt: input.prompt ?? null,
       uploadedBy: input.uploadedBy,
@@ -406,8 +416,8 @@ export async function createImageAssetFromBuffer(input: {
       height: dimensions.height,
       hash,
       imageType: input.imageType ?? "upload",
-      altZh: input.altZh ?? null,
-      altEn: input.altEn ?? null,
+      altZh: input.altZh ?? fallbackImageAlt(input.originalName),
+      altEn: input.altEn ?? fallbackImageAlt(input.originalName),
       sourceUrl: input.sourceUrl ?? null,
       prompt: input.prompt ?? null,
       uploadedBy: input.uploadedBy,

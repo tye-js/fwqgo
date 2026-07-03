@@ -55,9 +55,13 @@ export type OfferTopicSlug = "hong-kong" | "united-states" | "cheap-vps";
 export const offerTopics: Array<{
   slug: OfferTopicSlug;
   title: string;
+  seoTitle: string;
+  h1: string;
   shortTitle: string;
   description: string;
+  intro: string;
   keywords: string[];
+  faq: Array<{ question: string; answer: string }>;
   filters: {
     regions?: string[];
     maxMonthlyUsd?: number;
@@ -66,10 +70,26 @@ export const offerTopics: Array<{
   {
     slug: "hong-kong",
     title: "香港服务器",
+    seoTitle: "香港服务器优惠套餐对比：CN2、CMI、BGP VPS 与独立服务器",
+    h1: "香港服务器优惠套餐对比",
     shortTitle: "香港",
     description:
       "集中筛选香港 VPS、香港云服务器和香港独立服务器，重点关注 CN2、CMI、BGP、低延迟和建站场景。",
+    intro:
+      "香港服务器适合面向中国大陆、东南亚和跨境业务的低延迟访问场景。这里优先整理价格、配置、线路、优惠码和购买入口，方便快速比较 CN2、CMI、BGP 等线路。",
     keywords: ["香港", "HK", "Hong Kong", "CN2", "CMI"],
+    faq: [
+      {
+        question: "香港服务器适合哪些网站？",
+        answer:
+          "香港服务器适合外贸站、企业官网、跨境业务、API 服务和需要兼顾大陆访问速度的项目。",
+      },
+      {
+        question: "香港 VPS 选择 CN2 还是 CMI？",
+        answer:
+          "CN2 通常适合电信优化，CMI 更偏移动线路优化，实际选择应结合访客运营商、带宽和预算。",
+      },
+    ],
     filters: {
       regions: ["香港", "Hong Kong", "HK"],
     },
@@ -77,10 +97,26 @@ export const offerTopics: Array<{
   {
     slug: "united-states",
     title: "美国服务器",
+    seoTitle: "美国服务器优惠套餐对比：洛杉矶、圣何塞 VPS 与独立服务器",
+    h1: "美国服务器优惠套餐对比",
     shortTitle: "美国",
     description:
       "集中筛选美国 VPS、美国云服务器和美国独立服务器，适合外贸建站、跨境业务和大带宽需求。",
+    intro:
+      "美国服务器覆盖机房多、带宽资源丰富，适合外贸建站、海外业务、下载分发和测试环境。这里把文章中的价格、地区、线路和购买链接集中整理，方便快速筛选。",
     keywords: ["美国", "US", "USA", "United States", "洛杉矶", "圣何塞"],
+    faq: [
+      {
+        question: "美国服务器适合国内访问吗？",
+        answer:
+          "美国服务器到国内访问延迟通常高于香港，建议优先选择洛杉矶、圣何塞等西海岸机房和优化线路。",
+      },
+      {
+        question: "美国 VPS 的优势是什么？",
+        answer:
+          "美国 VPS 通常价格低、带宽大、商家选择多，适合外贸站、开发测试和海外用户访问。",
+      },
+    ],
     filters: {
       regions: ["美国", "US", "USA", "United States", "洛杉矶", "圣何塞"],
     },
@@ -88,10 +124,26 @@ export const offerTopics: Array<{
   {
     slug: "cheap-vps",
     title: "便宜 VPS",
+    seoTitle: "便宜 VPS 优惠套餐对比：低价月付 VPS 与入门云服务器",
+    h1: "便宜 VPS 优惠套餐对比",
     shortTitle: "便宜 VPS",
     description:
       "集中筛选低价 VPS 套餐，优先展示月付价格较低、适合测试、建站和轻量业务的服务器。",
+    intro:
+      "便宜 VPS 更适合轻量建站、学习测试、代理工具和临时项目。这里按价格优先整理低价套餐，同时保留配置、地区、流量和优惠码，避免只看价格忽略资源限制。",
     keywords: ["便宜", "低价", "cheap", "优惠", "特价"],
+    faq: [
+      {
+        question: "便宜 VPS 可以长期建站吗？",
+        answer:
+          "可以，但要关注 CPU 限制、内存、硬盘、流量和商家稳定性，低价套餐更适合轻量站点或测试用途。",
+      },
+      {
+        question: "低价 VPS 购买前要看什么？",
+        answer:
+          "建议重点看续费价格、退款政策、线路、流量限制、是否缺货以及优惠码是否仍然有效。",
+      },
+    ],
     filters: {
       maxMonthlyUsd: 8,
     },

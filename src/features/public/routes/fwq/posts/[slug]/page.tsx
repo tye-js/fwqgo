@@ -1,4 +1,5 @@
 import {
+  getPostBySlug,
   getPostWithTagsBySlug,
   getLatestPostsForSidebar,
   getPostsByPostId,
@@ -35,6 +36,7 @@ import {
   offerTopics,
 } from "@/server/offers/server-offers";
 import { Badge } from "@/components/ui/badge";
+import { addIdsToHeadings } from "@fwqgo/core/toc";
 
 function formatOfferPrice(offer: Awaited<ReturnType<typeof getRelatedServerOffersForPost>>[number]) {
   if (!offer.priceAmount) return "价格待补充";
@@ -60,30 +62,47 @@ function toAbsoluteUrl(value: string | null | undefined) {
 export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
+  await connection();
+
   const params = await props.params;
   const decodedSlug = decodeSlug(params.slug);
   const canonicalUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`;
   const readableTitle = decodedSlug.replace(/[-_]+/g, " ");
-  const description = `${readableTitle}相关的服务器优惠、VPS 活动、线路和购买建议。`;
+  const { data } = await getPostBySlug(decodedSlug);
+  const title = data?.title ?? readableTitle;
+  const description =
+    data?.description ??
+    `${readableTitle}相关的服务器优惠、VPS 活动、线路和购买建议。`;
+  const image = toAbsoluteUrl(data?.imgUrl);
+  const englishUrl = data?.enSlug
+    ? `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(data.enSlug)}`
+    : undefined;
 
   return {
-    title: `${readableTitle} - 服务器go`,
+    title: `${title} - 服务器go`,
     description,
-    keywords: readableTitle,
+    keywords: data?.keywords ?? readableTitle,
     alternates: {
       canonical: canonicalUrl,
+      languages: {
+        "zh-CN": canonicalUrl,
+        ...(englishUrl ? { en: englishUrl } : {}),
+        "x-default": canonicalUrl,
+      },
     },
     openGraph: {
       type: "article",
-      title: `${readableTitle} - 服务器go`,
+      title: `${title} - 服务器go`,
       description,
       url: canonicalUrl,
       siteName: "服务器go",
+      images: image ? [{ url: image, alt: title }] : undefined,
     },
     twitter: {
       card: "summary",
-      title: `${readableTitle} - 服务器go`,
+      title: `${title} - 服务器go`,
       description,
+      images: image ? [image] : undefined,
     },
   };
 }
@@ -103,7 +122,7 @@ async function PostPageContent({
   const { post, recommendedPosts } = data;
 
   if (!post) notFound();
-  const contentWithIds = post.content;
+  const contentWithIds = addIdsToHeadings(post.content);
 
   const { data: posts } = await getPostsByPostId(post.id);
   const [prevPost, nextPost] = posts ?? [null, null];
@@ -170,6 +189,57 @@ async function PostPageContent({
       },
     ],
   };
+  const offerJsonLd = relatedOffers.slice(0, 6).map((offer) => ({
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: offer.title,
+    brand: offer.providerName
+      ? {
+          "@type": "Brand",
+          name: offer.providerName,
+        }
+      : undefined,
+    category: "VPS and Server Hosting",
+    description: [offer.region, offer.lineType, offer.promoCode]
+      .filter(Boolean)
+      .join(" / "),
+    offers: {
+      "@type": "Offer",
+      url: offer.purchaseUrl
+        ? new URL(offer.purchaseUrl, getSiteUrl()).toString()
+        : articleUrl,
+      price: offer.priceAmount ? String(offer.priceAmount) : undefined,
+      priceCurrency: offer.currency ?? undefined,
+      availability:
+        offer.status === "in_stock"
+          ? "https://schema.org/InStock"
+          : offer.status === "preorder"
+            ? "https://schema.org/PreOrder"
+            : "https://schema.org/OutOfStock",
+    },
+  }));
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: [
+      {
+        "@type": "Question",
+        name: "这篇文章里的服务器套餐信息来自哪里？",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "套餐信息来自文章正文和商家页面中的价格、配置、地区、线路、优惠码等公开信息，购买前建议再次核对商家页面。",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "推广链接会影响价格吗？",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "推广链接通常不会提高购买价格，部分活动还会包含优惠码或折扣入口，最终价格以商家结算页面为准。",
+        },
+      },
+    ],
+  };
   return (
     <div className="py-4 md:py-6">
       <div className="grid items-start gap-8 xl:grid-cols-[260px_minmax(0,1fr)_300px] 2xl:grid-cols-[280px_minmax(0,920px)_320px]">
@@ -194,7 +264,12 @@ async function PostPageContent({
             <script
               type="application/ld+json"
               dangerouslySetInnerHTML={{
-                __html: JSON.stringify([blogPostingJsonLd, breadcrumbJsonLd]),
+                __html: JSON.stringify([
+                  blogPostingJsonLd,
+                  breadcrumbJsonLd,
+                  faqJsonLd,
+                  ...offerJsonLd,
+                ]),
               }}
             />
             <div className="border-b border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.28),rgba(255,255,255,0.92))] px-5 py-5 sm:px-6 md:px-8 md:py-6">
