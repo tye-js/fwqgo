@@ -2,7 +2,11 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import * as cheerio from "cheerio";
 
 import RewriteArticle from "@/langchain/rewrite-article";
-import { htmlToArticleMarkdown, normalizeArticleHtml } from "@fwqgo/core/content";
+import {
+  contentToArticleMarkdown,
+  htmlToArticleMarkdown,
+  normalizeArticleHtml,
+} from "@fwqgo/core/content";
 import { slugify } from "@fwqgo/core/utils";
 import {
   createPostRecordInTransaction,
@@ -369,7 +373,7 @@ async function runEnglishSeoTask(
       throw new Error("关联草稿文章不存在");
     }
 
-    const markdownInput = htmlToArticleMarkdown(post.content, {
+    const markdownInput = contentToArticleMarkdown(post.content, {
       maxLength: MAX_AI_MARKDOWN_INPUT_LENGTH,
     });
 
