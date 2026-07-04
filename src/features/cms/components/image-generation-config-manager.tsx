@@ -222,8 +222,11 @@ function ConfigForm({
             type="number"
             min={10}
             max={300}
-            defaultValue={config?.timeoutSeconds ?? 90}
+            defaultValue={config?.timeoutSeconds ?? 180}
           />
+          <p className="text-xs leading-5 text-muted-foreground">
+            单次生图默认等待 180 秒，慢模型可在这里调高，最高 300 秒。
+          </p>
         </div>
       </div>
 
