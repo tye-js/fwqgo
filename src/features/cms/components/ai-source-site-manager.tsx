@@ -107,24 +107,28 @@ function parseLastRunDetails(
       error: typeof data.error === "string" ? data.error : undefined,
       discoveredCount:
         typeof data.discoveredCount === "number" ? data.discoveredCount : 0,
-      createdCount: typeof data.createdCount === "number" ? data.createdCount : 0,
+      createdCount:
+        typeof data.createdCount === "number" ? data.createdCount : 0,
       skippedCount:
         typeof data.skippedCount === "number" ? data.skippedCount : 0,
       discoveredUrls: Array.isArray(data.discoveredUrls)
-        ? data.discoveredUrls.filter((item): item is string => typeof item === "string")
+        ? data.discoveredUrls.filter(
+            (item): item is string => typeof item === "string",
+          )
         : [],
       skippedUrls: Array.isArray(data.skippedUrls)
-        ? data.skippedUrls.filter((item): item is string => typeof item === "string")
+        ? data.skippedUrls.filter(
+            (item): item is string => typeof item === "string",
+          )
         : [],
       tasks: Array.isArray(data.tasks)
-        ? data.tasks.filter(
-            (item): item is { id: number; sourceUrl: string } =>
-              Boolean(
-                item &&
-                  typeof item === "object" &&
-                  typeof (item as { id?: unknown }).id === "number" &&
-                  typeof (item as { sourceUrl?: unknown }).sourceUrl === "string",
-              ),
+        ? data.tasks.filter((item): item is { id: number; sourceUrl: string } =>
+            Boolean(
+              item &&
+              typeof item === "object" &&
+              typeof (item as { id?: unknown }).id === "number" &&
+              typeof (item as { sourceUrl?: unknown }).sourceUrl === "string",
+            ),
           )
         : [],
     };
@@ -164,7 +168,9 @@ function SourceRunResultPanel({
       ) : null}
       <div className="grid gap-3 lg:grid-cols-3">
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">已加入任务</p>
+          <p className="text-xs font-medium text-muted-foreground">
+            已加入任务
+          </p>
           {result.tasks.length > 0 ? (
             result.tasks.map((task) => (
               <Link
@@ -284,6 +290,15 @@ function SourceSiteForm({
         ]),
       });
       onDone?.();
+    } catch (error) {
+      notifyError({
+        title: site ? "来源站更新失败" : "来源站添加失败",
+        description: describeAdminResult([
+          inputNameFromForm(formData),
+          error instanceof Error ? error.message : "保存失败",
+          "请检查站点 URL、Feed URL、分类和改写风格配置",
+        ]),
+      });
     } finally {
       setIsSaving(false);
     }
@@ -328,7 +343,9 @@ function SourceSiteForm({
           <Label>默认分类</Label>
           <Select
             name="categoryId"
-            defaultValue={defaultCategoryId ? String(defaultCategoryId) : undefined}
+            defaultValue={
+              defaultCategoryId ? String(defaultCategoryId) : undefined
+            }
             required
           >
             <SelectTrigger>
@@ -400,76 +417,100 @@ export function AiSourceSiteManager({
   const [editId, setEditId] = useState<number | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [runningId, setRunningId] = useState<number | null>(null);
-  const [lastRunResult, setLastRunResult] = useState<LastRunResult | null>(null);
+  const [lastRunResult, setLastRunResult] = useState<LastRunResult | null>(
+    null,
+  );
 
   async function handleRun(id: number) {
     const site = sites.find((item) => item.id === id);
     setRunningId(id);
-    const result = await runAiSourceSiteAction(id);
-    setRunningId(null);
+    try {
+      const result = await runAiSourceSiteAction(id);
 
-    if (result.error) {
+      if (result.error) {
+        notifyError({
+          title: "来源站抓取失败",
+          description: describeAdminResult([
+            site?.name,
+            result.error,
+            "没有创建新的 AI 改写任务",
+          ]),
+        });
+        return;
+      }
+
+      if (!result.data) {
+        notifyError({
+          title: "来源站抓取失败",
+          description: describeAdminResult([
+            site?.name,
+            "服务端没有返回抓取统计",
+            "请稍后重试或检查服务器日志",
+          ]),
+        });
+        return;
+      }
+
+      notifySuccess({
+        title:
+          result.data.createdCount > 0
+            ? "来源站抓取完成，已创建改写任务"
+            : "来源站抓取完成，没有新的文章",
+        description: describeAdminResult([
+          site?.name,
+          `发现 ${result.data.discoveredCount} 条`,
+          `新增 ${result.data.createdCount} 个任务`,
+          `跳过 ${result.data.skippedCount} 条重复或超额链接`,
+        ]),
+      });
+      setLastRunResult({ siteId: id, ...result.data });
+      router.refresh();
+    } catch (error) {
       notifyError({
         title: "来源站抓取失败",
         description: describeAdminResult([
           site?.name,
-          result.error,
+          error instanceof Error ? error.message : "抓取任务执行失败",
           "没有创建新的 AI 改写任务",
         ]),
       });
-      return;
+    } finally {
+      setRunningId(null);
     }
-
-    if (!result.data) {
-      notifyError({
-        title: "来源站抓取失败",
-        description: describeAdminResult([
-          site?.name,
-          "服务端没有返回抓取统计",
-          "请稍后重试或检查服务器日志",
-        ]),
-      });
-      return;
-    }
-
-    notifySuccess({
-      title:
-        result.data.createdCount > 0
-          ? "来源站抓取完成，已创建改写任务"
-          : "来源站抓取完成，没有新的文章",
-      description: describeAdminResult([
-        site?.name,
-        `发现 ${result.data.discoveredCount} 条`,
-        `新增 ${result.data.createdCount} 个任务`,
-        `跳过 ${result.data.skippedCount} 条重复或超额链接`,
-      ]),
-    });
-    setLastRunResult({ siteId: id, ...result.data });
-    router.refresh();
   }
 
   async function handleDelete(id: number) {
-    const result = await deleteAiSourceSiteAction(id);
+    try {
+      const result = await deleteAiSourceSiteAction(id);
 
-    if (result.error) {
+      if (result.error) {
+        notifyError({
+          title: "来源站删除失败",
+          description: describeAdminResult([
+            sites.find((site) => site.id === id)?.name,
+            result.error,
+          ]),
+        });
+        return;
+      }
+
+      notifySuccess({
+        title: "来源站配置已删除",
+        description: describeAdminResult([
+          sites.find((site) => site.id === id)?.name,
+          "后续不会再从该站点创建批量抓取任务",
+        ]),
+      });
+      router.refresh();
+    } catch (error) {
       notifyError({
         title: "来源站删除失败",
         description: describeAdminResult([
           sites.find((site) => site.id === id)?.name,
-          result.error,
+          error instanceof Error ? error.message : "删除失败",
         ]),
       });
-      return;
     }
-
-    notifySuccess({
-      title: "来源站配置已删除",
-      description: describeAdminResult([
-        sites.find((site) => site.id === id)?.name,
-        "后续不会再从该站点创建批量抓取任务",
-      ]),
-    });
-    router.refresh();
   }
 
   return (
@@ -612,8 +653,8 @@ export function AiSourceSiteManager({
                           <Trash2 className="size-4" />
                         </Button>
                       </div>
-                      </TableCell>
-                    </TableRow>
+                    </TableCell>
+                  </TableRow>
                   {detailId === site.id
                     ? (() => {
                         const details = parseLastRunDetails(

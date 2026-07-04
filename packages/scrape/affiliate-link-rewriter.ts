@@ -305,6 +305,93 @@ function tryNormalizeUrlHost(value: string) {
   }
 }
 
+function normalizeAbsoluteUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(
+      trimmed.startsWith("//") ? `https:${trimmed}` : trimmed,
+    );
+    const sortedParams = Array.from(url.searchParams.entries()).sort(
+      ([keyA, valueA], [keyB, valueB]) =>
+        keyA === keyB ? valueA.localeCompare(valueB) : keyA.localeCompare(keyB),
+    );
+    const search = sortedParams.length
+      ? `?${new URLSearchParams(sortedParams).toString()}`
+      : "";
+    const port = url.port ? `:${url.port}` : "";
+
+    return `${url.protocol}//${normalizeHost(url.hostname)}${port}${url.pathname}${search}${url.hash}`;
+  } catch {
+    return null;
+  }
+}
+
+function markdownLinkMatchesReportHref(
+  markdownHref: string,
+  matched: AffiliateRewriteMatch,
+) {
+  const normalizedHref = normalizeAbsoluteUrl(markdownHref);
+  if (!normalizedHref) {
+    return false;
+  }
+
+  return [matched.originalHref, matched.resolvedHref, matched.finalHref]
+    .map(normalizeAbsoluteUrl)
+    .some((candidate) => candidate === normalizedHref);
+}
+
+function markdownLinkMatchesReportHost(
+  host: string,
+  matched: AffiliateRewriteMatch,
+) {
+  const domains = [
+    matched.matchedDomain,
+    tryNormalizeUrlHost(matched.resolvedHref),
+    tryNormalizeUrlHost(matched.finalHref),
+  ].filter((domain): domain is string => Boolean(domain));
+
+  return domains.some(
+    (domain) => host === domain || host.endsWith(`.${domain}`),
+  );
+}
+
+function uniqueFinalHrefMatches(matches: AffiliateRewriteMatch[]) {
+  const byFinalHref = new Map<string, AffiliateRewriteMatch>();
+  for (const match of matches) {
+    byFinalHref.set(
+      normalizeAbsoluteUrl(match.finalHref) ?? match.finalHref,
+      match,
+    );
+  }
+
+  return [...byFinalHref.values()];
+}
+
+function findMarkdownAffiliateMatch(
+  href: string,
+  host: string,
+  report: AffiliateRewriteReport,
+) {
+  const exactMatch = report.matchedLinks.find((item) =>
+    markdownLinkMatchesReportHref(href, item),
+  );
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const hostMatches = uniqueFinalHrefMatches(
+    report.matchedLinks.filter((item) =>
+      markdownLinkMatchesReportHost(host, item),
+    ),
+  );
+
+  return hostMatches.length === 1 ? hostMatches[0] : null;
+}
+
 export function repairMarkdownAffiliateLinks(
   markdown: string,
   report: AffiliateRewriteReport,
@@ -314,47 +401,31 @@ export function repairMarkdownAffiliateLinks(
   }
 
   const linkPattern = /\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
-  const replacements: Array<{ original: string; replacement: string }> = [];
 
-  for (const match of markdown.matchAll(linkPattern)) {
-    const [original, label, href] = match;
-    if (!label || !href) continue;
+  const repaired = markdown.replace(
+    linkPattern,
+    (original: string, label: string, href: string) => {
+      if (!label || !href) {
+        return original;
+      }
 
-    let url: URL;
-    try {
-      url = new URL(href);
-    } catch {
-      continue;
-    }
+      let url: URL;
+      try {
+        url = new URL(href);
+      } catch {
+        return original;
+      }
 
-    const host = normalizeHost(url.hostname);
-    const matched = report.matchedLinks.find((item) => {
-      const domains = [
-        item.matchedDomain,
-        tryNormalizeUrlHost(item.resolvedHref),
-        tryNormalizeUrlHost(item.finalHref),
-      ].filter((domain): domain is string => Boolean(domain));
+      const host = normalizeHost(url.hostname);
+      const matched = findMarkdownAffiliateMatch(href, host, report);
+      if (!matched) {
+        return original;
+      }
 
-      return domains.some(
-        (domain) => host === domain || host.endsWith(`.${domain}`),
-      );
-    });
-
-    if (!matched) {
-      continue;
-    }
-
-    replacements.push({
-      original,
-      replacement: `[${
+      return `[${
         isGenericMarkdownLinkLabel(label) ? matched.providerName : label
-      }](${matched.finalHref})`,
-    });
-  }
-
-  const repaired = replacements.reduce(
-    (content, item) => content.replace(item.original, item.replacement),
-    markdown,
+      }](${matched.finalHref})`;
+    },
   );
 
   return repaired.trim();

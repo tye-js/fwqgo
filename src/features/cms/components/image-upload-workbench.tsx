@@ -17,7 +17,14 @@ import { AdminSectionCard } from "@/features/cms/components/admin-page-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
 import { cn } from "@fwqgo/core/utils";
 
@@ -65,7 +72,12 @@ export function ImageUploadWorkbench() {
     setItems((prev) =>
       prev.map((current) =>
         current.id === item.id
-          ? { ...current, status: "uploading", progress: 35, message: "正在上传并转换 WebP" }
+          ? {
+              ...current,
+              status: "uploading",
+              progress: 35,
+              message: "正在上传并转换 WebP",
+            }
           : current,
       ),
     );
@@ -77,9 +89,10 @@ export function ImageUploadWorkbench() {
       method: "POST",
       body: formData,
     });
-    const payload = (await response.json().catch(() => null)) as
-      | { url?: string; error?: string }
-      | null;
+    const payload = (await response.json().catch(() => null)) as {
+      url?: string;
+      error?: string;
+    } | null;
 
     if (!response.ok || !payload?.url) {
       throw new Error(payload?.error ?? `上传失败，HTTP ${response.status}`);
@@ -143,8 +156,12 @@ export function ImageUploadWorkbench() {
   }
 
   async function handleCopy(url: string) {
-    await navigator.clipboard.writeText(url);
-    toast.success("图片 URL 已复制");
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("图片 URL 已复制");
+    } catch {
+      toast.error("图片 URL 复制失败，请手动复制");
+    }
   }
 
   return (
@@ -195,7 +212,10 @@ export function ImageUploadWorkbench() {
       </AdminSectionCard>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Metric label="待处理" value={String(summary.total - summary.success)} />
+        <Metric
+          label="待处理"
+          value={String(summary.total - summary.success)}
+        />
         <Metric label="已完成" value={String(summary.success)} />
         <Metric label="失败" value={String(summary.failed)} />
       </div>
@@ -233,7 +253,8 @@ export function ImageUploadWorkbench() {
                       {item.file.name}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {item.file.type || "未知类型"} / {formatBytes(item.file.size)}
+                      {item.file.type || "未知类型"} /{" "}
+                      {formatBytes(item.file.size)}
                     </p>
                   </TableCell>
                   <TableCell className="min-w-[220px]">
@@ -259,7 +280,9 @@ export function ImageUploadWorkbench() {
                         {item.url}
                       </button>
                     ) : (
-                      <span className="text-sm text-muted-foreground">上传后生成</span>
+                      <span className="text-sm text-muted-foreground">
+                        上传后生成
+                      </span>
                     )}
                   </TableCell>
                   <TableCell>
@@ -275,7 +298,12 @@ export function ImageUploadWorkbench() {
                             setItems((prev) =>
                               prev.map((current) =>
                                 current.id === item.id
-                                  ? { ...current, status: "pending", progress: 0, message: null }
+                                  ? {
+                                      ...current,
+                                      status: "pending",
+                                      progress: 0,
+                                      message: null,
+                                    }
                                   : current,
                               ),
                             )
@@ -295,8 +323,17 @@ export function ImageUploadWorkbench() {
                           >
                             <Copy className="size-4" />
                           </Button>
-                          <Button asChild variant="outline" size="icon" title="打开原图">
-                            <a href={item.url} target="_blank" rel="noopener noreferrer">
+                          <Button
+                            asChild
+                            variant="outline"
+                            size="icon"
+                            title="打开原图"
+                          >
+                            <a
+                              href={item.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
                               <ExternalLink className="size-4" />
                             </a>
                           </Button>
@@ -337,10 +374,14 @@ function Preview({ item }: { item: UploadItem }) {
     };
   }, [localPreviewSrc]);
 
-  const previewSrc = item.url ? getOptimizedImageSrc(item.url) : localPreviewSrc;
+  const previewSrc = item.url
+    ? getOptimizedImageSrc(item.url)
+    : localPreviewSrc;
 
   if (!previewSrc) {
-    return <div className="h-16 w-20 rounded-md border border-border bg-muted" />;
+    return (
+      <div className="h-16 w-20 rounded-md border border-border bg-muted" />
+    );
   }
 
   return (
@@ -358,11 +399,25 @@ function Preview({ item }: { item: UploadItem }) {
 }
 
 function StatusBadge({ status }: { status: UploadStatus }) {
-  const statusMap: Record<UploadStatus, { label: string; className?: string; icon: ReactNode }> = {
+  const statusMap: Record<
+    UploadStatus,
+    { label: string; className?: string; icon: ReactNode }
+  > = {
     pending: { label: "待上传", icon: <ImagePlus className="size-3" /> },
-    uploading: { label: "上传中", icon: <Loader2 className="size-3 animate-spin" /> },
-    success: { label: "成功", className: "border-emerald-200 bg-emerald-50 text-emerald-700", icon: <CheckCircle2 className="size-3" /> },
-    error: { label: "失败", className: "border-destructive/30 bg-destructive/10 text-destructive", icon: <XCircle className="size-3" /> },
+    uploading: {
+      label: "上传中",
+      icon: <Loader2 className="size-3 animate-spin" />,
+    },
+    success: {
+      label: "成功",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      icon: <CheckCircle2 className="size-3" />,
+    },
+    error: {
+      label: "失败",
+      className: "border-destructive/30 bg-destructive/10 text-destructive",
+      icon: <XCircle className="size-3" />,
+    },
   };
   const item = statusMap[status];
 

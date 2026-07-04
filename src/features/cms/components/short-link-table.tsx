@@ -56,10 +56,16 @@ export function ShortLinkTable({ links }: { links: ShortLinkRow[] }) {
       process.env.NEXT_PUBLIC_URL?.replace(/\/+$/, "") ??
       window.location.origin.replace(/^https:\/\/cms\./, "https://");
     const url = `${publicOrigin}/go/${slug}`;
-    await navigator.clipboard.writeText(url);
-    toast.success("短链已复制", {
-      description: url,
-    });
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("短链已复制", {
+        description: url,
+      });
+    } catch {
+      toast.error("短链复制失败，请手动复制", {
+        description: url,
+      });
+    }
   }
 
   return (

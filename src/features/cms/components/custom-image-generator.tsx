@@ -70,11 +70,18 @@ export function CustomImageGenerator() {
 
   async function copyUrl() {
     if (!generated?.url) return;
-    await navigator.clipboard.writeText(generated.url);
-    notifySuccess({
-      title: "图片 URL 已复制",
-      description: generated.url,
-    });
+    try {
+      await navigator.clipboard.writeText(generated.url);
+      notifySuccess({
+        title: "图片 URL 已复制",
+        description: generated.url,
+      });
+    } catch {
+      notifyError({
+        title: "图片 URL 复制失败",
+        description: "请手动复制生成结果中的图片地址。",
+      });
+    }
   }
 
   return (
@@ -136,7 +143,12 @@ export function CustomImageGenerator() {
           </div>
           {generated ? (
             <div className="flex gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={copyUrl}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={copyUrl}
+              >
                 <Copy className="size-4" />
               </Button>
               <Button asChild variant="outline" size="sm">
