@@ -5,26 +5,70 @@ import { readDb } from "@fwqgo/db";
 import { attachTagsToPosts } from "@fwqgo/db/post-tags";
 import { postTags, posts, tags } from "@fwqgo/db/schema";
 
-function publishedChinesePostCondition() {
-  return and(eq(posts.published, true), eq(posts.language, "zh"));
+type PublicLanguage = "zh" | "en";
+
+function publishedPostCondition(language: PublicLanguage = "zh") {
+  return and(eq(posts.published, true), eq(posts.language, language));
 }
 
-export async function getTagBySlug(tagSlug: string) {
+function nonEmptyTrim(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  return trimmed;
+}
+
+function localizeTag<
+  T extends {
+    name: string;
+    slug: string;
+    description: string | null;
+    keywords: string | null;
+    enName?: string | null;
+    enSlug?: string | null;
+    enDescription?: string | null;
+    enKeywords?: string | null;
+  },
+>(tag: T, language: PublicLanguage) {
+  if (language === "en") {
+    return {
+      ...tag,
+      name: nonEmptyTrim(tag.enName) ?? tag.name,
+      slug: nonEmptyTrim(tag.enSlug) ?? tag.slug,
+      description: nonEmptyTrim(tag.enDescription) ?? tag.description,
+      keywords: nonEmptyTrim(tag.enKeywords) ?? tag.keywords,
+    };
+  }
+
+  return tag;
+}
+
+export async function getTagBySlug(
+  tagSlug: string,
+  language: PublicLanguage = "zh",
+) {
   try {
     const [tag] = await readDb
       .select({
         id: tags.id,
         name: tags.name,
         slug: tags.slug,
+        enName: tags.enName,
+        enSlug: tags.enSlug,
         description: tags.description,
         keywords: tags.keywords,
+        enDescription: tags.enDescription,
+        enKeywords: tags.enKeywords,
         indexable: tags.indexable,
       })
       .from(tags)
-      .where(eq(tags.slug, tagSlug))
+      .where(
+        language === "en"
+          ? or(eq(tags.enSlug, tagSlug), eq(tags.slug, tagSlug))
+          : eq(tags.slug, tagSlug),
+      )
       .limit(1);
 
-    return { data: tag ?? null };
+    return { data: tag ? localizeTag(tag, language) : null };
   } catch (error) {
     return { error: error, message: "通过标签 slug 查询标签信息失败" };
   }
@@ -33,6 +77,7 @@ export async function getTagBySlug(tagSlug: string) {
 export async function getPostsWithTagsByTagSlug(
   tagSlug: string,
   pageNo = 1,
+  language: PublicLanguage = "zh",
 ) {
   try {
     const currentPage = Number.isFinite(pageNo) && pageNo > 0 ? pageNo : 1;
@@ -43,23 +88,32 @@ export async function getPostsWithTagsByTagSlug(
         id: tags.id,
         name: tags.name,
         slug: tags.slug,
+        enName: tags.enName,
+        enSlug: tags.enSlug,
         description: tags.description,
         keywords: tags.keywords,
+        enDescription: tags.enDescription,
+        enKeywords: tags.enKeywords,
         indexable: tags.indexable,
       })
       .from(tags)
-      .where(eq(tags.slug, tagSlug))
+      .where(
+        language === "en"
+          ? or(eq(tags.enSlug, tagSlug), eq(tags.slug, tagSlug))
+          : eq(tags.slug, tagSlug),
+      )
       .limit(1);
 
     if (!tag) {
       return { data: null };
     }
+    const localizedTag = localizeTag(tag, language);
 
     const [countResult] = await readDb
       .select({ count: count() })
       .from(postTags)
       .innerJoin(posts, eq(posts.id, postTags.postId))
-      .where(and(eq(postTags.tagId, tag.id), publishedChinesePostCondition()));
+      .where(and(eq(postTags.tagId, tag.id), publishedPostCondition(language)));
 
     // 获取该标签下的文章
     const tagPosts = await readDb
@@ -73,15 +127,15 @@ export async function getPostsWithTagsByTagSlug(
       })
       .from(posts)
       .innerJoin(postTags, eq(posts.id, postTags.postId))
-      .where(and(eq(postTags.tagId, tag.id), publishedChinesePostCondition()))
+      .where(and(eq(postTags.tagId, tag.id), publishedPostCondition(language)))
       .orderBy(desc(posts.createdAt))
       .offset((currentPage - 1) * 10)
       .limit(10);
 
-    const postsWithTags = await attachTagsToPosts(tagPosts);
+    const postsWithTags = await attachTagsToPosts(tagPosts, language);
 
     const result = {
-      ...tag,
+      ...localizedTag,
       pageNo: currentPage,
       totalCount: countResult?.count ?? 0,
       posts: postsWithTags.map((post) => ({ post })),

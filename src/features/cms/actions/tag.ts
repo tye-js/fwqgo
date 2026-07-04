@@ -22,6 +22,32 @@ const updateTagIndexableSchema = z.object({
   indexable: z.boolean(),
 });
 
+const updateTagSeoSchema = z.object({
+  id: z.number().int().positive(),
+  enName: z.string().trim().max(120, "英文标签名不能超过120个字符").optional(),
+  enSlug: z.string().trim().max(180, "英文 slug 不能超过180个字符").optional(),
+  description: z.string().trim().max(800, "中文描述不能超过800个字符").optional(),
+  keywords: z.string().trim().max(800, "中文关键词不能超过800个字符").optional(),
+  enDescription: z.string().trim().max(800, "英文描述不能超过800个字符").optional(),
+  enKeywords: z.string().trim().max(800, "英文关键词不能超过800个字符").optional(),
+});
+
+function normalizeSeoKeywords(value: string | undefined) {
+  return (value ?? "")
+    .replace(/，/g, ",")
+    .split(",")
+    .map((keyword) => keyword.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+    .join(",");
+}
+
+function textOrNull(value: string | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed;
+}
+
 async function createTagRecord(
   input: z.infer<typeof createTagSchema>,
   options: { revalidate?: boolean } = {},
@@ -117,6 +143,49 @@ export async function updateTagIndexable(
   }
 
   revalidateSiteContent([cacheTags.tags, cacheTags.tagSlug(tag.slug)]);
+
+  return { data: tag };
+}
+
+export async function updateTagSeo(input: z.infer<typeof updateTagSeoSchema>) {
+  await requireAdminSession();
+
+  const result = updateTagSeoSchema.parse(input);
+
+  const [tag] = await db
+    .update(tags)
+    .set({
+      enName: textOrNull(result.enName),
+      enSlug: textOrNull(result.enSlug),
+      description: textOrNull(result.description),
+      keywords: textOrNull(normalizeSeoKeywords(result.keywords)),
+      enDescription: textOrNull(result.enDescription),
+      enKeywords: textOrNull(normalizeSeoKeywords(result.enKeywords)),
+      updatedAt: new Date(),
+    })
+    .where(eq(tags.id, result.id))
+    .returning({
+      id: tags.id,
+      name: tags.name,
+      slug: tags.slug,
+      enName: tags.enName,
+      enSlug: tags.enSlug,
+      description: tags.description,
+      keywords: tags.keywords,
+      enDescription: tags.enDescription,
+      enKeywords: tags.enKeywords,
+      indexable: tags.indexable,
+    });
+
+  if (!tag) {
+    return { error: "没有找到这个标签" };
+  }
+
+  revalidateSiteContent([
+    cacheTags.tags,
+    cacheTags.tagSlug(tag.slug),
+    ...(tag.enSlug ? [cacheTags.tagSlug(tag.enSlug)] : []),
+  ]);
 
   return { data: tag };
 }

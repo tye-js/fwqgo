@@ -26,10 +26,20 @@ function normalizeSeoKeywords(value: string) {
     .join(",");
 }
 
+function textOrNull(value: string | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed;
+}
+
 export async function updateCategorySeo(input: {
   id: number;
   description: string;
   keywords: string;
+  enName?: string;
+  enSlug?: string;
+  enDescription?: string;
+  enKeywords?: string;
 }) {
   try {
     await requireAdminSession();
@@ -41,16 +51,24 @@ export async function updateCategorySeo(input: {
     const [category] = await db
       .update(categories)
       .set({
-        description: input.description.trim() || null,
-        keywords: normalizeSeoKeywords(input.keywords) || null,
+        description: textOrNull(input.description),
+        keywords: textOrNull(normalizeSeoKeywords(input.keywords)),
+        enName: textOrNull(input.enName),
+        enSlug: textOrNull(input.enSlug),
+        enDescription: textOrNull(input.enDescription),
+        enKeywords: textOrNull(normalizeSeoKeywords(input.enKeywords ?? "")),
         updatedAt: new Date(),
       })
       .where(eq(categories.id, input.id))
       .returning({
         id: categories.id,
         slug: categories.slug,
+        enName: categories.enName,
+        enSlug: categories.enSlug,
         description: categories.description,
         keywords: categories.keywords,
+        enDescription: categories.enDescription,
+        enKeywords: categories.enKeywords,
       });
 
     if (!category) {

@@ -1,18 +1,26 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@fwqgo/db";
 import { homepagePromotedPosts, posts } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 
-export async function getHomepagePromotedPostList() {
+type HomepageLanguage = "zh" | "en";
+
+function normalizeHomepageLanguage(language?: string): HomepageLanguage {
+  return language === "en" ? "en" : "zh";
+}
+
+export async function getHomepagePromotedPostList(language: HomepageLanguage = "zh") {
   try {
     await requireAdminSession();
+    const normalizedLanguage = normalizeHomepageLanguage(language);
 
     const result = await db.query.homepagePromotedPosts.findMany({
+      where: eq(homepagePromotedPosts.language, normalizedLanguage),
       orderBy: [
         asc(homepagePromotedPosts.sortOrder),
         desc(homepagePromotedPosts.createdAt),
@@ -24,6 +32,7 @@ export async function getHomepagePromotedPostList() {
             title: true,
             slug: true,
             published: true,
+            language: true,
           },
         },
       },
@@ -38,9 +47,11 @@ export async function getHomepagePromotedPostList() {
 export async function addHomepagePromotedPost(input: {
   postId: number;
   sortOrder: number;
+  language?: HomepageLanguage;
 }) {
   try {
     await requireAdminSession();
+    const normalizedLanguage = normalizeHomepageLanguage(input.language);
 
     if (!Number.isInteger(input.postId) || input.postId <= 0) {
       return { error: "文章 ID 不正确" };
@@ -54,6 +65,7 @@ export async function addHomepagePromotedPost(input: {
       .select({
         id: posts.id,
         published: posts.published,
+        language: posts.language,
       })
       .from(posts)
       .where(eq(posts.id, input.postId))
@@ -67,15 +79,21 @@ export async function addHomepagePromotedPost(input: {
       return { error: "首页推荐只能添加已发布文章" };
     }
 
+    if (post.language !== normalizedLanguage) {
+      return { error: "文章语言和当前推荐位语言不一致" };
+    }
+
     const [result] = await db
       .insert(homepagePromotedPosts)
       .values({
         postId: input.postId,
+        language: normalizedLanguage,
         sortOrder: input.sortOrder,
       })
       .onConflictDoUpdate({
         target: homepagePromotedPosts.postId,
         set: {
+          language: normalizedLanguage,
           sortOrder: input.sortOrder,
         },
       })
@@ -176,18 +194,20 @@ export async function deleteHomepagePromotedPosts(ids: number[]) {
   }
 }
 
-export async function getPublishedPostOptions() {
+export async function getPublishedPostOptions(language: HomepageLanguage = "zh") {
   try {
     await requireAdminSession();
+    const normalizedLanguage = normalizeHomepageLanguage(language);
 
     const result = await db
       .select({
         id: posts.id,
         title: posts.title,
         slug: posts.slug,
+        language: posts.language,
       })
       .from(posts)
-      .where(eq(posts.published, true))
+      .where(and(eq(posts.published, true), eq(posts.language, normalizedLanguage)))
       .orderBy(desc(posts.createdAt))
       .limit(100);
 

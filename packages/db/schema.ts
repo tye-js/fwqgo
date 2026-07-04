@@ -123,14 +123,19 @@ export const categories = pgTable(
     id: serial("id").primaryKey(),
     name: text("name").notNull().unique(),
     slug: text("slug").notNull().unique(),
+    enName: text("enName"),
+    enSlug: text("enSlug"),
     description: varchar("description", { length: 800 }),
     keywords: varchar("keywords", { length: 800 }),
+    enDescription: varchar("enDescription", { length: 800 }),
+    enKeywords: varchar("enKeywords", { length: 800 }),
     parentId: integer("parentId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
   },
   (table) => ({
     parentIdx: index("categories_parentId_idx").on(table.parentId),
+    enSlugUnique: unique("categories_enSlug_unique").on(table.enSlug),
     parentFk: foreignKey({
       columns: [table.parentId],
       foreignColumns: [table.id],
@@ -145,15 +150,20 @@ export const tags = pgTable(
   {
     id: serial("id").primaryKey(),
     name: text("name").notNull().unique(),
+    enName: text("enName"),
     keywords: varchar("keywords", { length: 800 }),
     description: varchar("description", { length: 800 }),
+    enKeywords: varchar("enKeywords", { length: 800 }),
+    enDescription: varchar("enDescription", { length: 800 }),
     slug: text("slug").notNull().unique(),
+    enSlug: text("enSlug"),
     indexable: boolean("indexable").default(true).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
   },
   (table) => ({
     indexableIdx: index("tags_indexable_idx").on(table.indexable),
+    enSlugUnique: unique("tags_enSlug_unique").on(table.enSlug),
   }),
 );
 
@@ -285,20 +295,44 @@ export const homepagePromotedPosts = pgTable(
   {
     id: serial("id").primaryKey(),
     postId: integer("postId").notNull().unique(),
+    language: varchar("language", { length: 8 }).default("zh").notNull(),
     sortOrder: integer("sortOrder").default(0).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   (table) => ({
     postIdx: index("homepage_promoted_posts_postId_idx").on(table.postId),
+    languageIdx: index("homepage_promoted_posts_language_idx").on(
+      table.language,
+    ),
     sortIdx: index("homepage_promoted_posts_sortOrder_idx").on(table.sortOrder),
     sortCreatedAtIdx: index(
       "homepage_promoted_posts_sortOrder_createdAt_idx",
     ).on(table.sortOrder, table.createdAt),
+    languageSortCreatedAtIdx: index(
+      "homepage_promoted_posts_language_sortOrder_createdAt_idx",
+    ).on(table.language, table.sortOrder, table.createdAt),
     postFk: foreignKey({
       columns: [table.postId],
       foreignColumns: [posts.id],
       name: "homepage_promoted_posts_postId_posts_id_fk",
     }).onDelete("cascade"),
+  }),
+);
+
+export const siteSeoConfigs = pgTable(
+  "site_seo_configs",
+  {
+    id: serial("id").primaryKey(),
+    language: varchar("language", { length: 8 }).notNull().unique(),
+    siteName: text("siteName").notNull(),
+    title: text("title").notNull(),
+    description: varchar("description", { length: 800 }),
+    keywords: varchar("keywords", { length: 800 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    languageIdx: index("site_seo_configs_language_idx").on(table.language),
   }),
 );
 

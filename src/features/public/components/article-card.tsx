@@ -6,8 +6,16 @@ import { formatDate } from "@fwqgo/core/utils";
 import { type PostWithTags } from "@/types";
 import { SafePostImage } from "@/features/public/components/safe-post-image";
 
-function ArticleCard({ post }: { post: PostWithTags }) {
-  const href = `/fwq/posts/${post.slug}`;
+function ArticleCard({
+  post,
+  language = "zh",
+}: {
+  post: PostWithTags;
+  language?: "zh" | "en";
+}) {
+  const postPrefix = language === "en" ? "/en/fwq/posts" : "/fwq/posts";
+  const tagPrefix = language === "en" ? "/en/fwq/tags" : "/fwq/tags";
+  const href = `${postPrefix}/${post.slug}`;
 
   return (
     <Card
@@ -18,7 +26,7 @@ function ArticleCard({ post }: { post: PostWithTags }) {
         <Link
           href={href}
           prefetch
-          aria-label={`阅读文章：${post.title}`}
+          aria-label={language === "en" ? `Read article: ${post.title}` : `阅读文章：${post.title}`}
           className="relative m-3 mb-0 aspect-[16/9] overflow-hidden rounded-md bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:mb-3 md:mr-0"
         >
           <SafePostImage
@@ -38,7 +46,7 @@ function ArticleCard({ post }: { post: PostWithTags }) {
               </span>
               {post.tags[0]?.tag ? (
                 <Link
-                  href={`/fwq/tags/${post.tags[0].tag.slug}/page/1`}
+                  href={`${tagPrefix}/${post.tags[0].tag.slug}/page/1`}
                   prefetch
                   className="inline-flex min-h-6 items-center gap-1.5 rounded-full bg-muted px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/10 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
@@ -59,7 +67,10 @@ function ArticleCard({ post }: { post: PostWithTags }) {
                 </h3>
               </Link>
               <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
-                {post.description ?? "查看详细测评、优惠信息与适用场景。"}
+                {post.description ??
+                  (language === "en"
+                    ? "Read the full review, deal details, and use cases."
+                    : "查看详细测评、优惠信息与适用场景。")}
               </p>
             </div>
           </div>
@@ -69,7 +80,7 @@ function ArticleCard({ post }: { post: PostWithTags }) {
               {post.tags.slice(1, 4).map((tag) => (
                 <Link
                   key={tag.tag.id}
-                  href={`/fwq/tags/${tag.tag.slug}/page/1`}
+                  href={`${tagPrefix}/${tag.tag.slug}/page/1`}
                   prefetch
                   className="inline-flex min-h-7 items-center rounded-full border border-border/70 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/10 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
@@ -83,7 +94,7 @@ function ArticleCard({ post }: { post: PostWithTags }) {
               prefetch
               className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-md text-sm font-medium text-accent underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              阅读全文
+              {language === "en" ? "Read more" : "阅读全文"}
               <ArrowUpRight className="size-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             </Link>
           </div>

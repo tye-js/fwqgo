@@ -207,7 +207,7 @@ async function EnglishPostContent({ params }: PageProps) {
               {post.tags.map((tag) => (
                 <Link
                   key={tag.tag.id}
-                  href={`/fwq/tags/${tag.tag.slug}/page/1`}
+                  href={`/en/fwq/tags/${tag.tag.slug}/page/1`}
                   prefetch
                   className="inline-flex min-h-9 items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/15"
                 >

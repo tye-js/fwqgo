@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { connection } from "next/server";
 import {
@@ -34,6 +35,35 @@ import {
   getServerOfferTopicCounts,
   offerTopics,
 } from "@/server/offers/server-offers";
+import { getSiteSeoConfig } from "@/features/shared/data/site-seo";
+
+function getSiteUrl() {
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { data } = await getSiteSeoConfig("zh");
+
+  return {
+    title: data.title,
+    description: data.description,
+    keywords: data.keywords,
+    alternates: {
+      canonical: getSiteUrl(),
+      languages: {
+        "zh-CN": getSiteUrl(),
+        en: `${getSiteUrl()}/en`,
+        "x-default": getSiteUrl(),
+      },
+    },
+    openGraph: {
+      title: data.title,
+      description: data.description,
+      url: getSiteUrl(),
+      siteName: data.siteName,
+    },
+  };
+}
 
 function formatCount(value: number) {
   return value.toLocaleString("zh-CN");

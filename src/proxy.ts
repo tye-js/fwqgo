@@ -131,6 +131,7 @@ function isCmsAdminPath(pathname: string) {
     CMS_HOST_ADMIN_PREFIXES.some(
       (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
     ) ||
+    pathname.startsWith("/api/cms/") ||
     pathname === "/api/tags/search" ||
     pathname === "/api/upload"
   );
@@ -154,7 +155,10 @@ export function proxy(request: NextRequest) {
     return redirectToCms(request);
   }
 
-  if (PUBLIC_HOSTS.has(hostname) && CMS_API_PATHS.has(pathname)) {
+  if (
+    PUBLIC_HOSTS.has(hostname) &&
+    (CMS_API_PATHS.has(pathname) || pathname.startsWith("/api/cms/"))
+  ) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -203,6 +207,7 @@ export const config = {
     "/fwq/:path*",
     "/go/:path*",
     "/api/auth/:path*",
+    "/api/cms/:path*",
     "/api/tags/search",
     "/api/upload",
   ],

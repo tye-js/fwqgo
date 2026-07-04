@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -234,7 +235,7 @@ export async function createAiRewriteTaskAction(formData: FormData) {
 
       const task = await createSourceMaterialAndTask({
         sourceType: input.sourceType,
-        sourceUrl: `manual://${input.sourceType}/${Date.now()}`,
+        sourceUrl: `manual://${input.sourceType}/${randomUUID()}`,
         sourceTitle: input.sourceTitle,
         sourceContent: input.sourceContent,
         categoryId: input.categoryId,
@@ -272,7 +273,7 @@ export async function createAiRewriteTaskAction(formData: FormData) {
 
       const task = await createSourceMaterialAndTask({
         sourceType: "file",
-        sourceUrl: `file://${Date.now()}/${encodeURIComponent(input.sourceFileName)}`,
+        sourceUrl: `file://${randomUUID()}/${encodeURIComponent(input.sourceFileName)}`,
         sourceTitle: input.sourceTitle ?? input.sourceFileName,
         sourceContent: input.sourceContent,
         sourceFileName: input.sourceFileName,
@@ -362,8 +363,16 @@ export async function retryAiRewriteTaskAction(taskId: number) {
       .update(aiRewriteTasks)
       .set({
         status: "pending",
+        progress: 0,
         currentStep: "等待重试",
         error: null,
+        resultTitle: null,
+        scrapedTitle: null,
+        scrapedDescription: null,
+        scrapedHtml: null,
+        aiInputLength: null,
+        rewriteOutputLength: null,
+        diagnostics: null,
         updatedAt: new Date(),
         startedAt: null,
         finishedAt: null,
@@ -382,6 +391,8 @@ export async function retryAiRewriteTaskAction(taskId: number) {
     if (!task) {
       return { error: "任务不存在，或当前状态不能重试" };
     }
+
+    await db.delete(aiTaskSteps).where(eq(aiTaskSteps.taskId, task.id));
 
     if (task.sourceMaterialId) {
       await db
@@ -460,6 +471,7 @@ export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
         id: aiRewriteTasks.id,
         status: aiRewriteTasks.status,
         postId: aiRewriteTasks.postId,
+        sourceMaterialId: aiRewriteTasks.sourceMaterialId,
       })
       .from(aiRewriteTasks)
       .where(eq(aiRewriteTasks.id, taskId))
@@ -481,6 +493,7 @@ export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
       .update(aiRewriteTasks)
       .set({
         status: "succeeded",
+        progress: 100,
         currentStep: "人工审核已完成",
         error: null,
         finishedAt: new Date(),
@@ -488,6 +501,13 @@ export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
       })
       .where(eq(aiRewriteTasks.id, taskId))
       .returning({ id: aiRewriteTasks.id });
+
+    if (task.sourceMaterialId) {
+      await db
+        .update(sourceMaterials)
+        .set({ status: "succeeded", updatedAt: new Date() })
+        .where(eq(sourceMaterials.id, task.sourceMaterialId));
+    }
 
     revalidateAiTaskPages(taskId);
 

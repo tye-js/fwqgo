@@ -1,0 +1,147 @@
+import { Suspense } from "react";
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { connection } from "next/server";
+import { Compass } from "lucide-react";
+
+import { getCategoryBySlug } from "@/features/shared/data/category";
+import {
+  getLatestPostsForSidebar,
+  getPostsWithTagsByCategoryId,
+  getPublishedPostCountByCategoryId,
+} from "@/features/public/data/post";
+import ArticleCard from "@/features/public/components/article-card";
+import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
+import PageCard from "@/features/public/components/page-card";
+import { PaginationComponent } from "@/features/shared/components/pagination";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { decodeSlug } from "@fwqgo/core/utils";
+
+function getSiteUrl() {
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+}
+
+export async function generateMetadata(props: {
+  params: Promise<{ category: string; pageNo: string }>;
+}): Promise<Metadata> {
+  const params = await props.params;
+  const decodedCategory = decodeSlug(params.category);
+  const currentPage = Number.parseInt(params.pageNo, 10);
+  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
+  const { data: category } = await getCategoryBySlug(decodedCategory, "en");
+  const title = category?.name ?? decodedCategory.replace(/[-_]+/g, " ");
+
+  return {
+    title: `${title} - fwqgo`,
+    description:
+      category?.description ??
+      `${title} server deals, VPS reviews, coupons, and buying guides.`,
+    keywords: category?.keywords ?? title,
+    alternates: {
+      canonical: `${getSiteUrl()}/en/fwq/${encodeURIComponent(category?.slug ?? decodedCategory)}/page/${pageNo}`,
+    },
+  };
+}
+
+async function CategoryPageContent({
+  paramsPromise,
+}: {
+  paramsPromise: Promise<{ category: string; pageNo: string }>;
+}) {
+  await connection();
+
+  const params = await paramsPromise;
+  const decodedCategory = decodeSlug(params.category);
+  const currentPage = Number.parseInt(params.pageNo, 10);
+  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : null;
+  if (!pageNo) notFound();
+
+  const { data: category, error: categoryError } = await getCategoryBySlug(
+    decodedCategory,
+    "en",
+  );
+  if (categoryError) return <div>Failed to load category.</div>;
+  if (!category) notFound();
+
+  const [{ data: posts, error: postsError }, { data: totalCount }, { data: latestPosts }] =
+    await Promise.all([
+      getPostsWithTagsByCategoryId(category.id, pageNo, "en"),
+      getPublishedPostCountByCategoryId(category.id, "en"),
+      getLatestPostsForSidebar("en"),
+    ]);
+  const totalPage = Math.ceil((totalCount ?? 0) / 10);
+
+  if ((totalCount ?? 0) > 0 && pageNo > totalPage) {
+    notFound();
+  }
+
+  if (postsError) return <div>Failed to load articles.</div>;
+  if (!posts) notFound();
+
+  return (
+    <div className="grid gap-8 xl:grid-cols-[minmax(0,0.82fr)_320px]">
+      <div className="space-y-5">
+        <PageCard
+          kind="Category"
+          name={category.name}
+          description={
+            category.description ??
+            `${category.name} server deals, VPS reviews, and buying guides.`
+          }
+          totalCount={totalCount ?? 0}
+          pageNo={pageNo}
+          language="en"
+        />
+        <div className="space-y-4">
+          {posts.length > 0 ? (
+            posts.map((post) => (
+              <ArticleCard key={post.id} post={post} language="en" />
+            ))
+          ) : (
+            <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+              No published English articles in this category yet.
+            </div>
+          )}
+        </div>
+        <PaginationComponent
+          pageNo={pageNo}
+          totalPage={totalPage}
+          basePath={`/en/fwq/${category.slug}`}
+        />
+      </div>
+
+      <aside className="hidden xl:block">
+        <div className="sticky top-24 space-y-4">
+          <Card className="rounded-lg border-border/70 bg-background shadow-none">
+            <CardContent className="space-y-4 p-5">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Compass className="size-4 text-accent" />
+                Browsing tip
+              </div>
+              <p className="text-sm leading-6 text-muted-foreground">
+                Use this page to scan one category first, then continue by page
+                for deeper articles.
+              </p>
+              <Badge variant="secondary">
+                Page {pageNo} / {Math.max(totalPage, 1)}
+              </Badge>
+            </CardContent>
+          </Card>
+
+          <LatestPostsSidebar posts={latestPosts ?? []} language="en" />
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+export default function EnglishCategoryPage(props: {
+  params: Promise<{ category: string; pageNo: string }>;
+}) {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <CategoryPageContent paramsPromise={props.params} />
+    </Suspense>
+  );
+}

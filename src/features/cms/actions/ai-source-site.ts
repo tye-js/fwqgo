@@ -13,13 +13,22 @@ import {
   categories,
 } from "@fwqgo/db/schema";
 
+function isHttpUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 const sourceSiteSchema = z.object({
   name: z.string().trim().min(1, "请输入站点名称").max(120),
   siteUrl: z
     .string()
     .trim()
     .url("请输入有效站点 URL")
-    .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+    .refine(isHttpUrl, {
       message: "站点 URL 只支持 http 或 https",
     }),
   feedUrl: z.preprocess(
@@ -27,7 +36,7 @@ const sourceSiteSchema = z.object({
     z
       .string()
       .url("请输入有效 Feed URL")
-      .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+      .refine(isHttpUrl, {
         message: "Feed URL 只支持 http 或 https",
       })
       .nullable(),

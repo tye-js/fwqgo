@@ -13,8 +13,15 @@ type LatestPostItem = {
   createdAt: Date;
 };
 
-export function LatestPostsSidebar({ posts }: { posts: LatestPostItem[] }) {
+export function LatestPostsSidebar({
+  posts,
+  language = "zh",
+}: {
+  posts: LatestPostItem[];
+  language?: "zh" | "en";
+}) {
   if (posts.length === 0) return null;
+  const postPrefix = language === "en" ? "/en/fwq/posts" : "/fwq/posts";
 
   const featuredPost = posts[0];
   if (!featuredPost) return null;
@@ -27,20 +34,20 @@ export function LatestPostsSidebar({ posts }: { posts: LatestPostItem[] }) {
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <Newspaper className="size-4 text-accent" />
-              最新文章
+              {language === "en" ? "Latest articles" : "最新文章"}
             </div>
             <Link
-              href="/"
+              href={language === "en" ? "/en" : "/"}
               prefetch
               className="inline-flex min-h-9 items-center rounded-md text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              查看更多
+              {language === "en" ? "View more" : "查看更多"}
             </Link>
           </div>
         </div>
 
         <Link
-          href={`/fwq/posts/${featuredPost.slug}`}
+          href={`${postPrefix}/${featuredPost.slug}`}
           prefetch
           className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
@@ -52,7 +59,7 @@ export function LatestPostsSidebar({ posts }: { posts: LatestPostItem[] }) {
             />
             <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/45 to-transparent" />
             <span className="absolute left-4 top-4 rounded-full bg-background/90 px-2.5 py-1 text-xs font-medium text-foreground shadow-sm">
-              最新
+              {language === "en" ? "New" : "最新"}
             </span>
           </div>
           <div className="space-y-2 border-b border-border/70 p-5">
@@ -70,7 +77,7 @@ export function LatestPostsSidebar({ posts }: { posts: LatestPostItem[] }) {
           {compactPosts.map((post, index) => (
             <Link
               key={post.id}
-              href={`/fwq/posts/${post.slug}`}
+              href={`${postPrefix}/${post.slug}`}
               prefetch
               className="group grid min-h-16 grid-cols-[28px_1fr_auto] items-center gap-3 px-5 py-3 transition-colors hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >

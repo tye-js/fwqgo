@@ -15,8 +15,22 @@ import {
   isNotNull,
 } from "drizzle-orm";
 
+type PublicLanguage = "zh" | "en";
+
+function publishedPostCondition(language: PublicLanguage = "zh") {
+  return and(eq(posts.published, true), eq(posts.language, language));
+}
+
 function publishedChinesePostCondition() {
-  return and(eq(posts.published, true), eq(posts.language, "zh"));
+  return publishedPostCondition("zh");
+}
+
+function localizedTagFields() {
+  return {
+    id: tags.id,
+    name: sql<string>`coalesce(nullif(${tags.enName}, ''), ${tags.name})`,
+    slug: sql<string>`coalesce(nullif(${tags.enSlug}, ''), ${tags.slug})`,
+  };
 }
 
 async function getPublishedEnglishSlugForSourcePost(postId: number) {
@@ -43,21 +57,25 @@ function getLegacyPublishedEnglishSlug(post: {
   return post.enSlug && post.enContent ? post.enSlug : null;
 }
 
-export async function getPublishedPostCountByCategoryId(categoryId: number) {
+export async function getPublishedPostCountByCategoryId(
+  categoryId: number,
+  language: PublicLanguage = "zh",
+) {
   const [result] = await readDb
     .select({ count: count() })
     .from(posts)
-    .where(
-      and(eq(posts.categoryId, categoryId), publishedChinesePostCondition()),
-    );
+    .where(and(eq(posts.categoryId, categoryId), publishedPostCondition(language)));
 
   return { data: result?.count ?? 0 };
 }
 
-export async function getPostsWithTags(limit = 15) {
+export async function getPostsWithTags(
+  limit = 15,
+  language: PublicLanguage = "zh",
+) {
   try {
     const postsData = await readDb.query.posts.findMany({
-      where: publishedChinesePostCondition(),
+      where: publishedPostCondition(language),
       orderBy: desc(posts.createdAt),
       limit,
       with: {
@@ -83,16 +101,20 @@ export async function getPostsWithTags(limit = 15) {
   }
 }
 
-export async function getHomepagePostsWithTags() {
+export async function getHomepagePostsWithTags(
+  language: PublicLanguage = "zh",
+) {
   try {
-    return await getPostsWithTags(40);
+    const { data, error } = await getPostsWithTags(40, language);
+    if (error || !data) return { data: [], error };
+    return { data: await attachTagsToPosts(data, language) };
   } catch (error) {
     console.error("Failed to load homepage posts:", error);
     return { data: [] };
   }
 }
 
-export async function getHomepageSidebarData() {
+export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
   const promotedPostsPromise = (async () => {
     try {
       return await readDb
@@ -107,7 +129,12 @@ export async function getHomepageSidebarData() {
         })
         .from(homepagePromotedPosts)
         .innerJoin(posts, eq(homepagePromotedPosts.postId, posts.id))
-        .where(publishedChinesePostCondition())
+        .where(
+          and(
+            eq(homepagePromotedPosts.language, language),
+            publishedPostCondition(language),
+          ),
+        )
         .orderBy(
           asc(homepagePromotedPosts.sortOrder),
           desc(homepagePromotedPosts.createdAt),
@@ -132,7 +159,7 @@ export async function getHomepageSidebarData() {
           createdAt: posts.createdAt,
         })
         .from(posts)
-        .where(publishedChinesePostCondition())
+        .where(publishedPostCondition(language))
         .orderBy(desc(posts.views), desc(posts.createdAt))
         .limit(6);
     } catch (error) {
@@ -159,7 +186,10 @@ export async function getHomepageSidebarData() {
   };
 }
 
-export async function getPostByCategoryId(id: number) {
+export async function getPostByCategoryId(
+  id: number,
+  language: PublicLanguage = "zh",
+) {
   try {
     const postsData = await readDb
       .select({
@@ -171,10 +201,10 @@ export async function getPostByCategoryId(id: number) {
         createdAt: posts.createdAt,
       })
       .from(posts)
-      .where(and(eq(posts.categoryId, id), publishedChinesePostCondition()))
+      .where(and(eq(posts.categoryId, id), publishedPostCondition(language)))
       .orderBy(desc(posts.createdAt));
 
-    const postsWithTags = await attachTagsToPosts(postsData);
+    const postsWithTags = await attachTagsToPosts(postsData, language);
 
     return { data: postsWithTags };
   } catch (error) {
@@ -435,9 +465,7 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
     const postTagsData = await readDb
       .select({
         tag: {
-          id: tags.id,
-          name: tags.name,
-          slug: tags.slug,
+          ...localizedTagFields(),
         },
       })
       .from(postTags)
@@ -459,7 +487,11 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
   }
 }
 
-export async function getPostsWithTagsByCategoryId(id: number, pageNo: number) {
+export async function getPostsWithTagsByCategoryId(
+  id: number,
+  pageNo: number,
+  language: PublicLanguage = "zh",
+) {
   try {
     const postsData = await readDb
       .select({
@@ -471,12 +503,12 @@ export async function getPostsWithTagsByCategoryId(id: number, pageNo: number) {
         slug: posts.slug,
       })
       .from(posts)
-      .where(and(eq(posts.categoryId, id), publishedChinesePostCondition()))
+      .where(and(eq(posts.categoryId, id), publishedPostCondition(language)))
       .orderBy(desc(posts.createdAt))
       .offset((pageNo - 1) * 10)
       .limit(10);
 
-    const postsWithTags = await attachTagsToPosts(postsData);
+    const postsWithTags = await attachTagsToPosts(postsData, language);
 
     return { data: postsWithTags };
   } catch (error) {
@@ -507,7 +539,9 @@ export async function getPostsByPostId(id: number) {
   }
 }
 
-export async function getLatestPostsForSidebar() {
+export async function getLatestPostsForSidebar(
+  language: PublicLanguage = "zh",
+) {
   const postsData = await readDb
     .select({
       id: posts.id,
@@ -517,7 +551,7 @@ export async function getLatestPostsForSidebar() {
       createdAt: posts.createdAt,
     })
     .from(posts)
-    .where(publishedChinesePostCondition())
+    .where(publishedPostCondition(language))
     .orderBy(desc(posts.createdAt))
     .limit(5);
 
