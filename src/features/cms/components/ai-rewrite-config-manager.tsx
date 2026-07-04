@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useState } from "react";
+import { useRouter } from "next/navigation";
 import { BrainCircuit, Plus, Trash2 } from "lucide-react";
 
 import {
@@ -323,6 +324,7 @@ function ConfigForm({
 }
 
 export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
+  const router = useRouter();
   const [showCreate, setShowCreate] = useState(configs.length === 0);
   const [editId, setEditId] = useState<number | null>(null);
 
@@ -338,6 +340,7 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
           "后续任务不会再使用这套配置",
         ]),
       });
+      router.refresh();
     } catch (error) {
       notifyError({
         title: "AI 改写配置删除失败",
@@ -361,7 +364,14 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
         </Button>
       </div>
 
-      {showCreate ? <ConfigForm onDone={() => setShowCreate(false)} /> : null}
+      {showCreate ? (
+        <ConfigForm
+          onDone={() => {
+            setShowCreate(false);
+            router.refresh();
+          }}
+        />
+      ) : null}
 
       <Table>
         <TableHeader>
@@ -424,7 +434,10 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
                   <TableCell colSpan={7} className="bg-muted/20">
                     <ConfigForm
                       config={config}
-                      onDone={() => setEditId(null)}
+                      onDone={() => {
+                        setEditId(null);
+                        router.refresh();
+                      }}
                     />
                   </TableCell>
                 </TableRow>

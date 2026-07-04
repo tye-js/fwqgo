@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ImagePlus, Plus, Trash2 } from "lucide-react";
 
 import {
@@ -29,9 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  defaultCoverPromptTemplate,
-} from "@fwqgo/core/image-generation-prompts";
+import { defaultCoverPromptTemplate } from "@fwqgo/core/image-generation-prompts";
 import {
   describeAdminResult,
   notifyError,
@@ -266,6 +265,7 @@ export function ImageGenerationConfigManager({
 }: {
   configs: Config[];
 }) {
+  const router = useRouter();
   const [showCreate, setShowCreate] = useState(configs.length === 0);
   const [editId, setEditId] = useState<number | null>(null);
 
@@ -279,6 +279,7 @@ export function ImageGenerationConfigManager({
         title: "生图配置已删除",
         description: describeAdminResult([config?.name, config?.model]),
       });
+      router.refresh();
     } catch (error) {
       notifyError({
         title: "生图配置删除失败",
@@ -304,7 +305,14 @@ export function ImageGenerationConfigManager({
         </Button>
       </div>
 
-      {showCreate ? <ConfigForm onDone={() => setShowCreate(false)} /> : null}
+      {showCreate ? (
+        <ConfigForm
+          onDone={() => {
+            setShowCreate(false);
+            router.refresh();
+          }}
+        />
+      ) : null}
 
       <div className="overflow-hidden rounded-lg border border-border/70">
         <Table>
@@ -368,7 +376,10 @@ export function ImageGenerationConfigManager({
                     <TableCell colSpan={7}>
                       <ConfigForm
                         config={config}
-                        onDone={() => setEditId(null)}
+                        onDone={() => {
+                          setEditId(null);
+                          router.refresh();
+                        }}
                       />
                     </TableCell>
                   </TableRow>
