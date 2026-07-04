@@ -38,6 +38,7 @@ export interface ScrapedArticle {
   content: string;
   description: string;
   htmlContent: string;
+  cleanedHtmlContent: string;
   keywords: string[];
   recommendTagName: string;
   tagsName: string[];
@@ -170,6 +171,7 @@ function createEmptyDiagnostics(input: {
 function createArticle(input: {
   title?: string;
   htmlContent?: string;
+  cleanedHtmlContent?: string;
   description?: string;
   keywords?: string[];
   tagsName?: string[];
@@ -184,6 +186,7 @@ function createArticle(input: {
   return {
     title: input.title ?? "",
     htmlContent,
+    cleanedHtmlContent: input.cleanedHtmlContent ?? htmlContent,
     content: htmlContent,
     description: input.description ?? "",
     keywords: input.keywords ?? [],
@@ -489,6 +492,7 @@ async function scrapeByRule(input: {
         diagnostics.rewriteOutputLength = repairedMarkdown.length;
         return createArticle({
           htmlContent: repairedMarkdown,
+          cleanedHtmlContent: rawHtml,
           title: rewritten.title,
           description: rewritten.description,
           keywords: rewritten.keywords,
@@ -515,6 +519,7 @@ async function scrapeByRule(input: {
     return createArticle({
       title: scrapedTitle,
       htmlContent: rawHtml,
+      cleanedHtmlContent: rawHtml,
       description: scrapedDescription,
       tagsName: collectTags(page$, input.rule.tagSelector),
       diagnostics,
