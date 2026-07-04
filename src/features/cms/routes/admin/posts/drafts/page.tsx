@@ -1,7 +1,12 @@
 import { Suspense } from "react";
 import Link from "next/link";
 
-import { getDraftPostCount, getDraftPosts } from "@/features/cms/data/post";
+import {
+  getDraftPostCount,
+  getDraftPosts,
+  normalizePostLanguageFilter,
+  type PostLanguageFilter,
+} from "@/features/cms/data/post";
 import { AdminLoading } from "@/features/cms/components/admin-loading";
 import {
   AdminPageShell,
@@ -17,20 +22,54 @@ function parsePageNo(value: string | undefined) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
 }
 
+function languageFilterHref(language: PostLanguageFilter) {
+  return language === "all"
+    ? "/posts/drafts"
+    : `/posts/drafts?language=${language}`;
+}
+
+function LanguageFilter({ value }: { value: PostLanguageFilter }) {
+  const items: Array<{ value: PostLanguageFilter; label: string }> = [
+    { value: "all", label: "全部语言" },
+    { value: "zh", label: "中文" },
+    { value: "en", label: "英文" },
+  ];
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {items.map((item) => (
+        <Button
+          key={item.value}
+          asChild
+          size="sm"
+          variant={value === item.value ? "default" : "outline"}
+        >
+          <Link href={languageFilterHref(item.value)}>{item.label}</Link>
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 async function DraftListWrapper({
   searchParamsPromise,
 }: {
-  searchParamsPromise: Promise<{ pageNo?: string }>;
+  searchParamsPromise: Promise<{ pageNo?: string; language?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
   const pageNo = parsePageNo(searchParams.pageNo);
-  const { data: posts, error } = await getDraftPosts({ pageNo, pageSize: 15 });
+  const language = normalizePostLanguageFilter(searchParams.language);
+  const { data: posts, error } = await getDraftPosts({
+    pageNo,
+    pageSize: 15,
+    language,
+  });
 
   if (error || !posts) {
     return <div>获取草稿列表失败</div>;
   }
 
-  const { data: draftCount } = await getDraftPostCount();
+  const { data: draftCount } = await getDraftPostCount(language);
   const totalPage = Math.ceil((draftCount ?? 0) / 15);
 
   return (
@@ -67,6 +106,9 @@ async function DraftListWrapper({
         title="待编辑草稿"
         description="可以继续编辑标题、封面、slug 和发布状态；点击 slug 进入完整编辑页。"
       >
+        <div className="mb-4">
+          <LanguageFilter value={language} />
+        </div>
         <PostList
           posts={posts}
           editBasePath="/posts/edit"
@@ -79,7 +121,7 @@ async function DraftListWrapper({
 }
 
 export default function DraftsPage(props: {
-  searchParams: Promise<{ pageNo?: string }>;
+  searchParams: Promise<{ pageNo?: string; language?: string }>;
 }) {
   return (
     <Suspense

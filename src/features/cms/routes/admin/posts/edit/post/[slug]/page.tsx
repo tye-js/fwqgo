@@ -1,14 +1,15 @@
 import { getPostBySlug } from "@/features/cms/data/post";
 import EditPost from "@/components/endpoint/edit-post/edit-post";
 import { getLeafCategories } from "@/features/shared/data/category";
-import { AdminPageShell, AdminSectionCard } from "@/features/cms/components/admin-page-shell";
+import {
+  AdminPageShell,
+  AdminSectionCard,
+} from "@/features/cms/components/admin-page-shell";
 import { contentToArticleMarkdown } from "@fwqgo/core/content";
 
-export default async function EditPostPage(
-  props: {
-    params: Promise<{ slug: string }>;
-  }
-) {
+export default async function EditPostPage(props: {
+  params: Promise<{ slug: string }>;
+}) {
   const params = await props.params;
   const { slug } = params;
   const { data: post, error } = await getPostBySlug(slug);
@@ -48,6 +49,7 @@ export default async function EditPostPage(
         postMeta={{
           title: post.title,
           slug,
+          language: post.language,
         }}
       />
     </>

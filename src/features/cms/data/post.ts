@@ -1,21 +1,20 @@
 import { db } from "@fwqgo/db";
 import { requireAdminSession } from "@fwqgo/auth/session";
-import {
-  posts,
-  categories,
-  postTags,
-  tags,
-} from "@fwqgo/db/schema";
-import {
-  eq,
-  desc,
-  asc,
-  gte,
-  and,
-  count,
-  sql,
-} from "drizzle-orm";
+import { posts, categories, postTags, tags } from "@fwqgo/db/schema";
+import { eq, desc, asc, gte, and, count, sql } from "drizzle-orm";
 import { decodeSlug } from "@fwqgo/core/utils";
+
+export type PostLanguageFilter = "all" | "zh" | "en";
+
+export function normalizePostLanguageFilter(
+  value: string | undefined,
+): PostLanguageFilter {
+  return value === "zh" || value === "en" ? value : "all";
+}
+
+function postLanguageCondition(language: PostLanguageFilter) {
+  return language === "all" ? sql`true` : eq(posts.language, language);
+}
 
 function normalizePagination({
   pageNo,
@@ -61,6 +60,8 @@ export async function getPostBySlug(slug: string) {
         enDescription: posts.enDescription,
         enImgUrl: posts.enImgUrl,
         enUpdatedAt: posts.enUpdatedAt,
+        language: posts.language,
+        translationSourcePostId: posts.translationSourcePostId,
         title: posts.title,
         slug: posts.slug,
       })
@@ -93,9 +94,11 @@ export async function getPostBySlug(slug: string) {
 export async function getPosts({
   pageNo = 1,
   pageSize = 10,
+  language = "all",
 }: {
   pageNo?: number;
   pageSize?: number;
+  language?: PostLanguageFilter;
 }) {
   try {
     await requireAdminSession();
@@ -113,8 +116,10 @@ export async function getPosts({
         slug: posts.slug,
         imgUrl: posts.imgUrl,
         published: posts.published,
+        language: posts.language,
       })
       .from(posts)
+      .where(postLanguageCondition(language))
       .orderBy(desc(posts.createdAt))
       .offset(pagination.offset)
       .limit(pagination.pageSize);
@@ -128,9 +133,11 @@ export async function getPosts({
 export async function getDraftPosts({
   pageNo = 1,
   pageSize = 15,
+  language = "all",
 }: {
   pageNo?: number;
   pageSize?: number;
+  language?: PostLanguageFilter;
 }) {
   try {
     await requireAdminSession();
@@ -148,9 +155,10 @@ export async function getDraftPosts({
         slug: posts.slug,
         imgUrl: posts.imgUrl,
         published: posts.published,
+        language: posts.language,
       })
       .from(posts)
-      .where(eq(posts.published, false))
+      .where(and(eq(posts.published, false), postLanguageCondition(language)))
       .orderBy(desc(posts.createdAt))
       .offset(pagination.offset)
       .limit(pagination.pageSize);
@@ -161,20 +169,23 @@ export async function getDraftPosts({
   }
 }
 
-export async function getDraftPostCount() {
+export async function getDraftPostCount(language: PostLanguageFilter = "all") {
   await requireAdminSession();
 
   const [result] = await db
     .select({ count: count() })
     .from(posts)
-    .where(eq(posts.published, false));
+    .where(and(eq(posts.published, false), postLanguageCondition(language)));
   return { data: result?.count ?? 0 };
 }
 
-export async function getPostCount() {
+export async function getPostCount(language: PostLanguageFilter = "all") {
   await requireAdminSession();
 
-  const [result] = await db.select({ count: count() }).from(posts);
+  const [result] = await db
+    .select({ count: count() })
+    .from(posts)
+    .where(postLanguageCondition(language));
   return { data: result?.count ?? 0 };
 }
 
@@ -197,14 +208,8 @@ export async function getDashboardStats() {
     recentPosts,
     topCategories,
   ] = await Promise.all([
-    db
-      .select({ count: count() })
-      .from(posts)
-      .where(eq(posts.published, true)),
-    db
-      .select({ count: count() })
-      .from(posts)
-      .where(eq(posts.published, false)),
+    db.select({ count: count() }).from(posts).where(eq(posts.published, true)),
+    db.select({ count: count() }).from(posts).where(eq(posts.published, false)),
     db
       .select({ count: count() })
       .from(posts)
@@ -258,7 +263,11 @@ export async function getDashboardStats() {
         and(eq(posts.categoryId, categories.id), eq(posts.published, true)),
       )
       .groupBy(categories.id, categories.name)
-      .orderBy(desc(publishedCountExpr), desc(totalViewsExpr), asc(categories.id))
+      .orderBy(
+        desc(publishedCountExpr),
+        desc(totalViewsExpr),
+        asc(categories.id),
+      )
       .limit(5),
   ]);
 

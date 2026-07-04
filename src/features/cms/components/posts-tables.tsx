@@ -51,7 +51,7 @@ import { type posts } from "@fwqgo/db/schema";
 type Post = typeof posts.$inferSelect;
 type PostListProp = Pick<
   Post,
-  "id" | "title" | "published" | "imgUrl" | "slug"
+  "id" | "title" | "published" | "imgUrl" | "slug" | "language"
 >;
 type PostStatusFilter = "all" | "published" | "draft";
 type ImportStats = {
@@ -63,6 +63,10 @@ type ImportStats = {
 
 function describeImportStats(data: ImportStats) {
   return `扫描 ${data.scannedPosts} 篇，提取 ${data.extracted} 条，新增 ${data.inserted} 条，跳过 ${data.skipped} 条`;
+}
+
+function languageLabel(value: string) {
+  return value === "en" ? "英文" : "中文";
 }
 
 export function PostList({
@@ -330,6 +334,9 @@ export function PostList({
                       <span className="rounded-sm bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                         ID {post.id}
                       </span>
+                      <span className="rounded-sm bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                        {languageLabel(post.language)}
+                      </span>
                       <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                         {post.published ? (
                           <CircleCheck className="size-3.5 text-primary" />
@@ -493,6 +500,7 @@ export function PostList({
                     />
                   </TableHead>
                   <TableHead className="w-[64px]">ID</TableHead>
+                  <TableHead className="text-nowrap">语言</TableHead>
                   <TableHead className="text-nowrap">标题</TableHead>
                   <TableHead className="text-nowrap">slug</TableHead>
                   <TableHead className="text-nowrap text-center">
@@ -516,6 +524,11 @@ export function PostList({
                     </TableCell>
                     <TableCell className="tabular-nums text-muted-foreground">
                       {post.id}
+                    </TableCell>
+                    <TableCell className="text-nowrap">
+                      <span className="rounded-sm bg-muted px-2 py-1 text-xs text-muted-foreground">
+                        {languageLabel(post.language)}
+                      </span>
                     </TableCell>
                     <TableCell className="min-w-[220px] max-w-[360px]">
                       {editPostId === post.id ? (

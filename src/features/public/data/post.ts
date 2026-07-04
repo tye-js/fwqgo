@@ -1,12 +1,7 @@
 import { readDb } from "@fwqgo/db";
 import { decodeSlug } from "@fwqgo/core/utils";
 import { attachTagsToPosts } from "@fwqgo/db/post-tags";
-import {
-  posts,
-  tags,
-  postTags,
-  homepagePromotedPosts,
-} from "@fwqgo/db/schema";
+import { posts, tags, postTags, homepagePromotedPosts } from "@fwqgo/db/schema";
 import {
   eq,
   desc,
@@ -16,13 +11,45 @@ import {
   and,
   not,
   count,
+  sql,
+  isNotNull,
 } from "drizzle-orm";
+
+function publishedChinesePostCondition() {
+  return and(eq(posts.published, true), eq(posts.language, "zh"));
+}
+
+async function getPublishedEnglishSlugForSourcePost(postId: number) {
+  const [englishPost] = await readDb
+    .select({ slug: posts.slug })
+    .from(posts)
+    .where(
+      and(
+        eq(posts.translationSourcePostId, postId),
+        eq(posts.language, "en"),
+        eq(posts.published, true),
+      ),
+    )
+    .orderBy(desc(posts.updatedAt), desc(posts.createdAt))
+    .limit(1);
+
+  return englishPost?.slug ?? null;
+}
+
+function getLegacyPublishedEnglishSlug(post: {
+  enSlug: string | null;
+  enContent?: string | null;
+}) {
+  return post.enSlug && post.enContent ? post.enSlug : null;
+}
 
 export async function getPublishedPostCountByCategoryId(categoryId: number) {
   const [result] = await readDb
     .select({ count: count() })
     .from(posts)
-    .where(and(eq(posts.categoryId, categoryId), eq(posts.published, true)));
+    .where(
+      and(eq(posts.categoryId, categoryId), publishedChinesePostCondition()),
+    );
 
   return { data: result?.count ?? 0 };
 }
@@ -30,7 +57,7 @@ export async function getPublishedPostCountByCategoryId(categoryId: number) {
 export async function getPostsWithTags(limit = 15) {
   try {
     const postsData = await readDb.query.posts.findMany({
-      where: eq(posts.published, true),
+      where: publishedChinesePostCondition(),
       orderBy: desc(posts.createdAt),
       limit,
       with: {
@@ -80,7 +107,7 @@ export async function getHomepageSidebarData() {
         })
         .from(homepagePromotedPosts)
         .innerJoin(posts, eq(homepagePromotedPosts.postId, posts.id))
-        .where(eq(posts.published, true))
+        .where(publishedChinesePostCondition())
         .orderBy(
           asc(homepagePromotedPosts.sortOrder),
           desc(homepagePromotedPosts.createdAt),
@@ -105,7 +132,7 @@ export async function getHomepageSidebarData() {
           createdAt: posts.createdAt,
         })
         .from(posts)
-        .where(eq(posts.published, true))
+        .where(publishedChinesePostCondition())
         .orderBy(desc(posts.views), desc(posts.createdAt))
         .limit(6);
     } catch (error) {
@@ -144,7 +171,7 @@ export async function getPostByCategoryId(id: number) {
         createdAt: posts.createdAt,
       })
       .from(posts)
-      .where(and(eq(posts.categoryId, id), eq(posts.published, true)))
+      .where(and(eq(posts.categoryId, id), publishedChinesePostCondition()))
       .orderBy(desc(posts.createdAt));
 
     const postsWithTags = await attachTagsToPosts(postsData);
@@ -179,27 +206,35 @@ export async function getPostBySlug(slug: string) {
         views: posts.views,
       })
       .from(posts)
-      .where(and(eq(posts.slug, decodedSlug), eq(posts.published, true)))
+      .where(and(eq(posts.slug, decodedSlug), publishedChinesePostCondition()))
       .limit(1);
 
     if (!post) {
       return { data: null };
     }
 
-    // 获取文章的标签
-    const postTagsData = await readDb
-      .select({
-        tag: {
-          id: tags.id,
-          name: tags.name,
-          slug: tags.slug,
-        },
-      })
-      .from(postTags)
-      .innerJoin(tags, eq(postTags.tagId, tags.id))
-      .where(eq(postTags.postId, post.id));
+    const [postTagsData, publishedEnglishSlug] = await Promise.all([
+      readDb
+        .select({
+          tag: {
+            id: tags.id,
+            name: tags.name,
+            slug: tags.slug,
+          },
+        })
+        .from(postTags)
+        .innerJoin(tags, eq(postTags.tagId, tags.id))
+        .where(eq(postTags.postId, post.id)),
+      getPublishedEnglishSlugForSourcePost(post.id),
+    ]);
 
-    return { data: { ...post, tags: postTagsData } };
+    return {
+      data: {
+        ...post,
+        enSlug: publishedEnglishSlug ?? getLegacyPublishedEnglishSlug(post),
+        tags: postTagsData,
+      },
+    };
   } catch (error) {
     return { error: "通过slug获取文章失败", message: error };
   }
@@ -224,7 +259,7 @@ export async function getRecommendedPosts(
         and(
           eq(posts.recommendedTagId, tagId),
           not(eq(posts.id, currentPostId)),
-          eq(posts.published, true),
+          publishedChinesePostCondition(),
         ),
       )
       .orderBy(desc(posts.createdAt))
@@ -259,7 +294,7 @@ export async function getPostWithTagsBySlug(slug: string) {
       })
       .from(posts)
       .leftJoin(tags, eq(posts.recommendedTagId, tags.id))
-      .where(and(eq(posts.slug, decodedSlug), eq(posts.published, true)))
+      .where(and(eq(posts.slug, decodedSlug), publishedChinesePostCondition()))
       .limit(1);
 
     if (!postRow) {
@@ -284,16 +319,22 @@ export async function getPostWithTagsBySlug(slug: string) {
           (recommended) => recommended.data,
         )
       : Promise.resolve(null);
+    const publishedEnglishSlugPromise = getPublishedEnglishSlugForSourcePost(
+      post.id,
+    );
 
-    const [postTagsData, recommendedPosts] = await Promise.all([
-      postTagsPromise,
-      recommendedPostsPromise,
-    ]);
+    const [postTagsData, recommendedPosts, publishedEnglishSlug] =
+      await Promise.all([
+        postTagsPromise,
+        recommendedPostsPromise,
+        publishedEnglishSlugPromise,
+      ]);
 
     return {
       data: {
         post: {
           ...post,
+          enSlug: publishedEnglishSlug ?? getLegacyPublishedEnglishSlug(post),
           recommendedTagSlug,
           tags: postTagsData,
         },
@@ -308,30 +349,88 @@ export async function getPostWithTagsBySlug(slug: string) {
 export async function getEnglishPostWithTagsBySlug(slug: string) {
   try {
     const decodedSlug = decodeSlug(slug);
-    const [postRow] = await readDb
+    const [englishPostRow] = await readDb
       .select({
         id: posts.id,
-        title: posts.enTitle,
+        title: posts.title,
         slug: posts.slug,
-        enSlug: posts.enSlug,
-        description: posts.enDescription,
-        keywords: posts.enKeywords,
-        imgUrl: posts.enImgUrl,
+        enSlug: posts.slug,
+        description: posts.description,
+        keywords: posts.keywords,
+        imgUrl: posts.imgUrl,
         fallbackImgUrl: posts.imgUrl,
-        content: posts.enContent,
+        content: posts.content,
         createdAt: posts.createdAt,
-        updatedAt: posts.enUpdatedAt,
+        updatedAt: posts.updatedAt,
         views: posts.views,
         recommendedTagId: posts.recommendedTagId,
         recommendedTagName: posts.recommendedTagName,
+        language: posts.language,
+        translationSourcePostId: posts.translationSourcePostId,
       })
       .from(posts)
-      .where(and(eq(posts.enSlug, decodedSlug), eq(posts.published, true)))
+      .where(
+        and(
+          eq(posts.slug, decodedSlug),
+          eq(posts.language, "en"),
+          eq(posts.published, true),
+        ),
+      )
       .limit(1);
+
+    const [legacyPostRow] = englishPostRow
+      ? []
+      : await readDb
+          .select({
+            id: posts.id,
+            title: posts.enTitle,
+            slug: posts.slug,
+            enSlug: posts.enSlug,
+            description: posts.enDescription,
+            keywords: posts.enKeywords,
+            imgUrl: posts.enImgUrl,
+            fallbackImgUrl: posts.imgUrl,
+            content: posts.enContent,
+            createdAt: posts.createdAt,
+            updatedAt: posts.enUpdatedAt,
+            views: posts.views,
+            recommendedTagId: posts.recommendedTagId,
+            recommendedTagName: posts.recommendedTagName,
+            language: posts.language,
+            translationSourcePostId: sql<number | null>`null`,
+          })
+          .from(posts)
+          .where(
+            and(
+              eq(posts.enSlug, decodedSlug),
+              eq(posts.language, "zh"),
+              eq(posts.published, true),
+              isNotNull(posts.enContent),
+            ),
+          )
+          .limit(1);
+    const postRow = englishPostRow ?? legacyPostRow;
 
     if (!postRow?.title || !postRow.content || !postRow.enSlug) {
       return { data: { post: null } };
     }
+
+    const [sourcePostRow] = englishPostRow?.translationSourcePostId
+      ? await readDb
+          .select({ slug: posts.slug })
+          .from(posts)
+          .where(
+            and(
+              eq(posts.id, englishPostRow.translationSourcePostId),
+              eq(posts.language, "zh"),
+              eq(posts.published, true),
+            ),
+          )
+          .limit(1)
+      : [];
+    const chineseSlug = englishPostRow
+      ? (sourcePostRow?.slug ?? null)
+      : postRow.slug;
 
     const postTagsData = await readDb
       .select({
@@ -350,6 +449,7 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
         post: {
           ...postRow,
           imgUrl: postRow.imgUrl ?? postRow.fallbackImgUrl,
+          chineseSlug,
           tags: postTagsData,
         },
       },
@@ -371,7 +471,7 @@ export async function getPostsWithTagsByCategoryId(id: number, pageNo: number) {
         slug: posts.slug,
       })
       .from(posts)
-      .where(and(eq(posts.categoryId, id), eq(posts.published, true)))
+      .where(and(eq(posts.categoryId, id), publishedChinesePostCondition()))
       .orderBy(desc(posts.createdAt))
       .offset((pageNo - 1) * 10)
       .limit(10);
@@ -390,13 +490,13 @@ export async function getPostsByPostId(id: number) {
       readDb
         .select()
         .from(posts)
-        .where(and(lt(posts.id, id), eq(posts.published, true)))
+        .where(and(lt(posts.id, id), publishedChinesePostCondition()))
         .orderBy(desc(posts.id))
         .limit(1),
       readDb
         .select()
         .from(posts)
-        .where(and(gt(posts.id, id), eq(posts.published, true)))
+        .where(and(gt(posts.id, id), publishedChinesePostCondition()))
         .orderBy(asc(posts.id))
         .limit(1),
     ]);
@@ -417,7 +517,7 @@ export async function getLatestPostsForSidebar() {
       createdAt: posts.createdAt,
     })
     .from(posts)
-    .where(eq(posts.published, true))
+    .where(publishedChinesePostCondition())
     .orderBy(desc(posts.createdAt))
     .limit(5);
 

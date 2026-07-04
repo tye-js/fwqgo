@@ -100,10 +100,6 @@ export function getAiRewriteContentLimit(maxTokens: number) {
     : 8192;
 }
 
-function estimateEnglishTokens(text: string) {
-  return Math.ceil(text.length / 4);
-}
-
 function cleanJsonText(text: string) {
   return text
     .replace(/^```(?:json)?/i, "")
@@ -212,7 +208,7 @@ function buildEnglishContentPrompt(input: {
 }) {
   return `You are an English editor for a VPS/server deals website.
 
-Translate and localize the Chinese hosting deal article from compact Markdown into English Markdown content.
+Translate and localize the already rewritten Chinese hosting deal article from compact Markdown into English Markdown content.
 
 Writing style:
 ${input.stylePrompt}
@@ -234,7 +230,7 @@ ${input.description ?? ""}
 Chinese keywords:
 ${input.keywords ?? ""}
 
-Chinese article Markdown:
+Rewritten Chinese article Markdown:
 ${input.markdownContent.slice(0, input.maxMarkdownLength)}`;
 }
 
@@ -817,25 +813,18 @@ export async function generateEnglishArticleContent(
   let enContent = cleanMarkdownText(firstResult.text);
   let finishReason = firstResult.finishReason;
   let continuationAttempt = 0;
-  let usedCompletionTokens =
-    firstResult.completionTokens ?? estimateEnglishTokens(enContent);
 
   while (
     finishReason === "length" &&
     continuationAttempt < MAX_ENGLISH_CONTINUATION_ATTEMPTS
   ) {
-    const remainingTokens = config.maxTokens - usedCompletionTokens;
-    if (remainingTokens <= 0) {
-      break;
-    }
-
     continuationAttempt += 1;
 
     const continuationResult = await requestChatCompletionResult({
       config,
       endpoint,
       timeoutMs,
-      maxTokens: remainingTokens,
+      maxTokens: config.maxTokens,
       stepName: `英文正文续写 ${continuationAttempt}`,
       systemPrompt:
         "You are a professional English editor. Output only the English Markdown body continuation.",
@@ -848,9 +837,6 @@ export async function generateEnglishArticleContent(
     const continuation = cleanMarkdownText(continuationResult.text);
 
     enContent = appendMarkdownContinuation(enContent, continuation);
-    usedCompletionTokens +=
-      continuationResult.completionTokens ??
-      estimateEnglishTokens(continuation);
     finishReason =
       continuation.length > 0 ? continuationResult.finishReason : null;
 

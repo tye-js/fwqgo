@@ -60,6 +60,8 @@ export interface PostEditFormData {
     | "enDescription"
     | "enImgUrl"
     | "enUpdatedAt"
+    | "language"
+    | "translationSourcePostId"
   >;
   tags: TagMain[];
 }

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import * as cheerio from "cheerio";
 
 import RewriteArticle from "@/langchain/rewrite-article";
@@ -11,11 +11,13 @@ import { slugify } from "@fwqgo/core/utils";
 import {
   createPostRecordInTransaction,
   getErrorMessage,
+  prepareArticleContentForStorage,
 } from "@/server/posts/create-post-record";
 import { db } from "@fwqgo/db";
 import {
   aiRewriteTasks,
   aiTaskSteps,
+  postTags,
   posts,
   sourceMaterials,
 } from "@fwqgo/db/schema";
@@ -228,7 +230,10 @@ async function getTaskAiInputMaxLength(styleId?: number | null) {
     : MAX_AI_MARKDOWN_INPUT_LENGTH;
 }
 
-async function getUniqueEnglishSlug(baseSlug: string, postId: number) {
+async function getUniqueEnglishArticleSlug(
+  baseSlug: string,
+  excludePostId?: number,
+) {
   const normalizedBaseSlug = slugify(baseSlug) || "server-deal";
 
   for (let index = 0; index < 20; index += 1) {
@@ -237,7 +242,12 @@ async function getUniqueEnglishSlug(baseSlug: string, postId: number) {
     const [existing] = await db
       .select({ id: posts.id })
       .from(posts)
-      .where(and(eq(posts.enSlug, candidate), sql`${posts.id} <> ${postId}`))
+      .where(
+        and(
+          eq(posts.slug, candidate),
+          excludePostId ? sql`${posts.id} <> ${excludePostId}` : sql`true`,
+        ),
+      )
       .limit(1);
 
     if (!existing) {
@@ -245,34 +255,54 @@ async function getUniqueEnglishSlug(baseSlug: string, postId: number) {
     }
   }
 
-  return `${normalizedBaseSlug}-${postId}`;
+  return excludePostId
+    ? `${normalizedBaseSlug}-${excludePostId}`
+    : `${normalizedBaseSlug}-${Date.now()}`;
 }
 
 async function createEnglishSeoTask(input: {
   parentTask: typeof aiRewriteTasks.$inferSelect;
   post: { id: number; title: string };
-  cleanedHtmlContent: string;
+  rewrittenChineseContent: string;
 }) {
   const sourceUrl = `post://${input.post.id}/english`;
+  const sourceSnapshot = input.rewrittenChineseContent.trim().slice(0, 60_000);
+  if (!sourceSnapshot) {
+    throw new Error("英文 SEO 任务缺少改写后的中文正文");
+  }
+
   const [existing] = await db
-    .select({ id: aiRewriteTasks.id })
+    .select({ id: aiRewriteTasks.id, status: aiRewriteTasks.status })
     .from(aiRewriteTasks)
     .where(
       and(
         eq(aiRewriteTasks.sourceType, "english"),
-        eq(aiRewriteTasks.postId, input.post.id),
+        eq(aiRewriteTasks.sourceUrl, sourceUrl),
         inArray(aiRewriteTasks.status, ["pending", "running", "succeeded"]),
       ),
     )
     .limit(1);
 
   if (existing) {
+    if (existing.status === "running") {
+      return existing.id;
+    }
+
     await db
       .update(aiRewriteTasks)
       .set({
+        status: "pending",
+        progress: 0,
+        currentStep: "等待翻译中文改写正文并生成英文 SEO",
+        error: null,
         sourceTitle: input.post.title,
+        sourceContent: sourceSnapshot,
         resultTitle: input.post.title,
-        scrapedHtml: input.cleanedHtmlContent.slice(0, 60_000),
+        scrapedHtml: sourceSnapshot,
+        aiInputLength: null,
+        rewriteOutputLength: null,
+        startedAt: null,
+        finishedAt: null,
         updatedAt: new Date(),
       })
       .where(eq(aiRewriteTasks.id, existing.id));
@@ -287,14 +317,15 @@ async function createEnglishSeoTask(input: {
       sourceUrl,
       sourceType: "english",
       sourceTitle: input.post.title,
+      sourceContent: sourceSnapshot,
       status: "pending",
       progress: 0,
-      currentStep: "等待生成英文 SEO 版本",
+      currentStep: "等待翻译中文改写正文并生成英文 SEO",
       categoryId: input.parentTask.categoryId,
       rewriteStyleId: input.parentTask.rewriteStyleId,
       postId: input.post.id,
       resultTitle: input.post.title,
-      scrapedHtml: input.cleanedHtmlContent.slice(0, 60_000),
+      scrapedHtml: sourceSnapshot,
     })
     .returning({ id: aiRewriteTasks.id });
 
@@ -307,31 +338,164 @@ async function createEnglishSeoTask(input: {
 
 async function getEnglishSourceContent(
   claimedTask: typeof aiRewriteTasks.$inferSelect,
+  postContent: string | null,
 ) {
-  const taskSnapshot = claimedTask.scrapedHtml?.trim();
-  if (taskSnapshot) {
-    return taskSnapshot;
+  for (const value of [
+    claimedTask.sourceContent,
+    postContent,
+    claimedTask.scrapedHtml,
+  ]) {
+    const trimmed = value?.trim();
+    if (trimmed) {
+      return trimmed;
+    }
   }
 
-  if (!claimedTask.postId) {
-    return null;
+  return null;
+}
+
+function getEnglishParentPostId(
+  claimedTask: typeof aiRewriteTasks.$inferSelect,
+) {
+  const match = /^post:\/\/(\d+)\/english$/.exec(claimedTask.sourceUrl);
+  const parsed = match?.[1] ? Number.parseInt(match[1], 10) : NaN;
+
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : claimedTask.postId;
+}
+
+async function syncPostTagsFromSource(input: {
+  sourcePostId: number;
+  targetPostId: number;
+}) {
+  const sourceTags = await db
+    .select({ tagId: postTags.tagId })
+    .from(postTags)
+    .where(eq(postTags.postId, input.sourcePostId));
+
+  await db.transaction(async (tx) => {
+    await tx.delete(postTags).where(eq(postTags.postId, input.targetPostId));
+
+    if (sourceTags.length > 0) {
+      await tx.insert(postTags).values(
+        sourceTags.map((tag) => ({
+          postId: input.targetPostId,
+          tagId: tag.tagId,
+        })),
+      );
+    }
+  });
+}
+
+async function upsertEnglishDraftPost(input: {
+  parentPost: {
+    id: number;
+    categoryId: number;
+    imgUrl: string | null;
+    recommendedTagName: string | null;
+    recommendedTagId: number | null;
+  };
+  existingPostId: number | null;
+  title: string;
+  slug: string;
+  description: string;
+  keywords: string[];
+  content: string;
+}) {
+  const [existingByTask] = input.existingPostId
+    ? await db
+        .select({ id: posts.id })
+        .from(posts)
+        .where(
+          and(eq(posts.id, input.existingPostId), eq(posts.language, "en")),
+        )
+        .limit(1)
+    : [];
+  const [existingBySource] = existingByTask
+    ? []
+    : await db
+        .select({ id: posts.id })
+        .from(posts)
+        .where(
+          and(
+            eq(posts.translationSourcePostId, input.parentPost.id),
+            eq(posts.language, "en"),
+          ),
+        )
+        .limit(1);
+  const [existingBySlug] =
+    existingByTask || existingBySource
+      ? []
+      : await db
+          .select({ id: posts.id })
+          .from(posts)
+          .where(and(eq(posts.slug, input.slug), eq(posts.language, "en")))
+          .limit(1);
+  const existingPostId =
+    existingByTask?.id ?? existingBySource?.id ?? existingBySlug?.id ?? null;
+  const slug = await getUniqueEnglishArticleSlug(
+    input.slug,
+    existingPostId ?? undefined,
+  );
+  const storedContent = await prepareArticleContentForStorage(input.content);
+  const keywords = input.keywords.join(",");
+
+  const [post] = existingPostId
+    ? await db
+        .update(posts)
+        .set({
+          title: input.title,
+          slug,
+          description: input.description,
+          keywords,
+          content: storedContent,
+          imgUrl: input.parentPost.imgUrl,
+          enTitle: null,
+          enSlug: null,
+          enDescription: null,
+          enKeywords: null,
+          enContent: null,
+          enImgUrl: null,
+          enUpdatedAt: null,
+          language: "en",
+          translationSourcePostId: input.parentPost.id,
+          categoryId: input.parentPost.categoryId,
+          recommendedTagName: input.parentPost.recommendedTagName,
+          recommendedTagId: input.parentPost.recommendedTagId,
+          published: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(posts.id, existingPostId))
+        .returning({ id: posts.id, title: posts.title, slug: posts.slug })
+    : await db
+        .insert(posts)
+        .values({
+          title: input.title,
+          slug,
+          description: input.description,
+          keywords,
+          content: storedContent,
+          imgUrl: input.parentPost.imgUrl,
+          language: "en",
+          translationSourcePostId: input.parentPost.id,
+          categoryId: input.parentPost.categoryId,
+          recommendedTagName: input.parentPost.recommendedTagName,
+          recommendedTagId: input.parentPost.recommendedTagId,
+          published: false,
+          affiliateReviewStatus: "pending",
+        })
+        .returning({ id: posts.id, title: posts.title, slug: posts.slug });
+
+  if (!post) {
+    throw new Error("英文草稿保存失败");
   }
 
-  const [parentTask] = await db
-    .select({ scrapedHtml: aiRewriteTasks.scrapedHtml })
-    .from(aiRewriteTasks)
-    .where(
-      and(
-        eq(aiRewriteTasks.postId, claimedTask.postId),
-        sql`${aiRewriteTasks.sourceType} <> 'english'`,
-        sql`${aiRewriteTasks.scrapedHtml} IS NOT NULL`,
-      ),
-    )
-    .orderBy(desc(aiRewriteTasks.updatedAt), desc(aiRewriteTasks.id))
-    .limit(1);
+  await syncPostTagsFromSource({
+    sourcePostId: input.parentPost.id,
+    targetPostId: post.id,
+  });
+  await syncImageReferencesForPost(post.id);
 
-  const parentSnapshot = parentTask?.scrapedHtml?.trim();
-  return parentSnapshot && parentSnapshot.length > 0 ? parentSnapshot : null;
+  return post;
 }
 
 async function runEnglishSeoTask(
@@ -350,6 +514,11 @@ async function runEnglishSeoTask(
       throw new Error("英文 SEO 任务缺少关联草稿文章");
     }
 
+    const parentPostId = getEnglishParentPostId(claimedTask);
+    if (!parentPostId) {
+      throw new Error("英文 SEO 任务缺少关联中文草稿");
+    }
+
     const [post] = await db
       .select({
         id: posts.id,
@@ -357,20 +526,27 @@ async function runEnglishSeoTask(
         description: posts.description,
         keywords: posts.keywords,
         content: posts.content,
+        imgUrl: posts.imgUrl,
+        categoryId: posts.categoryId,
+        recommendedTagName: posts.recommendedTagName,
+        recommendedTagId: posts.recommendedTagId,
         enSlug: posts.enSlug,
       })
       .from(posts)
-      .where(eq(posts.id, claimedTask.postId))
+      .where(eq(posts.id, parentPostId))
       .limit(1);
 
     if (!post) {
       throw new Error("关联草稿文章不存在");
     }
 
-    const englishSourceContent = await getEnglishSourceContent(claimedTask);
+    const englishSourceContent = await getEnglishSourceContent(
+      claimedTask,
+      post.content,
+    );
     if (!englishSourceContent) {
       throw new Error(
-        "英文 SEO 任务缺少清洗后的原始正文，请重新运行中文改写任务",
+        "英文 SEO 任务缺少改写后的中文正文，请重新运行中文改写任务",
       );
     }
 
@@ -386,8 +562,8 @@ async function runEnglishSeoTask(
       status: "running",
       progress: 25,
       message: markdownInput.truncated
-        ? `正在调用 AI 生成英文正文，Markdown 输入 ${markdownInput.markdown.length} 字符，已截断`
-        : `正在调用 AI 生成英文正文，Markdown 输入 ${markdownInput.markdown.length} 字符`,
+        ? `正在翻译中文改写正文，Markdown 输入 ${markdownInput.markdown.length} 字符，已截断`
+        : `正在翻译中文改写正文，Markdown 输入 ${markdownInput.markdown.length} 字符`,
     });
     await updateTask(claimedTask.id, {
       progress: 35,
@@ -439,7 +615,7 @@ async function runEnglishSeoTask(
       stepName: "生成英文 SEO 信息",
       status: "running",
       progress: 68,
-      message: "正在根据英文正文生成标题、slug、摘要和关键词",
+      message: "正在单独生成英文标题、slug、摘要和关键词",
     });
     await updateTask(claimedTask.id, {
       progress: 68,
@@ -456,7 +632,19 @@ async function runEnglishSeoTask(
       },
       { styleId: claimedTask.rewriteStyleId ?? undefined },
     );
-    const enSlug = await getUniqueEnglishSlug(english.enSlug, post.id);
+    const existingEnglishPostId =
+      claimedTask.postId && claimedTask.postId !== post.id
+        ? claimedTask.postId
+        : null;
+    const englishPost = await upsertEnglishDraftPost({
+      parentPost: post,
+      existingPostId: existingEnglishPostId,
+      title: english.enTitle,
+      slug: english.enSlug,
+      description: english.enDescription,
+      keywords: english.enKeywords,
+      content: enContent,
+    });
 
     await upsertTaskStep({
       taskId: claimedTask.id,
@@ -468,7 +656,7 @@ async function runEnglishSeoTask(
       message: `英文标题：${english.enTitle}`,
       payload: {
         enTitle: english.enTitle,
-        enSlug,
+        enSlug: englishPost.slug,
         enKeywords: english.enKeywords,
       },
     });
@@ -494,21 +682,6 @@ async function runEnglishSeoTask(
       rewriteOutputLength: enContent.length,
     });
 
-    await db
-      .update(posts)
-      .set({
-        enTitle: english.enTitle,
-        enSlug,
-        enDescription: english.enDescription,
-        enKeywords: english.enKeywords.join(","),
-        enContent,
-        enUpdatedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(posts.id, post.id));
-
-    await syncImageReferencesForPost(post.id);
-
     await upsertTaskStep({
       taskId: claimedTask.id,
       attempt,
@@ -516,14 +689,15 @@ async function runEnglishSeoTask(
       stepName: "写入英文草稿",
       status: "success",
       progress: 100,
-      message: `英文 SEO 版本已写入草稿：/en/fwq/posts/${enSlug}`,
-      payload: { postId: post.id, enSlug },
+      message: `英文草稿已单独生成：/posts/edit/post/${englishPost.slug}`,
+      payload: { postId: englishPost.id, enSlug: englishPost.slug },
     });
     await updateTask(claimedTask.id, {
       status: "succeeded",
       progress: 100,
       currentStep: "英文 SEO 版本已生成",
       resultTitle: english.enTitle,
+      postId: englishPost.id,
       diagnostics: JSON.stringify({
         sourceHost: "english-seo",
         strategy: "english-seo-version",
@@ -977,7 +1151,7 @@ export async function runAiRewriteTask(taskId: number) {
         const englishTaskId = await createEnglishSeoTask({
           parentTask: claimedTask,
           post,
-          cleanedHtmlContent: article.cleanedHtmlContent,
+          rewrittenChineseContent: article.htmlContent || article.content,
         });
         await upsertTaskStep({
           taskId,
