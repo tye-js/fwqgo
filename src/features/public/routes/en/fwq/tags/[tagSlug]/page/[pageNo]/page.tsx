@@ -7,11 +7,14 @@ import { Hash } from "lucide-react";
 import { getPostsWithTagsByTagSlug } from "@/features/public/data/tag";
 import { getLatestPostsForSidebar } from "@/features/public/data/post";
 import ArticleCard from "@/features/public/components/article-card";
+import Footer from "@/features/public/components/footer";
+import Header from "@/features/public/components/header";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
 import PageCard from "@/features/public/components/page-card";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { decodeSlug } from "@fwqgo/core/utils";
 
 function getSiteUrl() {
@@ -27,6 +30,13 @@ export async function generateMetadata(props: {
   const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
   const { data } = await getPostsWithTagsByTagSlug(decodedTagSlug, pageNo, "en");
   const title = data?.name ?? decodedTagSlug.replace(/[-_]+/g, " ");
+  const canonicalSlug = data?.slug ?? decodedTagSlug;
+  const zhSlug =
+    data && "zhSlug" in data && typeof data.zhSlug === "string"
+      ? data.zhSlug
+      : decodedTagSlug;
+  const canonicalUrl = `${getSiteUrl()}/en/fwq/tags/${encodeURIComponent(canonicalSlug)}/page/${pageNo}`;
+  const zhUrl = `${getSiteUrl()}/fwq/tags/${encodeURIComponent(zhSlug)}/page/${pageNo}`;
 
   return {
     title: `${title} - fwqgo`,
@@ -34,7 +44,12 @@ export async function generateMetadata(props: {
       data?.description ?? `${title} server deals, VPS reviews, and coupons.`,
     keywords: data?.keywords ?? `${title} VPS,${title} server deals`,
     alternates: {
-      canonical: `${getSiteUrl()}/en/fwq/tags/${encodeURIComponent(data?.slug ?? decodedTagSlug)}/page/${pageNo}`,
+      canonical: canonicalUrl,
+      languages: {
+        "zh-CN": zhUrl,
+        en: canonicalUrl,
+        "x-default": zhUrl,
+      },
     },
   };
 }
@@ -130,8 +145,16 @@ export default function EnglishTagPage(props: {
   params: Promise<{ tagSlug: string; pageNo: string }>;
 }) {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <TagPageContent paramsPromise={props.params} />
-    </Suspense>
+    <div className="flex min-h-screen flex-col bg-background">
+      <Header />
+      <Separator />
+      <main className="container mx-auto flex-1 px-4 py-6 md:py-8">
+        <Suspense fallback={<div>Loading...</div>}>
+          <TagPageContent paramsPromise={props.params} />
+        </Suspense>
+      </main>
+      <Separator className="mt-4" />
+      <Footer />
+    </div>
   );
 }

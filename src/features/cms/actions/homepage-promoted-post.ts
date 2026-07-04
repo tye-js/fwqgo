@@ -111,9 +111,11 @@ export async function addHomepagePromotedPost(input: {
 export async function updateHomepagePromotedPost(input: {
   id: number;
   sortOrder: number;
+  language?: HomepageLanguage;
 }) {
   try {
     await requireAdminSession();
+    const normalizedLanguage = normalizeHomepageLanguage(input.language);
 
     if (!Number.isInteger(input.id) || input.id <= 0) {
       return { error: "推荐位 ID 不正确" };
@@ -128,7 +130,12 @@ export async function updateHomepagePromotedPost(input: {
       .set({
         sortOrder: input.sortOrder,
       })
-      .where(eq(homepagePromotedPosts.id, input.id))
+      .where(
+        and(
+          eq(homepagePromotedPosts.id, input.id),
+          eq(homepagePromotedPosts.language, normalizedLanguage),
+        ),
+      )
       .returning();
 
     if (!result) {
@@ -144,9 +151,13 @@ export async function updateHomepagePromotedPost(input: {
   }
 }
 
-export async function deleteHomepagePromotedPost(id: number) {
+export async function deleteHomepagePromotedPost(
+  id: number,
+  language: HomepageLanguage = "zh",
+) {
   try {
     await requireAdminSession();
+    const normalizedLanguage = normalizeHomepageLanguage(language);
 
     if (!Number.isInteger(id) || id <= 0) {
       return { error: "推荐位 ID 不正确" };
@@ -154,7 +165,12 @@ export async function deleteHomepagePromotedPost(id: number) {
 
     const [result] = await db
       .delete(homepagePromotedPosts)
-      .where(eq(homepagePromotedPosts.id, id))
+      .where(
+        and(
+          eq(homepagePromotedPosts.id, id),
+          eq(homepagePromotedPosts.language, normalizedLanguage),
+        ),
+      )
       .returning();
 
     if (!result) {
@@ -170,11 +186,17 @@ export async function deleteHomepagePromotedPost(id: number) {
   }
 }
 
-export async function deleteHomepagePromotedPosts(ids: number[]) {
+export async function deleteHomepagePromotedPosts(
+  ids: number[],
+  language: HomepageLanguage = "zh",
+) {
   try {
     await requireAdminSession();
+    const normalizedLanguage = normalizeHomepageLanguage(language);
 
-    const validIds = ids.filter((id) => Number.isInteger(id) && id > 0);
+    const validIds = [
+      ...new Set(ids.filter((id) => Number.isInteger(id) && id > 0)),
+    ];
 
     if (validIds.length === 0) {
       return { data: 0 };
@@ -182,7 +204,12 @@ export async function deleteHomepagePromotedPosts(ids: number[]) {
 
     const result = await db
       .delete(homepagePromotedPosts)
-      .where(inArray(homepagePromotedPosts.id, validIds))
+      .where(
+        and(
+          inArray(homepagePromotedPosts.id, validIds),
+          eq(homepagePromotedPosts.language, normalizedLanguage),
+        ),
+      )
       .returning({ id: homepagePromotedPosts.id });
 
     revalidateSiteContent([cacheTags.homepage]);

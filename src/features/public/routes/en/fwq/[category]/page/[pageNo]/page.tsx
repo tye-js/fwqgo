@@ -11,11 +11,14 @@ import {
   getPublishedPostCountByCategoryId,
 } from "@/features/public/data/post";
 import ArticleCard from "@/features/public/components/article-card";
+import Footer from "@/features/public/components/footer";
+import Header from "@/features/public/components/header";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
 import PageCard from "@/features/public/components/page-card";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { decodeSlug } from "@fwqgo/core/utils";
 
 function getSiteUrl() {
@@ -31,6 +34,13 @@ export async function generateMetadata(props: {
   const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
   const { data: category } = await getCategoryBySlug(decodedCategory, "en");
   const title = category?.name ?? decodedCategory.replace(/[-_]+/g, " ");
+  const canonicalSlug = category?.slug ?? decodedCategory;
+  const zhSlug =
+    category && "zhSlug" in category && typeof category.zhSlug === "string"
+      ? category.zhSlug
+      : decodedCategory;
+  const canonicalUrl = `${getSiteUrl()}/en/fwq/${encodeURIComponent(canonicalSlug)}/page/${pageNo}`;
+  const zhUrl = `${getSiteUrl()}/fwq/${encodeURIComponent(zhSlug)}/page/${pageNo}`;
 
   return {
     title: `${title} - fwqgo`,
@@ -39,7 +49,12 @@ export async function generateMetadata(props: {
       `${title} server deals, VPS reviews, coupons, and buying guides.`,
     keywords: category?.keywords ?? title,
     alternates: {
-      canonical: `${getSiteUrl()}/en/fwq/${encodeURIComponent(category?.slug ?? decodedCategory)}/page/${pageNo}`,
+      canonical: canonicalUrl,
+      languages: {
+        "zh-CN": zhUrl,
+        en: canonicalUrl,
+        "x-default": zhUrl,
+      },
     },
   };
 }
@@ -140,8 +155,16 @@ export default function EnglishCategoryPage(props: {
   params: Promise<{ category: string; pageNo: string }>;
 }) {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <CategoryPageContent paramsPromise={props.params} />
-    </Suspense>
+    <div className="flex min-h-screen flex-col bg-background">
+      <Header />
+      <Separator />
+      <main className="container mx-auto flex-1 px-4 py-6 md:py-8">
+        <Suspense fallback={<div>Loading...</div>}>
+          <CategoryPageContent paramsPromise={props.params} />
+        </Suspense>
+      </main>
+      <Separator className="mt-4" />
+      <Footer />
+    </div>
   );
 }

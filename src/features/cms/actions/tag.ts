@@ -48,6 +48,13 @@ function textOrNull(value: string | undefined) {
   return trimmed;
 }
 
+function normalizeOptionalSlug(value: string | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  const normalized = slugify(trimmed);
+  return normalized || null;
+}
+
 async function createTagRecord(
   input: z.infer<typeof createTagSchema>,
   options: { revalidate?: boolean } = {},
@@ -152,11 +159,26 @@ export async function updateTagSeo(input: z.infer<typeof updateTagSeoSchema>) {
 
   const result = updateTagSeoSchema.parse(input);
 
+  const [currentTag] = await db
+    .select({
+      slug: tags.slug,
+      enSlug: tags.enSlug,
+    })
+    .from(tags)
+    .where(eq(tags.id, result.id))
+    .limit(1);
+
+  if (!currentTag) {
+    return { error: "没有找到这个标签" };
+  }
+
+  const normalizedEnSlug = normalizeOptionalSlug(result.enSlug);
+
   const [tag] = await db
     .update(tags)
     .set({
       enName: textOrNull(result.enName),
-      enSlug: textOrNull(result.enSlug),
+      enSlug: normalizedEnSlug,
       description: textOrNull(result.description),
       keywords: textOrNull(normalizeSeoKeywords(result.keywords)),
       enDescription: textOrNull(result.enDescription),
@@ -185,6 +207,9 @@ export async function updateTagSeo(input: z.infer<typeof updateTagSeoSchema>) {
     cacheTags.tags,
     cacheTags.tagSlug(tag.slug),
     ...(tag.enSlug ? [cacheTags.tagSlug(tag.enSlug)] : []),
+    ...(currentTag.enSlug && currentTag.enSlug !== tag.enSlug
+      ? [cacheTags.tagSlug(currentTag.enSlug)]
+      : []),
   ]);
 
   return { data: tag };

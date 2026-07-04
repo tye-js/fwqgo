@@ -88,7 +88,8 @@ async function EnglishPostContent({ params }: PageProps) {
   if (!post.title || !post.content) {
     notFound();
   }
-  const articleUrl = `${getSiteUrl()}/en/fwq/posts/${decodedSlug}`;
+  const canonicalSlug = post.enSlug ?? decodedSlug;
+  const articleUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(canonicalSlug)}`;
   const blogPostingJsonLd = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
@@ -121,7 +122,7 @@ async function EnglishPostContent({ params }: PageProps) {
         "@type": "ListItem",
         position: 1,
         name: "Home",
-        item: getSiteUrl(),
+        item: `${getSiteUrl()}/en`,
       },
       {
         "@type": "ListItem",
