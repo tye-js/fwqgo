@@ -1,6 +1,4 @@
 import type * as cheerio from "cheerio";
-import { inArray } from "drizzle-orm";
-
 import { db } from "@fwqgo/db";
 import { affServiceProviders } from "@fwqgo/db/schema";
 
@@ -89,17 +87,22 @@ async function loadProvidersForHosts(hostnames: string[]) {
     return new Map<string, Provider>();
   }
 
-  const rows = await db
-    .select()
-    .from(affServiceProviders)
-    .where(inArray(affServiceProviders.officialUrl, domains));
-
+  const rows = await db.select().from(affServiceProviders);
+  const domainSet = new Set(domains);
   const providerByDomain = new Map<string, Provider>();
   for (const provider of rows) {
-    providerByDomain.set(
+    const providerDomains = [
       normalizeProviderDomain(provider.officialUrl),
-      provider,
-    );
+      normalizeProviderDomain(provider.affUrl),
+    ];
+
+    for (const domain of providerDomains) {
+      if (!domainSet.has(domain)) {
+        continue;
+      }
+
+      providerByDomain.set(domain, provider);
+    }
   }
 
   return providerByDomain;

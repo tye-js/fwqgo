@@ -32,9 +32,12 @@ const nullablePrice = nullableString.refine(
   "价格必须是数字",
 );
 
-const nullableHttpUrl = nullableString.refine(
-  (value) => value === null || isHttpHref(value),
-  "链接必须是 http 或 https URL",
+const nullablePurchaseUrl = nullableString.refine(
+  (value) =>
+    value === null ||
+    isHttpHref(value) ||
+    (isInternalHref(value) && /^\/go\/[a-z0-9-]+$/i.test(value)),
+  "购买链接必须是 http/https URL 或 /go/ 短链",
 );
 
 const nullableInternalOrHttpUrl = nullableString.refine(
@@ -51,7 +54,7 @@ const updateOfferSchema = z.object({
   region: nullableString,
   lineType: nullableString,
   status: z.enum(offerStatuses),
-  purchaseUrl: nullableHttpUrl,
+  purchaseUrl: nullablePurchaseUrl,
   promoCode: nullableString,
   articleUrl: nullableInternalOrHttpUrl,
   reviewUrl: nullableInternalOrHttpUrl,

@@ -21,6 +21,7 @@ import {
   posts,
   serverOffers,
 } from "@fwqgo/db/schema";
+import { readOutboundShortTarget } from "@/server/links/outbound-short-link";
 
 export const offerStatuses = [
   "in_stock",
@@ -150,21 +151,34 @@ export const offerTopics: Array<{
   },
 ];
 
-const pricePattern =
-  /(?:\$|USD|US\$|￥|¥|CNY|RMB)\s*([0-9]+(?:\.[0-9]+)?)/i;
-const memoryPattern = /([0-9]+(?:\.[0-9]+)?)\s*(GB|G|MB|M)\s*(?:内存|RAM)?/i;
-const storagePattern =
-  /([0-9]+(?:\.[0-9]+)?)\s*(GB|G|TB|T)\s*(?:SSD|NVMe|HDD|硬盘|存储)?/i;
-const bandwidthPattern =
-  /([0-9]+(?:\.[0-9]+)?)\s*(Gbps|G口|Mbps|M口|M)\s*(?:带宽|端口)?/i;
-const trafficPattern =
-  /([0-9]+(?:\.[0-9]+)?)\s*(TB|T|GB|G)\s*(?:流量|traffic)?/i;
+const pricePatterns = [
+  /(?:\$|USD|US\$)\s*([0-9]+(?:\.[0-9]+)?)/i,
+  /([0-9]+(?:\.[0-9]+)?)\s*(?:USD|US\$|美元|刀)(?:\b|\/|每)?/i,
+  /(?:￥|¥|CNY|RMB)\s*([0-9]+(?:\.[0-9]+)?)/i,
+  /([0-9]+(?:\.[0-9]+)?)\s*(?:元|CNY|RMB)(?:\b|\/|每)?/i,
+];
+const memoryPatterns = [
+  /(?:内存|RAM)\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*(GB|G|MB|M)\b/i,
+  /([0-9]+(?:\.[0-9]+)?)\s*(GB|G|MB|M)\s*(?:内存|RAM)\b/i,
+];
+const storagePatterns = [
+  /(?:硬盘|存储|Disk|Storage|SSD|NVMe|HDD)\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*(GB|G|TB|T)\b/i,
+  /([0-9]+(?:\.[0-9]+)?)\s*(GB|G|TB|T)\s*(?:SSD|NVMe|HDD|硬盘|存储|Disk|Storage)\b/i,
+];
+const bandwidthPatterns = [
+  /(?:带宽|端口|Bandwidth|Port)\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*(Gbps|G口|Mbps|M口|G|M)\b/i,
+  /([0-9]+(?:\.[0-9]+)?)\s*(Gbps|G口|Mbps|M口)\s*(?:带宽|端口|Bandwidth|Port)?/i,
+];
+const trafficPatterns = [
+  /(?:流量|Traffic|Transfer)\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*(TB|T|GB|G)\b/i,
+  /([0-9]+(?:\.[0-9]+)?)\s*(TB|T|GB|G)\s*(?:流量|Traffic|Transfer)\b/i,
+];
 const cpuPattern =
   /([0-9]+)\s*(?:核|核心|Core|Cores|vCPU|CPU)|(?:CPU|vCPU)\s*[:：]?\s*([0-9]+)/i;
 const ipv4Pattern = /([0-9]+)\s*(?:个)?\s*(?:IPv4|独立IP|IP)/i;
 const promoPattern =
   /(?:优惠码|折扣码|优惠代码|Promo Code|Coupon)\s*[:：]?\s*([A-Za-z0-9_-]+)/i;
-const urlPattern = /^https?:\/\//i;
+const purchaseHrefPattern = /^(https?:\/\/|\/go\/)/i;
 
 function normalizeSpace(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -194,6 +208,41 @@ function toMbps(value: string | undefined, unit: string | undefined) {
   return /g/i.test(unit) ? Math.round(number * 1000) : Math.round(number);
 }
 
+function findFirstMatch(text: string, patterns: RegExp[]) {
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (match?.[1] && match[2]) {
+      return {
+        raw: match[0],
+        value: match[1],
+        unit: match[2],
+      };
+    }
+  }
+
+  return null;
+}
+
+function extractPrice(text: string) {
+  for (const pattern of pricePatterns) {
+    const match = pattern.exec(text);
+    if (!match?.[1]) {
+      continue;
+    }
+
+    return {
+      amount: match[1],
+      currency: /￥|¥|CNY|RMB|元/i.test(match[0]) ? "CNY" : "USD",
+    };
+  }
+
+  return null;
+}
+
+function isPurchaseHref(value: string | null | undefined) {
+  return Boolean(value?.trim() && purchaseHrefPattern.test(value.trim()));
+}
+
 function detectBillingCycle(text: string) {
   if (/年付|每年|\/年|\/yr|year/i.test(text)) return "yearly";
   if (/季付|季度|\/quarter/i.test(text)) return "quarterly";
@@ -203,7 +252,7 @@ function detectBillingCycle(text: string) {
 }
 
 function detectCurrency(text: string) {
-  if (/￥|¥|CNY|RMB/i.test(text)) return "CNY";
+  if (/￥|¥|CNY|RMB|元/i.test(text)) return "CNY";
   return "USD";
 }
 
@@ -278,21 +327,25 @@ function parseOfferText(input: {
   sourcePostId: number;
   sourcePostTitle: string;
   sourcePostSlug: string;
+  sourcePostLanguage: string;
   purchaseUrl?: string | null;
 }) {
   const text = normalizeSpace(input.text);
-  const priceMatch = pricePattern.exec(text);
-  if (!priceMatch) return null;
+  const price = extractPrice(text);
+  if (!price) return null;
 
-  const memoryMatch = memoryPattern.exec(text);
-  const storageMatch = storagePattern.exec(text);
-  const bandwidthMatch = bandwidthPattern.exec(text);
-  const trafficMatch = trafficPattern.exec(text);
+  const memoryMatch = findFirstMatch(text, memoryPatterns);
+  const storageMatch = findFirstMatch(text, storagePatterns);
+  const bandwidthMatch = findFirstMatch(text, bandwidthPatterns);
+  const trafficMatch = findFirstMatch(text, trafficPatterns);
   const cpuMatch = cpuPattern.exec(text);
   const ipv4Match = ipv4Pattern.exec(text);
   const promoMatch = promoPattern.exec(text);
   const title = extractTitle(text, input.sourcePostTitle);
-  const purchaseUrl = input.purchaseUrl?.trim() ?? null;
+  const purchaseUrl = isPurchaseHref(input.purchaseUrl)
+    ? input.purchaseUrl!.trim()
+    : null;
+  const articlePrefix = input.sourcePostLanguage === "en" ? "/en" : "";
 
   return {
     title,
@@ -305,15 +358,15 @@ function parseOfferText(input: {
     providerId: null,
     productType: /独立服务器|dedicated/i.test(text) ? "dedicated" : "vps",
     cpu: cpuMatch?.[0] ?? null,
-    memory: memoryMatch?.[0] ?? null,
-    memoryMb: toMb(memoryMatch?.[1], memoryMatch?.[2]),
-    storage: storageMatch?.[0] ?? null,
-    storageGb: toGb(storageMatch?.[1], storageMatch?.[2]),
+    memory: memoryMatch?.raw ?? null,
+    memoryMb: toMb(memoryMatch?.value, memoryMatch?.unit),
+    storage: storageMatch?.raw ?? null,
+    storageGb: toGb(storageMatch?.value, storageMatch?.unit),
     storageType: /nvme/i.test(text) ? "NVMe" : /ssd/i.test(text) ? "SSD" : null,
-    bandwidth: bandwidthMatch?.[0] ?? null,
-    bandwidthMbps: toMbps(bandwidthMatch?.[1], bandwidthMatch?.[2]),
-    traffic: trafficMatch?.[0] ?? null,
-    trafficGb: toGb(trafficMatch?.[1], trafficMatch?.[2]),
+    bandwidth: bandwidthMatch?.raw ?? null,
+    bandwidthMbps: toMbps(bandwidthMatch?.value, bandwidthMatch?.unit),
+    traffic: trafficMatch?.raw ?? null,
+    trafficGb: toGb(trafficMatch?.value, trafficMatch?.unit),
     region: detectRegion(text),
     countryCode: null,
     city: null,
@@ -321,13 +374,13 @@ function parseOfferText(input: {
     network: null,
     ipv4: ipv4Match?.[0] ?? null,
     ipv6: /IPv6/i.test(text) ? "IPv6" : null,
-    priceAmount: priceMatch[1],
+    priceAmount: price.amount,
     originalPriceAmount: null,
-    currency: detectCurrency(text),
+    currency: price.currency ?? detectCurrency(text),
     billingCycle: detectBillingCycle(text),
     promoCode: promoMatch?.[1] ?? null,
     purchaseUrl,
-    articleUrl: `/fwq/posts/${input.sourcePostSlug}`,
+    articleUrl: `${articlePrefix}/fwq/posts/${input.sourcePostSlug}`,
     reviewUrl: null,
     sourcePostId: input.sourcePostId,
     status: "in_stock" satisfies OfferStatus,
@@ -379,7 +432,7 @@ function candidateTextsFromPost(post: {
         .find("a[href]")
         .toArray()
         .map((link) => $(link).attr("href"))
-        .find((hrefValue) => hrefValue && urlPattern.test(hrefValue));
+        .find((hrefValue) => isPurchaseHref(hrefValue));
       if (rowText) {
         candidates.push({ text: rowText, purchaseUrl: href ?? null });
       }
@@ -392,24 +445,43 @@ function candidateTextsFromPost(post: {
 
     const text = normalizeSpace($(element).text());
     if (text.length < 12 || text.length > 800) return;
-    if (!pricePattern.test(text)) return;
+    if (!extractPrice(text)) return;
     const href = $(element)
       .find("a[href]")
       .toArray()
       .map((link) => $(link).attr("href"))
-      .find((hrefValue) => hrefValue && urlPattern.test(hrefValue));
+      .find((hrefValue) => isPurchaseHref(hrefValue));
     candidates.push({ text, purchaseUrl: href ?? null });
   });
 
   return candidates;
 }
 
-async function resolveProvider(purchaseUrl: string | null | undefined) {
+async function resolvePurchaseTargetUrl(purchaseUrl: string | null | undefined) {
   if (!purchaseUrl) return null;
+
+  const trimmed = purchaseUrl.trim();
+  if (/^\/go\//i.test(trimmed)) {
+    return readOutboundShortTarget(trimmed.replace(/^\/go\//i, ""));
+  }
+
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveProvider(purchaseUrl: string | null | undefined) {
+  const targetUrl = await resolvePurchaseTargetUrl(purchaseUrl);
+  if (!targetUrl) return null;
 
   let host = "";
   try {
-    host = new URL(purchaseUrl).hostname.replace(/^www\./i, "").toLowerCase();
+    host = new URL(targetUrl).hostname.replace(/^www\./i, "").toLowerCase();
   } catch {
     return null;
   }
@@ -417,28 +489,42 @@ async function resolveProvider(purchaseUrl: string | null | undefined) {
   const providers = await db.select().from(affServiceProviders);
   return (
     providers.find((provider) => {
-      let providerHost: string;
-      try {
-        providerHost = new URL(provider.officialUrl).hostname
-          .replace(/^www\./i, "")
-          .toLowerCase();
-      } catch {
-        providerHost = provider.officialUrl
-          .replace(/^https?:\/\//i, "")
-          .split("/")[0]!
-          .replace(/^www\./i, "")
-          .toLowerCase();
-      }
+      const providerHosts = [
+        providerHostFromUrl(provider.officialUrl),
+        providerHostFromUrl(provider.affUrl),
+      ].filter((value): value is string => Boolean(value));
 
-      return host === providerHost || host.endsWith(`.${providerHost}`);
+      return providerHosts.some(
+        (providerHost) =>
+          host === providerHost || host.endsWith(`.${providerHost}`),
+      );
     }) ?? null
   );
+}
+
+function providerHostFromUrl(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+
+  try {
+    return new URL(trimmed).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return (
+      trimmed
+        .replace(/^https?:\/\//i, "")
+        .split("/")[0]
+        ?.replace(/:\d+$/, "")
+        .replace(/^www\./i, "")
+        .toLowerCase() ?? null
+    );
+  }
 }
 
 type OfferSourcePost = {
   id: number;
   title: string;
   slug: string;
+  language: string;
   content: string;
 };
 
@@ -463,6 +549,35 @@ function serverOfferConfigWhere(candidate: ParsedServerOffer) {
   );
 }
 
+async function findExistingServerOffer(candidate: ParsedServerOffer) {
+  const selectColumns = {
+    id: serverOffers.id,
+    title: serverOffers.title,
+  };
+  const [existingBySlug] = await db
+    .select(selectColumns)
+    .from(serverOffers)
+    .where(eq(serverOffers.slug, candidate.slug))
+    .limit(1);
+
+  if (existingBySlug) {
+    return existingBySlug;
+  }
+
+  const purchaseUrl = candidate.purchaseUrl?.trim();
+  const purchaseUrlCondition = purchaseUrl
+    ? eq(serverOffers.purchaseUrl, purchaseUrl)
+    : or(isNull(serverOffers.purchaseUrl), eq(serverOffers.purchaseUrl, ""));
+
+  const [existingByIdentity] = await db
+    .select(selectColumns)
+    .from(serverOffers)
+    .where(and(serverOfferConfigWhere(candidate), purchaseUrlCondition))
+    .limit(1);
+
+  return existingByIdentity ?? null;
+}
+
 function makeDuplicateKey(
   candidate: ParsedServerOffer,
   resolvedProviderName?: string | null,
@@ -479,6 +594,7 @@ function makeDuplicateKey(
     candidate.priceAmount ?? "",
     candidate.currency ?? "",
     candidate.billingCycle ?? "",
+    candidate.purchaseUrl ?? "",
   ]
     .map((item) => String(item).trim().toLowerCase())
     .join("|");
@@ -502,6 +618,7 @@ async function importServerOffersFromPostRows(
           sourcePostId: post.id,
           sourcePostTitle: post.title,
           sourcePostSlug: post.slug,
+          sourcePostLanguage: post.language,
           purchaseUrl: candidate.purchaseUrl,
         }),
       )
@@ -518,14 +635,7 @@ async function importServerOffersFromPostRows(
       seenInPost.add(key);
 
       const provider = await resolveProvider(candidate.purchaseUrl);
-      const [existing] = await db
-        .select({
-          id: serverOffers.id,
-          title: serverOffers.title,
-        })
-        .from(serverOffers)
-        .where(serverOfferConfigWhere(candidate))
-        .limit(1);
+      const existing = await findExistingServerOffer(candidate);
 
       if (existing) {
         await db
@@ -552,9 +662,7 @@ async function importServerOffersFromPostRows(
             articleUrl: candidate.articleUrl,
             reviewUrl: candidate.reviewUrl,
             rawText: candidate.rawText,
-            reviewStatus: "merged",
             duplicateKey: makeDuplicateKey(candidate, provider?.name),
-            mergedIntoOfferId: null,
             updatedAt: new Date(),
           })
           .where(eq(serverOffers.id, existing.id));
@@ -595,6 +703,7 @@ export async function importServerOffersFromPost(
       id: posts.id,
       title: posts.title,
       slug: posts.slug,
+      language: posts.language,
       content: posts.content,
     })
     .from(posts)
@@ -610,6 +719,7 @@ export async function getServerOfferImportPostOptions(limit = 120) {
       id: posts.id,
       title: posts.title,
       slug: posts.slug,
+      language: posts.language,
       published: posts.published,
       createdAt: posts.createdAt,
     })
@@ -626,6 +736,7 @@ export async function importServerOffersFromPosts(
       id: posts.id,
       title: posts.title,
       slug: posts.slug,
+      language: posts.language,
       content: posts.content,
     })
     .from(posts)
