@@ -11,8 +11,10 @@ import { db } from "@fwqgo/db";
 import { imageCoverGenerationTasks, posts } from "@fwqgo/db/schema";
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import { generateArticleCoverImage } from "@/server/images/generated-cover";
+import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 
 const coverSchema = z.object({
+  postId: z.coerce.number().int().positive().optional(),
   title: z.string().trim().min(1, "标题不能为空"),
   description: z.string().trim().optional(),
   keywords: z.string().trim().optional(),
@@ -30,6 +32,22 @@ type CoverTaskStatus = "pending" | "running" | "succeeded" | "failed";
 type CoverTaskRow = typeof imageCoverGenerationTasks.$inferSelect;
 
 let isCoverGenerationWorkerRunning = false;
+
+type EphemeralCoverTask = {
+  taskId: number;
+  batchId: string;
+  title: string;
+  status: CoverTaskStatus;
+  url?: string;
+  assetId?: number;
+  errorTitle?: string;
+  errorDetail?: string;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+};
+
+const ephemeralCoverBatches = new Map<string, EphemeralCoverTask[]>();
+const MAX_EPHEMERAL_COVER_BATCHES = 30;
 
 function formatCoverGenerationError(error: unknown) {
   const message =
@@ -70,6 +88,38 @@ function serializeCoverTask(task: CoverTaskRow) {
     startedAt: task.startedAt?.toISOString() ?? null,
     finishedAt: task.finishedAt?.toISOString() ?? null,
   };
+}
+
+function serializeEphemeralCoverTask(task: EphemeralCoverTask) {
+  return {
+    taskId: task.taskId,
+    batchId: task.batchId,
+    postId: 0,
+    title: task.title,
+    status: task.status,
+    success: task.status === "succeeded",
+    url: task.url,
+    assetId: task.assetId,
+    error: task.errorTitle
+      ? [task.errorTitle, task.errorDetail].filter(Boolean).join("：")
+      : undefined,
+    errorTitle: task.errorTitle,
+    errorDetail: task.errorDetail,
+    startedAt: task.startedAt?.toISOString() ?? null,
+    finishedAt: task.finishedAt?.toISOString() ?? null,
+  };
+}
+
+function pruneEphemeralCoverBatches() {
+  if (ephemeralCoverBatches.size <= MAX_EPHEMERAL_COVER_BATCHES) return;
+
+  const keysToDelete = [...ephemeralCoverBatches.keys()].slice(
+    0,
+    ephemeralCoverBatches.size - MAX_EPHEMERAL_COVER_BATCHES,
+  );
+  for (const key of keysToDelete) {
+    ephemeralCoverBatches.delete(key);
+  }
 }
 
 async function resetStaleRunningCoverTasks() {
@@ -224,12 +274,61 @@ async function runCoverGenerationWorker() {
 }
 
 function ensureCoverGenerationWorker() {
-  void runCoverGenerationWorker().catch((error) => {
-    console.error("Article cover generation worker crashed:", error);
+  enqueueAdminBackgroundJob({
+    key: "article-cover-generation-worker",
+    label: "Article cover generation worker",
+    run: runCoverGenerationWorker,
   });
 }
 
+async function runEphemeralCoverGenerationTask(
+  batchId: string,
+  payload: z.infer<typeof coverSchema>,
+  uploadedBy: string,
+) {
+  const tasks = ephemeralCoverBatches.get(batchId);
+  const task = tasks?.[0];
+  if (!tasks || !task) return;
+
+  const runningTask: EphemeralCoverTask = {
+    ...task,
+    status: "running",
+    startedAt: new Date(),
+  };
+  ephemeralCoverBatches.set(batchId, [runningTask]);
+
+  try {
+    const result = await generateArticleCoverImage({
+      ...payload,
+      uploadedBy,
+    });
+
+    ephemeralCoverBatches.set(batchId, [
+      {
+        ...runningTask,
+        status: "succeeded",
+        url: result.asset.path,
+        assetId: result.asset.id,
+        finishedAt: new Date(),
+      },
+    ]);
+    revalidatePath("/images/list");
+  } catch (error) {
+    const readableError = formatCoverGenerationError(error);
+    ephemeralCoverBatches.set(batchId, [
+      {
+        ...runningTask,
+        status: "failed",
+        errorTitle: readableError.title,
+        errorDetail: readableError.detail,
+        finishedAt: new Date(),
+      },
+    ]);
+  }
+}
+
 export async function generateArticleCoverImageAction(input: {
+  postId?: number;
   title: string;
   description?: string | null;
   keywords?: string | null;
@@ -241,18 +340,84 @@ export async function generateArticleCoverImageAction(input: {
   try {
     const session = await requireAdminSession();
     const payload = coverSchema.parse(input);
-    const result = await generateArticleCoverImage({
-      ...payload,
-      uploadedBy: session.userId,
-    });
 
-    revalidatePath("/images/list");
+    if (payload.postId) {
+      const [post] = await db
+        .select({ id: posts.id, title: posts.title })
+        .from(posts)
+        .where(eq(posts.id, payload.postId))
+        .limit(1);
+
+      if (!post) {
+        return {
+          success: false,
+          error: "文章不存在或已被删除",
+          errorTitle: "无法创建封面生成任务",
+        };
+      }
+
+      const batchId = randomUUID();
+      const [task] = await db
+        .insert(imageCoverGenerationTasks)
+        .values({
+          batchId,
+          postId: post.id,
+          title: post.title,
+          status: "pending",
+          createdBy: session.userId,
+        })
+        .returning();
+
+      if (!task) {
+        return {
+          success: false,
+          error: "封面生成任务创建失败",
+          errorTitle: "无法创建封面生成任务",
+        };
+      }
+
+      revalidatePath("/images/covers");
+      ensureCoverGenerationWorker();
+
+      return {
+        success: true,
+        queued: true,
+        batchId,
+        results: [serializeCoverTask(task)],
+        pendingCount: 1,
+        runningCount: 0,
+        successCount: 0,
+        failedCount: 0,
+      };
+    }
+
+    const batchId = randomUUID();
+    const task: EphemeralCoverTask = {
+      taskId: -Date.now(),
+      batchId,
+      title: payload.title,
+      status: "pending",
+      startedAt: null,
+      finishedAt: null,
+    };
+    ephemeralCoverBatches.set(batchId, [task]);
+    pruneEphemeralCoverBatches();
+    enqueueAdminBackgroundJob({
+      key: `article-cover-generation:${batchId}`,
+      label: `Article cover generation: ${payload.title}`,
+      run: () =>
+        runEphemeralCoverGenerationTask(batchId, payload, session.userId),
+    });
 
     return {
       success: true,
-      url: result.asset.path,
-      assetId: result.asset.id,
-      prompt: result.prompt,
+      queued: true,
+      batchId,
+      results: [serializeEphemeralCoverTask(task)],
+      pendingCount: 1,
+      runningCount: 0,
+      successCount: 0,
+      failedCount: 0,
     };
   } catch (error) {
     return {
@@ -333,6 +498,29 @@ export async function getCoverGenerationBatchStatusAction(batchId: string) {
     const normalizedBatchId = batchId.trim();
     if (!normalizedBatchId) {
       return { success: false, error: "批次号不能为空" };
+    }
+
+    const ephemeralTasks = ephemeralCoverBatches.get(normalizedBatchId);
+    if (ephemeralTasks) {
+      return {
+        success: true,
+        batchId: normalizedBatchId,
+        results: ephemeralTasks.map(serializeEphemeralCoverTask),
+        successCount: ephemeralTasks.filter(
+          (task) => task.status === "succeeded",
+        ).length,
+        failedCount: ephemeralTasks.filter((task) => task.status === "failed")
+          .length,
+        pendingCount: ephemeralTasks.filter(
+          (task) => task.status === "pending",
+        ).length,
+        runningCount: ephemeralTasks.filter(
+          (task) => task.status === "running",
+        ).length,
+        done: ephemeralTasks.every(
+          (task) => task.status === "succeeded" || task.status === "failed",
+        ),
+      };
     }
 
     const tasks = await db

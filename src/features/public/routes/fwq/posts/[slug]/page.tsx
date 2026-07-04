@@ -9,7 +9,13 @@ import {
   getOptimizedImageSrc,
   isRenderableImageSrc,
 } from "@fwqgo/core/image-src";
-import { decodeSlug, formatDate, isInternalHref } from "@fwqgo/core/utils";
+import {
+  decodeSlug,
+  formatDate,
+  isHttpHref,
+  isInternalHref,
+  toAbsoluteHttpUrl,
+} from "@fwqgo/core/utils";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { connection } from "next/server";
@@ -210,9 +216,7 @@ async function PostPageContent({
       .join(" / "),
     offers: {
       "@type": "Offer",
-      url: offer.purchaseUrl
-        ? new URL(offer.purchaseUrl, getSiteUrl()).toString()
-        : articleUrl,
+      url: toAbsoluteHttpUrl(offer.purchaseUrl, getSiteUrl()) ?? articleUrl,
       price: offer.priceAmount ? String(offer.priceAmount) : undefined,
       priceCurrency: offer.currency ?? undefined,
       availability:
@@ -321,6 +325,74 @@ async function PostPageContent({
                   <div className="h-full w-full bg-[linear-gradient(135deg,hsl(var(--muted)),hsl(var(--background)))]" />
                 )}
               </div>
+
+              {relatedOffers.length > 0 ? (
+                <section className="mt-5 rounded-lg border border-border/70 bg-muted/20 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <SquareLibrary className="size-4 text-accent" />
+                      本文相关套餐
+                    </div>
+                    <Link
+                      href="/servers"
+                      prefetch
+                      className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+                    >
+                      查看全部比价
+                    </Link>
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    {relatedOffers.slice(0, 2).map((offer) => (
+                      <div
+                        key={offer.id}
+                        className="rounded-lg border border-border/70 bg-background p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="line-clamp-2 text-sm font-medium leading-6">
+                              {offer.title}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {offer.providerName ?? "商家待补充"} ·{" "}
+                              {offer.region ?? "地区待补充"}
+                            </p>
+                          </div>
+                          <Badge>{formatOfferPrice(offer)}</Badge>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {isHttpHref(offer.purchaseUrl) ? (
+                            <a
+                              href={offer.purchaseUrl}
+                              target="_blank"
+                              rel="nofollow sponsored noopener noreferrer"
+                              className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+                            >
+                              购买链接
+                            </a>
+                          ) : isInternalHref(offer.purchaseUrl) ? (
+                            <Link
+                              href={offer.purchaseUrl}
+                              prefetch={false}
+                              className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+                            >
+                              购买链接
+                            </Link>
+                          ) : null}
+                          {offer.articleUrl && isInternalHref(offer.articleUrl) ? (
+                            <Link
+                              href={offer.articleUrl}
+                              prefetch
+                              className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                            >
+                              推广文章
+                            </Link>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
 
               <div className="mt-6 space-y-8">
                 <div
@@ -443,15 +515,23 @@ async function PostPageContent({
                               <Badge>{formatOfferPrice(offer)}</Badge>
                             </div>
                             <div className="mt-3 flex flex-wrap gap-2">
-                              {offer.purchaseUrl ? (
+                              {isHttpHref(offer.purchaseUrl) ? (
                                 <a
                                   href={offer.purchaseUrl}
                                   target="_blank"
-                                  rel="nofollow noopener noreferrer"
+                                  rel="nofollow sponsored noopener noreferrer"
                                   className="text-xs font-medium text-primary hover:underline"
                                 >
                                   购买链接
                                 </a>
+                              ) : isInternalHref(offer.purchaseUrl) ? (
+                                <Link
+                                  href={offer.purchaseUrl}
+                                  prefetch={false}
+                                  className="text-xs font-medium text-primary hover:underline"
+                                >
+                                  购买链接
+                                </Link>
                               ) : null}
                               {offer.articleUrl &&
                               isInternalHref(offer.articleUrl) ? (
@@ -462,7 +542,7 @@ async function PostPageContent({
                                 >
                                   推广文章
                                 </Link>
-                              ) : offer.articleUrl ? (
+                              ) : isHttpHref(offer.articleUrl) ? (
                                 <a
                                   href={offer.articleUrl}
                                   target="_blank"
@@ -514,7 +594,13 @@ async function PostPageContent({
 
 export default function PostPage(props: { params: Promise<{ slug: string }> }) {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
+          正在加载文章...
+        </div>
+      }
+    >
       <PostPageContent paramsPromise={props.params} />
     </Suspense>
   );

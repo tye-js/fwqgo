@@ -1,7 +1,10 @@
 import { readDb } from "@fwqgo/db";
 import { categories, posts, serverOffers, tags } from "@fwqgo/db/schema";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
-import { offerTopics } from "@/server/offers/server-offers";
+import {
+  getServerOfferCollectionIndex,
+  offerTopics,
+} from "@/server/offers/server-offers";
 
 function getBaseUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
@@ -400,13 +403,33 @@ export async function sitemapTagsGET() {
 
 export async function sitemapServersGET() {
   const baseUrl = getBaseUrl();
-  const [latestOffer] = await readDb
-    .select({ updatedAt: serverOffers.updatedAt })
-    .from(serverOffers)
-    .where(eq(serverOffers.visible, true))
-    .orderBy(desc(serverOffers.updatedAt))
-    .limit(1);
+  const [[latestOffer], collections] = await Promise.all([
+    readDb
+      .select({ updatedAt: serverOffers.updatedAt })
+      .from(serverOffers)
+      .where(eq(serverOffers.visible, true))
+      .orderBy(desc(serverOffers.updatedAt))
+      .limit(1),
+    getServerOfferCollectionIndex(120),
+  ]);
   const lastmod = latestOffer?.updatedAt ?? new Date();
+  const collectionEntries = [
+    ...collections.providers.map((item) => ({
+      loc: `${baseUrl}/servers/providers/${encodeURIComponent(item.value)}`,
+      lastmod: item.updatedAt ?? lastmod,
+      priority: "0.72",
+    })),
+    ...collections.regions.map((item) => ({
+      loc: `${baseUrl}/servers/regions/${encodeURIComponent(item.value)}`,
+      lastmod: item.updatedAt ?? lastmod,
+      priority: "0.74",
+    })),
+    ...collections.lines.map((item) => ({
+      loc: `${baseUrl}/servers/lines/${encodeURIComponent(item.value)}`,
+      lastmod: item.updatedAt ?? lastmod,
+      priority: "0.72",
+    })),
+  ];
 
   return urlset([
     urlEntry({
@@ -421,6 +444,14 @@ export async function sitemapServersGET() {
         lastmod,
         changefreq: "daily",
         priority: "0.85",
+      }),
+    ),
+    ...collectionEntries.map((entry) =>
+      urlEntry({
+        loc: entry.loc,
+        lastmod: entry.lastmod,
+        changefreq: "daily",
+        priority: entry.priority,
       }),
     ),
   ]);

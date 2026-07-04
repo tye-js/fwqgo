@@ -10,6 +10,11 @@ import {
   bulkUpdateServerOffersAction,
   updateServerOfferAction,
 } from "@/features/cms/actions/server-offers";
+import {
+  AdminTableEmpty,
+  AdminTableWorkbench,
+} from "@/features/cms/components/admin-table-workbench";
+import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -33,8 +38,16 @@ import {
 } from "@/components/ui/table";
 import { type getAdminServerOffers } from "@/server/offers/server-offers";
 import { isInternalHref } from "@fwqgo/core/utils";
+import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
 
 type Offer = Awaited<ReturnType<typeof getAdminServerOffers>>[number];
+type ServerOfferTableFilters = {
+  pageNo: number;
+  query: string;
+  status: string;
+  reviewStatus: string;
+  visibility: string;
+};
 
 const offerStatusLabels = {
   in_stock: "有货",
@@ -220,14 +233,91 @@ function OfferEditForm({ offer, onDone }: { offer: Offer; onDone: () => void }) 
   );
 }
 
-export function ServerOfferAdminTable({ offers }: { offers: Offer[] }) {
+function normalizeFilterValue(
+  value: string,
+  allowedValues: string[],
+  fallback = "all",
+) {
+  return allowedValues.includes(value) ? value : fallback;
+}
+
+export function ServerOfferAdminTable({
+  offers,
+  initialFilters,
+}: {
+  offers: Offer[];
+  initialFilters: ServerOfferTableFilters;
+}) {
   const router = useRouter();
+  const updateUrlQuery = useUrlQueryUpdater();
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editId, setEditId] = useState<number | null>(null);
   const [bulkStatus, setBulkStatus] = useState("in_stock");
   const [bulkReviewStatus, setBulkReviewStatus] = useState("reviewed");
   const [isPending, startTransition] = useTransition();
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const activeFilters = {
+    pageNo: initialFilters.pageNo,
+    query: initialFilters.query,
+    status: normalizeFilterValue(
+      initialFilters.status,
+      statusOptions.map(([value]) => value),
+    ),
+    reviewStatus: normalizeFilterValue(
+      initialFilters.reviewStatus,
+      reviewStatusOptions.map(([value]) => value),
+    ),
+    visibility: normalizeFilterValue(initialFilters.visibility, [
+      "all",
+      "visible",
+      "hidden",
+      "featured",
+    ]),
+  };
+  const filteredOffers = useMemo(() => {
+    const normalizedQuery = activeFilters.query.trim().toLowerCase();
+
+    return offers.filter((offer) => {
+      const matchesQuery =
+        !normalizedQuery ||
+        offer.title.toLowerCase().includes(normalizedQuery) ||
+        (offer.providerName?.toLowerCase().includes(normalizedQuery) ??
+          false) ||
+        (offer.region?.toLowerCase().includes(normalizedQuery) ?? false) ||
+        (offer.lineType?.toLowerCase().includes(normalizedQuery) ?? false) ||
+        (offer.promoCode?.toLowerCase().includes(normalizedQuery) ?? false);
+      const matchesStatus =
+        activeFilters.status === "all" || offer.status === activeFilters.status;
+      const matchesReviewStatus =
+        activeFilters.reviewStatus === "all" ||
+        offer.reviewStatus === activeFilters.reviewStatus;
+      const matchesVisibility =
+        activeFilters.visibility === "all" ||
+        (activeFilters.visibility === "visible" && offer.visible) ||
+        (activeFilters.visibility === "hidden" && !offer.visible) ||
+        (activeFilters.visibility === "featured" && offer.featured);
+
+      return (
+        matchesQuery &&
+        matchesStatus &&
+        matchesReviewStatus &&
+        matchesVisibility
+      );
+    });
+  }, [
+    activeFilters.query,
+    activeFilters.reviewStatus,
+    activeFilters.status,
+    activeFilters.visibility,
+    offers,
+  ]);
+  const pageSize = 20;
+  const totalPage = Math.max(1, Math.ceil(filteredOffers.length / pageSize));
+  const currentPage = Math.min(Math.max(activeFilters.pageNo, 1), totalPage);
+  const pagedOffers = filteredOffers.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
 
   function toggleSelected(id: number) {
     setSelectedIds((current) =>
@@ -266,9 +356,74 @@ export function ServerOfferAdminTable({ offers }: { offers: Offer[] }) {
 
   return (
     <div className="space-y-4">
+      <AdminTableWorkbench
+        title="套餐筛选"
+        description={`筛选条件和页码会写入地址栏，当前匹配 ${filteredOffers.length} 条套餐。`}
+        searchValue={activeFilters.query}
+        onSearchChange={(value) => updateUrlQuery({ query: value || null })}
+        searchPlaceholder="搜索套餐、商家、地区、线路或优惠码"
+        filterSlot={
+          <>
+            <Select
+              value={activeFilters.status}
+              onValueChange={(value) =>
+                updateUrlQuery({ status: value === "all" ? null : value })
+              }
+            >
+              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[120px] sm:border-0 sm:bg-transparent sm:p-0">
+                <SelectValue placeholder="状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部状态</SelectItem>
+                {statusOptions.map(([key, label]) => (
+                  <SelectItem key={key} value={key}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={activeFilters.reviewStatus}
+              onValueChange={(value) =>
+                updateUrlQuery({
+                  reviewStatus: value === "all" ? null : value,
+                })
+              }
+            >
+              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[120px] sm:border-0 sm:bg-transparent sm:p-0">
+                <SelectValue placeholder="审核" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部审核</SelectItem>
+                {reviewStatusOptions.map(([key, label]) => (
+                  <SelectItem key={key} value={key}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={activeFilters.visibility}
+              onValueChange={(value) =>
+                updateUrlQuery({ visibility: value === "all" ? null : value })
+              }
+            >
+              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[120px] sm:border-0 sm:bg-transparent sm:p-0">
+                <SelectValue placeholder="展示" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部展示</SelectItem>
+                <SelectItem value="visible">前台展示</SelectItem>
+                <SelectItem value="hidden">已隐藏</SelectItem>
+                <SelectItem value="featured">推荐</SelectItem>
+              </SelectContent>
+            </Select>
+          </>
+        }
+      />
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 bg-background p-3 shadow-sm">
         <div className="text-sm text-muted-foreground">
-          已选择 {selectedIds.length} / {offers.length} 条
+          已选择 {selectedIds.length} / {filteredOffers.length} 条
         </div>
         <div className="flex flex-wrap gap-2">
           <Select value={bulkStatus} onValueChange={setBulkStatus}>
@@ -349,7 +504,17 @@ export function ServerOfferAdminTable({ offers }: { offers: Offer[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {offers.map((offer) => (
+            {pagedOffers.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8}>
+                  <AdminTableEmpty
+                    title="没有匹配的套餐"
+                    description="当前筛选条件下没有可展示套餐。可以清空搜索词，或切换状态、审核、展示筛选。"
+                  />
+                </TableCell>
+              </TableRow>
+            ) : null}
+            {pagedOffers.map((offer) => (
               <Fragment key={offer.id}>
                 <TableRow>
                   <TableCell>
@@ -469,6 +634,7 @@ export function ServerOfferAdminTable({ offers }: { offers: Offer[] }) {
           </TableBody>
         </Table>
       </div>
+      <PaginationComponent pageNo={currentPage} totalPage={totalPage} />
     </div>
   );
 }

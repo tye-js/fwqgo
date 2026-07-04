@@ -10,6 +10,8 @@ export type AffiliateRewriteMatch = {
   finalHref: string;
   matchedDomain: string;
   providerName: string;
+  affParam: string;
+  affValue: string;
   mode: "param" | "replace";
 };
 
@@ -274,6 +276,8 @@ export async function rewriteAffiliateLinks(input: {
       finalHref: rewritten.href,
       matchedDomain: articleProvider.matchedDomain,
       providerName: articleProvider.provider.name,
+      affParam: articleProvider.provider.affParam,
+      affValue: articleProvider.provider.affValue,
       mode: rewritten.mode,
     });
   }

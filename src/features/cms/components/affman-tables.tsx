@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 
 import {
@@ -50,6 +50,7 @@ import {
   notifySuccess,
 } from "@/lib/admin-toast";
 import { type AffManData } from "@/types";
+import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
 
 type ActionErrorResult = {
   error: string;
@@ -142,15 +143,19 @@ function withTimeout<T>(promise: Promise<T>, message: string) {
 export default function AffManTable({
   data,
   initialQuery,
+  initialFilter = "all",
+  initialSort = "id-desc",
 }: {
   data: AffManData[];
   initialQuery: string;
+  initialFilter?: string;
+  initialSort?: string;
 }) {
   const router = useRouter();
-  const pathname = usePathname();
+  const updateUrlQuery = useUrlQueryUpdater();
   const [query, setQuery] = useState(initialQuery);
-  const [filter, setFilter] = useState("all");
-  const [sortValue, setSortValue] = useState("id-desc");
+  const [filter, setFilter] = useState(initialFilter);
+  const [sortValue, setSortValue] = useState(initialSort);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editId, setEditId] = useState<number | null>(null);
   const [name, setName] = useState("");
@@ -173,21 +178,11 @@ export default function AffManTable({
     }
 
     const timeoutId = window.setTimeout(() => {
-      const params = new URLSearchParams(window.location.search);
-
-      if (normalizedQuery) {
-        params.set("query", normalizedQuery);
-      } else {
-        params.delete("query");
-      }
-
-      params.delete("pageNo");
-      const nextUrl = params.toString() ? `${pathname}?${params}` : pathname;
-      router.replace(nextUrl, { scroll: false });
+      updateUrlQuery({ query: normalizedQuery || null });
     }, 400);
 
     return () => window.clearTimeout(timeoutId);
-  }, [initialQuery, pathname, query, router]);
+  }, [initialQuery, query, updateUrlQuery]);
 
   const filteredData = useMemo(() => {
     return data.filter((item) => {
@@ -487,7 +482,13 @@ export default function AffManTable({
         selectionCount={selectedIds.length}
         filterSlot={
           <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
-            <Select value={filter} onValueChange={setFilter}>
+            <Select
+              value={filter}
+              onValueChange={(value) => {
+                setFilter(value);
+                updateUrlQuery({ filter: value === "all" ? null : value });
+              }}
+            >
               <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[140px] sm:border-0 sm:bg-transparent sm:p-0">
                 <SelectValue placeholder="全部商家" />
               </SelectTrigger>
@@ -497,7 +498,13 @@ export default function AffManTable({
                 <SelectItem value="empty-aff">空返利链接</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={sortValue} onValueChange={setSortValue}>
+            <Select
+              value={sortValue}
+              onValueChange={(value) => {
+                setSortValue(value);
+                updateUrlQuery({ sort: value === "id-desc" ? null : value });
+              }}
+            >
               <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[148px] sm:border-0 sm:bg-transparent sm:p-0">
                 <SelectValue placeholder="排序方式" />
               </SelectTrigger>

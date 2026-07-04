@@ -17,12 +17,12 @@ import {
 import { Separator } from "@/components/ui/separator";
 
 const quickCategories = [
-  { id: 1, name: "香港服务器", slug: "hk-vps" },
-  { id: 2, name: "美国服务器", slug: "usa-vps" },
-  { id: 3, name: "便宜 VPS", slug: "cheap-vps" },
-  { id: 4, name: "高防服务器", slug: "ddos-vps" },
-  { id: 5, name: "出海服务器", slug: "export-vps" },
-  { id: 6, name: "原生 IP 服务器", slug: "isp-vps" },
+  { id: 1, name: "香港服务器", href: "/servers/hong-kong" },
+  { id: 2, name: "美国服务器", href: "/servers/united-states" },
+  { id: 3, name: "便宜 VPS", href: "/servers/cheap-vps" },
+  { id: 4, name: "CN2 线路", href: "/search?q=CN2" },
+  { id: 5, name: "CMI 线路", href: "/search?q=CMI" },
+  { id: 6, name: "独立服务器", href: "/search?q=独立服务器" },
 ];
 
 export default function NotFound() {
@@ -71,8 +71,8 @@ export default function NotFound() {
                     variant="outline"
                     className="rounded-md px-6"
                   >
-                    <Link href="/fwq/vps/page/1" prefetch>
-                      去看服务器分类
+                    <Link href="/servers" prefetch>
+                      去看服务器比价
                       <Compass className="size-4" />
                     </Link>
                   </Button>
@@ -116,7 +116,7 @@ export default function NotFound() {
                   {quickCategories.map((category) => (
                     <Link
                       key={category.id}
-                      href={`/fwq/${category.slug}/page/1`}
+                      href={category.href}
                       prefetch
                       className="inline-flex min-h-11 items-center rounded-md border border-border/70 bg-background px-4 py-2 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     >

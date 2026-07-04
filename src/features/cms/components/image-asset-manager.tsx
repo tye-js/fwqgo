@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   Copy,
@@ -62,6 +62,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
+import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
 
 type ImageReference = {
   id: number;
@@ -106,16 +107,23 @@ type ImageMetadataDraft = {
 
 export function ImageAssetManager({
   images,
+  initialQuery = "",
   initialUsageFilter = "all",
+  initialTypeFilter = "all",
+  initialStatusFilter = "all",
 }: {
   images: ImageAssetWithReferences[];
+  initialQuery?: string;
   initialUsageFilter?: string;
+  initialTypeFilter?: string;
+  initialStatusFilter?: string;
 }) {
   const router = useRouter();
-  const [query, setQuery] = useState("");
+  const updateUrlQuery = useUrlQueryUpdater();
+  const [query, setQuery] = useState(initialQuery);
   const [usageFilter, setUsageFilter] = useState(initialUsageFilter);
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState(initialTypeFilter);
+  const [statusFilter, setStatusFilter] = useState(initialStatusFilter);
   const [isPending, startTransition] = useTransition();
   const [replacementPathById, setReplacementPathById] = useState<
     Record<number, string>
@@ -125,6 +133,14 @@ export function ImageAssetManager({
     Record<number, ImageMetadataDraft>
   >({});
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      updateUrlQuery({ query: query || null }, { resetPage: false });
+    }, 400);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [query, updateUrlQuery]);
 
   const filteredImages = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -428,7 +444,16 @@ export function ImageAssetManager({
         selectionCount={filteredImages.length}
         filterSlot={
           <div className="grid w-full gap-2 sm:grid-cols-3">
-            <Select value={usageFilter} onValueChange={setUsageFilter}>
+            <Select
+              value={usageFilter}
+              onValueChange={(value) => {
+                setUsageFilter(value);
+                updateUrlQuery(
+                  { filter: value === "all" ? null : value },
+                  { resetPage: false },
+                );
+              }}
+            >
               <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:p-0">
                 <SelectValue placeholder="引用状态" />
               </SelectTrigger>
@@ -441,7 +466,16 @@ export function ImageAssetManager({
                 <SelectItem value="duplicates">重复图片</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <Select
+              value={typeFilter}
+              onValueChange={(value) => {
+                setTypeFilter(value);
+                updateUrlQuery(
+                  { type: value === "all" ? null : value },
+                  { resetPage: false },
+                );
+              }}
+            >
               <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:p-0">
                 <SelectValue placeholder="图片类型" />
               </SelectTrigger>
@@ -454,7 +488,16 @@ export function ImageAssetManager({
                 ))}
               </SelectContent>
             </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select
+              value={statusFilter}
+              onValueChange={(value) => {
+                setStatusFilter(value);
+                updateUrlQuery(
+                  { status: value === "all" ? null : value },
+                  { resetPage: false },
+                );
+              }}
+            >
               <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:p-0">
                 <SelectValue placeholder="状态" />
               </SelectTrigger>

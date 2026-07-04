@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getServerOfferTopic, offerTopics } from "@/server/offers/server-offers";
+import { toAbsoluteHttpUrl } from "@fwqgo/core/utils";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
@@ -66,6 +67,7 @@ async function ServerTopicContent({
 
   const { topic: topicInfo, offers } = data;
   const pageUrl = `${getSiteUrl()}/servers/${topicInfo.slug}`;
+  const siteUrl = getSiteUrl();
   const itemListJsonLd = {
     "@context": "https://schema.org",
     "@type": "ItemList",
@@ -76,9 +78,7 @@ async function ServerTopicContent({
     itemListElement: offers.slice(0, 30).map((offer, index) => ({
       "@type": "ListItem",
       position: index + 1,
-      url: offer.articleUrl
-        ? new URL(offer.articleUrl, getSiteUrl()).toString()
-        : pageUrl,
+      url: toAbsoluteHttpUrl(offer.articleUrl, siteUrl) ?? pageUrl,
       item: {
         "@type": "Product",
         name: offer.title,
@@ -91,9 +91,7 @@ async function ServerTopicContent({
         category: "VPS and Server Hosting",
         offers: {
           "@type": "Offer",
-          url: offer.purchaseUrl
-            ? new URL(offer.purchaseUrl, getSiteUrl()).toString()
-            : pageUrl,
+          url: toAbsoluteHttpUrl(offer.purchaseUrl, siteUrl) ?? pageUrl,
           price: offer.priceAmount ? String(offer.priceAmount) : undefined,
           priceCurrency: offer.currency ?? undefined,
           availability:

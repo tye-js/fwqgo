@@ -11,16 +11,27 @@ import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
 import PageCard from "@/features/public/components/page-card";
+import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { decodeSlug } from "@fwqgo/core/utils";
+import { getServerOffersByKeywords } from "@/server/offers/server-offers";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
     /\/+$/,
     "",
+  );
+}
+
+function splitKeywords(value: string | null | undefined) {
+  return (
+    value
+      ?.split(/[,，、\s]+/)
+      .map((item) => item.trim())
+      .filter(Boolean) ?? []
   );
 }
 
@@ -46,10 +57,12 @@ export async function generateMetadata(props: {
   const canonicalUrl = `${getSiteUrl()}/en/fwq/tags/${encodeURIComponent(canonicalSlug)}/page/${pageNo}`;
   const zhUrl = `${getSiteUrl()}/fwq/tags/${encodeURIComponent(zhSlug)}/page/${pageNo}`;
 
+  const description =
+    data?.description ?? `${title} server deals, VPS reviews, and coupons.`;
+
   return {
     title: `${title} - fwqgo`,
-    description:
-      data?.description ?? `${title} server deals, VPS reviews, and coupons.`,
+    description,
     keywords: data?.keywords ?? `${title} VPS,${title} server deals`,
     alternates: {
       canonical: canonicalUrl,
@@ -58,6 +71,12 @@ export async function generateMetadata(props: {
         en: canonicalUrl,
         "x-default": zhUrl,
       },
+    },
+    openGraph: {
+      title: `${title} - fwqgo`,
+      description,
+      url: canonicalUrl,
+      siteName: "fwqgo",
     },
   };
 }
@@ -88,6 +107,10 @@ async function TagPageContent({
 
   const posts = postsWithTag.posts;
   const totalPage = Math.ceil((postsWithTag.totalCount ?? 0) / 10);
+  const relatedOffers = await getServerOffersByKeywords({
+    keywords: [postsWithTag.name, ...splitKeywords(postsWithTag.keywords)],
+    limit: 6,
+  });
 
   if ((postsWithTag.totalCount ?? 0) > 0 && postsWithTag.pageNo > totalPage) {
     notFound();
@@ -105,6 +128,12 @@ async function TagPageContent({
           }
           totalCount={postsWithTag.totalCount ?? 0}
           pageNo={postsWithTag.pageNo}
+          language="en"
+        />
+        <RelatedServerOfferCards
+          title={`${postsWithTag.name} related offers`}
+          description="Structured server offers matched to this tag."
+          offers={relatedOffers}
           language="en"
         />
         <div className="space-y-4">
@@ -158,7 +187,13 @@ export default function EnglishTagPage(props: {
       <Header language="en" />
       <Separator />
       <main className="container mx-auto flex-1 px-4 py-6 md:py-8">
-        <Suspense fallback={<div>Loading...</div>}>
+        <Suspense
+          fallback={
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
+              Loading tag articles...
+            </div>
+          }
+        >
           <TagPageContent paramsPromise={props.params} />
         </Suspense>
       </main>

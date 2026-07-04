@@ -710,6 +710,44 @@ export const imageCoverGenerationTasks = pgTable(
   }),
 );
 
+export const serverOfferImportTasks = pgTable(
+  "server_offer_import_tasks",
+  {
+    id: serial("id").primaryKey(),
+    mode: varchar("mode", { length: 24 }).default("single").notNull(),
+    postId: integer("postId"),
+    status: varchar("status", { length: 24 }).default("pending").notNull(),
+    progress: integer("progress").default(0).notNull(),
+    message: text("message"),
+    result: text("result"),
+    errorTitle: text("errorTitle"),
+    errorDetail: text("errorDetail"),
+    createdBy: text("createdBy"),
+    startedAt: timestamp("startedAt"),
+    finishedAt: timestamp("finishedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    modeIdx: index("server_offer_import_tasks_mode_idx").on(table.mode),
+    statusIdx: index("server_offer_import_tasks_status_idx").on(table.status),
+    postIdx: index("server_offer_import_tasks_postId_idx").on(table.postId),
+    statusCreatedAtIdx: index(
+      "server_offer_import_tasks_status_createdAt_idx",
+    ).on(table.status, table.createdAt),
+    postFk: foreignKey({
+      columns: [table.postId],
+      foreignColumns: [posts.id],
+      name: "server_offer_import_tasks_postId_posts_id_fk",
+    }).onDelete("set null"),
+    creatorFk: foreignKey({
+      columns: [table.createdBy],
+      foreignColumns: [users.id],
+      name: "server_offer_import_tasks_createdBy_users_id_fk",
+    }).onDelete("set null"),
+  }),
+);
+
 export const outboundLinks = pgTable(
   "outbound_links",
   {

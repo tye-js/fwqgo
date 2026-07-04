@@ -22,6 +22,7 @@ export function LatestPostsSidebar({
 }) {
   if (posts.length === 0) return null;
   const postPrefix = language === "en" ? "/en/fwq/posts" : "/fwq/posts";
+  const locale = language === "en" ? "en-US" : "zh-CN";
 
   const featuredPost = posts[0];
   if (!featuredPost) return null;
@@ -68,7 +69,7 @@ export function LatestPostsSidebar({
             </h3>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <CalendarDays className="size-3.5" />
-              {formatDate(featuredPost.createdAt)}
+              {formatDate(featuredPost.createdAt, locale)}
             </div>
           </div>
         </Link>
@@ -90,7 +91,7 @@ export function LatestPostsSidebar({
                 </span>
                 <span className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                   <CalendarDays className="size-3" />
-                  {formatDate(post.createdAt)}
+                  {formatDate(post.createdAt, locale)}
                 </span>
               </span>
               <ArrowUpRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-accent" />

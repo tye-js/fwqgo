@@ -35,8 +35,11 @@ export function slugify(text: string): string {
     .join("");
 }
 
-export function formatDate(date: Date) {
-  return date.toLocaleDateString("zh-CN", {
+export function formatDate(date: Date | string, locale = "zh-CN") {
+  const value = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(value.getTime())) return "";
+
+  return value.toLocaleDateString(locale, {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -53,11 +56,11 @@ export function decodeSlug(url: string) {
   }
 }
 
-export function isInternalHref(href: string | null | undefined) {
+export function isInternalHref(href: string | null | undefined): href is string {
   return Boolean(href?.startsWith("/") && !href.startsWith("//"));
 }
 
-export function isHttpHref(href: string | null | undefined) {
+export function isHttpHref(href: string | null | undefined): href is string {
   if (!href) return false;
 
   try {
@@ -65,6 +68,27 @@ export function isHttpHref(href: string | null | undefined) {
     return url.protocol === "http:" || url.protocol === "https:";
   } catch {
     return false;
+  }
+}
+
+export function isSafePublicHref(href: string | null | undefined) {
+  return isInternalHref(href) || isHttpHref(href);
+}
+
+export function toAbsoluteHttpUrl(
+  href: string | null | undefined,
+  baseUrl: string,
+) {
+  if (!href) return null;
+
+  try {
+    const url = new URL(href, baseUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
   }
 }
 

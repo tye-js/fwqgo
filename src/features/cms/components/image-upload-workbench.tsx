@@ -90,12 +90,21 @@ export function ImageUploadWorkbench() {
       body: formData,
     });
     const payload = (await response.json().catch(() => null)) as {
+      data?: { url?: string };
       url?: string;
       error?: string;
+      message?: string;
+      actionError?: { message?: string };
     } | null;
+    const uploadedUrl = payload?.data?.url ?? payload?.url;
 
-    if (!response.ok || !payload?.url) {
-      throw new Error(payload?.error ?? `上传失败，HTTP ${response.status}`);
+    if (!response.ok || !uploadedUrl) {
+      throw new Error(
+        payload?.actionError?.message ??
+          payload?.message ??
+          payload?.error ??
+          `上传失败，HTTP ${response.status}`,
+      );
     }
 
     setItems((prev) =>
@@ -105,7 +114,7 @@ export function ImageUploadWorkbench() {
               ...current,
               status: "success",
               progress: 100,
-              url: payload.url ?? null,
+              url: uploadedUrl,
               message: "已入库",
             }
           : current,

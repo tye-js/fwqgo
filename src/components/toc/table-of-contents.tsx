@@ -5,9 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 
 interface TableOfContentsProps {
   content: string;
+  label?: string;
 }
 
-export function TableOfContents({ content }: TableOfContentsProps) {
+export function TableOfContents({
+  content,
+  label = "本文目录",
+}: TableOfContentsProps) {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const toc = useMemo(() => generateToc(content), [content]);
 
@@ -68,7 +72,7 @@ export function TableOfContents({ content }: TableOfContentsProps) {
   return (
     <nav
       className="toc max-h-[calc(100dvh-170px)] overflow-y-auto pr-1"
-      aria-label="本文目录"
+      aria-label={label}
     >
       <ul className="space-y-1.5">
         {toc.map((item) => (

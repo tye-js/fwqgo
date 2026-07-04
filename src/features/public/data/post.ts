@@ -1,4 +1,5 @@
 import { readDb } from "@fwqgo/db";
+import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { decodeSlug } from "@fwqgo/core/utils";
 import { attachTagsToPosts } from "@fwqgo/db/post-tags";
 import { posts, tags, postTags, homepagePromotedPosts } from "@fwqgo/db/schema";
@@ -13,6 +14,8 @@ import {
   count,
   sql,
   isNotNull,
+  or,
+  ilike,
 } from "drizzle-orm";
 
 type PublicLanguage = "zh" | "en";
@@ -98,6 +101,51 @@ export async function getPostsWithTags(
     return { data: postsData };
   } catch (error) {
     return { error: "获取文章列表失败", message: error };
+  }
+}
+
+export async function searchPublishedPosts(input: {
+  query: string;
+  language?: PublicLanguage;
+  limit?: number;
+}) {
+  "use cache";
+  tagCache(cacheTags.posts, cacheTags.tags);
+
+  const query = input.query.trim();
+  const language = input.language ?? "zh";
+  if (!query) return { data: [] };
+
+  const pattern = `%${query}%`;
+  try {
+    const postsData = await readDb
+      .select({
+        id: posts.id,
+        title: posts.title,
+        slug: posts.slug,
+        description: posts.description,
+        imgUrl: posts.imgUrl,
+        createdAt: posts.createdAt,
+      })
+      .from(posts)
+      .where(
+        and(
+          publishedPostCondition(language),
+          or(
+            ilike(posts.title, pattern),
+            ilike(posts.description, pattern),
+            ilike(posts.keywords, pattern),
+            ilike(posts.content, pattern),
+          ),
+        ),
+      )
+      .orderBy(desc(posts.createdAt))
+      .limit(input.limit ?? 20);
+
+    return { data: await attachTagsToPosts(postsData, language) };
+  } catch (error) {
+    console.error("Failed to search published posts:", error);
+    return { data: [] };
   }
 }
 

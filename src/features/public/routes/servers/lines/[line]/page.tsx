@@ -1,14 +1,11 @@
 import { Suspense } from "react";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { ArrowLeft } from "lucide-react";
+import type { Metadata } from "next";
 
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
-import { ServerOfferTable } from "@/features/public/components/server-offer-table";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { ServerOfferCollectionPage } from "@/features/public/components/server-offer-collection-page";
 import { Card, CardContent } from "@/components/ui/card";
 import { decodeSlug } from "@fwqgo/core/utils";
 import { getServerOfferCollection } from "@/server/offers/server-offers";
@@ -17,13 +14,31 @@ type PageProps = {
   params: Promise<{ line: string }>;
 };
 
-export async function generateMetadata({ params }: PageProps) {
+function getSiteUrl() {
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+}
+
+export async function generateMetadata({
+  params,
+}: PageProps): Promise<Metadata> {
   const { line } = await params;
   const value = decodeSlug(line);
+  const canonicalUrl = `${getSiteUrl()}/servers/lines/${encodeURIComponent(value)}`;
+  const title = `${value}线路服务器优惠套餐 - 服务器go`;
+  const description = `集中查看 ${value} 线路相关 VPS、云服务器和独立服务器套餐，比较价格、地区、优惠码和购买入口。`;
 
   return {
-    title: `${value}线路服务器优惠套餐 - 服务器go`,
-    description: `集中查看 ${value} 线路相关 VPS、云服务器和独立服务器套餐，比较价格、地区、优惠码和购买入口。`,
+    title,
+    description,
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    openGraph: {
+      title,
+      description,
+      url: canonicalUrl,
+      siteName: "服务器go",
+    },
   };
 }
 
@@ -39,30 +54,14 @@ async function LineContent({ params }: PageProps) {
   }
 
   return (
-    <main className="flex-1">
-      <section className="border-b border-border/60 bg-muted/20">
-        <div className="container mx-auto px-4 py-8 md:py-10">
-          <Button asChild variant="ghost" className="mb-5 px-0">
-            <Link href="/servers" prefetch>
-              <ArrowLeft className="size-4" />
-              服务器比价
-            </Link>
-          </Button>
-          <div className="space-y-4">
-            <Badge className="bg-primary text-primary-foreground">线路套餐</Badge>
-            <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-              {value}线路服务器优惠套餐
-            </h1>
-            <p className="max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">
-              {data.description}
-            </p>
-          </div>
-        </div>
-      </section>
-      <section className="container mx-auto px-4 py-8 md:py-10">
-        <ServerOfferTable offers={data.offers} />
-      </section>
-    </main>
+    <ServerOfferCollectionPage
+      kind="line"
+      value={value}
+      title={data.title}
+      description={data.description}
+      offers={data.offers}
+      updatedAt={data.updatedAt}
+    />
   );
 }
 

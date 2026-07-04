@@ -20,11 +20,29 @@ function parsePageNo(value: string | undefined) {
 async function AffManList({
   searchParamsPromise,
 }: {
-  searchParamsPromise: Promise<{ pageNo?: string; query?: string }>;
+  searchParamsPromise: Promise<{
+    pageNo?: string;
+    query?: string;
+    filter?: string;
+    sort?: string;
+  }>;
 }) {
   const searchParams = await searchParamsPromise;
   const pageNo = parsePageNo(searchParams.pageNo);
   const query = searchParams.query?.trim() ?? "";
+  const filter = ["all", "with-aff", "empty-aff"].includes(
+    searchParams.filter ?? "",
+  )
+    ? searchParams.filter!
+    : "all";
+  const sort = [
+    "id-desc",
+    "id-asc",
+    "name-asc",
+    "officialUrl-asc",
+  ].includes(searchParams.sort ?? "")
+    ? searchParams.sort!
+    : "id-desc";
   const { data } = await getAffProviderList({ page: pageNo, query });
   const { data: postCount } = await getAffProviderCount(query);
   const totalPage = Math.ceil((postCount ?? 0) / 20);
@@ -55,7 +73,13 @@ async function AffManList({
         ]}
       />
       <AdminSectionCard>
-        <AffManTable key={query} data={data} initialQuery={query} />
+        <AffManTable
+          key={`${query}-${filter}-${sort}`}
+          data={data}
+          initialQuery={query}
+          initialFilter={filter}
+          initialSort={sort}
+        />
         <PaginationComponent pageNo={pageNo} totalPage={totalPage} />
       </AdminSectionCard>
     </AdminPageShell>
@@ -63,7 +87,12 @@ async function AffManList({
 }
 
 export default function AffManPage(props: {
-  searchParams: Promise<{ pageNo?: string; query?: string }>;
+  searchParams: Promise<{
+    pageNo?: string;
+    query?: string;
+    filter?: string;
+    sort?: string;
+  }>;
 }) {
   return (
     <Suspense

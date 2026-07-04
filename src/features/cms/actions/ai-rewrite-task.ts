@@ -1,7 +1,19 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  ne,
+  or,
+  type SQL,
+} from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -16,6 +28,11 @@ import {
   posts,
   sourceMaterials,
 } from "@fwqgo/db/schema";
+import {
+  aiRewriteTaskSourceTypeFilters,
+  aiRewriteTaskStatusFilters,
+  type AiRewriteTaskListFilters,
+} from "@/features/cms/lib/ai-rewrite-task-filters";
 
 const taskInputSchema = z.object({
   sourceUrl: z.string().url("请输入有效 URL"),
@@ -83,6 +100,103 @@ function revalidateAiTaskPages(taskId?: number) {
     revalidatePath(`/ai-rewrite/tasks/${taskId}`);
     revalidatePath(`/ai-tasks/${taskId}`);
   }
+}
+
+function normalizeAiRewriteTaskListFilters(
+  filters: AiRewriteTaskListFilters = {},
+) {
+  const pageNo =
+    Number.isInteger(filters.pageNo) && (filters.pageNo ?? 0) > 0
+      ? filters.pageNo!
+      : 1;
+  const pageSize =
+    Number.isInteger(filters.pageSize) && (filters.pageSize ?? 0) > 0
+      ? Math.min(filters.pageSize!, 100)
+      : 20;
+  const status = aiRewriteTaskStatusFilters.includes(
+    filters.status as (typeof aiRewriteTaskStatusFilters)[number],
+  )
+    ? filters.status
+    : "all";
+  const sourceType = aiRewriteTaskSourceTypeFilters.includes(
+    filters.sourceType as (typeof aiRewriteTaskSourceTypeFilters)[number],
+  )
+    ? filters.sourceType
+    : "all";
+  const language =
+    filters.language === "zh" || filters.language === "en"
+      ? filters.language
+      : "all";
+
+  return {
+    pageNo,
+    pageSize,
+    offset: (pageNo - 1) * pageSize,
+    status,
+    sourceType,
+    language,
+    query: filters.query?.trim() ?? "",
+  };
+}
+
+function getAiRewriteTaskWhereConditions(
+  filters: ReturnType<typeof normalizeAiRewriteTaskListFilters>,
+) {
+  const conditions: SQL[] = [];
+  const status = filters.status;
+  const sourceType = filters.sourceType;
+
+  if (status && status !== "all") {
+    conditions.push(eq(aiRewriteTasks.status, status));
+  }
+
+  if (sourceType && sourceType !== "all") {
+    conditions.push(eq(aiRewriteTasks.sourceType, sourceType));
+  }
+
+  if (filters.language === "en") {
+    conditions.push(
+      or(eq(posts.language, "en"), eq(aiRewriteTasks.sourceType, "english"))!,
+    );
+  } else if (filters.language === "zh") {
+    conditions.push(
+      or(
+        eq(posts.language, "zh"),
+        and(isNull(posts.language), ne(aiRewriteTasks.sourceType, "english")),
+      )!,
+    );
+  }
+
+  if (filters.query) {
+    const pattern = `%${filters.query}%`;
+    conditions.push(
+      or(
+        ilike(aiRewriteTasks.sourceUrl, pattern),
+        ilike(aiRewriteTasks.sourceTitle, pattern),
+        ilike(aiRewriteTasks.resultTitle, pattern),
+        ilike(posts.title, pattern),
+        ilike(categories.name, pattern),
+      )!,
+    );
+  }
+
+  return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+function englishSourceUrl(postId: number) {
+  return `post://${postId}/english`;
+}
+
+function seoSourceUrl(postId: number) {
+  return `post://${postId}/seo`;
+}
+
+function normalizePostIds(postIds: number[], limit = 50) {
+  return [
+    ...new Set(
+      postIds.filter((id) => Number.isInteger(id) && id > 0).slice(0, limit),
+    ),
+  ];
 }
 
 async function validateCategoryAndStyle(input: {
@@ -380,7 +494,11 @@ export async function retryAiRewriteTaskAction(taskId: number) {
       .where(
         and(
           eq(aiRewriteTasks.id, taskId),
-          inArray(aiRewriteTasks.status, ["failed", "manual_required"]),
+          inArray(aiRewriteTasks.status, [
+            "failed",
+            "manual_required",
+            "cancelled",
+          ]),
         ),
       )
       .returning({
@@ -462,6 +580,436 @@ export async function deleteAiRewriteTaskAction(taskId: number) {
   }
 }
 
+export async function cancelAiRewriteTaskAction(taskId: number) {
+  try {
+    await requireAdminSession();
+
+    const [task] = await db
+      .update(aiRewriteTasks)
+      .set({
+        status: "cancelled",
+        progress: 0,
+        currentStep: "任务已取消",
+        error: null,
+        finishedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(aiRewriteTasks.id, taskId), eq(aiRewriteTasks.status, "pending")),
+      )
+      .returning({
+        id: aiRewriteTasks.id,
+        sourceMaterialId: aiRewriteTasks.sourceMaterialId,
+      });
+
+    if (!task) {
+      return { error: "任务不存在，或当前状态不能取消。运行中任务需要等待本轮结束。" };
+    }
+
+    if (task.sourceMaterialId) {
+      await db
+        .update(sourceMaterials)
+        .set({ status: "cancelled", updatedAt: new Date() })
+        .where(eq(sourceMaterials.id, task.sourceMaterialId));
+    }
+
+    revalidateAiTaskPages(taskId);
+
+    return { data: task };
+  } catch (error) {
+    console.error("取消 AI 改写任务失败:", error);
+    return { error: getErrorMessage(error) };
+  }
+}
+
+export async function enqueueEnglishVersionForPostAction(postId: number) {
+  try {
+    await requireAdminSession();
+
+    const [post] = await db
+      .select({
+        id: posts.id,
+        title: posts.title,
+        slug: posts.slug,
+        content: posts.content,
+        categoryId: posts.categoryId,
+        language: posts.language,
+        translationSourcePostId: posts.translationSourcePostId,
+      })
+      .from(posts)
+      .where(eq(posts.id, postId))
+      .limit(1);
+
+    if (!post) {
+      return { error: "文章不存在或已被删除" };
+    }
+
+    const parentPost =
+      post.language === "en"
+        ? post.translationSourcePostId
+          ? (
+              await db
+                .select({
+                  id: posts.id,
+                  title: posts.title,
+                  slug: posts.slug,
+                  content: posts.content,
+                  categoryId: posts.categoryId,
+                })
+                .from(posts)
+                .where(eq(posts.id, post.translationSourcePostId))
+                .limit(1)
+            )[0]
+          : null
+        : post;
+
+    if (!parentPost) {
+      return { error: "英文文章缺少对应的中文来源，无法重新生成英文" };
+    }
+
+    const sourceSnapshot = parentPost.content.trim().slice(0, 60_000);
+    if (!sourceSnapshot) {
+      return { error: "中文文章正文为空，无法生成英文文章" };
+    }
+
+    const sourceUrl = englishSourceUrl(parentPost.id);
+    const [latestSourceTask] = await db
+      .select({
+        rewriteStyleId: aiRewriteTasks.rewriteStyleId,
+      })
+      .from(aiRewriteTasks)
+      .where(eq(aiRewriteTasks.postId, parentPost.id))
+      .orderBy(desc(aiRewriteTasks.createdAt))
+      .limit(1);
+
+    const [defaultStyle] = latestSourceTask?.rewriteStyleId
+      ? []
+      : await db
+          .select({ id: aiRewriteConfigs.id })
+          .from(aiRewriteConfigs)
+          .where(eq(aiRewriteConfigs.enabled, true))
+          .orderBy(desc(aiRewriteConfigs.isDefault), desc(aiRewriteConfigs.id))
+          .limit(1);
+    const rewriteStyleId =
+      latestSourceTask?.rewriteStyleId ?? defaultStyle?.id ?? null;
+
+    const [existingTask] = await db
+      .select({
+        id: aiRewriteTasks.id,
+        status: aiRewriteTasks.status,
+      })
+      .from(aiRewriteTasks)
+      .where(eq(aiRewriteTasks.sourceUrl, sourceUrl))
+      .orderBy(desc(aiRewriteTasks.createdAt))
+      .limit(1);
+
+    const task = existingTask
+      ? existingTask.status === "running"
+        ? existingTask
+        : (
+            await db
+              .update(aiRewriteTasks)
+              .set({
+                sourceTitle: parentPost.title,
+                sourceContent: sourceSnapshot,
+                sourceType: "english",
+                status: "pending",
+                progress: 0,
+                currentStep: "等待翻译中文改写正文并生成英文 SEO",
+                error: null,
+                categoryId: parentPost.categoryId,
+                rewriteStyleId,
+                postId: parentPost.id,
+                resultTitle: parentPost.title,
+                scrapedTitle: parentPost.title,
+                scrapedHtml: sourceSnapshot,
+                aiInputLength: null,
+                rewriteOutputLength: null,
+                diagnostics: null,
+                startedAt: null,
+                finishedAt: null,
+                updatedAt: new Date(),
+              })
+              .where(eq(aiRewriteTasks.id, existingTask.id))
+              .returning({ id: aiRewriteTasks.id, status: aiRewriteTasks.status })
+          )[0]
+      : (
+          await db
+            .insert(aiRewriteTasks)
+            .values({
+              sourceMaterialId: null,
+              sourceUrl,
+              sourceType: "english",
+              sourceTitle: parentPost.title,
+              sourceContent: sourceSnapshot,
+              status: "pending",
+              progress: 0,
+              currentStep: "等待翻译中文改写正文并生成英文 SEO",
+              categoryId: parentPost.categoryId,
+              rewriteStyleId,
+              postId: parentPost.id,
+              resultTitle: parentPost.title,
+              scrapedTitle: parentPost.title,
+              scrapedHtml: sourceSnapshot,
+            })
+            .returning({ id: aiRewriteTasks.id, status: aiRewriteTasks.status })
+        )[0];
+
+    if (!task) {
+      return { error: "英文生成任务创建失败" };
+    }
+
+    if (task.status !== "running") {
+      await db.delete(aiTaskSteps).where(eq(aiTaskSteps.taskId, task.id));
+      await enqueueAiRewriteTask(task.id);
+    }
+
+    revalidateAiTaskPages(task.id);
+    revalidatePath(`/posts/edit/post/${post.slug}`);
+    revalidatePath(`/posts/edit/post/${parentPost.slug}`);
+
+    return {
+      data: {
+        taskId: task.id,
+        sourcePostId: parentPost.id,
+        sourceSlug: parentPost.slug,
+      },
+    };
+  } catch (error) {
+    console.error("创建英文文章生成任务失败:", error);
+    return { error: getErrorMessage(error) };
+  }
+}
+
+export async function bulkEnqueueEnglishVersionsForPostsAction(
+  postIds: number[],
+) {
+  try {
+    await requireAdminSession();
+
+    const validIds = normalizePostIds(postIds);
+    if (validIds.length === 0) {
+      return { error: "请先选择要生成英文的文章" };
+    }
+
+    const postRows = await db
+      .select({
+        id: posts.id,
+        language: posts.language,
+        translationSourcePostId: posts.translationSourcePostId,
+      })
+      .from(posts)
+      .where(inArray(posts.id, validIds));
+    const foundIds = new Set(postRows.map((post) => post.id));
+    const sourceIds = new Set<number>();
+    let skipped = validIds.filter((id) => !foundIds.has(id)).length;
+
+    for (const post of postRows) {
+      if (post.language === "en") {
+        if (post.translationSourcePostId) {
+          sourceIds.add(post.translationSourcePostId);
+        } else {
+          skipped += 1;
+        }
+        continue;
+      }
+
+      sourceIds.add(post.id);
+    }
+
+    let queued = 0;
+    const errors: Array<{ postId: number; reason: string }> = [];
+    const taskIds: number[] = [];
+
+    for (const sourceId of sourceIds) {
+      const result = await enqueueEnglishVersionForPostAction(sourceId);
+
+      if (result.error) {
+        errors.push({
+          postId: sourceId,
+          reason: result.error,
+        });
+        continue;
+      }
+
+      if (result.data?.taskId) {
+        taskIds.push(result.data.taskId);
+      }
+      queued += 1;
+    }
+
+    revalidateAiTaskPages();
+
+    return {
+      data: {
+        requested: validIds.length,
+        queued,
+        skipped,
+        failed: errors.length,
+        taskIds,
+        errors,
+      },
+    };
+  } catch (error) {
+    console.error("批量创建英文文章任务失败:", error);
+    return { error: getErrorMessage(error) };
+  }
+}
+
+export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
+  try {
+    await requireAdminSession();
+
+    const validIds = normalizePostIds(postIds);
+    if (validIds.length === 0) {
+      return { error: "请先选择要更新 SEO 的文章" };
+    }
+
+    const postRows = await db
+      .select({
+        id: posts.id,
+        title: posts.title,
+        content: posts.content,
+        categoryId: posts.categoryId,
+      })
+      .from(posts)
+      .where(inArray(posts.id, validIds));
+    const foundIds = new Set(postRows.map((post) => post.id));
+    const [defaultStyle] = await db
+      .select({ id: aiRewriteConfigs.id })
+      .from(aiRewriteConfigs)
+      .where(eq(aiRewriteConfigs.enabled, true))
+      .orderBy(desc(aiRewriteConfigs.isDefault), desc(aiRewriteConfigs.id))
+      .limit(1);
+
+    let queued = 0;
+    let running = 0;
+    let skipped = validIds.filter((id) => !foundIds.has(id)).length;
+    const taskIds: number[] = [];
+    const errors: Array<{ postId: number; reason: string }> = [];
+
+    for (const post of postRows) {
+      const sourceSnapshot = post.content.trim().slice(0, 60_000);
+      if (!sourceSnapshot) {
+        skipped += 1;
+        errors.push({ postId: post.id, reason: "文章正文为空" });
+        continue;
+      }
+
+      const [latestSourceTask] = await db
+        .select({
+          rewriteStyleId: aiRewriteTasks.rewriteStyleId,
+        })
+        .from(aiRewriteTasks)
+        .where(eq(aiRewriteTasks.postId, post.id))
+        .orderBy(desc(aiRewriteTasks.createdAt))
+        .limit(1);
+      const rewriteStyleId =
+        latestSourceTask?.rewriteStyleId ?? defaultStyle?.id ?? null;
+      const sourceUrl = seoSourceUrl(post.id);
+      const [existingTask] = await db
+        .select({
+          id: aiRewriteTasks.id,
+          status: aiRewriteTasks.status,
+        })
+        .from(aiRewriteTasks)
+        .where(eq(aiRewriteTasks.sourceUrl, sourceUrl))
+        .orderBy(desc(aiRewriteTasks.createdAt))
+        .limit(1);
+      const task = existingTask
+        ? existingTask.status === "running"
+          ? existingTask
+          : (
+              await db
+                .update(aiRewriteTasks)
+                .set({
+                  sourceTitle: post.title,
+                  sourceContent: sourceSnapshot,
+                  sourceType: "seo",
+                  status: "pending",
+                  progress: 0,
+                  currentStep: "等待更新文章 SEO",
+                  error: null,
+                  categoryId: post.categoryId,
+                  rewriteStyleId,
+                  postId: post.id,
+                  resultTitle: post.title,
+                  scrapedTitle: post.title,
+                  scrapedHtml: sourceSnapshot,
+                  aiInputLength: null,
+                  rewriteOutputLength: null,
+                  diagnostics: null,
+                  startedAt: null,
+                  finishedAt: null,
+                  updatedAt: new Date(),
+                })
+                .where(eq(aiRewriteTasks.id, existingTask.id))
+                .returning({
+                  id: aiRewriteTasks.id,
+                  status: aiRewriteTasks.status,
+                })
+            )[0]
+        : (
+            await db
+              .insert(aiRewriteTasks)
+              .values({
+                sourceMaterialId: null,
+                sourceUrl,
+                sourceType: "seo",
+                sourceTitle: post.title,
+                sourceContent: sourceSnapshot,
+                status: "pending",
+                progress: 0,
+                currentStep: "等待更新文章 SEO",
+                categoryId: post.categoryId,
+                rewriteStyleId,
+                postId: post.id,
+                resultTitle: post.title,
+                scrapedTitle: post.title,
+                scrapedHtml: sourceSnapshot,
+              })
+              .returning({
+                id: aiRewriteTasks.id,
+                status: aiRewriteTasks.status,
+              })
+          )[0];
+
+      if (!task) {
+        errors.push({ postId: post.id, reason: "SEO 任务创建失败" });
+        continue;
+      }
+
+      taskIds.push(task.id);
+
+      if (task.status === "running") {
+        running += 1;
+        continue;
+      }
+
+      await db.delete(aiTaskSteps).where(eq(aiTaskSteps.taskId, task.id));
+      await enqueueAiRewriteTask(task.id);
+      queued += 1;
+    }
+
+    revalidateAiTaskPages();
+
+    return {
+      data: {
+        requested: validIds.length,
+        queued,
+        running,
+        skipped,
+        failed: errors.length,
+        taskIds,
+        errors,
+      },
+    };
+  } catch (error) {
+    console.error("批量创建 SEO 更新任务失败:", error);
+    return { error: getErrorMessage(error) };
+  }
+}
+
 export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
   try {
     await requireAdminSession();
@@ -518,8 +1066,13 @@ export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
   }
 }
 
-export async function getAiRewriteTaskList() {
+export async function getAiRewriteTaskList(
+  filtersInput: AiRewriteTaskListFilters = {},
+) {
   await requireAdminSession();
+
+  const filters = normalizeAiRewriteTaskListFilters(filtersInput);
+  const whereCondition = getAiRewriteTaskWhereConditions(filters);
 
   return db
     .select({
@@ -533,10 +1086,15 @@ export async function getAiRewriteTaskList() {
       error: aiRewriteTasks.error,
       categoryName: categories.name,
       rewriteStyleName: aiRewriteConfigs.styleName,
+      model: aiRewriteConfigs.model,
+      maxTokens: aiRewriteConfigs.maxTokens,
       postId: aiRewriteTasks.postId,
       postSlug: posts.slug,
       postTitle: posts.title,
+      postLanguage: posts.language,
       resultTitle: aiRewriteTasks.resultTitle,
+      aiInputLength: aiRewriteTasks.aiInputLength,
+      rewriteOutputLength: aiRewriteTasks.rewriteOutputLength,
       diagnostics: aiRewriteTasks.diagnostics,
       attempts: aiRewriteTasks.attempts,
       createdAt: aiRewriteTasks.createdAt,
@@ -551,8 +1109,31 @@ export async function getAiRewriteTaskList() {
       eq(aiRewriteTasks.rewriteStyleId, aiRewriteConfigs.id),
     )
     .leftJoin(posts, eq(aiRewriteTasks.postId, posts.id))
+    .where(whereCondition)
     .orderBy(desc(aiRewriteTasks.createdAt))
-    .limit(50);
+    .offset(filters.offset)
+    .limit(filters.pageSize);
+}
+
+export async function getAiRewriteTaskCount(
+  filtersInput: AiRewriteTaskListFilters = {},
+) {
+  await requireAdminSession();
+
+  const filters = normalizeAiRewriteTaskListFilters(filtersInput);
+  const whereCondition = getAiRewriteTaskWhereConditions(filters);
+  const [result] = await db
+    .select({ count: count() })
+    .from(aiRewriteTasks)
+    .leftJoin(categories, eq(aiRewriteTasks.categoryId, categories.id))
+    .leftJoin(
+      aiRewriteConfigs,
+      eq(aiRewriteTasks.rewriteStyleId, aiRewriteConfigs.id),
+    )
+    .leftJoin(posts, eq(aiRewriteTasks.postId, posts.id))
+    .where(whereCondition);
+
+  return result?.count ?? 0;
 }
 
 export async function getAiRewriteTaskDetail(id: number) {
@@ -572,9 +1153,16 @@ export async function getAiRewriteTaskDetail(id: number) {
       error: aiRewriteTasks.error,
       categoryName: categories.name,
       rewriteStyleName: aiRewriteConfigs.styleName,
+      model: aiRewriteConfigs.model,
+      maxTokens: aiRewriteConfigs.maxTokens,
       postId: aiRewriteTasks.postId,
       postSlug: posts.slug,
       postTitle: posts.title,
+      postLanguage: posts.language,
+      postImgUrl: posts.imgUrl,
+      postDescription: posts.description,
+      postKeywords: posts.keywords,
+      postTranslationSourcePostId: posts.translationSourcePostId,
       resultTitle: aiRewriteTasks.resultTitle,
       scrapedTitle: aiRewriteTasks.scrapedTitle,
       scrapedDescription: aiRewriteTasks.scrapedDescription,

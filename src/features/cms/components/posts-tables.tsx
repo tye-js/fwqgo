@@ -1,17 +1,45 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { CircleCheck, CircleX, FileSearch, Trash2 } from "lucide-react";
+import {
+  Archive,
+  CircleCheck,
+  CircleX,
+  FileSearch,
+  ImagePlus,
+  Languages,
+  SearchCheck,
+  Send,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
+  bulkUpdatePostsPublishedAction,
   deletePostById,
   deletePostsByIds,
   updatePost,
 } from "@/features/cms/actions/post";
-import { importServerOffersFromPostAction } from "@/features/cms/actions/server-offers";
+import {
+  batchGenerateArticleCoverImagesAction,
+  getCoverGenerationBatchStatusAction,
+} from "@/features/cms/actions/article-cover-image";
+import {
+  bulkEnqueueEnglishVersionsForPostsAction,
+  enqueueSeoUpdateForPostsAction,
+} from "@/features/cms/actions/ai-rewrite-task";
+import {
+  getServerOfferImportTaskStatusAction,
+  importServerOffersFromSelectedPostsAction,
+  importServerOffersFromPostAction,
+} from "@/features/cms/actions/server-offers";
+import {
+  describeAdminResult,
+  notifyActionError,
+  notifyInfo,
+} from "@/lib/admin-toast";
 import {
   AdminTableEmpty,
   AdminTableWorkbench,
@@ -58,12 +86,43 @@ type ImportStats = {
   scannedPosts: number;
   extracted: number;
   inserted: number;
+  updated: number;
   skipped: number;
 };
 
 function describeImportStats(data: ImportStats) {
-  return `扫描 ${data.scannedPosts} 篇，提取 ${data.extracted} 条，新增 ${data.inserted} 条，跳过 ${data.skipped} 条`;
+  return `扫描 ${data.scannedPosts} 篇，提取 ${data.extracted} 条，新增 ${data.inserted} 条，更新 ${data.updated} 条，跳过 ${data.skipped} 条`;
 }
+
+type ImportTask = {
+  taskId: number;
+  postId: number | null;
+  status: "pending" | "running" | "succeeded" | "failed";
+  progress: number;
+  message: string | null;
+  result: ImportStats | null;
+  done: boolean;
+  errorTitle?: string;
+  errorDetail?: string;
+};
+
+type BulkAction =
+  | "publish"
+  | "draft"
+  | "cover"
+  | "english"
+  | "seo"
+  | "offers"
+  | "delete";
+
+type CoverBatch = {
+  batchId: string;
+  pendingCount: number;
+  runningCount: number;
+  successCount: number;
+  failedCount: number;
+  done?: boolean;
+};
 
 function languageLabel(value: string) {
   return value === "en" ? "英文" : "中文";
@@ -87,8 +146,13 @@ export function PostList({
   const [editPostId, setEditPostId] = useState<number | null>(null);
   const [editPostData, setEditPostData] = useState<PostListProp | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkAction, setBulkAction] = useState<BulkAction | null>(null);
   const [extractingPostId, setExtractingPostId] = useState<number | null>(null);
+  const [activeImportTask, setActiveImportTask] = useState<ImportTask | null>(
+    null,
+  );
+  const [activeCoverBatch, setActiveCoverBatch] =
+    useState<CoverBatch | null>(null);
 
   const filteredPosts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -136,6 +200,113 @@ export function PostList({
     sortedPosts.length > 0 &&
     sortedPosts.every((post) => selectedIds.includes(post.id));
 
+  useEffect(() => {
+    if (!activeImportTask || activeImportTask.done) return;
+
+    let stopped = false;
+    const poll = async () => {
+      const result = await getServerOfferImportTaskStatusAction(
+        activeImportTask.taskId,
+      );
+      if (stopped) return;
+
+      if (!result.success) {
+        notifyActionError(result, {
+          fallbackSuggestion: "请刷新页面后重试。",
+        });
+        return;
+      }
+
+      setActiveImportTask(result.data);
+      if (!result.data.done) {
+        return;
+      }
+
+      setExtractingPostId(null);
+      if (result.data.status === "succeeded" && result.data.result) {
+        toast.success("套餐数据提取完成", {
+          description: describeImportStats(result.data.result),
+        });
+        router.refresh();
+        return;
+      }
+
+      notifyActionError(
+        {
+          errorTitle: result.data.errorTitle ?? "套餐提取失败",
+          message: result.data.errorDetail ?? "请查看服务器日志。",
+        },
+        { fallbackSuggestion: "修正文章内容或提取规则后可以重新提交任务。" },
+      );
+    };
+
+    void poll();
+    const timer = window.setInterval(() => {
+      void poll();
+    }, 3000);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [activeImportTask, router]);
+
+  useEffect(() => {
+    if (!activeCoverBatch || activeCoverBatch.done) return;
+
+    let stopped = false;
+    const poll = async () => {
+      const result = await getCoverGenerationBatchStatusAction(
+        activeCoverBatch.batchId,
+      );
+      if (stopped) return;
+
+      if (!result.success) {
+        notifyActionError(result, {
+          fallbackSuggestion: "请刷新页面后重试，或到图片管理里查看封面任务。",
+        });
+        return;
+      }
+
+      setActiveCoverBatch({
+        batchId: result.batchId ?? activeCoverBatch.batchId,
+        pendingCount: result.pendingCount ?? 0,
+        runningCount: result.runningCount ?? 0,
+        successCount: result.successCount ?? 0,
+        failedCount: result.failedCount ?? 0,
+        done: Boolean(result.done),
+      });
+
+      if (!result.done) {
+        return;
+      }
+
+      const description = describeAdminResult([
+        `成功 ${result.successCount ?? 0} 张`,
+        (result.failedCount ?? 0) > 0
+          ? `失败 ${result.failedCount ?? 0} 张`
+          : null,
+      ]);
+
+      if ((result.failedCount ?? 0) > 0) {
+        toast.warning("批量封面生成已结束，部分失败", { description });
+      } else {
+        toast.success("批量封面生成完成", { description });
+      }
+      router.refresh();
+    };
+
+    void poll();
+    const timer = window.setInterval(() => {
+      void poll();
+    }, 3000);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [activeCoverBatch, router]);
+
   async function handleDelete(id: number) {
     try {
       const { error } = await deletePostById(id);
@@ -160,7 +331,7 @@ export function PostList({
       return;
     }
 
-    setIsBulkDeleting(true);
+    setBulkAction("delete");
     try {
       const { error } = await deletePostsByIds(selectedIds);
 
@@ -177,7 +348,250 @@ export function PostList({
         description: error instanceof Error ? error.message : "请稍后重试。",
       });
     } finally {
-      setIsBulkDeleting(false);
+      setBulkAction(null);
+    }
+  }
+
+  async function handleBulkPublished(published: boolean) {
+    if (selectedIds.length === 0) {
+      toast.error("请先选择文章");
+      return;
+    }
+
+    setBulkAction(published ? "publish" : "draft");
+    try {
+      const result = await bulkUpdatePostsPublishedAction({
+        ids: selectedIds,
+        published,
+      });
+
+      if (result.error) {
+        toast.error(result.error, {
+          description:
+            typeof result.message === "string" ? result.message : "请稍后重试。",
+        });
+        return;
+      }
+
+      if (!result.data) {
+        toast.error("批量操作没有返回结果", {
+          description: "请刷新页面后确认文章状态。",
+        });
+        return;
+      }
+
+      const stats = result.data;
+      const description = describeAdminResult([
+        `处理 ${stats.requested} 篇`,
+        `更新 ${stats.updated} 篇`,
+        stats.unchanged > 0 ? `跳过 ${stats.unchanged} 篇` : null,
+        stats.blocked > 0 ? `返利审计拦截 ${stats.blocked} 篇` : null,
+        stats.failed > 0 ? `失败 ${stats.failed} 篇` : null,
+        stats.blockedHosts.length > 0
+          ? `需补规则：${stats.blockedHosts.slice(0, 5).join(", ")}`
+          : null,
+      ]);
+
+      if (stats.blocked > 0 || stats.failed > 0) {
+        toast.warning(published ? "批量发布已处理，部分未发布" : "批量转草稿已处理", {
+          description,
+        });
+      } else {
+        toast.success(published ? "批量发布完成" : "批量转草稿完成", {
+          description,
+        });
+        setSelectedIds([]);
+      }
+
+      router.refresh();
+    } catch (error) {
+      toast.error(published ? "批量发布失败" : "批量转草稿失败", {
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      });
+    } finally {
+      setBulkAction(null);
+    }
+  }
+
+  async function handleBulkGenerateCovers() {
+    if (selectedIds.length === 0) {
+      toast.error("请先选择文章");
+      return;
+    }
+
+    setBulkAction("cover");
+    try {
+      const result = await batchGenerateArticleCoverImagesAction({
+        postIds: selectedIds,
+      });
+
+      if (!result.success) {
+        notifyActionError(result, {
+          fallbackSuggestion: "单次最多选择 20 篇文章，请减少选择后重试。",
+        });
+        return;
+      }
+
+      if (!result.batchId) {
+        notifyActionError(
+          { error: "封面生成任务没有返回批次号" },
+          { fallbackSuggestion: "请刷新页面后重试。" },
+        );
+        return;
+      }
+
+      setActiveCoverBatch({
+        batchId: result.batchId,
+        pendingCount: result.pendingCount ?? 0,
+        runningCount: result.runningCount ?? 0,
+        successCount: result.successCount ?? 0,
+        failedCount: result.failedCount ?? 0,
+        done: false,
+      });
+      notifyInfo({
+        title: "批量封面生成已加入后台队列",
+        description: describeAdminResult([
+          `批次 ${result.batchId}`,
+          `排队 ${result.pendingCount ?? 0} 篇`,
+        ]),
+      });
+      setSelectedIds([]);
+    } catch (error) {
+      toast.error("批量生成封面失败", {
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      });
+    } finally {
+      setBulkAction(null);
+    }
+  }
+
+  async function handleBulkEnglish() {
+    if (selectedIds.length === 0) {
+      toast.error("请先选择文章");
+      return;
+    }
+
+    setBulkAction("english");
+    try {
+      const result = await bulkEnqueueEnglishVersionsForPostsAction(selectedIds);
+
+      if (result.error) {
+        toast.error("批量生成英文失败", {
+          description: result.error,
+        });
+        return;
+      }
+
+      if (!result.data) {
+        toast.error("批量生成英文没有返回结果", {
+          description: "请到 AI 任务中心确认任务是否已创建。",
+        });
+        return;
+      }
+
+      const stats = result.data;
+      toast.success("英文生成任务已加入 AI 任务中心", {
+        description: describeAdminResult([
+          `处理 ${stats.requested} 篇`,
+          `排队 ${stats.queued} 个任务`,
+          stats.skipped > 0 ? `跳过 ${stats.skipped} 篇` : null,
+          stats.failed > 0 ? `失败 ${stats.failed} 个` : null,
+        ]),
+      });
+      if (stats.failed === 0) {
+        setSelectedIds([]);
+      }
+      router.refresh();
+    } catch (error) {
+      toast.error("批量生成英文失败", {
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      });
+    } finally {
+      setBulkAction(null);
+    }
+  }
+
+  async function handleBulkSeo() {
+    if (selectedIds.length === 0) {
+      toast.error("请先选择文章");
+      return;
+    }
+
+    setBulkAction("seo");
+    try {
+      const result = await enqueueSeoUpdateForPostsAction(selectedIds);
+
+      if (result.error) {
+        toast.error("批量更新 SEO 失败", {
+          description: result.error,
+        });
+        return;
+      }
+
+      if (!result.data) {
+        toast.error("批量更新 SEO 没有返回结果", {
+          description: "请到 AI 任务中心确认任务是否已创建。",
+        });
+        return;
+      }
+
+      const stats = result.data;
+      toast.success("SEO 更新任务已加入 AI 任务中心", {
+        description: describeAdminResult([
+          `处理 ${stats.requested} 篇`,
+          `排队 ${stats.queued} 个任务`,
+          stats.running > 0 ? `运行中 ${stats.running} 个` : null,
+          stats.skipped > 0 ? `跳过 ${stats.skipped} 篇` : null,
+          stats.failed > 0 ? `失败 ${stats.failed} 个` : null,
+        ]),
+      });
+      if (stats.failed === 0) {
+        setSelectedIds([]);
+      }
+      router.refresh();
+    } catch (error) {
+      toast.error("批量更新 SEO 失败", {
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      });
+    } finally {
+      setBulkAction(null);
+    }
+  }
+
+  async function handleBulkExtractOffers() {
+    if (selectedIds.length === 0) {
+      toast.error("请先选择文章");
+      return;
+    }
+
+    setBulkAction("offers");
+    try {
+      const result = await importServerOffersFromSelectedPostsAction(
+        selectedIds,
+      );
+
+      if (!result.success) {
+        notifyActionError(result);
+        return;
+      }
+
+      toast.success("批量套餐提取已加入后台队列", {
+        description: describeAdminResult([
+          `处理 ${result.data.requested} 篇`,
+          `排队 ${result.data.queued} 个任务`,
+          result.data.failed > 0 ? `失败 ${result.data.failed} 个` : null,
+        ]),
+      });
+      if (result.data.failed === 0) {
+        setSelectedIds([]);
+      }
+      router.refresh();
+    } catch (error) {
+      toast.error("批量提取套餐失败", {
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      });
+    } finally {
+      setBulkAction(null);
     }
   }
 
@@ -223,22 +637,28 @@ export function PostList({
     try {
       const result = await importServerOffersFromPostAction(postId);
       if (!result.success) {
-        toast.error(result.message ?? result.error);
+        setExtractingPostId(null);
+        notifyActionError(result);
         return;
       }
 
-      const data = result.data;
-      if (!data) {
-        toast.error("提取完成但没有返回统计信息");
-        return;
-      }
-
-      toast.success("套餐数据提取完成", {
-        description: describeImportStats(data),
+      setActiveImportTask(result.data);
+      notifyInfo({
+        title: "套餐提取已加入后台队列",
+        description: describeAdminResult([
+          `任务 ID ${result.data.taskId}`,
+          "后台会解析文章表格、正文段落和购买链接",
+        ]),
       });
-      router.refresh();
-    } finally {
+    } catch (error) {
       setExtractingPostId(null);
+      notifyActionError(
+        {
+          error: "套餐提取任务创建失败",
+          message: error instanceof Error ? error.message : "请稍后重试。",
+        },
+        { fallbackSuggestion: "请确认登录状态和文章是否存在。" },
+      );
     }
   }
 
@@ -254,11 +674,13 @@ export function PostList({
     setSelectedIds(checked ? sortedPosts.map((post) => post.id) : []);
   }
 
+  const bulkDisabled = selectedIds.length === 0 || bulkAction !== null;
+
   return (
     <div className="space-y-4">
       <AdminTableWorkbench
         title="文章工作台"
-        description="支持快速搜索标题与 slug，按发布状态筛选，并可批量删除文章。"
+        description="支持搜索、筛选、批量发布/转草稿、生成封面、生成英文、更新 SEO、提取套餐和删除文章。"
         searchValue={query}
         onSearchChange={setQuery}
         searchPlaceholder="搜索文章标题或 slug"
@@ -295,17 +717,82 @@ export function PostList({
           </div>
         }
         actionSlot={
-          <Button
-            variant="destructive"
-            disabled={selectedIds.length === 0 || isBulkDeleting}
-            onClick={handleBulkDelete}
-            className="min-h-11 w-full sm:w-auto"
-          >
-            <Trash2 className="size-4" />
-            {isBulkDeleting ? "删除中..." : "批量删除"}
-          </Button>
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto xl:justify-end">
+            <Button
+              variant="outline"
+              disabled={bulkDisabled}
+              onClick={() => handleBulkPublished(true)}
+              className="min-h-11 w-full sm:w-auto"
+            >
+              <Send className="size-4" />
+              {bulkAction === "publish" ? "发布中..." : "批量发布"}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={bulkDisabled}
+              onClick={() => handleBulkPublished(false)}
+              className="min-h-11 w-full sm:w-auto"
+            >
+              <Archive className="size-4" />
+              {bulkAction === "draft" ? "处理中..." : "转草稿"}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={bulkDisabled}
+              onClick={handleBulkGenerateCovers}
+              className="min-h-11 w-full sm:w-auto"
+            >
+              <ImagePlus className="size-4" />
+              {bulkAction === "cover" ? "排队中..." : "生成封面"}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={bulkDisabled}
+              onClick={handleBulkEnglish}
+              className="min-h-11 w-full sm:w-auto"
+            >
+              <Languages className="size-4" />
+              {bulkAction === "english" ? "排队中..." : "生成英文"}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={bulkDisabled}
+              onClick={handleBulkSeo}
+              className="min-h-11 w-full sm:w-auto"
+            >
+              <SearchCheck className="size-4" />
+              {bulkAction === "seo" ? "排队中..." : "更新 SEO"}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={bulkDisabled}
+              onClick={handleBulkExtractOffers}
+              className="min-h-11 w-full sm:w-auto"
+            >
+              <FileSearch className="size-4" />
+              {bulkAction === "offers" ? "排队中..." : "提取套餐"}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={bulkDisabled}
+              onClick={handleBulkDelete}
+              className="min-h-11 w-full sm:w-auto"
+            >
+              <Trash2 className="size-4" />
+              {bulkAction === "delete" ? "删除中..." : "批量删除"}
+            </Button>
+          </div>
         }
       />
+
+      {activeCoverBatch && !activeCoverBatch.done ? (
+        <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs leading-5 text-muted-foreground">
+          封面批次 {activeCoverBatch.batchId} 正在后台处理：
+          成功 {activeCoverBatch.successCount}，运行{" "}
+          {activeCoverBatch.runningCount}，排队 {activeCoverBatch.pendingCount}
+          ，失败 {activeCoverBatch.failedCount}
+        </div>
+      ) : null}
 
       {sortedPosts.length === 0 ? (
         <AdminTableEmpty

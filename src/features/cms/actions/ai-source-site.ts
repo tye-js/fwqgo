@@ -12,6 +12,7 @@ import {
   aiSourceSites,
   categories,
 } from "@fwqgo/db/schema";
+import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 
 function isHttpUrl(value: string) {
   try {
@@ -59,6 +60,16 @@ function revalidateAiTaskPages() {
   revalidatePath("/ai-rewrite/tasks");
   revalidatePath("/ai-tasks");
 }
+
+type SourceSiteRunInput = {
+  id: number;
+  name: string;
+  siteUrl: string;
+  feedUrl: string | null;
+  categoryId: number;
+  rewriteStyleId: number | null;
+  limit: number;
+};
 
 function parseSourceSiteFormData(formData: FormData) {
   const rewriteStyleId = formData.get("rewriteStyleId");
@@ -221,6 +232,71 @@ export async function runAiSourceSiteAction(id: number) {
       return { error: "来源站已停用" };
     }
 
+    await db
+      .update(aiSourceSites)
+      .set({
+        lastRunAt: new Date(),
+        lastDiscoveredCount: 0,
+        lastCreatedCount: 0,
+        lastSkippedCount: 0,
+        lastRunDetails: JSON.stringify({
+          runAt: new Date().toISOString(),
+          queued: true,
+          message: "来源站抓取已进入后台队列",
+        }),
+        lastError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(aiSourceSites.id, id));
+
+    enqueueAdminBackgroundJob({
+      key: `ai-source-site:${id}`,
+      label: `来源站抓取：${site.name}`,
+      run: () =>
+        runAiSourceSiteInBackground({
+          id: site.id,
+          name: site.name,
+          siteUrl: site.siteUrl,
+          feedUrl: site.feedUrl,
+          categoryId: site.categoryId,
+          rewriteStyleId: site.rewriteStyleId,
+          limit: site.limit,
+        }),
+    });
+    revalidateAiTaskPages();
+
+    return {
+      data: {
+        queued: true,
+        discoveredCount: 0,
+        createdCount: 0,
+        skippedCount: 0,
+        discoveredUrls: [],
+        skippedUrls: [],
+        tasks: [],
+      },
+    };
+  } catch (error) {
+    console.error("执行来源站抓取失败:", error);
+    await db
+      .update(aiSourceSites)
+      .set({
+        lastRunAt: new Date(),
+        lastError: getErrorMessage(error),
+        lastRunDetails: JSON.stringify({
+          runAt: new Date().toISOString(),
+          error: getErrorMessage(error),
+        }),
+        updatedAt: new Date(),
+      })
+      .where(eq(aiSourceSites.id, id));
+    revalidateAiTaskPages();
+    return { error: getErrorMessage(error) };
+  }
+}
+
+async function runAiSourceSiteInBackground(site: SourceSiteRunInput) {
+  try {
     const result = await pullSourceSiteToAiTasks({
       siteUrl: site.siteUrl,
       feedUrl: site.feedUrl,
@@ -243,13 +319,9 @@ export async function runAiSourceSiteAction(id: number) {
         lastError: null,
         updatedAt: new Date(),
       })
-      .where(eq(aiSourceSites.id, id));
-
-    revalidateAiTaskPages();
-
-    return { data: result };
+      .where(eq(aiSourceSites.id, site.id));
   } catch (error) {
-    console.error("执行来源站抓取失败:", error);
+    console.error("后台来源站抓取失败:", error);
     await db
       .update(aiSourceSites)
       .set({
@@ -261,8 +333,8 @@ export async function runAiSourceSiteAction(id: number) {
         }),
         updatedAt: new Date(),
       })
-      .where(eq(aiSourceSites.id, id));
+      .where(eq(aiSourceSites.id, site.id));
+  } finally {
     revalidateAiTaskPages();
-    return { error: getErrorMessage(error) };
   }
 }

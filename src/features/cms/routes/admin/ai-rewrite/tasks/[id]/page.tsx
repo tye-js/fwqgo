@@ -13,6 +13,7 @@ import {
 import { getAiRewriteTaskDetail } from "@/features/cms/actions/ai-rewrite-task";
 import { AiRewriteTaskRetryButton } from "@/features/cms/components/ai-rewrite-task-retry-button";
 import { AiRewriteTaskResolveButton } from "@/features/cms/components/ai-rewrite-task-resolve-button";
+import { AffiliateRewriteAudit } from "@/features/cms/components/affiliate-rewrite-audit";
 import {
   AdminPageShell,
   AdminSectionCard,
@@ -37,6 +38,7 @@ const statusLabels: Record<string, string> = {
   succeeded: "已完成",
   manual_required: "需人工处理",
   failed: "失败",
+  cancelled: "已取消",
 };
 
 const stepStatusLabels = {
@@ -66,8 +68,10 @@ type TaskStep = {
   name: string;
   status: StepStatus;
   description: string;
+  progress?: number;
   attempt?: number;
   time?: Date | string | null;
+  payload?: string | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -107,6 +111,8 @@ function normalizeAffiliateReport(
       finalHref: stringValue(match.finalHref),
       matchedDomain: stringValue(match.matchedDomain),
       providerName: stringValue(match.providerName, "未知商家"),
+      affParam: stringValue(match.affParam),
+      affValue: stringValue(match.affValue),
       mode: match.mode === "replace" ? "replace" : "param",
     };
   };
@@ -213,6 +219,22 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
+function formatMaybeNumber(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : "-";
+}
+
+function parsePayloadPreview(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
+
 function sourceTypeLabel(value: string) {
   const labels: Record<string, string> = {
     url: "网址",
@@ -220,6 +242,7 @@ function sourceTypeLabel(value: string) {
     email: "邮件素材",
     file: "文件导入",
     english: "英文 SEO 生成",
+    seo: "文章 SEO 更新",
   };
 
   return labels[value] ?? value;
@@ -368,8 +391,10 @@ function buildStoredTaskSteps(steps: DbTaskStep[]): TaskStep[] {
       name: step.stepName,
       status: normalizeStepStatus(step.status),
       description: step.error ?? step.message ?? "等待处理",
+      progress: step.progress,
       attempt: step.attempt,
       time: step.finishedAt ?? step.updatedAt ?? step.createdAt,
+      payload: step.payload,
     }));
 }
 
@@ -418,9 +443,161 @@ function TaskStepTimeline({ steps }: { steps: TaskStep[] }) {
                 {formatTime(step.time)}
               </p>
             ) : null}
+            {typeof step.progress === "number" ? (
+              <p className="text-xs text-muted-foreground">
+                进度 {step.progress}%
+              </p>
+            ) : null}
+            {step.payload ? (
+              <details className="pt-1">
+                <summary className="cursor-pointer text-xs font-medium text-primary">
+                  查看步骤 payload
+                </summary>
+                <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
+                  {parsePayloadPreview(step.payload)}
+                </pre>
+              </details>
+            ) : null}
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ProductionChain({
+  task,
+  diagnostics,
+  report,
+}: {
+  task: NonNullable<Awaited<ReturnType<typeof getAiRewriteTaskDetail>>>;
+  diagnostics: ScrapeDiagnostics | null;
+  report: ScrapeDiagnostics["affiliateReport"] | undefined;
+}) {
+  const isEnglishTask = task.sourceType === "english";
+  const hasSeo =
+    Boolean(task.postTitle) ||
+    Boolean(task.postDescription) ||
+    Boolean(task.postKeywords);
+  const items = [
+    {
+      title: "原文 / 素材",
+      status: task.sourceContent || task.scrapedTitle ? "success" : "pending",
+      detail:
+        task.sourceTitle ??
+        task.scrapedTitle ??
+        (isHttpHref(task.sourceUrl) ? task.sourceUrl : "等待读取素材"),
+    },
+    {
+      title: "清洗后正文",
+      status: task.scrapedHtml ? "success" : "pending",
+      detail: task.scrapedHtml
+        ? `${task.scrapedHtml.length} 字符，AI 输入 ${formatMaybeNumber(task.aiInputLength)}`
+        : "暂无正文快照",
+    },
+    {
+      title: isEnglishTask ? "中文改写输入" : "改写中文",
+      status: task.rewriteOutputLength ? "success" : "pending",
+      detail: task.rewriteOutputLength
+        ? `输出 ${task.rewriteOutputLength} 字符`
+        : "等待模型输出",
+    },
+    {
+      title: "翻译英文",
+      status:
+        task.sourceType === "english" && task.postId
+          ? "success"
+          : task.sourceType === "english"
+            ? "running"
+            : "pending",
+      detail:
+        task.sourceType === "english"
+          ? task.postId
+            ? `英文草稿 #${task.postId}`
+            : "正在从中文正文翻译英文"
+          : "中文任务完成后会自动创建英文任务",
+    },
+    {
+      title: "SEO 字段",
+      status: hasSeo ? "success" : "pending",
+      detail: hasSeo
+        ? [task.postTitle, task.postDescription, task.postKeywords]
+            .filter(Boolean)
+            .join(" / ")
+            .slice(0, 160)
+        : "等待标题、摘要、关键词写入草稿",
+    },
+    {
+      title: "封面图",
+      status: task.postImgUrl ? "success" : "pending",
+      detail: task.postImgUrl ?? "暂无封面或自动生图未完成",
+    },
+    {
+      title: "返利审计",
+      status: report
+        ? report.unmatchedLinks.length > 0 || report.invalidLinks.length > 0
+          ? "manual_required"
+          : "success"
+        : "pending",
+      detail: report
+        ? `命中 ${report.matchedLinks.length}，未命中 ${report.unmatchedLinks.length}，无效 ${report.invalidLinks.length}`
+        : diagnostics?.usedAiRewrite
+          ? "英文任务不重复采集返利诊断"
+          : "等待链接替换记录",
+    },
+  ] satisfies Array<{
+    title: string;
+    status: StepStatus;
+    detail: string;
+  }>;
+
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {items.map((item) => (
+        <div
+          key={item.title}
+          className="rounded-md border border-border/70 bg-background p-3"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium">{item.title}</p>
+            <Badge variant={stepStatusVariants[item.status]}>
+              {stepStatusLabels[item.status]}
+            </Badge>
+          </div>
+          <p className="mt-2 line-clamp-3 break-all text-xs leading-5 text-muted-foreground">
+            {item.detail}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TruncationHint({
+  task,
+  diagnostics,
+}: {
+  task: NonNullable<Awaited<ReturnType<typeof getAiRewriteTaskDetail>>>;
+  diagnostics: ScrapeDiagnostics | null;
+}) {
+  const error = task.error ?? diagnostics?.aiRewriteError ?? "";
+  const isTruncated =
+    (diagnostics?.aiInputTruncated ?? false) ||
+    /截断|truncated|max tokens|max_tokens|length/i.test(error);
+
+  if (!isTruncated) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+      <p className="font-medium text-amber-700">可能是输出或输入长度问题</p>
+      <p className="mt-1 leading-6 text-amber-700/90">
+        当前模型 {task.model ?? "未记录"}，Max Tokens{" "}
+        {formatMaybeNumber(task.maxTokens)}，AI 输入{" "}
+        {formatMaybeNumber(task.aiInputLength)}，输出{" "}
+        {formatMaybeNumber(task.rewriteOutputLength)}。如果英文 SEO 或正文生成被截断，优先在 AI 改写配置中调大 Max Tokens，或缩短正文输入。
+      </p>
     </div>
   );
 }
@@ -541,6 +718,9 @@ export async function AiRewriteTaskDetailPageContent({
           {task.status === "failed" ? (
             <AiRewriteTaskRetryButton taskId={task.id} />
           ) : null}
+          {task.status === "cancelled" ? (
+            <AiRewriteTaskRetryButton taskId={task.id} />
+          ) : null}
           {task.status === "manual_required" ? (
             <AiRewriteTaskResolveButton taskId={task.id} />
           ) : null}
@@ -552,11 +732,16 @@ export async function AiRewriteTaskDetailPageContent({
         </div>
       }
     >
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-4 xl:grid-cols-6">
         <Stat label="状态" value={statusLabels[task.status] ?? task.status} />
         <Stat label="尝试次数" value={task.attempts} />
-        <Stat label="AI 输入长度" value={task.aiInputLength ?? "-"} />
-        <Stat label="改写输出长度" value={task.rewriteOutputLength ?? "-"} />
+        <Stat label="模型" value={task.model ?? "-"} />
+        <Stat label="Max Tokens" value={formatMaybeNumber(task.maxTokens)} />
+        <Stat label="AI 输入长度" value={formatMaybeNumber(task.aiInputLength)} />
+        <Stat
+          label="改写输出长度"
+          value={formatMaybeNumber(task.rewriteOutputLength)}
+        />
       </div>
 
       <AdminSectionCard
@@ -572,12 +757,20 @@ export async function AiRewriteTaskDetailPageContent({
             <Badge variant="outline">结束 {formatTime(task.finishedAt)}</Badge>
           </div>
           {task.error ? (
-            <p className="flex gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            <p className="flex gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm leading-6 text-destructive">
               <AlertCircle className="mt-0.5 size-4 shrink-0" />
               {task.error}
             </p>
           ) : null}
+          <TruncationHint task={task} diagnostics={diagnostics} />
         </div>
+      </AdminSectionCard>
+
+      <AdminSectionCard
+        title="文章生产链路"
+        description="按抓取、清洗、改写、翻译、SEO、封面和返利审计查看每一步产物。"
+      >
+        <ProductionChain task={task} diagnostics={diagnostics} report={report} />
       </AdminSectionCard>
 
       <AdminSectionCard
@@ -706,62 +899,17 @@ export async function AiRewriteTaskDetailPageContent({
 
       <AdminSectionCard
         title="返利链接命中"
-        description="确认原站链接是否成功替换为你的推广链接。"
+        description="逐条确认替换前、替换后、命中商家、命中参数，以及是否 href 整条替换。"
       >
         {report ? (
           <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-4">
-              <Stat label="链接总数" value={report.totalLinks} />
-              <Stat label="命中返利" value={report.matchedLinks.length} />
-              <Stat label="未命中" value={report.unmatchedLinks.length} />
-              <Stat label="站内移除" value={report.internalLinksRemoved} />
-            </div>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="space-y-2">
-                <p className="text-sm font-medium">命中记录</p>
-                {report.matchedLinks.slice(0, 10).map((item, index) => (
-                  <div
-                    key={`${item.finalHref}-${index}`}
-                    className="rounded-md border border-border/70 p-3 text-xs"
-                  >
-                    <p className="font-medium">
-                      {item.providerName} / {item.matchedDomain}
-                    </p>
-                    <p className="mt-1 break-all text-muted-foreground">
-                      原链接：{item.resolvedHref}
-                    </p>
-                    <p className="mt-1 break-all text-muted-foreground">
-                      返利：{item.finalHref}
-                    </p>
-                  </div>
-                ))}
-                {report.matchedLinks.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">暂无命中</p>
-                ) : null}
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm font-medium">未命中域名</p>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    ...new Set(
-                      report.unmatchedLinks
-                        .map((item) => item.host)
-                        .filter(Boolean),
-                    ),
-                  ].map((host) => (
-                    <Badge key={host} variant="outline">
-                      {host}
-                    </Badge>
-                  ))}
-                </div>
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/collect/aff-man">
-                    <RotateCcw className="size-4" />
-                    去补返利规则
-                  </Link>
-                </Button>
-              </div>
-            </div>
+            <AffiliateRewriteAudit report={report} />
+            <Button asChild variant="outline" size="sm">
+              <Link href="/collect/aff-man">
+                <RotateCcw className="size-4" />
+                去补返利规则
+              </Link>
+            </Button>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">暂无返利诊断</p>

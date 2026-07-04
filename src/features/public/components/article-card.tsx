@@ -16,6 +16,7 @@ function ArticleCard({
   const postPrefix = language === "en" ? "/en/fwq/posts" : "/fwq/posts";
   const tagPrefix = language === "en" ? "/en/fwq/tags" : "/fwq/tags";
   const href = `${postPrefix}/${post.slug}`;
+  const locale = language === "en" ? "en-US" : "zh-CN";
 
   return (
     <Card
@@ -46,7 +47,7 @@ function ArticleCard({
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
                 <CalendarDays className="size-3" />
-                {formatDate(post.createdAt)}
+                {formatDate(post.createdAt, locale)}
               </span>
               {post.tags[0]?.tag ? (
                 <Link

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { ImageUpload } from "@/features/cms/components/image-upload";
 import { ArticleCoverGenerator } from "@/features/cms/components/article-cover-generator";
+import { AffiliateRewriteAudit } from "@/features/cms/components/affiliate-rewrite-audit";
+import { PostProductionContextPanel } from "@/features/cms/components/post-production-context-panel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -31,6 +33,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { type PostEditFormData } from "@/types/post.types";
 import { toast } from "sonner";
+import { notifyActionError } from "@/lib/admin-toast";
 import { rewriteDraftAffiliateLinksAction } from "@/features/cms/actions/affiliate-rewrite";
 import { type AffiliateRewriteReport } from "@fwqgo/scrape/affiliate-link-rewriter";
 import { type NewTag } from "@/types";
@@ -39,15 +42,21 @@ import {
   AdminPageShell,
   AdminSectionCard,
 } from "@/features/cms/components/admin-page-shell";
+import { type getPostProductionContext } from "@/features/cms/data/post";
 interface Category {
   id: number;
   name: string;
 }
 
+type ProductionContext = NonNullable<
+  Awaited<ReturnType<typeof getPostProductionContext>>
+>;
+
 export default function EditPost({
   post,
   categories,
   postMeta,
+  productionContext,
 }: {
   post: PostEditFormData;
   categories: Category[];
@@ -56,6 +65,7 @@ export default function EditPost({
     slug: string;
     language: string;
   };
+  productionContext: ProductionContext | null;
 }) {
   const postLanguage = postMeta.language === "en" ? "en" : "zh";
   const publicPostHref =
@@ -155,15 +165,26 @@ export default function EditPost({
       });
 
       const result = (await response.json().catch(() => null)) as {
+        success?: boolean;
         error?: string;
+        message?: unknown;
+        actionError?: {
+          title: string;
+          message: string;
+          suggestion?: string;
+        };
       } | null;
-      if (!response.ok || result?.error) {
-        throw new Error(
-          result?.error ??
-            (response.status === 401
-              ? "登录已过期，请重新登录"
-              : "更新文章失败，请重试"),
+      if (!response.ok || result?.success === false || result?.error) {
+        notifyActionError(
+          result ?? {
+            error:
+              response.status === 401
+                ? "登录已过期，请重新登录"
+                : "更新文章失败，请重试",
+          },
+          { fallbackSuggestion: "请检查正文、摘要、分类、标签后再保存。" },
         );
+        return;
       }
 
       toast.success("更新文章成功");
@@ -239,6 +260,10 @@ export default function EditPost({
         </>
       }
     >
+      {productionContext ? (
+        <PostProductionContextPanel context={productionContext} />
+      ) : null}
+
       <form className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
         <AdminSectionCard title="正文编辑" description={postMeta.title}>
           <div className="space-y-3">
@@ -292,78 +317,12 @@ export default function EditPost({
           {affiliateReport ? (
             <div className="mt-3 space-y-3 rounded-md border border-border/70 bg-muted/15 p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">
-                    总链接 {affiliateReport.totalLinks}
-                  </Badge>
-                  <Badge variant="secondary">
-                    命中 {affiliateReport.matchedLinks.length}
-                  </Badge>
-                  <Badge
-                    variant={
-                      affiliateReport.unmatchedLinks.length > 0
-                        ? "destructive"
-                        : "outline"
-                    }
-                  >
-                    未命中 {affiliateReport.unmatchedLinks.length}
-                  </Badge>
-                </div>
+                <p className="font-medium">本次替换审计</p>
                 <Button asChild variant="outline" size="sm" className="h-9">
                   <Link href="/collect/aff-man">补返利规则</Link>
                 </Button>
               </div>
-
-              {affiliateReport.matchedLinks.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="font-medium">命中商家</p>
-                  <div className="space-y-2">
-                    {affiliateReport.matchedLinks
-                      .slice(0, 5)
-                      .map((item, index) => (
-                        <div
-                          key={`${item.finalHref}-${index}`}
-                          className="rounded-md border border-border/70 bg-background p-3 text-xs"
-                        >
-                          <div className="flex flex-wrap gap-2">
-                            <Badge>{item.providerName}</Badge>
-                            <Badge variant="outline">
-                              {item.matchedDomain}
-                            </Badge>
-                            <Badge variant="secondary">
-                              {item.mode === "replace" ? "替换" : "追加参数"}
-                            </Badge>
-                          </div>
-                          <p className="mt-2 break-all text-muted-foreground">
-                            原链接：{item.resolvedHref}
-                          </p>
-                          <p className="mt-1 break-all text-muted-foreground">
-                            返利：{item.finalHref}
-                          </p>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {affiliateReport.unmatchedLinks.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="font-medium">未命中域名</p>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      ...new Set(
-                        affiliateReport.unmatchedLinks
-                          .map((item) => item.host)
-                          .filter(Boolean),
-                      ),
-                    ].map((host) => (
-                      <Badge key={host} variant="outline">
-                        {host}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
+              <AffiliateRewriteAudit report={affiliateReport} />
             </div>
           ) : null}
         </AdminSectionCard>
@@ -389,6 +348,7 @@ export default function EditPost({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <label className="text-sm font-medium">封面图片</label>
                   <ArticleCoverGenerator
+                    postId={post.post.id}
                     title={postMeta.title}
                     description={description ?? ""}
                     keywords={keywords}

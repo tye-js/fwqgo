@@ -7,6 +7,7 @@ import {
 import ArticleCard from "@/features/public/components/article-card";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
 import PageCard from "@/features/public/components/page-card";
+import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,9 +17,19 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Compass } from "lucide-react";
 import { connection } from "next/server";
+import { getServerOffersByKeywords } from "@/server/offers/server-offers";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+}
+
+function splitKeywords(value: string | null | undefined) {
+  return (
+    value
+      ?.split(/[,，、\s]+/)
+      .map((item) => item.trim())
+      .filter(Boolean) ?? []
+  );
 }
 
 export async function generateMetadata(
@@ -32,13 +43,21 @@ export async function generateMetadata(
   const readableName = decodeSlug(params.category).replace(/[-_]+/g, " ");
   const { data: category } = await getCategoryBySlug(params.category);
   const title = category?.name ?? readableName;
+  const description =
+    category?.description ?? `${title}相关的服务器优惠、评测与选购文章。`;
+  const canonical = `${getSiteUrl()}/fwq/${encodeURIComponent(params.category)}/page/${pageNo}`;
   return {
     title: `${title}-服务器go`,
-    description:
-      category?.description ?? `${title}相关的服务器优惠、评测与选购文章。`,
+    description,
     keywords: category?.keywords ?? readableName,
     alternates: {
-      canonical: `${getSiteUrl()}/fwq/${encodeURIComponent(params.category)}/page/${pageNo}`,
+      canonical,
+    },
+    openGraph: {
+      title: `${title}-服务器go`,
+      description,
+      url: canonical,
+      siteName: "服务器go",
     },
   };
 }
@@ -69,7 +88,13 @@ const CategoryPageContent = async ({
     pageNo,
   );
   const { data: totalCount } = await getPublishedPostCountByCategoryId(category.id);
-  const { data: latestPosts } = await getLatestPostsForSidebar();
+  const [{ data: latestPosts }, relatedOffers] = await Promise.all([
+    getLatestPostsForSidebar(),
+    getServerOffersByKeywords({
+      keywords: [category.name, ...splitKeywords(category.keywords)],
+      limit: 6,
+    }),
+  ]);
   const totalPage = Math.ceil((totalCount ?? 0) / 10);
 
   if ((totalCount ?? 0) > 0 && pageNo > totalPage) {
@@ -87,10 +112,37 @@ const CategoryPageContent = async ({
   };
   if (postsError) return <div>加载失败: {postsError}</div>;
   if (!posts) notFound();
+  const pageUrl = `${getSiteUrl()}/fwq/${encodeURIComponent(params.category)}/page/${pageNo}`;
+  const collectionJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    name: categoryInfo.name,
+    description: categoryInfo.description,
+    url: pageUrl,
+    mainEntity: {
+      "@type": "ItemList",
+      numberOfItems: posts.length,
+      itemListElement: posts.map((post, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        url: `${getSiteUrl()}/fwq/posts/${encodeURIComponent(post.slug)}`,
+        name: post.title,
+      })),
+    },
+  };
+
   return (
     <div className="grid gap-8 xl:grid-cols-[minmax(0,0.82fr)_320px]">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }}
+      />
       <div className="space-y-5">
         {category && <PageCard {...categoryInfo} />}
+        <RelatedServerOfferCards
+          title={`${category.name}相关套餐`}
+          offers={relatedOffers}
+        />
         <div className="space-y-4">
           {posts.length > 0 ? (
             posts.map((post) => <ArticleCard key={post.id} post={post} />)
@@ -141,7 +193,13 @@ export default function CategoryPage(
   }
 ) {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
+          正在加载分类文章...
+        </div>
+      }
+    >
       <CategoryPageContent paramsPromise={props.params} />
     </Suspense>
   );

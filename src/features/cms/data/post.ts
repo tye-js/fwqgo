@@ -1,7 +1,15 @@
 import { db } from "@fwqgo/db";
 import { requireAdminSession } from "@fwqgo/auth/session";
-import { posts, categories, postTags, tags } from "@fwqgo/db/schema";
-import { eq, desc, asc, gte, and, count, sql } from "drizzle-orm";
+import {
+  aiRewriteConfigs,
+  aiRewriteTasks,
+  imageCoverGenerationTasks,
+  posts,
+  categories,
+  postTags,
+  tags,
+} from "@fwqgo/db/schema";
+import { eq, desc, asc, gte, and, count, sql, inArray, or } from "drizzle-orm";
 import { decodeSlug } from "@fwqgo/core/utils";
 
 export type PostLanguageFilter = "all" | "zh" | "en";
@@ -14,6 +22,19 @@ export function normalizePostLanguageFilter(
 
 function postLanguageCondition(language: PostLanguageFilter) {
   return language === "all" ? sql`true` : eq(posts.language, language);
+}
+
+function serializeDate(value: Date | string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function englishTaskSourceUrl(postId: number) {
+  return `post://${postId}/english`;
 }
 
 function normalizePagination({
@@ -89,6 +110,164 @@ export async function getPostBySlug(slug: string) {
   } catch (error) {
     return { error: "通过slug获取文章失败", message: error };
   }
+}
+
+export async function getPostProductionContext(postId: number) {
+  await requireAdminSession();
+
+  const [currentPost] = await db
+    .select({
+      id: posts.id,
+      title: posts.title,
+      slug: posts.slug,
+      language: posts.language,
+      translationSourcePostId: posts.translationSourcePostId,
+      imgUrl: posts.imgUrl,
+      description: posts.description,
+      keywords: posts.keywords,
+      published: posts.published,
+      affiliateReviewStatus: posts.affiliateReviewStatus,
+      affiliateReviewDetails: posts.affiliateReviewDetails,
+      affiliateReviewUpdatedAt: posts.affiliateReviewUpdatedAt,
+      createdAt: posts.createdAt,
+      updatedAt: posts.updatedAt,
+    })
+    .from(posts)
+    .where(eq(posts.id, postId))
+    .limit(1);
+
+  if (!currentPost) {
+    return null;
+  }
+
+  const [sourcePost] = currentPost.translationSourcePostId
+    ? await db
+        .select({
+          id: posts.id,
+          title: posts.title,
+          slug: posts.slug,
+          language: posts.language,
+          imgUrl: posts.imgUrl,
+          published: posts.published,
+          updatedAt: posts.updatedAt,
+        })
+        .from(posts)
+        .where(eq(posts.id, currentPost.translationSourcePostId))
+        .limit(1)
+    : [];
+
+  const translations = await db
+    .select({
+      id: posts.id,
+      title: posts.title,
+      slug: posts.slug,
+      language: posts.language,
+      imgUrl: posts.imgUrl,
+      published: posts.published,
+      updatedAt: posts.updatedAt,
+    })
+    .from(posts)
+    .where(eq(posts.translationSourcePostId, currentPost.id))
+    .orderBy(desc(posts.updatedAt), desc(posts.createdAt));
+
+  const parentPostId = sourcePost?.id ?? currentPost.id;
+  const relatedPostIds = [
+    ...new Set([
+      currentPost.id,
+      parentPostId,
+      ...translations.map((post) => post.id),
+    ]),
+  ];
+
+  const recentTasks = await db
+    .select({
+      id: aiRewriteTasks.id,
+      sourceType: aiRewriteTasks.sourceType,
+      sourceUrl: aiRewriteTasks.sourceUrl,
+      status: aiRewriteTasks.status,
+      progress: aiRewriteTasks.progress,
+      currentStep: aiRewriteTasks.currentStep,
+      error: aiRewriteTasks.error,
+      resultTitle: aiRewriteTasks.resultTitle,
+      postId: aiRewriteTasks.postId,
+      postSlug: posts.slug,
+      postTitle: posts.title,
+      model: aiRewriteConfigs.model,
+      maxTokens: aiRewriteConfigs.maxTokens,
+      aiInputLength: aiRewriteTasks.aiInputLength,
+      rewriteOutputLength: aiRewriteTasks.rewriteOutputLength,
+      createdAt: aiRewriteTasks.createdAt,
+      updatedAt: aiRewriteTasks.updatedAt,
+      finishedAt: aiRewriteTasks.finishedAt,
+    })
+    .from(aiRewriteTasks)
+    .leftJoin(posts, eq(aiRewriteTasks.postId, posts.id))
+    .leftJoin(
+      aiRewriteConfigs,
+      eq(aiRewriteTasks.rewriteStyleId, aiRewriteConfigs.id),
+    )
+    .where(
+      or(
+        inArray(aiRewriteTasks.postId, relatedPostIds),
+        eq(aiRewriteTasks.sourceUrl, englishTaskSourceUrl(parentPostId)),
+      ),
+    )
+    .orderBy(desc(aiRewriteTasks.createdAt))
+    .limit(8);
+
+  const coverTasks =
+    relatedPostIds.length > 0
+      ? await db
+          .select({
+            id: imageCoverGenerationTasks.id,
+            postId: imageCoverGenerationTasks.postId,
+            title: imageCoverGenerationTasks.title,
+            status: imageCoverGenerationTasks.status,
+            outputUrl: imageCoverGenerationTasks.outputUrl,
+            errorTitle: imageCoverGenerationTasks.errorTitle,
+            errorDetail: imageCoverGenerationTasks.errorDetail,
+            createdAt: imageCoverGenerationTasks.createdAt,
+            updatedAt: imageCoverGenerationTasks.updatedAt,
+            finishedAt: imageCoverGenerationTasks.finishedAt,
+          })
+          .from(imageCoverGenerationTasks)
+          .where(inArray(imageCoverGenerationTasks.postId, relatedPostIds))
+          .orderBy(desc(imageCoverGenerationTasks.createdAt))
+          .limit(6)
+      : [];
+
+  return {
+    currentPost: {
+      ...currentPost,
+      affiliateReviewUpdatedAt: serializeDate(
+        currentPost.affiliateReviewUpdatedAt,
+      ),
+      createdAt: serializeDate(currentPost.createdAt),
+      updatedAt: serializeDate(currentPost.updatedAt),
+    },
+    sourcePost: sourcePost
+      ? {
+          ...sourcePost,
+          updatedAt: serializeDate(sourcePost.updatedAt),
+        }
+      : null,
+    translations: translations.map((post) => ({
+      ...post,
+      updatedAt: serializeDate(post.updatedAt),
+    })),
+    recentTasks: recentTasks.map((task) => ({
+      ...task,
+      createdAt: serializeDate(task.createdAt),
+      updatedAt: serializeDate(task.updatedAt),
+      finishedAt: serializeDate(task.finishedAt),
+    })),
+    coverTasks: coverTasks.map((task) => ({
+      ...task,
+      createdAt: serializeDate(task.createdAt),
+      updatedAt: serializeDate(task.updatedAt),
+      finishedAt: serializeDate(task.finishedAt),
+    })),
+  };
 }
 
 export async function getPosts({

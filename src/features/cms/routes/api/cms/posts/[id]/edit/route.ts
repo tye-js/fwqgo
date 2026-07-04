@@ -1,8 +1,9 @@
 import { isUnauthorizedError } from "@fwqgo/auth/session";
-import { connection, NextResponse } from "next/server";
+import { connection } from "next/server";
 import { z } from "zod";
 
 import { updatePostContent, updatePostTags } from "@/features/cms/actions/post";
+import { adminApiFailure, adminApiSuccess } from "@/lib/admin-api-response";
 import { type TagMain } from "@/types";
 
 const tagSchema = z.object({
@@ -50,7 +51,11 @@ export async function POST(
     const { id } = await props.params;
     const postId = Number(id);
     if (!Number.isSafeInteger(postId) || postId <= 0) {
-      return NextResponse.json({ error: "文章 ID 不正确" }, { status: 400 });
+      return adminApiFailure("文章 ID 不正确", {
+        status: 400,
+        title: "文章保存失败",
+        suggestion: "请刷新列表后重新进入编辑页。",
+      });
     }
 
     const payload = payloadSchema.parse(await request.json());
@@ -65,7 +70,11 @@ export async function POST(
     });
     const contentError = formatActionError(contentResult);
     if (contentError) {
-      return NextResponse.json({ error: contentError }, { status: 400 });
+      return adminApiFailure(contentError, {
+        status: 400,
+        title: "文章正文保存失败",
+        suggestion: "请检查正文、摘要、分类和推荐标签后再保存。",
+      });
     }
 
     const tagsResult = await updatePostTags({
@@ -75,17 +84,29 @@ export async function POST(
     });
     const tagsError = formatActionError(tagsResult);
     if (tagsError) {
-      return NextResponse.json({ error: tagsError }, { status: 400 });
+      return adminApiFailure(tagsError, {
+        status: 400,
+        title: "文章标签保存失败",
+        suggestion: "请确认标签名称有效，并至少保留一个标签。",
+      });
     }
 
-    return NextResponse.json({ success: true });
+    return adminApiSuccess({ saved: true });
   } catch (error) {
     console.error("Post edit API failed:", error);
 
     if (isUnauthorizedError(error)) {
-      return NextResponse.json({ error: "未登录或登录已过期" }, { status: 401 });
+      return adminApiFailure("未登录或登录已过期", {
+        status: 401,
+        title: "登录已过期",
+        suggestion: "请重新登录后台后再保存。",
+      });
     }
 
-    return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
+    return adminApiFailure(getErrorMessage(error), {
+      status: 500,
+      title: "文章保存失败",
+      suggestion: "请稍后重试；如果持续失败，查看服务器日志。",
+    });
   }
 }

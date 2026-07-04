@@ -3,8 +3,8 @@ import { Compass, Files, Hash } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
-function formatCount(value: number) {
-  return value.toLocaleString("zh-CN");
+function formatCount(value: number, language: "zh" | "en") {
+  return value.toLocaleString(language === "en" ? "en-US" : "zh-CN");
 }
 
 export default function PageCard({
@@ -51,7 +51,7 @@ export default function PageCard({
                 {language === "en" ? "Content size" : "内容规模"}
               </div>
               <p className="mt-2 text-xl font-semibold text-foreground">
-                {formatCount(totalCount ?? 0)}
+                {formatCount(totalCount ?? 0, language)}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {language === "en" ? "published articles" : "已收录文章"}

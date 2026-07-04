@@ -8,6 +8,7 @@ import {
   ArrowUpRight,
   CalendarDays,
   MapPin,
+  Search,
   ShoppingCart,
 } from "lucide-react";
 
@@ -29,7 +30,7 @@ import {
   getOptimizedImageSrc,
   isRenderableImageSrc,
 } from "@fwqgo/core/image-src";
-import { formatDate, isInternalHref } from "@fwqgo/core/utils";
+import { formatDate, isHttpHref, isInternalHref } from "@fwqgo/core/utils";
 import {
   getLatestServerOffers,
   getServerOfferTopicCounts,
@@ -69,6 +70,15 @@ function formatCount(value: number) {
   return value.toLocaleString("zh-CN");
 }
 
+const quickIntentLinks = [
+  { label: "香港 CN2", href: "/search?q=香港%20CN2" },
+  { label: "香港 CMI", href: "/search?q=香港%20CMI" },
+  { label: "美国 VPS", href: "/servers/united-states" },
+  { label: "便宜 VPS", href: "/servers/cheap-vps" },
+  { label: "独立服务器", href: "/search?q=独立服务器" },
+  { label: "优惠码", href: "/search?q=优惠码" },
+];
+
 function formatOfferPrice(offer: Awaited<ReturnType<typeof getLatestServerOffers>>[number]) {
   if (!offer.priceAmount) return "价格待补充";
   const amount = Number(offer.priceAmount);
@@ -100,6 +110,14 @@ function OfferArticleLink({
   if (isInternalHref(href)) {
     return (
       <Link href={href} prefetch className={className}>
+        {children}
+      </Link>
+    );
+  }
+
+  if (!isHttpHref(href)) {
+    return (
+      <Link href="/servers" prefetch className={className}>
         {children}
       </Link>
     );
@@ -288,6 +306,25 @@ async function HomeContent() {
                     <ArrowUpRight className="size-4" />
                   </Link>
                 </Button>
+              </div>
+
+              <div className="rounded-lg border border-border/70 bg-background/80 p-3 shadow-sm backdrop-blur">
+                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <Search className="size-3.5" />
+                  快速筛选
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {quickIntentLinks.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      prefetch
+                      className="inline-flex min-h-9 items-center rounded-full border border-border/70 bg-background px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/5 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
               </div>
 
               <HeroTagSearch />
