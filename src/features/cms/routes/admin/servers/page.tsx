@@ -1,7 +1,12 @@
 import { connection } from "next/server";
 import { Suspense } from "react";
 
-import { AdminPageShell, AdminSectionCard, AdminSummaryStrip } from "@/features/cms/components/admin-page-shell";
+import { AdminLoading } from "@/features/cms/components/admin-loading";
+import {
+  AdminPageShell,
+  AdminSectionCard,
+  AdminSummaryStrip,
+} from "@/features/cms/components/admin-page-shell";
 import { ServerOfferImporter } from "@/features/cms/components/server-offer-importer";
 import {
   getServerOfferImportPostOptions,
@@ -60,17 +65,11 @@ export default function ServerOffersAdminPage() {
   return (
     <Suspense
       fallback={
-        <AdminPageShell
+        <AdminLoading
           badge="服务器套餐"
           title="提取套餐数据"
           description="正在加载可提取文章。"
-        >
-          <AdminSectionCard>
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              正在加载...
-            </div>
-          </AdminSectionCard>
-        </AdminPageShell>
+        />
       }
     >
       <ServerOffersAdminContent />

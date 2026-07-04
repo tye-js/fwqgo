@@ -253,37 +253,46 @@ export default function AffManTable({
     }
 
     setIsSave(true);
-    const result = await withTimeout(
-      updateAffProvider({
-        id: editId,
-        ...validation.data,
-      }),
-      "保存超时，请稍后重试",
-    );
-    setIsSave(false);
+    try {
+      const result = await withTimeout(
+        updateAffProvider({
+          id: editId,
+          ...validation.data,
+        }),
+        "保存超时，请稍后重试",
+      );
 
-    if (isActionError(result)) {
-      notifyError({
-        title: "返利商家保存失败",
+      if (isActionError(result)) {
+        notifyError({
+          title: "返利商家保存失败",
+          description: describeAdminResult([
+            validation.data.name,
+            validation.data.officialUrl,
+            result.message ?? result.error,
+          ]),
+        });
+        return;
+      }
+
+      setEditId(null);
+      notifySuccess({
+        title: "返利商家已更新",
         description: describeAdminResult([
           validation.data.name,
           validation.data.officialUrl,
-          result.message ?? result.error,
+          `${validation.data.affParam}=${validation.data.affValue}`,
         ]),
       });
-      return;
+      router.refresh();
+    } catch (error) {
+      notifyError({
+        title: "返利商家保存失败",
+        description:
+          error instanceof Error ? error.message : "保存失败，请稍后重试",
+      });
+    } finally {
+      setIsSave(false);
     }
-
-    setEditId(null);
-    notifySuccess({
-      title: "返利商家已更新",
-      description: describeAdminResult([
-        validation.data.name,
-        validation.data.officialUrl,
-        `${validation.data.affParam}=${validation.data.affValue}`,
-      ]),
-    });
-    router.refresh();
   }
 
   async function handleDelete(id: number) {
@@ -323,8 +332,9 @@ export default function AffManTable({
         description:
           error instanceof Error ? error.message : "删除失败，请稍后重试",
       });
+    } finally {
+      setIsDelete(false);
     }
-    setIsDelete(false);
   }
 
   async function handleBulkDelete() {
@@ -476,9 +486,9 @@ export default function AffManTable({
         searchPlaceholder="搜索商家名、官网域名或返利链接"
         selectionCount={selectedIds.length}
         filterSlot={
-          <div className="flex items-center gap-3">
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
             <Select value={filter} onValueChange={setFilter}>
-              <SelectTrigger className="h-auto w-[140px] border-0 bg-transparent p-0 shadow-none focus:ring-0">
+              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[140px] sm:border-0 sm:bg-transparent sm:p-0">
                 <SelectValue placeholder="全部商家" />
               </SelectTrigger>
               <SelectContent>
@@ -488,7 +498,7 @@ export default function AffManTable({
               </SelectContent>
             </Select>
             <Select value={sortValue} onValueChange={setSortValue}>
-              <SelectTrigger className="h-auto w-[148px] border-0 bg-transparent p-0 shadow-none focus:ring-0">
+              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[148px] sm:border-0 sm:bg-transparent sm:p-0">
                 <SelectValue placeholder="排序方式" />
               </SelectTrigger>
               <SelectContent>
@@ -505,6 +515,7 @@ export default function AffManTable({
             variant="destructive"
             disabled={selectedIds.length === 0 || isBulkDeleting}
             onClick={handleBulkDelete}
+            className="min-h-10 w-full sm:w-auto"
           >
             <Trash2 className="size-4" />
             {isBulkDeleting ? "删除中..." : "批量删除"}
@@ -544,11 +555,19 @@ export default function AffManTable({
               onChange={(e) => setOfficialUrl(e.target.value)}
               placeholder="商家官网"
             />
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setIsAdd(false)}>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                variant="secondary"
+                onClick={() => setIsAdd(false)}
+                className="min-h-10"
+              >
                 取消
               </Button>
-              <Button disabled={isAddSave} onClick={handleAdd}>
+              <Button
+                disabled={isAddSave}
+                onClick={handleAdd}
+                className="min-h-10"
+              >
                 {isAddSave ? "添加中..." : "添加"}
               </Button>
             </div>
@@ -568,164 +587,172 @@ export default function AffManTable({
           description="试试更换关键词，或者切换筛选项看看。"
         />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[44px]">
-                <Checkbox
-                  checked={allFilteredSelected}
-                  onCheckedChange={(checked) =>
-                    setSelectedIds(
-                      Boolean(checked) ? sortedData.map((item) => item.id) : [],
-                    )
-                  }
-                />
-              </TableHead>
-              <TableHead>ID</TableHead>
-              <TableHead className="text-nowrap">商家名</TableHead>
-              <TableHead className="text-nowrap">返利链接</TableHead>
-              <TableHead className="text-nowrap">返利参数</TableHead>
-              <TableHead className="text-nowrap">返利值</TableHead>
-              <TableHead>商家官网</TableHead>
-              <TableHead className="text-center">操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sortedData.map((item) => (
-              <TableRow key={item.id} className="hover:bg-muted/30">
-                <TableCell>
+        <div className="overflow-hidden rounded-md border border-border/70 bg-background">
+          <Table className="min-w-[980px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[44px]">
                   <Checkbox
-                    checked={selectedIds.includes(item.id)}
+                    aria-label="全选当前筛选商家"
+                    checked={allFilteredSelected}
                     onCheckedChange={(checked) =>
-                      setSelectedIds((prev) =>
+                      setSelectedIds(
                         Boolean(checked)
-                          ? [...prev, item.id]
-                          : prev.filter((id) => id !== item.id),
+                          ? sortedData.map((item) => item.id)
+                          : [],
                       )
                     }
                   />
-                </TableCell>
-                {editId === item.id ? (
-                  <>
-                    <TableCell>{item.id}</TableCell>
-                    <TableCell>
-                      <Input
-                        className="h-8"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        className="h-8"
-                        value={affUrl}
-                        onChange={(e) => setAffUrl(e.target.value)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        className="h-8"
-                        value={affParam}
-                        onChange={(e) => setAffParam(e.target.value)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        className="h-8"
-                        value={affValue}
-                        onChange={(e) => setAffValue(e.target.value)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        className="h-8"
-                        value={officialUrl}
-                        onChange={(e) => setOfficialUrl(e.target.value)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex justify-center gap-2">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => setEditId(null)}
-                        >
-                          取消
-                        </Button>
-                        <Button
-                          disabled={isSave}
-                          size="sm"
-                          onClick={handleSave}
-                        >
-                          {isSave ? "保存中..." : "保存"}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </>
-                ) : (
-                  <>
-                    <TableCell>{item.id}</TableCell>
-                    <TableCell>{item.name}</TableCell>
-                    <TableCell className="max-w-[220px]">
-                      <span className="block truncate">{item.affUrl}</span>
-                    </TableCell>
-                    <TableCell>{item.affParam}</TableCell>
-                    <TableCell>{item.affValue}</TableCell>
-                    <TableCell className="max-w-[220px]">
-                      <span className="block truncate text-muted-foreground">
-                        {item.officialUrl}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex justify-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setEditId(item.id);
-                            setName(item.name);
-                            setAffUrl(item.affUrl);
-                            setAffParam(item.affParam);
-                            setAffValue(item.affValue);
-                            setOfficialUrl(item.officialUrl);
-                          }}
-                        >
-                          编辑
-                        </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="destructive" size="sm">
-                              删除
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                确定删除这个商家吗？
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                删除后将无法恢复，当前商家为
-                                <p className="mt-2 text-red-500">{item.name}</p>
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>取消</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDelete(item.id)}
-                              >
-                                {isDelete ? "删除中..." : "确定删除"}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </TableCell>
-                  </>
-                )}
+                </TableHead>
+                <TableHead>ID</TableHead>
+                <TableHead className="text-nowrap">商家名</TableHead>
+                <TableHead className="text-nowrap">返利链接</TableHead>
+                <TableHead className="text-nowrap">返利参数</TableHead>
+                <TableHead className="text-nowrap">返利值</TableHead>
+                <TableHead>商家官网</TableHead>
+                <TableHead className="text-center">操作</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {sortedData.map((item) => (
+                <TableRow key={item.id} className="hover:bg-muted/30">
+                  <TableCell>
+                    <Checkbox
+                      aria-label={`选择商家 ${item.name}`}
+                      checked={selectedIds.includes(item.id)}
+                      onCheckedChange={(checked) =>
+                        setSelectedIds((prev) =>
+                          Boolean(checked)
+                            ? [...prev, item.id]
+                            : prev.filter((id) => id !== item.id),
+                        )
+                      }
+                    />
+                  </TableCell>
+                  {editId === item.id ? (
+                    <>
+                      <TableCell>{item.id}</TableCell>
+                      <TableCell>
+                        <Input
+                          className="h-9 min-w-[140px]"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          className="h-9 min-w-[240px]"
+                          value={affUrl}
+                          onChange={(e) => setAffUrl(e.target.value)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          className="h-9 min-w-[120px]"
+                          value={affParam}
+                          onChange={(e) => setAffParam(e.target.value)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          className="h-9 min-w-[120px]"
+                          value={affValue}
+                          onChange={(e) => setAffValue(e.target.value)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          className="h-9 min-w-[200px]"
+                          value={officialUrl}
+                          onChange={(e) => setOfficialUrl(e.target.value)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex justify-center gap-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setEditId(null)}
+                          >
+                            取消
+                          </Button>
+                          <Button
+                            disabled={isSave}
+                            size="sm"
+                            onClick={handleSave}
+                          >
+                            {isSave ? "保存中..." : "保存"}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </>
+                  ) : (
+                    <>
+                      <TableCell>{item.id}</TableCell>
+                      <TableCell>{item.name}</TableCell>
+                      <TableCell className="max-w-[220px]">
+                        <span className="block truncate">{item.affUrl}</span>
+                      </TableCell>
+                      <TableCell>{item.affParam}</TableCell>
+                      <TableCell>{item.affValue}</TableCell>
+                      <TableCell className="max-w-[220px]">
+                        <span className="block truncate text-muted-foreground">
+                          {item.officialUrl}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex justify-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditId(item.id);
+                              setName(item.name);
+                              setAffUrl(item.affUrl);
+                              setAffParam(item.affParam);
+                              setAffValue(item.affValue);
+                              setOfficialUrl(item.officialUrl);
+                            }}
+                          >
+                            编辑
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="destructive" size="sm">
+                                删除
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  确定删除这个商家吗？
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  删除后将无法恢复，当前商家为
+                                  <p className="mt-2 text-red-500">
+                                    {item.name}
+                                  </p>
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>取消</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDelete(item.id)}
+                                >
+                                  {isDelete ? "删除中..." : "确定删除"}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </TableCell>
+                    </>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
     </div>
   );

@@ -3,6 +3,7 @@ import {
   getAffProviderCount,
   getAffProviderList,
 } from "@/features/cms/actions/aff-provider";
+import { AdminLoading } from "@/features/cms/components/admin-loading";
 import {
   AdminPageShell,
   AdminSectionCard,
@@ -65,7 +66,15 @@ export default function AffManPage(props: {
   searchParams: Promise<{ pageNo?: string; query?: string }>;
 }) {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense
+      fallback={
+        <AdminLoading
+          badge="采集配置"
+          title="正在加载返利商家"
+          description="正在读取返利规则和分页数据。"
+        />
+      }
+    >
       <AffManList searchParamsPromise={props.searchParams} />
     </Suspense>
   );

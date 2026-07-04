@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 
 import { getDraftPostCount, getDraftPosts } from "@/features/cms/data/post";
+import { AdminLoading } from "@/features/cms/components/admin-loading";
 import {
   AdminPageShell,
   AdminSectionCard,
@@ -81,7 +82,15 @@ export default function DraftsPage(props: {
   searchParams: Promise<{ pageNo?: string }>;
 }) {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense
+      fallback={
+        <AdminLoading
+          badge="草稿箱"
+          title="正在加载草稿"
+          description="正在读取待编辑文章和分页信息。"
+        />
+      }
+    >
       <DraftListWrapper searchParamsPromise={props.searchParams} />
     </Suspense>
   );

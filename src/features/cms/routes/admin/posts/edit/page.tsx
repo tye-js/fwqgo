@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { getPosts, getPostCount } from "@/features/cms/data/post";
+import { AdminLoading } from "@/features/cms/components/admin-loading";
 import {
   AdminPageShell,
   AdminSectionCard,
@@ -72,13 +73,19 @@ async function PostListWrapper({
   );
 }
 
-export default function EditPage(
-  props: {
-    searchParams: Promise<{ pageNo?: string }>;
-  }
-) {
+export default function EditPage(props: {
+  searchParams: Promise<{ pageNo?: string }>;
+}) {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense
+      fallback={
+        <AdminLoading
+          badge="文章管理"
+          title="正在加载文章列表"
+          description="正在读取文章、分页和编辑状态。"
+        />
+      }
+    >
       <PostListWrapper searchParamsPromise={props.searchParams} />
     </Suspense>
   );

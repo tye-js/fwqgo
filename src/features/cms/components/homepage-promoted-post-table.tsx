@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -11,7 +12,10 @@ import {
   deleteHomepagePromotedPosts,
   updateHomepagePromotedPost,
 } from "@/features/cms/actions/homepage-promoted-post";
-import { AdminTableEmpty, AdminTableWorkbench } from "@/features/cms/components/admin-table-workbench";
+import {
+  AdminTableEmpty,
+  AdminTableWorkbench,
+} from "@/features/cms/components/admin-table-workbench";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -57,6 +61,7 @@ export function HomepagePromotedPostTable({
   data: HomepagePromotedPostItem[];
   postOptions: PublishedPostOption[];
 }) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [sortValue, setSortValue] = useState("sortOrder-asc");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -91,7 +96,10 @@ export function HomepagePromotedPostTable({
 
     result.sort((left, right) => {
       if (sortKey === "title") {
-        return (left.post?.title ?? "").localeCompare(right.post?.title ?? "") * direction;
+        return (
+          (left.post?.title ?? "").localeCompare(right.post?.title ?? "") *
+          direction
+        );
       }
 
       if (sortKey === "postId") {
@@ -118,18 +126,26 @@ export function HomepagePromotedPostTable({
     }
 
     setIsSubmitting(true);
-    const result = await addHomepagePromotedPost({ postId, sortOrder });
-    setIsSubmitting(false);
+    try {
+      const result = await addHomepagePromotedPost({ postId, sortOrder });
 
-    const errorMessage = getActionErrorMessage(result);
-    if (errorMessage) {
-      toast.error(errorMessage);
-      return;
+      const errorMessage = getActionErrorMessage(result);
+      if (errorMessage) {
+        toast.error(errorMessage);
+        return;
+      }
+
+      toast.success("首页推荐文章已保存");
+      setNewPostId("");
+      setNewSortOrder("0");
+      router.refresh();
+    } catch (error) {
+      toast.error("首页推荐文章保存失败", {
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      });
+    } finally {
+      setIsSubmitting(false);
     }
-
-    toast.success("首页推荐文章已保存");
-    setNewPostId("");
-    setNewSortOrder("0");
   }
 
   async function handleUpdate(id: number) {
@@ -150,6 +166,7 @@ export function HomepagePromotedPostTable({
     toast.success("排序已更新");
     setEditingId(null);
     setEditingSortOrder("");
+    router.refresh();
   }
 
   async function handleDelete(id: number) {
@@ -162,6 +179,7 @@ export function HomepagePromotedPostTable({
 
     toast.success("首页推荐文章已删除");
     setSelectedIds((prev) => prev.filter((item) => item !== id));
+    router.refresh();
   }
 
   async function handleBulkDelete() {
@@ -171,17 +189,25 @@ export function HomepagePromotedPostTable({
     }
 
     setIsBulkDeleting(true);
-    const result = await deleteHomepagePromotedPosts(selectedIds);
-    setIsBulkDeleting(false);
+    try {
+      const result = await deleteHomepagePromotedPosts(selectedIds);
 
-    const errorMessage = getActionErrorMessage(result);
-    if (errorMessage) {
-      toast.error(errorMessage);
-      return;
+      const errorMessage = getActionErrorMessage(result);
+      if (errorMessage) {
+        toast.error(errorMessage);
+        return;
+      }
+
+      toast.success(`已删除 ${selectedIds.length} 个推荐位`);
+      setSelectedIds([]);
+      router.refresh();
+    } catch (error) {
+      toast.error("批量删除推荐位失败", {
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      });
+    } finally {
+      setIsBulkDeleting(false);
     }
-
-    toast.success(`已删除 ${selectedIds.length} 个推荐位`);
-    setSelectedIds([]);
   }
 
   return (
@@ -221,7 +247,8 @@ export function HomepagePromotedPostTable({
       <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
         <p className="text-sm font-medium text-foreground">添加推荐文章</p>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          通过文章 ID 把已发布文章加入首页右侧“站长推荐”区域，`sortOrder` 越小越靠前。
+          通过文章 ID 把已发布文章加入首页右侧“站长推荐”区域，`sortOrder`
+          越小越靠前。
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-[1fr_140px_auto]">
           <Input
@@ -271,7 +298,9 @@ export function HomepagePromotedPostTable({
                 <Checkbox
                   checked={allFilteredSelected}
                   onCheckedChange={(checked) =>
-                    setSelectedIds(Boolean(checked) ? sortedData.map((item) => item.id) : [])
+                    setSelectedIds(
+                      Boolean(checked) ? sortedData.map((item) => item.id) : [],
+                    )
                   }
                 />
               </TableHead>
@@ -312,7 +341,9 @@ export function HomepagePromotedPostTable({
                       </p>
                     </div>
                   ) : (
-                    <span className="text-sm text-muted-foreground">文章不存在</span>
+                    <span className="text-sm text-muted-foreground">
+                      文章不存在
+                    </span>
                   )}
                 </TableCell>
                 <TableCell>{item.postId}</TableCell>
@@ -320,7 +351,9 @@ export function HomepagePromotedPostTable({
                   {editingId === item.id ? (
                     <Input
                       value={editingSortOrder}
-                      onChange={(event) => setEditingSortOrder(event.target.value)}
+                      onChange={(event) =>
+                        setEditingSortOrder(event.target.value)
+                      }
                       className="h-8"
                     />
                   ) : (

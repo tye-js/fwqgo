@@ -6,9 +6,16 @@ import { usePathname, useRouter } from "next/navigation";
 import { CircleCheck, CircleX, FileSearch, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { deletePostById, deletePostsByIds, updatePost } from "@/features/cms/actions/post";
+import {
+  deletePostById,
+  deletePostsByIds,
+  updatePost,
+} from "@/features/cms/actions/post";
 import { importServerOffersFromPostAction } from "@/features/cms/actions/server-offers";
-import { AdminTableEmpty, AdminTableWorkbench } from "@/features/cms/components/admin-table-workbench";
+import {
+  AdminTableEmpty,
+  AdminTableWorkbench,
+} from "@/features/cms/components/admin-table-workbench";
 import { ImageLibraryPicker } from "@/features/cms/components/image-library-picker";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -126,14 +133,21 @@ export function PostList({
     sortedPosts.every((post) => selectedIds.includes(post.id));
 
   async function handleDelete(id: number) {
-    const { error } = await deletePostById(id);
-    if (error) {
-      toast.error("删除文章失败");
-      return;
-    }
+    try {
+      const { error } = await deletePostById(id);
+      if (error) {
+        toast.error("删除文章失败");
+        return;
+      }
 
-    toast.success("删除文章成功");
-    setSelectedIds((prev) => prev.filter((item) => item !== id));
+      toast.success("删除文章成功");
+      setSelectedIds((prev) => prev.filter((item) => item !== id));
+      router.refresh();
+    } catch (error) {
+      toast.error("删除文章失败", {
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      });
+    }
   }
 
   async function handleBulkDelete() {
@@ -143,16 +157,24 @@ export function PostList({
     }
 
     setIsBulkDeleting(true);
-    const { error } = await deletePostsByIds(selectedIds);
-    setIsBulkDeleting(false);
+    try {
+      const { error } = await deletePostsByIds(selectedIds);
 
-    if (error) {
-      toast.error("批量删除文章失败");
-      return;
+      if (error) {
+        toast.error("批量删除文章失败");
+        return;
+      }
+
+      toast.success(`已删除 ${selectedIds.length} 篇文章`);
+      setSelectedIds([]);
+      router.refresh();
+    } catch (error) {
+      toast.error("批量删除文章失败", {
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      });
+    } finally {
+      setIsBulkDeleting(false);
     }
-
-    toast.success(`已删除 ${selectedIds.length} 篇文章`);
-    setSelectedIds([]);
   }
 
   function handleInputChange(
@@ -168,19 +190,27 @@ export function PostList({
   async function handleSave(postId: number) {
     if (editPostData?.id !== postId) return;
     setIsSaving(true);
-    const { error, message } = await updatePost({ ...editPostData });
-    setIsSaving(false);
+    try {
+      const { error, message } = await updatePost({ ...editPostData });
 
-    if (error) {
-      toast.error(error, {
-        description:
-          typeof message === "string" ? message : "请检查文章信息后再保存。",
+      if (error) {
+        toast.error(error, {
+          description:
+            typeof message === "string" ? message : "请检查文章信息后再保存。",
+        });
+        return;
+      }
+
+      toast.success("更新文章成功");
+      setEditPostId(null);
+      router.refresh();
+    } catch (error) {
+      toast.error("更新文章失败", {
+        description: error instanceof Error ? error.message : "请稍后重试。",
       });
-      return;
+    } finally {
+      setIsSaving(false);
     }
-
-    toast.success("更新文章成功");
-    setEditPostId(null);
   }
 
   async function handleExtractOffers(postId: number) {
@@ -210,7 +240,9 @@ export function PostList({
 
   function toggleSelection(id: number, checked: boolean) {
     setSelectedIds((prev) =>
-      checked ? [...new Set([...prev, id])] : prev.filter((item) => item !== id),
+      checked
+        ? [...new Set([...prev, id])]
+        : prev.filter((item) => item !== id),
     );
   }
 
@@ -278,345 +310,377 @@ export function PostList({
         />
       ) : (
         <>
-        <div className="grid gap-3 md:hidden">
-          {sortedPosts.map((post) => (
-            <article
-              key={post.id}
-              className="rounded-md border border-border/70 bg-card p-3 shadow-none"
-            >
-              <div className="flex items-start gap-3">
-                <Checkbox
-                  checked={selectedIds.includes(post.id)}
-                  onCheckedChange={(checked) =>
-                    toggleSelection(post.id, Boolean(checked))
-                  }
-                  aria-label={`选择文章 ${post.title}`}
-                  className="mt-1"
-                />
-                <div className="min-w-0 flex-1 space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-sm bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                      ID {post.id}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                      {post.published ? (
-                        <CircleCheck className="size-3.5 text-primary" />
-                      ) : (
-                        <CircleX className="size-3.5" />
-                      )}
-                      {post.published ? "已发布" : "草稿"}
-                    </span>
-                  </div>
-
-                  {editPostId === post.id ? (
-                    <div className="space-y-2">
-                      <Input
-                        className="h-10"
-                        autoFocus
-                        value={editPostData?.title ?? ""}
-                        onChange={(e) =>
-                          handleInputChange("title", e.target.value)
-                        }
-                      />
-                      <Input
-                        className="h-10"
-                        value={editPostData?.slug ?? ""}
-                        onChange={(e) =>
-                          handleInputChange("slug", e.target.value)
-                        }
-                      />
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          checked={editPostData?.published ?? false}
-                          onCheckedChange={(checked) =>
-                            handleInputChange("published", Boolean(checked))
-                          }
-                        />
-                        <span className="text-sm text-muted-foreground">
-                          发布文章
-                        </span>
-                      </div>
-                      <div className="grid gap-2">
-                        <Input
-                          className="h-10"
-                          value={editPostData?.imgUrl ?? ""}
-                          onChange={(e) =>
-                            handleInputChange("imgUrl", e.target.value)
-                          }
-                        />
-                        <ImageLibraryPicker
-                          triggerLabel="从图片库选择"
-                          onSelect={(value) =>
-                            handleInputChange("imgUrl", value)
-                          }
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <Link
-                        href={`${editBasePath ?? pathname}/post/${post.slug}`}
-                        className="line-clamp-2 text-base font-medium leading-6 text-foreground underline-offset-4 hover:text-accent hover:underline"
-                      >
-                        {post.title}
-                      </Link>
-                      <p className="truncate font-mono text-xs text-muted-foreground">
-                        {post.slug}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {post.imgUrl ?? "未设置封面"}
-                      </p>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                {editPostId === post.id ? (
-                  <>
-                    <Button
-                      variant="secondary"
-                      className="min-h-10"
-                      onClick={() => setEditPostId(null)}
-                    >
-                      取消
-                    </Button>
-                    <Button className="min-h-10" onClick={() => handleSave(post.id)}>
-                      {isSaving ? "保存中..." : "保存"}
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      variant="outline"
-                      className="min-h-10"
-                      disabled={extractingPostId === post.id}
-                      onClick={() => handleExtractOffers(post.id)}
-                    >
-                      <FileSearch className="size-4" />
-                      {extractingPostId === post.id ? "提取中..." : "提取套餐"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="min-h-10"
-                      onClick={() => {
-                        setEditPostId(post.id);
-                        setEditPostData(post);
-                      }}
-                    >
-                      编辑
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="destructive" className="col-span-2 min-h-10">
-                          删除
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>确定删除这篇文章吗？</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            删除后将无法恢复，当前文章为
-                            <p className="mt-2 text-red-500">{post.title}</p>
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>取消</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleDelete(post.id)}>
-                            确定删除
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
-
-        <div className="hidden overflow-x-auto rounded-md border border-border/70 md:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[40px]">
-                <Checkbox
-                  checked={allFilteredSelected}
-                  onCheckedChange={(checked) =>
-                    toggleSelectAll(Boolean(checked))
-                  }
-                  aria-label="全选当前筛选结果"
-                />
-              </TableHead>
-              <TableHead className="w-[64px]">ID</TableHead>
-              <TableHead className="text-nowrap">标题</TableHead>
-              <TableHead className="text-nowrap">slug</TableHead>
-              <TableHead className="text-nowrap text-center">发布</TableHead>
-              <TableHead className="text-nowrap">封面</TableHead>
-              <TableHead className="text-center">操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+          <div className="grid gap-3 md:hidden">
             {sortedPosts.map((post) => (
-              <TableRow key={post.id} className="text-xs hover:bg-muted/30">
-                <TableCell>
+              <article
+                key={post.id}
+                className="rounded-md border border-border/70 bg-card p-3 shadow-none"
+              >
+                <div className="flex items-start gap-3">
                   <Checkbox
                     checked={selectedIds.includes(post.id)}
                     onCheckedChange={(checked) =>
                       toggleSelection(post.id, Boolean(checked))
                     }
                     aria-label={`选择文章 ${post.title}`}
+                    className="mt-1"
                   />
-                </TableCell>
-                <TableCell className="tabular-nums text-muted-foreground">
-                  {post.id}
-                </TableCell>
-                <TableCell className="min-w-[220px] max-w-[360px]">
-                  {editPostId === post.id ? (
-                    <Input
-                      className="h-8"
-                      autoFocus
-                      value={editPostData?.title ?? ""}
-                      onChange={(e) => handleInputChange("title", e.target.value)}
-                    />
-                  ) : (
-                    <span className="line-clamp-2 text-sm leading-5">
-                      {post.title}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell className="text-nowrap">
-                  {editPostId === post.id ? (
-                    <Input
-                      className="h-8"
-                      value={editPostData?.slug ?? ""}
-                      onChange={(e) => handleInputChange("slug", e.target.value)}
-                    />
-                  ) : (
-                    <Link
-                      href={`${editBasePath ?? pathname}/post/${post.slug}`}
-                      className="font-medium transition-colors hover:text-accent"
-                    >
-                      {post.slug}
-                    </Link>
-                  )}
-                </TableCell>
-                <TableCell className="p-0 text-center">
-                  {editPostId === post.id ? (
-                    <Checkbox
-                      className="h-5 w-5 rounded-full"
-                      checked={editPostData?.published ?? false}
-                      onCheckedChange={(checked) =>
-                        handleInputChange("published", Boolean(checked))
-                      }
-                    />
-                  ) : post.published ? (
-                    <CircleCheck className="mx-auto text-primary" size={20} />
-                  ) : (
-                    <CircleX className="mx-auto text-muted-foreground" size={20} />
-                  )}
-                </TableCell>
-                <TableCell className="max-w-[200px] text-nowrap">
-                  {editPostId === post.id ? (
-                    <div className="flex min-w-[300px] items-center gap-2">
-                      <Input
-                        className="h-8"
-                        value={editPostData?.imgUrl ?? ""}
-                        onChange={(e) => handleInputChange("imgUrl", e.target.value)}
-                      />
-                      <ImageLibraryPicker
-                        triggerLabel="选择"
-                        onSelect={(value) => handleInputChange("imgUrl", value)}
-                      />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-sm bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                        ID {post.id}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        {post.published ? (
+                          <CircleCheck className="size-3.5 text-primary" />
+                        ) : (
+                          <CircleX className="size-3.5" />
+                        )}
+                        {post.published ? "已发布" : "草稿"}
+                      </span>
                     </div>
-                  ) : (
-                    <span className="block truncate text-muted-foreground">
-                      {post.imgUrl ?? "-"}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell className="text-center">
-                  <div className="flex justify-center gap-1.5">
+
                     {editPostId === post.id ? (
-                      <>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          className="h-8 min-h-0 px-2"
-                          onClick={() => setEditPostId(null)}
-                        >
-                          取消
-                        </Button>
-                        <Button
-                          size="sm"
-                          className="h-8 min-h-0 px-2"
-                          onClick={() => handleSave(post.id)}
-                        >
-                          {isSaving ? "保存中..." : "保存"}
-                        </Button>
-                      </>
+                      <div className="space-y-2">
+                        <Input
+                          className="h-10"
+                          autoFocus
+                          value={editPostData?.title ?? ""}
+                          onChange={(e) =>
+                            handleInputChange("title", e.target.value)
+                          }
+                        />
+                        <Input
+                          className="h-10"
+                          value={editPostData?.slug ?? ""}
+                          onChange={(e) =>
+                            handleInputChange("slug", e.target.value)
+                          }
+                        />
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            checked={editPostData?.published ?? false}
+                            onCheckedChange={(checked) =>
+                              handleInputChange("published", Boolean(checked))
+                            }
+                          />
+                          <span className="text-sm text-muted-foreground">
+                            发布文章
+                          </span>
+                        </div>
+                        <div className="grid gap-2">
+                          <Input
+                            className="h-10"
+                            value={editPostData?.imgUrl ?? ""}
+                            onChange={(e) =>
+                              handleInputChange("imgUrl", e.target.value)
+                            }
+                          />
+                          <ImageLibraryPicker
+                            triggerLabel="从图片库选择"
+                            onSelect={(value) =>
+                              handleInputChange("imgUrl", value)
+                            }
+                          />
+                        </div>
+                      </div>
                     ) : (
                       <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 min-h-0 px-2"
-                          disabled={extractingPostId === post.id}
-                          onClick={() => handleExtractOffers(post.id)}
+                        <Link
+                          href={`${editBasePath ?? pathname}/post/${post.slug}`}
+                          className="line-clamp-2 text-base font-medium leading-6 text-foreground underline-offset-4 hover:text-accent hover:underline"
                         >
-                          <FileSearch className="size-4" />
-                          {extractingPostId === post.id ? "提取中..." : "提取套餐"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 min-h-0 px-2"
-                          onClick={() => {
-                            setEditPostId(post.id);
-                            setEditPostData(post);
-                          }}
-                        >
-                          编辑
-                        </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              className="h-8 min-h-0 px-2"
-                            >
-                              删除
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                确定删除这篇文章吗？
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                删除后将无法恢复，当前文章为
-                                <p className="mt-2 text-red-500">{post.title}</p>
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>取消</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDelete(post.id)}
-                              >
-                                确定删除
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                          {post.title}
+                        </Link>
+                        <p className="truncate font-mono text-xs text-muted-foreground">
+                          {post.slug}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {post.imgUrl ?? "未设置封面"}
+                        </p>
                       </>
                     )}
                   </div>
-                </TableCell>
-              </TableRow>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {editPostId === post.id ? (
+                    <>
+                      <Button
+                        variant="secondary"
+                        className="min-h-10"
+                        onClick={() => setEditPostId(null)}
+                      >
+                        取消
+                      </Button>
+                      <Button
+                        className="min-h-10"
+                        onClick={() => handleSave(post.id)}
+                      >
+                        {isSaving ? "保存中..." : "保存"}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        variant="outline"
+                        className="min-h-10"
+                        disabled={extractingPostId === post.id}
+                        onClick={() => handleExtractOffers(post.id)}
+                      >
+                        <FileSearch className="size-4" />
+                        {extractingPostId === post.id
+                          ? "提取中..."
+                          : "提取套餐"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="min-h-10"
+                        onClick={() => {
+                          setEditPostId(post.id);
+                          setEditPostData(post);
+                        }}
+                      >
+                        编辑
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="destructive"
+                            className="col-span-2 min-h-10"
+                          >
+                            删除
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              确定删除这篇文章吗？
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              删除后将无法恢复，当前文章为
+                              <p className="mt-2 text-red-500">{post.title}</p>
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>取消</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDelete(post.id)}
+                            >
+                              确定删除
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </>
+                  )}
+                </div>
+              </article>
             ))}
-          </TableBody>
-        </Table>
-        </div>
+          </div>
+
+          <div className="hidden overflow-x-auto rounded-md border border-border/70 md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[40px]">
+                    <Checkbox
+                      checked={allFilteredSelected}
+                      onCheckedChange={(checked) =>
+                        toggleSelectAll(Boolean(checked))
+                      }
+                      aria-label="全选当前筛选结果"
+                    />
+                  </TableHead>
+                  <TableHead className="w-[64px]">ID</TableHead>
+                  <TableHead className="text-nowrap">标题</TableHead>
+                  <TableHead className="text-nowrap">slug</TableHead>
+                  <TableHead className="text-nowrap text-center">
+                    发布
+                  </TableHead>
+                  <TableHead className="text-nowrap">封面</TableHead>
+                  <TableHead className="text-center">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedPosts.map((post) => (
+                  <TableRow key={post.id} className="text-xs hover:bg-muted/30">
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedIds.includes(post.id)}
+                        onCheckedChange={(checked) =>
+                          toggleSelection(post.id, Boolean(checked))
+                        }
+                        aria-label={`选择文章 ${post.title}`}
+                      />
+                    </TableCell>
+                    <TableCell className="tabular-nums text-muted-foreground">
+                      {post.id}
+                    </TableCell>
+                    <TableCell className="min-w-[220px] max-w-[360px]">
+                      {editPostId === post.id ? (
+                        <Input
+                          className="h-8"
+                          autoFocus
+                          value={editPostData?.title ?? ""}
+                          onChange={(e) =>
+                            handleInputChange("title", e.target.value)
+                          }
+                        />
+                      ) : (
+                        <span className="line-clamp-2 text-sm leading-5">
+                          {post.title}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-nowrap">
+                      {editPostId === post.id ? (
+                        <Input
+                          className="h-8"
+                          value={editPostData?.slug ?? ""}
+                          onChange={(e) =>
+                            handleInputChange("slug", e.target.value)
+                          }
+                        />
+                      ) : (
+                        <Link
+                          href={`${editBasePath ?? pathname}/post/${post.slug}`}
+                          className="font-medium transition-colors hover:text-accent"
+                        >
+                          {post.slug}
+                        </Link>
+                      )}
+                    </TableCell>
+                    <TableCell className="p-0 text-center">
+                      {editPostId === post.id ? (
+                        <Checkbox
+                          className="h-5 w-5 rounded-full"
+                          checked={editPostData?.published ?? false}
+                          onCheckedChange={(checked) =>
+                            handleInputChange("published", Boolean(checked))
+                          }
+                        />
+                      ) : post.published ? (
+                        <CircleCheck
+                          className="mx-auto text-primary"
+                          size={20}
+                        />
+                      ) : (
+                        <CircleX
+                          className="mx-auto text-muted-foreground"
+                          size={20}
+                        />
+                      )}
+                    </TableCell>
+                    <TableCell className="max-w-[200px] text-nowrap">
+                      {editPostId === post.id ? (
+                        <div className="flex min-w-[300px] items-center gap-2">
+                          <Input
+                            className="h-8"
+                            value={editPostData?.imgUrl ?? ""}
+                            onChange={(e) =>
+                              handleInputChange("imgUrl", e.target.value)
+                            }
+                          />
+                          <ImageLibraryPicker
+                            triggerLabel="选择"
+                            onSelect={(value) =>
+                              handleInputChange("imgUrl", value)
+                            }
+                          />
+                        </div>
+                      ) : (
+                        <span className="block truncate text-muted-foreground">
+                          {post.imgUrl ?? "-"}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex justify-center gap-1.5">
+                        {editPostId === post.id ? (
+                          <>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="h-8 min-h-0 px-2"
+                              onClick={() => setEditPostId(null)}
+                            >
+                              取消
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="h-8 min-h-0 px-2"
+                              onClick={() => handleSave(post.id)}
+                            >
+                              {isSaving ? "保存中..." : "保存"}
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 min-h-0 px-2"
+                              disabled={extractingPostId === post.id}
+                              onClick={() => handleExtractOffers(post.id)}
+                            >
+                              <FileSearch className="size-4" />
+                              {extractingPostId === post.id
+                                ? "提取中..."
+                                : "提取套餐"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 min-h-0 px-2"
+                              onClick={() => {
+                                setEditPostId(post.id);
+                                setEditPostData(post);
+                              }}
+                            >
+                              编辑
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  className="h-8 min-h-0 px-2"
+                                >
+                                  删除
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>
+                                    确定删除这篇文章吗？
+                                  </AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    删除后将无法恢复，当前文章为
+                                    <p className="mt-2 text-red-500">
+                                      {post.title}
+                                    </p>
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>取消</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => handleDelete(post.id)}
+                                  >
+                                    确定删除
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </>
       )}
     </div>

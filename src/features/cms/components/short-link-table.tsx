@@ -4,7 +4,10 @@ import { useMemo, useState } from "react";
 import { Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
-import { AdminTableEmpty, AdminTableWorkbench } from "@/features/cms/components/admin-table-workbench";
+import {
+  AdminTableEmpty,
+  AdminTableWorkbench,
+} from "@/features/cms/components/admin-table-workbench";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -67,7 +70,6 @@ export function ShortLinkTable({ links }: { links: ShortLinkRow[] }) {
         searchValue={query}
         onSearchChange={setQuery}
         searchPlaceholder="搜索 slug 或目标 URL"
-        selectionCount={filteredLinks.length}
       />
 
       {filteredLinks.length === 0 ? (
@@ -76,12 +78,12 @@ export function ShortLinkTable({ links }: { links: ShortLinkRow[] }) {
           description="发布包含外部链接的文章后，系统会自动生成短链。"
         />
       ) : (
-        <div className="rounded-lg border border-border/70 bg-background shadow-sm">
-          <Table>
+        <div className="overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm">
+          <Table className="min-w-[760px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[140px]">短链</TableHead>
-                <TableHead>目标 URL</TableHead>
+                <TableHead className="min-w-[320px]">目标 URL</TableHead>
                 <TableHead className="w-[170px]">创建时间</TableHead>
                 <TableHead className="w-[120px] text-right">操作</TableHead>
               </TableRow>
