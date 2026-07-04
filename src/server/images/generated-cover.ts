@@ -34,7 +34,10 @@ type ImageGenerationResponse = {
 
 function fillPromptTemplate(
   template: string,
-  input: Pick<GenerateCoverInput, "title" | "description" | "keywords" | "content">,
+  input: Pick<
+    GenerateCoverInput,
+    "title" | "description" | "keywords" | "content"
+  >,
 ) {
   const contentText = stripHtml(input.content ?? "").slice(0, 1200);
 
@@ -93,7 +96,10 @@ function findImageUrl(payload: ImageGenerationResponse): string | null {
   if (payload.data?.[0]?.url) return payload.data[0].url;
   if (payload.image_url) return payload.image_url;
   if (payload.url) return payload.url;
-  if (typeof payload.image === "string" && /^https?:\/\//i.test(payload.image)) {
+  if (
+    typeof payload.image === "string" &&
+    /^https?:\/\//i.test(payload.image)
+  ) {
     return payload.image;
   }
   return null;
@@ -102,7 +108,10 @@ function findImageUrl(payload: ImageGenerationResponse): string | null {
 function findBase64Image(payload: ImageGenerationResponse): string | null {
   if (payload.data?.[0]?.b64_json) return payload.data[0].b64_json;
   if (payload.b64_json) return payload.b64_json;
-  if (typeof payload.image === "string" && !/^https?:\/\//i.test(payload.image)) {
+  if (
+    typeof payload.image === "string" &&
+    !/^https?:\/\//i.test(payload.image)
+  ) {
     return payload.image;
   }
   return null;
@@ -117,6 +126,46 @@ function inferMimeFromResponse(response: Response) {
 function normalizeBase64(value: string) {
   const commaIndex = value.indexOf(",");
   return commaIndex >= 0 ? value.slice(commaIndex + 1) : value;
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return "未知错误";
+}
+
+function isTimeoutError(error: unknown) {
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.name === "TimeoutError")
+  );
+}
+
+function getJsonErrorMessage(text: string) {
+  try {
+    const payload = JSON.parse(text) as {
+      error?: { message?: string; code?: string | number; type?: string };
+      message?: string;
+      detail?: string;
+    };
+    const message =
+      payload.error?.message ?? payload.message ?? payload.detail ?? "";
+    const code = payload.error?.code ? `（${payload.error.code}）` : "";
+    return message ? `${message}${code}` : "";
+  } catch {
+    return "";
+  }
+}
+
+function summarizeJsonShape(payload: ImageGenerationResponse) {
+  const keys = Object.keys(payload).slice(0, 12);
+  const dataKeys = payload.data?.[0] ? Object.keys(payload.data[0]) : [];
+  const parts = [
+    keys.length > 0 ? `顶层字段：${keys.join(", ")}` : null,
+    dataKeys.length > 0 ? `data[0] 字段：${dataKeys.join(", ")}` : null,
+  ].filter(Boolean);
+
+  return parts.join("；") || "返回 JSON 为空对象";
 }
 
 function toEnglishFileSlug(value: string | null | undefined) {
@@ -138,17 +187,31 @@ function buildCoverOriginalName(
   input: Pick<GenerateCoverInput, "title" | "fileSlug" | "language">,
 ) {
   const language = input.language === "en" ? "en" : "zh";
-  const baseSlug = toEnglishFileSlug(input.fileSlug) || toEnglishFileSlug(input.title);
+  const baseSlug =
+    toEnglishFileSlug(input.fileSlug) || toEnglishFileSlug(input.title);
   return `${baseSlug || "article-cover"}-${language}-cover.png`;
 }
 
 async function downloadImage(url: string, timeoutSeconds: number) {
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(timeoutSeconds * 1000),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      signal: AbortSignal.timeout(timeoutSeconds * 1000),
+    });
+  } catch (error) {
+    if (isTimeoutError(error)) {
+      throw new Error(
+        `图片下载超时：${timeoutSeconds} 秒内没有下载完成，请调大生图配置里的超时时间或检查图片 URL`,
+      );
+    }
+
+    throw new Error(`图片下载失败：${getErrorMessage(error)}`);
+  }
 
   if (!response.ok) {
-    throw new Error(`图片下载失败：HTTP ${response.status}`);
+    throw new Error(
+      `图片下载失败：HTTP ${response.status} ${response.statusText}`,
+    );
   }
 
   const buffer = Buffer.from(await response.arrayBuffer());
@@ -176,28 +239,44 @@ export async function generateArticleCoverImage(
 
   const prompt = fillPromptTemplate(config.promptTemplate, input);
   const endpoint = buildEndpoint(config.baseUrl);
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(
-      buildRequestBody({
-        provider: config.provider as ImageGenerationProvider,
-        model: config.model,
-        prompt,
-        size: config.size,
-        quality: config.quality,
-      }),
-    ),
-    signal: AbortSignal.timeout(config.timeoutSeconds * 1000),
-  });
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(
+        buildRequestBody({
+          provider: config.provider as ImageGenerationProvider,
+          model: config.model,
+          prompt,
+          size: config.size,
+          quality: config.quality,
+        }),
+      ),
+      signal: AbortSignal.timeout(config.timeoutSeconds * 1000),
+    });
+  } catch (error) {
+    if (isTimeoutError(error)) {
+      throw new Error(
+        `生图接口请求超时：${config.timeoutSeconds} 秒内没有返回结果。请调大「生图配置」里的超时时间，或检查模型/中转服务是否可用`,
+      );
+    }
+
+    throw new Error(
+      `生图接口连接失败：${getErrorMessage(error)}。请检查 Base URL、网络和中转服务状态`,
+    );
+  }
 
   const text = await response.text();
   if (!response.ok) {
+    const providerMessage = getJsonErrorMessage(text);
     throw new Error(
-      `生图接口请求失败：HTTP ${response.status} ${text.slice(0, 240)}`,
+      providerMessage
+        ? `生图接口请求失败：HTTP ${response.status} ${response.statusText}；${providerMessage}`
+        : `生图接口请求失败：HTTP ${response.status} ${response.statusText}；返回内容：${text.slice(0, 240) || "空"}`,
     );
   }
 
@@ -205,7 +284,10 @@ export async function generateArticleCoverImage(
   try {
     payload = JSON.parse(text) as ImageGenerationResponse;
   } catch {
-    throw new Error("生图接口返回的不是有效 JSON");
+    const contentType = response.headers.get("content-type") ?? "未知";
+    throw new Error(
+      `生图接口返回的不是有效 JSON：Content-Type ${contentType}；返回开头：${text.slice(0, 180) || "空"}`,
+    );
   }
 
   const imageUrl = findImageUrl(payload);
@@ -220,7 +302,9 @@ export async function generateArticleCoverImage(
       : null;
 
   if (!image) {
-    throw new Error("生图接口没有返回图片 URL 或 base64 图片数据");
+    throw new Error(
+      `生图接口没有返回图片 URL 或 base64 图片数据；${summarizeJsonShape(payload)}`,
+    );
   }
 
   const asset = await createImageAssetFromBuffer({
@@ -230,7 +314,8 @@ export async function generateArticleCoverImage(
     uploadedBy: input.uploadedBy,
     imageType: "ai_cover",
     altZh: input.title,
-    altEn: input.language === "en" ? input.title : toEnglishFileSlug(input.title),
+    altEn:
+      input.language === "en" ? input.title : toEnglishFileSlug(input.title),
     prompt,
   });
 

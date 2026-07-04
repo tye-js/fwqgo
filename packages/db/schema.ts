@@ -618,7 +618,7 @@ export const imageGenerationConfigs = pgTable(
     promptTemplate: text("promptTemplate").notNull(),
     size: varchar("size", { length: 40 }).default("1024x576").notNull(),
     quality: varchar("quality", { length: 40 }).default("standard").notNull(),
-    timeoutSeconds: integer("timeoutSeconds").default(90).notNull(),
+    timeoutSeconds: integer("timeoutSeconds").default(180).notNull(),
     enabled: boolean("enabled").default(false).notNull(),
     isDefault: boolean("isDefault").default(false).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -629,6 +629,50 @@ export const imageGenerationConfigs = pgTable(
     defaultIdx: index("image_generation_configs_isDefault_idx").on(
       table.isDefault,
     ),
+  }),
+);
+
+export const imageCoverGenerationTasks = pgTable(
+  "image_cover_generation_tasks",
+  {
+    id: serial("id").primaryKey(),
+    batchId: varchar("batchId", { length: 64 }).notNull(),
+    postId: integer("postId").notNull(),
+    title: text("title").notNull(),
+    status: varchar("status", { length: 24 }).default("pending").notNull(),
+    outputUrl: text("outputUrl"),
+    assetId: integer("assetId"),
+    errorTitle: text("errorTitle"),
+    errorDetail: text("errorDetail"),
+    createdBy: text("createdBy"),
+    startedAt: timestamp("startedAt"),
+    finishedAt: timestamp("finishedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    batchIdx: index("image_cover_generation_tasks_batchId_idx").on(
+      table.batchId,
+    ),
+    statusIdx: index("image_cover_generation_tasks_status_idx").on(
+      table.status,
+    ),
+    postIdx: index("image_cover_generation_tasks_postId_idx").on(table.postId),
+    postFk: foreignKey({
+      columns: [table.postId],
+      foreignColumns: [posts.id],
+      name: "image_cover_generation_tasks_postId_posts_id_fk",
+    }).onDelete("cascade"),
+    assetFk: foreignKey({
+      columns: [table.assetId],
+      foreignColumns: [imageAssets.id],
+      name: "image_cover_generation_tasks_assetId_image_assets_id_fk",
+    }).onDelete("set null"),
+    creatorFk: foreignKey({
+      columns: [table.createdBy],
+      foreignColumns: [users.id],
+      name: "image_cover_generation_tasks_createdBy_users_id_fk",
+    }).onDelete("set null"),
   }),
 );
 
@@ -770,6 +814,7 @@ export const postsRelations = relations(posts, ({ one, many }) => ({
   }),
   tags: many(postTags),
   serverOffers: many(serverOffers),
+  coverGenerationTasks: many(imageCoverGenerationTasks),
 }));
 
 export const categoriesRelations = relations(categories, ({ one, many }) => ({
@@ -845,6 +890,24 @@ export const imageAssetReferencesRelations = relations(
     image: one(imageAssets, {
       fields: [imageAssetReferences.imageId],
       references: [imageAssets.id],
+    }),
+  }),
+);
+
+export const imageCoverGenerationTasksRelations = relations(
+  imageCoverGenerationTasks,
+  ({ one }) => ({
+    post: one(posts, {
+      fields: [imageCoverGenerationTasks.postId],
+      references: [posts.id],
+    }),
+    asset: one(imageAssets, {
+      fields: [imageCoverGenerationTasks.assetId],
+      references: [imageAssets.id],
+    }),
+    creator: one(users, {
+      fields: [imageCoverGenerationTasks.createdBy],
+      references: [users.id],
     }),
   }),
 );

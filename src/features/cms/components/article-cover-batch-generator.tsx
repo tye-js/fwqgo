@@ -1,13 +1,26 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ExternalLink, ImagePlus, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock3,
+  ExternalLink,
+  ImagePlus,
+  Loader2,
+  XCircle,
+} from "lucide-react";
 
-import { batchGenerateArticleCoverImagesAction } from "@/features/cms/actions/article-cover-image";
-import { AdminTableEmpty, AdminTableWorkbench } from "@/features/cms/components/admin-table-workbench";
+import {
+  batchGenerateArticleCoverImagesAction,
+  getCoverGenerationBatchStatusAction,
+} from "@/features/cms/actions/article-cover-image";
+import {
+  AdminTableEmpty,
+  AdminTableWorkbench,
+} from "@/features/cms/components/admin-table-workbench";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,6 +42,7 @@ import {
 import {
   describeAdminResult,
   notifyError,
+  notifyInfo,
   notifySuccess,
 } from "@/lib/admin-toast";
 
@@ -43,12 +57,29 @@ export type CoverGenerationPost = {
 };
 
 type GenerateResult = {
+  taskId?: number;
   postId: number;
   title?: string;
+  status?: "pending" | "running" | "succeeded" | "failed";
   success: boolean;
   url?: string;
   assetId?: number;
   error?: string;
+  errorTitle?: string;
+  errorDetail?: string;
+};
+
+type BatchStatusResult = {
+  success: boolean;
+  batchId?: string;
+  results?: GenerateResult[];
+  successCount?: number;
+  failedCount?: number;
+  pendingCount?: number;
+  runningCount?: number;
+  done?: boolean;
+  error?: string;
+  errorTitle?: string;
 };
 
 function formatTime(value: Date | string | null) {
@@ -62,6 +93,44 @@ function formatTime(value: Date | string | null) {
   }).format(new Date(value));
 }
 
+function getResultStatus(result: GenerateResult) {
+  return result.status ?? (result.success ? "succeeded" : "failed");
+}
+
+function getResultBadge(result: GenerateResult) {
+  const status = getResultStatus(result);
+
+  if (status === "succeeded") {
+    return {
+      label: "成功",
+      icon: CheckCircle2,
+      variant: "default" as const,
+    };
+  }
+
+  if (status === "failed") {
+    return {
+      label: "失败",
+      icon: XCircle,
+      variant: "destructive" as const,
+    };
+  }
+
+  if (status === "running") {
+    return {
+      label: "生成中",
+      icon: Loader2,
+      variant: "secondary" as const,
+    };
+  }
+
+  return {
+    label: "排队中",
+    icon: Clock3,
+    variant: "outline" as const,
+  };
+}
+
 export function ArticleCoverBatchGenerator({
   posts,
 }: {
@@ -69,14 +138,25 @@ export function ArticleCoverBatchGenerator({
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [coverFilter, setCoverFilter] = useState<"all" | "missing" | "has-cover">(
-    "missing",
-  );
+  const [coverFilter, setCoverFilter] = useState<
+    "all" | "missing" | "has-cover"
+  >("missing");
   const [selectedIds, setSelectedIds] = useState<number[]>(
-    posts.filter((post) => !post.imgUrl).slice(0, 20).map((post) => post.id),
+    posts
+      .filter((post) => !post.imgUrl)
+      .slice(0, 20)
+      .map((post) => post.id),
   );
   const [results, setResults] = useState<GenerateResult[]>([]);
-  const [isPending, startTransition] = useTransition();
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const [isStarting, setIsStarting] = useState(false);
+  const [batchSummary, setBatchSummary] = useState({
+    successCount: 0,
+    failedCount: 0,
+    pendingCount: 0,
+    runningCount: 0,
+    done: true,
+  });
 
   const filteredPosts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -101,11 +181,19 @@ export function ArticleCoverBatchGenerator({
     selectableFilteredPosts.length > 0 &&
     selectableFilteredPosts.every((post) => selectedSet.has(post.id));
   const selectedPosts = posts.filter((post) => selectedSet.has(post.id));
-  const selectedWithoutCoverCount = selectedPosts.filter((post) => !post.imgUrl).length;
+  const selectedWithoutCoverCount = selectedPosts.filter(
+    (post) => !post.imgUrl,
+  ).length;
+  const isBatchRunning =
+    Boolean(batchId) &&
+    (batchSummary.runningCount > 0 || batchSummary.pendingCount > 0);
+  const isBusy = isStarting || isBatchRunning;
 
   function toggleSelected(id: number, checked: boolean) {
     setSelectedIds((current) =>
-      checked ? [...new Set([...current, id])].slice(0, 20) : current.filter((item) => item !== id),
+      checked
+        ? [...new Set([...current, id])].slice(0, 20)
+        : current.filter((item) => item !== id),
     );
   }
 
@@ -117,17 +205,128 @@ export function ArticleCoverBatchGenerator({
       return;
     }
 
-    setSelectedIds((current) => [
-      ...new Set([...current, ...selectableFilteredPosts.map((post) => post.id)]),
-    ].slice(0, 20));
+    setSelectedIds((current) =>
+      [
+        ...new Set([
+          ...current,
+          ...selectableFilteredPosts.map((post) => post.id),
+        ]),
+      ].slice(0, 20),
+    );
   }
 
   function selectMissingCovers() {
     setCoverFilter("missing");
-    setSelectedIds(posts.filter((post) => !post.imgUrl).slice(0, 20).map((post) => post.id));
+    setSelectedIds(
+      posts
+        .filter((post) => !post.imgUrl)
+        .slice(0, 20)
+        .map((post) => post.id),
+    );
   }
 
-  function handleGenerate() {
+  const applyBatchStatus = useCallback((result: BatchStatusResult) => {
+    const resultRows = result.results ?? [];
+    setResults(resultRows);
+    setBatchSummary({
+      successCount:
+        result.successCount ??
+        resultRows.filter((item) => getResultStatus(item) === "succeeded")
+          .length,
+      failedCount:
+        result.failedCount ??
+        resultRows.filter((item) => getResultStatus(item) === "failed").length,
+      pendingCount:
+        result.pendingCount ??
+        resultRows.filter((item) => getResultStatus(item) === "pending").length,
+      runningCount:
+        result.runningCount ??
+        resultRows.filter((item) => getResultStatus(item) === "running").length,
+      done:
+        result.done ??
+        resultRows.every((item) =>
+          ["succeeded", "failed"].includes(getResultStatus(item)),
+        ),
+    });
+  }, []);
+
+  const refreshBatchStatus = useCallback(
+    async (currentBatchId: string, options: { notifyDone?: boolean } = {}) => {
+      const result = await getCoverGenerationBatchStatusAction(currentBatchId);
+      if (!result.success) {
+        notifyError({
+          title: result.errorTitle ?? "读取封面生成状态失败",
+          description: result.error ?? "请刷新页面后重试。",
+        });
+        return;
+      }
+
+      applyBatchStatus(result);
+
+      if (result.done && options.notifyDone) {
+        notifySuccess({
+          title: "后台封面生成完成",
+          description: describeAdminResult([
+            `成功 ${result.successCount ?? 0} 篇`,
+            (result.failedCount ?? 0) > 0
+              ? `失败 ${result.failedCount ?? 0} 篇`
+              : null,
+          ]),
+        });
+        router.refresh();
+      }
+    },
+    [applyBatchStatus, router],
+  );
+
+  useEffect(() => {
+    if (!batchId || !isBatchRunning) return;
+
+    let stopped = false;
+    let notifiedDone = false;
+    const poll = async () => {
+      if (stopped) return;
+
+      const result = await getCoverGenerationBatchStatusAction(batchId);
+      if (stopped) return;
+
+      if (!result.success) {
+        notifyError({
+          title: result.errorTitle ?? "读取封面生成状态失败",
+          description: result.error ?? "请刷新页面后重试。",
+        });
+        return;
+      }
+
+      applyBatchStatus(result);
+
+      if (result.done && !notifiedDone) {
+        notifiedDone = true;
+        notifySuccess({
+          title: "后台封面生成完成",
+          description: describeAdminResult([
+            `成功 ${result.successCount ?? 0} 篇`,
+            (result.failedCount ?? 0) > 0
+              ? `失败 ${result.failedCount ?? 0} 篇`
+              : null,
+          ]),
+        });
+        router.refresh();
+      }
+    };
+
+    void poll();
+    const timer = window.setInterval(() => {
+      void poll();
+    }, 3000);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [applyBatchStatus, batchId, isBatchRunning, router]);
+
+  async function handleGenerate() {
     if (selectedIds.length === 0) {
       notifyError({
         title: "请选择文章",
@@ -136,34 +335,35 @@ export function ArticleCoverBatchGenerator({
       return;
     }
 
-    startTransition(async () => {
+    setIsStarting(true);
+    try {
       const result = await batchGenerateArticleCoverImagesAction({
         postIds: selectedIds,
       });
 
       if (!result.success) {
         notifyError({
-          title: "批量生成封面失败",
+          title: result.errorTitle ?? "批量生成封面失败",
           description: result.error ?? "请检查生图接口配置",
         });
         return;
       }
 
-      const resultRows = result.results ?? [];
-      const failedCount = result.failedCount ?? resultRows.filter((item) => !item.success).length;
-      const successCount = result.successCount ?? resultRows.filter((item) => item.success).length;
-
-      setResults(resultRows);
-      notifySuccess({
-        title: "文章封面生成完成",
+      setBatchId(result.batchId ?? null);
+      applyBatchStatus(result);
+      notifyInfo({
+        title: "已加入后台生成队列",
         description: describeAdminResult([
-          `成功 ${successCount} 篇`,
-          failedCount > 0 ? `失败 ${failedCount} 篇` : null,
-          "成功项已写入文章封面并同步图片引用",
+          `任务 ${result.results?.length ?? selectedIds.length} 篇`,
+          "可以停留本页查看进度",
         ]),
       });
-      router.refresh();
-    });
+      if (result.batchId) {
+        await refreshBatchStatus(result.batchId);
+      }
+    } finally {
+      setIsStarting(false);
+    }
   }
 
   return (
@@ -176,7 +376,12 @@ export function ArticleCoverBatchGenerator({
         searchPlaceholder="搜索标题、slug 或分类"
         selectionCount={selectedIds.length}
         filterSlot={
-          <Select value={coverFilter} onValueChange={(value) => setCoverFilter(value as typeof coverFilter)}>
+          <Select
+            value={coverFilter}
+            onValueChange={(value) =>
+              setCoverFilter(value as typeof coverFilter)
+            }
+          >
             <SelectTrigger className="h-9 w-36 border-0 bg-transparent px-0 shadow-none focus:ring-0">
               <SelectValue />
             </SelectTrigger>
@@ -189,20 +394,68 @@ export function ArticleCoverBatchGenerator({
         }
         actionSlot={
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" onClick={selectMissingCovers}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={selectMissingCovers}
+            >
               选择无封面
             </Button>
             <Button
               type="button"
-              disabled={isPending || selectedIds.length === 0}
+              disabled={isBusy || selectedIds.length === 0}
               onClick={handleGenerate}
             >
-              <ImagePlus className="size-4" />
-              {isPending ? "生成中..." : `生成封面 ${selectedIds.length}`}
+              {isBusy ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ImagePlus className="size-4" />
+              )}
+              {isStarting
+                ? "加入队列..."
+                : isBatchRunning
+                  ? "后台生成中..."
+                  : `生成封面 ${selectedIds.length}`}
             </Button>
           </div>
         }
       />
+
+      {batchId ? (
+        <div className="rounded-lg border border-border/70 bg-muted/20 px-4 py-3 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-medium">后台批次正在运行</p>
+              <p className="mt-1 break-all text-xs text-muted-foreground">
+                批次号：{batchId}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="default">成功 {batchSummary.successCount}</Badge>
+              <Badge variant="secondary">
+                生成中 {batchSummary.runningCount}
+              </Badge>
+              <Badge variant="outline">排队 {batchSummary.pendingCount}</Badge>
+              <Badge
+                variant={
+                  batchSummary.failedCount > 0 ? "destructive" : "outline"
+                }
+              >
+                失败 {batchSummary.failedCount}
+              </Badge>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7"
+                onClick={() => refreshBatchStatus(batchId)}
+              >
+                刷新状态
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {selectedIds.length > 20 ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -216,7 +469,7 @@ export function ArticleCoverBatchGenerator({
           <div className="mt-3 grid gap-2">
             {results.map((result) => (
               <div
-                key={result.postId}
+                key={result.taskId ?? result.postId}
                 className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm"
               >
                 <div className="min-w-0">
@@ -227,20 +480,39 @@ export function ArticleCoverBatchGenerator({
                     <p className="break-all text-xs text-muted-foreground">
                       {result.url}
                     </p>
+                  ) : getResultStatus(result) === "failed" ? (
+                    <div className="mt-1 space-y-1 text-xs text-destructive">
+                      <p>{result.errorTitle ?? "生成失败"}</p>
+                      {result.errorDetail || result.error ? (
+                        <p className="break-all text-muted-foreground">
+                          {result.errorDetail ?? result.error}
+                        </p>
+                      ) : null}
+                    </div>
                   ) : (
-                    <p className="text-xs text-destructive">
-                      {result.error ?? "生成失败"}
+                    <p className="text-xs text-muted-foreground">
+                      {getResultStatus(result) === "running"
+                        ? "正在调用生图接口并保存图片。"
+                        : "等待后台任务处理。"}
                     </p>
                   )}
                 </div>
-                <Badge variant={result.success ? "default" : "destructive"}>
-                  {result.success ? (
-                    <CheckCircle2 className="size-3.5" />
-                  ) : (
-                    <XCircle className="size-3.5" />
-                  )}
-                  {result.success ? "成功" : "失败"}
-                </Badge>
+                {(() => {
+                  const badge = getResultBadge(result);
+                  const Icon = badge.icon;
+                  return (
+                    <Badge variant={badge.variant}>
+                      <Icon
+                        className={
+                          getResultStatus(result) === "running"
+                            ? "size-3.5 animate-spin"
+                            : "size-3.5"
+                        }
+                      />
+                      {badge.label}
+                    </Badge>
+                  );
+                })()}
               </div>
             ))}
           </div>
@@ -260,7 +532,9 @@ export function ArticleCoverBatchGenerator({
                 <TableHead className="w-10">
                   <Checkbox
                     checked={allFilteredSelected}
-                    onCheckedChange={(checked) => toggleAllFiltered(Boolean(checked))}
+                    onCheckedChange={(checked) =>
+                      toggleAllFiltered(Boolean(checked))
+                    }
                     aria-label="选择当前筛选文章"
                   />
                 </TableHead>
@@ -277,7 +551,9 @@ export function ArticleCoverBatchGenerator({
                   <TableCell>
                     <Checkbox
                       checked={selectedSet.has(post.id)}
-                      onCheckedChange={(checked) => toggleSelected(post.id, Boolean(checked))}
+                      onCheckedChange={(checked) =>
+                        toggleSelected(post.id, Boolean(checked))
+                      }
                       aria-label={`选择 ${post.title}`}
                     />
                   </TableCell>
@@ -285,9 +561,13 @@ export function ArticleCoverBatchGenerator({
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="line-clamp-2 font-medium">{post.title}</p>
-                        <Badge variant="outline">{post.categoryName ?? "未分类"}</Badge>
+                        <Badge variant="outline">
+                          {post.categoryName ?? "未分类"}
+                        </Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground">{post.slug}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {post.slug}
+                      </p>
                     </div>
                   </TableCell>
                   <TableCell>
