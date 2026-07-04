@@ -1,9 +1,8 @@
 import Link from "next/link";
 import React from "react";
 
-import { getCategories } from "@/features/shared/data/category";
 import { BrandLogo } from "@/components/brand/brand-logo";
-import { cn } from "@fwqgo/core/utils";
+import { Button } from "@/components/ui/button";
 import { navigationMenuTriggerStyle } from "@/components/ui/navigation-menu";
 import {
   NavigationMenu,
@@ -15,27 +14,132 @@ import {
 } from "@/components/ui/navigation-menu";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Menu, Server } from "lucide-react";
+import { getCategories } from "@/features/shared/data/category";
+import { cn } from "@fwqgo/core/utils";
+import { Globe2, Menu, Server } from "lucide-react";
 
-const HeaderComponent = async () => {
+type PublicLanguage = "zh" | "en";
+
+const headerCopy: Record<
+  PublicLanguage,
+  {
+    homeLabel: string;
+    languageHref: string;
+    languageLabel: string;
+    dealsTitle: string;
+    allOffers: string;
+    allOffersDescription: string;
+    hongKong: string;
+    hongKongDescription: string;
+    unitedStates: string;
+    unitedStatesDescription: string;
+    cheapVps: string;
+    cheapVpsDescription: string;
+    categoriesTitle: string;
+    errorLabel: string;
+    errorDescription: string;
+    navigationTitle: string;
+    articleCategories: string;
+  }
+> = {
+  zh: {
+    homeLabel: "返回服务器go首页",
+    languageHref: "/en",
+    languageLabel: "English",
+    dealsTitle: "服务器比价",
+    allOffers: "全部套餐",
+    allOffersDescription: "按价格、地区、线路和状态集中筛选服务器套餐。",
+    hongKong: "香港服务器",
+    hongKongDescription: "香港 VPS、云服务器、CN2、CMI 和低延迟线路。",
+    unitedStates: "美国服务器",
+    unitedStatesDescription: "美国 VPS、独立服务器、大带宽和外贸建站套餐。",
+    cheapVps: "便宜 VPS",
+    cheapVpsDescription: "低价 VPS、月付优惠和适合测试的轻量套餐。",
+    categoriesTitle: "套餐专题",
+    errorLabel: "分类暂不可用",
+    errorDescription: "分类暂时加载失败，可以先进入服务器比价或稍后刷新页面。",
+    navigationTitle: "导航",
+    articleCategories: "文章分类",
+  },
+  en: {
+    homeLabel: "Back to fwqgo English homepage",
+    languageHref: "/",
+    languageLabel: "中文",
+    dealsTitle: "Server deals",
+    allOffers: "All offers",
+    allOffersDescription:
+      "Filter server offers by price, region, line, and status.",
+    hongKong: "Hong Kong servers",
+    hongKongDescription:
+      "Hong Kong VPS, cloud servers, CN2, CMI, and low-latency lines.",
+    unitedStates: "US servers",
+    unitedStatesDescription:
+      "US VPS, dedicated servers, bandwidth deals, and hosting offers.",
+    cheapVps: "Cheap VPS",
+    cheapVpsDescription:
+      "Low-cost VPS plans, monthly deals, and lightweight test servers.",
+    categoriesTitle: "Offer topics",
+    errorLabel: "Categories unavailable",
+    errorDescription:
+      "Categories failed to load. You can open server deals or refresh later.",
+    navigationTitle: "Navigation",
+    articleCategories: "Article categories",
+  },
+};
+
+function categoryHref(slug: string, language: PublicLanguage) {
+  return `${language === "en" ? "/en" : ""}/fwq/${slug}/page/1`;
+}
+
+function nonEmptyTrim(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+const HeaderComponent = async ({
+  language = "zh",
+}: {
+  language?: PublicLanguage;
+}) => {
+  const copy = headerCopy[language];
   const { data: categories, error } = await getCategories();
-  const safeCategories = categories ?? [];
+  const safeCategories = (categories ?? []).map((category) => {
+    if (language === "zh") {
+      return category;
+    }
+
+    return {
+      ...category,
+      name: nonEmptyTrim(category.enName) ?? category.name,
+      slug: nonEmptyTrim(category.enSlug) ?? category.slug,
+      description: nonEmptyTrim(category.enDescription) ?? category.description,
+      children: category.children.map((child) => ({
+        ...child,
+        name: nonEmptyTrim(child.enName) ?? child.name,
+        slug: nonEmptyTrim(child.enSlug) ?? child.slug,
+        description: nonEmptyTrim(child.enDescription) ?? child.description,
+      })),
+    };
+  });
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/95 backdrop-blur-xl">
       <div className="container mx-auto px-4">
         <div className="flex min-h-16 items-center justify-between gap-5">
           <Link
-            href="/"
+            href={language === "en" ? "/en" : "/"}
             prefetch
             className="min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            aria-label="返回服务器go首页"
+            aria-label={copy.homeLabel}
           >
             <BrandLogo className="min-w-0" />
           </Link>
@@ -44,21 +148,24 @@ const HeaderComponent = async () => {
             <NavigationMenuList className="rounded-md border border-border/70 bg-background p-1 shadow-sm">
               <NavigationMenuItem>
                 <NavigationMenuTrigger className="rounded-md">
-                  服务器比价
+                  {copy.dealsTitle}
                 </NavigationMenuTrigger>
                 <NavigationMenuContent>
                   <ul className="grid w-[420px] gap-3 p-4 md:w-[520px] md:grid-cols-2">
-                    <ListItem title="全部套餐" href="/servers">
-                      按价格、地区、线路和状态集中筛选服务器套餐。
+                    <ListItem title={copy.allOffers} href="/servers">
+                      {copy.allOffersDescription}
                     </ListItem>
-                    <ListItem title="香港服务器" href="/servers/hong-kong">
-                      香港 VPS、云服务器、CN2、CMI 和低延迟线路。
+                    <ListItem title={copy.hongKong} href="/servers/hong-kong">
+                      {copy.hongKongDescription}
                     </ListItem>
-                    <ListItem title="美国服务器" href="/servers/united-states">
-                      美国 VPS、独立服务器、大带宽和外贸建站套餐。
+                    <ListItem
+                      title={copy.unitedStates}
+                      href="/servers/united-states"
+                    >
+                      {copy.unitedStatesDescription}
                     </ListItem>
-                    <ListItem title="便宜 VPS" href="/servers/cheap-vps">
-                      低价 VPS、月付优惠和适合测试的轻量套餐。
+                    <ListItem title={copy.cheapVps} href="/servers/cheap-vps">
+                      {copy.cheapVpsDescription}
                     </ListItem>
                   </ul>
                 </NavigationMenuContent>
@@ -75,7 +182,7 @@ const HeaderComponent = async () => {
                           <ListItem
                             key={item.id}
                             title={item.name}
-                            href={`/fwq/${item.slug}/page/1`}
+                            href={categoryHref(item.slug, language)}
                           >
                             {item.description}
                           </ListItem>
@@ -87,7 +194,7 @@ const HeaderComponent = async () => {
                   <NavigationMenuItem key={category.id}>
                     <NavigationMenuLink asChild>
                       <Link
-                        href={`/fwq/${category.slug}/page/1`}
+                        href={categoryHref(category.slug, language)}
                         prefetch
                         className={cn(
                           navigationMenuTriggerStyle(),
@@ -111,13 +218,24 @@ const HeaderComponent = async () => {
                         "rounded-md bg-transparent text-muted-foreground",
                       )}
                     >
-                      分类暂不可用
+                      {copy.errorLabel}
                     </Link>
                   </NavigationMenuLink>
                 </NavigationMenuItem>
               ) : null}
             </NavigationMenuList>
           </NavigationMenu>
+
+          <Button
+            asChild
+            variant="outline"
+            className="hidden shrink-0 lg:inline-flex"
+          >
+            <Link href={copy.languageHref} prefetch>
+              <Globe2 className="size-4" />
+              {copy.languageLabel}
+            </Link>
+          </Button>
 
           <Sheet>
             <SheetTrigger asChild>
@@ -126,7 +244,7 @@ const HeaderComponent = async () => {
                 variant="outline"
                 size="icon"
                 className="lg:hidden"
-                aria-label="打开导航菜单"
+                aria-label={copy.navigationTitle}
               >
                 <Menu className="size-5" />
               </Button>
@@ -136,63 +254,71 @@ const HeaderComponent = async () => {
               className="max-h-dvh w-[88vw] max-w-sm overflow-y-auto"
             >
               <SheetHeader>
-                <SheetTitle>导航</SheetTitle>
+                <SheetTitle>{copy.navigationTitle}</SheetTitle>
               </SheetHeader>
               <nav className="mt-6 grid gap-4">
                 <div className="grid gap-1 rounded-lg border border-border/70 p-2">
                   <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium uppercase text-muted-foreground">
                     <Server className="size-3.5" />
-                    套餐专题
+                    {copy.categoriesTitle}
                   </div>
-                  <Link
+                  <MobileNavLink
                     href="/servers"
                     prefetch
                     className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    服务器比价
-                  </Link>
+                    {copy.dealsTitle}
+                  </MobileNavLink>
                   {(
                     [
-                    ["香港服务器", "/servers/hong-kong"],
-                    ["美国服务器", "/servers/united-states"],
-                    ["便宜 VPS", "/servers/cheap-vps"],
+                      [copy.hongKong, "/servers/hong-kong"],
+                      [copy.unitedStates, "/servers/united-states"],
+                      [copy.cheapVps, "/servers/cheap-vps"],
                     ] satisfies Array<[string, string]>
                   ).map(([label, href]) => (
-                    <Link
+                    <MobileNavLink
                       key={href}
                       href={href}
                       prefetch
                       className="flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {label}
-                    </Link>
+                    </MobileNavLink>
                   ))}
+                  <MobileNavLink
+                    href={copy.languageHref}
+                    prefetch
+                    className="mt-1 flex min-h-11 items-center gap-2 rounded-md border border-border/70 px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Globe2 className="size-4" />
+                    {copy.languageLabel}
+                  </MobileNavLink>
                 </div>
                 {safeCategories.length > 0 ? (
                   <div className="px-3 text-xs font-medium uppercase text-muted-foreground">
-                    文章分类
+                    {copy.articleCategories}
                   </div>
                 ) : null}
                 {safeCategories.map((category) => (
                   <div key={category.id} className="grid gap-2">
-                    <Link
-                      href={`/fwq/${category.slug}/page/1`}
+                    <MobileNavLink
+                      href={categoryHref(category.slug, language)}
                       prefetch
                       className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {category.name}
-                    </Link>
+                    </MobileNavLink>
                     {category.children.length > 0 ? (
                       <div className="grid gap-1 border-l border-border pl-3">
                         {category.children.map((item) => (
-                          <Link
+                          <MobileNavLink
                             key={item.id}
-                            href={`/fwq/${item.slug}/page/1`}
+                            href={categoryHref(item.slug, language)}
                             prefetch
                             className="flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             {item.name}
-                          </Link>
+                          </MobileNavLink>
                         ))}
                       </div>
                     ) : null}
@@ -200,7 +326,7 @@ const HeaderComponent = async () => {
                 ))}
                 {error ? (
                   <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-4 text-sm leading-6 text-muted-foreground">
-                    分类暂时加载失败，可以先进入服务器比价或稍后刷新页面。
+                    {copy.errorDescription}
                   </div>
                 ) : null}
               </nav>
@@ -211,6 +337,17 @@ const HeaderComponent = async () => {
     </header>
   );
 };
+
+function MobileNavLink({
+  children,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof Link>) {
+  return (
+    <SheetClose asChild>
+      <Link {...props}>{children}</Link>
+    </SheetClose>
+  );
+}
 
 const ListItem = React.forwardRef<
   React.ComponentRef<"a">,

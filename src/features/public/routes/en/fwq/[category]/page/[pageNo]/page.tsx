@@ -22,7 +22,10 @@ import { Separator } from "@/components/ui/separator";
 import { decodeSlug } from "@fwqgo/core/utils";
 
 function getSiteUrl() {
-  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
+    /\/+$/,
+    "",
+  );
 }
 
 export async function generateMetadata(props: {
@@ -31,7 +34,8 @@ export async function generateMetadata(props: {
   const params = await props.params;
   const decodedCategory = decodeSlug(params.category);
   const currentPage = Number.parseInt(params.pageNo, 10);
-  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
+  const pageNo =
+    Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
   const { data: category } = await getCategoryBySlug(decodedCategory, "en");
   const title = category?.name ?? decodedCategory.replace(/[-_]+/g, " ");
   const canonicalSlug = category?.slug ?? decodedCategory;
@@ -69,7 +73,8 @@ async function CategoryPageContent({
   const params = await paramsPromise;
   const decodedCategory = decodeSlug(params.category);
   const currentPage = Number.parseInt(params.pageNo, 10);
-  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : null;
+  const pageNo =
+    Number.isFinite(currentPage) && currentPage > 0 ? currentPage : null;
   if (!pageNo) notFound();
 
   const { data: category, error: categoryError } = await getCategoryBySlug(
@@ -79,12 +84,15 @@ async function CategoryPageContent({
   if (categoryError) return <div>Failed to load category.</div>;
   if (!category) notFound();
 
-  const [{ data: posts, error: postsError }, { data: totalCount }, { data: latestPosts }] =
-    await Promise.all([
-      getPostsWithTagsByCategoryId(category.id, pageNo, "en"),
-      getPublishedPostCountByCategoryId(category.id, "en"),
-      getLatestPostsForSidebar("en"),
-    ]);
+  const [
+    { data: posts, error: postsError },
+    { data: totalCount },
+    { data: latestPosts },
+  ] = await Promise.all([
+    getPostsWithTagsByCategoryId(category.id, pageNo, "en"),
+    getPublishedPostCountByCategoryId(category.id, "en"),
+    getLatestPostsForSidebar("en"),
+  ]);
   const totalPage = Math.ceil((totalCount ?? 0) / 10);
 
   if ((totalCount ?? 0) > 0 && pageNo > totalPage) {
@@ -156,7 +164,7 @@ export default function EnglishCategoryPage(props: {
 }) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Header />
+      <Header language="en" />
       <Separator />
       <main className="container mx-auto flex-1 px-4 py-6 md:py-8">
         <Suspense fallback={<div>Loading...</div>}>
@@ -164,7 +172,7 @@ export default function EnglishCategoryPage(props: {
         </Suspense>
       </main>
       <Separator className="mt-4" />
-      <Footer />
+      <Footer language="en" />
     </div>
   );
 }

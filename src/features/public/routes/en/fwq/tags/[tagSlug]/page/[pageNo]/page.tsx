@@ -18,7 +18,10 @@ import { Separator } from "@/components/ui/separator";
 import { decodeSlug } from "@fwqgo/core/utils";
 
 function getSiteUrl() {
-  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
+    /\/+$/,
+    "",
+  );
 }
 
 export async function generateMetadata(props: {
@@ -27,8 +30,13 @@ export async function generateMetadata(props: {
   const params = await props.params;
   const decodedTagSlug = decodeSlug(params.tagSlug);
   const currentPage = Number.parseInt(params.pageNo, 10);
-  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
-  const { data } = await getPostsWithTagsByTagSlug(decodedTagSlug, pageNo, "en");
+  const pageNo =
+    Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
+  const { data } = await getPostsWithTagsByTagSlug(
+    decodedTagSlug,
+    pageNo,
+    "en",
+  );
   const title = data?.name ?? decodedTagSlug.replace(/[-_]+/g, " ");
   const canonicalSlug = data?.slug ?? decodedTagSlug;
   const zhSlug =
@@ -64,7 +72,8 @@ async function TagPageContent({
   const params = await paramsPromise;
   const decodedTagSlug = decodeSlug(params.tagSlug);
   const currentPage = Number.parseInt(params.pageNo, 10);
-  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : null;
+  const pageNo =
+    Number.isFinite(currentPage) && currentPage > 0 ? currentPage : null;
   if (!pageNo) notFound();
 
   const [{ data: postsWithTag, error }, { data: latestPosts }] =
@@ -146,7 +155,7 @@ export default function EnglishTagPage(props: {
 }) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Header />
+      <Header language="en" />
       <Separator />
       <main className="container mx-auto flex-1 px-4 py-6 md:py-8">
         <Suspense fallback={<div>Loading...</div>}>
@@ -154,7 +163,7 @@ export default function EnglishTagPage(props: {
         </Suspense>
       </main>
       <Separator className="mt-4" />
-      <Footer />
+      <Footer language="en" />
     </div>
   );
 }

@@ -20,7 +20,10 @@ import { Separator } from "@/components/ui/separator";
 import { formatDate } from "@fwqgo/core/utils";
 
 function getSiteUrl() {
-  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
+    /\/+$/,
+    "",
+  );
 }
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -82,7 +85,11 @@ async function EnglishHomeContent() {
             <div className="flex flex-wrap gap-2">
               <Button asChild>
                 <Link
-                  href={heroPost ? `/en/fwq/posts/${heroPost.slug}` : "/en"}
+                  href={
+                    heroPost
+                      ? `/en/fwq/posts/${heroPost.slug}`
+                      : "#latest-english-articles"
+                  }
                   prefetch
                 >
                   Start reading
@@ -127,7 +134,10 @@ async function EnglishHomeContent() {
         </div>
       </section>
 
-      <section className="container mx-auto grid gap-8 px-4 py-8 xl:grid-cols-[minmax(0,0.82fr)_320px]">
+      <section
+        id="latest-english-articles"
+        className="container mx-auto grid gap-8 px-4 py-8 xl:grid-cols-[minmax(0,0.82fr)_320px]"
+      >
         <div className="space-y-4">
           <div>
             <h2 className="text-2xl font-semibold tracking-tight">
@@ -144,7 +154,9 @@ async function EnglishHomeContent() {
           ) : (
             <Card className="border-dashed border-border/80 bg-muted/20">
               <CardContent className="p-8 text-center text-sm text-muted-foreground">
-                No more English articles yet.
+                {safePosts.length > 0
+                  ? "No more English articles yet."
+                  : "No English articles have been published yet. Check the Chinese homepage or come back later."}
               </CardContent>
             </Card>
           )}
@@ -186,17 +198,23 @@ async function EnglishHomeContent() {
                 Popular articles
               </p>
               <div className="mt-4 space-y-3">
-                {popularPosts.map((post, index) => (
-                  <Link
-                    key={post.id}
-                    href={`/en/fwq/posts/${post.slug}`}
-                    prefetch
-                    className="flex gap-3 rounded-md border border-border/70 p-3 text-sm hover:bg-muted/30"
-                  >
-                    <Badge variant="secondary">TOP {index + 1}</Badge>
-                    <span className="line-clamp-2">{post.title}</span>
-                  </Link>
-                ))}
+                {popularPosts.length > 0 ? (
+                  popularPosts.map((post, index) => (
+                    <Link
+                      key={post.id}
+                      href={`/en/fwq/posts/${post.slug}`}
+                      prefetch
+                      className="flex min-h-11 gap-3 rounded-md border border-border/70 p-3 text-sm hover:bg-muted/30"
+                    >
+                      <Badge variant="secondary">TOP {index + 1}</Badge>
+                      <span className="line-clamp-2">{post.title}</span>
+                    </Link>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No English popularity data yet.
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -209,7 +227,7 @@ async function EnglishHomeContent() {
 export default function EnglishHomePage() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Header />
+      <Header language="en" />
       <Separator />
       <Suspense
         fallback={
@@ -221,7 +239,7 @@ export default function EnglishHomePage() {
         <EnglishHomeContent />
       </Suspense>
       <Separator className="mt-4" />
-      <Footer />
+      <Footer language="en" />
     </div>
   );
 }

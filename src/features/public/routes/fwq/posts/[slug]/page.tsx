@@ -38,7 +38,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { addIdsToHeadings } from "@fwqgo/core/toc";
 
-function formatOfferPrice(offer: Awaited<ReturnType<typeof getRelatedServerOffersForPost>>[number]) {
+function formatOfferPrice(
+  offer: Awaited<ReturnType<typeof getRelatedServerOffersForPost>>[number],
+) {
   if (!offer.priceAmount) return "价格待补充";
   const amount = Number(offer.priceAmount);
   if (!Number.isFinite(amount)) return "价格待确认";
@@ -46,7 +48,10 @@ function formatOfferPrice(offer: Awaited<ReturnType<typeof getRelatedServerOffer
 }
 
 function getSiteUrl() {
-  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
+    /\/+$/,
+    "",
+  );
 }
 
 function toAbsoluteUrl(value: string | null | undefined) {
@@ -290,7 +295,7 @@ async function PostPageContent({
                   <Link
                     href={`/fwq/tags/${post.recommendedTagSlug ?? post.recommendedTagName}/page/1`}
                     prefetch
-                    className="inline-flex min-h-8 items-center gap-2 rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    className="inline-flex min-h-11 items-center gap-2 rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     <Tags className="size-4" />
                     {post.recommendedTagName}
@@ -319,7 +324,7 @@ async function PostPageContent({
 
               <div className="mt-6 space-y-8">
                 <div
-                  className="article-prose font-ui prose prose-zinc max-w-none prose-headings:font-editorial prose-p:text-base prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-accent prose-a:underline prose-a:decoration-accent/55 prose-a:underline-offset-4 prose-a:transition-colors hover:prose-a:text-primary hover:prose-a:decoration-primary prose-strong:text-foreground prose-img:rounded-lg prose-blockquote:border-l-4 prose-blockquote:border-accent prose-blockquote:bg-accent/5 prose-blockquote:px-5 prose-blockquote:py-3 prose-blockquote:font-ui prose-blockquote:text-base prose-li:my-2 prose-li:text-foreground/90 prose-code:rounded prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:font-ui prose-code:text-sm"
+                  className="article-prose font-ui prose-headings:font-editorial prose-blockquote:font-ui prose-code:font-ui prose prose-zinc max-w-none prose-p:text-base prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-accent prose-a:underline prose-a:decoration-accent/55 prose-a:underline-offset-4 prose-a:transition-colors hover:prose-a:text-primary hover:prose-a:decoration-primary prose-blockquote:border-l-4 prose-blockquote:border-accent prose-blockquote:bg-accent/5 prose-blockquote:px-5 prose-blockquote:py-3 prose-blockquote:text-base prose-strong:text-foreground prose-code:rounded prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:text-sm prose-li:my-2 prose-li:text-foreground/90 prose-img:rounded-lg"
                   dangerouslySetInnerHTML={{ __html: contentWithIds }}
                 />
 
@@ -337,7 +342,7 @@ async function PostPageContent({
                           key={tag.tag.id}
                           href={`/fwq/tags/${tag.tag.slug}/page/1`}
                           prefetch
-                          className="inline-flex min-h-8 items-center rounded-full border border-border/70 px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/10 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          className="inline-flex min-h-10 items-center rounded-full border border-border/70 px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/10 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         >
                           #{tag.tag.name}
                         </Link>
@@ -390,7 +395,7 @@ async function PostPageContent({
                   </nav>
                 ) : null}
 
-                {(matchedTopics.length > 0 || relatedOffers.length > 0) ? (
+                {matchedTopics.length > 0 || relatedOffers.length > 0 ? (
                   <section className="space-y-4 border-t border-border/70 pt-5">
                     <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                       <SquareLibrary className="size-4 text-accent" />
@@ -403,7 +408,7 @@ async function PostPageContent({
                             key={topic.slug}
                             href={`/servers/${topic.slug}`}
                             prefetch
-                            className="inline-flex min-h-8 items-center rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                            className="inline-flex min-h-10 items-center rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                           >
                             {topic.title}
                           </Link>
@@ -411,7 +416,7 @@ async function PostPageContent({
                         <Link
                           href="/servers"
                           prefetch
-                          className="inline-flex min-h-8 items-center rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          className="inline-flex min-h-10 items-center rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         >
                           全部服务器比价
                         </Link>
@@ -448,7 +453,8 @@ async function PostPageContent({
                                   购买链接
                                 </a>
                               ) : null}
-                              {offer.articleUrl && isInternalHref(offer.articleUrl) ? (
+                              {offer.articleUrl &&
+                              isInternalHref(offer.articleUrl) ? (
                                 <Link
                                   href={offer.articleUrl}
                                   prefetch

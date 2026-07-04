@@ -30,10 +30,12 @@ export function AdminTableWorkbench({
           {title || description ? (
             <div className="space-y-1">
               {title ? (
-                <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+                <h3 className="text-sm font-semibold text-foreground">
+                  {title}
+                </h3>
               ) : null}
               {description ? (
-                <p className="line-clamp-1 text-xs leading-5 text-muted-foreground">
+                <p className="text-xs leading-5 text-muted-foreground">
                   {description}
                 </p>
               ) : null}
@@ -54,13 +56,13 @@ export function AdminTableWorkbench({
             value={searchValue}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={searchPlaceholder}
-            className="h-10 rounded-md border-border/70 bg-background pl-9 pr-10 text-sm shadow-none"
+            className="min-h-11 rounded-md border-border/70 bg-background pl-9 pr-12 text-sm shadow-none"
             aria-label={searchPlaceholder}
           />
           {searchValue ? (
             <button
               type="button"
-              className="absolute right-2 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="absolute right-1.5 top-1/2 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => onSearchChange("")}
               aria-label="清空搜索"
             >
@@ -78,7 +80,7 @@ export function AdminTableWorkbench({
           </div>
         ) : null}
         {actionSlot ? (
-          <div className="flex min-w-0 flex-wrap justify-start gap-2 [&>*]:w-full sm:[&>*]:w-auto xl:justify-end">
+          <div className="flex min-w-0 flex-wrap justify-start gap-2 xl:justify-end [&>*]:w-full sm:[&>*]:w-auto">
             {actionSlot}
           </div>
         ) : null}
