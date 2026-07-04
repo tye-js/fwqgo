@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Filter, Search } from "lucide-react";
+import { Filter, Search, SearchX, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -48,23 +48,37 @@ export function AdminTableWorkbench({
       ) : null}
 
       <div className="grid min-w-0 gap-2 xl:grid-cols-[minmax(0,1fr)_auto_auto] xl:items-center">
-        <div className="relative">
+        <div className="relative" role="search">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={searchValue}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={searchPlaceholder}
-            className="h-10 rounded-md border-border/70 bg-background pl-9 text-sm shadow-none"
+            className="h-10 rounded-md border-border/70 bg-background pl-9 pr-10 text-sm shadow-none"
+            aria-label={searchPlaceholder}
           />
+          {searchValue ? (
+            <button
+              type="button"
+              className="absolute right-2 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => onSearchChange("")}
+              aria-label="清空搜索"
+            >
+              <X className="size-4" />
+            </button>
+          ) : null}
         </div>
         {filterSlot ? (
           <div className="flex min-w-0 flex-col gap-2 rounded-md border border-border/70 bg-background px-3 py-2 text-sm text-muted-foreground md:flex-row md:flex-wrap md:items-center">
-            <Filter className="size-4" />
+            <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <Filter className="size-4" />
+              筛选
+            </span>
             {filterSlot}
           </div>
         ) : null}
         {actionSlot ? (
-          <div className="flex min-w-0 flex-wrap justify-start gap-2 xl:justify-end">
+          <div className="flex min-w-0 flex-wrap justify-start gap-2 [&>*]:w-full sm:[&>*]:w-auto xl:justify-end">
             {actionSlot}
           </div>
         ) : null}
@@ -83,8 +97,11 @@ export function AdminTableEmpty({
   actionSlot?: ReactNode;
 }) {
   return (
-    <div className="rounded-md border border-dashed border-border/70 bg-muted/15 px-4 py-6 text-center">
-      <p className="text-sm font-medium text-foreground">{title}</p>
+    <div className="rounded-md border border-dashed border-border/70 bg-muted/15 px-4 py-8 text-center">
+      <div className="mx-auto flex size-10 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+        <SearchX className="size-5" />
+      </div>
+      <p className="mt-3 text-sm font-medium text-foreground">{title}</p>
       <p className="mx-auto mt-2 max-w-xl text-xs leading-5 text-muted-foreground">
         {description}
       </p>

@@ -22,6 +22,7 @@ import {
   sourceMaterials,
 } from "@fwqgo/db/schema";
 import { syncImageReferencesForPost } from "@/server/images/assets";
+import { generateArticleCoverImage } from "@/server/images/generated-cover";
 import { importServerOffersFromPost } from "@/server/offers/server-offers";
 import {
   scrapeArticleWithOptions,
@@ -386,6 +387,126 @@ async function syncPostTagsFromSource(input: {
   });
 }
 
+async function generateCoverForDraftPost(input: {
+  taskId: number;
+  attempt: number;
+  stepKey: string;
+  stepName: string;
+  progress: number;
+  postId: number;
+  language: "zh" | "en";
+  force?: boolean;
+}) {
+  const [post] = await db
+    .select({
+      id: posts.id,
+      title: posts.title,
+      slug: posts.slug,
+      description: posts.description,
+      keywords: posts.keywords,
+      content: posts.content,
+      imgUrl: posts.imgUrl,
+    })
+    .from(posts)
+    .where(eq(posts.id, input.postId))
+    .limit(1);
+
+  if (!post) {
+    await upsertTaskStep({
+      taskId: input.taskId,
+      attempt: input.attempt,
+      stepKey: input.stepKey,
+      stepName: input.stepName,
+      status: "failed",
+      progress: input.progress,
+      message: "草稿已保存，但没有找到文章记录，无法生成封面图",
+    });
+    return { status: "failed" as const, url: null };
+  }
+
+  if (post.imgUrl && !input.force) {
+    await upsertTaskStep({
+      taskId: input.taskId,
+      attempt: input.attempt,
+      stepKey: input.stepKey,
+      stepName: input.stepName,
+      status: "skipped",
+      progress: input.progress,
+      message: "文章已有封面图，跳过自动生图",
+      payload: { postId: post.id, url: post.imgUrl },
+    });
+    return { status: "skipped" as const, url: post.imgUrl };
+  }
+
+  await upsertTaskStep({
+    taskId: input.taskId,
+    attempt: input.attempt,
+    stepKey: input.stepKey,
+    stepName: input.stepName,
+    status: "running",
+    progress: input.progress,
+    message:
+      input.language === "en"
+        ? "正在自动生成英文文章封面图"
+        : "正在自动生成中文文章封面图",
+  });
+
+  try {
+    const generated = await generateArticleCoverImage({
+      title: post.title,
+      description: post.description,
+      keywords: post.keywords,
+      content: post.content,
+      fileSlug: post.slug,
+      language: input.language,
+      uploadedBy: null,
+    });
+
+    await db
+      .update(posts)
+      .set({
+        imgUrl: generated.asset.path,
+        updatedAt: new Date(),
+      })
+      .where(eq(posts.id, post.id));
+    await syncImageReferencesForPost(post.id);
+
+    await upsertTaskStep({
+      taskId: input.taskId,
+      attempt: input.attempt,
+      stepKey: input.stepKey,
+      stepName: input.stepName,
+      status: "success",
+      progress: input.progress,
+      message:
+        input.language === "en"
+          ? "英文封面图已生成并写入文章"
+          : "中文封面图已生成并写入文章",
+      payload: {
+        postId: post.id,
+        url: generated.asset.path,
+        assetId: generated.asset.id,
+      },
+    });
+
+    return { status: "success" as const, url: generated.asset.path };
+  } catch (error) {
+    console.error("AI rewrite cover generation failed:", error);
+    await upsertTaskStep({
+      taskId: input.taskId,
+      attempt: input.attempt,
+      stepKey: input.stepKey,
+      stepName: input.stepName,
+      status: "failed",
+      progress: input.progress,
+      message: "草稿已保存，但自动封面图生成失败",
+      error: getErrorMessage(error),
+    });
+
+    return { status: "failed" as const, url: null };
+  }
+}
+
 async function upsertEnglishDraftPost(input: {
   parentPost: {
     id: number;
@@ -403,7 +524,7 @@ async function upsertEnglishDraftPost(input: {
 }) {
   const [existingByTask] = input.existingPostId
     ? await db
-        .select({ id: posts.id })
+        .select({ id: posts.id, imgUrl: posts.imgUrl })
         .from(posts)
         .where(
           and(eq(posts.id, input.existingPostId), eq(posts.language, "en")),
@@ -413,7 +534,7 @@ async function upsertEnglishDraftPost(input: {
   const [existingBySource] = existingByTask
     ? []
     : await db
-        .select({ id: posts.id })
+        .select({ id: posts.id, imgUrl: posts.imgUrl })
         .from(posts)
         .where(
           and(
@@ -426,12 +547,13 @@ async function upsertEnglishDraftPost(input: {
     existingByTask || existingBySource
       ? []
       : await db
-          .select({ id: posts.id })
+          .select({ id: posts.id, imgUrl: posts.imgUrl })
           .from(posts)
           .where(and(eq(posts.slug, input.slug), eq(posts.language, "en")))
           .limit(1);
-  const existingPostId =
-    existingByTask?.id ?? existingBySource?.id ?? existingBySlug?.id ?? null;
+  const existingPost = existingByTask ?? existingBySource ?? existingBySlug;
+  const existingPostId = existingPost?.id ?? null;
+  const existingImgUrl = existingPost?.imgUrl ?? null;
   const slug = await getUniqueEnglishArticleSlug(
     input.slug,
     existingPostId ?? undefined,
@@ -448,7 +570,7 @@ async function upsertEnglishDraftPost(input: {
           description: input.description,
           keywords,
           content: storedContent,
-          imgUrl: input.parentPost.imgUrl,
+          imgUrl: existingImgUrl ?? input.parentPost.imgUrl,
           enTitle: null,
           enSlug: null,
           enDescription: null,
@@ -465,7 +587,12 @@ async function upsertEnglishDraftPost(input: {
           updatedAt: new Date(),
         })
         .where(eq(posts.id, existingPostId))
-        .returning({ id: posts.id, title: posts.title, slug: posts.slug })
+        .returning({
+          id: posts.id,
+          title: posts.title,
+          slug: posts.slug,
+          imgUrl: posts.imgUrl,
+        })
     : await db
         .insert(posts)
         .values({
@@ -483,7 +610,12 @@ async function upsertEnglishDraftPost(input: {
           published: false,
           affiliateReviewStatus: "pending",
         })
-        .returning({ id: posts.id, title: posts.title, slug: posts.slug });
+        .returning({
+          id: posts.id,
+          title: posts.title,
+          slug: posts.slug,
+          imgUrl: posts.imgUrl,
+        });
 
   if (!post) {
     throw new Error("英文草稿保存失败");
@@ -688,10 +820,22 @@ async function runEnglishSeoTask(
       stepKey: "english_save",
       stepName: "写入英文草稿",
       status: "success",
-      progress: 100,
+      progress: 88,
       message: `英文草稿已单独生成：/posts/edit/post/${englishPost.slug}`,
       payload: { postId: englishPost.id, enSlug: englishPost.slug },
     });
+
+    await generateCoverForDraftPost({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "english_cover",
+      stepName: "自动生成英文封面",
+      progress: 92,
+      postId: englishPost.id,
+      language: "en",
+      force: !englishPost.imgUrl || englishPost.imgUrl === post.imgUrl,
+    });
+
     await updateTask(claimedTask.id, {
       status: "succeeded",
       progress: 100,
@@ -1065,6 +1209,17 @@ export async function runAiRewriteTask(taskId: number) {
           : `已生成草稿文章 #${post.id}`,
         payload: { postId: post.id, title: post.title },
       });
+
+      await generateCoverForDraftPost({
+        taskId,
+        attempt,
+        stepKey: "cover_generate",
+        stepName: "自动生成中文封面",
+        progress: 91,
+        postId: post.id,
+        language: "zh",
+      });
+
       await upsertTaskStep({
         taskId,
         attempt,

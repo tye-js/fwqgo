@@ -36,9 +36,6 @@ export default async function EditPostPage(props: {
   const markdownPost = {
     ...post,
     content: contentToArticleMarkdown(post.content).markdown,
-    enContent: post.enContent
-      ? contentToArticleMarkdown(post.enContent).markdown
-      : post.enContent,
   };
 
   return (

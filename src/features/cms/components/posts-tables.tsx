@@ -422,6 +422,7 @@ export function PostList({
                       </Button>
                       <Button
                         className="min-h-10"
+                        disabled={isSaving}
                         onClick={() => handleSave(post.id)}
                       >
                         {isSaving ? "保存中..." : "保存"}
@@ -466,7 +467,9 @@ export function PostList({
                             </AlertDialogTitle>
                             <AlertDialogDescription>
                               删除后将无法恢复，当前文章为
-                              <p className="mt-2 text-red-500">{post.title}</p>
+                              <span className="mt-2 block text-red-500">
+                                {post.title}
+                              </span>
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
@@ -587,7 +590,7 @@ export function PostList({
                     </TableCell>
                     <TableCell className="max-w-[200px] text-nowrap">
                       {editPostId === post.id ? (
-                        <div className="flex min-w-[300px] items-center gap-2">
+                        <div className="grid min-w-[240px] gap-2 xl:grid-cols-[minmax(180px,1fr)_auto]">
                           <Input
                             className="h-8"
                             value={editPostData?.imgUrl ?? ""}
@@ -623,6 +626,7 @@ export function PostList({
                             <Button
                               size="sm"
                               className="h-8 min-h-0 px-2"
+                              disabled={isSaving}
                               onClick={() => handleSave(post.id)}
                             >
                               {isSaving ? "保存中..." : "保存"}
@@ -670,9 +674,9 @@ export function PostList({
                                   </AlertDialogTitle>
                                   <AlertDialogDescription>
                                     删除后将无法恢复，当前文章为
-                                    <p className="mt-2 text-red-500">
+                                    <span className="mt-2 block text-red-500">
                                       {post.title}
-                                    </p>
+                                    </span>
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>

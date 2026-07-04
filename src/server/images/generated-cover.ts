@@ -186,9 +186,9 @@ function toEnglishFileSlug(value: string | null | undefined) {
 function buildCoverOriginalName(
   input: Pick<GenerateCoverInput, "title" | "fileSlug" | "language">,
 ) {
-  const language = input.language === "en" ? "en" : "zh";
   const baseSlug =
     toEnglishFileSlug(input.fileSlug) || toEnglishFileSlug(input.title);
+  const language = input.language === "en" ? "en" : "zh";
   return `${baseSlug || "article-cover"}-${language}-cover.png`;
 }
 
