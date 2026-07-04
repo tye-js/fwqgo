@@ -72,7 +72,7 @@ export function NavMain({
                   asChild
                   tooltip={item.title}
                   isActive={item.isActive}
-                  className="h-8"
+                  className="h-10 md:h-8"
                 >
                   <Link href={item.url}>
                     {item.icon && <item.icon />}
@@ -95,7 +95,7 @@ export function NavMain({
                   <SidebarMenuButton
                     tooltip={item.title}
                     isActive={item.isActive}
-                    className="h-8"
+                    className="h-10 md:h-8"
                   >
                     {item.icon && <item.icon />}
                     <span>{item.title}</span>
@@ -110,6 +110,7 @@ export function NavMain({
                           asChild
                           isActive={subItem.url === activeSubItemUrl}
                           size="sm"
+                          className="min-h-9 md:min-h-0"
                         >
                           <Link href={subItem.url}>
                             <span>{subItem.title}</span>

@@ -101,9 +101,9 @@ function getUniqueValues(values: Array<string | null>) {
 
 function OfferActions({ offer }: { offer: Offer }) {
   return (
-    <div className="flex flex-wrap justify-end gap-2">
+    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
       {offer.purchaseUrl ? (
-        <Button asChild size="sm" className="min-h-9 px-3">
+        <Button asChild size="sm" className="min-h-10 px-3 sm:min-h-9">
           <a href={offer.purchaseUrl} target="_blank" rel="nofollow noopener noreferrer">
             <ShoppingCart className="size-4" />
             购买
@@ -111,7 +111,12 @@ function OfferActions({ offer }: { offer: Offer }) {
         </Button>
       ) : null}
       {offer.articleUrl ? (
-        <Button asChild size="sm" variant="outline" className="min-h-9 px-3">
+        <Button
+          asChild
+          size="sm"
+          variant="outline"
+          className="min-h-10 px-3 sm:min-h-9"
+        >
           {isInternalHref(offer.articleUrl) ? (
             <Link href={offer.articleUrl} prefetch>
               <FileText className="size-4" />
@@ -130,7 +135,12 @@ function OfferActions({ offer }: { offer: Offer }) {
         </Button>
       ) : null}
       {offer.reviewUrl ? (
-        <Button asChild size="sm" variant="outline" className="min-h-9 px-3">
+        <Button
+          asChild
+          size="sm"
+          variant="outline"
+          className="min-h-10 px-3 sm:min-h-9"
+        >
           {isInternalHref(offer.reviewUrl) ? (
             <Link href={offer.reviewUrl} prefetch>
               <FlaskConical className="size-4" />

@@ -131,7 +131,10 @@ const HeaderComponent = async () => {
                 <Menu className="size-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-[86vw] max-w-sm">
+            <SheetContent
+              side="right"
+              className="max-h-dvh w-[88vw] max-w-sm overflow-y-auto"
+            >
               <SheetHeader>
                 <SheetTitle>导航</SheetTitle>
               </SheetHeader>

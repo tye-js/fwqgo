@@ -127,7 +127,7 @@ function HeroArticleTile({
       href={`/fwq/posts/${slug}`}
       prefetch
       className={`glass-card group relative flex flex-col justify-end overflow-hidden rounded-2xl ${
-        isLarge ? "min-h-[300px] md:min-h-[420px]" : "min-h-[180px]"
+        isLarge ? "min-h-[260px] md:min-h-[420px]" : "min-h-[160px]"
       }`}
     >
       {isRenderableImageSrc(imgUrl) ? (
@@ -149,7 +149,7 @@ function HeroArticleTile({
       <div className="absolute inset-0 z-10 bg-[linear-gradient(180deg,rgba(2,6,23,0.18)_0%,rgba(2,6,23,0.28)_36%,rgba(2,6,23,0.9)_100%)]" />
       <div className="absolute inset-x-0 bottom-0 z-10 h-2/3 bg-[radial-gradient(circle_at_20%_100%,rgba(37,99,235,0.26),transparent_38%)]" />
 
-      <div className="absolute inset-x-0 bottom-0 z-20 p-4 text-white md:p-5">
+      <div className="absolute inset-x-0 bottom-0 z-20 p-3.5 text-white md:p-5">
         <div className="flex flex-wrap items-center gap-2">
           {showNewBadge ? (
             <Badge className="bg-emerald-500 text-white hover:bg-emerald-500">
@@ -161,8 +161,8 @@ function HeroArticleTile({
           </Badge>
         </div>
         <h2
-          className={`font-editorial mt-2 font-semibold leading-tight drop-shadow-[0_2px_10px_rgba(0,0,0,0.55)] ${
-            isLarge ? "text-2xl md:text-3xl" : "text-lg md:text-xl"
+            className={`font-editorial mt-2 font-semibold leading-tight drop-shadow-[0_2px_10px_rgba(0,0,0,0.55)] ${
+            isLarge ? "text-xl md:text-3xl" : "text-lg md:text-xl"
           }`}
         >
           {title}
@@ -226,7 +226,7 @@ async function HomeContent() {
                   </Badge>
                   <Badge variant="secondary">标签直达</Badge>
                 </div>
-                <h1 className="font-editorial text-gradient max-w-3xl text-3xl font-bold leading-tight tracking-tight md:text-4xl lg:text-5xl">
+                <h1 className="font-editorial text-gradient max-w-3xl text-2xl font-bold leading-tight tracking-tight md:text-4xl lg:text-5xl">
                   更快找到合适的服务器优惠和选购文章
                 </h1>
                 <p className="max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">
@@ -285,7 +285,7 @@ async function HomeContent() {
                     key={post.id}
                     href={`/fwq/posts/${post.slug}`}
                     prefetch
-                    className="group grid min-h-[100px] grid-cols-[96px_minmax(0,1fr)_auto] items-start gap-3 rounded-lg border border-border/70 bg-background p-2.5 shadow-sm transition-colors hover:border-accent/35 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:grid-cols-[112px_minmax(0,1fr)_auto]"
+                    className="group grid min-h-[96px] grid-cols-[88px_minmax(0,1fr)] items-start gap-3 rounded-lg border border-border/70 bg-background p-2.5 shadow-sm transition-colors hover:border-accent/35 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:grid-cols-[112px_minmax(0,1fr)_auto]"
                   >
                     <div className="relative aspect-[16/9] overflow-hidden rounded-md bg-muted">
                       <SafePostImage
@@ -306,7 +306,7 @@ async function HomeContent() {
                         {post.description ?? "查看这篇文章的线路、优惠与适用场景。"}
                       </p>
                     </div>
-                    <ArrowUpRight className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-accent" />
+                    <ArrowUpRight className="mt-1 hidden size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-accent sm:block" />
                   </Link>
                 ))}
               </div>

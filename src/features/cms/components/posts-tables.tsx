@@ -228,14 +228,14 @@ export function PostList({
         searchPlaceholder="搜索文章标题或 slug"
         selectionCount={selectedIds.length}
         filterSlot={
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
             <Select
               value={statusFilter}
               onValueChange={(value) =>
                 setStatusFilter(value as PostStatusFilter)
               }
             >
-              <SelectTrigger className="h-auto w-[132px] border-0 bg-transparent p-0 shadow-none focus:ring-0">
+              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[132px] sm:border-0 sm:bg-transparent sm:p-0">
                 <SelectValue placeholder="全部状态" />
               </SelectTrigger>
               <SelectContent>
@@ -245,7 +245,7 @@ export function PostList({
               </SelectContent>
             </Select>
             <Select value={sortValue} onValueChange={setSortValue}>
-              <SelectTrigger className="h-auto w-[152px] border-0 bg-transparent p-0 shadow-none focus:ring-0">
+              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[152px] sm:border-0 sm:bg-transparent sm:p-0">
                 <SelectValue placeholder="排序方式" />
               </SelectTrigger>
               <SelectContent>
@@ -263,7 +263,7 @@ export function PostList({
             variant="destructive"
             disabled={selectedIds.length === 0 || isBulkDeleting}
             onClick={handleBulkDelete}
-            className="min-h-0"
+            className="min-h-10 w-full sm:w-auto"
           >
             <Trash2 className="size-4" />
             {isBulkDeleting ? "删除中..." : "批量删除"}
@@ -277,6 +277,165 @@ export function PostList({
           description="试试更换关键词，或者切换发布状态筛选。"
         />
       ) : (
+        <>
+        <div className="grid gap-3 md:hidden">
+          {sortedPosts.map((post) => (
+            <article
+              key={post.id}
+              className="rounded-md border border-border/70 bg-card p-3 shadow-none"
+            >
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  checked={selectedIds.includes(post.id)}
+                  onCheckedChange={(checked) =>
+                    toggleSelection(post.id, Boolean(checked))
+                  }
+                  aria-label={`选择文章 ${post.title}`}
+                  className="mt-1"
+                />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-sm bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                      ID {post.id}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      {post.published ? (
+                        <CircleCheck className="size-3.5 text-primary" />
+                      ) : (
+                        <CircleX className="size-3.5" />
+                      )}
+                      {post.published ? "已发布" : "草稿"}
+                    </span>
+                  </div>
+
+                  {editPostId === post.id ? (
+                    <div className="space-y-2">
+                      <Input
+                        className="h-10"
+                        autoFocus
+                        value={editPostData?.title ?? ""}
+                        onChange={(e) =>
+                          handleInputChange("title", e.target.value)
+                        }
+                      />
+                      <Input
+                        className="h-10"
+                        value={editPostData?.slug ?? ""}
+                        onChange={(e) =>
+                          handleInputChange("slug", e.target.value)
+                        }
+                      />
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={editPostData?.published ?? false}
+                          onCheckedChange={(checked) =>
+                            handleInputChange("published", Boolean(checked))
+                          }
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          发布文章
+                        </span>
+                      </div>
+                      <div className="grid gap-2">
+                        <Input
+                          className="h-10"
+                          value={editPostData?.imgUrl ?? ""}
+                          onChange={(e) =>
+                            handleInputChange("imgUrl", e.target.value)
+                          }
+                        />
+                        <ImageLibraryPicker
+                          triggerLabel="从图片库选择"
+                          onSelect={(value) =>
+                            handleInputChange("imgUrl", value)
+                          }
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <Link
+                        href={`${editBasePath ?? pathname}/post/${post.slug}`}
+                        className="line-clamp-2 text-base font-medium leading-6 text-foreground underline-offset-4 hover:text-accent hover:underline"
+                      >
+                        {post.title}
+                      </Link>
+                      <p className="truncate font-mono text-xs text-muted-foreground">
+                        {post.slug}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {post.imgUrl ?? "未设置封面"}
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {editPostId === post.id ? (
+                  <>
+                    <Button
+                      variant="secondary"
+                      className="min-h-10"
+                      onClick={() => setEditPostId(null)}
+                    >
+                      取消
+                    </Button>
+                    <Button className="min-h-10" onClick={() => handleSave(post.id)}>
+                      {isSaving ? "保存中..." : "保存"}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      variant="outline"
+                      className="min-h-10"
+                      disabled={extractingPostId === post.id}
+                      onClick={() => handleExtractOffers(post.id)}
+                    >
+                      <FileSearch className="size-4" />
+                      {extractingPostId === post.id ? "提取中..." : "提取套餐"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="min-h-10"
+                      onClick={() => {
+                        setEditPostId(post.id);
+                        setEditPostData(post);
+                      }}
+                    >
+                      编辑
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive" className="col-span-2 min-h-10">
+                          删除
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>确定删除这篇文章吗？</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            删除后将无法恢复，当前文章为
+                            <p className="mt-2 text-red-500">{post.title}</p>
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>取消</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleDelete(post.id)}>
+                            确定删除
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <div className="hidden overflow-x-auto rounded-md border border-border/70 md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -457,6 +616,8 @@ export function PostList({
             ))}
           </TableBody>
         </Table>
+        </div>
+        </>
       )}
     </div>
   );
