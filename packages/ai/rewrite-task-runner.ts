@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import * as cheerio from "cheerio";
 
 import RewriteArticle from "@/langchain/rewrite-article";
@@ -221,71 +221,11 @@ function textToHtml(value: string) {
     .join("");
 }
 
-function parseDiagnosticsSnapshot(value: string | null) {
-  if (!value) {
-    return null;
-  }
-
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (!parsed || typeof parsed !== "object") {
-      return null;
-    }
-
-    return parsed as ScrapeDiagnostics;
-  } catch {
-    return null;
-  }
-}
-
 async function getTaskAiInputMaxLength(styleId?: number | null) {
   const config = await getActiveAiRewriteConfig(styleId ?? undefined);
   return config
     ? getAiRewriteContentLimit(config.maxTokens)
     : MAX_AI_MARKDOWN_INPUT_LENGTH;
-}
-
-function articleFromTaskSnapshot(
-  task: typeof aiRewriteTasks.$inferSelect,
-): ScrapedArticle | null {
-  if (!task.scrapedHtml || !task.resultTitle) {
-    return null;
-  }
-
-  const diagnostics = parseDiagnosticsSnapshot(task.diagnostics) ?? {
-    sourceHost: task.sourceUrl,
-    strategy: "task-snapshot",
-    usedPuppeteer: false,
-    usedFallback: false,
-    usedAiRewrite: true,
-    contentLength: task.scrapedHtml.length,
-    scrapedTitle: task.scrapedTitle ?? task.resultTitle,
-    scrapedDescription: task.scrapedDescription ?? undefined,
-    cleanedHtmlLength: task.scrapedHtml.length,
-    aiInputLength: task.aiInputLength ?? task.scrapedHtml.length,
-    aiInputTruncated: false,
-    rewriteOutputLength: task.rewriteOutputLength ?? task.scrapedHtml.length,
-    removedSelectors: [],
-    affiliateReport: {
-      totalLinks: 0,
-      internalLinksRemoved: 0,
-      matchedLinks: [],
-      unmatchedLinks: [],
-      invalidLinks: [],
-    },
-    warnings: ["复用上次任务已生成的改写快照，跳过重新抓取和 AI 改写"],
-  };
-
-  return {
-    title: task.resultTitle,
-    content: task.scrapedHtml,
-    htmlContent: task.scrapedHtml,
-    description: task.scrapedDescription ?? task.resultTitle,
-    keywords: [],
-    recommendTagName: "",
-    tagsName: [],
-    diagnostics,
-  };
 }
 
 async function getUniqueEnglishSlug(baseSlug: string, postId: number) {
@@ -311,6 +251,7 @@ async function getUniqueEnglishSlug(baseSlug: string, postId: number) {
 async function createEnglishSeoTask(input: {
   parentTask: typeof aiRewriteTasks.$inferSelect;
   post: { id: number; title: string };
+  cleanedHtmlContent: string;
 }) {
   const sourceUrl = `post://${input.post.id}/english`;
   const [existing] = await db
@@ -326,6 +267,16 @@ async function createEnglishSeoTask(input: {
     .limit(1);
 
   if (existing) {
+    await db
+      .update(aiRewriteTasks)
+      .set({
+        sourceTitle: input.post.title,
+        resultTitle: input.post.title,
+        scrapedHtml: input.cleanedHtmlContent.slice(0, 60_000),
+        updatedAt: new Date(),
+      })
+      .where(eq(aiRewriteTasks.id, existing.id));
+
     return existing.id;
   }
 
@@ -343,6 +294,7 @@ async function createEnglishSeoTask(input: {
       rewriteStyleId: input.parentTask.rewriteStyleId,
       postId: input.post.id,
       resultTitle: input.post.title,
+      scrapedHtml: input.cleanedHtmlContent.slice(0, 60_000),
     })
     .returning({ id: aiRewriteTasks.id });
 
@@ -351,6 +303,35 @@ async function createEnglishSeoTask(input: {
   }
 
   return task.id;
+}
+
+async function getEnglishSourceContent(
+  claimedTask: typeof aiRewriteTasks.$inferSelect,
+) {
+  const taskSnapshot = claimedTask.scrapedHtml?.trim();
+  if (taskSnapshot) {
+    return taskSnapshot;
+  }
+
+  if (!claimedTask.postId) {
+    return null;
+  }
+
+  const [parentTask] = await db
+    .select({ scrapedHtml: aiRewriteTasks.scrapedHtml })
+    .from(aiRewriteTasks)
+    .where(
+      and(
+        eq(aiRewriteTasks.postId, claimedTask.postId),
+        sql`${aiRewriteTasks.sourceType} <> 'english'`,
+        sql`${aiRewriteTasks.scrapedHtml} IS NOT NULL`,
+      ),
+    )
+    .orderBy(desc(aiRewriteTasks.updatedAt), desc(aiRewriteTasks.id))
+    .limit(1);
+
+  const parentSnapshot = parentTask?.scrapedHtml?.trim();
+  return parentSnapshot && parentSnapshot.length > 0 ? parentSnapshot : null;
 }
 
 async function runEnglishSeoTask(
@@ -386,7 +367,14 @@ async function runEnglishSeoTask(
       throw new Error("关联草稿文章不存在");
     }
 
-    const markdownInput = contentToArticleMarkdown(post.content, {
+    const englishSourceContent = await getEnglishSourceContent(claimedTask);
+    if (!englishSourceContent) {
+      throw new Error(
+        "英文 SEO 任务缺少清洗后的原始正文，请重新运行中文改写任务",
+      );
+    }
+
+    const markdownInput = contentToArticleMarkdown(englishSourceContent, {
       maxLength: await getTaskAiInputMaxLength(claimedTask.rewriteStyleId),
     });
 
@@ -407,7 +395,7 @@ async function runEnglishSeoTask(
       resultTitle: post.title,
       scrapedTitle: post.title,
       scrapedDescription: post.description,
-      scrapedHtml: post.content.slice(0, 60_000),
+      scrapedHtml: englishSourceContent.slice(0, 60_000),
       aiInputLength: markdownInput.markdown.length,
     });
 
@@ -623,6 +611,7 @@ async function createArticleFromManualTask(input: {
       title: rewritten.title || sourceTitle,
       content: repairedMarkdown,
       htmlContent: repairedMarkdown,
+      cleanedHtmlContent: cleanedHtml,
       description: rewritten.description,
       keywords: rewritten.keywords,
       recommendTagName: rewritten.recommendTagName,
@@ -638,6 +627,7 @@ async function createArticleFromManualTask(input: {
       title: sourceTitle,
       content: cleanedHtml,
       htmlContent: cleanedHtml,
+      cleanedHtmlContent: cleanedHtml,
       description: diagnostics.scrapedDescription ?? sourceTitle,
       keywords: [],
       recommendTagName: "",
@@ -748,8 +738,7 @@ export async function runAiRewriteTask(taskId: number) {
         currentStep: "抓取文章并执行 AI 改写",
       });
 
-      const snapshotArticle = articleFromTaskSnapshot(claimedTask);
-      const article = snapshotArticle ?? (await loadTaskArticle(claimedTask));
+      const article = await loadTaskArticle(claimedTask);
       const manualRequired = needsManualAffiliateReview(article.diagnostics);
 
       await upsertTaskStep({
@@ -759,9 +748,7 @@ export async function runAiRewriteTask(taskId: number) {
         stepName: sourceStep.name,
         status: "success",
         progress: 30,
-        message: snapshotArticle
-          ? "已复用上次改写快照"
-          : `素材读取完成，正文 ${article.diagnostics.contentLength} 字`,
+        message: `素材读取完成，正文 ${article.diagnostics.contentLength} 字`,
         payload: {
           strategy: article.diagnostics.strategy,
           usedPuppeteer: article.diagnostics.usedPuppeteer,
@@ -775,7 +762,7 @@ export async function runAiRewriteTask(taskId: number) {
         stepName: "清洗正文结构",
         status: "success",
         progress: 45,
-        message: `清洗后正文 ${article.diagnostics.cleanedHtmlLength ?? article.htmlContent.length} 字符，AI Markdown 输入 ${article.diagnostics.aiInputLength ?? "-"} 字符`,
+        message: `清洗后正文 ${article.diagnostics.cleanedHtmlLength ?? article.cleanedHtmlContent.length} 字符，AI Markdown 输入 ${article.diagnostics.aiInputLength ?? "-"} 字符`,
         payload: {
           removedSelectors: article.diagnostics.removedSelectors,
           aiInputTruncated: article.diagnostics.aiInputTruncated,
@@ -817,7 +804,7 @@ export async function runAiRewriteTask(taskId: number) {
         scrapedTitle: article.diagnostics.scrapedTitle ?? article.title,
         scrapedDescription:
           article.diagnostics.scrapedDescription ?? article.description,
-        scrapedHtml: article.htmlContent.slice(0, 60_000),
+        scrapedHtml: article.cleanedHtmlContent.slice(0, 60_000),
         aiInputLength: article.diagnostics.aiInputLength ?? null,
         rewriteOutputLength:
           article.diagnostics.rewriteOutputLength ?? article.htmlContent.length,
@@ -990,6 +977,7 @@ export async function runAiRewriteTask(taskId: number) {
         const englishTaskId = await createEnglishSeoTask({
           parentTask: claimedTask,
           post,
+          cleanedHtmlContent: article.cleanedHtmlContent,
         });
         await upsertTaskStep({
           taskId,

@@ -13,7 +13,10 @@ import {
 import { getAiRewriteTaskDetail } from "@/features/cms/actions/ai-rewrite-task";
 import { AiRewriteTaskRetryButton } from "@/features/cms/components/ai-rewrite-task-retry-button";
 import { AiRewriteTaskResolveButton } from "@/features/cms/components/ai-rewrite-task-resolve-button";
-import { AdminPageShell, AdminSectionCard } from "@/features/cms/components/admin-page-shell";
+import {
+  AdminPageShell,
+  AdminSectionCard,
+} from "@/features/cms/components/admin-page-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -90,7 +93,9 @@ function arrayValue<T>(
   return Array.isArray(value) ? value.map(normalizeItem) : [];
 }
 
-function normalizeAffiliateReport(value: unknown): ScrapeDiagnostics["affiliateReport"] {
+function normalizeAffiliateReport(
+  value: unknown,
+): ScrapeDiagnostics["affiliateReport"] {
   const report = isRecord(value) ? value : {};
   const normalizeMatch = (
     item: unknown,
@@ -114,7 +119,9 @@ function normalizeAffiliateReport(value: unknown): ScrapeDiagnostics["affiliateR
       href: stringValue(miss.href),
       host: typeof miss.host === "string" ? miss.host : null,
       reason:
-        reason === "invalid-url" || reason === "internal" || reason === "no-provider"
+        reason === "invalid-url" ||
+        reason === "internal" ||
+        reason === "no-provider"
           ? reason
           : "no-provider",
     };
@@ -146,7 +153,9 @@ function parseDiagnostics(value: string | null) {
       usedAiRewrite: booleanValue(parsed.usedAiRewrite),
       contentLength: numberValue(parsed.contentLength),
       scrapedTitle:
-        typeof parsed.scrapedTitle === "string" ? parsed.scrapedTitle : undefined,
+        typeof parsed.scrapedTitle === "string"
+          ? parsed.scrapedTitle
+          : undefined,
       scrapedDescription:
         typeof parsed.scrapedDescription === "string"
           ? parsed.scrapedDescription
@@ -156,7 +165,9 @@ function parseDiagnostics(value: string | null) {
           ? parsed.cleanedHtmlLength
           : undefined,
       aiInputLength:
-        typeof parsed.aiInputLength === "number" ? parsed.aiInputLength : undefined,
+        typeof parsed.aiInputLength === "number"
+          ? parsed.aiInputLength
+          : undefined,
       rewriteOutputLength:
         typeof parsed.rewriteOutputLength === "number"
           ? parsed.rewriteOutputLength
@@ -237,14 +248,26 @@ function buildTaskSteps({
   return [
     {
       name: "抓取素材",
-      status: hasDiagnostics ? "success" : isFailed ? "failed" : isRunning ? "running" : "pending",
+      status: hasDiagnostics
+        ? "success"
+        : isFailed
+          ? "failed"
+          : isRunning
+            ? "running"
+            : "pending",
       description: hasDiagnostics
         ? `使用 ${diagnostics?.strategy ?? "未知"} 策略，正文 ${diagnostics?.contentLength ?? 0} 字`
-        : currentStep ?? "等待抓取来源内容",
+        : (currentStep ?? "等待抓取来源内容"),
     },
     {
       name: "清洗正文",
-      status: hasCleanHtml ? "success" : isFailed ? "failed" : hasDiagnostics ? "running" : "pending",
+      status: hasCleanHtml
+        ? "success"
+        : isFailed
+          ? "failed"
+          : hasDiagnostics
+            ? "running"
+            : "pending",
       description: hasCleanHtml
         ? `清洗后正文 ${diagnostics?.cleanedHtmlLength ?? scrapedHtml?.length ?? 0} 字符，AI Markdown 输入 ${diagnostics?.aiInputLength ?? "-"} 字符`
         : "等待正文清洗结果",
@@ -273,12 +296,20 @@ function buildTaskSteps({
             : "pending",
       description: diagnostics?.usedAiRewrite
         ? `输入 ${diagnostics.aiInputLength ?? "-"} 字符，输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符`
-        : diagnostics?.aiRewriteError ?? "等待 AI 改写",
+        : (diagnostics?.aiRewriteError ?? "等待 AI 改写"),
     },
     {
       name: "保存草稿",
-      status: postId ? "success" : isFailed ? "failed" : isRunning ? "running" : "pending",
-      description: postId ? `已生成草稿文章 #${postId}` : currentStep ?? "成功后才会写入草稿",
+      status: postId
+        ? "success"
+        : isFailed
+          ? "failed"
+          : isRunning
+            ? "running"
+            : "pending",
+      description: postId
+        ? `已生成草稿文章 #${postId}`
+        : (currentStep ?? "成功后才会写入草稿"),
     },
     {
       name: "等待人工审核",
@@ -358,7 +389,7 @@ function TaskStepTimeline({ steps }: { steps: TaskStep[] }) {
           </div>
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium text-foreground">{step.name}</p>
+              <p className="text-sm font-medium text-foreground">{step.name}</p>
               <Badge variant={stepStatusVariants[step.status]}>
                 {stepStatusLabels[step.status]}
               </Badge>
@@ -390,7 +421,9 @@ function ManualReviewHints({
 }) {
   const report = diagnostics?.affiliateReport;
   const unmatchedHosts = [
-    ...new Set(report?.unmatchedLinks.map((item) => item.host).filter(Boolean) ?? []),
+    ...new Set(
+      report?.unmatchedLinks.map((item) => item.host).filter(Boolean) ?? [],
+    ),
   ];
   const warnings = diagnostics?.warnings ?? [];
 
@@ -499,9 +532,7 @@ export async function AiRewriteTaskDetailPageContent({
           ) : null}
           {task.postSlug ? (
             <Button asChild>
-              <Link href={`/posts/edit/post/${task.postSlug}`}>
-                编辑草稿
-              </Link>
+              <Link href={`/posts/edit/post/${task.postSlug}`}>编辑草稿</Link>
             </Button>
           ) : null}
         </div>
@@ -514,7 +545,10 @@ export async function AiRewriteTaskDetailPageContent({
         <Stat label="改写输出长度" value={task.rewriteOutputLength ?? "-"} />
       </div>
 
-      <AdminSectionCard title="进度" description={task.currentStep ?? "等待处理"}>
+      <AdminSectionCard
+        title="进度"
+        description={task.currentStep ?? "等待处理"}
+      >
         <div className="space-y-3">
           <Progress value={task.progress} />
           <div className="flex flex-wrap gap-2">
@@ -545,7 +579,10 @@ export async function AiRewriteTaskDetailPageContent({
 
       <ManualReviewHints diagnostics={diagnostics} postSlug={task.postSlug} />
 
-      <AdminSectionCard title="来源与结果" description="素材来源、分类、风格和草稿入口。">
+      <AdminSectionCard
+        title="来源与结果"
+        description="素材来源、分类、风格和草稿入口。"
+      >
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-2 text-sm">
             <p className="text-muted-foreground">
@@ -581,30 +618,47 @@ export async function AiRewriteTaskDetailPageContent({
         {task.sourceType !== "url" && task.sourceContent ? (
           <div className="mt-4 space-y-2">
             <p className="text-sm text-muted-foreground">原始素材预览</p>
-            <pre className="max-h-56 overflow-auto rounded-md bg-muted/40 p-3 text-xs leading-6 whitespace-pre-wrap break-words">
+            <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-xs leading-6">
               {task.sourceContent.slice(0, 5000)}
             </pre>
           </div>
         ) : null}
       </AdminSectionCard>
 
-      <AdminSectionCard title="采集质量" description="用于判断来源站规则和清洗结果是否稳定。">
+      <AdminSectionCard
+        title="采集质量"
+        description="用于判断来源站规则和清洗结果是否稳定。"
+      >
         {diagnostics ? (
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-5">
               <Stat label="策略" value={diagnostics.strategy} />
               <Stat label="正文长度" value={diagnostics.contentLength} />
-              <Stat label="清洗正文" value={diagnostics.cleanedHtmlLength ?? "-"} />
-              <Stat label="AI Markdown 输入" value={diagnostics.aiInputLength ?? "-"} />
+              <Stat
+                label="清洗正文"
+                value={diagnostics.cleanedHtmlLength ?? "-"}
+              />
+              <Stat
+                label="AI Markdown 输入"
+                value={diagnostics.aiInputLength ?? "-"}
+              />
               <Stat
                 label="AI 截断"
                 value={diagnostics.aiInputTruncated ? "是" : "否"}
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              {diagnostics.usedFallback ? <Badge variant="outline">通用 fallback</Badge> : null}
-              {diagnostics.usedPuppeteer ? <Badge variant="outline">Puppeteer</Badge> : null}
-              {diagnostics.usedAiRewrite ? <Badge variant="secondary">AI 已改写</Badge> : <Badge variant="destructive">AI 回退</Badge>}
+              {diagnostics.usedFallback ? (
+                <Badge variant="outline">通用 fallback</Badge>
+              ) : null}
+              {diagnostics.usedPuppeteer ? (
+                <Badge variant="outline">Puppeteer</Badge>
+              ) : null}
+              {diagnostics.usedAiRewrite ? (
+                <Badge variant="secondary">AI 已改写</Badge>
+              ) : (
+                <Badge variant="destructive">AI 回退</Badge>
+              )}
             </div>
             {diagnostics.removedSelectors.length > 0 ? (
               <div className="space-y-2">
@@ -634,7 +688,10 @@ export async function AiRewriteTaskDetailPageContent({
         )}
       </AdminSectionCard>
 
-      <AdminSectionCard title="返利链接命中" description="确认原站链接是否成功替换为你的推广链接。">
+      <AdminSectionCard
+        title="返利链接命中"
+        description="确认原站链接是否成功替换为你的推广链接。"
+      >
         {report ? (
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-4">
@@ -647,10 +704,19 @@ export async function AiRewriteTaskDetailPageContent({
               <div className="space-y-2">
                 <p className="text-sm font-medium">命中记录</p>
                 {report.matchedLinks.slice(0, 10).map((item, index) => (
-                  <div key={`${item.finalHref}-${index}`} className="rounded-md border border-border/70 p-3 text-xs">
-                    <p className="font-medium">{item.providerName} / {item.matchedDomain}</p>
-                    <p className="mt-1 break-all text-muted-foreground">原链接：{item.resolvedHref}</p>
-                    <p className="mt-1 break-all text-muted-foreground">返利：{item.finalHref}</p>
+                  <div
+                    key={`${item.finalHref}-${index}`}
+                    className="rounded-md border border-border/70 p-3 text-xs"
+                  >
+                    <p className="font-medium">
+                      {item.providerName} / {item.matchedDomain}
+                    </p>
+                    <p className="mt-1 break-all text-muted-foreground">
+                      原链接：{item.resolvedHref}
+                    </p>
+                    <p className="mt-1 break-all text-muted-foreground">
+                      返利：{item.finalHref}
+                    </p>
                   </div>
                 ))}
                 {report.matchedLinks.length === 0 ? (
@@ -660,7 +726,13 @@ export async function AiRewriteTaskDetailPageContent({
               <div className="space-y-2">
                 <p className="text-sm font-medium">未命中域名</p>
                 <div className="flex flex-wrap gap-2">
-                  {[...new Set(report.unmatchedLinks.map((item) => item.host).filter(Boolean))].map((host) => (
+                  {[
+                    ...new Set(
+                      report.unmatchedLinks
+                        .map((item) => item.host)
+                        .filter(Boolean),
+                    ),
+                  ].map((host) => (
                     <Badge key={host} variant="outline">
                       {host}
                     </Badge>
@@ -680,8 +752,11 @@ export async function AiRewriteTaskDetailPageContent({
         )}
       </AdminSectionCard>
 
-      <AdminSectionCard title="正文预览" description="保存的清洗/改写 HTML 片段，便于排查结构是否失真。">
-        <pre className="max-h-[500px] overflow-auto rounded-md bg-muted/40 p-4 text-xs leading-6 font-mono whitespace-pre-wrap break-words">
+      <AdminSectionCard
+        title="正文预览"
+        description="清洗后的原始正文片段，便于排查抓取和清洗结果。"
+      >
+        <pre className="max-h-[500px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-4 font-mono text-xs leading-6">
           {task.scrapedHtml ?? "暂无正文快照"}
         </pre>
       </AdminSectionCard>
