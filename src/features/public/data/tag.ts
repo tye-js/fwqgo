@@ -32,6 +32,7 @@ function localizeTag<
   if (language === "en") {
     return {
       ...tag,
+      zhSlug: tag.slug,
       name: nonEmptyTrim(tag.enName) ?? tag.name,
       slug: nonEmptyTrim(tag.enSlug) ?? tag.slug,
       description: nonEmptyTrim(tag.enDescription) ?? tag.description,

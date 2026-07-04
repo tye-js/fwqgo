@@ -138,7 +138,11 @@ export function HomepagePromotedPostTable({
 
     setIsSubmitting(true);
     try {
-      const result = await addHomepagePromotedPost({ postId, sortOrder, language });
+      const result = await addHomepagePromotedPost({
+        postId,
+        sortOrder,
+        language,
+      });
 
       const errorMessage = getActionErrorMessage(result);
       if (errorMessage) {
@@ -167,7 +171,7 @@ export function HomepagePromotedPostTable({
       return;
     }
 
-    const result = await updateHomepagePromotedPost({ id, sortOrder });
+    const result = await updateHomepagePromotedPost({ id, sortOrder, language });
     const errorMessage = getActionErrorMessage(result);
     if (errorMessage) {
       toast.error(errorMessage);
@@ -181,7 +185,7 @@ export function HomepagePromotedPostTable({
   }
 
   async function handleDelete(id: number) {
-    const result = await deleteHomepagePromotedPost(id);
+    const result = await deleteHomepagePromotedPost(id, language);
     const errorMessage = getActionErrorMessage(result);
     if (errorMessage) {
       toast.error(errorMessage);
@@ -201,7 +205,7 @@ export function HomepagePromotedPostTable({
 
     setIsBulkDeleting(true);
     try {
-      const result = await deleteHomepagePromotedPosts(selectedIds);
+      const result = await deleteHomepagePromotedPosts(selectedIds, language);
 
       const errorMessage = getActionErrorMessage(result);
       if (errorMessage) {

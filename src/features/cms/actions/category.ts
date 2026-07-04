@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 
+import { slugify } from "@fwqgo/core/utils";
 import { db } from "@fwqgo/db";
 import { categories } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
@@ -32,6 +33,13 @@ function textOrNull(value: string | undefined) {
   return trimmed;
 }
 
+function normalizeOptionalSlug(value: string | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  const normalized = slugify(trimmed);
+  return normalized || null;
+}
+
 export async function updateCategorySeo(input: {
   id: number;
   description: string;
@@ -48,13 +56,28 @@ export async function updateCategorySeo(input: {
       return { error: "分类 ID 不正确" };
     }
 
+    const [currentCategory] = await db
+      .select({
+        slug: categories.slug,
+        enSlug: categories.enSlug,
+      })
+      .from(categories)
+      .where(eq(categories.id, input.id))
+      .limit(1);
+
+    if (!currentCategory) {
+      return { error: "分类不存在" };
+    }
+
+    const normalizedEnSlug = normalizeOptionalSlug(input.enSlug);
+
     const [category] = await db
       .update(categories)
       .set({
         description: textOrNull(input.description),
         keywords: textOrNull(normalizeSeoKeywords(input.keywords)),
         enName: textOrNull(input.enName),
-        enSlug: textOrNull(input.enSlug),
+        enSlug: normalizedEnSlug,
         enDescription: textOrNull(input.enDescription),
         enKeywords: textOrNull(normalizeSeoKeywords(input.enKeywords ?? "")),
         updatedAt: new Date(),
@@ -79,6 +102,10 @@ export async function updateCategorySeo(input: {
       cacheTags.categories,
       cacheTags.category(category.id),
       cacheTags.categorySlug(category.slug),
+      ...(category.enSlug ? [cacheTags.categorySlug(category.enSlug)] : []),
+      ...(currentCategory.enSlug && currentCategory.enSlug !== category.enSlug
+        ? [cacheTags.categorySlug(currentCategory.enSlug)]
+        : []),
     ]);
     revalidatePath("/seo");
     revalidatePath("/seo/category");

@@ -87,6 +87,7 @@ async function HomepagePromotedPostContent({
         description="通过文章 ID 和排序值控制首页推荐区展示内容。"
       >
         <HomepagePromotedPostTable
+          key={language}
           data={data}
           postOptions={postOptions ?? []}
           language={language}

@@ -71,6 +71,7 @@ export async function updateSiteSeoConfig(
 
     revalidateSiteContent([cacheTags.siteSeo, cacheTags.homepage]);
     revalidatePath("/seo");
+    revalidatePath("/en");
 
     return { data: config };
   } catch (error) {

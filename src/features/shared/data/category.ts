@@ -28,6 +28,7 @@ function localizeCategory<
   if (language === "en") {
     return {
       ...category,
+      zhSlug: category.slug,
       name: nonEmptyTrim(category.enName) ?? category.name,
       slug: nonEmptyTrim(category.enSlug) ?? category.slug,
       description:
