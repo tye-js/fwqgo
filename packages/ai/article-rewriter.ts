@@ -169,18 +169,24 @@ function getEnglishMetadataStylePrompt(value?: string | null) {
 function buildMetadataPrompt(
   markdownContent: string,
   metadataStylePrompt?: string | null,
+  maxContentLength = MAX_METADATA_INPUT_LENGTH,
 ) {
   const style = getMetadataStylePrompt(metadataStylePrompt);
+  const metadataInputLength = Math.min(
+    MAX_METADATA_INPUT_LENGTH,
+    Math.max(MIN_AI_INPUT_LENGTH, Math.floor(maxContentLength)),
+  );
 
   return `你是服务器/VPS 推广文章的 SEO 编辑。请根据已改写的中文 Markdown 正文生成文章元信息。
 
 输出要求：
 1. 只输出 JSON 对象，不要输出 Markdown、解释或额外文本。
-2. title 要偏 SEO 长尾词，尽量包含商家、价格、配置、线路或适用场景；原文没有的信息不要编造。
-3. description 控制在 120 字以内，准确概括商家、价格、配置、线路和适用场景。
-4. keywords 生成 2 到 6 个适合 SEO 的关键词，不要超过 6 个。
-5. tagsName 生成 8 到 10 个相关标签，第一个标签优先为商家名，其余是长尾 SEO 关键词。
-6. recommendTagName 是商家名；无法判断商家名时使用最核心的服务商品牌词。
+2. 输出紧凑 JSON，不要换行缩进，不要输出空白填充。
+3. title 要偏 SEO 长尾词，尽量包含商家、价格、配置、线路或适用场景；原文没有的信息不要编造。
+4. description 控制在 120 字以内，准确概括商家、价格、配置、线路和适用场景。
+5. keywords 生成 2 到 6 个适合 SEO 的关键词，不要超过 6 个。
+6. tagsName 生成 8 到 10 个相关标签，第一个标签优先为商家名，其余是长尾 SEO 关键词。
+7. recommendTagName 是商家名；无法判断商家名时使用最核心的服务商品牌词。
 
 标题 / SEO 生成风格：
 ${style}
@@ -195,7 +201,7 @@ JSON 格式：
 }
 
 已改写的 Markdown 正文：
-${markdownContent.slice(0, MAX_METADATA_INPUT_LENGTH)}`;
+${markdownContent.slice(0, metadataInputLength)}`;
 }
 
 function buildEnglishContentPrompt(input: {
@@ -256,8 +262,16 @@ function buildEnglishMetadataPrompt(input: {
   keywords: string | null;
   enContent: string;
   metadataStylePrompt?: string | null;
+  maxContentLength?: number;
 }) {
   const style = getEnglishMetadataStylePrompt(input.metadataStylePrompt);
+  const metadataInputLength = Math.min(
+    MAX_METADATA_INPUT_LENGTH,
+    Math.max(
+      MIN_AI_INPUT_LENGTH,
+      Math.floor(input.maxContentLength ?? MAX_METADATA_INPUT_LENGTH),
+    ),
+  );
 
   return `You are an SEO editor for an English VPS/server deals website.
 
@@ -265,7 +279,7 @@ Generate English SEO metadata from the translated English Markdown body.
 
 Requirements:
 1. Return only a valid JSON object.
-2. Do not use Markdown code fences or explanations.
+2. Output compact JSON only. Do not add indentation, whitespace padding, Markdown code fences or explanations.
 3. enTitle should be an English SEO title.
 4. enSlug must be short, lowercase, ASCII only, words separated by hyphens.
 5. enDescription should be within 160 characters.
@@ -293,7 +307,7 @@ Original Chinese keywords:
 ${input.keywords ?? ""}
 
 English Markdown:
-${input.enContent.slice(0, MAX_METADATA_INPUT_LENGTH)}`;
+${input.enContent.slice(0, metadataInputLength)}`;
 }
 
 function cleanMarkdownText(text: string) {
@@ -723,7 +737,7 @@ export async function rewriteArticleWithAi(
     config,
     endpoint,
     timeoutMs,
-    maxTokens: Math.min(config.maxTokens, 4096),
+    maxTokens: config.maxTokens,
     responseFormat: { type: "json_object" },
     stepName: "标题/SEO 元信息生成",
     systemPrompt:
@@ -731,6 +745,7 @@ export async function rewriteArticleWithAi(
     userPrompt: buildMetadataPrompt(
       markdownContent,
       config.metadataStylePrompt,
+      getAiRewriteContentLimit(config.maxTokens),
     ),
   });
   const metadata = normalizeMetadata(
@@ -878,7 +893,7 @@ export async function generateEnglishMetadata(
     config,
     endpoint,
     timeoutMs,
-    maxTokens: Math.min(config.maxTokens, 4096),
+    maxTokens: config.maxTokens,
     responseFormat: { type: "json_object" },
     stepName: "英文 SEO 元信息生成",
     systemPrompt:
@@ -889,6 +904,7 @@ export async function generateEnglishMetadata(
       keywords: input.keywords,
       enContent: input.enContent,
       metadataStylePrompt: config.englishMetadataStylePrompt,
+      maxContentLength: getAiRewriteContentLimit(config.maxTokens),
     }),
   });
   const output = normalizeEnglishMetadata(
