@@ -60,7 +60,7 @@ export default function AppBreadcrumb() {
     .filter((item) => item.title !== "");
   return (
     <Breadcrumb>
-      <BreadcrumbList>
+      <BreadcrumbList className="min-w-0 flex-nowrap">
         {breadcrumbItems.map((item, index) => {
           const breadcrumbUrl = breadcrumbItems
             .slice(0, index + 1)
@@ -68,8 +68,8 @@ export default function AppBreadcrumb() {
             .join("");
           if (index === breadcrumbItems.length - 1) {
             return (
-              <BreadcrumbItem key={item.title} className="hidden md:block">
-                <BreadcrumbPage>
+              <BreadcrumbItem key={item.title} className="min-w-0">
+                <BreadcrumbPage className="max-w-[58vw] truncate text-sm md:max-w-[42vw]">
                   {formatBreadcrumbTitle(item.title, breadcrumbUrl)}
                 </BreadcrumbPage>
               </BreadcrumbItem>

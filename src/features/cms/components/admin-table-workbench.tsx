@@ -24,7 +24,7 @@ export function AdminTableWorkbench({
   actionSlot?: ReactNode;
 }) {
   return (
-    <div className="space-y-3 rounded-md border border-border/70 bg-muted/15 p-3">
+    <div className="min-w-0 space-y-3 rounded-md border border-border/70 bg-muted/15 p-3">
       {title || description || (selectionCount && selectionCount > 0) ? (
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           {title || description ? (
@@ -47,7 +47,7 @@ export function AdminTableWorkbench({
         </div>
       ) : null}
 
-      <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto_auto] xl:items-center">
+      <div className="grid min-w-0 gap-2 xl:grid-cols-[minmax(0,1fr)_auto_auto] xl:items-center">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -58,13 +58,13 @@ export function AdminTableWorkbench({
           />
         </div>
         {filterSlot ? (
-          <div className="flex min-w-0 flex-col gap-2 rounded-md border border-border/70 bg-background px-3 py-2 text-sm text-muted-foreground md:flex-row md:items-center">
+          <div className="flex min-w-0 flex-col gap-2 rounded-md border border-border/70 bg-background px-3 py-2 text-sm text-muted-foreground md:flex-row md:flex-wrap md:items-center">
             <Filter className="size-4" />
             {filterSlot}
           </div>
         ) : null}
         {actionSlot ? (
-          <div className="flex min-w-0 justify-start xl:justify-end">
+          <div className="flex min-w-0 flex-wrap justify-start gap-2 xl:justify-end">
             {actionSlot}
           </div>
         ) : null}

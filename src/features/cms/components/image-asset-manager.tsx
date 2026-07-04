@@ -413,9 +413,9 @@ export function ImageAssetManager({
         searchPlaceholder="搜索文件名、URL、alt 或 prompt"
         selectionCount={filteredImages.length}
         filterSlot={
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid w-full gap-2 sm:grid-cols-3">
             <Select value={usageFilter} onValueChange={setUsageFilter}>
-              <SelectTrigger className="h-auto w-[132px] border-0 bg-transparent p-0 shadow-none focus:ring-0">
+              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:p-0">
                 <SelectValue placeholder="引用状态" />
               </SelectTrigger>
               <SelectContent>
@@ -428,7 +428,7 @@ export function ImageAssetManager({
               </SelectContent>
             </Select>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="h-auto w-[120px] border-0 bg-transparent p-0 shadow-none focus:ring-0">
+              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:p-0">
                 <SelectValue placeholder="图片类型" />
               </SelectTrigger>
               <SelectContent>
@@ -441,7 +441,7 @@ export function ImageAssetManager({
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-auto w-[104px] border-0 bg-transparent p-0 shadow-none focus:ring-0">
+              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:p-0">
                 <SelectValue placeholder="状态" />
               </SelectTrigger>
               <SelectContent>
@@ -456,12 +456,13 @@ export function ImageAssetManager({
           </div>
         }
         actionSlot={
-          <div className="flex flex-wrap gap-2">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
             <Button
               type="button"
               variant="outline"
               disabled={isPending}
               onClick={() => runAction(handleImport)}
+              className="min-h-10"
             >
               <UploadCloud className="size-4" />
               导入历史
@@ -471,6 +472,7 @@ export function ImageAssetManager({
               variant="outline"
               disabled={isPending}
               onClick={() => runAction(handleRebuildReferences)}
+              className="min-h-10"
             >
               <RefreshCw className="size-4" />
               重建引用
@@ -480,6 +482,7 @@ export function ImageAssetManager({
               variant="outline"
               disabled={isPending}
               onClick={() => runAction(handleConvertToWebp)}
+              className="min-h-10"
             >
               <WandSparkles className="size-4" />
               历史转 WebP
@@ -489,6 +492,7 @@ export function ImageAssetManager({
               variant="outline"
               disabled={isPending}
               onClick={() => runAction(handleAuditAndRepairImages)}
+              className="min-h-10"
             >
               <FileSearch className="size-4" />
               资产体检
@@ -498,6 +502,7 @@ export function ImageAssetManager({
               variant="outline"
               disabled={isPending}
               onClick={() => runAction(handleRebuildResponsiveImages)}
+              className="col-span-2 min-h-10 sm:col-span-1"
             >
               <RefreshCw className="size-4" />
               重建响应式图
@@ -522,6 +527,229 @@ export function ImageAssetManager({
           description="可以调整搜索条件，或先导入历史上传目录里的图片。"
         />
       ) : (
+        <>
+        <div className="grid gap-3 md:hidden">
+          {filteredImages.map((image) => {
+            const isUsed = image.references.length > 0;
+            const qualityIssues = getImageQualityIssues(
+              image,
+              duplicateHashCounts.get(image.hash ?? "") ?? 0,
+            );
+            const metadataDraft = getMetadataDraft(image);
+
+            return (
+              <article
+                key={image.id}
+                className="rounded-md border border-border/70 bg-card p-3 shadow-none"
+              >
+                <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-3">
+                  <a href={image.path} target="_blank" rel="noopener noreferrer">
+                    <div className="relative aspect-[4/3] overflow-hidden rounded-md border border-border/70 bg-muted">
+                      <Image
+                        src={getOptimizedImageSrc(image.thumbPath ?? image.path)}
+                        alt={image.originalName}
+                        fill
+                        sizes="88px"
+                        className="object-cover"
+                      />
+                    </div>
+                  </a>
+                  <div className="min-w-0 space-y-2">
+                    <p className="line-clamp-2 text-sm font-medium leading-5 text-foreground">
+                      {image.originalName}
+                    </p>
+                    <button
+                      type="button"
+                      className="block max-w-full truncate text-left text-xs text-muted-foreground underline-offset-4 hover:text-accent hover:underline"
+                      onClick={() => void handleCopy(image.path)}
+                    >
+                      {image.path}
+                    </button>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Badge variant={isUsed ? "default" : "secondary"}>
+                        {isUsed ? "已使用" : "未使用"}
+                      </Badge>
+                      <Badge variant="outline">{formatBytes(image.size)}</Badge>
+                      {image.width && image.height ? (
+                        <Badge variant="outline">
+                          {image.width} x {image.height}
+                        </Badge>
+                      ) : null}
+                      {qualityIssues.length > 0 ? (
+                        <Badge variant="destructive">
+                          {qualityIssues.length} 项
+                        </Badge>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 space-y-3">
+                  <div className="grid gap-2">
+                    <Input
+                      className="h-10"
+                      value={getFileNameDraft(image)}
+                      placeholder="图片文件名.webp"
+                      onChange={(event) =>
+                        setFileNameById((prev) => ({
+                          ...prev,
+                          [image.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={isPending}
+                      className="min-h-10"
+                      onClick={() => runAction(() => handleRenameFile(image))}
+                    >
+                      <Save className="size-4" />
+                      保存图片名
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Input
+                      className="h-10"
+                      placeholder="中文 alt"
+                      value={metadataDraft.altZh}
+                      onChange={(event) =>
+                        updateMetadataDraft(
+                          image.id,
+                          { altZh: event.target.value },
+                          image,
+                        )
+                      }
+                    />
+                    <Input
+                      className="h-10"
+                      placeholder="English alt"
+                      value={metadataDraft.altEn}
+                      onChange={(event) =>
+                        updateMetadataDraft(
+                          image.id,
+                          { altEn: event.target.value },
+                          image,
+                        )
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={isPending}
+                      className="min-h-10"
+                      onClick={() => runAction(() => handleUpdateMetadata(image))}
+                    >
+                      <Save className="size-4" />
+                      保存 SEO 信息
+                    </Button>
+                  </div>
+
+                  <div className="rounded-md bg-muted/25 p-3 text-xs leading-5 text-muted-foreground">
+                    {image.references.length === 0 ? (
+                      "无引用"
+                    ) : (
+                      <>
+                        <p className="font-medium text-foreground">
+                          引用 {image.references.length} 条
+                        </p>
+                        {image.references.slice(0, 2).map((reference) => (
+                          <p key={reference.id} className="line-clamp-1">
+                            {referenceLabel(reference)}
+                          </p>
+                        ))}
+                      </>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="size-10"
+                      title="复制 URL"
+                      onClick={() => void handleCopy(image.path)}
+                    >
+                      <Copy className="size-4" />
+                    </Button>
+                    <Button
+                      asChild
+                      variant="outline"
+                      size="icon"
+                      className="size-10"
+                      title="打开原图"
+                    >
+                      <a href={image.path} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="size-4" />
+                      </a>
+                    </Button>
+                    <input
+                      ref={(node) => {
+                        fileInputRefs.current[image.id] = node;
+                      }}
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={(event) =>
+                        runAction(() =>
+                          handleReplaceFile(
+                            image.id,
+                            event.target.files?.[0] ?? undefined,
+                          ),
+                        )
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="size-10"
+                      title="替换文件"
+                      disabled={isPending}
+                      onClick={() => fileInputRefs.current[image.id]?.click()}
+                    >
+                      <FileSearch className="size-4" />
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="icon"
+                          className="size-10"
+                          disabled={isPending || isUsed}
+                          title={isUsed ? "被引用时不能删除" : "删除图片"}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>删除这张图片？</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            删除后会同时移除服务器文件。只有未被文章或用户引用的图片才能删除。
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>取消</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => runAction(() => handleDelete(image.id))}
+                          >
+                            删除
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        <div className="hidden overflow-x-auto rounded-md border border-border/70 md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -850,6 +1078,8 @@ export function ImageAssetManager({
             })}
           </TableBody>
         </Table>
+        </div>
+        </>
       )}
     </div>
   );

@@ -23,7 +23,7 @@ export function AdminPageShell({
 }) {
   return (
     <div
-      className="flex flex-1 flex-col gap-4 px-3 py-3 md:px-5 md:py-4"
+      className="flex min-w-0 flex-1 flex-col gap-3 px-3 py-3 md:gap-4 md:px-5 md:py-4"
       aria-label={title}
     >
       <div className="flex flex-col gap-2 border-b border-border/70 pb-3 md:flex-row md:items-start md:justify-between">
@@ -45,7 +45,7 @@ export function AdminPageShell({
           ) : null}
         </div>
         {actions ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="flex w-full shrink-0 flex-wrap items-center gap-2 md:w-auto md:justify-end">
             {actions}
           </div>
         ) : null}
@@ -65,7 +65,7 @@ export function AdminSectionCard({
   children: ReactNode;
 }) {
   return (
-    <Card className="rounded-md border-border/70 bg-card shadow-none">
+    <Card className="min-w-0 rounded-md border-border/70 bg-card shadow-none">
       {title || description ? (
         <CardHeader className="border-b border-border/60 px-3 py-2.5 md:px-4">
           <div className="space-y-1">
@@ -82,7 +82,9 @@ export function AdminSectionCard({
           </div>
         </CardHeader>
       ) : null}
-      <CardContent className="px-3 py-3 md:px-4">{children}</CardContent>
+      <CardContent className="min-w-0 px-3 py-3 md:px-4">
+        {children}
+      </CardContent>
     </Card>
   );
 }

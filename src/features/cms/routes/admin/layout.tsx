@@ -65,19 +65,21 @@ export default function CreateLayout({
           <Suspense fallback={null}>
             <AppSidebar />
           </Suspense>
-          <SidebarInset>
-            <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background/95 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-11">
-              <div className="flex items-center gap-2 px-3">
-                <SidebarTrigger className="-ml-1" />
+          <SidebarInset className="min-w-0">
+            <header className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-2 border-b border-border bg-background/95 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-11 md:h-12">
+              <div className="flex min-w-0 items-center gap-2 px-3">
+                <SidebarTrigger className="-ml-1 size-9 md:size-7" />
                 <Separator orientation="vertical" className="h-4" />
                 <Suspense fallback={null}>
                   <AppBreadcrumb />
                 </Suspense>
               </div>
             </header>
-            <Suspense fallback={<div className="p-4">加载中...</div>}>
-              {children}
-            </Suspense>
+            <div className="min-w-0 overflow-x-hidden">
+              <Suspense fallback={<div className="p-4">加载中...</div>}>
+                {children}
+              </Suspense>
+            </div>
           </SidebarInset>
         </SidebarProvider>
       </main>
