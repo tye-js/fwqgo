@@ -32,13 +32,13 @@ export function ArticleShareActions({
         type="button"
         variant="outline"
         size="sm"
-        className="h-9"
+        className="min-h-11"
         onClick={copyUrl}
       >
         <Copy className="size-4" />
         复制链接
       </Button>
-      <Button asChild variant="outline" size="sm" className="h-9">
+      <Button asChild variant="outline" size="sm" className="min-h-11">
         <a href={xUrl} target="_blank" rel="noopener noreferrer">
           <Share2 className="size-4" />
           分享到 X

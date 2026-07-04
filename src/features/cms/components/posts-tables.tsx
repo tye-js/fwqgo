@@ -271,7 +271,7 @@ export function PostList({
                 setStatusFilter(value as PostStatusFilter)
               }
             >
-              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[132px] sm:border-0 sm:bg-transparent sm:p-0">
+              <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[132px] sm:border-0 sm:bg-transparent sm:px-0">
                 <SelectValue placeholder="全部状态" />
               </SelectTrigger>
               <SelectContent>
@@ -281,7 +281,7 @@ export function PostList({
               </SelectContent>
             </Select>
             <Select value={sortValue} onValueChange={setSortValue}>
-              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[152px] sm:border-0 sm:bg-transparent sm:p-0">
+              <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[152px] sm:border-0 sm:bg-transparent sm:px-0">
                 <SelectValue placeholder="排序方式" />
               </SelectTrigger>
               <SelectContent>
@@ -299,7 +299,7 @@ export function PostList({
             variant="destructive"
             disabled={selectedIds.length === 0 || isBulkDeleting}
             onClick={handleBulkDelete}
-            className="min-h-10 w-full sm:w-auto"
+            className="min-h-11 w-full sm:w-auto"
           >
             <Trash2 className="size-4" />
             {isBulkDeleting ? "删除中..." : "批量删除"}
@@ -350,7 +350,7 @@ export function PostList({
                     {editPostId === post.id ? (
                       <div className="space-y-2">
                         <Input
-                          className="h-10"
+                          className="min-h-11"
                           autoFocus
                           value={editPostData?.title ?? ""}
                           onChange={(e) =>
@@ -358,7 +358,7 @@ export function PostList({
                           }
                         />
                         <Input
-                          className="h-10"
+                          className="min-h-11"
                           value={editPostData?.slug ?? ""}
                           onChange={(e) =>
                             handleInputChange("slug", e.target.value)
@@ -377,7 +377,7 @@ export function PostList({
                         </div>
                         <div className="grid gap-2">
                           <Input
-                            className="h-10"
+                            className="min-h-11"
                             value={editPostData?.imgUrl ?? ""}
                             onChange={(e) =>
                               handleInputChange("imgUrl", e.target.value)
@@ -415,13 +415,13 @@ export function PostList({
                     <>
                       <Button
                         variant="secondary"
-                        className="min-h-10"
+                        className="min-h-11"
                         onClick={() => setEditPostId(null)}
                       >
                         取消
                       </Button>
                       <Button
-                        className="min-h-10"
+                        className="min-h-11"
                         disabled={isSaving}
                         onClick={() => handleSave(post.id)}
                       >
@@ -432,7 +432,7 @@ export function PostList({
                     <>
                       <Button
                         variant="outline"
-                        className="min-h-10"
+                        className="min-h-11"
                         disabled={extractingPostId === post.id}
                         onClick={() => handleExtractOffers(post.id)}
                       >
@@ -443,7 +443,7 @@ export function PostList({
                       </Button>
                       <Button
                         variant="outline"
-                        className="min-h-10"
+                        className="min-h-11"
                         onClick={() => {
                           setEditPostId(post.id);
                           setEditPostData(post);
@@ -455,7 +455,7 @@ export function PostList({
                         <AlertDialogTrigger asChild>
                           <Button
                             variant="destructive"
-                            className="col-span-2 min-h-10"
+                            className="col-span-2 min-h-11"
                           >
                             删除
                           </Button>
@@ -536,7 +536,7 @@ export function PostList({
                     <TableCell className="min-w-[220px] max-w-[360px]">
                       {editPostId === post.id ? (
                         <Input
-                          className="h-8"
+                          className="min-h-11"
                           autoFocus
                           value={editPostData?.title ?? ""}
                           onChange={(e) =>
@@ -552,7 +552,7 @@ export function PostList({
                     <TableCell className="text-nowrap">
                       {editPostId === post.id ? (
                         <Input
-                          className="h-8"
+                          className="min-h-11"
                           value={editPostData?.slug ?? ""}
                           onChange={(e) =>
                             handleInputChange("slug", e.target.value)
@@ -592,7 +592,7 @@ export function PostList({
                       {editPostId === post.id ? (
                         <div className="grid min-w-[240px] gap-2 xl:grid-cols-[minmax(180px,1fr)_auto]">
                           <Input
-                            className="h-8"
+                            className="min-h-11"
                             value={editPostData?.imgUrl ?? ""}
                             onChange={(e) =>
                               handleInputChange("imgUrl", e.target.value)
@@ -618,14 +618,14 @@ export function PostList({
                             <Button
                               variant="secondary"
                               size="sm"
-                              className="h-8 min-h-0 px-2"
+                              className="px-2"
                               onClick={() => setEditPostId(null)}
                             >
                               取消
                             </Button>
                             <Button
                               size="sm"
-                              className="h-8 min-h-0 px-2"
+                              className="px-2"
                               disabled={isSaving}
                               onClick={() => handleSave(post.id)}
                             >
@@ -637,7 +637,7 @@ export function PostList({
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-8 min-h-0 px-2"
+                              className="px-2"
                               disabled={extractingPostId === post.id}
                               onClick={() => handleExtractOffers(post.id)}
                             >
@@ -649,7 +649,7 @@ export function PostList({
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-8 min-h-0 px-2"
+                              className="px-2"
                               onClick={() => {
                                 setEditPostId(post.id);
                                 setEditPostData(post);
@@ -662,7 +662,7 @@ export function PostList({
                                 <Button
                                   variant="destructive"
                                   size="sm"
-                                  className="h-8 min-h-0 px-2"
+                                  className="px-2"
                                 >
                                   删除
                                 </Button>

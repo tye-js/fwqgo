@@ -5,7 +5,10 @@ import { Edit3 } from "lucide-react";
 import { toast } from "sonner";
 
 import { updateCategorySeo } from "@/features/cms/actions/category";
-import { AdminTableEmpty, AdminTableWorkbench } from "@/features/cms/components/admin-table-workbench";
+import {
+  AdminTableEmpty,
+  AdminTableWorkbench,
+} from "@/features/cms/components/admin-table-workbench";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -134,8 +137,8 @@ export function CategorySeoTable({ data }: { data: CategorySeoRow[] }) {
       />
 
       {filteredRows.length > 0 ? (
-        <div className="overflow-hidden rounded-lg border border-border/70">
-          <Table>
+        <div className="rounded-lg border border-border/70">
+          <Table className="min-w-[1080px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-16">ID</TableHead>
@@ -165,8 +168,11 @@ export function CategorySeoTable({ data }: { data: CategorySeoRow[] }) {
         />
       )}
 
-      <Dialog open={Boolean(editingRow)} onOpenChange={(open) => !open && setEditingRow(null)}>
-        <DialogContent className="max-w-2xl">
+      <Dialog
+        open={Boolean(editingRow)}
+        onOpenChange={(open) => !open && setEditingRow(null)}
+      >
+        <DialogContent className="max-h-[85dvh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>编辑分类 SEO</DialogTitle>
             <DialogDescription>
@@ -178,7 +184,10 @@ export function CategorySeoTable({ data }: { data: CategorySeoRow[] }) {
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="category-seo-description">
+              <label
+                className="text-sm font-medium"
+                htmlFor="category-seo-description"
+              >
                 中文 Description
               </label>
               <Textarea
@@ -190,7 +199,10 @@ export function CategorySeoTable({ data }: { data: CategorySeoRow[] }) {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="category-seo-keywords">
+              <label
+                className="text-sm font-medium"
+                htmlFor="category-seo-keywords"
+              >
                 中文 Keywords
               </label>
               <Input
@@ -201,7 +213,10 @@ export function CategorySeoTable({ data }: { data: CategorySeoRow[] }) {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="category-seo-en-name">
+              <label
+                className="text-sm font-medium"
+                htmlFor="category-seo-en-name"
+              >
                 英文分类名
               </label>
               <Input
@@ -212,7 +227,10 @@ export function CategorySeoTable({ data }: { data: CategorySeoRow[] }) {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="category-seo-en-slug">
+              <label
+                className="text-sm font-medium"
+                htmlFor="category-seo-en-slug"
+              >
                 英文 Slug
               </label>
               <Input
@@ -223,7 +241,10 @@ export function CategorySeoTable({ data }: { data: CategorySeoRow[] }) {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="category-seo-en-description">
+              <label
+                className="text-sm font-medium"
+                htmlFor="category-seo-en-description"
+              >
                 英文 Description
               </label>
               <Textarea
@@ -235,7 +256,10 @@ export function CategorySeoTable({ data }: { data: CategorySeoRow[] }) {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="category-seo-en-keywords">
+              <label
+                className="text-sm font-medium"
+                htmlFor="category-seo-en-keywords"
+              >
                 英文 Keywords
               </label>
               <Input

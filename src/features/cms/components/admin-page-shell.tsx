@@ -39,13 +39,13 @@ export function AdminPageShell({
             ) : null}
           </div>
           {description ? (
-            <p className="line-clamp-2 max-w-4xl text-xs leading-5 text-muted-foreground md:text-sm">
+            <p className="max-w-4xl text-xs leading-5 text-muted-foreground md:text-sm">
               {description}
             </p>
           ) : null}
         </div>
         {actions ? (
-          <div className="flex w-full shrink-0 flex-wrap items-center gap-2 [&>*]:w-full sm:[&>*]:w-auto md:w-auto md:justify-end">
+          <div className="flex w-full shrink-0 flex-wrap items-center gap-2 md:w-auto md:justify-end [&>*]:w-full sm:[&>*]:w-auto">
             {actions}
           </div>
         ) : null}
@@ -108,7 +108,7 @@ export function AdminSummaryStrip({
             {item.value}
           </p>
           {item.note ? (
-            <p className="mt-0.5 line-clamp-1 text-xs leading-5 text-muted-foreground">
+            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
               {item.note}
             </p>
           ) : null}

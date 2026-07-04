@@ -78,13 +78,19 @@ function formatPrice(offer: Offer) {
 
   const currency = offer.currency === "CNY" ? "¥" : "$";
   const cycle = offer.billingCycle
-    ? billingCycleLabels[offer.billingCycle] ?? offer.billingCycle
+    ? (billingCycleLabels[offer.billingCycle] ?? offer.billingCycle)
     : "周期待确认";
   return `${currency}${amount.toFixed(2)} / ${cycle}`;
 }
 
 function specsText(offer: Offer) {
-  return [offer.cpu, offer.memory, offer.storage, offer.bandwidth, offer.traffic]
+  return [
+    offer.cpu,
+    offer.memory,
+    offer.storage,
+    offer.bandwidth,
+    offer.traffic,
+  ]
     .filter(Boolean)
     .join(" · ");
 }
@@ -96,27 +102,28 @@ function priceSortValue(value: string | null) {
 }
 
 function getUniqueValues(values: Array<string | null>) {
-  return [...new Set(values.map((value) => value?.trim()).filter(Boolean))] as string[];
+  return [
+    ...new Set(values.map((value) => value?.trim()).filter(Boolean)),
+  ] as string[];
 }
 
 function OfferActions({ offer }: { offer: Offer }) {
   return (
     <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
       {offer.purchaseUrl ? (
-        <Button asChild size="sm" className="min-h-10 px-3 sm:min-h-9">
-          <a href={offer.purchaseUrl} target="_blank" rel="nofollow noopener noreferrer">
+        <Button asChild size="sm" className="min-h-11 px-3">
+          <a
+            href={offer.purchaseUrl}
+            target="_blank"
+            rel="nofollow noopener noreferrer"
+          >
             <ShoppingCart className="size-4" />
             购买
           </a>
         </Button>
       ) : null}
       {offer.articleUrl ? (
-        <Button
-          asChild
-          size="sm"
-          variant="outline"
-          className="min-h-10 px-3 sm:min-h-9"
-        >
+        <Button asChild size="sm" variant="outline" className="min-h-11 px-3">
           {isInternalHref(offer.articleUrl) ? (
             <Link href={offer.articleUrl} prefetch>
               <FileText className="size-4" />
@@ -135,23 +142,14 @@ function OfferActions({ offer }: { offer: Offer }) {
         </Button>
       ) : null}
       {offer.reviewUrl ? (
-        <Button
-          asChild
-          size="sm"
-          variant="outline"
-          className="min-h-10 px-3 sm:min-h-9"
-        >
+        <Button asChild size="sm" variant="outline" className="min-h-11 px-3">
           {isInternalHref(offer.reviewUrl) ? (
             <Link href={offer.reviewUrl} prefetch>
               <FlaskConical className="size-4" />
               测评
             </Link>
           ) : (
-            <a
-              href={offer.reviewUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
+            <a href={offer.reviewUrl} target="_blank" rel="noopener noreferrer">
               <FlaskConical className="size-4" />
               测评
             </a>
@@ -165,7 +163,10 @@ function OfferActions({ offer }: { offer: Offer }) {
   );
 }
 
-function collectionHref(kind: "providers" | "regions" | "lines", value: string) {
+function collectionHref(
+  kind: "providers" | "regions" | "lines",
+  value: string,
+) {
   return `/servers/${kind}/${encodeURIComponent(value)}`;
 }
 
@@ -205,7 +206,9 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
       <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
         <div className="rounded-md bg-muted/30 p-3">
           <p className="text-xs text-muted-foreground">价格</p>
-          <p className="mt-1 font-semibold text-foreground">{formatPrice(offer)}</p>
+          <p className="mt-1 font-semibold text-foreground">
+            {formatPrice(offer)}
+          </p>
         </div>
         <div className="rounded-md bg-muted/30 p-3">
           <p className="text-xs text-muted-foreground">地区 / 线路</p>
@@ -302,14 +305,18 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
       })
       .sort((left, right) => {
         if (sortKey === "price-desc") {
-          return priceSortValue(right.priceAmount) - priceSortValue(left.priceAmount);
+          return (
+            priceSortValue(right.priceAmount) - priceSortValue(left.priceAmount)
+          );
         }
 
         if (sortKey === "new-desc") {
           return right.id - left.id;
         }
 
-        return priceSortValue(left.priceAmount) - priceSortValue(right.priceAmount);
+        return (
+          priceSortValue(left.priceAmount) - priceSortValue(right.priceAmount)
+        );
       });
   }, [lineType, offers, promoFilter, provider, query, region, sortKey, status]);
 
@@ -343,78 +350,78 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
             placeholder="搜索套餐、地区、线路、优惠码"
             className="min-h-11 md:col-span-2 xl:col-span-1"
           />
-        <Select value={provider} onValueChange={setProvider}>
-          <SelectTrigger className="min-h-11">
-            <SelectValue placeholder="商家" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部商家</SelectItem>
-            {providers.map((item) => (
-              <SelectItem key={item} value={item}>
-                {item}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="min-h-11">
-            <SelectValue placeholder="状态" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部状态</SelectItem>
-            {Object.entries(offerStatusLabels).map(([key, label]) => (
-              <SelectItem key={key} value={key}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={region} onValueChange={setRegion}>
-          <SelectTrigger className="min-h-11">
-            <SelectValue placeholder="地区" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部地区</SelectItem>
-            {regions.map((item) => (
-              <SelectItem key={item} value={item}>
-                {item}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={lineType} onValueChange={setLineType}>
-          <SelectTrigger className="min-h-11">
-            <SelectValue placeholder="线路" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部线路</SelectItem>
-            {lineTypes.map((item) => (
-              <SelectItem key={item} value={item}>
-                {item}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={sortKey} onValueChange={setSortKey}>
-          <SelectTrigger className="min-h-11">
-            <SelectValue placeholder="排序" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="price-asc">价格从低到高</SelectItem>
-            <SelectItem value="price-desc">价格从高到低</SelectItem>
-            <SelectItem value="new-desc">最新优先</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={promoFilter} onValueChange={setPromoFilter}>
-          <SelectTrigger className="min-h-11">
-            <SelectValue placeholder="优惠码" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部优惠</SelectItem>
-            <SelectItem value="with">有优惠码</SelectItem>
-            <SelectItem value="without">无优惠码</SelectItem>
-          </SelectContent>
-        </Select>
+          <Select value={provider} onValueChange={setProvider}>
+            <SelectTrigger className="min-h-11">
+              <SelectValue placeholder="商家" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部商家</SelectItem>
+              {providers.map((item) => (
+                <SelectItem key={item} value={item}>
+                  {item}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger className="min-h-11">
+              <SelectValue placeholder="状态" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部状态</SelectItem>
+              {Object.entries(offerStatusLabels).map(([key, label]) => (
+                <SelectItem key={key} value={key}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={region} onValueChange={setRegion}>
+            <SelectTrigger className="min-h-11">
+              <SelectValue placeholder="地区" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部地区</SelectItem>
+              {regions.map((item) => (
+                <SelectItem key={item} value={item}>
+                  {item}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={lineType} onValueChange={setLineType}>
+            <SelectTrigger className="min-h-11">
+              <SelectValue placeholder="线路" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部线路</SelectItem>
+              {lineTypes.map((item) => (
+                <SelectItem key={item} value={item}>
+                  {item}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={sortKey} onValueChange={setSortKey}>
+            <SelectTrigger className="min-h-11">
+              <SelectValue placeholder="排序" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="price-asc">价格从低到高</SelectItem>
+              <SelectItem value="price-desc">价格从高到低</SelectItem>
+              <SelectItem value="new-desc">最新优先</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={promoFilter} onValueChange={setPromoFilter}>
+            <SelectTrigger className="min-h-11">
+              <SelectValue placeholder="优惠码" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部优惠</SelectItem>
+              <SelectItem value="with">有优惠码</SelectItem>
+              <SelectItem value="without">无优惠码</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
@@ -443,8 +450,8 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
         ))}
       </div>
 
-      <div className="hidden overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm md:block">
-        <table className="w-full table-fixed text-[13px]">
+      <div className="hidden overflow-x-auto rounded-lg border border-border/70 bg-background shadow-sm md:block">
+        <table className="w-full min-w-[920px] table-fixed text-[13px]">
           <thead className="border-b border-border/70 bg-muted/30 text-left text-xs uppercase text-muted-foreground">
             <tr>
               <th className="w-[25%] px-3 py-3 font-medium">套餐</th>
@@ -467,7 +474,10 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                       {offer.providerName ? (
                         <Badge variant="secondary">
                           <Link
-                            href={collectionHref("providers", offer.providerName)}
+                            href={collectionHref(
+                              "providers",
+                              offer.providerName,
+                            )}
                             prefetch
                             className="hover:underline"
                           >
@@ -525,7 +535,10 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                   </p>
                 </td>
                 <td className="px-3 py-3">
-                  <Badge variant="outline" className={getStatusClassName(offer.status)}>
+                  <Badge
+                    variant="outline"
+                    className={getStatusClassName(offer.status)}
+                  >
                     {offerStatusLabels[offer.status] ?? offer.status}
                   </Badge>
                 </td>

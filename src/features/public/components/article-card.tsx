@@ -26,7 +26,11 @@ function ArticleCard({
         <Link
           href={href}
           prefetch
-          aria-label={language === "en" ? `Read article: ${post.title}` : `阅读文章：${post.title}`}
+          aria-label={
+            language === "en"
+              ? `Read article: ${post.title}`
+              : `阅读文章：${post.title}`
+          }
           className="relative m-3 mb-0 aspect-[16/9] overflow-hidden rounded-md bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:mb-3 md:mr-0"
         >
           <SafePostImage
@@ -48,7 +52,7 @@ function ArticleCard({
                 <Link
                   href={`${tagPrefix}/${post.tags[0].tag.slug}/page/1`}
                   prefetch
-                  className="inline-flex min-h-6 items-center gap-1.5 rounded-full bg-muted px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/10 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-full bg-muted px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/10 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   <Tags className="size-3" />
                   {post.tags[0].tag.name}
@@ -82,7 +86,7 @@ function ArticleCard({
                   key={tag.tag.id}
                   href={`${tagPrefix}/${tag.tag.slug}/page/1`}
                   prefetch
-                  className="inline-flex min-h-7 items-center rounded-full border border-border/70 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/10 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="inline-flex min-h-9 items-center rounded-full border border-border/70 px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/10 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   #{tag.tag.name}
                 </Link>
@@ -92,10 +96,10 @@ function ArticleCard({
             <Link
               href={href}
               prefetch
-              className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-md text-sm font-medium text-accent underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md text-sm font-medium text-accent underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {language === "en" ? "Read more" : "阅读全文"}
-              <ArrowUpRight className="size-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              <ArrowUpRight className="size-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
             </Link>
           </div>
         </CardContent>

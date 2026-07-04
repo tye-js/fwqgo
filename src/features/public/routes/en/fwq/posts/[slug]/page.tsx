@@ -210,7 +210,7 @@ async function EnglishPostContent({ params }: PageProps) {
                   key={tag.tag.id}
                   href={`/en/fwq/tags/${tag.tag.slug}/page/1`}
                   prefetch
-                  className="inline-flex min-h-9 items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/15"
+                  className="inline-flex min-h-10 items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   #{tag.tag.name}
                 </Link>
@@ -226,13 +226,13 @@ async function EnglishPostContent({ params }: PageProps) {
 export default function EnglishPostPage({ params }: PageProps) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Header />
+      <Header language="en" />
       <Suspense
         fallback={<main className="flex-1 px-4 py-10">Loading...</main>}
       >
         <EnglishPostContent params={params} />
       </Suspense>
-      <Footer />
+      <Footer language="en" />
     </div>
   );
 }

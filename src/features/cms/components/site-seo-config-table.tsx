@@ -93,46 +93,57 @@ export function SiteSeoConfigTable({ data }: { data: SiteSeoConfigRow[] }) {
 
   return (
     <>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-24">语言</TableHead>
-            <TableHead className="min-w-36">站点名</TableHead>
-            <TableHead className="min-w-48">标题</TableHead>
-            <TableHead className="min-w-72">Description</TableHead>
-            <TableHead className="min-w-56">Keywords</TableHead>
-            <TableHead className="w-24 text-right">操作</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => (
-            <TableRow key={row.language}>
-              <TableCell>{languageLabel[row.language]}</TableCell>
-              <TableCell className="font-medium">{row.siteName}</TableCell>
-              <TableCell>{row.title}</TableCell>
-              <TableCell className="max-w-[420px] whitespace-normal text-sm leading-6 text-muted-foreground">
-                {row.description}
-              </TableCell>
-              <TableCell className="max-w-[320px] whitespace-normal text-sm leading-6 text-muted-foreground">
-                {row.keywords}
-              </TableCell>
-              <TableCell className="text-right">
-                <Button variant="outline" size="sm" onClick={() => openEditor(row)}>
-                  <Edit3 className="size-4" />
-                  编辑
-                </Button>
-              </TableCell>
+      <div className="rounded-lg border border-border/70">
+        <Table className="min-w-[920px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-24">语言</TableHead>
+              <TableHead className="min-w-36">站点名</TableHead>
+              <TableHead className="min-w-48">标题</TableHead>
+              <TableHead className="min-w-72">Description</TableHead>
+              <TableHead className="min-w-56">Keywords</TableHead>
+              <TableHead className="w-24 text-right">操作</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.language}>
+                <TableCell>{languageLabel[row.language]}</TableCell>
+                <TableCell className="font-medium">{row.siteName}</TableCell>
+                <TableCell>{row.title}</TableCell>
+                <TableCell className="max-w-[420px] whitespace-normal text-sm leading-6 text-muted-foreground">
+                  {row.description}
+                </TableCell>
+                <TableCell className="max-w-[320px] whitespace-normal text-sm leading-6 text-muted-foreground">
+                  {row.keywords}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openEditor(row)}
+                  >
+                    <Edit3 className="size-4" />
+                    编辑
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
 
-      <Dialog open={Boolean(editingRow)} onOpenChange={(open) => !open && setEditingRow(null)}>
-        <DialogContent className="max-w-2xl">
+      <Dialog
+        open={Boolean(editingRow)}
+        onOpenChange={(open) => !open && setEditingRow(null)}
+      >
+        <DialogContent className="max-h-[85dvh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>编辑站点 SEO</DialogTitle>
             <DialogDescription>
-              {editingRow ? `${languageLabel[editingRow.language]}首页 SEO 配置` : ""}
+              {editingRow
+                ? `${languageLabel[editingRow.language]}首页 SEO 配置`
+                : ""}
             </DialogDescription>
           </DialogHeader>
 
@@ -160,7 +171,10 @@ export function SiteSeoConfigTable({ data }: { data: SiteSeoConfigRow[] }) {
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="site-seo-description">
+              <label
+                className="text-sm font-medium"
+                htmlFor="site-seo-description"
+              >
                 Description
               </label>
               <Textarea
@@ -171,7 +185,10 @@ export function SiteSeoConfigTable({ data }: { data: SiteSeoConfigRow[] }) {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="site-seo-keywords">
+              <label
+                className="text-sm font-medium"
+                htmlFor="site-seo-keywords"
+              >
                 Keywords
               </label>
               <Input
