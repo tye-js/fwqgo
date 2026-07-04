@@ -20,18 +20,8 @@ import {
   deleteImageReferencesForPosts,
   syncImageReferencesForPost,
 } from "@/server/images/assets";
-import {
-  posts,
-  categories,
-  tags,
-  postTags,
-} from "@fwqgo/db/schema";
-import {
-  eq,
-  and,
-  inArray,
-  ne,
-} from "drizzle-orm";
+import { posts, categories, tags, postTags } from "@fwqgo/db/schema";
+import { eq, and, inArray, ne } from "drizzle-orm";
 
 function normalizeTagName(name: string) {
   return name.trim();
@@ -161,6 +151,7 @@ export async function updatePost(input: {
         slug: posts.slug,
         categoryId: posts.categoryId,
         content: posts.content,
+        translationSourcePostId: posts.translationSourcePostId,
       })
       .from(posts)
       .where(eq(posts.id, input.id))
@@ -231,6 +222,18 @@ export async function updatePost(input: {
     }
 
     if (post) {
+      const [translationSourcePost] = post.translationSourcePostId
+        ? await db
+            .select({
+              id: posts.id,
+              slug: posts.slug,
+              categoryId: posts.categoryId,
+            })
+            .from(posts)
+            .where(eq(posts.id, post.translationSourcePostId))
+            .limit(1)
+        : [];
+
       await syncImageReferencesForPost(post.id);
       revalidateImageAssetList();
       revalidatePostWorkbenches();
@@ -241,7 +244,16 @@ export async function updatePost(input: {
         ...(currentPost?.slug && currentPost.slug !== post.slug
           ? [cacheTags.postSlug(currentPost.slug)]
           : []),
-        ...(currentPost?.categoryId ? [cacheTags.category(currentPost.categoryId)] : []),
+        ...(currentPost?.categoryId
+          ? [cacheTags.category(currentPost.categoryId)]
+          : []),
+        ...(translationSourcePost
+          ? [
+              cacheTags.post(translationSourcePost.id),
+              cacheTags.postSlug(translationSourcePost.slug),
+              cacheTags.category(translationSourcePost.categoryId),
+            ]
+          : []),
       ]);
     }
 
@@ -345,7 +357,8 @@ export async function updatePostContent(input: {
         cacheTags.post(post.id),
         cacheTags.postSlug(post.slug),
         cacheTags.category(post.categoryId),
-        ...(currentPost?.categoryId && currentPost.categoryId !== post.categoryId
+        ...(currentPost?.categoryId &&
+        currentPost.categoryId !== post.categoryId
           ? [cacheTags.category(currentPost.categoryId)]
           : []),
       ]);
@@ -430,6 +443,7 @@ export async function updatePostEnglishContent(input: {
         slug: posts.slug,
         enSlug: posts.enSlug,
         categoryId: posts.categoryId,
+        translationSourcePostId: posts.translationSourcePostId,
       });
 
     if (!post) {
@@ -462,15 +476,32 @@ export async function deletePostById(id: number) {
   try {
     await requireAdminSession();
 
-    const [deletedPost] = await db.delete(posts).where(eq(posts.id, id)).returning({
-      id: posts.id,
-      slug: posts.slug,
-      categoryId: posts.categoryId,
-    });
+    const [deletedPost] = await db
+      .delete(posts)
+      .where(eq(posts.id, id))
+      .returning({
+        id: posts.id,
+        slug: posts.slug,
+        enSlug: posts.enSlug,
+        categoryId: posts.categoryId,
+        translationSourcePostId: posts.translationSourcePostId,
+      });
 
     if (!deletedPost) {
       return { error: "文章不存在或已被删除" };
     }
+
+    const [translationSourcePost] = deletedPost.translationSourcePostId
+      ? await db
+          .select({
+            id: posts.id,
+            slug: posts.slug,
+            categoryId: posts.categoryId,
+          })
+          .from(posts)
+          .where(eq(posts.id, deletedPost.translationSourcePostId))
+          .limit(1)
+      : [];
 
     await syncImageReferencesForPost(deletedPost.id);
     revalidateImageAssetList();
@@ -478,7 +509,15 @@ export async function deletePostById(id: number) {
     revalidateSiteContent([
       cacheTags.post(deletedPost.id),
       cacheTags.postSlug(deletedPost.slug),
+      ...(deletedPost.enSlug ? [cacheTags.postSlug(deletedPost.enSlug)] : []),
       cacheTags.category(deletedPost.categoryId),
+      ...(translationSourcePost
+        ? [
+            cacheTags.post(translationSourcePost.id),
+            cacheTags.postSlug(translationSourcePost.slug),
+            cacheTags.category(translationSourcePost.categoryId),
+          ]
+        : []),
     ]);
 
     return { data: "删除文章成功" };
@@ -497,11 +536,16 @@ export async function deletePostsByIds(ids: number[]) {
       return { data: 0 };
     }
 
-    const deletedPosts = await db.delete(posts).where(inArray(posts.id, validIds)).returning({
-      id: posts.id,
-      slug: posts.slug,
-      categoryId: posts.categoryId,
-    });
+    const deletedPosts = await db
+      .delete(posts)
+      .where(inArray(posts.id, validIds))
+      .returning({
+        id: posts.id,
+        slug: posts.slug,
+        enSlug: posts.enSlug,
+        categoryId: posts.categoryId,
+        translationSourcePostId: posts.translationSourcePostId,
+      });
 
     if (deletedPosts.length > 0) {
       await deleteImageReferencesForPosts(deletedPosts.map((post) => post.id));
@@ -509,13 +553,38 @@ export async function deletePostsByIds(ids: number[]) {
       revalidatePostWorkbenches();
     }
 
-    revalidateSiteContent(
-      deletedPosts.flatMap((post) => [
+    const translationSourceIds = [
+      ...new Set(
+        deletedPosts
+          .map((post) => post.translationSourcePostId)
+          .filter((id): id is number => typeof id === "number"),
+      ),
+    ];
+    const translationSourcePosts =
+      translationSourceIds.length > 0
+        ? await db
+            .select({
+              id: posts.id,
+              slug: posts.slug,
+              categoryId: posts.categoryId,
+            })
+            .from(posts)
+            .where(inArray(posts.id, translationSourceIds))
+        : [];
+
+    revalidateSiteContent([
+      ...deletedPosts.flatMap((post) => [
+        cacheTags.post(post.id),
+        cacheTags.postSlug(post.slug),
+        ...(post.enSlug ? [cacheTags.postSlug(post.enSlug)] : []),
+        cacheTags.category(post.categoryId),
+      ]),
+      ...translationSourcePosts.flatMap((post) => [
         cacheTags.post(post.id),
         cacheTags.postSlug(post.slug),
         cacheTags.category(post.categoryId),
       ]),
-    );
+    ]);
 
     return { data: deletedPosts.length };
   } catch (error) {

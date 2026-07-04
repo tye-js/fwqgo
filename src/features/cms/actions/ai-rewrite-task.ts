@@ -31,11 +31,18 @@ const manualTaskInputSchema = z.object({
 });
 
 const fileTaskInputSchema = z.object({
-  sourceTitle: z.string().trim().max(180).optional(),
+  sourceTitle: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() ? value : undefined),
+    z.string().trim().max(180).optional(),
+  ),
   sourceContent: z.string().trim().min(20, "文件内容至少需要 20 个字符"),
   sourceFileName: z.string().trim().min(1, "文件名不能为空").max(260),
   sourceFileType: z.string().trim().max(120).optional(),
-  sourceFileSize: z.number().int().nonnegative().max(2 * 1024 * 1024),
+  sourceFileSize: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(2 * 1024 * 1024),
   categoryId: z.coerce.number().int().positive("请选择分类"),
   rewriteStyleId: z.coerce.number().int().positive().optional(),
 });
@@ -203,9 +210,7 @@ export async function createAiRewriteTaskAction(formData: FormData) {
     const sourceType = formData.get("sourceType");
     const sourceUrls = parseSourceUrls(formData.get("sourceUrls"));
     const rewriteStyleIdValue = formData.get("rewriteStyleId");
-    const sharedInput = taskInputSchema
-      .omit({ sourceUrl: true })
-      .parse({
+    const sharedInput = taskInputSchema.omit({ sourceUrl: true }).parse({
       categoryId: formData.get("categoryId"),
       rewriteStyleId:
         typeof rewriteStyleIdValue === "string" && rewriteStyleIdValue
@@ -285,7 +290,10 @@ export async function createAiRewriteTaskAction(formData: FormData) {
       return { data: task, count: 1 };
     }
 
-    const urls = sourceUrls.length > 0 ? sourceUrls : parseSourceUrls(formData.get("sourceUrl"));
+    const urls =
+      sourceUrls.length > 0
+        ? sourceUrls
+        : parseSourceUrls(formData.get("sourceUrl"));
     const parsedUrls: Array<z.infer<typeof taskInputSchema>> = [];
 
     for (const [index, sourceUrl] of urls.entries()) {

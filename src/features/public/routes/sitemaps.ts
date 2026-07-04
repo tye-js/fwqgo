@@ -1,10 +1,17 @@
 import { readDb } from "@fwqgo/db";
 import { categories, posts, serverOffers, tags } from "@fwqgo/db/schema";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { offerTopics } from "@/server/offers/server-offers";
 
 function getBaseUrl() {
-  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
+    /\/+$/,
+    "",
+  );
+}
+
+function publishedChinesePostCondition() {
+  return and(eq(posts.published, true), eq(posts.language, "zh"));
 }
 
 function escapeXml(value: string) {
@@ -86,36 +93,77 @@ export async function sitemapIndexGET() {
   return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${[
-  sitemapEntry({ loc: `${baseUrl}/sitemap-posts.xml`, lastmod: latestPost?.updatedAt }),
-  sitemapEntry({ loc: `${baseUrl}/sitemap-en.xml`, lastmod: latestPost?.updatedAt }),
-  sitemapEntry({ loc: `${baseUrl}/sitemap-categories.xml`, lastmod: latestPost?.updatedAt }),
-  sitemapEntry({ loc: `${baseUrl}/sitemap-tags.xml`, lastmod: latestPost?.updatedAt }),
-  sitemapEntry({ loc: `${baseUrl}/sitemap-servers.xml`, lastmod: latestOffer?.updatedAt ?? latestPost?.updatedAt }),
+  sitemapEntry({
+    loc: `${baseUrl}/sitemap-posts.xml`,
+    lastmod: latestPost?.updatedAt,
+  }),
+  sitemapEntry({
+    loc: `${baseUrl}/sitemap-en.xml`,
+    lastmod: latestPost?.updatedAt,
+  }),
+  sitemapEntry({
+    loc: `${baseUrl}/sitemap-categories.xml`,
+    lastmod: latestPost?.updatedAt,
+  }),
+  sitemapEntry({
+    loc: `${baseUrl}/sitemap-tags.xml`,
+    lastmod: latestPost?.updatedAt,
+  }),
+  sitemapEntry({
+    loc: `${baseUrl}/sitemap-servers.xml`,
+    lastmod: latestOffer?.updatedAt ?? latestPost?.updatedAt,
+  }),
 ].join("")}
 </sitemapindex>`);
 }
 
 export async function sitemapPostsGET() {
   const baseUrl = getBaseUrl();
-  const rows = await readDb
-    .select({
-      slug: posts.slug,
-      enSlug: posts.enSlug,
-      updatedAt: posts.updatedAt,
-      createdAt: posts.createdAt,
-    })
-    .from(posts)
-    .where(eq(posts.published, true))
-    .orderBy(desc(posts.createdAt));
+  const [rows, englishRows] = await Promise.all([
+    readDb
+      .select({
+        id: posts.id,
+        slug: posts.slug,
+        enSlug: posts.enSlug,
+        enContent: posts.enContent,
+        updatedAt: posts.updatedAt,
+        createdAt: posts.createdAt,
+      })
+      .from(posts)
+      .where(publishedChinesePostCondition())
+      .orderBy(desc(posts.createdAt)),
+    readDb
+      .select({
+        slug: posts.slug,
+        translationSourcePostId: posts.translationSourcePostId,
+      })
+      .from(posts)
+      .where(
+        and(
+          eq(posts.published, true),
+          eq(posts.language, "en"),
+          isNotNull(posts.translationSourcePostId),
+        ),
+      ),
+  ]);
+  const englishSlugBySourcePostId = new Map(
+    englishRows
+      .filter((post) => post.translationSourcePostId)
+      .map((post) => [post.translationSourcePostId!, post.slug]),
+  );
 
   return urlset(
-    rows.map((post) =>
-      urlEntry({
+    rows.map((post) => {
+      const englishSlug =
+        englishSlugBySourcePostId.get(post.id) ??
+        (post.enSlug && post.enContent ? post.enSlug : null);
+
+      return urlEntry({
         loc: `${baseUrl}/fwq/posts/${encodeURIComponent(post.slug)}`,
         lastmod: post.updatedAt ?? post.createdAt,
         changefreq: "weekly",
         priority: "0.9",
-        alternates: post.enSlug
+        alternates: englishSlug
           ? [
               {
                 hreflang: "zh-CN",
@@ -123,7 +171,7 @@ export async function sitemapPostsGET() {
               },
               {
                 hreflang: "en",
-                href: `${baseUrl}/en/fwq/posts/${encodeURIComponent(post.enSlug)}`,
+                href: `${baseUrl}/en/fwq/posts/${encodeURIComponent(englishSlug)}`,
               },
               {
                 hreflang: "x-default",
@@ -131,15 +179,50 @@ export async function sitemapPostsGET() {
               },
             ]
           : undefined,
-      }),
-    ),
+      });
+    }),
   );
 }
 
 export async function sitemapEnglishGET() {
   const baseUrl = getBaseUrl();
-  const rows = await readDb
+  const englishRows = await readDb
     .select({
+      id: posts.id,
+      slug: posts.slug,
+      updatedAt: posts.updatedAt,
+      createdAt: posts.createdAt,
+      translationSourcePostId: posts.translationSourcePostId,
+    })
+    .from(posts)
+    .where(and(eq(posts.published, true), eq(posts.language, "en")))
+    .orderBy(desc(posts.updatedAt), desc(posts.createdAt));
+  const sourcePostIds = [
+    ...new Set(
+      englishRows
+        .map((post) => post.translationSourcePostId)
+        .filter((id): id is number => typeof id === "number"),
+    ),
+  ];
+  const sourcePosts =
+    sourcePostIds.length > 0
+      ? await readDb
+          .select({ id: posts.id, slug: posts.slug })
+          .from(posts)
+          .where(
+            and(
+              inArray(posts.id, sourcePostIds),
+              publishedChinesePostCondition(),
+            ),
+          )
+      : [];
+  const sourceSlugById = new Map(
+    sourcePosts.map((post) => [post.id, post.slug]),
+  );
+  const independentSourcePostIds = new Set(sourcePostIds);
+  const legacyRows = await readDb
+    .select({
+      id: posts.id,
       slug: posts.slug,
       enSlug: posts.enSlug,
       enUpdatedAt: posts.enUpdatedAt,
@@ -147,12 +230,50 @@ export async function sitemapEnglishGET() {
       createdAt: posts.createdAt,
     })
     .from(posts)
-    .where(and(eq(posts.published, true), isNotNull(posts.enSlug), isNotNull(posts.enContent)))
+    .where(
+      and(
+        publishedChinesePostCondition(),
+        isNotNull(posts.enSlug),
+        isNotNull(posts.enContent),
+      ),
+    )
     .orderBy(desc(posts.enUpdatedAt));
+  const entries = [
+    ...englishRows.map((post) => {
+      const sourceSlug = post.translationSourcePostId
+        ? sourceSlugById.get(post.translationSourcePostId)
+        : null;
 
-  return urlset(
-    rows
-      .filter((post) => post.enSlug)
+      return urlEntry({
+        loc: `${baseUrl}/en/fwq/posts/${encodeURIComponent(post.slug)}`,
+        lastmod: post.updatedAt ?? post.createdAt,
+        changefreq: "weekly",
+        priority: "0.8",
+        alternates: sourceSlug
+          ? [
+              {
+                hreflang: "zh-CN",
+                href: `${baseUrl}/fwq/posts/${encodeURIComponent(sourceSlug)}`,
+              },
+              {
+                hreflang: "en",
+                href: `${baseUrl}/en/fwq/posts/${encodeURIComponent(post.slug)}`,
+              },
+              {
+                hreflang: "x-default",
+                href: `${baseUrl}/fwq/posts/${encodeURIComponent(sourceSlug)}`,
+              },
+            ]
+          : [
+              {
+                hreflang: "en",
+                href: `${baseUrl}/en/fwq/posts/${encodeURIComponent(post.slug)}`,
+              },
+            ],
+      });
+    }),
+    ...legacyRows
+      .filter((post) => !independentSourcePostIds.has(post.id))
       .map((post) =>
         urlEntry({
           loc: `${baseUrl}/en/fwq/posts/${encodeURIComponent(post.enSlug!)}`,
@@ -175,7 +296,9 @@ export async function sitemapEnglishGET() {
           ],
         }),
       ),
-  );
+  ];
+
+  return urlset(entries);
 }
 
 export async function sitemapCategoriesGET() {

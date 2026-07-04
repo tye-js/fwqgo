@@ -9,7 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 
-import { ArrowLeft, ExternalLink, FileText, Save, Tags, Wand2, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ExternalLink,
+  FileText,
+  Save,
+  Tags,
+  Wand2,
+  X,
+} from "lucide-react";
 
 import {
   Select,
@@ -32,7 +40,10 @@ import {
 import { type AffiliateRewriteReport } from "@fwqgo/scrape/affiliate-link-rewriter";
 import { type NewTag } from "@/types";
 import { Separator } from "@/components/ui/separator";
-import { AdminPageShell, AdminSectionCard } from "@/features/cms/components/admin-page-shell";
+import {
+  AdminPageShell,
+  AdminSectionCard,
+} from "@/features/cms/components/admin-page-shell";
 interface Category {
   id: number;
   name: string;
@@ -56,8 +67,14 @@ export default function EditPost({
   postMeta: {
     title: string;
     slug: string;
+    language: string;
   };
 }) {
+  const postLanguage = postMeta.language === "en" ? "en" : "zh";
+  const publicPostHref =
+    postLanguage === "en"
+      ? `/en/fwq/posts/${postMeta.slug}`
+      : `/fwq/posts/${postMeta.slug}`;
   const [description, setDescription] = useState(post.post.description);
   const [content, setContent] = useState(post.post.content);
   const [imageUrl, setImageUrl] = useState(post.post.imgUrl ?? "");
@@ -96,7 +113,9 @@ export default function EditPost({
     }
 
     const normalizedName = name.toLowerCase();
-    if (tags.some((tag) => tag.tag.name.trim().toLowerCase() === normalizedName)) {
+    if (
+      tags.some((tag) => tag.tag.name.trim().toLowerCase() === normalizedName)
+    ) {
       toast.info("这个标签已经添加过了");
       return;
     }
@@ -181,7 +200,9 @@ export default function EditPost({
       toast.success("更新文章成功");
     } catch (error) {
       console.error("更新文章失败:", error);
-      toast.error(error instanceof Error ? error.message : "更新文章失败，请重试");
+      toast.error(
+        error instanceof Error ? error.message : "更新文章失败，请重试",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -276,7 +297,7 @@ export default function EditPost({
           </Button>
           <Button asChild variant="outline" size="sm" className="h-9">
             <Link
-              href={`/fwq/posts/${postMeta.slug}`}
+              href={publicPostHref}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -341,7 +362,9 @@ export default function EditPost({
             <div className="mt-3 space-y-3 rounded-md border border-border/70 bg-muted/15 p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">总链接 {affiliateReport.totalLinks}</Badge>
+                  <Badge variant="outline">
+                    总链接 {affiliateReport.totalLinks}
+                  </Badge>
                   <Badge variant="secondary">
                     命中 {affiliateReport.matchedLinks.length}
                   </Badge>
@@ -364,26 +387,30 @@ export default function EditPost({
                 <div className="space-y-2">
                   <p className="font-medium">命中商家</p>
                   <div className="space-y-2">
-                    {affiliateReport.matchedLinks.slice(0, 5).map((item, index) => (
-                      <div
-                        key={`${item.finalHref}-${index}`}
-                        className="rounded-md border border-border/70 bg-background p-3 text-xs"
-                      >
-                        <div className="flex flex-wrap gap-2">
-                          <Badge>{item.providerName}</Badge>
-                          <Badge variant="outline">{item.matchedDomain}</Badge>
-                          <Badge variant="secondary">
-                            {item.mode === "replace" ? "替换" : "追加参数"}
-                          </Badge>
+                    {affiliateReport.matchedLinks
+                      .slice(0, 5)
+                      .map((item, index) => (
+                        <div
+                          key={`${item.finalHref}-${index}`}
+                          className="rounded-md border border-border/70 bg-background p-3 text-xs"
+                        >
+                          <div className="flex flex-wrap gap-2">
+                            <Badge>{item.providerName}</Badge>
+                            <Badge variant="outline">
+                              {item.matchedDomain}
+                            </Badge>
+                            <Badge variant="secondary">
+                              {item.mode === "replace" ? "替换" : "追加参数"}
+                            </Badge>
+                          </div>
+                          <p className="mt-2 break-all text-muted-foreground">
+                            原链接：{item.resolvedHref}
+                          </p>
+                          <p className="mt-1 break-all text-muted-foreground">
+                            返利：{item.finalHref}
+                          </p>
                         </div>
-                        <p className="mt-2 break-all text-muted-foreground">
-                          原链接：{item.resolvedHref}
-                        </p>
-                        <p className="mt-1 break-all text-muted-foreground">
-                          返利：{item.finalHref}
-                        </p>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 </div>
               ) : null}
@@ -411,7 +438,10 @@ export default function EditPost({
         </AdminSectionCard>
 
         <div className="space-y-5">
-          <AdminSectionCard title="发布设置" description="分类、标签和摘要会影响前台展示与 SEO。">
+          <AdminSectionCard
+            title="发布设置"
+            description="分类、标签和摘要会影响前台展示与 SEO。"
+          >
             <div className="space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">文章简述</label>
@@ -433,7 +463,7 @@ export default function EditPost({
                     keywords={keywords}
                     content={content}
                     fileSlug={postMeta.slug}
-                    language="zh"
+                    language={postLanguage}
                     onGenerated={setImageUrl}
                   />
                 </div>
@@ -548,7 +578,9 @@ export default function EditPost({
               <Separator />
 
               <div className="space-y-2">
-                <label className="text-nowrap text-sm font-medium">关键词</label>
+                <label className="text-nowrap text-sm font-medium">
+                  关键词
+                </label>
                 <p className="text-xs leading-5 text-muted-foreground">
                   关键词之间用逗号分隔，建议 2-6 个，单个关键词保持简短。
                 </p>
@@ -564,12 +596,22 @@ export default function EditPost({
             </div>
           </AdminSectionCard>
 
-          <AdminSectionCard title="SEO 检查" description="即时评估，不会阻止保存。">
+          <AdminSectionCard
+            title="SEO 检查"
+            description="即时评估，不会阻止保存。"
+          >
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium text-foreground">当前完成度</p>
-                <Badge variant={seoChecks.every((item) => item.ok) ? "default" : "secondary"}>
-                  {seoChecks.filter((item) => item.ok).length}/{seoChecks.length}
+                <p className="text-sm font-medium text-foreground">
+                  当前完成度
+                </p>
+                <Badge
+                  variant={
+                    seoChecks.every((item) => item.ok) ? "default" : "secondary"
+                  }
+                >
+                  {seoChecks.filter((item) => item.ok).length}/
+                  {seoChecks.length}
                 </Badge>
               </div>
               <div className="grid gap-2">
@@ -596,147 +638,154 @@ export default function EditPost({
             </div>
           </AdminSectionCard>
 
-          <AdminSectionCard
-            title="英文 SEO 版本"
-            description="英文内容独立保存，前台通过 /en/fwq/posts/[slug] 访问。"
-          >
-            <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
+          {postLanguage === "zh" ? (
+            <AdminSectionCard
+              title="英文 SEO 版本"
+              description="旧版英文内容字段，仅用于兼容老文章。新生成英文文章会单独进入英文草稿。"
+            >
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">英文标题</label>
+                    <Input
+                      className="h-10"
+                      value={enTitle}
+                      onChange={(e) => setEnTitle(e.target.value)}
+                      placeholder="English title"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">英文 Slug</label>
+                    <Input
+                      className="h-10"
+                      value={enSlug}
+                      onChange={(e) => setEnSlug(e.target.value)}
+                      placeholder="cheap-hong-kong-vps"
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">英文标题</label>
+                  <label className="text-sm font-medium">英文摘要</label>
+                  <Textarea
+                    value={enDescription}
+                    onChange={(e) => setEnDescription(e.target.value)}
+                    placeholder="English meta description"
+                    className="min-h-24 resize-y"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">英文关键词</label>
                   <Input
                     className="h-10"
-                    value={enTitle}
-                    onChange={(e) => setEnTitle(e.target.value)}
-                    placeholder="English title"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">英文 Slug</label>
-                  <Input
-                    className="h-10"
-                    value={enSlug}
-                    onChange={(e) => setEnSlug(e.target.value)}
-                    placeholder="cheap-hong-kong-vps"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">英文摘要</label>
-                <Textarea
-                  value={enDescription}
-                  onChange={(e) => setEnDescription(e.target.value)}
-                  placeholder="English meta description"
-                  className="min-h-24 resize-y"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">英文关键词</label>
-                <Input
-                  className="h-10"
-                  value={enKeywords}
-                  onChange={(e) =>
-                    setEnKeywords(limitKeywordInput(e.target.value))
-                  }
-                  placeholder="hong kong vps, cheap server, cn2 gia"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <label className="text-sm font-medium">英文封面</label>
-                  <ArticleCoverGenerator
-                    title={enTitle || postMeta.title}
-                    description={enDescription}
-                    keywords={enKeywords}
-                    content={enContent || content}
-                    fileSlug={enSlug || postMeta.slug}
-                    language="en"
-                    onGenerated={setEnImageUrl}
-                  />
-                </div>
-                <ImageUpload value={enImageUrl} onChange={setEnImageUrl} />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">英文正文</label>
-                <MarkdownEditor
-                  content={enContent}
-                  onChange={setEnContent}
-                  minHeightClassName="min-h-[420px]"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium text-foreground">
-                    英文 SEO 未通过项
-                  </p>
-                  <Badge
-                    variant={
-                      failedEnglishSeoChecks.length === 0
-                        ? "default"
-                        : "secondary"
+                    value={enKeywords}
+                    onChange={(e) =>
+                      setEnKeywords(limitKeywordInput(e.target.value))
                     }
-                  >
-                    {englishSeoChecks.length - failedEnglishSeoChecks.length}/
-                    {englishSeoChecks.length}
-                  </Badge>
+                    placeholder="hong kong vps, cheap server, cn2 gia"
+                  />
                 </div>
-                {failedEnglishSeoChecks.length === 0 ? (
-                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                    英文 SEO 检查已全部通过。
-                  </div>
-                ) : (
-                  <div className="grid gap-2">
-                    {failedEnglishSeoChecks.map((check) => (
-                      <div
-                        key={check.label}
-                        className="rounded-md border border-border/60 bg-background px-3 py-2 text-sm"
-                      >
-                        <p className="font-medium">{check.label}</p>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                          {check.note}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 p-3">
-                <p className="text-xs leading-5 text-muted-foreground">
-                  英文版本为空时，英文前台不会展示该文章；保存后会刷新英文文章缓存。
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {enSlug.trim() ? (
-                    <Button asChild variant="outline" size="sm" className="h-9">
-                      <Link
-                        href={`/en/fwq/posts/${encodeURIComponent(enSlug.trim())}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="text-sm font-medium">英文封面</label>
+                    <ArticleCoverGenerator
+                      title={enTitle || postMeta.title}
+                      description={enDescription}
+                      keywords={enKeywords}
+                      content={enContent || content}
+                      fileSlug={enSlug || postMeta.slug}
+                      language="en"
+                      onGenerated={setEnImageUrl}
+                    />
+                  </div>
+                  <ImageUpload value={enImageUrl} onChange={setEnImageUrl} />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">英文正文</label>
+                  <MarkdownEditor
+                    content={enContent}
+                    onChange={setEnContent}
+                    minHeightClassName="min-h-[420px]"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-foreground">
+                      英文 SEO 未通过项
+                    </p>
+                    <Badge
+                      variant={
+                        failedEnglishSeoChecks.length === 0
+                          ? "default"
+                          : "secondary"
+                      }
+                    >
+                      {englishSeoChecks.length - failedEnglishSeoChecks.length}/
+                      {englishSeoChecks.length}
+                    </Badge>
+                  </div>
+                  {failedEnglishSeoChecks.length === 0 ? (
+                    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                      英文 SEO 检查已全部通过。
+                    </div>
+                  ) : (
+                    <div className="grid gap-2">
+                      {failedEnglishSeoChecks.map((check) => (
+                        <div
+                          key={check.label}
+                          className="rounded-md border border-border/60 bg-background px-3 py-2 text-sm"
+                        >
+                          <p className="font-medium">{check.label}</p>
+                          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                            {check.note}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 p-3">
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    英文版本为空时，英文前台不会展示该文章；保存后会刷新英文文章缓存。
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {enSlug.trim() ? (
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className="h-9"
                       >
-                        <ExternalLink className="size-4" />
-                        查看英文页
-                      </Link>
+                        <Link
+                          href={`/en/fwq/posts/${encodeURIComponent(enSlug.trim())}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <ExternalLink className="size-4" />
+                          查看英文页
+                        </Link>
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-9"
+                      disabled={isSavingEnglish}
+                      onClick={handleSubmitEnglish}
+                    >
+                      <Save className="size-4" />
+                      {isSavingEnglish ? "保存中..." : "保存英文版本"}
                     </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-9"
-                    disabled={isSavingEnglish}
-                    onClick={handleSubmitEnglish}
-                  >
-                    <Save className="size-4" />
-                    {isSavingEnglish ? "保存中..." : "保存英文版本"}
-                  </Button>
+                  </div>
                 </div>
               </div>
-            </div>
-          </AdminSectionCard>
+            </AdminSectionCard>
+          ) : null}
 
           <div className="sticky bottom-4 rounded-lg border border-border/70 bg-background/95 p-3 shadow-sm backdrop-blur">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

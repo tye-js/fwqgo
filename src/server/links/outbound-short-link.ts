@@ -6,9 +6,11 @@ import { affServiceProviders, outboundLinks } from "@fwqgo/db/schema";
 
 const siteBaseUrl = "https://fwqgo.com";
 const slugAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-let providerCache:
-  | Promise<Array<typeof affServiceProviders.$inferSelect>>
-  | null = null;
+const markdownLinkPattern =
+  /\[([^\]]+)\]\((<([^>]+)>|[^)\s]+)(?:\s+"[^"]*")?\)/g;
+let providerCache: Promise<
+  Array<typeof affServiceProviders.$inferSelect>
+> | null = null;
 
 function makeSlug(seed: number) {
   let value = seed;
@@ -49,7 +51,9 @@ function normalizeProviderDomain(value: string) {
   try {
     return normalizeHost(new URL(value).hostname);
   } catch {
-    return normalizeHost(value.replace(/^https?:\/\//, "").split("/")[0] ?? value);
+    return normalizeHost(
+      value.replace(/^https?:\/\//, "").split("/")[0] ?? value,
+    );
   }
 }
 
@@ -96,11 +100,7 @@ function isGenericMarkdownLinkLabel(label: string) {
     "click here",
     "learn more",
   ].includes(
-    label
-      .replace(/[*_`]/g, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase(),
+    label.replace(/[*_`]/g, "").replace(/\s+/g, " ").trim().toLowerCase(),
   );
 }
 
@@ -210,7 +210,12 @@ export async function shortenArticleOutboundLinks(html: string) {
     const $link = $(element);
     const href = $link.attr("href");
 
-    if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) {
+    if (
+      !href ||
+      href.startsWith("#") ||
+      href.startsWith("mailto:") ||
+      href.startsWith("tel:")
+    ) {
       continue;
     }
 
@@ -244,15 +249,23 @@ export async function shortenArticleOutboundLinks(html: string) {
 }
 
 export async function shortenMarkdownOutboundLinks(markdown: string) {
-  const linkPattern = /\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
   const replacements: Array<{
-    original: string;
+    start: number;
+    end: number;
     replacement: string;
   }> = [];
 
-  for (const match of markdown.matchAll(linkPattern)) {
-    const [original, label, href] = match;
-    if (!label || !href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) {
+  for (const match of markdown.matchAll(markdownLinkPattern)) {
+    const [original, label, rawHref, angledHref] = match;
+    const href = angledHref ?? rawHref;
+    if (
+      typeof match.index !== "number" ||
+      !label ||
+      !href ||
+      href.startsWith("#") ||
+      href.startsWith("mailto:") ||
+      href.startsWith("tel:")
+    ) {
       continue;
     }
 
@@ -281,7 +294,8 @@ export async function shortenMarkdownOutboundLinks(markdown: string) {
 
       const target = new URL(targetUrl);
       replacements.push({
-        original,
+        start: match.index,
+        end: match.index + original.length,
         replacement: `[${getReadableFallbackLabel(target, label)}](${url.pathname})`,
       });
       continue;
@@ -297,14 +311,26 @@ export async function shortenMarkdownOutboundLinks(markdown: string) {
       continue;
     }
 
+    const affiliateUrl = new URL(affiliateTargetUrl);
     replacements.push({
-      original,
-      replacement: `[${getReadableFallbackLabel(url, label)}](${shortLink.path})`,
+      start: match.index,
+      end: match.index + original.length,
+      replacement: `[${getReadableFallbackLabel(affiliateUrl, label)}](${shortLink.path})`,
     });
   }
 
-  return replacements.reduce(
-    (content, item) => content.replace(item.original, item.replacement),
-    markdown,
-  );
+  if (replacements.length === 0) {
+    return markdown;
+  }
+
+  let output = "";
+  let lastIndex = 0;
+  for (const item of replacements) {
+    output += markdown.slice(lastIndex, item.start);
+    output += item.replacement;
+    lastIndex = item.end;
+  }
+
+  output += markdown.slice(lastIndex);
+  return output;
 }

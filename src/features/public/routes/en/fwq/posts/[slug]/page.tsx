@@ -18,14 +18,19 @@ import { renderArticleContentHtml } from "@fwqgo/core/content";
 import { decodeSlug, formatDate } from "@fwqgo/core/utils";
 
 function getSiteUrl() {
-  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
+    /\/+$/,
+    "",
+  );
 }
 
 type PageProps = {
   params: Promise<{ slug: string }>;
 };
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: PageProps): Promise<Metadata> {
   await connection();
 
   const { slug } = await params;
@@ -34,8 +39,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const post = data?.post;
   const canonicalSlug = post?.enSlug ?? decodedSlug;
   const canonicalUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(canonicalSlug)}`;
-  const chineseUrl = post?.slug
-    ? `${getSiteUrl()}/fwq/posts/${encodeURIComponent(post.slug)}`
+  const chineseUrl = post?.chineseSlug
+    ? `${getSiteUrl()}/fwq/posts/${encodeURIComponent(post.chineseSlug)}`
     : undefined;
   const readableTitle = decodedSlug.replace(/[-_]+/g, " ");
   const title = post?.title ?? readableTitle;
@@ -88,7 +93,9 @@ async function EnglishPostContent({ params }: PageProps) {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
     headline: post.title,
-    image: post.imgUrl ? new URL(post.imgUrl, getSiteUrl()).toString() : undefined,
+    image: post.imgUrl
+      ? new URL(post.imgUrl, getSiteUrl()).toString()
+      : undefined,
     description: post.description,
     inLanguage: "en",
     datePublished: post.createdAt,
@@ -140,14 +147,16 @@ async function EnglishPostContent({ params }: PageProps) {
             __html: JSON.stringify([blogPostingJsonLd, breadcrumbJsonLd]),
           }}
         />
-        <Link
-          href={`/fwq/posts/${post.slug}`}
-          prefetch
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground underline-offset-4 hover:text-primary hover:underline"
-        >
-          <ArrowLeft className="size-4" />
-          Chinese version
-        </Link>
+        {post.chineseSlug ? (
+          <Link
+            href={`/fwq/posts/${post.chineseSlug}`}
+            prefetch
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground underline-offset-4 hover:text-primary hover:underline"
+          >
+            <ArrowLeft className="size-4" />
+            Chinese version
+          </Link>
+        ) : null}
 
         <header className="mt-6 border-b border-border/70 pb-6">
           <h1 className="font-editorial text-3xl font-semibold leading-tight text-foreground md:text-5xl">
@@ -182,7 +191,7 @@ async function EnglishPostContent({ params }: PageProps) {
         ) : null}
 
         <div
-          className="article-prose font-ui prose prose-zinc mt-8 max-w-none prose-headings:font-editorial prose-p:text-[17px] prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-accent prose-a:underline prose-a:decoration-accent/55 prose-a:underline-offset-4 prose-a:transition-colors hover:prose-a:text-primary hover:prose-a:decoration-primary prose-strong:text-foreground"
+          className="article-prose font-ui prose-headings:font-editorial prose prose-zinc mt-8 max-w-none prose-p:text-[17px] prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-accent prose-a:underline prose-a:decoration-accent/55 prose-a:underline-offset-4 prose-a:transition-colors hover:prose-a:text-primary hover:prose-a:decoration-primary prose-strong:text-foreground"
           dangerouslySetInnerHTML={{
             __html: renderArticleContentHtml(post.content),
           }}
@@ -217,7 +226,9 @@ export default function EnglishPostPage({ params }: PageProps) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Header />
-      <Suspense fallback={<main className="flex-1 px-4 py-10">Loading...</main>}>
+      <Suspense
+        fallback={<main className="flex-1 px-4 py-10">Loading...</main>}
+      >
         <EnglishPostContent params={params} />
       </Suspense>
       <Footer />

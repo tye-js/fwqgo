@@ -89,8 +89,12 @@ function isExternalArticleHref(href: string) {
     return true;
   }
 
+  if (href.startsWith("/") && !href.startsWith("//")) {
+    return false;
+  }
+
   try {
-    const parsed = new URL(href);
+    const parsed = new URL(href.startsWith("//") ? `https:${href}` : href);
     return ["http:", "https:"].includes(parsed.protocol);
   } catch {
     return false;
@@ -605,6 +609,24 @@ function tableToMarkdown(rows: string[][]) {
   ].join("\n");
 }
 
+function truncateMarkdownBlock(value: string, maxLength: number) {
+  if (!Number.isFinite(maxLength) || value.length <= maxLength) {
+    return value;
+  }
+
+  const limit = Math.max(0, Math.floor(maxLength));
+  if (limit === 0) {
+    return "";
+  }
+
+  const sliced = value.slice(0, limit);
+  const lastLineBreak = sliced.lastIndexOf("\n");
+
+  return (
+    lastLineBreak > 0 ? sliced.slice(0, lastLineBreak) : sliced
+  ).trimEnd();
+}
+
 export function articleDocumentToMarkdown(
   document: ArticleDocument,
   options: { maxLength?: number } = {},
@@ -621,9 +643,18 @@ export function articleDocumentToMarkdown(
       return;
     }
 
-    const nextLength = length + block.length + (output.length > 0 ? 2 : 0);
+    const separatorLength = output.length > 0 ? 2 : 0;
+    const nextLength = length + block.length + separatorLength;
     if (nextLength > maxLength) {
       truncated = true;
+      const remaining = maxLength - length - separatorLength;
+      const partialBlock = truncateMarkdownBlock(block, remaining);
+
+      if (partialBlock) {
+        output.push(partialBlock);
+        length += partialBlock.length + separatorLength;
+      }
+
       return;
     }
 

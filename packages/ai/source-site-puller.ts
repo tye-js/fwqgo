@@ -57,13 +57,43 @@ async function fetchText(url: string) {
 }
 
 function normalizeUrl(href: string, baseUrl: string) {
+  const trimmedHref = href.trim();
+  if (!trimmedHref) {
+    return null;
+  }
+
   try {
-    const url = new URL(href, baseUrl);
+    const url = new URL(trimmedHref, baseUrl);
+    if (!["http:", "https:"].includes(url.protocol)) {
+      return null;
+    }
+
     url.hash = "";
     return url.toString();
   } catch {
     return null;
   }
+}
+
+function normalizeHost(hostname: string) {
+  return hostname.toLowerCase().replace(/^www\./, "");
+}
+
+function normalizeSourceUrl(href: string, siteUrl: string) {
+  const normalizedUrl = normalizeUrl(href, siteUrl);
+  if (!normalizedUrl) {
+    return null;
+  }
+
+  const siteHost = normalizeHost(new URL(siteUrl).hostname);
+  const parsed = new URL(normalizedUrl);
+  const targetHost = normalizeHost(parsed.hostname);
+
+  if (targetHost !== siteHost) {
+    return null;
+  }
+
+  return normalizedUrl;
 }
 
 function parseSourceDate(value: string | undefined) {
@@ -109,11 +139,7 @@ function dedupeDiscoveredUrls(items: DiscoveredSourceUrl[]) {
   return [...byUrl.values()];
 }
 
-function childText(
-  $: cheerio.CheerioAPI,
-  element: Element,
-  selector: string,
-) {
+function childText($: cheerio.CheerioAPI, element: Element, selector: string) {
   return $(element).children(selector).first().text().trim();
 }
 
@@ -127,7 +153,7 @@ async function discoverFromXmlEntries(
   const sitemapEntries = $("sitemap")
     .toArray()
     .map((element, index) => ({
-      url: normalizeUrl(childText($, element, "loc"), siteUrl),
+      url: normalizeSourceUrl(childText($, element, "loc"), siteUrl),
       publishedAt: parseSourceDate(childText($, element, "lastmod")),
       order: index,
     }))
@@ -155,7 +181,7 @@ async function discoverFromXmlEntries(
   const sitemapUrls = $("url")
     .toArray()
     .map((element, index) => ({
-      url: normalizeUrl(childText($, element, "loc"), siteUrl),
+      url: normalizeSourceUrl(childText($, element, "loc"), siteUrl),
       publishedAt: parseSourceDate(childText($, element, "lastmod")),
       order: index,
     }))
@@ -168,7 +194,7 @@ async function discoverFromXmlEntries(
   const rssItems = $("item")
     .toArray()
     .map((element, index) => ({
-      url: normalizeUrl(childText($, element, "link"), siteUrl),
+      url: normalizeSourceUrl(childText($, element, "link"), siteUrl),
       publishedAt: parseSourceDate(
         childText($, element, "pubDate") ||
           childText($, element, "published") ||
@@ -188,16 +214,19 @@ async function discoverFromXmlEntries(
         childText($, element, "link");
 
       return {
-        url: normalizeUrl(href, siteUrl),
+        url: normalizeSourceUrl(href, siteUrl),
         publishedAt: parseSourceDate(
-          childText($, element, "published") || childText($, element, "updated"),
+          childText($, element, "published") ||
+            childText($, element, "updated"),
         ),
         order: rssItems.length + index,
       };
     })
     .filter((item): item is DiscoveredSourceUrl => Boolean(item.url));
 
-  return sortDiscoveredUrls(dedupeDiscoveredUrls([...rssItems, ...atomEntries]));
+  return sortDiscoveredUrls(
+    dedupeDiscoveredUrls([...rssItems, ...atomEntries]),
+  );
 }
 
 async function discoverFromXml(url: string, siteUrl: string) {
@@ -206,24 +235,29 @@ async function discoverFromXml(url: string, siteUrl: string) {
 
 async function discoverFromHomeEntries(siteUrl: string) {
   const html = await fetchText(siteUrl);
-  const baseHost = new URL(siteUrl).hostname.replace(/^www\./, "");
   const $ = cheerio.load(html);
 
   const entries = $("a[href]")
     .toArray()
     .map((element, index) => {
-      const url = normalizeUrl($(element).attr("href") ?? "", siteUrl);
+      const url = normalizeSourceUrl($(element).attr("href") ?? "", siteUrl);
       if (!url) return null;
 
       const parsed = new URL(url);
-      const host = parsed.hostname.replace(/^www\./, "");
       const publishedAt = parseSourceDate(
-        $(element).closest("article, li, .post, .entry").find("time[datetime]").first().attr("datetime") ??
-          $(element).closest("article, li, .post, .entry").find("time").first().text(),
+        $(element)
+          .closest("article, li, .post, .entry")
+          .find("time[datetime]")
+          .first()
+          .attr("datetime") ??
+          $(element)
+            .closest("article, li, .post, .entry")
+            .find("time")
+            .first()
+            .text(),
       );
 
       if (
-        host !== baseHost ||
         /\.(jpg|jpeg|png|gif|webp|zip|pdf|rar|7z)$/i.exec(parsed.pathname) ||
         parsed.pathname === "/"
       ) {
@@ -289,8 +323,14 @@ async function filterExistingTasks(urls: string[]) {
   };
 }
 
+function normalizePullLimit(limit: number) {
+  return Number.isFinite(limit)
+    ? Math.max(1, Math.min(Math.floor(limit), 50))
+    : 1;
+}
+
 export async function pullSourceSiteToAiTasks(input: SourceSitePullInput) {
-  const limit = Math.max(1, Math.min(input.limit, 50));
+  const limit = normalizePullLimit(input.limit);
   const discoveredUrls = [
     ...new Set(await discoverSourceSiteUrls(input)),
   ].slice(0, limit * 3);

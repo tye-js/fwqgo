@@ -1,5 +1,10 @@
 import { Suspense } from "react";
-import { getPosts, getPostCount } from "@/features/cms/data/post";
+import {
+  getPosts,
+  getPostCount,
+  normalizePostLanguageFilter,
+  type PostLanguageFilter,
+} from "@/features/cms/data/post";
 import { AdminLoading } from "@/features/cms/components/admin-loading";
 import {
   AdminPageShell,
@@ -16,20 +21,54 @@ function parsePageNo(value: string | undefined) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
 }
 
+function languageFilterHref(language: PostLanguageFilter) {
+  return language === "all"
+    ? "/posts/edit"
+    : `/posts/edit?language=${language}`;
+}
+
+function LanguageFilter({ value }: { value: PostLanguageFilter }) {
+  const items: Array<{ value: PostLanguageFilter; label: string }> = [
+    { value: "all", label: "全部语言" },
+    { value: "zh", label: "中文" },
+    { value: "en", label: "英文" },
+  ];
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {items.map((item) => (
+        <Button
+          key={item.value}
+          asChild
+          size="sm"
+          variant={value === item.value ? "default" : "outline"}
+        >
+          <Link href={languageFilterHref(item.value)}>{item.label}</Link>
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 async function PostListWrapper({
   searchParamsPromise,
 }: {
-  searchParamsPromise: Promise<{ pageNo?: string }>;
+  searchParamsPromise: Promise<{ pageNo?: string; language?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
   const pageNo = parsePageNo(searchParams.pageNo);
-  const { data: posts, error } = await getPosts({ pageNo, pageSize: 15 });
+  const language = normalizePostLanguageFilter(searchParams.language);
+  const { data: posts, error } = await getPosts({
+    pageNo,
+    pageSize: 15,
+    language,
+  });
 
   if (error || !posts) {
     return <div>获取文章列表失败</div>;
   }
 
-  const { data: postCount } = await getPostCount();
+  const { data: postCount } = await getPostCount(language);
   const totalPage = Math.ceil((postCount ?? 0) / 15);
 
   return (
@@ -66,6 +105,9 @@ async function PostListWrapper({
         title="全部文章"
         description="支持快速编辑标题、slug、发布状态和封面链接。"
       >
+        <div className="mb-4">
+          <LanguageFilter value={language} />
+        </div>
         <PostList posts={posts} />
         <PaginationComponent pageNo={pageNo} totalPage={totalPage} />
       </AdminSectionCard>
@@ -74,7 +116,7 @@ async function PostListWrapper({
 }
 
 export default function EditPage(props: {
-  searchParams: Promise<{ pageNo?: string }>;
+  searchParams: Promise<{ pageNo?: string; language?: string }>;
 }) {
   return (
     <Suspense

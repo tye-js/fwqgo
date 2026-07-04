@@ -33,6 +33,7 @@ export const posts = pgTable(
     enDescription: varchar("enDescription", { length: 800 }),
     enImgUrl: text("enImgUrl"),
     enUpdatedAt: timestamp("enUpdatedAt"),
+    language: varchar("language", { length: 8 }).default("zh").notNull(),
     affiliateReviewStatus: varchar("affiliateReviewStatus", { length: 24 })
       .default("pending")
       .notNull(),
@@ -44,6 +45,7 @@ export const posts = pgTable(
     views: integer("views").default(0).notNull(),
     recommendedTagName: text("recommendedTagName"),
     recommendedTagId: integer("recommendedTagId"),
+    translationSourcePostId: integer("translationSourcePostId"),
     authorId: text("authorId"),
     categoryId: integer("categoryId").notNull(),
   },
@@ -51,11 +53,18 @@ export const posts = pgTable(
     titleIdx: index("posts_title_idx").on(table.title),
     categoryIdx: index("posts_categoryId_idx").on(table.categoryId),
     authorIdx: index("posts_authorId_idx").on(table.authorId),
+    languageIdx: index("posts_language_idx").on(table.language),
+    languagePublishedCreatedAtIdx: index(
+      "posts_language_published_createdAt_idx",
+    ).on(table.language, table.published, table.createdAt),
     recommendedTagIdx: index("posts_recommendedTagName_idx").on(
       table.recommendedTagName,
     ),
     recommendedTagIdIdx: index("posts_recommendedTagId_idx").on(
       table.recommendedTagId,
+    ),
+    translationSourcePostIdIdx: index("posts_translationSourcePostId_idx").on(
+      table.translationSourcePostId,
     ),
     affiliateReviewStatusIdx: index("posts_affiliateReviewStatus_idx").on(
       table.affiliateReviewStatus,
@@ -98,6 +107,11 @@ export const posts = pgTable(
       columns: [table.recommendedTagId],
       foreignColumns: [tags.id],
       name: "posts_recommendedTagId_tags_id_fk",
+    }).onDelete("set null"),
+    translationSourcePostFk: foreignKey({
+      columns: [table.translationSourcePostId],
+      foreignColumns: [table.id],
+      name: "posts_translationSourcePostId_posts_id_fk",
     }).onDelete("set null"),
   }),
 );
@@ -398,7 +412,9 @@ export const sourceMaterials = pgTable(
   "source_materials",
   {
     id: serial("id").primaryKey(),
-    materialType: varchar("materialType", { length: 24 }).default("url").notNull(),
+    materialType: varchar("materialType", { length: 24 })
+      .default("url")
+      .notNull(),
     sourceUrl: text("sourceUrl"),
     title: text("title"),
     content: text("content"),
@@ -593,7 +609,9 @@ export const imageGenerationConfigs = pgTable(
   {
     id: serial("id").primaryKey(),
     name: text("name").notNull().unique(),
-    provider: varchar("provider", { length: 40 }).default("compatible").notNull(),
+    provider: varchar("provider", { length: 40 })
+      .default("compatible")
+      .notNull(),
     baseUrl: text("baseUrl").notNull(),
     apiKey: text("apiKey"),
     model: text("model").notNull(),
@@ -742,6 +760,14 @@ export const postsRelations = relations(posts, ({ one, many }) => ({
     fields: [posts.recommendedTagId],
     references: [tags.id],
   }),
+  translationSourcePost: one(posts, {
+    fields: [posts.translationSourcePostId],
+    references: [posts.id],
+    relationName: "post_translations",
+  }),
+  translations: many(posts, {
+    relationName: "post_translations",
+  }),
   tags: many(postTags),
   serverOffers: many(serverOffers),
 }));
@@ -823,41 +849,47 @@ export const imageAssetReferencesRelations = relations(
   }),
 );
 
-export const sourceMaterialsRelations = relations(sourceMaterials, ({ one, many }) => ({
-  category: one(categories, {
-    fields: [sourceMaterials.categoryId],
-    references: [categories.id],
+export const sourceMaterialsRelations = relations(
+  sourceMaterials,
+  ({ one, many }) => ({
+    category: one(categories, {
+      fields: [sourceMaterials.categoryId],
+      references: [categories.id],
+    }),
+    rewriteStyle: one(aiRewriteConfigs, {
+      fields: [sourceMaterials.rewriteStyleId],
+      references: [aiRewriteConfigs.id],
+    }),
+    creator: one(users, {
+      fields: [sourceMaterials.createdBy],
+      references: [users.id],
+    }),
+    tasks: many(aiRewriteTasks),
   }),
-  rewriteStyle: one(aiRewriteConfigs, {
-    fields: [sourceMaterials.rewriteStyleId],
-    references: [aiRewriteConfigs.id],
-  }),
-  creator: one(users, {
-    fields: [sourceMaterials.createdBy],
-    references: [users.id],
-  }),
-  tasks: many(aiRewriteTasks),
-}));
+);
 
-export const aiRewriteTasksRelations = relations(aiRewriteTasks, ({ one, many }) => ({
-  sourceMaterial: one(sourceMaterials, {
-    fields: [aiRewriteTasks.sourceMaterialId],
-    references: [sourceMaterials.id],
+export const aiRewriteTasksRelations = relations(
+  aiRewriteTasks,
+  ({ one, many }) => ({
+    sourceMaterial: one(sourceMaterials, {
+      fields: [aiRewriteTasks.sourceMaterialId],
+      references: [sourceMaterials.id],
+    }),
+    category: one(categories, {
+      fields: [aiRewriteTasks.categoryId],
+      references: [categories.id],
+    }),
+    rewriteStyle: one(aiRewriteConfigs, {
+      fields: [aiRewriteTasks.rewriteStyleId],
+      references: [aiRewriteConfigs.id],
+    }),
+    post: one(posts, {
+      fields: [aiRewriteTasks.postId],
+      references: [posts.id],
+    }),
+    steps: many(aiTaskSteps),
   }),
-  category: one(categories, {
-    fields: [aiRewriteTasks.categoryId],
-    references: [categories.id],
-  }),
-  rewriteStyle: one(aiRewriteConfigs, {
-    fields: [aiRewriteTasks.rewriteStyleId],
-    references: [aiRewriteConfigs.id],
-  }),
-  post: one(posts, {
-    fields: [aiRewriteTasks.postId],
-    references: [posts.id],
-  }),
-  steps: many(aiTaskSteps),
-}));
+);
 
 export const aiTaskStepsRelations = relations(aiTaskSteps, ({ one }) => ({
   task: one(aiRewriteTasks, {

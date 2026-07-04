@@ -5,6 +5,10 @@ import { readDb } from "@fwqgo/db";
 import { attachTagsToPosts } from "@fwqgo/db/post-tags";
 import { postTags, posts, tags } from "@fwqgo/db/schema";
 
+function publishedChinesePostCondition() {
+  return and(eq(posts.published, true), eq(posts.language, "zh"));
+}
+
 export async function getTagBySlug(tagSlug: string) {
   try {
     const [tag] = await readDb
@@ -55,7 +59,7 @@ export async function getPostsWithTagsByTagSlug(
       .select({ count: count() })
       .from(postTags)
       .innerJoin(posts, eq(posts.id, postTags.postId))
-      .where(and(eq(postTags.tagId, tag.id), eq(posts.published, true)));
+      .where(and(eq(postTags.tagId, tag.id), publishedChinesePostCondition()));
 
     // 获取该标签下的文章
     const tagPosts = await readDb
@@ -69,7 +73,7 @@ export async function getPostsWithTagsByTagSlug(
       })
       .from(posts)
       .innerJoin(postTags, eq(posts.id, postTags.postId))
-      .where(and(eq(postTags.tagId, tag.id), eq(posts.published, true)))
+      .where(and(eq(postTags.tagId, tag.id), publishedChinesePostCondition()))
       .orderBy(desc(posts.createdAt))
       .offset((currentPage - 1) * 10)
       .limit(10);

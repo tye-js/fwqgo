@@ -227,17 +227,20 @@ function sourceTypeLabel(value: string) {
 
 function buildTaskSteps({
   status,
+  sourceType,
   currentStep,
   postId,
   scrapedHtml,
   diagnostics,
 }: {
   status: string;
+  sourceType: string;
   currentStep: string | null;
   postId: number | null;
   scrapedHtml: string | null;
   diagnostics: ScrapeDiagnostics | null;
 }): TaskStep[] {
+  const isEnglishTask = sourceType === "english";
   const hasDiagnostics = Boolean(diagnostics);
   const hasCleanHtml = Boolean(scrapedHtml);
   const report = diagnostics?.affiliateReport;
@@ -247,7 +250,7 @@ function buildTaskSteps({
 
   return [
     {
-      name: "抓取素材",
+      name: isEnglishTask ? "读取中文草稿" : "抓取素材",
       status: hasDiagnostics
         ? "success"
         : isFailed
@@ -257,10 +260,12 @@ function buildTaskSteps({
             : "pending",
       description: hasDiagnostics
         ? `使用 ${diagnostics?.strategy ?? "未知"} 策略，正文 ${diagnostics?.contentLength ?? 0} 字`
-        : (currentStep ?? "等待抓取来源内容"),
+        : isEnglishTask
+          ? (currentStep ?? "等待读取改写后的中文正文")
+          : (currentStep ?? "等待抓取来源内容"),
     },
     {
-      name: "清洗正文",
+      name: isEnglishTask ? "准备翻译输入" : "清洗正文",
       status: hasCleanHtml
         ? "success"
         : isFailed
@@ -269,8 +274,12 @@ function buildTaskSteps({
             ? "running"
             : "pending",
       description: hasCleanHtml
-        ? `清洗后正文 ${diagnostics?.cleanedHtmlLength ?? scrapedHtml?.length ?? 0} 字符，AI Markdown 输入 ${diagnostics?.aiInputLength ?? "-"} 字符`
-        : "等待正文清洗结果",
+        ? isEnglishTask
+          ? `中文改写正文 ${scrapedHtml?.length ?? 0} 字符，等待翻译为英文正文`
+          : `清洗后正文 ${diagnostics?.cleanedHtmlLength ?? scrapedHtml?.length ?? 0} 字符，AI Markdown 输入 ${diagnostics?.aiInputLength ?? "-"} 字符`
+        : isEnglishTask
+          ? "等待中文改写正文快照"
+          : "等待正文清洗结果",
     },
     {
       name: "识别商户与返利链接",
@@ -283,10 +292,12 @@ function buildTaskSteps({
           : "pending",
       description: report
         ? `命中 ${report.matchedLinks.length} 条，未命中 ${report.unmatchedLinks.length} 条，移除站内 ${report.internalLinksRemoved} 条`
-        : "暂无返利链接诊断",
+        : isEnglishTask
+          ? "英文任务复用中文草稿中的链接，不重复做采集诊断"
+          : "暂无返利链接诊断",
     },
     {
-      name: "AI 改写文章",
+      name: isEnglishTask ? "翻译英文正文" : "AI 改写文章",
       status: diagnostics?.usedAiRewrite
         ? "success"
         : diagnostics?.aiRewriteError
@@ -296,7 +307,9 @@ function buildTaskSteps({
             : "pending",
       description: diagnostics?.usedAiRewrite
         ? `输入 ${diagnostics.aiInputLength ?? "-"} 字符，输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符`
-        : (diagnostics?.aiRewriteError ?? "等待 AI 改写"),
+        : isEnglishTask
+          ? "等待从中文改写正文翻译英文正文，SEO 字段会单独生成"
+          : (diagnostics?.aiRewriteError ?? "等待 AI 改写"),
     },
     {
       name: "保存草稿",
@@ -505,6 +518,7 @@ export async function AiRewriteTaskDetailPageContent({
       ? storedSteps
       : buildTaskSteps({
           status: task.status,
+          sourceType: task.sourceType,
           currentStep: task.currentStep,
           postId: task.postId,
           scrapedHtml: task.scrapedHtml,
@@ -615,7 +629,9 @@ export async function AiRewriteTaskDetailPageContent({
             </div>
           </div>
         </div>
-        {task.sourceType !== "url" && task.sourceContent ? (
+        {task.sourceType !== "url" &&
+        task.sourceType !== "english" &&
+        task.sourceContent ? (
           <div className="mt-4 space-y-2">
             <p className="text-sm text-muted-foreground">原始素材预览</p>
             <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-xs leading-6">
@@ -753,11 +769,15 @@ export async function AiRewriteTaskDetailPageContent({
       </AdminSectionCard>
 
       <AdminSectionCard
-        title="正文预览"
-        description="清洗后的原始正文片段，便于排查抓取和清洗结果。"
+        title={task.sourceType === "english" ? "中文改写正文预览" : "正文预览"}
+        description={
+          task.sourceType === "english"
+            ? "英文正文会从这份已改写的中文正文翻译生成；标题、slug、摘要和关键词会在后续 SEO 步骤单独生成。"
+            : "清洗后的原始正文片段，便于排查抓取和清洗结果。"
+        }
       >
         <pre className="max-h-[500px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-4 font-mono text-xs leading-6">
-          {task.scrapedHtml ?? "暂无正文快照"}
+          {task.scrapedHtml ?? task.sourceContent ?? "暂无正文快照"}
         </pre>
       </AdminSectionCard>
     </AdminPageShell>

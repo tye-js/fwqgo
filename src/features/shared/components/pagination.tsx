@@ -60,11 +60,14 @@ export function PaginationComponent({
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const paginationItems = getPaginationItems(pageNo, totalPage);
+  const normalizedTotalPage = Math.max(Math.floor(totalPage), 0);
 
-  if (totalPage <= 1) {
+  if (normalizedTotalPage <= 1) {
     return null;
   }
+
+  const currentPage = Math.min(Math.max(pageNo, 1), normalizedTotalPage);
+  const paginationItems = getPaginationItems(currentPage, normalizedTotalPage);
 
   const getHref = (page: number) => {
     if (basePath) {
@@ -81,12 +84,12 @@ export function PaginationComponent({
       <PaginationContent className="min-w-max flex-nowrap">
         <PaginationItem>
           <PaginationPrevious
-            aria-disabled={pageNo === 1}
+            aria-disabled={currentPage === 1}
             className={cn(
               "min-w-11 px-2 sm:px-4 [&>span]:hidden sm:[&>span]:inline",
-              pageNo === 1 && "hidden",
+              currentPage === 1 && "hidden",
             )}
-            href={pageNo === 1 ? undefined : getHref(pageNo - 1)}
+            href={currentPage === 1 ? undefined : getHref(currentPage - 1)}
           />
         </PaginationItem>
         {paginationItems.map((item, index) => (
@@ -96,7 +99,7 @@ export function PaginationComponent({
             ) : (
               <PaginationLink
                 href={getHref(item)}
-                isActive={item === pageNo}
+                isActive={item === currentPage}
                 className="min-w-11"
               >
                 {item}
@@ -106,12 +109,16 @@ export function PaginationComponent({
         ))}
         <PaginationItem>
           <PaginationNext
-            aria-disabled={pageNo === totalPage}
+            aria-disabled={currentPage === normalizedTotalPage}
             className={cn(
               "min-w-11 px-2 sm:px-4 [&>span]:hidden sm:[&>span]:inline",
-              pageNo === totalPage && "hidden",
+              currentPage === normalizedTotalPage && "hidden",
             )}
-            href={pageNo === totalPage ? undefined : getHref(pageNo + 1)}
+            href={
+              currentPage === normalizedTotalPage
+                ? undefined
+                : getHref(currentPage + 1)
+            }
           />
         </PaginationItem>
       </PaginationContent>
