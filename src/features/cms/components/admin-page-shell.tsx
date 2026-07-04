@@ -45,7 +45,7 @@ export function AdminPageShell({
           ) : null}
         </div>
         {actions ? (
-          <div className="flex w-full shrink-0 flex-wrap items-center gap-2 md:w-auto md:justify-end">
+          <div className="flex w-full shrink-0 flex-wrap items-center gap-2 [&>*]:w-full sm:[&>*]:w-auto md:w-auto md:justify-end">
             {actions}
           </div>
         ) : null}
@@ -75,7 +75,7 @@ export function AdminSectionCard({
               </CardTitle>
             ) : null}
             {description ? (
-              <CardDescription className="line-clamp-2 text-xs leading-5">
+              <CardDescription className="text-xs leading-5">
                 {description}
               </CardDescription>
             ) : null}
@@ -95,11 +95,11 @@ export function AdminSummaryStrip({
   items: Array<{ label: string; value: string; note?: string }>;
 }) {
   return (
-    <div className="grid overflow-hidden rounded-md border border-border/70 bg-card md:grid-cols-3">
+    <div className="grid overflow-hidden rounded-md border border-border/70 bg-card [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]">
       {items.map((item, index) => (
         <div
           key={item.label}
-          className="border-b border-border/60 px-3 py-2.5 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0"
+          className="border-b border-border/60 px-3 py-2.5 last:border-b-0 sm:border-r sm:last:border-r-0"
         >
           <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             {item.label}

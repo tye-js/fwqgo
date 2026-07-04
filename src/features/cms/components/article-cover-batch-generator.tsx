@@ -370,7 +370,7 @@ export function ArticleCoverBatchGenerator({
     <div className="space-y-5">
       <AdminTableWorkbench
         title="文章封面生成"
-        description="批量选择文章后调用生图接口生成中文文章封面，成功后直接写入文章封面。单次最多 20 篇。"
+        description="批量选择文章后调用生图接口生成对应语言的文章封面，成功后直接写入文章封面。单次最多 20 篇。"
         searchValue={query}
         onSearchChange={setQuery}
         searchPlaceholder="搜索标题、slug 或分类"
@@ -393,16 +393,18 @@ export function ArticleCoverBatchGenerator({
           </Select>
         }
         actionSlot={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
             <Button
               type="button"
               variant="outline"
+              className="w-full sm:w-auto"
               onClick={selectMissingCovers}
             >
               选择无封面
             </Button>
             <Button
               type="button"
+              className="w-full sm:w-auto"
               disabled={isBusy || selectedIds.length === 0}
               onClick={handleGenerate}
             >
@@ -415,7 +417,9 @@ export function ArticleCoverBatchGenerator({
                 ? "加入队列..."
                 : isBatchRunning
                   ? "后台生成中..."
-                  : `生成封面 ${selectedIds.length}`}
+                  : selectedIds.length > 0
+                    ? `生成封面 ${selectedIds.length}`
+                    : "选择文章"}
             </Button>
           </div>
         }
@@ -519,14 +523,14 @@ export function ArticleCoverBatchGenerator({
         </div>
       ) : null}
 
-      <div className="rounded-lg border border-border/70 bg-background shadow-sm">
+      <div className="overflow-x-auto rounded-lg border border-border/70 bg-background shadow-sm">
         {filteredPosts.length === 0 ? (
           <AdminTableEmpty
             title="没有匹配的文章"
             description="调整搜索词或筛选条件后再选择文章生成封面。"
           />
         ) : (
-          <Table>
+          <Table className="min-w-[860px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">
@@ -604,7 +608,10 @@ export function ArticleCoverBatchGenerator({
                   </TableCell>
                   <TableCell className="text-right">
                     <Button asChild variant="outline" size="sm">
-                      <Link href={`/posts/edit/post/${post.slug}`}>
+                      <Link
+                        href={`/posts/edit/post/${post.slug}`}
+                        aria-label={`编辑文章 ${post.title}`}
+                      >
                         <ExternalLink className="size-4" />
                       </Link>
                     </Button>

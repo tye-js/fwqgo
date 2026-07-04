@@ -34,7 +34,6 @@ import { toast } from "sonner";
 import { rewriteDraftAffiliateLinksAction } from "@/features/cms/actions/affiliate-rewrite";
 import {
   updatePostContent,
-  updatePostEnglishContent,
   updatePostTags,
 } from "@/features/cms/actions/post";
 import { type AffiliateRewriteReport } from "@fwqgo/scrape/affiliate-link-rewriter";
@@ -92,17 +91,6 @@ export default function EditPost({
   const [keywords, setKeywords] = useState<string>(
     limitKeywordInput(post.post.keywords ?? ""),
   );
-  const [enTitle, setEnTitle] = useState(post.post.enTitle ?? "");
-  const [enSlug, setEnSlug] = useState(post.post.enSlug ?? "");
-  const [enDescription, setEnDescription] = useState(
-    post.post.enDescription ?? "",
-  );
-  const [enContent, setEnContent] = useState(post.post.enContent ?? "");
-  const [enKeywords, setEnKeywords] = useState(
-    limitKeywordInput(post.post.enKeywords ?? ""),
-  );
-  const [enImageUrl, setEnImageUrl] = useState(post.post.enImgUrl ?? "");
-  const [isSavingEnglish, setIsSavingEnglish] = useState(false);
   const handleAddTag = (tagInput: string) => {
     const name = tagInput.trim();
     if (!name) return;
@@ -235,36 +223,6 @@ export default function EditPost({
     }
   };
 
-  const handleSubmitEnglish = async () => {
-    if (!enTitle.trim() || !enSlug.trim() || !enContent.trim()) {
-      toast.error("请填写英文标题、slug 和正文");
-      return;
-    }
-
-    setIsSavingEnglish(true);
-    try {
-      const result = await updatePostEnglishContent({
-        id: post.post.id,
-        enTitle,
-        enSlug,
-        enDescription,
-        enContent,
-        enKeywords: limitKeywordInput(enKeywords),
-        enImgUrl: enImageUrl,
-      });
-
-      if (result.error) {
-        throw new Error(result.message ?? result.error);
-      }
-
-      toast.success("英文 SEO 版本已保存");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "英文版本保存失败");
-    } finally {
-      setIsSavingEnglish(false);
-    }
-  };
-
   const seoChecks = buildSeoChecks({
     content,
     description: description ?? "",
@@ -273,14 +231,6 @@ export default function EditPost({
     recommendTagName,
   });
   const failedSeoChecks = seoChecks.filter((item) => !item.ok);
-  const englishSeoChecks = buildSeoChecks({
-    content: enContent,
-    description: enDescription,
-    keywords: enKeywords,
-    tagCount: tags.length,
-    recommendTagName,
-  });
-  const failedEnglishSeoChecks = englishSeoChecks.filter((item) => !item.ok);
 
   return (
     <AdminPageShell
@@ -637,155 +587,6 @@ export default function EditPost({
               </div>
             </div>
           </AdminSectionCard>
-
-          {postLanguage === "zh" ? (
-            <AdminSectionCard
-              title="英文 SEO 版本"
-              description="旧版英文内容字段，仅用于兼容老文章。新生成英文文章会单独进入英文草稿。"
-            >
-              <div className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">英文标题</label>
-                    <Input
-                      className="h-10"
-                      value={enTitle}
-                      onChange={(e) => setEnTitle(e.target.value)}
-                      placeholder="English title"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">英文 Slug</label>
-                    <Input
-                      className="h-10"
-                      value={enSlug}
-                      onChange={(e) => setEnSlug(e.target.value)}
-                      placeholder="cheap-hong-kong-vps"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">英文摘要</label>
-                  <Textarea
-                    value={enDescription}
-                    onChange={(e) => setEnDescription(e.target.value)}
-                    placeholder="English meta description"
-                    className="min-h-24 resize-y"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">英文关键词</label>
-                  <Input
-                    className="h-10"
-                    value={enKeywords}
-                    onChange={(e) =>
-                      setEnKeywords(limitKeywordInput(e.target.value))
-                    }
-                    placeholder="hong kong vps, cheap server, cn2 gia"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <label className="text-sm font-medium">英文封面</label>
-                    <ArticleCoverGenerator
-                      title={enTitle || postMeta.title}
-                      description={enDescription}
-                      keywords={enKeywords}
-                      content={enContent || content}
-                      fileSlug={enSlug || postMeta.slug}
-                      language="en"
-                      onGenerated={setEnImageUrl}
-                    />
-                  </div>
-                  <ImageUpload value={enImageUrl} onChange={setEnImageUrl} />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">英文正文</label>
-                  <MarkdownEditor
-                    content={enContent}
-                    onChange={setEnContent}
-                    minHeightClassName="min-h-[420px]"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-foreground">
-                      英文 SEO 未通过项
-                    </p>
-                    <Badge
-                      variant={
-                        failedEnglishSeoChecks.length === 0
-                          ? "default"
-                          : "secondary"
-                      }
-                    >
-                      {englishSeoChecks.length - failedEnglishSeoChecks.length}/
-                      {englishSeoChecks.length}
-                    </Badge>
-                  </div>
-                  {failedEnglishSeoChecks.length === 0 ? (
-                    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                      英文 SEO 检查已全部通过。
-                    </div>
-                  ) : (
-                    <div className="grid gap-2">
-                      {failedEnglishSeoChecks.map((check) => (
-                        <div
-                          key={check.label}
-                          className="rounded-md border border-border/60 bg-background px-3 py-2 text-sm"
-                        >
-                          <p className="font-medium">{check.label}</p>
-                          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                            {check.note}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 p-3">
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    英文版本为空时，英文前台不会展示该文章；保存后会刷新英文文章缓存。
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {enSlug.trim() ? (
-                      <Button
-                        asChild
-                        variant="outline"
-                        size="sm"
-                        className="h-9"
-                      >
-                        <Link
-                          href={`/en/fwq/posts/${encodeURIComponent(enSlug.trim())}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <ExternalLink className="size-4" />
-                          查看英文页
-                        </Link>
-                      </Button>
-                    ) : null}
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-9"
-                      disabled={isSavingEnglish}
-                      onClick={handleSubmitEnglish}
-                    >
-                      <Save className="size-4" />
-                      {isSavingEnglish ? "保存中..." : "保存英文版本"}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </AdminSectionCard>
-          ) : null}
 
           <div className="sticky bottom-4 rounded-lg border border-border/70 bg-background/95 p-3 shadow-sm backdrop-blur">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

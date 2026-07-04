@@ -84,7 +84,7 @@ export function ShortLinkTable({ links }: { links: ShortLinkRow[] }) {
           description="发布包含外部链接的文章后，系统会自动生成短链。"
         />
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm">
+        <div className="overflow-x-auto rounded-lg border border-border/70 bg-background shadow-sm">
           <Table className="min-w-[760px]">
             <TableHeader>
               <TableRow>
