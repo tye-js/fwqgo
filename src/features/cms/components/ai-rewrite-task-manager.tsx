@@ -142,7 +142,9 @@ function normalizeRequiredNumber(value: unknown) {
 }
 
 function normalizeOptionalNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function normalizeBoolean(value: unknown) {
@@ -174,7 +176,9 @@ function normalizeTaskDiagnostics(
     sourceHost:
       typeof diagnostics.sourceHost === "string" ? diagnostics.sourceHost : "",
     strategy:
-      typeof diagnostics.strategy === "string" ? diagnostics.strategy : "未知规则",
+      typeof diagnostics.strategy === "string"
+        ? diagnostics.strategy
+        : "未知规则",
     usedPuppeteer: normalizeBoolean(diagnostics.usedPuppeteer),
     usedFallback: normalizeBoolean(diagnostics.usedFallback),
     usedAiRewrite: normalizeBoolean(diagnostics.usedAiRewrite),
@@ -189,7 +193,9 @@ function normalizeTaskDiagnostics(
         : undefined,
     cleanedHtmlLength: normalizeOptionalNumber(diagnostics.cleanedHtmlLength),
     aiInputLength: normalizeOptionalNumber(diagnostics.aiInputLength),
-    rewriteOutputLength: normalizeOptionalNumber(diagnostics.rewriteOutputLength),
+    rewriteOutputLength: normalizeOptionalNumber(
+      diagnostics.rewriteOutputLength,
+    ),
     aiInputTruncated:
       typeof diagnostics.aiInputTruncated === "boolean"
         ? diagnostics.aiInputTruncated
@@ -318,7 +324,9 @@ function FailedTaskPanel({
   onDelete: (task: RewriteTask) => void;
   basePath: string;
 }) {
-  const failedTasks = tasks.filter((task) => task.status === "failed").slice(0, 4);
+  const failedTasks = tasks
+    .filter((task) => task.status === "failed")
+    .slice(0, 4);
 
   if (failedTasks.length === 0) {
     return null;
@@ -419,7 +427,11 @@ function FailedTaskPanel({
 
 function countSubmittedUrls(formData: FormData) {
   const sourceType = formData.get("sourceType");
-  if (sourceType === "text" || sourceType === "email" || sourceType === "file") {
+  if (
+    sourceType === "text" ||
+    sourceType === "email" ||
+    sourceType === "file"
+  ) {
     return 1;
   }
 
@@ -485,14 +497,18 @@ function AffiliateDiagnosticsSummary({
           {diagnostics.usedPuppeteer ? (
             <Badge variant="outline">浏览器渲染</Badge>
           ) : null}
-          <Badge variant={diagnostics.usedAiRewrite ? "secondary" : "destructive"}>
+          <Badge
+            variant={diagnostics.usedAiRewrite ? "secondary" : "destructive"}
+          >
             {diagnostics.usedAiRewrite ? "AI 已改写" : "AI 回退"}
           </Badge>
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div className="rounded-md border border-border/70 p-2">
             <p className="text-muted-foreground">链接</p>
-            <p className="mt-1 font-medium text-foreground">{report.totalLinks}</p>
+            <p className="mt-1 font-medium text-foreground">
+              {report.totalLinks}
+            </p>
           </div>
           <div className="rounded-md border border-border/70 p-2">
             <p className="text-muted-foreground">返利</p>
@@ -589,7 +605,9 @@ function AffiliateDiagnosticsSummary({
 
           {unmatchedHosts.length > 0 ? (
             <div className="space-y-2">
-              <p className="font-medium text-foreground">未配置返利的外链域名</p>
+              <p className="font-medium text-foreground">
+                未配置返利的外链域名
+              </p>
               <div className="flex flex-wrap gap-1.5">
                 {unmatchedHosts.slice(0, 12).map((host) => (
                   <Badge key={host} variant="outline">
@@ -614,12 +632,14 @@ export function AiRewriteTaskManager({
   rewriteStyles,
   basePath = "/ai-rewrite/tasks",
   showCreateForm = true,
+  showTaskList = true,
 }: {
   tasks: RewriteTask[];
   categories: Option[];
   rewriteStyles: RewriteStyleOption[];
   basePath?: string;
   showCreateForm?: boolean;
+  showTaskList?: boolean;
 }) {
   const router = useRouter();
   const [isSubmitting, startSubmitTransition] = useTransition();
@@ -628,12 +648,14 @@ export function AiRewriteTaskManager({
   const [sourceType, setSourceType] = useState("url");
   const defaultCategoryId = categories[0]?.id ? String(categories[0].id) : "";
   const defaultRewriteStyleId = useMemo(
-    () => rewriteStyles.find((style) => style.isDefault)?.id ?? rewriteStyles[0]?.id,
+    () =>
+      rewriteStyles.find((style) => style.isDefault)?.id ??
+      rewriteStyles[0]?.id,
     [rewriteStyles],
   );
-  const hasActiveTask = tasks.some((task) =>
-    ["pending", "running"].includes(task.status),
-  );
+  const hasActiveTask =
+    showTaskList &&
+    tasks.some((task) => ["pending", "running"].includes(task.status));
 
   useEffect(() => {
     if (!hasActiveTask) return;
@@ -737,7 +759,11 @@ export function AiRewriteTaskManager({
           encType="multipart/form-data"
           className="grid gap-3 rounded-md border border-border/70 bg-card px-4 py-3 lg:grid-cols-[150px_minmax(0,1fr)_180px_180px_auto]"
         >
-          <Select name="sourceType" value={sourceType} onValueChange={setSourceType}>
+          <Select
+            name="sourceType"
+            value={sourceType}
+            onValueChange={setSourceType}
+          >
             <SelectTrigger className="min-h-11">
               <SelectValue placeholder="素材类型" />
             </SelectTrigger>
@@ -771,7 +797,8 @@ export function AiRewriteTaskManager({
                   className="min-h-11"
                 />
                 <p className="text-xs leading-5 text-muted-foreground">
-                  支持 txt、md、html、csv，单个文件不超过 2MB。导入后会清洗、替换返利链接并改写为草稿。
+                  支持 txt、md、html、csv，单个文件不超过
+                  2MB。导入后会清洗、替换返利链接并改写为草稿。
                 </p>
               </>
             ) : (
@@ -816,7 +843,9 @@ export function AiRewriteTaskManager({
           >
             <SelectTrigger className="min-h-11">
               <SelectValue
-                placeholder={rewriteStyles.length > 0 ? "改写风格" : "未配置 AI"}
+                placeholder={
+                  rewriteStyles.length > 0 ? "改写风格" : "未配置 AI"
+                }
               />
             </SelectTrigger>
             <SelectContent>
@@ -838,200 +867,213 @@ export function AiRewriteTaskManager({
         </form>
       ) : null}
 
-      <FailedTaskPanel
-        tasks={tasks}
-        retryingId={retryingId}
-        deletingId={deletingId}
-        onRetry={(taskId) => void handleRetry(taskId)}
-        onDelete={(task) => void handleDelete(task)}
-        basePath={basePath}
-      />
-
-      <div
-        id="task-table"
-        className="scroll-mt-24 overflow-hidden rounded-md border border-border/70 bg-card"
-      >
-        {tasks.length === 0 ? (
-          <AdminTableEmpty
-            title="暂无 AI 改写任务"
-            description="提交来源 URL 后，系统会在后台抓取、清洗、改写，并在成功后保存为草稿。"
+      {showTaskList ? (
+        <>
+          <FailedTaskPanel
+            tasks={tasks}
+            retryingId={retryingId}
+            deletingId={deletingId}
+            onRetry={(taskId) => void handleRetry(taskId)}
+            onDelete={(task) => void handleDelete(task)}
+            basePath={basePath}
           />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-[280px]">任务来源</TableHead>
-                <TableHead className="w-[120px]">状态</TableHead>
-                <TableHead className="min-w-[280px]">失败 / 进度</TableHead>
-                <TableHead className="min-w-[220px]">结果</TableHead>
-                <TableHead className="w-[220px] text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tasks.map((task) => {
-                const diagnostics = parseTaskDiagnostics(task.diagnostics);
-                const isFailed = task.status === "failed";
-                return (
-                  <TableRow
-                    key={task.id}
-                    className={isFailed ? "bg-destructive/5 align-top" : "align-top"}
-                  >
-                    <TableCell>
-                      <div className="min-w-0 space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xs font-medium text-muted-foreground">
-                            #{task.id}
-                          </span>
-                          <Badge variant="outline">
-                            {task.categoryName ?? "未分类"}
-                          </Badge>
-                          {task.rewriteStyleName ? (
-                            <Badge variant="secondary">
-                              {task.rewriteStyleName}
-                            </Badge>
-                          ) : null}
-                          <Badge variant="outline">
-                            {taskSourceTypeLabel(task.sourceType)}
-                          </Badge>
-                        </div>
-                        {task.sourceType === "url" && isHttpHref(task.sourceUrl) ? (
-                          <a
-                            href={task.sourceUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="line-clamp-2 break-all text-sm font-medium text-foreground hover:underline"
-                          >
-                            {taskSourceTitle(task)}
-                          </a>
-                        ) : (
-                          <p className="line-clamp-2 break-all text-sm font-medium text-foreground">
-                            {taskSourceTitle(task)}
-                          </p>
-                        )}
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                          <span className="inline-flex items-center gap-1">
-                            <Clock3 className="size-3.5" />
-                            创建 {formatTime(task.createdAt)}
-                          </span>
-                          <span>更新 {formatTime(task.updatedAt)}</span>
-                          <span>尝试 {task.attempts} 次</span>
-                        </div>
-                        <TaskDiagnosticsDisclosure diagnostics={diagnostics} />
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={task.status} />
-                    </TableCell>
-                    <TableCell>
-                      {isFailed ? (
-                        <TaskFailureMessage error={task.error} />
-                      ) : (
-                        <TaskProgress task={task} />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {task.postSlug ? (
-                        <Link
-                          href={`/posts/edit/post/${task.postSlug}`}
-                          className="inline-flex max-w-[260px] items-start gap-2 text-sm font-medium text-primary hover:underline"
-                        >
-                          <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
-                          <span className="line-clamp-2">
-                            {task.postTitle ?? task.resultTitle ?? "编辑草稿"}
-                          </span>
-                        </Link>
-                      ) : task.resultTitle ? (
-                        <span className="inline-flex max-w-[260px] items-start gap-2 text-sm text-muted-foreground">
-                          <FileText className="mt-0.5 size-4 shrink-0" />
-                          <span className="line-clamp-2">
-                            {task.resultTitle}
-                          </span>
-                        </span>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">
-                          -
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex flex-wrap justify-end gap-2">
-                        <Button asChild size="sm" variant="outline">
-                          <Link href={`${basePath}/${task.id}`}>详情</Link>
-                        </Button>
-                        {task.postSlug ? (
-                          <Button asChild size="sm" variant="outline">
-                            <Link href={`/posts/edit/post/${task.postSlug}`}>
-                              <ExternalLink className="size-4" />
-                              编辑
-                            </Link>
-                          </Button>
-                        ) : null}
-                        {isFailed ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={retryingId === task.id}
-                            onClick={() => void handleRetry(task.id)}
-                          >
-                            <RotateCcw className="size-4" />
-                            {retryingId === task.id ? "启动中" : "重试"}
-                          </Button>
-                        ) : null}
-                        {task.status === "manual_required" ? (
-                          <AiRewriteTaskResolveButton
-                            taskId={task.id}
-                            size="sm"
-                          />
-                        ) : null}
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={
-                                deletingId === task.id ||
-                                task.status === "running"
-                              }
-                              title={
-                                task.status === "running"
-                                  ? "处理中任务不能删除"
-                                  : "删除任务"
-                              }
-                            >
-                              <Trash2 className="size-4" />
-                              {deletingId === task.id ? "删除中" : "删除"}
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                删除 AI 任务 #{task.id}？
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                只会删除任务记录和步骤日志，不会删除已经生成的草稿文章。任务删除后无法恢复。
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>取消</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => void handleDelete(task)}
-                              >
-                                确定删除
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </TableCell>
+
+          <div
+            id="task-table"
+            className="scroll-mt-24 overflow-hidden rounded-md border border-border/70 bg-card"
+          >
+            {tasks.length === 0 ? (
+              <AdminTableEmpty
+                title="暂无 AI 改写任务"
+                description="提交来源 URL 后，系统会在后台抓取、清洗、改写，并在成功后保存为草稿。"
+              />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[280px]">任务来源</TableHead>
+                    <TableHead className="w-[120px]">状态</TableHead>
+                    <TableHead className="min-w-[280px]">失败 / 进度</TableHead>
+                    <TableHead className="min-w-[220px]">结果</TableHead>
+                    <TableHead className="w-[220px] text-right">操作</TableHead>
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
-      </div>
+                </TableHeader>
+                <TableBody>
+                  {tasks.map((task) => {
+                    const diagnostics = parseTaskDiagnostics(task.diagnostics);
+                    const isFailed = task.status === "failed";
+                    return (
+                      <TableRow
+                        key={task.id}
+                        className={
+                          isFailed ? "bg-destructive/5 align-top" : "align-top"
+                        }
+                      >
+                        <TableCell>
+                          <div className="min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs font-medium text-muted-foreground">
+                                #{task.id}
+                              </span>
+                              <Badge variant="outline">
+                                {task.categoryName ?? "未分类"}
+                              </Badge>
+                              {task.rewriteStyleName ? (
+                                <Badge variant="secondary">
+                                  {task.rewriteStyleName}
+                                </Badge>
+                              ) : null}
+                              <Badge variant="outline">
+                                {taskSourceTypeLabel(task.sourceType)}
+                              </Badge>
+                            </div>
+                            {task.sourceType === "url" &&
+                            isHttpHref(task.sourceUrl) ? (
+                              <a
+                                href={task.sourceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="line-clamp-2 break-all text-sm font-medium text-foreground hover:underline"
+                              >
+                                {taskSourceTitle(task)}
+                              </a>
+                            ) : (
+                              <p className="line-clamp-2 break-all text-sm font-medium text-foreground">
+                                {taskSourceTitle(task)}
+                              </p>
+                            )}
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                              <span className="inline-flex items-center gap-1">
+                                <Clock3 className="size-3.5" />
+                                创建 {formatTime(task.createdAt)}
+                              </span>
+                              <span>更新 {formatTime(task.updatedAt)}</span>
+                              <span>尝试 {task.attempts} 次</span>
+                            </div>
+                            <TaskDiagnosticsDisclosure
+                              diagnostics={diagnostics}
+                            />
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={task.status} />
+                        </TableCell>
+                        <TableCell>
+                          {isFailed ? (
+                            <TaskFailureMessage error={task.error} />
+                          ) : (
+                            <TaskProgress task={task} />
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {task.postSlug ? (
+                            <Link
+                              href={`/posts/edit/post/${task.postSlug}`}
+                              className="inline-flex max-w-[260px] items-start gap-2 text-sm font-medium text-primary hover:underline"
+                            >
+                              <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+                              <span className="line-clamp-2">
+                                {task.postTitle ??
+                                  task.resultTitle ??
+                                  "编辑草稿"}
+                              </span>
+                            </Link>
+                          ) : task.resultTitle ? (
+                            <span className="inline-flex max-w-[260px] items-start gap-2 text-sm text-muted-foreground">
+                              <FileText className="mt-0.5 size-4 shrink-0" />
+                              <span className="line-clamp-2">
+                                {task.resultTitle}
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">
+                              -
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Button asChild size="sm" variant="outline">
+                              <Link href={`${basePath}/${task.id}`}>详情</Link>
+                            </Button>
+                            {task.postSlug ? (
+                              <Button asChild size="sm" variant="outline">
+                                <Link
+                                  href={`/posts/edit/post/${task.postSlug}`}
+                                >
+                                  <ExternalLink className="size-4" />
+                                  编辑
+                                </Link>
+                              </Button>
+                            ) : null}
+                            {isFailed ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={retryingId === task.id}
+                                onClick={() => void handleRetry(task.id)}
+                              >
+                                <RotateCcw className="size-4" />
+                                {retryingId === task.id ? "启动中" : "重试"}
+                              </Button>
+                            ) : null}
+                            {task.status === "manual_required" ? (
+                              <AiRewriteTaskResolveButton
+                                taskId={task.id}
+                                size="sm"
+                              />
+                            ) : null}
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={
+                                    deletingId === task.id ||
+                                    task.status === "running"
+                                  }
+                                  title={
+                                    task.status === "running"
+                                      ? "处理中任务不能删除"
+                                      : "删除任务"
+                                  }
+                                >
+                                  <Trash2 className="size-4" />
+                                  {deletingId === task.id ? "删除中" : "删除"}
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>
+                                    删除 AI 任务 #{task.id}？
+                                  </AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    只会删除任务记录和步骤日志，不会删除已经生成的草稿文章。任务删除后无法恢复。
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>取消</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => void handleDelete(task)}
+                                  >
+                                    确定删除
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
