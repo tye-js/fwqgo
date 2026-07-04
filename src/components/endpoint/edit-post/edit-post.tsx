@@ -32,10 +32,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { type PostEditFormData } from "@/types/post.types";
 import { toast } from "sonner";
 import { rewriteDraftAffiliateLinksAction } from "@/features/cms/actions/affiliate-rewrite";
-import {
-  updatePostContent,
-  updatePostTags,
-} from "@/features/cms/actions/post";
 import { type AffiliateRewriteReport } from "@fwqgo/scrape/affiliate-link-rewriter";
 import { type NewTag } from "@/types";
 import { Separator } from "@/components/ui/separator";
@@ -46,14 +42,6 @@ import {
 interface Category {
   id: number;
   name: string;
-}
-
-function formatActionError(error: string, message: unknown) {
-  if (typeof message === "string" && message.trim()) {
-    return message;
-  }
-
-  return error;
 }
 
 export default function EditPost({
@@ -131,13 +119,13 @@ export default function EditPost({
     e.preventDefault();
     const normalizedContent = content.trim();
     const normalizedDescription = (description ?? "").trim();
-    const parsedCategoryId = Number.parseInt(categoryId, 10);
+    const parsedCategoryId = Number(categoryId);
 
     if (!normalizedContent || !normalizedDescription) {
       toast.error("请填写内容和简述");
       return;
     }
-    if (!Number.isInteger(parsedCategoryId) || parsedCategoryId <= 0) {
+    if (!Number.isSafeInteger(parsedCategoryId) || parsedCategoryId <= 0) {
       toast.error("请选择正确的文章分类");
       return;
     }
@@ -151,40 +139,33 @@ export default function EditPost({
     }
     try {
       setIsSubmitting(true);
-      // 更新文章内容
-      const result = await updatePostContent({
-        id: post.post.id,
-        description: normalizedDescription,
-        content: normalizedContent,
-        imgUrl: imageUrl,
-        categoryId: parsedCategoryId,
-        recommendTagName: recommendTagName.trim(),
-        keywords: limitKeywordInput(keywords),
+      const response = await fetch(`/api/cms/posts/${post.post.id}/edit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: normalizedDescription,
+          content: normalizedContent,
+          imgUrl: imageUrl || null,
+          categoryId: parsedCategoryId,
+          recommendTagName: recommendTagName.trim(),
+          keywords: limitKeywordInput(keywords),
+          oldTags: post.tags,
+          newTags: tags,
+        }),
       });
-      if ("error" in result && result.error) {
+
+      const result = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      if (!response.ok || result?.error) {
         throw new Error(
-          formatActionError(
-            result.error,
-            "message" in result ? result.message : undefined,
-          ),
+          result?.error ??
+            (response.status === 401
+              ? "登录已过期，请重新登录"
+              : "更新文章失败，请重试"),
         );
       }
 
-      // 更新文章标签
-      const tagsResult = await updatePostTags({
-        postId: post.post.id,
-        oldTags: post.tags,
-        newTags: tags,
-      });
-
-      if ("error" in tagsResult && tagsResult.error) {
-        throw new Error(
-          formatActionError(
-            tagsResult.error,
-            "message" in tagsResult ? tagsResult.message : undefined,
-          ),
-        );
-      }
       toast.success("更新文章成功");
     } catch (error) {
       console.error("更新文章失败:", error);

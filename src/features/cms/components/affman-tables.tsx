@@ -587,7 +587,7 @@ export default function AffManTable({
           description="试试更换关键词，或者切换筛选项看看。"
         />
       ) : (
-        <div className="overflow-hidden rounded-md border border-border/70 bg-background">
+        <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
           <Table className="min-w-[980px]">
             <TableHeader>
               <TableRow>
@@ -729,9 +729,9 @@ export default function AffManTable({
                                 </AlertDialogTitle>
                                 <AlertDialogDescription>
                                   删除后将无法恢复，当前商家为
-                                  <p className="mt-2 text-red-500">
+                                  <span className="mt-2 block text-red-500">
                                     {item.name}
-                                  </p>
+                                  </span>
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>

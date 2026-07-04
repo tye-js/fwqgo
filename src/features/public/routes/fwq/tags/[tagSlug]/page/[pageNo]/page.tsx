@@ -1,4 +1,4 @@
-import { getPostsWithTagsByTagSlug } from "@/features/public/data/tag";
+import { getPostsWithTagsByTagSlug, getTagBySlug } from "@/features/public/data/tag";
 import { getLatestPostsForSidebar } from "@/features/public/data/post";
 import ArticleCard from "@/features/public/components/article-card";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
@@ -26,10 +26,12 @@ export async function generateMetadata(
   const currentPage = Number.parseInt(params.pageNo, 10);
   const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
   const readableName = decodedTagSlug.replace(/[-_]+/g, " ");
+  const { data: tag } = await getTagBySlug(decodedTagSlug);
+  const title = tag?.name ?? readableName;
   return {
-    title: `${readableName}-服务器`,
-    description: `${readableName}相关服务器、VPS、优惠和测评文章。`,
-    keywords: `${readableName}的服务器,${readableName}的VPS`,
+    title: `${title}-服务器`,
+    description: tag?.description ?? `${title}相关服务器、VPS、优惠和测评文章。`,
+    keywords: tag?.keywords ?? `${title}的服务器,${title}的VPS`,
     alternates: {
       canonical: `${getSiteUrl()}/fwq/tags/${encodeURIComponent(decodedTagSlug)}/page/${pageNo}`,
     },

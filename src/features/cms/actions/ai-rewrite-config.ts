@@ -12,6 +12,15 @@ import {
   updateAiRewriteConfig,
 } from "@fwqgo/ai/rewrite-config";
 
+function isHttpUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 const configSchema = z.object({
   name: z.string().trim().min(1, "名称不能为空"),
   provider: z.enum(aiProviderOptions),
@@ -19,7 +28,7 @@ const configSchema = z.object({
     .string()
     .trim()
     .url("Base URL 必须是有效 URL")
-    .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+    .refine(isHttpUrl, {
       message: "Base URL 只支持 http 或 https",
     }),
   apiKey: z.string().trim().optional(),

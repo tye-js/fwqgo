@@ -30,10 +30,13 @@ export async function generateMetadata(
   const currentPage = Number.parseInt(params.pageNo, 10);
   const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
   const readableName = decodeSlug(params.category).replace(/[-_]+/g, " ");
+  const { data: category } = await getCategoryBySlug(params.category);
+  const title = category?.name ?? readableName;
   return {
-    title: `${readableName}-服务器go`,
-    description: `${readableName}相关的服务器优惠、评测与选购文章。`,
-    keywords: readableName,
+    title: `${title}-服务器go`,
+    description:
+      category?.description ?? `${title}相关的服务器优惠、评测与选购文章。`,
+    keywords: category?.keywords ?? readableName,
     alternates: {
       canonical: `${getSiteUrl()}/fwq/${encodeURIComponent(params.category)}/page/${pageNo}`,
     },

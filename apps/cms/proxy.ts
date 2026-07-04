@@ -85,7 +85,8 @@ function isProtectedCmsPath(pathname: string) {
     ADMIN_PAGE_PREFIXES.some(
       (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
     ) ||
-    PROTECTED_API_PATHS.has(pathname)
+    PROTECTED_API_PATHS.has(pathname) ||
+    pathname.startsWith("/api/cms/")
   );
 }
 
@@ -136,6 +137,7 @@ export const config = {
     "/fwq/:path*",
     "/go/:path*",
     "/api/auth/:path*",
+    "/api/cms/:path*",
     "/api/tags/search",
     "/api/upload",
   ],

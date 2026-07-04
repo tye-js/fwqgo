@@ -40,6 +40,7 @@ type PublishedPostOption = {
   id: number;
   title: string;
   slug: string;
+  language: string;
 };
 
 function getActionErrorMessage(result: { error?: string; message?: unknown }) {
@@ -54,12 +55,22 @@ function getActionErrorMessage(result: { error?: string; message?: unknown }) {
   return result.error;
 }
 
+function parseIntegerInput(value: string) {
+  const trimmed = value.trim();
+  if (!/^-?\d+$/.test(trimmed)) return null;
+
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
 export function HomepagePromotedPostTable({
   data,
   postOptions,
+  language = "zh",
 }: {
   data: HomepagePromotedPostItem[];
   postOptions: PublishedPostOption[];
+  language?: "zh" | "en";
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -117,17 +128,17 @@ export function HomepagePromotedPostTable({
     sortedData.every((item) => selectedIds.includes(item.id));
 
   async function handleAdd() {
-    const postId = Number.parseInt(newPostId, 10);
-    const sortOrder = Number.parseInt(newSortOrder, 10);
+    const postId = parseIntegerInput(newPostId);
+    const sortOrder = parseIntegerInput(newSortOrder);
 
-    if (!Number.isFinite(postId) || !Number.isFinite(sortOrder)) {
+    if (postId === null || sortOrder === null) {
       toast.error("请填写正确的文章 ID 和排序值");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const result = await addHomepagePromotedPost({ postId, sortOrder });
+      const result = await addHomepagePromotedPost({ postId, sortOrder, language });
 
       const errorMessage = getActionErrorMessage(result);
       if (errorMessage) {
@@ -149,9 +160,9 @@ export function HomepagePromotedPostTable({
   }
 
   async function handleUpdate(id: number) {
-    const sortOrder = Number.parseInt(editingSortOrder, 10);
+    const sortOrder = parseIntegerInput(editingSortOrder);
 
-    if (!Number.isFinite(sortOrder)) {
+    if (sortOrder === null) {
       toast.error("请输入正确的排序值");
       return;
     }
@@ -214,7 +225,7 @@ export function HomepagePromotedPostTable({
     <div className="space-y-5">
       <AdminTableWorkbench
         title="推荐位工作台"
-        description="支持搜索文章标题、slug 或文章 ID，并可批量移除推荐位。"
+        description={`当前维护${language === "en" ? "英文" : "中文"}首页推荐，支持搜索文章标题、slug 或文章 ID，并可批量移除推荐位。`}
         searchValue={query}
         onSearchChange={setQuery}
         searchPlaceholder="搜索标题、slug 或文章 ID"
@@ -247,7 +258,7 @@ export function HomepagePromotedPostTable({
       <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
         <p className="text-sm font-medium text-foreground">添加推荐文章</p>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          通过文章 ID 把已发布文章加入首页右侧“站长推荐”区域，`sortOrder`
+          通过文章 ID 把已发布的{language === "en" ? "英文" : "中文"}文章加入首页右侧“站长推荐”区域，`sortOrder`
           越小越靠前。
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-[1fr_140px_auto]">
@@ -277,7 +288,7 @@ export function HomepagePromotedPostTable({
               >
                 <p className="text-sm font-medium">{post.title}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  ID: {post.id} / {post.slug}
+                  ID: {post.id} / {post.slug} / {post.language === "en" ? "英文" : "中文"}
                 </p>
               </button>
             ))}
@@ -337,7 +348,8 @@ export function HomepagePromotedPostTable({
                         {item.post.title}
                       </Link>
                       <p className="text-xs text-muted-foreground">
-                        {item.post.published ? "已发布" : "未发布"}
+                        {item.post.published ? "已发布" : "未发布"} /{" "}
+                        {item.post.language === "en" ? "英文" : "中文"}
                       </p>
                     </div>
                   ) : (

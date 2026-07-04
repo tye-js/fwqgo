@@ -8,5 +8,6 @@ export type HomepagePromotedPostItem = {
     title: string;
     slug: string;
     published: boolean;
+    language: string;
   } | null;
 };

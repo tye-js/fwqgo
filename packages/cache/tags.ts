@@ -7,6 +7,7 @@ export const cacheTags = {
   homepage: "homepage",
   sidebar: "sidebar",
   sitemap: "sitemap",
+  siteSeo: "site-seo",
   serverOffers: "server-offers",
   category: (id: number) => `category:${id}`,
   categorySlug: (slug: string) => `category-slug:${slug}`,

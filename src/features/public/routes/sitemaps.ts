@@ -304,39 +304,97 @@ export async function sitemapEnglishGET() {
 export async function sitemapCategoriesGET() {
   const baseUrl = getBaseUrl();
   const rows = await readDb
-    .select({ slug: categories.slug, updatedAt: categories.updatedAt })
+    .select({
+      slug: categories.slug,
+      enSlug: categories.enSlug,
+      updatedAt: categories.updatedAt,
+    })
     .from(categories)
     .orderBy(desc(categories.updatedAt));
 
   return urlset(
-    rows.map((category) =>
-      urlEntry({
-        loc: `${baseUrl}/fwq/${encodeURIComponent(category.slug)}/page/1`,
-        lastmod: category.updatedAt,
-        changefreq: "weekly",
-        priority: "0.7",
-      }),
-    ),
+    rows.flatMap((category) => {
+      const enSlug = category.enSlug?.trim();
+      const zhUrl = `${baseUrl}/fwq/${encodeURIComponent(category.slug)}/page/1`;
+      const enUrl = enSlug
+        ? `${baseUrl}/en/fwq/${encodeURIComponent(enSlug)}/page/1`
+        : null;
+      const alternates = enUrl
+        ? [
+            { hreflang: "zh-CN", href: zhUrl },
+            { hreflang: "en", href: enUrl },
+            { hreflang: "x-default", href: zhUrl },
+          ]
+        : undefined;
+
+      return [
+        urlEntry({
+          loc: zhUrl,
+          lastmod: category.updatedAt,
+          changefreq: "weekly",
+          priority: "0.7",
+          alternates,
+        }),
+        ...(enUrl
+          ? [
+              urlEntry({
+                loc: enUrl,
+                lastmod: category.updatedAt,
+                changefreq: "weekly",
+                priority: "0.65",
+                alternates,
+              }),
+            ]
+          : []),
+      ];
+    }),
   );
 }
 
 export async function sitemapTagsGET() {
   const baseUrl = getBaseUrl();
   const rows = await readDb
-    .select({ slug: tags.slug, updatedAt: tags.updatedAt })
+    .select({ slug: tags.slug, enSlug: tags.enSlug, updatedAt: tags.updatedAt })
     .from(tags)
     .where(eq(tags.indexable, true))
     .orderBy(desc(tags.updatedAt));
 
   return urlset(
-    rows.map((tag) =>
-      urlEntry({
-        loc: `${baseUrl}/fwq/tags/${encodeURIComponent(tag.slug)}/page/1`,
-        lastmod: tag.updatedAt,
-        changefreq: "weekly",
-        priority: "0.6",
-      }),
-    ),
+    rows.flatMap((tag) => {
+      const enSlug = tag.enSlug?.trim();
+      const zhUrl = `${baseUrl}/fwq/tags/${encodeURIComponent(tag.slug)}/page/1`;
+      const enUrl = enSlug
+        ? `${baseUrl}/en/fwq/tags/${encodeURIComponent(enSlug)}/page/1`
+        : null;
+      const alternates = enUrl
+        ? [
+            { hreflang: "zh-CN", href: zhUrl },
+            { hreflang: "en", href: enUrl },
+            { hreflang: "x-default", href: zhUrl },
+          ]
+        : undefined;
+
+      return [
+        urlEntry({
+          loc: zhUrl,
+          lastmod: tag.updatedAt,
+          changefreq: "weekly",
+          priority: "0.6",
+          alternates,
+        }),
+        ...(enUrl
+          ? [
+              urlEntry({
+                loc: enUrl,
+                lastmod: tag.updatedAt,
+                changefreq: "weekly",
+                priority: "0.55",
+                alternates,
+              }),
+            ]
+          : []),
+      ];
+    }),
   );
 }
 

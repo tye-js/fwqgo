@@ -13,12 +13,14 @@ export default function PageCard({
   description,
   totalCount,
   pageNo,
+  language = "zh",
 }: {
   kind?: string;
   name: string;
   description: string;
   totalCount?: number;
   pageNo?: number;
+  language?: "zh" | "en";
 }) {
   return (
     <Card className="overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm">
@@ -26,7 +28,9 @@ export default function PageCard({
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary">{kind}</Badge>
           {typeof pageNo === "number" ? (
-            <Badge variant="outline">第 {pageNo} 页</Badge>
+            <Badge variant="outline">
+              {language === "en" ? `Page ${pageNo}` : `第 ${pageNo} 页`}
+            </Badge>
           ) : null}
         </div>
 
@@ -44,35 +48,41 @@ export default function PageCard({
             <div className="rounded-md border border-border/70 bg-muted/20 p-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Files className="size-3.5" />
-                内容规模
+                {language === "en" ? "Content size" : "内容规模"}
               </div>
               <p className="mt-2 text-xl font-semibold text-foreground">
                 {formatCount(totalCount ?? 0)}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">已收录文章</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {language === "en" ? "published articles" : "已收录文章"}
+              </p>
             </div>
             <div className="rounded-md border border-border/70 bg-muted/20 p-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Compass className="size-3.5" />
-                内容方向
+                {language === "en" ? "Content focus" : "内容方向"}
               </div>
               <p className="mt-2 text-sm font-medium text-foreground">
-                内容优先
+                {language === "en" ? "Article first" : "内容优先"}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                以文章为主的聚合浏览
+                {language === "en"
+                  ? "Browse grouped article collections"
+                  : "以文章为主的聚合浏览"}
               </p>
             </div>
             <div className="rounded-md border border-border/70 bg-muted/20 p-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Hash className="size-3.5" />
-                浏览建议
+                {language === "en" ? "Browsing tip" : "浏览建议"}
               </div>
               <p className="mt-2 text-sm font-medium text-foreground">
-                先看前几篇
+                {language === "en" ? "Start from the top" : "先看前几篇"}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                再按分页继续深入
+                {language === "en"
+                  ? "Then continue by page"
+                  : "再按分页继续深入"}
               </p>
             </div>
           </div>
