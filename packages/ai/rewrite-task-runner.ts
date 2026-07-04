@@ -1,5 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import * as cheerio from "cheerio";
+import { revalidatePath } from "next/cache";
 
 import RewriteArticle from "@/langchain/rewrite-article";
 import {
@@ -20,10 +21,13 @@ import {
   postTags,
   posts,
   sourceMaterials,
+  tags,
 } from "@fwqgo/db/schema";
+import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import { generateArticleCoverImage } from "@/server/images/generated-cover";
 import { importServerOffersFromPost } from "@/server/offers/server-offers";
+import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import {
   scrapeArticleWithOptions,
   type ScrapedArticle,
@@ -36,6 +40,7 @@ import {
 import {
   generateEnglishArticleContent,
   generateEnglishMetadata,
+  generateArticleMetadata,
   getAiRewriteContentLimit,
 } from "@fwqgo/ai/article-rewriter";
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
@@ -385,6 +390,88 @@ async function syncPostTagsFromSource(input: {
       );
     }
   });
+}
+
+function uniqueTagNames(tagNames: string[]) {
+  const seenSlugs = new Set<string>();
+  const result: Array<{ name: string; slug: string }> = [];
+
+  for (const value of tagNames) {
+    const name = value.trim();
+    const slug = slugify(name);
+
+    if (!name || !slug || seenSlugs.has(slug)) {
+      continue;
+    }
+
+    seenSlugs.add(slug);
+    result.push({ name, slug });
+  }
+
+  return result;
+}
+
+async function ensureTagRowsByName(tagNames: string[]) {
+  const normalizedTags = uniqueTagNames(tagNames);
+  const tagRows: Array<{ id: number; name: string; slug: string }> = [];
+
+  for (const tag of normalizedTags) {
+    const [existingTag] = await db
+      .select({ id: tags.id, name: tags.name, slug: tags.slug })
+      .from(tags)
+      .where(eq(tags.slug, tag.slug))
+      .limit(1);
+
+    if (existingTag) {
+      tagRows.push(existingTag);
+      continue;
+    }
+
+    const [insertedTag] = await db
+      .insert(tags)
+      .values({ name: tag.name, slug: tag.slug })
+      .onConflictDoNothing()
+      .returning({ id: tags.id, name: tags.name, slug: tags.slug });
+
+    if (insertedTag) {
+      tagRows.push(insertedTag);
+      continue;
+    }
+
+    const [createdByConcurrentTask] = await db
+      .select({ id: tags.id, name: tags.name, slug: tags.slug })
+      .from(tags)
+      .where(eq(tags.slug, tag.slug))
+      .limit(1);
+
+    if (createdByConcurrentTask) {
+      tagRows.push(createdByConcurrentTask);
+    }
+  }
+
+  return tagRows;
+}
+
+async function replacePostTagsByNames(postId: number, tagNames: string[]) {
+  const tagRows = await ensureTagRowsByName(tagNames);
+
+  await db.transaction(async (tx) => {
+    await tx.delete(postTags).where(eq(postTags.postId, postId));
+
+    if (tagRows.length > 0) {
+      await tx
+        .insert(postTags)
+        .values(
+          tagRows.map((tag) => ({
+            postId,
+            tagId: tag.id,
+          })),
+        )
+        .onConflictDoNothing();
+    }
+  });
+
+  return tagRows;
 }
 
 async function generateCoverForDraftPost(input: {
@@ -863,6 +950,255 @@ async function runEnglishSeoTask(
   }
 }
 
+async function runSeoMetadataTask(
+  claimedTask: typeof aiRewriteTasks.$inferSelect,
+) {
+  const attempt = claimedTask.attempts;
+  let activeStep = {
+    key: "seo_metadata",
+    name: "生成文章 SEO",
+    attempt,
+    progress: 35,
+  };
+
+  try {
+    if (!claimedTask.postId) {
+      throw new Error("SEO 更新任务缺少文章 ID");
+    }
+
+    const [post] = await db
+      .select({
+        id: posts.id,
+        title: posts.title,
+        slug: posts.slug,
+        description: posts.description,
+        keywords: posts.keywords,
+        content: posts.content,
+        categoryId: posts.categoryId,
+        language: posts.language,
+      })
+      .from(posts)
+      .where(eq(posts.id, claimedTask.postId))
+      .limit(1);
+
+    if (!post) {
+      throw new Error("文章不存在或已被删除");
+    }
+
+    const sourceContent = claimedTask.sourceContent?.trim() ?? post.content;
+    const markdownInput = contentToArticleMarkdown(sourceContent, {
+      maxLength: await getTaskAiInputMaxLength(claimedTask.rewriteStyleId),
+    });
+
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "seo_prepare",
+      stepName: "准备 SEO 输入",
+      status: "success",
+      progress: 25,
+      message: markdownInput.truncated
+        ? `正文 Markdown 输入 ${markdownInput.markdown.length} 字符，已截断`
+        : `正文 Markdown 输入 ${markdownInput.markdown.length} 字符`,
+      payload: {
+        language: post.language,
+        markdownInputLength: markdownInput.markdown.length,
+        markdownInputTruncated: markdownInput.truncated,
+      },
+    });
+
+    await updateTask(claimedTask.id, {
+      progress: 35,
+      currentStep: "生成文章 SEO",
+      resultTitle: post.title,
+      scrapedTitle: post.title,
+      scrapedDescription: post.description,
+      scrapedHtml: sourceContent.slice(0, 60_000),
+      aiInputLength: markdownInput.markdown.length,
+    });
+
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "seo_metadata",
+      stepName: post.language === "en" ? "生成英文 SEO" : "生成中文 SEO",
+      status: "running",
+      progress: 45,
+      message:
+        post.language === "en"
+          ? "正在生成英文标题、slug、摘要和关键词"
+          : "正在生成中文标题、摘要、关键词和标签",
+    });
+
+    const isEnglishPost = post.language === "en";
+    const updateResult = isEnglishPost
+      ? await (async () => {
+          const metadata = await generateEnglishMetadata(
+            {
+              title: post.title,
+              description: post.description,
+              keywords: post.keywords,
+              enContent: markdownInput.markdown,
+            },
+            { styleId: claimedTask.rewriteStyleId ?? undefined },
+          );
+          const nextSlug = await getUniqueEnglishArticleSlug(
+            metadata.enSlug || metadata.enTitle,
+            post.id,
+          );
+          const [updatedPost] = await db
+            .update(posts)
+            .set({
+              title: metadata.enTitle,
+              slug: nextSlug,
+              description: metadata.enDescription,
+              keywords: metadata.enKeywords.join(","),
+              updatedAt: new Date(),
+            })
+            .where(eq(posts.id, post.id))
+            .returning({
+              id: posts.id,
+              title: posts.title,
+              slug: posts.slug,
+              categoryId: posts.categoryId,
+            });
+
+          return {
+            updatedPost,
+            title: metadata.enTitle,
+            slug: nextSlug,
+            description: metadata.enDescription,
+            keywords: metadata.enKeywords,
+            tagCount: null as number | null,
+          };
+        })()
+      : await (async () => {
+          const metadata = await generateArticleMetadata(
+            { markdownContent: markdownInput.markdown },
+            { styleId: claimedTask.rewriteStyleId ?? undefined },
+          );
+          const nextSlug = await getUniqueEnglishArticleSlug(
+            metadata.title,
+            post.id,
+          );
+          const tagRows = await replacePostTagsByNames(post.id, [
+            metadata.recommendTagName,
+            ...metadata.tagsName,
+          ]);
+          const recommendedTagSlug = slugify(metadata.recommendTagName);
+          const recommendedTag =
+            tagRows.find((tag) => tag.slug === recommendedTagSlug) ?? null;
+          const [updatedPost] = await db
+            .update(posts)
+            .set({
+              title: metadata.title,
+              slug: nextSlug,
+              description: metadata.description,
+              keywords: metadata.keywords.join(","),
+              recommendedTagName:
+                recommendedTag?.name ?? metadata.recommendTagName,
+              recommendedTagId: recommendedTag?.id ?? null,
+              updatedAt: new Date(),
+            })
+            .where(eq(posts.id, post.id))
+            .returning({
+              id: posts.id,
+              title: posts.title,
+              slug: posts.slug,
+              categoryId: posts.categoryId,
+            });
+
+          return {
+            updatedPost,
+            title: metadata.title,
+            slug: nextSlug,
+            description: metadata.description,
+            keywords: metadata.keywords,
+            tagCount: tagRows.length,
+          };
+        })();
+
+    if (!updateResult.updatedPost) {
+      throw new Error("文章 SEO 写入失败");
+    }
+
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "seo_metadata",
+      stepName: isEnglishPost ? "生成英文 SEO" : "生成中文 SEO",
+      status: "success",
+      progress: 78,
+      message: `SEO 标题：${updateResult.title}`,
+      payload: {
+        slug: updateResult.slug,
+        description: updateResult.description,
+        keywords: updateResult.keywords,
+        tagCount: updateResult.tagCount,
+      },
+    });
+
+    activeStep = {
+      key: "seo_save",
+      name: "写入文章 SEO",
+      attempt,
+      progress: 88,
+    };
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "seo_save",
+      stepName: "写入文章 SEO",
+      status: "success",
+      progress: 95,
+      message: `已更新文章 #${post.id}`,
+      payload: {
+        postId: post.id,
+        oldSlug: post.slug,
+        newSlug: updateResult.slug,
+      },
+    });
+
+    revalidateSiteContent([
+      cacheTags.post(post.id),
+      cacheTags.postSlug(post.slug),
+      cacheTags.postSlug(updateResult.slug),
+      cacheTags.category(post.categoryId),
+      ...(isEnglishPost ? [] : [cacheTags.tags]),
+    ]);
+    revalidatePath("/posts/edit");
+    revalidatePath("/posts/drafts");
+    revalidatePath(`/posts/edit/post/${post.slug}`);
+    revalidatePath(`/posts/edit/post/${updateResult.slug}`);
+
+    await updateTask(claimedTask.id, {
+      status: "succeeded",
+      progress: 100,
+      currentStep: "文章 SEO 已更新",
+      resultTitle: updateResult.title,
+      postId: post.id,
+      rewriteOutputLength: updateResult.description.length,
+      diagnostics: JSON.stringify({
+        sourceHost: "post-seo",
+        strategy: isEnglishPost ? "english-post-seo" : "chinese-post-seo",
+        usedAiRewrite: true,
+        aiInputLength: markdownInput.markdown.length,
+        rewriteOutputLength: updateResult.description.length,
+        markdownInputLength: markdownInput.markdown.length,
+        markdownInputTruncated: markdownInput.truncated,
+        sourceHtmlLength: markdownInput.document.sourceHtmlLength,
+        semanticBlockCount: markdownInput.document.blocks.length,
+        warnings: markdownInput.truncated
+          ? ["SEO 生成使用的 Markdown 输入过长，已按正文结构截断"]
+          : [],
+      }),
+      finishedAt: new Date(),
+    });
+  } catch (error) {
+    await failTask(claimedTask, error, activeStep);
+  }
+}
+
 async function createArticleFromManualTask(input: {
   sourceTitle: string | null;
   sourceContent: string | null;
@@ -989,11 +1325,11 @@ export async function enqueueAiRewriteTask(taskId: number) {
   }
 
   runningTaskIds.add(taskId);
-  setTimeout(() => {
-    runAiRewriteTask(taskId).catch((error) => {
-      console.error("AI rewrite task failed:", error);
-    });
-  }, 0);
+  enqueueAdminBackgroundJob({
+    key: `ai-rewrite-task:${taskId}`,
+    label: `AI rewrite task #${taskId}`,
+    run: () => runAiRewriteTask(taskId),
+  });
 }
 
 export async function runAiRewriteTask(taskId: number) {
@@ -1023,6 +1359,11 @@ export async function runAiRewriteTask(taskId: number) {
       .returning();
 
     if (!claimedTask) {
+      return;
+    }
+
+    if (claimedTask.sourceType === "seo") {
+      await runSeoMetadataTask(claimedTask);
       return;
     }
 

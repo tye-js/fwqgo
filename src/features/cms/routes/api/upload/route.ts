@@ -1,7 +1,8 @@
 import { isUnauthorizedError, requireAdminSession } from "@fwqgo/auth/session";
 import { createImageAssetFromUpload } from "@/server/images/assets";
-import { type NextRequest, NextResponse } from "next/server";
+import { type NextRequest } from "next/server";
 import { revalidatePath } from "next/cache";
+import { adminApiFailure, adminApiSuccess } from "@/lib/admin-api-response";
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,7 +12,11 @@ export async function POST(request: NextRequest) {
     const file = formData.get("file");
 
     if (!(file instanceof File)) {
-      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+      return adminApiFailure("没有选择上传文件", {
+        status: 400,
+        title: "上传图片失败",
+        suggestion: "请选择一张图片后再上传。",
+      });
     }
 
     const asset = await createImageAssetFromUpload({
@@ -22,19 +27,16 @@ export async function POST(request: NextRequest) {
     revalidatePath("/images/list");
     revalidatePath("/images/upload");
 
-    return NextResponse.json({
-      success: true,
-      url: asset.path,
-      asset,
-    });
+    return adminApiSuccess({ url: asset.path, asset });
   } catch (error) {
     console.error("Upload error:", error);
 
     if (isUnauthorizedError(error)) {
-      return NextResponse.json(
-        { error: "请先登录后再上传图片" },
-        { status: 401 },
-      );
+      return adminApiFailure("请先登录后再上传图片", {
+        status: 401,
+        title: "登录已过期",
+        suggestion: "请重新登录后台后再上传。",
+      });
     }
 
     const message = error instanceof Error ? error.message : "Upload failed";
@@ -46,11 +48,10 @@ export async function POST(request: NextRequest) {
           ? 400
           : 500;
 
-    return NextResponse.json(
-      {
-        error: message,
-      },
-      { status },
-    );
+    return adminApiFailure(message, {
+      status,
+      title: "上传图片失败",
+      suggestion: "请检查文件类型、大小和上传路径后再试。",
+    });
   }
 }

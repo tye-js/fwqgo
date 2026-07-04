@@ -10,19 +10,51 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getServerOfferTopicCounts, offerTopics } from "@/server/offers/server-offers";
 
+function getSiteUrl() {
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+}
+
 export const metadata = {
   title: "服务器比价 - 服务器go",
   description:
     "按香港服务器、美国服务器、便宜 VPS 等专题集中查看结构化服务器套餐、价格、线路、购买链接和推广文章。",
+  alternates: {
+    canonical: `${getSiteUrl()}/servers`,
+  },
+  openGraph: {
+    title: "服务器比价 - 服务器go",
+    description:
+      "按香港服务器、美国服务器、便宜 VPS 等专题集中查看结构化服务器套餐、价格、线路、购买链接和推广文章。",
+    url: `${getSiteUrl()}/servers`,
+    siteName: "服务器go",
+  },
 };
 
 async function ServersContent() {
   await connection();
 
   const counts = await getServerOfferTopicCounts();
+  const itemListJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    name: "服务器比价专题",
+    description: metadata.description,
+    url: `${getSiteUrl()}/servers`,
+    itemListElement: offerTopics.map((topic, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      url: `${getSiteUrl()}/servers/${topic.slug}`,
+      name: topic.title,
+      description: topic.description,
+    })),
+  };
 
   return (
     <main className="flex-1">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
+        />
         <section className="border-b border-border/60 bg-muted/20">
           <div className="container mx-auto px-4 py-10 md:py-14">
             <div className="max-w-3xl space-y-4">

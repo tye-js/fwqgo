@@ -1,7 +1,18 @@
 import { AiRewriteTaskManager } from "@/features/cms/components/ai-rewrite-task-manager";
 import { AiSourceSiteManager } from "@/features/cms/components/ai-source-site-manager";
 import { getAiSourceSiteList } from "@/features/cms/actions/ai-source-site";
-import { getAiRewriteTaskList } from "@/features/cms/actions/ai-rewrite-task";
+import {
+  getAiRewriteTaskCount,
+  getAiRewriteTaskList,
+} from "@/features/cms/actions/ai-rewrite-task";
+import {
+  aiRewriteTaskSourceTypeFilters,
+  aiRewriteTaskStatusFilters,
+  type AiRewriteTaskLanguageFilter,
+  type AiRewriteTaskListFilters,
+  type AiRewriteTaskSourceTypeFilter,
+  type AiRewriteTaskStatusFilter,
+} from "@/features/cms/lib/ai-rewrite-task-filters";
 import { getLeafCategories } from "@/features/shared/data/category";
 import { getAiRewriteStyleOptions } from "@/features/cms/actions/scrape";
 import {
@@ -13,15 +24,66 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
 type AiRewriteTasksPageVariant = "production" | "task-center";
+type AiRewriteTaskSearchParams = {
+  pageNo?: string;
+  status?: string;
+  sourceType?: string;
+  language?: string;
+  query?: string;
+};
+
+function parsePageNo(value: string | undefined) {
+  const parsed = value ? Number.parseInt(value, 10) : 1;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function parseAiTaskFilters(
+  params: AiRewriteTaskSearchParams = {},
+): Required<
+  Pick<
+    AiRewriteTaskListFilters,
+    "pageNo" | "pageSize" | "status" | "sourceType" | "language" | "query"
+  >
+> {
+  const status = aiRewriteTaskStatusFilters.includes(
+    params.status as (typeof aiRewriteTaskStatusFilters)[number],
+  )
+    ? (params.status as AiRewriteTaskStatusFilter)
+    : "all";
+  const sourceType = aiRewriteTaskSourceTypeFilters.includes(
+    params.sourceType as (typeof aiRewriteTaskSourceTypeFilters)[number],
+  )
+    ? (params.sourceType as AiRewriteTaskSourceTypeFilter)
+    : "all";
+  const language: AiRewriteTaskLanguageFilter =
+    params.language === "zh" || params.language === "en"
+      ? params.language
+      : "all";
+
+  return {
+    pageNo: parsePageNo(params.pageNo),
+    pageSize: 20,
+    status,
+    sourceType,
+    language,
+    query: params.query?.trim() ?? "",
+  };
+}
 
 export async function AiRewriteTasksPageContent({
   variant = "production",
+  searchParamsPromise,
 }: {
   variant?: AiRewriteTasksPageVariant;
+  searchParamsPromise?: Promise<AiRewriteTaskSearchParams>;
 }) {
-  const [tasks, sourceSites, categoriesResult, rewriteStyles] =
+  const searchParams = (await searchParamsPromise) ?? {};
+  const taskFilters = parseAiTaskFilters(searchParams);
+  const isTaskCenter = variant === "task-center";
+  const [tasks, taskCount, sourceSites, categoriesResult, rewriteStyles] =
     await Promise.all([
-      getAiRewriteTaskList(),
+      getAiRewriteTaskList(isTaskCenter ? taskFilters : { pageSize: 50 }),
+      getAiRewriteTaskCount(isTaskCenter ? taskFilters : {}),
       getAiSourceSiteList(),
       getLeafCategories(),
       getAiRewriteStyleOptions(),
@@ -35,7 +97,7 @@ export async function AiRewriteTasksPageContent({
     (task) => task.status === "manual_required",
   ).length;
   const draftCount = tasks.filter((task) => task.postSlug).length;
-  const isTaskCenter = variant === "task-center";
+  const totalPage = Math.ceil(taskCount / taskFilters.pageSize);
   const pageTitle = isTaskCenter ? "AI任务中心" : "内容生产台";
   const pageDescription = isTaskCenter
     ? "集中查看 AI 采集、清洗、改写、英文生成、草稿保存的队列进度和失败原因。"
@@ -94,6 +156,9 @@ export async function AiRewriteTasksPageContent({
             rewriteStyles={rewriteStyles}
             basePath="/ai-tasks"
             showCreateForm={false}
+            filters={taskFilters}
+            totalCount={taskCount}
+            totalPage={totalPage}
           />
         </AdminSectionCard>
       ) : (
@@ -129,6 +194,8 @@ export async function AiRewriteTasksPageContent({
   );
 }
 
-export default async function AiRewriteTasksPage() {
-  return <AiRewriteTasksPageContent />;
+export default async function AiRewriteTasksPage(props: {
+  searchParams: Promise<AiRewriteTaskSearchParams>;
+}) {
+  return <AiRewriteTasksPageContent searchParamsPromise={props.searchParams} />;
 }

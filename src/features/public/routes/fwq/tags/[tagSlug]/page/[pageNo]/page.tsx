@@ -3,6 +3,7 @@ import { getLatestPostsForSidebar } from "@/features/public/data/post";
 import ArticleCard from "@/features/public/components/article-card";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
 import PageCard from "@/features/public/components/page-card";
+import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { decodeSlug } from "@fwqgo/core/utils";
 import type { Metadata } from "next";
@@ -11,9 +12,19 @@ import { Hash } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { connection } from "next/server";
+import { getServerOffersByKeywords } from "@/server/offers/server-offers";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+}
+
+function splitKeywords(value: string | null | undefined) {
+  return (
+    value
+      ?.split(/[,，、\s]+/)
+      .map((item) => item.trim())
+      .filter(Boolean) ?? []
+  );
 }
 
 export async function generateMetadata(
@@ -28,12 +39,21 @@ export async function generateMetadata(
   const readableName = decodedTagSlug.replace(/[-_]+/g, " ");
   const { data: tag } = await getTagBySlug(decodedTagSlug);
   const title = tag?.name ?? readableName;
+  const description =
+    tag?.description ?? `${title}相关服务器、VPS、优惠和测评文章。`;
+  const canonical = `${getSiteUrl()}/fwq/tags/${encodeURIComponent(decodedTagSlug)}/page/${pageNo}`;
   return {
     title: `${title}-服务器`,
-    description: tag?.description ?? `${title}相关服务器、VPS、优惠和测评文章。`,
+    description,
     keywords: tag?.keywords ?? `${title}的服务器,${title}的VPS`,
     alternates: {
-      canonical: `${getSiteUrl()}/fwq/tags/${encodeURIComponent(decodedTagSlug)}/page/${pageNo}`,
+      canonical,
+    },
+    openGraph: {
+      title: `${title}-服务器`,
+      description,
+      url: canonical,
+      siteName: "服务器go",
     },
   };
 }
@@ -61,7 +81,16 @@ async function TagPageContent({
       decodedTagSlug,
       pageNo,
     );
-  const { data: latestPosts } = await getLatestPostsForSidebar();
+  const [{ data: latestPosts }, relatedOffers] = await Promise.all([
+    getLatestPostsForSidebar(),
+    getServerOffersByKeywords({
+      keywords: [
+        postsWithTag?.name ?? decodedTagSlug,
+        ...splitKeywords(postsWithTag?.keywords),
+      ],
+      limit: 6,
+    }),
+  ]);
   if (error || !postsWithTag?.posts)
     return (
       <div>
@@ -83,11 +112,37 @@ async function TagPageContent({
   if ((postsWithTag.totalCount ?? 0) > 0 && postsWithTag.pageNo > totalPage) {
     notFound();
   }
+  const pageUrl = `${getSiteUrl()}/fwq/tags/${encodeURIComponent(decodedTagSlug)}/page/${postsWithTag.pageNo}`;
+  const collectionJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    name: cardInfo.name,
+    description: cardInfo.description,
+    url: pageUrl,
+    mainEntity: {
+      "@type": "ItemList",
+      numberOfItems: posts.length,
+      itemListElement: posts.map((item, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        url: `${getSiteUrl()}/fwq/posts/${encodeURIComponent(item.post.slug)}`,
+        name: item.post.title,
+      })),
+    },
+  };
 
   return (
     <div className="grid gap-8 xl:grid-cols-[minmax(0,0.82fr)_320px]">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }}
+      />
       <div className="space-y-5">
         {postsWithTag && <PageCard {...cardInfo} />}
+        <RelatedServerOfferCards
+          title={`${postsWithTag.name}相关套餐`}
+          offers={relatedOffers}
+        />
         <div className="space-y-4">
           {posts.length > 0 ? (
             posts.map((post) => <ArticleCard key={post.post.id} post={post.post} />)
@@ -132,7 +187,13 @@ export default function TagPage(
   props: { params: Promise<{ tagSlug: string; pageNo: string }> }
 ) {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
+          正在加载标签文章...
+        </div>
+      }
+    >
       <TagPageContent paramsPromise={props.params} />
     </Suspense>
   );

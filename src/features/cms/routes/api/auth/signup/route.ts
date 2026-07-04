@@ -5,6 +5,8 @@ import { users } from "@fwqgo/db/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
+import { adminApiFailure, adminApiSuccess } from "@/lib/admin-api-response";
+
 const registerSchema = z
   .object({
     username: z
@@ -27,7 +29,11 @@ const registerSchema = z
 export async function POST(request: Request) {
   try {
     if (process.env.ENABLE_PUBLIC_SIGNUP !== "true") {
-      return Response.json({ error: "注册入口已关闭" }, { status: 403 });
+      return adminApiFailure("注册入口已关闭", {
+        status: 403,
+        title: "注册失败",
+        suggestion: "请在服务器环境变量中确认 ENABLE_PUBLIC_SIGNUP 是否需要开启。",
+      });
     }
 
     const body = registerSchema.safeParse(
@@ -35,9 +41,13 @@ export async function POST(request: Request) {
     );
 
     if (!body.success) {
-      return Response.json(
-        { error: body.error.issues[0]?.message ?? "注册信息格式不正确" },
-        { status: 400 },
+      return adminApiFailure(
+        body.error.issues[0]?.message ?? "注册信息格式不正确",
+        {
+          status: 400,
+          title: "注册失败",
+          suggestion: "请按页面提示检查用户名、密码和确认密码。",
+        },
       );
     }
 
@@ -51,7 +61,11 @@ export async function POST(request: Request) {
       .limit(1);
 
     if (existingUser) {
-      return Response.json({ error: "用户名已存在" }, { status: 400 });
+      return adminApiFailure("用户名已存在", {
+        status: 400,
+        title: "注册失败",
+        suggestion: "请换一个用户名后重试。",
+      });
     }
 
     // 密码加密
@@ -65,8 +79,12 @@ export async function POST(request: Request) {
       updatedAt: new Date(),
     });
 
-    return Response.json({ success: true });
+    return adminApiSuccess({ created: true });
   } catch {
-    return Response.json({ error: "注册失败，请重试" }, { status: 500 });
+    return adminApiFailure("注册失败，请重试", {
+      status: 500,
+      title: "注册失败",
+      suggestion: "请稍后重试，仍失败请检查服务端日志和数据库连接。",
+    });
   }
 }

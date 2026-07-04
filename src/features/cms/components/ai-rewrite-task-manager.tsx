@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
+  Ban,
   CheckCircle2,
   ChevronDown,
   Clock3,
@@ -16,12 +17,21 @@ import {
 } from "lucide-react";
 
 import {
+  cancelAiRewriteTaskAction,
   createAiRewriteTaskAction,
   deleteAiRewriteTaskAction,
   retryAiRewriteTaskAction,
 } from "@/features/cms/actions/ai-rewrite-task";
+import {
+  type AiRewriteTaskLanguageFilter,
+  type AiRewriteTaskSourceTypeFilter,
+  type AiRewriteTaskStatusFilter,
+} from "@/features/cms/lib/ai-rewrite-task-filters";
 import { AiRewriteTaskResolveButton } from "@/features/cms/components/ai-rewrite-task-resolve-button";
 import { type getAiRewriteTaskList } from "@/features/cms/actions/ai-rewrite-task";
+import { AdminTableWorkbench } from "@/features/cms/components/admin-table-workbench";
+import { PaginationComponent } from "@/features/shared/components/pagination";
+import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
 import { type ScrapeDiagnostics } from "@fwqgo/scrape/article-scraper";
 import { type AffiliateRewriteReport } from "@fwqgo/scrape/affiliate-link-rewriter";
 import { Button } from "@/components/ui/button";
@@ -87,6 +97,7 @@ const statusLabels: Record<string, string> = {
   succeeded: "已完成",
   manual_required: "需人工处理",
   failed: "失败",
+  cancelled: "已取消",
 };
 
 const statusVariants: Record<
@@ -98,6 +109,7 @@ const statusVariants: Record<
   succeeded: "default",
   manual_required: "secondary",
   failed: "destructive",
+  cancelled: "outline",
 };
 
 function formatTime(value: Date | string | null) {
@@ -255,6 +267,17 @@ function TaskProgress({ task }: { task: RewriteTask }) {
   );
 }
 
+function TaskTokenMeta({ task }: { task: RewriteTask }) {
+  return (
+    <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+      <Badge variant="outline">{task.model ?? "未配置模型"}</Badge>
+      <Badge variant="outline">Max {task.maxTokens ?? "-"}</Badge>
+      <Badge variant="outline">输入 {task.aiInputLength ?? "-"}</Badge>
+      <Badge variant="outline">输出 {task.rewriteOutputLength ?? "-"}</Badge>
+    </div>
+  );
+}
+
 function TaskFailureMessage({ error }: { error: string | null }) {
   const lines = getErrorLines(error);
 
@@ -374,6 +397,7 @@ function FailedTaskPanel({
               <p className="text-xs text-muted-foreground">
                 {formatTime(task.updatedAt)} · 尝试 {task.attempts} 次
               </p>
+              <TaskTokenMeta task={task} />
             </div>
             <TaskFailureMessage error={task.error} />
             <div className="flex items-center justify-end gap-2">
@@ -451,6 +475,7 @@ function taskSourceTypeLabel(value: string) {
     email: "邮件素材",
     file: "文件导入",
     english: "英文生成",
+    seo: "SEO 更新",
   };
 
   return labels[value] ?? value;
@@ -463,6 +488,10 @@ function taskSourceTitle(task: RewriteTask) {
 
   if (task.sourceType === "english") {
     return `英文 SEO 版本：${task.postTitle ?? task.resultTitle ?? task.sourceTitle ?? task.sourceUrl}`;
+  }
+
+  if (task.sourceType === "seo") {
+    return `SEO 更新：${task.postTitle ?? task.resultTitle ?? task.sourceTitle ?? task.sourceUrl}`;
   }
 
   return task.sourceTitle ?? task.sourceUrl;
@@ -585,6 +614,13 @@ function AffiliateDiagnosticsSummary({
                       <Badge variant="secondary">
                         {item.mode === "replace" ? "替换链接" : "追加参数"}
                       </Badge>
+                      <Badge variant="outline">
+                        {item.affParam
+                          ? item.affValue
+                            ? `${item.affParam}=${item.affValue}`
+                            : item.affParam
+                          : "-"}
+                      </Badge>
                     </div>
                     <p className="break-all text-muted-foreground">
                       原链接：{shortUrl(item.resolvedHref)}
@@ -633,6 +669,9 @@ export function AiRewriteTaskManager({
   basePath = "/ai-rewrite/tasks",
   showCreateForm = true,
   showTaskList = true,
+  filters,
+  totalCount,
+  totalPage,
 }: {
   tasks: RewriteTask[];
   categories: Option[];
@@ -640,10 +679,21 @@ export function AiRewriteTaskManager({
   basePath?: string;
   showCreateForm?: boolean;
   showTaskList?: boolean;
+  filters?: {
+    pageNo: number;
+    status: AiRewriteTaskStatusFilter;
+    sourceType: AiRewriteTaskSourceTypeFilter;
+    language: AiRewriteTaskLanguageFilter;
+    query: string;
+  };
+  totalCount?: number;
+  totalPage?: number;
 }) {
   const router = useRouter();
+  const updateUrlQuery = useUrlQueryUpdater();
   const [isSubmitting, startSubmitTransition] = useTransition();
   const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [cancelingId, setCancelingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [sourceType, setSourceType] = useState("url");
   const defaultCategoryId = categories[0]?.id ? String(categories[0].id) : "";
@@ -656,6 +706,13 @@ export function AiRewriteTaskManager({
   const hasActiveTask =
     showTaskList &&
     tasks.some((task) => ["pending", "running"].includes(task.status));
+  const activeFilters = filters ?? {
+    pageNo: 1,
+    status: "all" as const,
+    sourceType: "all" as const,
+    language: "all" as const,
+    query: "",
+  };
 
   useEffect(() => {
     if (!hasActiveTask) return;
@@ -715,6 +772,33 @@ export function AiRewriteTaskManager({
       description: describeAdminResult([
         `任务 ID ${taskId}`,
         "系统会重新抓取、清洗、改写，成功后再保存草稿",
+      ]),
+    });
+    router.refresh();
+  }
+
+  async function handleCancel(taskId: number) {
+    setCancelingId(taskId);
+    const result = await cancelAiRewriteTaskAction(taskId);
+    setCancelingId(null);
+
+    if (result.error) {
+      notifyError({
+        title: "AI 任务取消失败",
+        description: describeAdminResult([
+          `任务 ID ${taskId}`,
+          result.error,
+          "只有等待中的任务可以取消，运行中任务会等待本轮处理结束",
+        ]),
+      });
+      return;
+    }
+
+    notifySuccess({
+      title: "AI 任务已取消",
+      description: describeAdminResult([
+        `任务 ID ${taskId}`,
+        "需要继续时可点击恢复，任务会重新加入队列",
       ]),
     });
     router.refresh();
@@ -869,6 +953,76 @@ export function AiRewriteTaskManager({
 
       {showTaskList ? (
         <>
+          <AdminTableWorkbench
+            title="任务筛选"
+            description={`筛选条件和页码会写入地址栏，当前匹配 ${totalCount ?? tasks.length} 个任务。`}
+            searchValue={activeFilters.query}
+            onSearchChange={(value) =>
+              updateUrlQuery({ query: value || null })
+            }
+            searchPlaceholder="搜索来源、标题、分类或生成结果"
+            filterSlot={
+              <>
+                <Select
+                  value={activeFilters.status}
+                  onValueChange={(value) =>
+                    updateUrlQuery({ status: value === "all" ? null : value })
+                  }
+                >
+                  <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[140px] sm:border-0 sm:bg-transparent sm:p-0">
+                    <SelectValue placeholder="任务状态" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部状态</SelectItem>
+                    {Object.entries(statusLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={activeFilters.sourceType}
+                  onValueChange={(value) =>
+                    updateUrlQuery({
+                      sourceType: value === "all" ? null : value,
+                    })
+                  }
+                >
+                  <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[132px] sm:border-0 sm:bg-transparent sm:p-0">
+                    <SelectValue placeholder="素材类型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部素材</SelectItem>
+                    <SelectItem value="url">网址</SelectItem>
+                    <SelectItem value="text">手动文本</SelectItem>
+                    <SelectItem value="email">邮件素材</SelectItem>
+                    <SelectItem value="file">文件导入</SelectItem>
+                    <SelectItem value="english">英文生成</SelectItem>
+                    <SelectItem value="seo">SEO 更新</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={activeFilters.language}
+                  onValueChange={(value) =>
+                    updateUrlQuery({
+                      language: value === "all" ? null : value,
+                    })
+                  }
+                >
+                  <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[120px] sm:border-0 sm:bg-transparent sm:p-0">
+                    <SelectValue placeholder="语言" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部语言</SelectItem>
+                    <SelectItem value="zh">中文</SelectItem>
+                    <SelectItem value="en">英文</SelectItem>
+                  </SelectContent>
+                </Select>
+              </>
+            }
+          />
+
           <FailedTaskPanel
             tasks={tasks}
             retryingId={retryingId}
@@ -926,6 +1080,14 @@ export function AiRewriteTaskManager({
                               <Badge variant="outline">
                                 {taskSourceTypeLabel(task.sourceType)}
                               </Badge>
+                              {task.model ? (
+                                <Badge variant="outline">{task.model}</Badge>
+                              ) : null}
+                              {task.maxTokens ? (
+                                <Badge variant="outline">
+                                  Max {task.maxTokens}
+                                </Badge>
+                              ) : null}
                             </div>
                             {task.sourceType === "url" &&
                             isHttpHref(task.sourceUrl) ? (
@@ -960,9 +1122,15 @@ export function AiRewriteTaskManager({
                         </TableCell>
                         <TableCell>
                           {isFailed ? (
-                            <TaskFailureMessage error={task.error} />
+                            <div className="space-y-2">
+                              <TaskFailureMessage error={task.error} />
+                              <TaskTokenMeta task={task} />
+                            </div>
                           ) : (
-                            <TaskProgress task={task} />
+                            <div className="space-y-2">
+                              <TaskProgress task={task} />
+                              <TaskTokenMeta task={task} />
+                            </div>
                           )}
                         </TableCell>
                         <TableCell>
@@ -1016,6 +1184,30 @@ export function AiRewriteTaskManager({
                               >
                                 <RotateCcw className="size-4" />
                                 {retryingId === task.id ? "启动中" : "重试"}
+                              </Button>
+                            ) : null}
+                            {task.status === "cancelled" ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={retryingId === task.id}
+                                onClick={() => void handleRetry(task.id)}
+                              >
+                                <RotateCcw className="size-4" />
+                                {retryingId === task.id ? "恢复中" : "恢复"}
+                              </Button>
+                            ) : null}
+                            {task.status === "pending" ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={cancelingId === task.id}
+                                onClick={() => void handleCancel(task.id)}
+                              >
+                                <Ban className="size-4" />
+                                {cancelingId === task.id ? "取消中" : "取消"}
                               </Button>
                             ) : null}
                             {task.status === "manual_required" ? (
@@ -1072,6 +1264,10 @@ export function AiRewriteTaskManager({
               </Table>
             )}
           </div>
+          <PaginationComponent
+            pageNo={activeFilters.pageNo}
+            totalPage={totalPage ?? 1}
+          />
         </>
       ) : null}
     </div>

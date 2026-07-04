@@ -1,4 +1,7 @@
-import { getPostBySlug } from "@/features/cms/data/post";
+import {
+  getPostBySlug,
+  getPostProductionContext,
+} from "@/features/cms/data/post";
 import EditPost from "@/components/endpoint/edit-post/edit-post";
 import { getLeafCategories } from "@/features/shared/data/category";
 import {
@@ -37,6 +40,7 @@ export default async function EditPostPage(props: {
     ...post,
     content: contentToArticleMarkdown(post.content).markdown,
   };
+  const productionContext = await getPostProductionContext(post.id);
 
   return (
     <>
@@ -48,6 +52,7 @@ export default async function EditPostPage(props: {
           slug,
           language: post.language,
         }}
+        productionContext={productionContext}
       />
     </>
   );

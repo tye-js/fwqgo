@@ -13,12 +13,30 @@ import {
   getServerOfferTopicCounts,
 } from "@/server/offers/server-offers";
 
-async function ServerOfferManageContent() {
+type ServerOfferManageSearchParams = {
+  pageNo?: string;
+  query?: string;
+  status?: string;
+  reviewStatus?: string;
+  visibility?: string;
+};
+
+function parsePageNo(value: string | undefined) {
+  const parsed = value ? Number.parseInt(value, 10) : 1;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+}
+
+async function ServerOfferManageContent({
+  searchParamsPromise,
+}: {
+  searchParamsPromise: Promise<ServerOfferManageSearchParams>;
+}) {
   await connection();
 
+  const searchParams = await searchParamsPromise;
   const [counts, offers] = await Promise.all([
     getServerOfferTopicCounts(),
-    getAdminServerOffers(),
+    getAdminServerOffers(300),
   ]);
   const total = counts.reduce((sum, item) => sum + item.count, 0);
   const hasMissingPrice = (priceAmount: unknown) =>
@@ -113,13 +131,24 @@ async function ServerOfferManageContent() {
         title="套餐校正"
         description="对提取后的结构化套餐做人工审核、补字段、改状态和控制前台展示。"
       >
-        <ServerOfferAdminTable offers={offers} />
+        <ServerOfferAdminTable
+          offers={offers}
+          initialFilters={{
+            pageNo: parsePageNo(searchParams.pageNo),
+            query: searchParams.query?.trim() ?? "",
+            status: searchParams.status ?? "all",
+            reviewStatus: searchParams.reviewStatus ?? "all",
+            visibility: searchParams.visibility ?? "all",
+          }}
+        />
       </AdminSectionCard>
     </AdminPageShell>
   );
 }
 
-export default function ServerOfferManagePage() {
+export default function ServerOfferManagePage(props: {
+  searchParams: Promise<ServerOfferManageSearchParams>;
+}) {
   return (
     <Suspense
       fallback={
@@ -130,7 +159,7 @@ export default function ServerOfferManagePage() {
         />
       }
     >
-      <ServerOfferManageContent />
+      <ServerOfferManageContent searchParamsPromise={props.searchParams} />
     </Suspense>
   );
 }

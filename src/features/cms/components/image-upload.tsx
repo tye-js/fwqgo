@@ -44,15 +44,27 @@ export function ImageUpload({ onChange, value }: ImageUploadProps) {
       });
 
       const data = (await response.json().catch(() => null)) as
-        | { url?: string; error?: string }
+        | {
+            data?: { url?: string };
+            url?: string;
+            error?: string;
+            message?: string;
+            actionError?: { message?: string };
+          }
         | null;
+      const uploadedUrl = data?.data?.url ?? data?.url;
 
-      if (!response.ok || !data?.url) {
-        throw new Error(data?.error ?? `上传失败，HTTP ${response.status}`);
+      if (!response.ok || !uploadedUrl) {
+        throw new Error(
+          data?.actionError?.message ??
+            data?.message ??
+            data?.error ??
+            `上传失败，HTTP ${response.status}`,
+        );
       }
 
       // const data = await response.json();
-      onChange(data.url);
+      onChange(uploadedUrl);
     } catch (error) {
       console.error("上传错误:", error);
       toast.error(error instanceof Error ? error.message : "上传失败，请重试");

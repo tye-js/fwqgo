@@ -46,6 +46,61 @@ function revalidatePostWorkbenches() {
   revalidatePath("/posts/drafts");
 }
 
+function normalizePostIds(ids: number[], limit = 100) {
+  return [
+    ...new Set(
+      ids.filter((id) => Number.isInteger(id) && id > 0).slice(0, limit),
+    ),
+  ];
+}
+
+async function revalidateChangedPosts(
+  changedPosts: Array<{
+    id: number;
+    slug: string;
+    categoryId: number;
+    translationSourcePostId?: number | null;
+  }>,
+) {
+  if (changedPosts.length === 0) {
+    revalidatePostWorkbenches();
+    return;
+  }
+
+  const translationSourceIds = [
+    ...new Set(
+      changedPosts
+        .map((post) => post.translationSourcePostId)
+        .filter((id): id is number => typeof id === "number"),
+    ),
+  ];
+  const translationSourcePosts =
+    translationSourceIds.length > 0
+      ? await db
+          .select({
+            id: posts.id,
+            slug: posts.slug,
+            categoryId: posts.categoryId,
+          })
+          .from(posts)
+          .where(inArray(posts.id, translationSourceIds))
+      : [];
+
+  revalidatePostWorkbenches();
+  revalidateSiteContent([
+    ...changedPosts.flatMap((post) => [
+      cacheTags.post(post.id),
+      cacheTags.postSlug(post.slug),
+      cacheTags.category(post.categoryId),
+    ]),
+    ...translationSourcePosts.flatMap((post) => [
+      cacheTags.post(post.id),
+      cacheTags.postSlug(post.slug),
+      cacheTags.category(post.categoryId),
+    ]),
+  ]);
+}
+
 async function auditAffiliateLinksForPublish(content: string) {
   const siteBaseUrl = process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com";
   const $ = cheerio.load(content, null, false);
@@ -57,7 +112,11 @@ async function auditAffiliateLinksForPublish(content: string) {
   });
   const manualLinks = [...report.unmatchedLinks, ...report.invalidLinks];
   const manualHosts = [
-    ...new Set(manualLinks.map((item) => item.host).filter(Boolean)),
+    ...new Set(
+      manualLinks
+        .map((item) => item.host)
+        .filter((host): host is string => Boolean(host)),
+    ),
   ];
 
   return {
@@ -68,6 +127,10 @@ async function auditAffiliateLinksForPublish(content: string) {
       matchedCount: report.matchedLinks.length,
       unmatchedCount: report.unmatchedLinks.length,
       invalidCount: report.invalidLinks.length,
+      internalLinksRemoved: report.internalLinksRemoved,
+      matchedLinks: report.matchedLinks,
+      unmatchedLinks: report.unmatchedLinks,
+      invalidLinks: report.invalidLinks,
       manualHosts,
       checkedAt: new Date().toISOString(),
     },
@@ -260,6 +323,153 @@ export async function updatePost(input: {
     return { data: post };
   } catch (error) {
     return { error: "更新文章失败", message: error };
+  }
+}
+
+export async function bulkUpdatePostsPublishedAction(input: {
+  ids: number[];
+  published: boolean;
+}) {
+  try {
+    await requireAdminSession();
+
+    const validIds = normalizePostIds(input.ids);
+    if (validIds.length === 0) {
+      return { error: "请先选择要操作的文章" };
+    }
+
+    const postRows = await db
+      .select({
+        id: posts.id,
+        title: posts.title,
+        slug: posts.slug,
+        categoryId: posts.categoryId,
+        content: posts.content,
+        published: posts.published,
+        translationSourcePostId: posts.translationSourcePostId,
+      })
+      .from(posts)
+      .where(inArray(posts.id, validIds));
+    const foundIds = new Set(postRows.map((post) => post.id));
+    const changedPosts: Array<{
+      id: number;
+      slug: string;
+      categoryId: number;
+      translationSourcePostId: number | null;
+    }> = [];
+    const blockedHosts = new Set<string>();
+    const blockedPosts: Array<{
+      id: number;
+      title: string;
+      hosts: string[];
+    }> = [];
+    const errors: Array<{ id: number; title?: string; reason: string }> =
+      validIds
+        .filter((id) => !foundIds.has(id))
+        .map((id) => ({ id, reason: "文章不存在或已被删除" }));
+    let updated = 0;
+    let unchanged = 0;
+    let blocked = 0;
+
+    for (const post of postRows) {
+      if (post.published === input.published) {
+        unchanged += 1;
+        continue;
+      }
+
+      try {
+        if (input.published && post.content) {
+          const audit = await auditAffiliateLinksForPublish(post.content);
+
+          if (audit.manualRequired) {
+            const [blockedPost] = await db
+              .update(posts)
+              .set({
+                published: false,
+                affiliateReviewStatus: "manual_required",
+                affiliateReviewDetails: JSON.stringify(audit.details),
+                affiliateReviewUpdatedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(posts.id, post.id))
+              .returning({
+                id: posts.id,
+                slug: posts.slug,
+                categoryId: posts.categoryId,
+                translationSourcePostId: posts.translationSourcePostId,
+              });
+
+            if (blockedPost) {
+              changedPosts.push(blockedPost);
+            }
+
+            blocked += 1;
+            for (const host of audit.details.manualHosts) {
+              blockedHosts.add(host);
+            }
+            blockedPosts.push({
+              id: post.id,
+              title: post.title,
+              hosts: audit.details.manualHosts,
+            });
+            continue;
+          }
+        }
+
+        const [updatedPost] = await db
+          .update(posts)
+          .set({
+            published: input.published,
+            affiliateReviewStatus: input.published ? "passed" : "pending",
+            affiliateReviewDetails: null,
+            affiliateReviewUpdatedAt: input.published ? new Date() : null,
+            updatedAt: new Date(),
+          })
+          .where(eq(posts.id, post.id))
+          .returning({
+            id: posts.id,
+            slug: posts.slug,
+            categoryId: posts.categoryId,
+            translationSourcePostId: posts.translationSourcePostId,
+          });
+
+        if (!updatedPost) {
+          errors.push({
+            id: post.id,
+            title: post.title,
+            reason: "文章不存在或已被删除",
+          });
+          continue;
+        }
+
+        changedPosts.push(updatedPost);
+        updated += 1;
+      } catch (error) {
+        errors.push({
+          id: post.id,
+          title: post.title,
+          reason: getErrorMessage(error),
+        });
+      }
+    }
+
+    await revalidateChangedPosts(changedPosts);
+
+    return {
+      data: {
+        requested: validIds.length,
+        updated,
+        unchanged,
+        blocked,
+        failed: errors.length,
+        blockedHosts: [...blockedHosts],
+        blockedPosts,
+        errors,
+      },
+    };
+  } catch (error) {
+    console.error("批量更新文章发布状态失败:", error);
+    return { error: "批量更新文章发布状态失败", message: getErrorMessage(error) };
   }
 }
 

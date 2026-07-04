@@ -27,6 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   describeAdminResult,
   notifyError,
+  notifyInfo,
   notifySuccess,
 } from "@/lib/admin-toast";
 import {
@@ -448,6 +449,19 @@ export function AiSourceSiteManager({
             "请稍后重试或检查服务器日志",
           ]),
         });
+        return;
+      }
+
+      if ("queued" in result.data && result.data.queued) {
+        notifyInfo({
+          title: "来源站抓取已进入后台",
+          description: describeAdminResult([
+            site?.name,
+            "系统会后台发现新链接并创建 AI 改写任务",
+            "稍后刷新可查看最近一次抓取结果",
+          ]),
+        });
+        router.refresh();
         return;
       }
 

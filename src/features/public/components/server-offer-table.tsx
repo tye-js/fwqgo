@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { isInternalHref } from "@fwqgo/core/utils";
+import { isHttpHref, isInternalHref, isSafePublicHref } from "@fwqgo/core/utils";
 
 type Offer = {
   id: number;
@@ -42,6 +42,10 @@ type Offer = {
   articleUrl: string | null;
   reviewUrl: string | null;
   status: string;
+  lastCheckedAt?: Date | string | null;
+  validUntil?: Date | string | null;
+  updatedAt?: Date | string | null;
+  createdAt?: Date | string | null;
 };
 
 const offerStatusLabels: Record<string, string> = {
@@ -83,6 +87,38 @@ function formatPrice(offer: Offer) {
   return `${currency}${amount.toFixed(2)} / ${cycle}`;
 }
 
+function formatShortDate(value: Date | string | null | undefined) {
+  if (!value) return "未核验";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "未核验";
+  return date.toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+function getOfferFreshnessLabel(offer: Offer) {
+  return formatShortDate(
+    offer.lastCheckedAt ?? offer.updatedAt ?? offer.createdAt ?? null,
+  );
+}
+
+function getOfferCompleteness(offer: Offer) {
+  const requiredFields = [
+    offer.priceAmount,
+    offer.currency,
+    offer.billingCycle,
+    offer.providerName,
+    offer.region,
+    offer.lineType,
+    specsText(offer),
+    offer.purchaseUrl,
+  ];
+  const completed = requiredFields.filter(Boolean).length;
+  return Math.round((completed / requiredFields.length) * 100);
+}
+
 function specsText(offer: Offer) {
   return [
     offer.cpu,
@@ -95,10 +131,22 @@ function specsText(offer: Offer) {
     .join(" · ");
 }
 
-function priceSortValue(value: string | null) {
-  if (!value) return Infinity;
-  const amount = Number(value);
-  return Number.isFinite(amount) ? amount : Infinity;
+function priceSortValue(offer: Offer) {
+  if (!offer.priceAmount) return Infinity;
+  const amount = Number(offer.priceAmount);
+  if (!Number.isFinite(amount)) return Infinity;
+
+  const usdAmount = offer.currency === "CNY" ? amount / 7.2 : amount;
+  const divisorMap: Record<string, number> = {
+    monthly: 1,
+    quarterly: 3,
+    semiannual: 6,
+    yearly: 12,
+  };
+  const divisor = offer.billingCycle
+    ? (divisorMap[offer.billingCycle] ?? 1)
+    : 1;
+  return usdAmount / divisor;
 }
 
 function getUniqueValues(values: Array<string | null>) {
@@ -108,28 +156,39 @@ function getUniqueValues(values: Array<string | null>) {
 }
 
 function OfferActions({ offer }: { offer: Offer }) {
+  const hasPurchaseUrl = isSafePublicHref(offer.purchaseUrl);
+  const hasArticleUrl = isSafePublicHref(offer.articleUrl);
+  const hasReviewUrl = isSafePublicHref(offer.reviewUrl);
+
   return (
     <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-      {offer.purchaseUrl ? (
+      {hasPurchaseUrl ? (
         <Button asChild size="sm" className="min-h-11 px-3">
-          <a
-            href={offer.purchaseUrl}
-            target="_blank"
-            rel="nofollow noopener noreferrer"
-          >
-            <ShoppingCart className="size-4" />
-            购买
-          </a>
+          {isInternalHref(offer.purchaseUrl) ? (
+            <Link href={offer.purchaseUrl} prefetch={false}>
+              <ShoppingCart className="size-4" />
+              购买
+            </Link>
+          ) : isHttpHref(offer.purchaseUrl) ? (
+            <a
+              href={offer.purchaseUrl}
+              target="_blank"
+              rel="nofollow sponsored noopener noreferrer"
+            >
+              <ShoppingCart className="size-4" />
+              购买
+            </a>
+          ) : null}
         </Button>
       ) : null}
-      {offer.articleUrl ? (
+      {hasArticleUrl ? (
         <Button asChild size="sm" variant="outline" className="min-h-11 px-3">
           {isInternalHref(offer.articleUrl) ? (
             <Link href={offer.articleUrl} prefetch>
               <FileText className="size-4" />
               推广
             </Link>
-          ) : (
+          ) : isHttpHref(offer.articleUrl) ? (
             <a
               href={offer.articleUrl}
               target="_blank"
@@ -138,25 +197,25 @@ function OfferActions({ offer }: { offer: Offer }) {
               <FileText className="size-4" />
               推广
             </a>
-          )}
+          ) : null}
         </Button>
       ) : null}
-      {offer.reviewUrl ? (
+      {hasReviewUrl ? (
         <Button asChild size="sm" variant="outline" className="min-h-11 px-3">
           {isInternalHref(offer.reviewUrl) ? (
             <Link href={offer.reviewUrl} prefetch>
               <FlaskConical className="size-4" />
               测评
             </Link>
-          ) : (
+          ) : isHttpHref(offer.reviewUrl) ? (
             <a href={offer.reviewUrl} target="_blank" rel="noopener noreferrer">
               <FlaskConical className="size-4" />
               测评
             </a>
-          )}
+          ) : null}
         </Button>
       ) : null}
-      {!offer.purchaseUrl && !offer.articleUrl && !offer.reviewUrl ? (
+      {!hasPurchaseUrl && !hasArticleUrl && !hasReviewUrl ? (
         <ArrowUpRight className="mt-2 size-4 text-muted-foreground" />
       ) : null}
     </div>
@@ -182,7 +241,7 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
             {offerStatusLabels[offer.status] ?? offer.status}
           </Badge>
         </div>
-        <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2">
           {offer.providerName ? (
             <Badge variant="secondary">
               <Link
@@ -200,6 +259,7 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
           {offer.promoCode ? (
             <Badge variant="outline">优惠码 {offer.promoCode}</Badge>
           ) : null}
+          <Badge variant="outline">完整度 {getOfferCompleteness(offer)}%</Badge>
         </div>
       </div>
 
@@ -237,6 +297,13 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
             ) : (
               "线路待补充"
             )}
+          </p>
+        </div>
+        <div className="rounded-md bg-muted/30 p-3 sm:col-span-2">
+          <p className="text-xs text-muted-foreground">数据状态</p>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            最近核验：{getOfferFreshnessLabel(offer)}
+            {offer.validUntil ? ` · 有效期至：${formatShortDate(offer.validUntil)}` : ""}
           </p>
         </div>
       </div>
@@ -306,7 +373,7 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
       .sort((left, right) => {
         if (sortKey === "price-desc") {
           return (
-            priceSortValue(right.priceAmount) - priceSortValue(left.priceAmount)
+            priceSortValue(right) - priceSortValue(left)
           );
         }
 
@@ -315,7 +382,7 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
         }
 
         return (
-          priceSortValue(left.priceAmount) - priceSortValue(right.priceAmount)
+          priceSortValue(left) - priceSortValue(right)
         );
       });
   }, [lineType, offers, promoFilter, provider, query, region, sortKey, status]);
@@ -500,6 +567,9 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                       优惠码：{offer.promoCode}
                     </p>
                   ) : null}
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    核验：{getOfferFreshnessLabel(offer)}
+                  </p>
                 </td>
                 <td className="px-3 py-3">
                   <p className="font-medium leading-5">
@@ -541,6 +611,9 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                   >
                     {offerStatusLabels[offer.status] ?? offer.status}
                   </Badge>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    完整度 {getOfferCompleteness(offer)}%
+                  </p>
                 </td>
                 <td className="px-3 py-3">
                   <OfferActions offer={offer} />

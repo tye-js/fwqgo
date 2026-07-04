@@ -46,7 +46,10 @@ export interface EnglishMetadataOutput {
   enKeywords: string[];
 }
 
-type ArticleMetadataOutput = Omit<ArticleRewriteOutput, "markdownContent">;
+export type ArticleMetadataOutput = Omit<
+  ArticleRewriteOutput,
+  "markdownContent"
+>;
 
 type EnglishSeoVersionRawOutput = Partial<{
   enTitle: string;
@@ -761,6 +764,46 @@ export async function rewriteArticleWithAi(
       metadata.title,
     ),
   };
+}
+
+export async function generateArticleMetadata(
+  input: { markdownContent: string },
+  options: { styleId?: number } = {},
+): Promise<ArticleMetadataOutput> {
+  const config = await getVerifiedAiConfig("中文 SEO 生成", options);
+  const timeoutMs = getAiRewriteTimeoutMs();
+  const normalizedContent = input.markdownContent.trim();
+
+  if (normalizedContent.length < MIN_AI_INPUT_LENGTH) {
+    throw createReadableError(
+      "中文 SEO 生成输入过短",
+      `正文 Markdown 只有 ${normalizedContent.length} 个字符`,
+    );
+  }
+
+  const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/v1/chat/completions`;
+  const metadataText = await requestChatCompletion({
+    config,
+    endpoint,
+    timeoutMs,
+    maxTokens: config.maxTokens,
+    responseFormat: { type: "json_object" },
+    stepName: "中文 SEO 元信息生成",
+    systemPrompt:
+      "你只输出符合要求的 JSON 对象，不输出 Markdown、解释或额外文本。",
+    userPrompt: buildMetadataPrompt(
+      normalizedContent,
+      config.metadataStylePrompt,
+      getAiRewriteContentLimit(config.maxTokens),
+    ),
+  });
+  const metadata = normalizeMetadata(
+    parseJsonResponse<Partial<ArticleMetadataOutput>>(metadataText),
+    normalizedContent,
+  );
+  validateMetadata(metadata);
+
+  return metadata;
 }
 
 async function getVerifiedAiConfig(

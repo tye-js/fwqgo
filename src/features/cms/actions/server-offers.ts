@@ -6,9 +6,16 @@ import { z } from "zod";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { isHttpHref, isInternalHref } from "@fwqgo/core/utils";
 import {
+  adminActionFailure,
+  adminActionSuccess,
+  getErrorMessage,
+} from "@/lib/admin-action-result";
+import {
+  createServerOfferImportTask,
+  getServerOfferImportTaskStatus,
+} from "@/server/offers/import-task-runner";
+import {
   bulkUpdateServerOffers,
-  importServerOffersFromPost,
-  importServerOffersFromPosts,
   offerReviewStatuses,
   offerStatuses,
   updateServerOffer,
@@ -53,14 +60,6 @@ const updateOfferSchema = z.object({
   reviewStatus: z.enum(offerReviewStatuses),
 });
 
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return typeof error === "string" ? error : "未知错误";
-}
-
 function revalidateOfferPages() {
   revalidatePath("/servers");
   revalidatePath("/servers/manage");
@@ -72,43 +71,94 @@ function revalidateOfferPages() {
 
 export async function importServerOffersFromPostAction(postId: number) {
   try {
-    await requireAdminSession();
-    if (!Number.isInteger(postId) || postId <= 0) {
-      return {
-        success: false,
-        error: "文章参数无效",
-        message: "请选择一篇有效文章后再提取套餐。",
-      };
-    }
+    const task = await createServerOfferImportTask({
+      mode: "single",
+      postId,
+    });
 
-    const result = await importServerOffersFromPost(postId);
-    revalidateOfferPages();
-
-    return { success: true, data: result };
+    return adminActionSuccess(task, "套餐提取任务已加入后台队列");
   } catch (error) {
     console.error("从单篇文章导入服务器套餐失败:", error);
-    return {
-      success: false,
-      error: "从单篇文章导入服务器套餐失败",
-      message: getErrorMessage(error),
-    };
+    return adminActionFailure(error, {
+      title: "从单篇文章导入服务器套餐失败",
+      suggestion: "请确认文章存在且正文包含套餐表格或购买链接。",
+    });
+  }
+}
+
+export async function importServerOffersFromSelectedPostsAction(
+  postIds: number[],
+) {
+  try {
+    const validIds = [
+      ...new Set(postIds.filter((id) => Number.isInteger(id) && id > 0)),
+    ].slice(0, 50);
+
+    if (validIds.length === 0) {
+      return adminActionFailure(new Error("请先选择要提取套餐的文章"), {
+        title: "批量提取套餐失败",
+        suggestion: "在文章列表勾选一篇或多篇文章后再提交。",
+      });
+    }
+
+    const tasks = [];
+    const errors: Array<{ postId: number; reason: string }> = [];
+
+    for (const postId of validIds) {
+      try {
+        tasks.push(
+          await createServerOfferImportTask({
+            mode: "single",
+            postId,
+          }),
+        );
+      } catch (error) {
+        errors.push({ postId, reason: getErrorMessage(error) });
+      }
+    }
+
+    return adminActionSuccess(
+      {
+        requested: validIds.length,
+        queued: tasks.length,
+        failed: errors.length,
+        taskIds: tasks.map((task) => task.taskId),
+        errors,
+      },
+      "选中文章套餐提取任务已加入后台队列",
+    );
+  } catch (error) {
+    console.error("批量从文章导入服务器套餐失败:", error);
+    return adminActionFailure(error, {
+      title: "批量提取套餐失败",
+      suggestion: "请稍后重试；如果持续失败，查看任务状态里的失败原因。",
+    });
   }
 }
 
 export async function importServerOffersFromPostsAction() {
   try {
-    await requireAdminSession();
-    const result = await importServerOffersFromPosts();
-    revalidateOfferPages();
+    const task = await createServerOfferImportTask({ mode: "bulk" });
 
-    return { success: true, data: result };
+    return adminActionSuccess(task, "历史文章套餐提取任务已加入后台队列");
   } catch (error) {
     console.error("导入服务器套餐失败:", error);
-    return {
-      success: false,
-      error: "导入服务器套餐失败",
-      message: getErrorMessage(error),
-    };
+    return adminActionFailure(error, {
+      title: "导入服务器套餐失败",
+      suggestion: "请稍后重试；如果持续失败，查看任务状态里的失败原因。",
+    });
+  }
+}
+
+export async function getServerOfferImportTaskStatusAction(taskId: number) {
+  try {
+    const task = await getServerOfferImportTaskStatus(taskId);
+    return adminActionSuccess(task);
+  } catch (error) {
+    return adminActionFailure(error, {
+      title: "读取套餐提取任务失败",
+      suggestion: "请刷新页面后重试。",
+    });
   }
 }
 

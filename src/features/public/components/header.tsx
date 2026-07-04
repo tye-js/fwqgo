@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/sheet";
 import { getCategories } from "@/features/shared/data/category";
 import { cn } from "@fwqgo/core/utils";
-import { Globe2, Menu, Server } from "lucide-react";
+import { Globe2, Menu, Search, Server } from "lucide-react";
 
 type PublicLanguage = "zh" | "en";
 
@@ -42,6 +42,8 @@ const headerCopy: Record<
     cheapVps: string;
     cheapVpsDescription: string;
     categoriesTitle: string;
+    searchHref: string;
+    searchLabel: string;
     errorLabel: string;
     errorDescription: string;
     navigationTitle: string;
@@ -62,6 +64,8 @@ const headerCopy: Record<
     cheapVps: "便宜 VPS",
     cheapVpsDescription: "低价 VPS、月付优惠和适合测试的轻量套餐。",
     categoriesTitle: "套餐专题",
+    searchHref: "/search",
+    searchLabel: "搜索",
     errorLabel: "分类暂不可用",
     errorDescription: "分类暂时加载失败，可以先进入服务器比价或稍后刷新页面。",
     navigationTitle: "导航",
@@ -85,6 +89,8 @@ const headerCopy: Record<
     cheapVpsDescription:
       "Low-cost VPS plans, monthly deals, and lightweight test servers.",
     categoriesTitle: "Offer topics",
+    searchHref: "/search?lang=en",
+    searchLabel: "Search",
     errorLabel: "Categories unavailable",
     errorDescription:
       "Categories failed to load. You can open server deals or refresh later.",
@@ -223,6 +229,20 @@ const HeaderComponent = async ({
                   </NavigationMenuLink>
                 </NavigationMenuItem>
               ) : null}
+              <NavigationMenuItem>
+                <NavigationMenuLink asChild>
+                  <Link
+                    href={copy.searchHref}
+                    prefetch
+                    className={cn(
+                      navigationMenuTriggerStyle(),
+                      "rounded-md bg-transparent",
+                    )}
+                  >
+                    {copy.searchLabel}
+                  </Link>
+                </NavigationMenuLink>
+              </NavigationMenuItem>
             </NavigationMenuList>
           </NavigationMenu>
 
@@ -292,6 +312,14 @@ const HeaderComponent = async ({
                   >
                     <Globe2 className="size-4" />
                     {copy.languageLabel}
+                  </MobileNavLink>
+                  <MobileNavLink
+                    href={copy.searchHref}
+                    prefetch
+                    className="flex min-h-11 items-center gap-2 rounded-md border border-border/70 px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Search className="size-4" />
+                    {copy.searchLabel}
                   </MobileNavLink>
                 </div>
                 {safeCategories.length > 0 ? (

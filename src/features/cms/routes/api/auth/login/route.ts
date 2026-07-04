@@ -6,6 +6,8 @@ import { randomUUID } from "crypto";
 import { users, sessions } from "@fwqgo/db/schema";
 import { eq } from "drizzle-orm";
 
+import { adminApiFailure, adminApiSuccess } from "@/lib/admin-api-response";
+
 const loginSchema = z.object({
   username: z.string().trim().min(3),
   password: z.string().min(6),
@@ -16,10 +18,11 @@ export async function POST(request: Request) {
     const body = loginSchema.safeParse(await request.json().catch(() => null));
 
     if (!body.success) {
-      return Response.json(
-        { error: "请输入有效的用户名和密码" },
-        { status: 400 },
-      );
+      return adminApiFailure("请输入有效的用户名和密码", {
+        status: 400,
+        title: "登录失败",
+        suggestion: "请检查用户名不少于 3 个字符，密码不少于 6 个字符。",
+      });
     }
 
     const { username, password } = body.data;
@@ -31,12 +34,20 @@ export async function POST(request: Request) {
       .limit(1);
 
     if (!user)
-      return Response.json({ error: "用户名或密码错误" }, { status: 401 });
+      return adminApiFailure("用户名或密码错误", {
+        status: 401,
+        title: "登录失败",
+        suggestion: "请确认账号和密码后重试。",
+      });
 
     const isValidPassword = await compare(password, user.password);
 
     if (!isValidPassword)
-      return Response.json({ error: "用户名或密码错误" }, { status: 401 });
+      return adminApiFailure("用户名或密码错误", {
+        status: 401,
+        title: "登录失败",
+        suggestion: "请确认账号和密码后重试。",
+      });
 
     // 创建 session
     const sessionId = randomUUID();
@@ -51,7 +62,11 @@ export async function POST(request: Request) {
       .returning();
 
     if (!session) {
-      return Response.json({ error: "登录失败" }, { status: 500 });
+      return adminApiFailure("会话创建失败", {
+        status: 500,
+        title: "登录失败",
+        suggestion: "请稍后重试，仍失败请检查数据库会话表。",
+      });
     }
 
     (await cookies()).set("session_id", session.id, {
@@ -62,8 +77,12 @@ export async function POST(request: Request) {
       expires: session.expires,
     });
 
-    return Response.json({ success: true });
+    return adminApiSuccess({ authenticated: true });
   } catch {
-    return Response.json({ error: "登录失败" }, { status: 500 });
+    return adminApiFailure("登录失败", {
+      status: 500,
+      title: "登录失败",
+      suggestion: "请稍后重试，仍失败请检查服务端日志。",
+    });
   }
 }

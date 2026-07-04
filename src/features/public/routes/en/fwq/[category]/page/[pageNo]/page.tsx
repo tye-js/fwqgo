@@ -15,16 +15,27 @@ import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
 import PageCard from "@/features/public/components/page-card";
+import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { decodeSlug } from "@fwqgo/core/utils";
+import { getServerOffersByKeywords } from "@/server/offers/server-offers";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
     /\/+$/,
     "",
+  );
+}
+
+function splitKeywords(value: string | null | undefined) {
+  return (
+    value
+      ?.split(/[,，、\s]+/)
+      .map((item) => item.trim())
+      .filter(Boolean) ?? []
   );
 }
 
@@ -46,11 +57,13 @@ export async function generateMetadata(props: {
   const canonicalUrl = `${getSiteUrl()}/en/fwq/${encodeURIComponent(canonicalSlug)}/page/${pageNo}`;
   const zhUrl = `${getSiteUrl()}/fwq/${encodeURIComponent(zhSlug)}/page/${pageNo}`;
 
+  const description =
+    category?.description ??
+    `${title} server deals, VPS reviews, coupons, and buying guides.`;
+
   return {
     title: `${title} - fwqgo`,
-    description:
-      category?.description ??
-      `${title} server deals, VPS reviews, coupons, and buying guides.`,
+    description,
     keywords: category?.keywords ?? title,
     alternates: {
       canonical: canonicalUrl,
@@ -59,6 +72,12 @@ export async function generateMetadata(props: {
         en: canonicalUrl,
         "x-default": zhUrl,
       },
+    },
+    openGraph: {
+      title: `${title} - fwqgo`,
+      description,
+      url: canonicalUrl,
+      siteName: "fwqgo",
     },
   };
 }
@@ -88,10 +107,15 @@ async function CategoryPageContent({
     { data: posts, error: postsError },
     { data: totalCount },
     { data: latestPosts },
+    relatedOffers,
   ] = await Promise.all([
     getPostsWithTagsByCategoryId(category.id, pageNo, "en"),
     getPublishedPostCountByCategoryId(category.id, "en"),
     getLatestPostsForSidebar("en"),
+    getServerOffersByKeywords({
+      keywords: [category.name, ...splitKeywords(category.keywords)],
+      limit: 6,
+    }),
   ]);
   const totalPage = Math.ceil((totalCount ?? 0) / 10);
 
@@ -114,6 +138,12 @@ async function CategoryPageContent({
           }
           totalCount={totalCount ?? 0}
           pageNo={pageNo}
+          language="en"
+        />
+        <RelatedServerOfferCards
+          title={`${category.name} related offers`}
+          description="Structured server offers matched to this category."
+          offers={relatedOffers}
           language="en"
         />
         <div className="space-y-4">
@@ -167,7 +197,13 @@ export default function EnglishCategoryPage(props: {
       <Header language="en" />
       <Separator />
       <main className="container mx-auto flex-1 px-4 py-6 md:py-8">
-        <Suspense fallback={<div>Loading...</div>}>
+        <Suspense
+          fallback={
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
+              Loading category articles...
+            </div>
+          }
+        >
           <CategoryPageContent paramsPromise={props.params} />
         </Suspense>
       </main>

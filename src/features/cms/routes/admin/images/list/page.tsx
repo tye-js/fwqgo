@@ -6,11 +6,32 @@ import { ImageAssetManager } from "@/features/cms/components/image-asset-manager
 export default async function ImageListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<{
+    query?: string;
+    filter?: string;
+    type?: string;
+    status?: string;
+  }>;
 }) {
   await requireAdminSession();
   const params = await searchParams;
   const images = await getImageAssetList();
+  const imageTypes = new Set(images.map((image) => image.imageType));
+  const imageStatuses = new Set(images.map((image) => image.status));
+  const usageFilter = [
+    "all",
+    "used",
+    "unused",
+    "issues",
+    "missing-alt",
+    "duplicates",
+  ].includes(params.filter ?? "")
+    ? params.filter!
+    : "all";
+  const typeFilter = imageTypes.has(params.type ?? "") ? params.type! : "all";
+  const statusFilter = imageStatuses.has(params.status ?? "")
+    ? params.status!
+    : "all";
   const usedCount = images.filter((image) => image.references.length > 0).length;
   const needsWebpCount = images.filter(
     (image) => image.mime !== "image/webp" && image.mime !== "image/gif",
@@ -44,7 +65,10 @@ export default async function ImageListPage({
       />
       <ImageAssetManager
         images={images.map(serializeImageAsset)}
-        initialUsageFilter={params.filter === "unused" ? "unused" : "all"}
+        initialQuery={params.query?.trim() ?? ""}
+        initialUsageFilter={usageFilter}
+        initialTypeFilter={typeFilter}
+        initialStatusFilter={statusFilter}
       />
     </AdminPageShell>
   );

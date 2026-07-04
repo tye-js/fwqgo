@@ -14,7 +14,7 @@ import {
 
 import { slugify } from "@fwqgo/core/utils";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
-import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
+import { cacheTags, revalidateSiteContent, tagCache } from "@fwqgo/cache/tags";
 import { db, readDb } from "@fwqgo/db";
 import {
   affServiceProviders,
@@ -661,35 +661,15 @@ function topicWhere(topic: (typeof offerTopics)[number]) {
 }
 
 export async function getServerOfferTopic(slug: string) {
+  "use cache";
+  tagCache(cacheTags.serverOffers, cacheTags.serverOfferTopic(slug));
+
   const topic = offerTopics.find((item) => item.slug === slug);
   if (!topic) return null;
 
   try {
     const offers = await readDb
-      .select({
-        id: serverOffers.id,
-        title: serverOffers.title,
-        slug: serverOffers.slug,
-        providerName: serverOffers.providerName,
-        productType: serverOffers.productType,
-        cpu: serverOffers.cpu,
-        memory: serverOffers.memory,
-        storage: serverOffers.storage,
-        bandwidth: serverOffers.bandwidth,
-        traffic: serverOffers.traffic,
-        region: serverOffers.region,
-        lineType: serverOffers.lineType,
-        priceAmount: serverOffers.priceAmount,
-        currency: serverOffers.currency,
-        billingCycle: serverOffers.billingCycle,
-        promoCode: serverOffers.promoCode,
-        purchaseUrl: serverOffers.purchaseUrl,
-        articleUrl: serverOffers.articleUrl,
-        reviewUrl: serverOffers.reviewUrl,
-        status: serverOffers.status,
-        featured: serverOffers.featured,
-        createdAt: serverOffers.createdAt,
-      })
+      .select(serverOfferPublicSelect())
       .from(serverOffers)
       .where(topicWhere(topic))
       .orderBy(
@@ -729,7 +709,10 @@ function serverOfferPublicSelect() {
     reviewUrl: serverOffers.reviewUrl,
     status: serverOffers.status,
     featured: serverOffers.featured,
+    lastCheckedAt: serverOffers.lastCheckedAt,
+    validUntil: serverOffers.validUntil,
     createdAt: serverOffers.createdAt,
+    updatedAt: serverOffers.updatedAt,
   };
 }
 
@@ -737,6 +720,9 @@ export async function getServerOfferCollection(input: {
   kind: "provider" | "region" | "line";
   value: string;
 }) {
+  "use cache";
+  tagCache(cacheTags.serverOffers);
+
   const value = input.value.trim();
   if (!value) return null;
 
@@ -769,6 +755,12 @@ export async function getServerOfferCollection(input: {
       title: `${value}${titlePrefix === "商家" ? "" : titlePrefix}服务器套餐`,
       description: `集中查看${value}相关服务器套餐，按价格、地区、线路、状态和购买入口筛选。`,
       offers,
+      kind: input.kind,
+      value,
+      updatedAt:
+        offers
+          .map((offer) => offer.updatedAt ?? offer.createdAt)
+          .sort((left, right) => right.getTime() - left.getTime())[0] ?? null,
     };
   } catch (error) {
     console.error("Failed to load server offer collection:", error);
@@ -776,11 +768,17 @@ export async function getServerOfferCollection(input: {
       title: `${value}${titlePrefix === "商家" ? "" : titlePrefix}服务器套餐`,
       description: `集中查看${value}相关服务器套餐，按价格、地区、线路、状态和购买入口筛选。`,
       offers: [],
+      kind: input.kind,
+      value,
+      updatedAt: null,
     };
   }
 }
 
 export async function getServerOfferTopicCounts() {
+  "use cache";
+  tagCache(cacheTags.serverOffers);
+
   try {
     const result = await Promise.all(
       offerTopics.map(async (topic) => {
@@ -800,6 +798,9 @@ export async function getServerOfferTopicCounts() {
 }
 
 export async function getLatestServerOffers(limit = 8) {
+  "use cache";
+  tagCache(cacheTags.serverOffers);
+
   try {
     return await readDb
       .select({
@@ -815,6 +816,9 @@ export async function getLatestServerOffers(limit = 8) {
         purchaseUrl: serverOffers.purchaseUrl,
         articleUrl: serverOffers.articleUrl,
         status: serverOffers.status,
+        lastCheckedAt: serverOffers.lastCheckedAt,
+        updatedAt: serverOffers.updatedAt,
+        createdAt: serverOffers.createdAt,
       })
       .from(serverOffers)
       .where(and(eq(serverOffers.visible, true), inArray(serverOffers.status, ["in_stock", "preorder", "restocking"])))
@@ -822,6 +826,138 @@ export async function getLatestServerOffers(limit = 8) {
       .limit(limit);
   } catch (error) {
     console.error("Failed to load latest server offers:", error);
+    return [];
+  }
+}
+
+export async function getServerOfferCollectionIndex(limit = 80) {
+  type CollectionField =
+    | typeof serverOffers.providerName
+    | typeof serverOffers.region
+    | typeof serverOffers.lineType;
+
+  async function readCollection(
+    field: CollectionField,
+    kind: "provider" | "region" | "line",
+  ) {
+    const rows = await readDb
+      .select({
+        value: field,
+        count: sql<number>`count(*)`,
+        updatedAt: sql<Date | null>`max(coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt}))`,
+      })
+      .from(serverOffers)
+      .where(and(eq(serverOffers.visible, true), isNotNull(field)))
+      .groupBy(field)
+      .orderBy(desc(sql`count(*)`), asc(field))
+      .limit(limit);
+
+    return rows
+      .map((row) => ({
+        kind,
+        value: row.value?.trim() ?? "",
+        count: Number(row.count ?? 0),
+        updatedAt: row.updatedAt,
+      }))
+      .filter((row) => row.value.length > 0);
+  }
+
+  try {
+    const [providers, regions, lines] = await Promise.all([
+      readCollection(serverOffers.providerName, "provider"),
+      readCollection(serverOffers.region, "region"),
+      readCollection(serverOffers.lineType, "line"),
+    ]);
+
+    return { providers, regions, lines };
+  } catch (error) {
+    console.error("Failed to load server offer collection index:", error);
+    return { providers: [], regions: [], lines: [] };
+  }
+}
+
+export async function searchServerOffers(input: {
+  query: string;
+  limit?: number;
+}) {
+  "use cache";
+  tagCache(cacheTags.serverOffers);
+
+  const query = input.query.trim();
+  if (!query) return [];
+
+  const pattern = `%${query}%`;
+  try {
+    return await readDb
+      .select(serverOfferPublicSelect())
+      .from(serverOffers)
+      .where(
+        and(
+          eq(serverOffers.visible, true),
+          or(
+            ilike(serverOffers.title, pattern),
+            ilike(serverOffers.providerName, pattern),
+            ilike(serverOffers.region, pattern),
+            ilike(serverOffers.lineType, pattern),
+            ilike(serverOffers.promoCode, pattern),
+            ilike(serverOffers.rawText, pattern),
+          ),
+        ),
+      )
+      .orderBy(
+        desc(serverOffers.featured),
+        asc(serverOffers.priceAmount),
+        desc(serverOffers.createdAt),
+      )
+      .limit(input.limit ?? 20);
+  } catch (error) {
+    console.error("Failed to search server offers:", error);
+    return [];
+  }
+}
+
+export async function getServerOffersByKeywords(input: {
+  keywords: string[];
+  limit?: number;
+}) {
+  "use cache";
+  tagCache(cacheTags.serverOffers);
+
+  const keywords = input.keywords
+    .map((keyword) => keyword.trim())
+    .filter((keyword) => keyword.length >= 2)
+    .slice(0, 8);
+
+  if (keywords.length === 0) return [];
+
+  try {
+    return await readDb
+      .select(serverOfferPublicSelect())
+      .from(serverOffers)
+      .where(
+        and(
+          eq(serverOffers.visible, true),
+          or(
+            ...keywords.flatMap((keyword) => {
+              const pattern = `%${keyword}%`;
+              return [
+                ilike(serverOffers.title, pattern),
+                ilike(serverOffers.providerName, pattern),
+                ilike(serverOffers.region, pattern),
+                ilike(serverOffers.lineType, pattern),
+              ];
+            }),
+          ),
+        ),
+      )
+      .orderBy(
+        desc(serverOffers.featured),
+        asc(serverOffers.priceAmount),
+        desc(serverOffers.createdAt),
+      )
+      .limit(input.limit ?? 6);
+  } catch (error) {
+    console.error("Failed to load keyword server offers:", error);
     return [];
   }
 }
@@ -939,6 +1075,9 @@ export async function getRelatedServerOffersForPost(input: {
   tagNames: string[];
   limit?: number;
 }) {
+  "use cache";
+  tagCache(cacheTags.serverOffers, cacheTags.post(input.postId));
+
   const tagText = input.tagNames.join(" ");
   const conditions = [
     eq(serverOffers.visible, true),
@@ -959,6 +1098,12 @@ export async function getRelatedServerOffersForPost(input: {
       id: serverOffers.id,
       title: serverOffers.title,
       providerName: serverOffers.providerName,
+      productType: serverOffers.productType,
+      cpu: serverOffers.cpu,
+      memory: serverOffers.memory,
+      storage: serverOffers.storage,
+      bandwidth: serverOffers.bandwidth,
+      traffic: serverOffers.traffic,
       region: serverOffers.region,
       lineType: serverOffers.lineType,
       priceAmount: serverOffers.priceAmount,
@@ -967,7 +1112,13 @@ export async function getRelatedServerOffersForPost(input: {
       promoCode: serverOffers.promoCode,
       purchaseUrl: serverOffers.purchaseUrl,
       articleUrl: serverOffers.articleUrl,
+      reviewUrl: serverOffers.reviewUrl,
       status: serverOffers.status,
+      featured: serverOffers.featured,
+      lastCheckedAt: serverOffers.lastCheckedAt,
+      validUntil: serverOffers.validUntil,
+      createdAt: serverOffers.createdAt,
+      updatedAt: serverOffers.updatedAt,
     })
     .from(serverOffers)
     .where(and(...conditions))
