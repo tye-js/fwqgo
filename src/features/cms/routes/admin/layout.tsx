@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/sidebar";
 import AppBreadcrumb from "@/components/endpoint/app-breadcrumb";
 import { validateSession } from "@/features/cms/actions/validate-session";
+import { AdminLoading } from "@/features/cms/components/admin-loading";
 
 export const metadata: Metadata = {
   title: "后台系统",
@@ -76,7 +77,7 @@ export default function CreateLayout({
               </div>
             </header>
             <div className="min-w-0 overflow-x-hidden">
-              <Suspense fallback={<div className="p-4">加载中...</div>}>
+              <Suspense fallback={<AdminLoading title="正在加载后台" />}>
                 {children}
               </Suspense>
             </div>

@@ -77,12 +77,15 @@ export function PaginationComponent({
   };
 
   return (
-    <Pagination>
-      <PaginationContent>
+    <Pagination className="justify-start overflow-x-auto py-1 sm:justify-center">
+      <PaginationContent className="min-w-max flex-nowrap">
         <PaginationItem>
           <PaginationPrevious
             aria-disabled={pageNo === 1}
-            className={cn(pageNo === 1 && "hidden")}
+            className={cn(
+              "min-w-11 px-2 sm:px-4 [&>span]:hidden sm:[&>span]:inline",
+              pageNo === 1 && "hidden",
+            )}
             href={pageNo === 1 ? undefined : getHref(pageNo - 1)}
           />
         </PaginationItem>
@@ -91,7 +94,11 @@ export function PaginationComponent({
             {item === "ellipsis" ? (
               <PaginationEllipsis />
             ) : (
-              <PaginationLink href={getHref(item)} isActive={item === pageNo}>
+              <PaginationLink
+                href={getHref(item)}
+                isActive={item === pageNo}
+                className="min-w-11"
+              >
                 {item}
               </PaginationLink>
             )}
@@ -100,7 +107,10 @@ export function PaginationComponent({
         <PaginationItem>
           <PaginationNext
             aria-disabled={pageNo === totalPage}
-            className={cn(pageNo === totalPage && "hidden")}
+            className={cn(
+              "min-w-11 px-2 sm:px-4 [&>span]:hidden sm:[&>span]:inline",
+              pageNo === totalPage && "hidden",
+            )}
             href={pageNo === totalPage ? undefined : getHref(pageNo + 1)}
           />
         </PaginationItem>

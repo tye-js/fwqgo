@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 import { Suspense } from "react";
 
+import { AdminLoading } from "@/features/cms/components/admin-loading";
 import {
   AdminPageShell,
   AdminSectionCard,
@@ -30,12 +31,14 @@ async function ServerOfferManageContent() {
     },
     {
       label: "需修正",
-      value: offers.filter((offer) => offer.reviewStatus === "needs_fix").length,
+      value: offers.filter((offer) => offer.reviewStatus === "needs_fix")
+        .length,
       note: "提取结果可能不完整",
     },
     {
       label: "缺价格",
-      value: offers.filter((offer) => hasMissingPrice(offer.priceAmount)).length,
+      value: offers.filter((offer) => hasMissingPrice(offer.priceAmount))
+        .length,
       note: "影响前台比价排序",
     },
     {
@@ -120,17 +123,11 @@ export default function ServerOfferManagePage() {
   return (
     <Suspense
       fallback={
-        <AdminPageShell
+        <AdminLoading
           badge="服务器套餐"
           title="人工修正数据"
           description="正在加载结构化套餐数据。"
-        >
-          <AdminSectionCard>
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              正在加载...
-            </div>
-          </AdminSectionCard>
-        </AdminPageShell>
+        />
       }
     >
       <ServerOfferManageContent />

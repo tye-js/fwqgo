@@ -18,6 +18,8 @@ export type ArticleDocument = {
 };
 
 const safeHrefPattern = /^(https?:|mailto:|tel:|\/|#)/i;
+const markdownLinkPattern =
+  /\[([^\]]+)\]\((<([^>]+)>|[^)\s]+)(?:\s+"[^"]*")?\)/g;
 
 function getHeadingId(text: string, usedIds: Map<string, number>) {
   const baseId = slugify(text) || "section";
@@ -108,20 +110,28 @@ function renderArticleLink(href: string, label: string) {
   return `<a href="${escapeAttribute(trimmedHref)}"${attrs}>${label}</a>`;
 }
 
+function unescapeMarkdownInlineText(value: string) {
+  return value.replace(/\\([\\*_[\]\|])/g, "$1");
+}
+
 function renderMarkdownInline(value: string) {
   const links: string[] = [];
   const tokenized = value.replace(
-    /\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
-    (_, label: string, href: string) => {
+    markdownLinkPattern,
+    (_, label: string, rawHref: string, angledHref: string | undefined) => {
+      const href = angledHref ?? rawHref;
       const token = `@@ARTICLE_LINK_${links.length}@@`;
-      links.push(renderArticleLink(href, escapeHtml(label)));
+      links.push(
+        renderArticleLink(href, escapeHtml(unescapeMarkdownInlineText(label))),
+      );
       return token;
     },
   );
 
   let rendered = escapeHtml(tokenized)
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/`([^`]+)`/g, "<code>$1</code>");
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\\([\\*_[\]\|])/g, "$1");
 
   links.forEach((link, index) => {
     rendered = rendered.replace(`@@ARTICLE_LINK_${index}@@`, link);
@@ -130,15 +140,41 @@ function renderMarkdownInline(value: string) {
   return rendered;
 }
 
+function splitMarkdownTableRow(row: string) {
+  const trimmed = row.trim().replace(/^\|/, "").replace(/\|$/, "");
+  const cells: string[] = [];
+  let current = "";
+  let escaped = false;
+
+  for (const char of trimmed) {
+    if (char === "|" && !escaped) {
+      cells.push(current);
+      current = "";
+      continue;
+    }
+
+    current += char;
+    escaped = !escaped && char === "\\";
+  }
+
+  cells.push(current);
+  return cells;
+}
+
+function unescapeMarkdownTableCell(value: string) {
+  return value.replace(/\\\|/g, "|");
+}
+
 function renderMarkdownTable(rows: string[]) {
   const parsedRows = rows
-    .filter((row, index) => index !== 1 || !/^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(row))
+    .filter(
+      (row, index) =>
+        index !== 1 || !/^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(row),
+    )
     .map((row) =>
-      row
-        .trim()
-        .replace(/^\||\|$/g, "")
-        .split("|")
-        .map((cell) => renderMarkdownInline(cell.trim())),
+      splitMarkdownTableRow(row).map((cell) =>
+        renderMarkdownInline(unescapeMarkdownTableCell(cell.trim())),
+      ),
     )
     .filter((row) => row.length > 0);
 
@@ -184,7 +220,9 @@ export function markdownToArticleHtml(markdown: string) {
         index += 1;
       }
 
-      output.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      output.push(
+        `<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`,
+      );
       continue;
     }
 
@@ -199,10 +237,16 @@ export function markdownToArticleHtml(markdown: string) {
       continue;
     }
 
-    if (/^\|.+\|$/.test(line.trim()) && /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(lines[index + 1] ?? "")) {
+    if (
+      /^\|.+\|$/.test(line.trim()) &&
+      /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(lines[index + 1] ?? "")
+    ) {
       const tableLines: string[] = [];
 
-      while (index < lines.length && /^\|.+\|$/.test((lines[index] ?? "").trim())) {
+      while (
+        index < lines.length &&
+        /^\|.+\|$/.test((lines[index] ?? "").trim())
+      ) {
         tableLines.push(lines[index] ?? "");
         index += 1;
       }
@@ -220,7 +264,9 @@ export function markdownToArticleHtml(markdown: string) {
         quoteLines.push((lines[index] ?? "").replace(/^>\s?/, ""));
         index += 1;
       }
-      output.push(`<blockquote>${renderMarkdownInline(quoteLines.join(" "))}</blockquote>`);
+      output.push(
+        `<blockquote>${renderMarkdownInline(quoteLines.join(" "))}</blockquote>`,
+      );
       continue;
     }
 
@@ -303,10 +349,64 @@ function markdownEscape(value: string) {
     .replace(/\]/g, "\\]");
 }
 
-function htmlFragmentToMarkdownText(
-  $: cheerio.CheerioAPI,
-  element: Element,
+function markdownEscapePreservingLinks(
+  value: string,
+  escapeText: (text: string) => string = markdownEscape,
+  transformLink: (link: string) => string = (link) => link,
 ) {
+  let result = "";
+  let lastIndex = 0;
+
+  for (const match of value.matchAll(markdownLinkPattern)) {
+    const original = match[0];
+    if (typeof match.index !== "number") {
+      continue;
+    }
+
+    result += escapeText(value.slice(lastIndex, match.index));
+    result += transformLink(original);
+    lastIndex = match.index + original.length;
+  }
+
+  result += escapeText(value.slice(lastIndex));
+  return result;
+}
+
+function markdownTableCellEscape(value: string) {
+  return markdownEscapePreservingLinks(
+    value.replace(/\r?\n/g, " "),
+    (text) => markdownEscape(text).replace(/\|/g, "\\|"),
+    (link) => link.replace(/\|/g, "\\|"),
+  );
+}
+
+function escapeMarkdownLinkDestination(href: string) {
+  return href
+    .trim()
+    .replace(/\s/g, "%20")
+    .replace(/\)/g, "%29")
+    .replace(/</g, "%3C")
+    .replace(/>/g, "%3E");
+}
+
+function createMarkdownLink(label: string, href: string | undefined) {
+  const normalizedLabel = normalizeArticleText(label);
+  const normalizedHref = href?.trim();
+
+  if (!normalizedLabel) {
+    return "";
+  }
+
+  if (!normalizedHref || !safeHrefPattern.test(normalizedHref)) {
+    return normalizedLabel;
+  }
+
+  return `[${markdownEscape(normalizedLabel)}](${escapeMarkdownLinkDestination(
+    normalizedHref,
+  )})`;
+}
+
+function htmlFragmentToMarkdownText($: cheerio.CheerioAPI, element: Element) {
   const $clone = $(element).clone();
 
   $clone.find("a").each((_, anchor) => {
@@ -319,7 +419,7 @@ function htmlFragmentToMarkdownText(
       return;
     }
 
-    $anchor.replaceWith(href ? `[${text}](${href})` : text);
+    $anchor.replaceWith(createMarkdownLink(text, href));
   });
 
   $clone.find("br").replaceWith("\n");
@@ -442,7 +542,7 @@ export function htmlToArticleDocument(content: string): ArticleDocument {
           $(row)
             .children("th,td")
             .toArray()
-            .map((cell) => normalizeArticleText($(cell).text())),
+            .map((cell) => htmlFragmentToMarkdownText($, cell)),
         )
         .filter((row) => row.some(Boolean));
       pushTextBlock(blocks, { type: "table", rows });
@@ -489,7 +589,7 @@ function tableToMarkdown(rows: string[][]) {
 
   const normalizedRows = rows.map((row) =>
     Array.from({ length: maxColumns }, (_, index) =>
-      markdownEscape(row[index] ?? ""),
+      markdownTableCellEscape(row[index] ?? ""),
     ),
   );
   const [firstRow, ...bodyRows] = normalizedRows;
@@ -542,12 +642,12 @@ export function articleDocumentToMarkdown(
     }
 
     if (block.type === "paragraph") {
-      append(markdownEscape(block.text));
+      append(markdownEscapePreservingLinks(block.text));
       continue;
     }
 
     if (block.type === "quote") {
-      append(`> ${markdownEscape(block.text)}`);
+      append(`> ${markdownEscapePreservingLinks(block.text)}`);
       continue;
     }
 
@@ -561,8 +661,8 @@ export function articleDocumentToMarkdown(
         block.items
           .map((item, index) =>
             block.ordered
-              ? `${index + 1}. ${markdownEscape(item)}`
-              : `- ${markdownEscape(item)}`,
+              ? `${index + 1}. ${markdownEscapePreservingLinks(item)}`
+              : `- ${markdownEscapePreservingLinks(item)}`,
           )
           .join("\n"),
       );

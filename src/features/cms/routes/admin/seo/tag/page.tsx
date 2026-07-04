@@ -1,7 +1,11 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { getAdminTagCount, getAdminTagList } from "@/features/cms/data/tag";
-import { AdminPageShell, AdminSectionCard } from "@/features/cms/components/admin-page-shell";
+import { AdminLoading } from "@/features/cms/components/admin-loading";
+import {
+  AdminPageShell,
+  AdminSectionCard,
+} from "@/features/cms/components/admin-page-shell";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { TagSeoTable } from "@/features/cms/components/tag-seo-table";
 
@@ -43,15 +47,21 @@ async function TagListWrapper({
   );
 }
 
-export default async function Page(
-  props: {
-    searchParams: Promise<{ pageNo?: string }>;
-  }
-) {
+export default async function Page(props: {
+  searchParams: Promise<{ pageNo?: string }>;
+}) {
   await connection();
 
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense
+      fallback={
+        <AdminLoading
+          badge="SEO / 标签"
+          title="正在加载标签 SEO"
+          description="正在读取标签列表和收录状态。"
+        />
+      }
+    >
       <TagListWrapper searchParamsPromise={props.searchParams} />
     </Suspense>
   );

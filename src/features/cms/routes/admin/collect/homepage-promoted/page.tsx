@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 
+import { AdminLoading } from "@/features/cms/components/admin-loading";
 import {
   AdminPageShell,
   AdminSectionCard,
@@ -50,7 +51,10 @@ async function HomepagePromotedPostContent() {
         title="推荐位管理"
         description="通过文章 ID 和排序值控制首页推荐区展示内容。"
       >
-        <HomepagePromotedPostTable data={data} postOptions={postOptions ?? []} />
+        <HomepagePromotedPostTable
+          data={data}
+          postOptions={postOptions ?? []}
+        />
       </AdminSectionCard>
     </AdminPageShell>
   );
@@ -58,7 +62,15 @@ async function HomepagePromotedPostContent() {
 
 export default function HomepagePromotedPostPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense
+      fallback={
+        <AdminLoading
+          badge="首页运营"
+          title="正在加载首页推荐"
+          description="正在读取推荐位和可选文章。"
+        />
+      }
+    >
       <HomepagePromotedPostContent />
     </Suspense>
   );

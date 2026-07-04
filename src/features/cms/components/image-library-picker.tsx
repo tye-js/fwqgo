@@ -2,12 +2,13 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Images, Search } from "lucide-react";
+import { Images, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import { getImageAssets } from "@/features/cms/actions/images";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -87,8 +88,25 @@ export function ImageLibraryPicker({
         </div>
         <div className="max-h-[60vh] overflow-y-auto">
           {isPending ? (
-            <div className="py-10 text-center text-sm text-muted-foreground">
-              加载中...
+            <div className="space-y-3" role="status" aria-live="polite">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                正在读取图片库
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {Array.from({ length: 8 }, (_, index) => (
+                  <div
+                    key={index}
+                    className="overflow-hidden rounded-lg border border-border/70 bg-background"
+                  >
+                    <Skeleton className="aspect-[4/3] w-full rounded-none" />
+                    <div className="space-y-2 p-3">
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-3 w-full" />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : filteredImages.length === 0 ? (
             <div className="py-10 text-center text-sm text-muted-foreground">
