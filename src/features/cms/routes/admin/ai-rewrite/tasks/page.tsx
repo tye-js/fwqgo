@@ -19,12 +19,13 @@ export async function AiRewriteTasksPageContent({
 }: {
   variant?: AiRewriteTasksPageVariant;
 }) {
-  const [tasks, sourceSites, categoriesResult, rewriteStyles] = await Promise.all([
-    getAiRewriteTaskList(),
-    getAiSourceSiteList(),
-    getLeafCategories(),
-    getAiRewriteStyleOptions(),
-  ]);
+  const [tasks, sourceSites, categoriesResult, rewriteStyles] =
+    await Promise.all([
+      getAiRewriteTaskList(),
+      getAiSourceSiteList(),
+      getLeafCategories(),
+      getAiRewriteStyleOptions(),
+    ]);
   const categories = categoriesResult.data ?? [];
   const runningCount = tasks.filter((task) =>
     ["pending", "running"].includes(task.status),
@@ -77,8 +78,8 @@ export async function AiRewriteTasksPageContent({
               manualRequiredCount > 0
                 ? `${manualRequiredCount} 个草稿需人工处理外链`
                 : failedCount > 0
-                ? `${failedCount} 个失败任务可重新开始`
-                : "可进入草稿箱人工编辑",
+                  ? `${failedCount} 个失败任务可重新开始`
+                  : "可进入草稿箱人工编辑",
           },
         ]}
       />
@@ -102,11 +103,11 @@ export async function AiRewriteTasksPageContent({
               title="来源站"
               description="保存常用中文来源站，需要时点击抓取新页面，系统会自动创建 AI 改写任务并在成功后保存为草稿。"
             >
-            <AiSourceSiteManager
-              sites={sourceSites}
-              categories={categories}
-              rewriteStyles={rewriteStyles}
-            />
+              <AiSourceSiteManager
+                sites={sourceSites}
+                categories={categories}
+                rewriteStyles={rewriteStyles}
+              />
             </AdminSectionCard>
           </div>
           <div id="single-task" className="scroll-mt-24">
@@ -118,6 +119,7 @@ export async function AiRewriteTasksPageContent({
                 tasks={tasks}
                 categories={categories}
                 rewriteStyles={rewriteStyles}
+                showTaskList={false}
               />
             </AdminSectionCard>
           </div>
