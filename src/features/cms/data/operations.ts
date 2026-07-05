@@ -18,6 +18,7 @@ import {
   posts,
   serverOfferImportTasks,
 } from "@fwqgo/db/schema";
+import { ensureCmsBackgroundWorkersForRecoverableTasks } from "@/server/admin/cms-background-workers";
 import { getAdminBackgroundJobSnapshots } from "@/server/admin/background-jobs";
 
 type StatusCountRow = {
@@ -271,6 +272,7 @@ function activeTaskRowToStaleTask(input: {
 
 export async function getCmsTaskOperationsSummary() {
   await requireAdminSession();
+  await ensureCmsBackgroundWorkersForRecoverableTasks();
 
   const [
     aiStatusRows,
@@ -282,6 +284,7 @@ export async function getCmsTaskOperationsSummary() {
     aiActiveTasks,
     coverActiveTasks,
     offerActiveTasks,
+    backgroundJobs,
   ] = await Promise.all([
     db
       .select({ status: aiRewriteTasks.status, count: count() })
@@ -396,6 +399,7 @@ export async function getCmsTaskOperationsSummary() {
         desc(serverOfferImportTasks.createdAt),
       )
       .limit(40),
+    getAdminBackgroundJobSnapshots(),
   ]);
 
   const recentFailures: RecentFailure[] = [
@@ -495,7 +499,7 @@ export async function getCmsTaskOperationsSummary() {
       cover: toStatusSummary(coverStatusRows),
       offer: toStatusSummary(offerStatusRows),
     },
-    backgroundJobs: getAdminBackgroundJobSnapshots(),
+    backgroundJobs,
     recentFailures,
     staleTasks,
   };

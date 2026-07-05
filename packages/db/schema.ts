@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   integer,
@@ -9,6 +9,7 @@ import {
   varchar,
   primaryKey,
   index,
+  uniqueIndex,
   unique,
   foreignKey,
   bigint,
@@ -745,6 +746,48 @@ export const serverOfferImportTasks = pgTable(
       foreignColumns: [users.id],
       name: "server_offer_import_tasks_createdBy_users_id_fk",
     }).onDelete("set null"),
+  }),
+);
+
+export const adminBackgroundJobs = pgTable(
+  "admin_background_jobs",
+  {
+    id: serial("id").primaryKey(),
+    jobKey: varchar("jobKey", { length: 180 }).notNull(),
+    label: text("label").notNull(),
+    status: varchar("status", { length: 24 }).default("queued").notNull(),
+    payload: text("payload"),
+    attempts: integer("attempts").default(0).notNull(),
+    maxAttempts: integer("maxAttempts").default(3).notNull(),
+    runAfter: timestamp("runAfter").defaultNow().notNull(),
+    lockedBy: text("lockedBy"),
+    lockedAt: timestamp("lockedAt"),
+    heartbeatAt: timestamp("heartbeatAt"),
+    lastError: text("lastError"),
+    startedAt: timestamp("startedAt"),
+    finishedAt: timestamp("finishedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    jobKeyIdx: index("admin_background_jobs_jobKey_idx").on(table.jobKey),
+    statusRunAfterIdx: index("admin_background_jobs_status_runAfter_idx").on(
+      table.status,
+      table.runAfter,
+    ),
+    lockedAtIdx: index("admin_background_jobs_lockedAt_idx").on(table.lockedAt),
+    heartbeatAtIdx: index("admin_background_jobs_heartbeatAt_idx").on(
+      table.heartbeatAt,
+    ),
+    statusCreatedAtIdx: index("admin_background_jobs_status_createdAt_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+    queuedJobKeyUnique: uniqueIndex(
+      "admin_background_jobs_queued_jobKey_unique",
+    )
+      .on(table.jobKey)
+      .where(sql`${table.status} = 'queued'`),
   }),
 );
 

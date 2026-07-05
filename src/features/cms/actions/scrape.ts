@@ -174,9 +174,10 @@ export async function scrapeArticleAction(
     });
     pruneScrapeJobs();
 
-    enqueueAdminBackgroundJob({
+    await enqueueAdminBackgroundJob({
       key: `scrape-article:${jobId}`,
       label: `抓取并改写文章：${url}`,
+      maxAttempts: 1,
       run: () => runScrapeJob(jobId),
     });
 

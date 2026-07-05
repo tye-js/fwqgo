@@ -1369,15 +1369,34 @@ async function loadTaskArticle(
 }
 
 export async function enqueueAiRewriteTask(taskId: number) {
-  if (runningTaskIds.has(taskId)) {
-    return;
-  }
+  if (!Number.isInteger(taskId) || taskId <= 0) return;
+  await ensureAiRewriteWorker();
+}
 
-  runningTaskIds.add(taskId);
-  enqueueAdminBackgroundJob({
-    key: `ai-rewrite-task:${taskId}`,
-    label: `AI rewrite task #${taskId}`,
-    run: () => runAiRewriteTask(taskId),
+async function getNextPendingAiRewriteTaskId() {
+  const [task] = await db
+    .select({ id: aiRewriteTasks.id })
+    .from(aiRewriteTasks)
+    .where(eq(aiRewriteTasks.status, "pending"))
+    .orderBy(aiRewriteTasks.createdAt, aiRewriteTasks.id)
+    .limit(1);
+
+  return task?.id ?? null;
+}
+
+async function runAiRewriteWorker() {
+  while (true) {
+    const taskId = await getNextPendingAiRewriteTaskId();
+    if (!taskId) return;
+    await runAiRewriteTask(taskId);
+  }
+}
+
+export async function ensureAiRewriteWorker() {
+  await enqueueAdminBackgroundJob({
+    key: "ai-rewrite-worker",
+    label: "AI rewrite worker",
+    run: runAiRewriteWorker,
   });
 }
 

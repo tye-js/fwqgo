@@ -1,1 +1,5 @@
-export { enqueueAiRewriteTask, runAiRewriteTask } from "@fwqgo/ai/rewrite-task-runner";
+export {
+  enqueueAiRewriteTask,
+  ensureAiRewriteWorker,
+  runAiRewriteTask,
+} from "@fwqgo/ai/rewrite-task-runner";

@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { and, eq, lt } from "drizzle-orm";
+import { and, asc, eq, isNull, lt, or } from "drizzle-orm";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { db } from "@fwqgo/db";
@@ -91,17 +91,23 @@ async function resetStaleRunningTasks() {
     .where(
       and(
         eq(serverOfferImportTasks.status, "running"),
-        lt(serverOfferImportTasks.updatedAt, staleBefore),
+        or(
+          lt(serverOfferImportTasks.updatedAt, staleBefore),
+          and(
+            isNull(serverOfferImportTasks.updatedAt),
+            lt(serverOfferImportTasks.startedAt, staleBefore),
+          ),
+        ),
       ),
     );
 }
 
 async function claimNextTask() {
   const [task] = await db
-    .select()
+    .select({ id: serverOfferImportTasks.id })
     .from(serverOfferImportTasks)
     .where(eq(serverOfferImportTasks.status, "pending"))
-    .orderBy(serverOfferImportTasks.id)
+    .orderBy(asc(serverOfferImportTasks.id))
     .limit(1);
 
   if (!task) {
@@ -119,7 +125,12 @@ async function claimNextTask() {
       startedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(serverOfferImportTasks.id, task.id))
+    .where(
+      and(
+        eq(serverOfferImportTasks.id, task.id),
+        eq(serverOfferImportTasks.status, "pending"),
+      ),
+    )
     .returning();
 
   return claimedTask ?? null;
@@ -211,8 +222,8 @@ async function runServerOfferImportWorker() {
   }
 }
 
-export function ensureServerOfferImportWorker() {
-  enqueueAdminBackgroundJob({
+export async function ensureServerOfferImportWorker() {
+  await enqueueAdminBackgroundJob({
     key: "server-offer-import-worker",
     label: "Server offer import worker",
     run: runServerOfferImportWorker,
@@ -261,7 +272,7 @@ export async function createServerOfferImportTask(input: {
     throw new Error("创建套餐提取任务失败");
   }
 
-  ensureServerOfferImportWorker();
+  await ensureServerOfferImportWorker();
   return serializeServerOfferImportTask(task);
 }
 
@@ -315,12 +326,12 @@ export async function retryServerOfferImportTask(taskId: number) {
       throw new Error("任务不存在，或当前状态不能恢复");
     }
 
-    ensureServerOfferImportWorker();
+    await ensureServerOfferImportWorker();
     revalidateOfferTaskPages(taskId);
     return serializeServerOfferImportTask(cancelledTask);
   }
 
-  ensureServerOfferImportWorker();
+  await ensureServerOfferImportWorker();
   revalidateOfferTaskPages(taskId);
   return serializeServerOfferImportTask(task);
 }
@@ -371,7 +382,7 @@ export async function getServerOfferImportTaskStatus(taskId: number) {
   }
 
   if (task.status === "pending") {
-    ensureServerOfferImportWorker();
+    await ensureServerOfferImportWorker();
   }
 
   return serializeServerOfferImportTask(task);

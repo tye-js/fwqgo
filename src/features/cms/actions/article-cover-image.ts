@@ -3,15 +3,21 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq, inArray, lt } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { db } from "@fwqgo/db";
 import { imageCoverGenerationTasks, posts } from "@fwqgo/db/schema";
-import { syncImageReferencesForPost } from "@/server/images/assets";
 import { generateArticleCoverImage } from "@/server/images/generated-cover";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
+import {
+  ensureCoverGenerationWorker,
+  formatCoverGenerationError,
+  serializeCoverTask,
+  terminalCoverTaskStatuses,
+  type CoverTaskStatus,
+} from "@/server/images/cover-generation-task-runner";
 import {
   adminActionFailure,
   adminActionSuccess,
@@ -32,15 +38,6 @@ const batchCoverSchema = z.object({
   postIds: z.array(z.coerce.number().int().positive()).min(1).max(20),
 });
 
-type CoverTaskStatus =
-  | "pending"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "cancelled";
-type CoverTaskRow = typeof imageCoverGenerationTasks.$inferSelect;
-
-let isCoverGenerationWorkerRunning = false;
 const finalizedCoverGenerationBatches = new Set<string>();
 
 type EphemeralCoverTask = {
@@ -58,50 +55,6 @@ type EphemeralCoverTask = {
 
 const ephemeralCoverBatches = new Map<string, EphemeralCoverTask[]>();
 const MAX_EPHEMERAL_COVER_BATCHES = 30;
-const terminalCoverTaskStatuses = ["succeeded", "failed", "cancelled"];
-
-function formatCoverGenerationError(error: unknown) {
-  const message =
-    error instanceof Error
-      ? error.message
-      : typeof error === "string"
-        ? error
-        : "生成封面图失败";
-  const [title, ...detailParts] = message.split(/：|；/);
-  const trimmedTitle = title?.trim() ?? "";
-  const normalizedTitle =
-    trimmedTitle.length > 0 ? trimmedTitle : "生成封面图失败";
-  const detail = detailParts.join("；").trim();
-
-  return {
-    title: normalizedTitle,
-    detail: detail.length > 0 ? detail : message,
-  };
-}
-
-function serializeCoverTask(task: CoverTaskRow) {
-  const status = task.status as CoverTaskStatus;
-
-  return {
-    taskId: task.id,
-    batchId: task.batchId,
-    postId: task.postId,
-    title: task.title,
-    status,
-    success: status === "succeeded",
-    url: task.outputUrl ?? undefined,
-    assetId: task.assetId ?? undefined,
-    error: task.errorTitle
-      ? [task.errorTitle, task.errorDetail].filter(Boolean).join("：")
-      : undefined,
-    errorTitle: task.errorTitle ?? undefined,
-    errorDetail: task.errorDetail ?? undefined,
-    startedAt: task.startedAt?.toISOString() ?? null,
-    finishedAt: task.finishedAt?.toISOString() ?? null,
-    createdAt: task.createdAt.toISOString(),
-    updatedAt: task.updatedAt?.toISOString() ?? null,
-  };
-}
 
 function serializeEphemeralCoverTask(task: EphemeralCoverTask) {
   return {
@@ -133,155 +86,6 @@ function pruneEphemeralCoverBatches() {
   for (const key of keysToDelete) {
     ephemeralCoverBatches.delete(key);
   }
-}
-
-async function resetStaleRunningCoverTasks() {
-  const staleBefore = new Date(Date.now() - 15 * 60 * 1000);
-
-  await db
-    .update(imageCoverGenerationTasks)
-    .set({
-      status: "pending",
-      errorTitle: null,
-      errorDetail: null,
-      startedAt: null,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(imageCoverGenerationTasks.status, "running"),
-        lt(imageCoverGenerationTasks.updatedAt, staleBefore),
-      ),
-    );
-}
-
-async function getNextPendingCoverTask() {
-  const [task] = await db
-    .select()
-    .from(imageCoverGenerationTasks)
-    .where(eq(imageCoverGenerationTasks.status, "pending"))
-    .orderBy(imageCoverGenerationTasks.id)
-    .limit(1);
-
-  if (!task) return null;
-
-  const [claimedTask] = await db
-    .update(imageCoverGenerationTasks)
-    .set({
-      status: "running",
-      errorTitle: null,
-      errorDetail: null,
-      startedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(imageCoverGenerationTasks.id, task.id))
-    .returning();
-
-  return claimedTask ?? null;
-}
-
-async function processCoverGenerationTask(task: CoverTaskRow) {
-  const [post] = await db
-    .select({
-      id: posts.id,
-      title: posts.title,
-      slug: posts.slug,
-      description: posts.description,
-      keywords: posts.keywords,
-      content: posts.content,
-      categoryId: posts.categoryId,
-      language: posts.language,
-    })
-    .from(posts)
-    .where(eq(posts.id, task.postId))
-    .limit(1);
-
-  if (!post) {
-    throw new Error("文章不存在或已被删除");
-  }
-
-  const generated = await generateArticleCoverImage({
-    title: post.title,
-    description: post.description,
-    keywords: post.keywords,
-    content: post.content,
-    fileSlug: post.slug,
-    language: post.language === "en" ? "en" : "zh",
-    uploadedBy: task.createdBy,
-  });
-
-  const [updatedPost] = await db
-    .update(posts)
-    .set({
-      imgUrl: generated.asset.path,
-      updatedAt: new Date(),
-    })
-    .where(eq(posts.id, post.id))
-    .returning({
-      id: posts.id,
-      slug: posts.slug,
-      categoryId: posts.categoryId,
-    });
-
-  if (!updatedPost) {
-    throw new Error("封面写入文章失败");
-  }
-
-  await syncImageReferencesForPost(updatedPost.id);
-
-  await db
-    .update(imageCoverGenerationTasks)
-    .set({
-      status: "succeeded",
-      outputUrl: generated.asset.path,
-      assetId: generated.asset.id,
-      errorTitle: null,
-      errorDetail: null,
-      finishedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(imageCoverGenerationTasks.id, task.id));
-}
-
-async function runCoverGenerationWorker() {
-  if (isCoverGenerationWorkerRunning) return;
-  isCoverGenerationWorkerRunning = true;
-
-  try {
-    await resetStaleRunningCoverTasks();
-
-    while (true) {
-      const task = await getNextPendingCoverTask();
-      if (!task) break;
-
-      try {
-        await processCoverGenerationTask(task);
-      } catch (error) {
-        const readableError = formatCoverGenerationError(error);
-
-        await db
-          .update(imageCoverGenerationTasks)
-          .set({
-            status: "failed",
-            errorTitle: readableError.title,
-            errorDetail: readableError.detail,
-            finishedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(imageCoverGenerationTasks.id, task.id));
-      }
-    }
-  } finally {
-    isCoverGenerationWorkerRunning = false;
-  }
-}
-
-function ensureCoverGenerationWorker() {
-  enqueueAdminBackgroundJob({
-    key: "article-cover-generation-worker",
-    label: "Article cover generation worker",
-    run: runCoverGenerationWorker,
-  });
 }
 
 async function runEphemeralCoverGenerationTask(
@@ -413,7 +217,7 @@ export async function generateArticleCoverImageAction(input: {
       }
 
       revalidatePath("/images/covers");
-      ensureCoverGenerationWorker();
+      await ensureCoverGenerationWorker();
 
       return {
         success: true,
@@ -438,9 +242,10 @@ export async function generateArticleCoverImageAction(input: {
     };
     ephemeralCoverBatches.set(batchId, [task]);
     pruneEphemeralCoverBatches();
-    enqueueAdminBackgroundJob({
+    await enqueueAdminBackgroundJob({
       key: `article-cover-generation:${batchId}`,
       label: `Article cover generation: ${payload.title}`,
+      maxAttempts: 1,
       run: () =>
         runEphemeralCoverGenerationTask(batchId, payload, session.userId),
     });
@@ -505,7 +310,7 @@ export async function batchGenerateArticleCoverImagesAction(input: {
       .returning();
 
     revalidatePath("/images/covers");
-    ensureCoverGenerationWorker();
+    await ensureCoverGenerationWorker();
 
     return {
       success: true,
@@ -565,7 +370,7 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
       });
     }
 
-    ensureCoverGenerationWorker();
+    await ensureCoverGenerationWorker();
     revalidateCoverGenerationTaskPaths(taskId);
     return adminActionSuccess(
       serializeCoverTask(task),
@@ -673,7 +478,7 @@ export async function getCoverGenerationBatchStatusAction(batchId: string) {
 
     const hasPending = tasks.some((task) => task.status === "pending");
     if (hasPending) {
-      ensureCoverGenerationWorker();
+      await ensureCoverGenerationWorker();
     }
 
     return {
