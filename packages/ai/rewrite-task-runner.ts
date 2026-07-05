@@ -49,6 +49,48 @@ import { shortenMarkdownOutboundLinks } from "@/server/links/outbound-short-link
 const runningTaskIds = new Set<number>();
 const MAX_AI_MARKDOWN_INPUT_LENGTH = 14_000;
 
+function normalizeCoverUrlForLanguageCheck(value: string | null | undefined) {
+  if (!value) return "";
+
+  try {
+    return decodeURIComponent(value).toLowerCase();
+  } catch {
+    return value.toLowerCase();
+  }
+}
+
+function isGeneratedCoverForLanguage(
+  value: string | null | undefined,
+  language: "zh" | "en",
+) {
+  return normalizeCoverUrlForLanguageCheck(value).includes(
+    `-${language}-cover.`,
+  );
+}
+
+function getReusableEnglishCoverUrl(
+  existingImgUrl: string | null,
+  parentImgUrl: string | null,
+) {
+  if (!existingImgUrl) return null;
+  if (parentImgUrl && existingImgUrl === parentImgUrl) return null;
+  if (isGeneratedCoverForLanguage(existingImgUrl, "zh")) return null;
+
+  return existingImgUrl;
+}
+
+function shouldForceEnglishCoverGeneration(input: {
+  englishImgUrl: string | null;
+  parentImgUrl: string | null;
+}) {
+  if (!input.englishImgUrl) return true;
+  if (input.parentImgUrl && input.englishImgUrl === input.parentImgUrl) {
+    return true;
+  }
+
+  return isGeneratedCoverForLanguage(input.englishImgUrl, "zh");
+}
+
 type TaskStatus =
   | "pending"
   | "running"
@@ -641,6 +683,10 @@ async function upsertEnglishDraftPost(input: {
   const existingPost = existingByTask ?? existingBySource ?? existingBySlug;
   const existingPostId = existingPost?.id ?? null;
   const existingImgUrl = existingPost?.imgUrl ?? null;
+  const reusableEnglishImgUrl = getReusableEnglishCoverUrl(
+    existingImgUrl,
+    input.parentPost.imgUrl,
+  );
   const slug = await getUniqueEnglishArticleSlug(
     input.slug,
     existingPostId ?? undefined,
@@ -657,7 +703,7 @@ async function upsertEnglishDraftPost(input: {
           description: input.description,
           keywords,
           content: storedContent,
-          imgUrl: existingImgUrl ?? input.parentPost.imgUrl,
+          imgUrl: reusableEnglishImgUrl,
           enTitle: null,
           enSlug: null,
           enDescription: null,
@@ -688,7 +734,7 @@ async function upsertEnglishDraftPost(input: {
           description: input.description,
           keywords,
           content: storedContent,
-          imgUrl: input.parentPost.imgUrl,
+          imgUrl: null,
           language: "en",
           translationSourcePostId: input.parentPost.id,
           categoryId: input.parentPost.categoryId,
@@ -920,7 +966,10 @@ async function runEnglishSeoTask(
       progress: 92,
       postId: englishPost.id,
       language: "en",
-      force: !englishPost.imgUrl || englishPost.imgUrl === post.imgUrl,
+      force: shouldForceEnglishCoverGeneration({
+        englishImgUrl: englishPost.imgUrl,
+        parentImgUrl: post.imgUrl,
+      }),
     });
 
     await updateTask(claimedTask.id, {
