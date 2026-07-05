@@ -241,13 +241,13 @@ export default function EditPost({
       description="编辑文章正文、分类、标签和 SEO 信息。"
       actions={
         <>
-          <Button asChild variant="outline" size="sm" className="h-9">
+          <Button asChild variant="outline" size="sm">
             <Link href="/posts/edit">
               <ArrowLeft className="size-4" />
               返回列表
             </Link>
           </Button>
-          <Button asChild variant="outline" size="sm" className="h-9">
+          <Button asChild variant="outline" size="sm">
             <Link
               href={publicPostHref}
               target="_blank"
@@ -273,7 +273,7 @@ export default function EditPost({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8 min-h-0 px-2"
+                className="px-3"
                 disabled={isRewritingLinks}
                 onClick={handleRewriteAffiliateLinks}
               >
@@ -318,7 +318,7 @@ export default function EditPost({
             <div className="mt-3 space-y-3 rounded-md border border-border/70 bg-muted/15 p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="font-medium">本次替换审计</p>
-                <Button asChild variant="outline" size="sm" className="h-9">
+                <Button asChild variant="outline" size="sm">
                   <Link href="/collect/aff-man">补返利规则</Link>
                 </Button>
               </div>
@@ -405,7 +405,7 @@ export default function EditPost({
                     <Badge
                       key={tag.tag.name}
                       variant="secondary"
-                      className="h-8 gap-1 rounded-md px-2.5"
+                      className="gap-1 rounded-md px-3"
                     >
                       {tag.tag.name}
                       <button
@@ -425,7 +425,7 @@ export default function EditPost({
                         value={tagInput}
                         onChange={(e) => setTagInput(e.target.value)}
                         placeholder="输入标签名称"
-                        className="h-8 w-36"
+                        className="w-40"
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
                             e.preventDefault();
@@ -442,7 +442,6 @@ export default function EditPost({
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="h-8"
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
@@ -457,7 +456,7 @@ export default function EditPost({
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-8 px-3"
+                      className="px-3"
                       onClick={() => setIsAddingTag(true)}
                     >
                       添加标签

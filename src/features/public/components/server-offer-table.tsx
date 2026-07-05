@@ -9,6 +9,7 @@ import {
   ShoppingCart,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { isHttpHref, isInternalHref, isSafePublicHref } from "@fwqgo/core/utils";
+import { isInternalHref, isSafePublicHref } from "@fwqgo/core/utils";
 
 type Offer = {
   id: number;
@@ -63,6 +64,12 @@ const billingCycleLabels: Record<string, string> = {
   yearly: "年付",
 };
 
+function cleanText(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed;
+}
+
 function getStatusClassName(status: string) {
   if (status === "in_stock") {
     return "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50";
@@ -76,9 +83,10 @@ function getStatusClassName(status: string) {
 }
 
 function formatPrice(offer: Offer) {
-  if (!offer.priceAmount) return "待补充";
-  const amount = Number(offer.priceAmount);
-  if (!Number.isFinite(amount)) return "待确认";
+  const priceAmount = cleanText(offer.priceAmount);
+  if (!priceAmount) return "待补充";
+  const amount = Number(priceAmount);
+  if (!Number.isFinite(amount) || amount < 0) return "待确认";
 
   const currency = offer.currency === "CNY" ? "¥" : "$";
   const cycle = offer.billingCycle
@@ -106,14 +114,14 @@ function getOfferFreshnessLabel(offer: Offer) {
 
 function getOfferCompleteness(offer: Offer) {
   const requiredFields = [
-    offer.priceAmount,
-    offer.currency,
-    offer.billingCycle,
-    offer.providerName,
-    offer.region,
-    offer.lineType,
+    cleanText(offer.priceAmount),
+    cleanText(offer.currency),
+    cleanText(offer.billingCycle),
+    cleanText(offer.providerName),
+    cleanText(offer.region),
+    cleanText(offer.lineType),
     specsText(offer),
-    offer.purchaseUrl,
+    cleanText(offer.purchaseUrl),
   ];
   const completed = requiredFields.filter(Boolean).length;
   return Math.round((completed / requiredFields.length) * 100);
@@ -127,14 +135,16 @@ function specsText(offer: Offer) {
     offer.bandwidth,
     offer.traffic,
   ]
+    .map(cleanText)
     .filter(Boolean)
     .join(" · ");
 }
 
 function priceSortValue(offer: Offer) {
-  if (!offer.priceAmount) return Infinity;
-  const amount = Number(offer.priceAmount);
-  if (!Number.isFinite(amount)) return Infinity;
+  const priceAmount = cleanText(offer.priceAmount);
+  if (!priceAmount) return Infinity;
+  const amount = Number(priceAmount);
+  if (!Number.isFinite(amount) || amount < 0) return Infinity;
 
   const usdAmount = offer.currency === "CNY" ? amount / 7.2 : amount;
   const divisorMap: Record<string, number> = {
@@ -155,67 +165,68 @@ function getUniqueValues(values: Array<string | null>) {
   ] as string[];
 }
 
+function SafeActionButton({
+  href,
+  icon,
+  label,
+  rel,
+  variant = "outline",
+}: {
+  href: string | null;
+  icon: ReactNode;
+  label: string;
+  rel?: string;
+  variant?: "default" | "outline";
+}) {
+  if (!isSafePublicHref(href)) return null;
+
+  return (
+    <Button asChild size="sm" variant={variant} className="min-h-11 px-3">
+      {isInternalHref(href) ? (
+        <Link href={href} prefetch={false}>
+          {icon}
+          {label}
+        </Link>
+      ) : (
+        <a
+          href={href}
+          target="_blank"
+          rel={rel ?? "noopener noreferrer"}
+        >
+          {icon}
+          {label}
+        </a>
+      )}
+    </Button>
+  );
+}
+
 function OfferActions({ offer }: { offer: Offer }) {
-  const hasPurchaseUrl = isSafePublicHref(offer.purchaseUrl);
-  const hasArticleUrl = isSafePublicHref(offer.articleUrl);
-  const hasReviewUrl = isSafePublicHref(offer.reviewUrl);
+  const hasAnyAction =
+    isSafePublicHref(offer.purchaseUrl) ||
+    isSafePublicHref(offer.articleUrl) ||
+    isSafePublicHref(offer.reviewUrl);
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-      {hasPurchaseUrl ? (
-        <Button asChild size="sm" className="min-h-11 px-3">
-          {isInternalHref(offer.purchaseUrl) ? (
-            <Link href={offer.purchaseUrl} prefetch={false}>
-              <ShoppingCart className="size-4" />
-              购买
-            </Link>
-          ) : isHttpHref(offer.purchaseUrl) ? (
-            <a
-              href={offer.purchaseUrl}
-              target="_blank"
-              rel="nofollow sponsored noopener noreferrer"
-            >
-              <ShoppingCart className="size-4" />
-              购买
-            </a>
-          ) : null}
-        </Button>
-      ) : null}
-      {hasArticleUrl ? (
-        <Button asChild size="sm" variant="outline" className="min-h-11 px-3">
-          {isInternalHref(offer.articleUrl) ? (
-            <Link href={offer.articleUrl} prefetch>
-              <FileText className="size-4" />
-              推广
-            </Link>
-          ) : isHttpHref(offer.articleUrl) ? (
-            <a
-              href={offer.articleUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <FileText className="size-4" />
-              推广
-            </a>
-          ) : null}
-        </Button>
-      ) : null}
-      {hasReviewUrl ? (
-        <Button asChild size="sm" variant="outline" className="min-h-11 px-3">
-          {isInternalHref(offer.reviewUrl) ? (
-            <Link href={offer.reviewUrl} prefetch>
-              <FlaskConical className="size-4" />
-              测评
-            </Link>
-          ) : isHttpHref(offer.reviewUrl) ? (
-            <a href={offer.reviewUrl} target="_blank" rel="noopener noreferrer">
-              <FlaskConical className="size-4" />
-              测评
-            </a>
-          ) : null}
-        </Button>
-      ) : null}
-      {!hasPurchaseUrl && !hasArticleUrl && !hasReviewUrl ? (
+      <SafeActionButton
+        href={cleanText(offer.purchaseUrl)}
+        icon={<ShoppingCart className="size-4" />}
+        label="购买"
+        rel="nofollow sponsored noopener noreferrer"
+        variant="default"
+      />
+      <SafeActionButton
+        href={cleanText(offer.articleUrl)}
+        icon={<FileText className="size-4" />}
+        label="推广"
+      />
+      <SafeActionButton
+        href={cleanText(offer.reviewUrl)}
+        icon={<FlaskConical className="size-4" />}
+        label="测评"
+      />
+      {!hasAnyAction ? (
         <ArrowUpRight className="mt-2 size-4 text-muted-foreground" />
       ) : null}
     </div>
@@ -230,6 +241,12 @@ function collectionHref(
 }
 
 function OfferMobileCard({ offer }: { offer: Offer }) {
+  const providerName = cleanText(offer.providerName);
+  const productType = cleanText(offer.productType);
+  const promoCode = cleanText(offer.promoCode);
+  const region = cleanText(offer.region);
+  const lineType = cleanText(offer.lineType);
+
   return (
     <article className="space-y-4 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
       <div className="space-y-2">
@@ -241,23 +258,23 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
             {offerStatusLabels[offer.status] ?? offer.status}
           </Badge>
         </div>
-      <div className="flex flex-wrap gap-2">
-          {offer.providerName ? (
+        <div className="flex flex-wrap gap-2">
+          {providerName ? (
             <Badge variant="secondary">
               <Link
-                href={collectionHref("providers", offer.providerName)}
+                href={collectionHref("providers", providerName)}
                 prefetch
                 className="hover:underline"
               >
-                {offer.providerName}
+                {providerName}
               </Link>
             </Badge>
           ) : null}
-          {offer.productType ? (
-            <Badge variant="outline">{offer.productType}</Badge>
+          {productType ? (
+            <Badge variant="outline">{productType}</Badge>
           ) : null}
-          {offer.promoCode ? (
-            <Badge variant="outline">优惠码 {offer.promoCode}</Badge>
+          {promoCode ? (
+            <Badge variant="outline">优惠码 {promoCode}</Badge>
           ) : null}
           <Badge variant="outline">完整度 {getOfferCompleteness(offer)}%</Badge>
         </div>
@@ -273,26 +290,26 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
         <div className="rounded-md bg-muted/30 p-3">
           <p className="text-xs text-muted-foreground">地区 / 线路</p>
           <p className="mt-1 font-medium text-foreground">
-            {offer.region ? (
+            {region ? (
               <Link
-                href={collectionHref("regions", offer.region)}
+                href={collectionHref("regions", region)}
                 prefetch
                 className="underline-offset-4 hover:text-primary hover:underline"
               >
-                {offer.region}
+                {region}
               </Link>
             ) : (
               "地区待补充"
             )}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {offer.lineType ? (
+            {lineType ? (
               <Link
-                href={collectionHref("lines", offer.lineType)}
+                href={collectionHref("lines", lineType)}
                 prefetch
                 className="underline-offset-4 hover:text-primary hover:underline"
               >
-                {offer.lineType}
+                {lineType}
               </Link>
             ) : (
               "线路待补充"
@@ -355,6 +372,7 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
           specsText(offer),
           offer.promoCode,
         ]
+          .map(cleanText)
           .filter(Boolean)
           .join(" ")
           .toLowerCase();

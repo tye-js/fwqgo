@@ -489,7 +489,7 @@ export default function AffManTable({
                 updateUrlQuery({ filter: value === "all" ? null : value });
               }}
             >
-              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[140px] sm:border-0 sm:bg-transparent sm:p-0">
+              <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[140px] sm:border-0 sm:bg-transparent sm:px-0">
                 <SelectValue placeholder="全部商家" />
               </SelectTrigger>
               <SelectContent>
@@ -505,7 +505,7 @@ export default function AffManTable({
                 updateUrlQuery({ sort: value === "id-desc" ? null : value });
               }}
             >
-              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[148px] sm:border-0 sm:bg-transparent sm:p-0">
+              <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[148px] sm:border-0 sm:bg-transparent sm:px-0">
                 <SelectValue placeholder="排序方式" />
               </SelectTrigger>
               <SelectContent>
@@ -641,35 +641,35 @@ export default function AffManTable({
                       <TableCell>{item.id}</TableCell>
                       <TableCell>
                         <Input
-                          className="h-9 min-w-[140px]"
+                          className="min-h-11 min-w-[140px]"
                           value={name}
                           onChange={(e) => setName(e.target.value)}
                         />
                       </TableCell>
                       <TableCell>
                         <Input
-                          className="h-9 min-w-[240px]"
+                          className="min-h-11 min-w-[240px]"
                           value={affUrl}
                           onChange={(e) => setAffUrl(e.target.value)}
                         />
                       </TableCell>
                       <TableCell>
                         <Input
-                          className="h-9 min-w-[120px]"
+                          className="min-h-11 min-w-[120px]"
                           value={affParam}
                           onChange={(e) => setAffParam(e.target.value)}
                         />
                       </TableCell>
                       <TableCell>
                         <Input
-                          className="h-9 min-w-[120px]"
+                          className="min-h-11 min-w-[120px]"
                           value={affValue}
                           onChange={(e) => setAffValue(e.target.value)}
                         />
                       </TableCell>
                       <TableCell>
                         <Input
-                          className="h-9 min-w-[200px]"
+                          className="min-h-11 min-w-[200px]"
                           value={officialUrl}
                           onChange={(e) => setOfficialUrl(e.target.value)}
                         />

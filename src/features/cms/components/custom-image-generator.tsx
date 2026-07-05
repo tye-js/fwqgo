@@ -147,6 +147,8 @@ export function CustomImageGenerator() {
                 type="button"
                 variant="outline"
                 size="sm"
+                aria-label="复制生成图片 URL"
+                title="复制生成图片 URL"
                 onClick={copyUrl}
               >
                 <Copy className="size-4" />
@@ -156,6 +158,8 @@ export function CustomImageGenerator() {
                   href={generated.url}
                   target="_blank"
                   rel="noopener noreferrer"
+                  aria-label="打开生成图片"
+                  title="打开生成图片"
                 >
                   <ExternalLink className="size-4" />
                 </Link>

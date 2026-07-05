@@ -441,7 +441,6 @@ export function ImageAssetManager({
         searchValue={query}
         onSearchChange={setQuery}
         searchPlaceholder="搜索文件名、URL、alt 或 prompt"
-        selectionCount={filteredImages.length}
         filterSlot={
           <div className="grid w-full gap-2 sm:grid-cols-3">
             <Select
@@ -454,7 +453,7 @@ export function ImageAssetManager({
                 );
               }}
             >
-              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:p-0">
+              <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:px-0">
                 <SelectValue placeholder="引用状态" />
               </SelectTrigger>
               <SelectContent>
@@ -476,7 +475,7 @@ export function ImageAssetManager({
                 );
               }}
             >
-              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:p-0">
+              <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:px-0">
                 <SelectValue placeholder="图片类型" />
               </SelectTrigger>
               <SelectContent>
@@ -498,7 +497,7 @@ export function ImageAssetManager({
                 );
               }}
             >
-              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:p-0">
+              <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:px-0">
                 <SelectValue placeholder="状态" />
               </SelectTrigger>
               <SelectContent>
@@ -519,7 +518,7 @@ export function ImageAssetManager({
               variant="outline"
               disabled={isPending}
               onClick={() => runAction(handleImport)}
-              className="min-h-10"
+              className="min-h-11"
             >
               <UploadCloud className="size-4" />
               导入历史
@@ -529,7 +528,7 @@ export function ImageAssetManager({
               variant="outline"
               disabled={isPending}
               onClick={() => runAction(handleRebuildReferences)}
-              className="min-h-10"
+              className="min-h-11"
             >
               <RefreshCw className="size-4" />
               重建引用
@@ -539,7 +538,7 @@ export function ImageAssetManager({
               variant="outline"
               disabled={isPending}
               onClick={() => runAction(handleConvertToWebp)}
-              className="min-h-10"
+              className="min-h-11"
             >
               <WandSparkles className="size-4" />
               历史转 WebP
@@ -549,7 +548,7 @@ export function ImageAssetManager({
               variant="outline"
               disabled={isPending}
               onClick={() => runAction(handleAuditAndRepairImages)}
-              className="min-h-10"
+              className="min-h-11"
             >
               <FileSearch className="size-4" />
               资产体检
@@ -559,7 +558,7 @@ export function ImageAssetManager({
               variant="outline"
               disabled={isPending}
               onClick={() => runAction(handleRebuildResponsiveImages)}
-              className="col-span-2 min-h-10 sm:col-span-1"
+              className="col-span-2 min-h-11 sm:col-span-1"
             >
               <RefreshCw className="size-4" />
               重建响应式图
@@ -656,7 +655,7 @@ export function ImageAssetManager({
                   <div className="mt-3 space-y-3">
                     <div className="grid gap-2">
                       <Input
-                        className="h-10"
+                        className="min-h-11"
                         value={getFileNameDraft(image)}
                         placeholder="图片文件名.webp"
                         onChange={(event) =>
@@ -670,7 +669,7 @@ export function ImageAssetManager({
                         type="button"
                         variant="outline"
                         disabled={isPending}
-                        className="min-h-10"
+                        className="min-h-11"
                         onClick={() => runAction(() => handleRenameFile(image))}
                       >
                         <Save className="size-4" />
@@ -680,7 +679,7 @@ export function ImageAssetManager({
 
                     <div className="grid gap-2">
                       <Input
-                        className="h-10"
+                        className="min-h-11"
                         placeholder="中文 alt"
                         value={metadataDraft.altZh}
                         onChange={(event) =>
@@ -692,7 +691,7 @@ export function ImageAssetManager({
                         }
                       />
                       <Input
-                        className="h-10"
+                        className="min-h-11"
                         placeholder="English alt"
                         value={metadataDraft.altEn}
                         onChange={(event) =>
@@ -707,7 +706,7 @@ export function ImageAssetManager({
                         type="button"
                         variant="outline"
                         disabled={isPending}
-                        className="min-h-10"
+                        className="min-h-11"
                         onClick={() =>
                           runAction(() => handleUpdateMetadata(image))
                         }
@@ -739,8 +738,9 @@ export function ImageAssetManager({
                         type="button"
                         variant="outline"
                         size="icon"
-                        className="size-10"
+                        className="size-11"
                         title="复制 URL"
+                        aria-label={`复制图片 URL：${image.originalName}`}
                         onClick={() => void handleCopy(image.path)}
                       >
                         <Copy className="size-4" />
@@ -749,13 +749,14 @@ export function ImageAssetManager({
                         asChild
                         variant="outline"
                         size="icon"
-                        className="size-10"
+                        className="size-11"
                         title="打开原图"
                       >
                         <a
                           href={image.path}
                           target="_blank"
                           rel="noopener noreferrer"
+                          aria-label={`打开原图：${image.originalName}`}
                         >
                           <ExternalLink className="size-4" />
                         </a>
@@ -780,8 +781,9 @@ export function ImageAssetManager({
                         type="button"
                         variant="outline"
                         size="icon"
-                        className="size-10"
+                        className="size-11"
                         title="替换文件"
+                        aria-label={`替换图片文件：${image.originalName}`}
                         disabled={isPending}
                         onClick={() => fileInputRefs.current[image.id]?.click()}
                       >
@@ -793,9 +795,10 @@ export function ImageAssetManager({
                             type="button"
                             variant="destructive"
                             size="icon"
-                            className="size-10"
+                            className="size-11"
                             disabled={isPending || isUsed}
                             title={isUsed ? "被引用时不能删除" : "删除图片"}
+                            aria-label={`删除图片：${image.originalName}`}
                           >
                             <Trash2 className="size-4" />
                           </Button>
@@ -883,7 +886,7 @@ export function ImageAssetManager({
                           </button>
                           <div className="flex items-center gap-2">
                             <Input
-                              className="h-9"
+                              className="min-h-11"
                               value={getFileNameDraft(image)}
                               placeholder="图片文件名.webp"
                               onChange={(event) =>
@@ -979,7 +982,7 @@ export function ImageAssetManager({
                                 )
                               }
                             >
-                              <SelectTrigger className="h-9">
+                              <SelectTrigger className="min-h-11">
                                 <SelectValue placeholder="图片类型" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1008,7 +1011,7 @@ export function ImageAssetManager({
                                 )
                               }
                             >
-                              <SelectTrigger className="h-9">
+                              <SelectTrigger className="min-h-11">
                                 <SelectValue placeholder="状态" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1021,7 +1024,7 @@ export function ImageAssetManager({
                             </Select>
                           </div>
                           <Input
-                            className="h-9"
+                            className="min-h-11"
                             placeholder="中文 alt"
                             value={metadataDraft.altZh}
                             onChange={(event) =>
@@ -1034,7 +1037,7 @@ export function ImageAssetManager({
                           />
                           <div className="flex items-center gap-2">
                             <Input
-                              className="h-9"
+                              className="min-h-11"
                               placeholder="English alt"
                               value={metadataDraft.altEn}
                               onChange={(event) =>
@@ -1085,7 +1088,7 @@ export function ImageAssetManager({
                       <TableCell className="min-w-[260px]">
                         <div className="flex items-center gap-2">
                           <Input
-                            className="h-9"
+                            className="min-h-11"
                             placeholder="/uploads/new.webp"
                             value={replacementPathById[image.id] ?? ""}
                             onChange={(event) =>
@@ -1115,6 +1118,7 @@ export function ImageAssetManager({
                             variant="outline"
                             size="icon"
                             title="复制 URL"
+                            aria-label={`复制图片 URL：${image.originalName}`}
                             onClick={() => void handleCopy(image.path)}
                           >
                             <Copy className="size-4" />
@@ -1129,6 +1133,7 @@ export function ImageAssetManager({
                               href={image.path}
                               target="_blank"
                               rel="noopener noreferrer"
+                              aria-label={`打开原图：${image.originalName}`}
                             >
                               <ExternalLink className="size-4" />
                             </a>

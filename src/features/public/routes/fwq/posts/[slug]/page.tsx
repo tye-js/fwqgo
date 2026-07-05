@@ -10,10 +10,10 @@ import {
   isRenderableImageSrc,
 } from "@fwqgo/core/image-src";
 import {
-  decodeSlug,
   formatDate,
   isHttpHref,
   isInternalHref,
+  normalizeDecodedSlug,
   toAbsoluteHttpUrl,
 } from "@fwqgo/core/utils";
 import Link from "next/link";
@@ -76,7 +76,9 @@ export async function generateMetadata(props: {
   await connection();
 
   const params = await props.params;
-  const decodedSlug = decodeSlug(params.slug);
+  const decodedSlug = normalizeDecodedSlug(params.slug);
+  if (!decodedSlug) return {};
+
   const canonicalUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`;
   const readableTitle = decodedSlug.replace(/[-_]+/g, " ");
   const { data } = await getPostBySlug(decodedSlug);
@@ -126,7 +128,11 @@ async function PostPageContent({
   await connection();
 
   const params = await paramsPromise;
-  const decodedSlug = decodeSlug(params.slug);
+  const decodedSlug = normalizeDecodedSlug(params.slug);
+  if (!decodedSlug) {
+    notFound();
+  }
+
   const { data, error } = await getPostWithTagsBySlug(decodedSlug);
   if (error) return <div>加载失败: {error}</div>;
   if (!data) notFound();

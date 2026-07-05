@@ -67,9 +67,9 @@ export default function CreateLayout({
             <AppSidebar />
           </Suspense>
           <SidebarInset className="min-w-0">
-            <header className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-2 border-b border-border bg-background/95 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-11 md:h-12">
+            <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/95 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-14">
               <div className="flex min-w-0 items-center gap-2 px-3">
-                <SidebarTrigger className="-ml-1 size-9 md:size-7" />
+                <SidebarTrigger className="-ml-1 size-11 md:size-10" />
                 <Separator orientation="vertical" className="h-4" />
                 <Suspense fallback={null}>
                   <AppBreadcrumb />

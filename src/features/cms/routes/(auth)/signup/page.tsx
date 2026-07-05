@@ -9,6 +9,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
+import { Eye, EyeOff } from "lucide-react";
 
 const registerSchema = z
   .object({
@@ -34,6 +35,8 @@ export default function RegisterPage() {
   const router = useRouter();
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const {
     register,
@@ -94,7 +97,11 @@ export default function RegisterPage() {
               }
             />
             {errors.username && (
-              <p id="signup-username-error" className="text-sm text-destructive">
+              <p
+                id="signup-username-error"
+                role="alert"
+                className="text-sm text-destructive"
+              >
                 {errors.username.message}
               </p>
             )}
@@ -102,18 +109,38 @@ export default function RegisterPage() {
 
           <div className="grid gap-2">
             <Label htmlFor="password">密码</Label>
-            <Input
-              id="password"
-              {...register("password")}
-              type="password"
-              autoComplete="new-password"
-              aria-invalid={Boolean(errors.password)}
-              aria-describedby={
-                errors.password ? "signup-password-error" : undefined
-              }
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                {...register("password")}
+                type={showPassword ? "text" : "password"}
+                autoComplete="new-password"
+                aria-invalid={Boolean(errors.password)}
+                aria-describedby={
+                  errors.password ? "signup-password-error" : undefined
+                }
+                className="pr-12"
+              />
+              <button
+                type="button"
+                className="absolute right-1 top-1/2 inline-flex size-10 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                title={showPassword ? "隐藏密码" : "显示密码"}
+                onClick={() => setShowPassword((value) => !value)}
+              >
+                {showPassword ? (
+                  <EyeOff className="size-4" />
+                ) : (
+                  <Eye className="size-4" />
+                )}
+              </button>
+            </div>
             {errors.password && (
-              <p id="signup-password-error" className="text-sm text-destructive">
+              <p
+                id="signup-password-error"
+                role="alert"
+                className="text-sm text-destructive"
+              >
                 {errors.password.message}
               </p>
             )}
@@ -121,21 +148,40 @@ export default function RegisterPage() {
 
           <div className="grid gap-2">
             <Label htmlFor="confirmPassword">确认密码</Label>
-            <Input
-              id="confirmPassword"
-              {...register("confirmPassword")}
-              type="password"
-              autoComplete="new-password"
-              aria-invalid={Boolean(errors.confirmPassword)}
-              aria-describedby={
-                errors.confirmPassword
-                  ? "signup-confirm-password-error"
-                  : undefined
-              }
-            />
+            <div className="relative">
+              <Input
+                id="confirmPassword"
+                {...register("confirmPassword")}
+                type={showConfirmPassword ? "text" : "password"}
+                autoComplete="new-password"
+                aria-invalid={Boolean(errors.confirmPassword)}
+                aria-describedby={
+                  errors.confirmPassword
+                    ? "signup-confirm-password-error"
+                    : undefined
+                }
+                className="pr-12"
+              />
+              <button
+                type="button"
+                className="absolute right-1 top-1/2 inline-flex size-10 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={
+                  showConfirmPassword ? "隐藏确认密码" : "显示确认密码"
+                }
+                title={showConfirmPassword ? "隐藏确认密码" : "显示确认密码"}
+                onClick={() => setShowConfirmPassword((value) => !value)}
+              >
+                {showConfirmPassword ? (
+                  <EyeOff className="size-4" />
+                ) : (
+                  <Eye className="size-4" />
+                )}
+              </button>
+            </div>
             {errors.confirmPassword && (
               <p
                 id="signup-confirm-password-error"
+                role="alert"
                 className="text-sm text-destructive"
               >
                 {errors.confirmPassword.message}
@@ -143,7 +189,11 @@ export default function RegisterPage() {
             )}
           </div>
 
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          {error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
 
           <Button type="submit" className="w-full" disabled={isPending}>
             {isPending ? "注册中..." : "注册"}

@@ -11,10 +11,10 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import AffManTable from "@/features/cms/components/affman-tables";
 import { PaginationComponent } from "@/features/shared/components/pagination";
+import { parsePositiveInt } from "@fwqgo/core/utils";
 
 function parsePageNo(value: string | undefined) {
-  const parsed = value ? Number.parseInt(value, 10) : 1;
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+  return parsePositiveInt(value) ?? 1;
 }
 
 async function AffManList({

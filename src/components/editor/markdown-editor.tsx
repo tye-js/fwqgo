@@ -78,7 +78,6 @@ export function MarkdownEditor({
               type="button"
               variant="outline"
               size="sm"
-              className="h-8"
               onClick={() => insertSnippet(snippet.text)}
             >
               <Icon className="size-3.5" />

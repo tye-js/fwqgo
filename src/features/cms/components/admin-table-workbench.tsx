@@ -62,7 +62,7 @@ export function AdminTableWorkbench({
           {searchValue ? (
             <button
               type="button"
-              className="absolute right-1.5 top-1/2 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="absolute right-0 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => onSearchChange("")}
               aria-label="清空搜索"
             >
@@ -100,7 +100,7 @@ export function AdminTableEmpty({
 }) {
   return (
     <div className="rounded-md border border-dashed border-border/70 bg-muted/15 px-4 py-8 text-center">
-      <div className="mx-auto flex size-10 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
+      <div className="mx-auto flex size-11 items-center justify-center rounded-md border border-border/70 bg-background text-muted-foreground">
         <SearchX className="size-5" />
       </div>
       <p className="mt-3 text-sm font-medium text-foreground">{title}</p>

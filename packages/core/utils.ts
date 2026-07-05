@@ -56,6 +56,24 @@ export function decodeSlug(url: string) {
   }
 }
 
+export function normalizeDecodedSlug(value: string | null | undefined) {
+  if (!value) return null;
+  const decoded = decodeSlug(value).trim();
+  return decoded.length > 0 ? decoded : null;
+}
+
+export function parsePositiveInt(value: string | number | null | undefined) {
+  if (typeof value === "number") {
+    return Number.isInteger(value) && value > 0 ? value : null;
+  }
+
+  const trimmed = value?.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return null;
+
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 export function isInternalHref(href: string | null | undefined): href is string {
   return Boolean(href?.startsWith("/") && !href.startsWith("//"));
 }
@@ -116,7 +134,8 @@ export function sanitizeFileName(fileName: string) {
 // 判断时间是不是24小时内
 export function isWithin24Hours(date: Date) {
   const now = new Date();
-  const diffTime = Math.abs(now.getTime() - date.getTime());
+  const diffTime = now.getTime() - date.getTime();
+  if (diffTime < 0) return false;
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   return diffDays <= 1;
 }

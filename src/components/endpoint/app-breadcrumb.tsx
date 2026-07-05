@@ -58,6 +58,21 @@ export default function AppBreadcrumb() {
       url: `/${item}`,
     }))
     .filter((item) => item.title !== "");
+
+  if (breadcrumbItems.length === 0) {
+    return (
+      <Breadcrumb>
+        <BreadcrumbList className="min-w-0 flex-nowrap">
+          <BreadcrumbItem className="min-w-0">
+            <BreadcrumbPage className="max-w-[58vw] truncate text-sm md:max-w-[42vw]">
+              数据面板
+            </BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
+    );
+  }
+
   return (
     <Breadcrumb>
       <BreadcrumbList className="min-w-0 flex-nowrap">

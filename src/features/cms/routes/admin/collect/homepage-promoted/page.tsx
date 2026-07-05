@@ -53,7 +53,6 @@ async function HomepagePromotedPostContent({
               asChild
               size="sm"
               variant={language === item ? "default" : "ghost"}
-              className="h-8"
             >
               <Link href={languageHref(item)}>
                 {item === "zh" ? "中文" : "英文"}
@@ -78,7 +77,7 @@ async function HomepagePromotedPostContent({
           {
             label: "工作模式",
             value: "手动排序",
-            note: "sortOrder 越小越靠前",
+            note: "排序值越小越靠前",
           },
         ]}
       />

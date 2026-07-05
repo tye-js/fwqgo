@@ -24,7 +24,7 @@ export function AdminLoading({
       title={title}
       description={description}
       actions={
-        <div className="inline-flex h-9 items-center gap-2 rounded-md border border-border/70 bg-muted/30 px-3 text-xs text-muted-foreground">
+        <div className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border/70 bg-muted/30 px-3 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
           <span>加载中</span>
         </div>
@@ -48,8 +48,8 @@ export function AdminLoading({
                 <Skeleton className="h-4 w-2/3" />
                 <Skeleton className="h-3 w-full" />
               </div>
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-11 w-full" />
+              <Skeleton className="h-11 w-full" />
             </div>
           ))}
         </div>

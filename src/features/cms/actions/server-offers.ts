@@ -74,6 +74,14 @@ function revalidateOfferPages() {
 
 export async function importServerOffersFromPostAction(postId: number) {
   try {
+    await requireAdminSession();
+    if (!Number.isInteger(postId) || postId <= 0) {
+      return adminActionFailure(new Error("文章 ID 无效"), {
+        title: "从单篇文章导入服务器套餐失败",
+        suggestion: "请刷新文章列表后重试。",
+      });
+    }
+
     const task = await createServerOfferImportTask({
       mode: "single",
       postId,
@@ -93,6 +101,7 @@ export async function importServerOffersFromSelectedPostsAction(
   postIds: number[],
 ) {
   try {
+    await requireAdminSession();
     const validIds = [
       ...new Set(postIds.filter((id) => Number.isInteger(id) && id > 0)),
     ].slice(0, 50);
@@ -141,6 +150,7 @@ export async function importServerOffersFromSelectedPostsAction(
 
 export async function importServerOffersFromPostsAction() {
   try {
+    await requireAdminSession();
     const task = await createServerOfferImportTask({ mode: "bulk" });
 
     return adminActionSuccess(task, "历史文章套餐提取任务已加入后台队列");
@@ -155,6 +165,14 @@ export async function importServerOffersFromPostsAction() {
 
 export async function getServerOfferImportTaskStatusAction(taskId: number) {
   try {
+    await requireAdminSession();
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return adminActionFailure(new Error("任务 ID 无效"), {
+        title: "读取套餐提取任务失败",
+        suggestion: "请从最新任务提示中重新打开状态。",
+      });
+    }
+
     const task = await getServerOfferImportTaskStatus(taskId);
     return adminActionSuccess(task);
   } catch (error) {
@@ -168,6 +186,10 @@ export async function getServerOfferImportTaskStatusAction(taskId: number) {
 export async function updateServerOfferAction(id: number, formData: FormData) {
   try {
     await requireAdminSession();
+    if (!Number.isInteger(id) || id <= 0) {
+      return { error: "套餐 ID 无效" };
+    }
+
     const input = updateOfferSchema.parse({
       title: formData.get("title"),
       providerName: formData.get("providerName"),
@@ -208,12 +230,17 @@ export async function bulkUpdateServerOffersAction(input: {
 }) {
   try {
     await requireAdminSession();
+    const ids = input.ids.filter((id) => Number.isInteger(id) && id > 0);
+    if (ids.length === 0) {
+      return { error: "请先选择要更新的套餐" };
+    }
+
     const status =
       input.status && offerStatuses.includes(input.status as (typeof offerStatuses)[number])
         ? (input.status as (typeof offerStatuses)[number])
         : undefined;
     const result = await bulkUpdateServerOffers({
-      ids: input.ids.filter((id) => Number.isInteger(id) && id > 0),
+      ids,
       status,
       visible: input.visible,
       featured: input.featured,
