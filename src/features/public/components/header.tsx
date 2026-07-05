@@ -20,6 +20,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { LanguageSwitchLink } from "@/features/public/components/language-switch-link";
 import { getCategories } from "@/features/shared/data/category";
 import { cn } from "@fwqgo/core/utils";
 import { Globe2, Menu, Search, Server } from "lucide-react";
@@ -30,7 +31,6 @@ const headerCopy: Record<
   PublicLanguage,
   {
     homeLabel: string;
-    languageHref: string;
     languageLabel: string;
     dealsTitle: string;
     allOffers: string;
@@ -52,7 +52,6 @@ const headerCopy: Record<
 > = {
   zh: {
     homeLabel: "返回服务器go首页",
-    languageHref: "/en",
     languageLabel: "English",
     dealsTitle: "服务器比价",
     allOffers: "全部套餐",
@@ -73,7 +72,6 @@ const headerCopy: Record<
   },
   en: {
     homeLabel: "Back to fwqgo English homepage",
-    languageHref: "/",
     languageLabel: "中文",
     dealsTitle: "Server deals",
     allOffers: "All offers",
@@ -251,10 +249,13 @@ const HeaderComponent = async ({
             variant="outline"
             className="hidden shrink-0 lg:inline-flex"
           >
-            <Link href={copy.languageHref} prefetch>
+            <LanguageSwitchLink
+              currentLanguage={language}
+              prefetch
+            >
               <Globe2 className="size-4" />
               {copy.languageLabel}
-            </Link>
+            </LanguageSwitchLink>
           </Button>
 
           <Sheet>
@@ -305,14 +306,16 @@ const HeaderComponent = async ({
                       {label}
                     </MobileNavLink>
                   ))}
-                  <MobileNavLink
-                    href={copy.languageHref}
-                    prefetch
-                    className="mt-1 flex min-h-11 items-center gap-2 rounded-md border border-border/70 px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <Globe2 className="size-4" />
-                    {copy.languageLabel}
-                  </MobileNavLink>
+                  <SheetClose asChild>
+                    <LanguageSwitchLink
+                      currentLanguage={language}
+                      prefetch
+                      className="mt-1 flex min-h-11 items-center gap-2 rounded-md border border-border/70 px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Globe2 className="size-4" />
+                      {copy.languageLabel}
+                    </LanguageSwitchLink>
+                  </SheetClose>
                   <MobileNavLink
                     href={copy.searchHref}
                     prefetch

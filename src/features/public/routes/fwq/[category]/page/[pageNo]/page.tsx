@@ -20,7 +20,10 @@ import { connection } from "next/server";
 import { getServerOffersByKeywords } from "@/server/offers/server-offers";
 
 function getSiteUrl() {
-  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
+    /\/+$/,
+    "",
+  );
 }
 
 function splitKeywords(value: string | null | undefined) {
@@ -32,25 +35,34 @@ function splitKeywords(value: string | null | undefined) {
   );
 }
 
-export async function generateMetadata(
-  props: {
-    params: Promise<{ category: string; pageNo: string }>;
-  }
-): Promise<Metadata> {
+export async function generateMetadata(props: {
+  params: Promise<{ category: string; pageNo: string }>;
+}): Promise<Metadata> {
   const params = await props.params;
   const pageNo = parsePositiveInt(params.pageNo) ?? 1;
-  const readableName = decodeSlug(params.category).replace(/[-_]+/g, " ");
-  const { data: category } = await getCategoryBySlug(params.category);
+  const decodedCategory = decodeSlug(params.category);
+  const readableName = decodedCategory.replace(/[-_]+/g, " ");
+  const { data: category } = await getCategoryBySlug(decodedCategory);
   const title = category?.name ?? readableName;
   const description =
     category?.description ?? `${title}相关的服务器优惠、评测与选购文章。`;
-  const canonical = `${getSiteUrl()}/fwq/${encodeURIComponent(params.category)}/page/${pageNo}`;
+  const canonicalSlug = category?.slug ?? decodedCategory;
+  const canonical = `${getSiteUrl()}/fwq/${encodeURIComponent(canonicalSlug)}/page/${pageNo}`;
+  const englishSlug = category?.enSlug?.trim();
+  const englishUrl = englishSlug
+    ? `${getSiteUrl()}/en/fwq/${encodeURIComponent(englishSlug)}/page/${pageNo}`
+    : undefined;
   return {
     title: `${title}-服务器go`,
     description,
     keywords: category?.keywords ?? readableName,
     alternates: {
       canonical,
+      languages: {
+        "zh-CN": canonical,
+        ...(englishUrl ? { en: englishUrl } : {}),
+        "x-default": canonical,
+      },
     },
     openGraph: {
       title: `${title}-服务器go`,
@@ -85,7 +97,9 @@ const CategoryPageContent = async ({
     category.id,
     pageNo,
   );
-  const { data: totalCount } = await getPublishedPostCountByCategoryId(category.id);
+  const { data: totalCount } = await getPublishedPostCountByCategoryId(
+    category.id,
+  );
   const [{ data: latestPosts }, relatedOffers] = await Promise.all([
     getLatestPostsForSidebar(),
     getServerOffersByKeywords({
@@ -185,11 +199,9 @@ async function CategoryInfo(slug: string) {
   return await getCategoryBySlug(slug);
 }
 
-export default function CategoryPage(
-  props: {
-    params: Promise<{ category: string; pageNo: string }>;
-  }
-) {
+export default function CategoryPage(props: {
+  params: Promise<{ category: string; pageNo: string }>;
+}) {
   return (
     <Suspense
       fallback={

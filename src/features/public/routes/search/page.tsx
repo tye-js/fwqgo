@@ -217,7 +217,11 @@ async function SearchContent({ searchParams }: SearchPageProps) {
               {posts.length > 0 ? (
                 <div className="space-y-4">
                   {posts.map((post) => (
-                    <ArticleCard key={post.id} post={post} language={language} />
+                    <ArticleCard
+                      key={post.id}
+                      post={post}
+                      language={language}
+                    />
                   ))}
                 </div>
               ) : (
@@ -233,10 +237,14 @@ async function SearchContent({ searchParams }: SearchPageProps) {
   );
 }
 
-export default function SearchPage(props: SearchPageProps) {
+export default async function SearchPage(props: SearchPageProps) {
+  const searchParams = await props.searchParams;
+  const language = normalizeLanguage(searchParams.lang);
+  const resolvedSearchParams = Promise.resolve(searchParams);
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Header />
+      <Header language={language} />
       <Suspense
         fallback={
           <main className="container mx-auto flex flex-1 items-center px-4 py-12">
@@ -246,9 +254,9 @@ export default function SearchPage(props: SearchPageProps) {
           </main>
         }
       >
-        <SearchContent searchParams={props.searchParams} />
+        <SearchContent searchParams={resolvedSearchParams} />
       </Suspense>
-      <Footer />
+      <Footer language={language} />
     </div>
   );
 }
