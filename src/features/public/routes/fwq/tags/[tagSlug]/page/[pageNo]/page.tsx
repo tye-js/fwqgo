@@ -1,4 +1,7 @@
-import { getPostsWithTagsByTagSlug, getTagBySlug } from "@/features/public/data/tag";
+import {
+  getPostsWithTagsByTagSlug,
+  getTagBySlug,
+} from "@/features/public/data/tag";
 import { getLatestPostsForSidebar } from "@/features/public/data/post";
 import ArticleCard from "@/features/public/components/article-card";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
@@ -15,7 +18,10 @@ import { connection } from "next/server";
 import { getServerOffersByKeywords } from "@/server/offers/server-offers";
 
 function getSiteUrl() {
-  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
+    /\/+$/,
+    "",
+  );
 }
 
 function splitKeywords(value: string | null | undefined) {
@@ -27,11 +33,9 @@ function splitKeywords(value: string | null | undefined) {
   );
 }
 
-export async function generateMetadata(
-  props: {
-    params: Promise<{ tagSlug: string; pageNo: string }>;
-  }
-): Promise<Metadata> {
+export async function generateMetadata(props: {
+  params: Promise<{ tagSlug: string; pageNo: string }>;
+}): Promise<Metadata> {
   const params = await props.params;
   const decodedTagSlug = decodeSlug(params.tagSlug);
   const pageNo = parsePositiveInt(params.pageNo) ?? 1;
@@ -40,13 +44,23 @@ export async function generateMetadata(
   const title = tag?.name ?? readableName;
   const description =
     tag?.description ?? `${title}相关服务器、VPS、优惠和测评文章。`;
-  const canonical = `${getSiteUrl()}/fwq/tags/${encodeURIComponent(decodedTagSlug)}/page/${pageNo}`;
+  const canonicalSlug = tag?.slug ?? decodedTagSlug;
+  const canonical = `${getSiteUrl()}/fwq/tags/${encodeURIComponent(canonicalSlug)}/page/${pageNo}`;
+  const englishSlug = tag?.enSlug?.trim();
+  const englishUrl = englishSlug
+    ? `${getSiteUrl()}/en/fwq/tags/${encodeURIComponent(englishSlug)}/page/${pageNo}`
+    : undefined;
   return {
     title: `${title}-服务器`,
     description,
     keywords: tag?.keywords ?? `${title}的服务器,${title}的VPS`,
     alternates: {
       canonical,
+      languages: {
+        "zh-CN": canonical,
+        ...(englishUrl ? { en: englishUrl } : {}),
+        "x-default": canonical,
+      },
     },
     openGraph: {
       title: `${title}-服务器`,
@@ -74,11 +88,10 @@ async function TagPageContent({
     notFound();
   }
 
-  const { data: postsWithTag, error } =
-    await getPostsWithTagsByTagSlug(
-      decodedTagSlug,
-      pageNo,
-    );
+  const { data: postsWithTag, error } = await getPostsWithTagsByTagSlug(
+    decodedTagSlug,
+    pageNo,
+  );
   const [{ data: latestPosts }, relatedOffers] = await Promise.all([
     getLatestPostsForSidebar(),
     getServerOffersByKeywords({
@@ -143,7 +156,9 @@ async function TagPageContent({
         />
         <div className="space-y-4">
           {posts.length > 0 ? (
-            posts.map((post) => <ArticleCard key={post.post.id} post={post.post} />)
+            posts.map((post) => (
+              <ArticleCard key={post.post.id} post={post.post} />
+            ))
           ) : (
             <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 p-8 text-center text-sm text-muted-foreground">
               当前标签下还没有已发布文章。
@@ -181,9 +196,9 @@ async function TagPageContent({
   );
 }
 
-export default function TagPage(
-  props: { params: Promise<{ tagSlug: string; pageNo: string }> }
-) {
+export default function TagPage(props: {
+  params: Promise<{ tagSlug: string; pageNo: string }>;
+}) {
   return (
     <Suspense
       fallback={

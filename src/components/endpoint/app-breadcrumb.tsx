@@ -29,6 +29,7 @@ const breadcrumbTitleMap: Record<string, string> = {
   posts: "文章管理",
   drafts: "草稿箱",
   edit: "文章列表",
+  quality: "发布质检",
   post: "编辑文章",
   seo: "SEO运营",
   category: "分类SEO",
@@ -45,7 +46,9 @@ const breadcrumbPathTitleMap: Record<string, string> = {
 
 function formatBreadcrumbTitle(value: string, path: string) {
   return (
-    breadcrumbPathTitleMap[path] ?? breadcrumbTitleMap[value] ?? decodeSlug(value)
+    breadcrumbPathTitleMap[path] ??
+    breadcrumbTitleMap[value] ??
+    decodeSlug(value)
   );
 }
 

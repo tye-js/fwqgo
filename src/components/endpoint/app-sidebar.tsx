@@ -72,6 +72,10 @@ const data = {
           title: "文章列表",
           url: "/posts/edit",
         },
+        {
+          title: "发布质检",
+          url: "/posts/quality",
+        },
       ],
     },
     {

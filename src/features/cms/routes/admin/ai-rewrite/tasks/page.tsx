@@ -1,10 +1,12 @@
 import { AiRewriteTaskManager } from "@/features/cms/components/ai-rewrite-task-manager";
 import { AiSourceSiteManager } from "@/features/cms/components/ai-source-site-manager";
+import { CmsTaskOperationsOverview } from "@/features/cms/components/cms-task-operations-overview";
 import { getAiSourceSiteList } from "@/features/cms/actions/ai-source-site";
 import {
   getAiRewriteTaskCount,
   getAiRewriteTaskList,
 } from "@/features/cms/actions/ai-rewrite-task";
+import { getCmsTaskOperationsSummary } from "@/features/cms/data/operations";
 import {
   aiRewriteTaskSourceTypeFilters,
   aiRewriteTaskStatusFilters,
@@ -80,14 +82,21 @@ export async function AiRewriteTasksPageContent({
   const searchParams = (await searchParamsPromise) ?? {};
   const taskFilters = parseAiTaskFilters(searchParams);
   const isTaskCenter = variant === "task-center";
-  const [tasks, taskCount, sourceSites, categoriesResult, rewriteStyles] =
-    await Promise.all([
-      getAiRewriteTaskList(isTaskCenter ? taskFilters : { pageSize: 50 }),
-      getAiRewriteTaskCount(isTaskCenter ? taskFilters : {}),
-      getAiSourceSiteList(),
-      getLeafCategories(),
-      getAiRewriteStyleOptions(),
-    ]);
+  const [
+    tasks,
+    taskCount,
+    sourceSites,
+    categoriesResult,
+    rewriteStyles,
+    operationsSummary,
+  ] = await Promise.all([
+    getAiRewriteTaskList(isTaskCenter ? taskFilters : { pageSize: 50 }),
+    getAiRewriteTaskCount(isTaskCenter ? taskFilters : {}),
+    getAiSourceSiteList(),
+    getLeafCategories(),
+    getAiRewriteStyleOptions(),
+    isTaskCenter ? getCmsTaskOperationsSummary() : Promise.resolve(null),
+  ]);
   const categories = categoriesResult.data ?? [];
   const runningCount = tasks.filter((task) =>
     ["pending", "running"].includes(task.status),
@@ -146,21 +155,26 @@ export async function AiRewriteTasksPageContent({
         ]}
       />
       {isTaskCenter ? (
-        <AdminSectionCard
-          title="任务看板"
-          description="按任务状态、进度、失败原因和草稿结果查看 AI 处理链路。运行中的任务会自动刷新。"
-        >
-          <AiRewriteTaskManager
-            tasks={tasks}
-            categories={categories}
-            rewriteStyles={rewriteStyles}
-            basePath="/ai-tasks"
-            showCreateForm={false}
-            filters={taskFilters}
-            totalCount={taskCount}
-            totalPage={totalPage}
-          />
-        </AdminSectionCard>
+        <>
+          {operationsSummary ? (
+            <CmsTaskOperationsOverview summary={operationsSummary} />
+          ) : null}
+          <AdminSectionCard
+            title="任务看板"
+            description="按任务状态、进度、失败原因和草稿结果查看 AI 处理链路。运行中的任务会自动刷新。"
+          >
+            <AiRewriteTaskManager
+              tasks={tasks}
+              categories={categories}
+              rewriteStyles={rewriteStyles}
+              basePath="/ai-tasks"
+              showCreateForm={false}
+              filters={taskFilters}
+              totalCount={taskCount}
+              totalPage={totalPage}
+            />
+          </AdminSectionCard>
+        </>
       ) : (
         <>
           <div id="source-sites" className="scroll-mt-24">
