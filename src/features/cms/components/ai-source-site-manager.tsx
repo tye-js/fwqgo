@@ -661,7 +661,9 @@ export function AiSourceSiteManager({
                         <Button
                           type="button"
                           size="sm"
-                          variant="outline"
+                          variant="destructive"
+                          aria-label={`删除来源站：${site.name}`}
+                          title={`删除来源站：${site.name}`}
                           onClick={() => void handleDelete(site.id)}
                         >
                           <Trash2 className="size-4" />

@@ -16,10 +16,10 @@ import {
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { PostList } from "@/features/cms/components/posts-tables";
 import { Button } from "@/components/ui/button";
+import { parsePositiveInt } from "@fwqgo/core/utils";
 
 function parsePageNo(value: string | undefined) {
-  const parsed = value ? Number.parseInt(value, 10) : 1;
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+  return parsePositiveInt(value) ?? 1;
 }
 
 function languageFilterHref(language: PostLanguageFilter) {

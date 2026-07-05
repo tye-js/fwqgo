@@ -101,7 +101,7 @@ export function AdminSummaryStrip({
           key={item.label}
           className="border-b border-border/60 px-3 py-2.5 last:border-b-0 sm:border-r sm:last:border-r-0"
         >
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {item.label}
           </p>
           <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">

@@ -27,6 +27,7 @@ import {
   Card,
   CardContent,
 } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -60,7 +61,7 @@ function ToolbarGroup({
 }) {
   return (
     <div className="space-y-2 rounded-2xl border border-border/70 bg-background p-3">
-      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {title}
       </p>
       <div className="flex flex-wrap gap-2">
@@ -70,7 +71,7 @@ function ToolbarGroup({
             size="sm"
             pressed={item.active}
             onPressedChange={() => item.onClick()}
-            className="h-9 rounded-xl border border-border/70 bg-background px-3 hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+            className="rounded-md border border-border/70 bg-background px-3 hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
             aria-label={item.label}
           >
             <item.icon className="h-4 w-4" />
@@ -89,6 +90,7 @@ export function EditorToolbar({
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
   const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
   const [url, setUrl] = useState("");
+  const isTableActive = editor.isActive("table");
 
   const headingLevels = [2, 3, 4, 5, 6] as const;
 
@@ -177,25 +179,34 @@ export function EditorToolbar({
             </div>
             <div className="flex items-center gap-2">
               <Button
+                type="button"
                 size="sm"
                 variant="outline"
                 onClick={() => editor.chain().focus().undo().run()}
                 disabled={!editor.can().undo()}
+                aria-label="撤销"
+                title="撤销"
               >
                 <Undo className="h-4 w-4" />
               </Button>
               <Button
+                type="button"
                 size="sm"
                 variant="outline"
                 onClick={() => editor.chain().focus().redo().run()}
                 disabled={!editor.can().redo()}
+                aria-label="重做"
+                title="重做"
               >
                 <Redo className="h-4 w-4" />
               </Button>
               <Button
+                type="button"
                 size="sm"
                 variant={isFullscreen ? "secondary" : "outline"}
                 onClick={onToggleFullscreen}
+                aria-label={isFullscreen ? "退出全屏" : "全屏编辑"}
+                title={isFullscreen ? "退出全屏" : "全屏编辑"}
               >
                 <Maximize2 className="h-4 w-4" />
               </Button>
@@ -206,11 +217,12 @@ export function EditorToolbar({
             <ToolbarGroup title="标题层级" items={headingItems} />
             <ToolbarGroup title="基础格式" items={formatItems} />
             <div className="space-y-2 rounded-2xl border border-border/70 bg-background p-3">
-              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 插入内容
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button
+                  type="button"
                   size="sm"
                   variant="outline"
                   onClick={() => setIsImageDialogOpen(true)}
@@ -219,6 +231,7 @@ export function EditorToolbar({
                   图片
                 </Button>
                 <Button
+                  type="button"
                   size="sm"
                   variant="outline"
                   onClick={() => setIsLinkDialogOpen(true)}
@@ -227,6 +240,7 @@ export function EditorToolbar({
                   链接
                 </Button>
                 <Button
+                  type="button"
                   size="sm"
                   variant="outline"
                   onClick={() =>
@@ -246,30 +260,72 @@ export function EditorToolbar({
 
           <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 表格操作
               </span>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => editor.chain().focus().addColumnAfter().run()}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!isTableActive}
+                onClick={() => editor.chain().focus().addColumnAfter().run()}
+              >
                 添加列
               </Button>
-              <Button size="sm" variant="outline" onClick={() => editor.chain().focus().deleteColumn().run()}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!isTableActive}
+                onClick={() => editor.chain().focus().deleteColumn().run()}
+              >
                 删除列
               </Button>
-              <Button size="sm" variant="outline" onClick={() => editor.chain().focus().addRowAfter().run()}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!isTableActive}
+                onClick={() => editor.chain().focus().addRowAfter().run()}
+              >
                 添加行
               </Button>
-              <Button size="sm" variant="outline" onClick={() => editor.chain().focus().deleteRow().run()}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!isTableActive}
+                onClick={() => editor.chain().focus().deleteRow().run()}
+              >
                 删除行
               </Button>
-              <Button size="sm" variant="outline" onClick={() => editor.chain().focus().toggleHeaderColumn().run()}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!isTableActive}
+                onClick={() => editor.chain().focus().toggleHeaderColumn().run()}
+              >
                 列标题
               </Button>
-              <Button size="sm" variant="outline" onClick={() => editor.chain().focus().toggleHeaderRow().run()}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!isTableActive}
+                onClick={() => editor.chain().focus().toggleHeaderRow().run()}
+              >
                 行标题
               </Button>
-              <Button size="sm" variant="destructive" onClick={() => editor.chain().focus().deleteTable().run()}>
+              <Button
+                type="button"
+                size="sm"
+                variant="destructive"
+                disabled={!isTableActive}
+                onClick={() => editor.chain().focus().deleteTable().run()}
+              >
                 删除表格
               </Button>
             </div>
@@ -283,23 +339,31 @@ export function EditorToolbar({
             <DialogTitle>插入图片</DialogTitle>
             <DialogDescription>输入图片 URL 后即可插入正文。</DialogDescription>
           </DialogHeader>
-          <Input
-            placeholder="输入图片 URL"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleImageSubmit();
-              }
-            }}
-            autoFocus
-          />
+          <div className="grid gap-2">
+            <Label htmlFor="editor-image-url">图片 URL</Label>
+            <Input
+              id="editor-image-url"
+              type="url"
+              inputMode="url"
+              placeholder="https://example.com/image.webp"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleImageSubmit();
+                }
+              }}
+              autoFocus
+            />
+          </div>
           <DialogFooter>
-            <Button variant="secondary" onClick={closeDialog}>
+            <Button type="button" variant="secondary" onClick={closeDialog}>
               取消
             </Button>
-            <Button onClick={handleImageSubmit}>插入图片</Button>
+            <Button type="button" onClick={handleImageSubmit}>
+              插入图片
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -310,23 +374,31 @@ export function EditorToolbar({
             <DialogTitle>插入链接</DialogTitle>
             <DialogDescription>输入链接 URL 后即可添加超链接。</DialogDescription>
           </DialogHeader>
-          <Input
-            placeholder="输入链接 URL"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleLinkSubmit();
-              }
-            }}
-            autoFocus
-          />
+          <div className="grid gap-2">
+            <Label htmlFor="editor-link-url">链接 URL</Label>
+            <Input
+              id="editor-link-url"
+              type="url"
+              inputMode="url"
+              placeholder="https://example.com"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleLinkSubmit();
+                }
+              }}
+              autoFocus
+            />
+          </div>
           <DialogFooter>
-            <Button variant="secondary" onClick={closeDialog}>
+            <Button type="button" variant="secondary" onClick={closeDialog}>
               取消
             </Button>
-            <Button onClick={handleLinkSubmit}>插入链接</Button>
+            <Button type="button" onClick={handleLinkSubmit}>
+              插入链接
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

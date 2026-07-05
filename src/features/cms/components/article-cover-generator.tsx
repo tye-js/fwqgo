@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
 
 import {
+  finalizeCoverGenerationBatchAction,
   generateArticleCoverImageAction,
   getCoverGenerationBatchStatusAction,
 } from "@/features/cms/actions/article-cover-image";
@@ -37,6 +38,7 @@ export function ArticleCoverGenerator({
 }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [batchId, setBatchId] = useState<string | null>(null);
+  const finalizedBatchIdsRef = useRef(new Set<string>());
 
   useEffect(() => {
     if (!batchId) return;
@@ -65,6 +67,27 @@ export function ArticleCoverGenerator({
 
       setIsGenerating(false);
       setBatchId(null);
+      if (!finalizedBatchIdsRef.current.has(batchId)) {
+        const finalizeResult =
+          await finalizeCoverGenerationBatchAction(batchId);
+        if (stopped) return;
+
+        if (!finalizeResult.success) {
+          notifyActionError(
+            {
+              errorTitle:
+                finalizeResult.errorTitle ?? "封面图已生成，但刷新缓存失败",
+              message: finalizeResult.error ?? "请刷新页面后确认文章封面。",
+            },
+            {
+              fallbackSuggestion: "可以刷新页面，或到图片管理里确认图片资产。",
+            },
+          );
+        } else {
+          finalizedBatchIdsRef.current.add(batchId);
+        }
+      }
+
       const generated = result.results?.find((item) => item.url);
       if (generated?.url) {
         onGenerated(generated.url);
@@ -165,7 +188,6 @@ export function ArticleCoverGenerator({
       type="button"
       variant="outline"
       size="sm"
-      className="h-9"
       disabled={isGenerating}
       onClick={handleGenerate}
     >

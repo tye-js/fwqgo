@@ -12,6 +12,7 @@ import {
   getAdminServerOffers,
   getServerOfferTopicCounts,
 } from "@/server/offers/server-offers";
+import { parsePositiveInt } from "@fwqgo/core/utils";
 
 type ServerOfferManageSearchParams = {
   pageNo?: string;
@@ -22,8 +23,7 @@ type ServerOfferManageSearchParams = {
 };
 
 function parsePageNo(value: string | undefined) {
-  const parsed = value ? Number.parseInt(value, 10) : 1;
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+  return parsePositiveInt(value) ?? 1;
 }
 
 async function ServerOfferManageContent({

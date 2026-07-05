@@ -8,10 +8,10 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { TagSeoTable } from "@/features/cms/components/tag-seo-table";
+import { parsePositiveInt } from "@fwqgo/core/utils";
 
 function parsePageNo(value: string | undefined) {
-  const parsed = value ? Number.parseInt(value, 10) : 1;
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+  return parsePositiveInt(value) ?? 1;
 }
 
 async function TagListWrapper({

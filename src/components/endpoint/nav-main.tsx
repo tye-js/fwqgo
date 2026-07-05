@@ -60,7 +60,7 @@ export function NavMain({
 
   return (
     <SidebarGroup className="p-1.5">
-      <SidebarGroupLabel className="h-6 px-2 text-[11px] uppercase tracking-wide text-sidebar-foreground/50">
+      <SidebarGroupLabel className="h-7 px-2 text-xs uppercase tracking-wide text-sidebar-foreground/60">
         菜单
       </SidebarGroupLabel>
       <SidebarMenu className="gap-0.5">
@@ -72,7 +72,7 @@ export function NavMain({
                   asChild
                   tooltip={item.title}
                   isActive={item.isActive}
-                  className="h-10 md:h-8"
+                  className="h-10"
                 >
                   <Link href={item.url}>
                     {item.icon && <item.icon />}
@@ -95,7 +95,7 @@ export function NavMain({
                   <SidebarMenuButton
                     tooltip={item.title}
                     isActive={item.isActive}
-                    className="h-10 md:h-8"
+                    className="h-10"
                   >
                     {item.icon && <item.icon />}
                     <span>{item.title}</span>
@@ -110,7 +110,7 @@ export function NavMain({
                           asChild
                           isActive={subItem.url === activeSubItemUrl}
                           size="sm"
-                          className="min-h-9 md:min-h-0"
+                          className="min-h-10"
                         >
                           <Link href={subItem.url}>
                             <span>{subItem.title}</span>

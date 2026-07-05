@@ -236,7 +236,7 @@ export function HomepagePromotedPostTable({
         selectionCount={selectedIds.length}
         filterSlot={
           <Select value={sortValue} onValueChange={setSortValue}>
-            <SelectTrigger className="h-auto w-[156px] border-0 bg-transparent p-0 shadow-none focus:ring-0">
+            <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[180px] sm:border-0 sm:bg-transparent sm:px-0">
               <SelectValue placeholder="排序方式" />
             </SelectTrigger>
             <SelectContent>
@@ -262,8 +262,8 @@ export function HomepagePromotedPostTable({
       <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
         <p className="text-sm font-medium text-foreground">添加推荐文章</p>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          通过文章 ID 把已发布的{language === "en" ? "英文" : "中文"}文章加入首页右侧“站长推荐”区域，`sortOrder`
-          越小越靠前。
+          通过文章 ID 把已发布的{language === "en" ? "英文" : "中文"}
+          文章加入首页右侧“站长推荐”区域，排序值越小越靠前。
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-[1fr_140px_auto]">
           <Input
@@ -306,11 +306,13 @@ export function HomepagePromotedPostTable({
           description="试试更换关键词，或者从上面的最近可选文章里重新选择。"
         />
       ) : (
-        <Table>
+        <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
+        <Table className="min-w-[820px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[44px]">
                 <Checkbox
+                  aria-label="全选当前筛选推荐文章"
                   checked={allFilteredSelected}
                   onCheckedChange={(checked) =>
                     setSelectedIds(
@@ -331,6 +333,7 @@ export function HomepagePromotedPostTable({
               <TableRow key={item.id} className="hover:bg-muted/30">
                 <TableCell>
                   <Checkbox
+                    aria-label={`选择推荐位 ${item.post?.title ?? item.postId}`}
                     checked={selectedIds.includes(item.id)}
                     onCheckedChange={(checked) =>
                       setSelectedIds((prev) =>
@@ -370,7 +373,7 @@ export function HomepagePromotedPostTable({
                       onChange={(event) =>
                         setEditingSortOrder(event.target.value)
                       }
-                      className="h-8"
+                      className="min-h-11"
                     />
                   ) : (
                     item.sortOrder
@@ -421,6 +424,7 @@ export function HomepagePromotedPostTable({
             ))}
           </TableBody>
         </Table>
+        </div>
       )}
     </div>
   );

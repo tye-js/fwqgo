@@ -302,6 +302,7 @@ export function ImageUploadWorkbench() {
                           variant="outline"
                           size="icon"
                           title="重试"
+                          aria-label={`重试上传 ${item.file.name}`}
                           disabled={isUploading}
                           onClick={() =>
                             setItems((prev) =>
@@ -328,6 +329,7 @@ export function ImageUploadWorkbench() {
                             variant="outline"
                             size="icon"
                             title="复制 URL"
+                            aria-label={`复制图片 URL：${item.file.name}`}
                             onClick={() => void handleCopy(item.url!)}
                           >
                             <Copy className="size-4" />
@@ -342,6 +344,7 @@ export function ImageUploadWorkbench() {
                               href={item.url}
                               target="_blank"
                               rel="noopener noreferrer"
+                              aria-label={`打开原图：${item.file.name}`}
                             >
                               <ExternalLink className="size-4" />
                             </a>

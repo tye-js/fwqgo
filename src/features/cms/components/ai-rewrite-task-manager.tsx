@@ -318,7 +318,7 @@ function TaskDiagnosticsDisclosure({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-8 px-2 text-xs text-muted-foreground"
+          className="px-3 text-xs text-muted-foreground"
         >
           <Link2 className="size-3.5" />
           采集诊断
@@ -592,7 +592,7 @@ function AffiliateDiagnosticsSummary({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-8 px-2 text-xs text-muted-foreground"
+              className="px-3 text-xs text-muted-foreground"
             >
               <Link2 className="h-3.5 w-3.5" />
               查看命中详情
@@ -969,7 +969,7 @@ export function AiRewriteTaskManager({
                     updateUrlQuery({ status: value === "all" ? null : value })
                   }
                 >
-                  <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[140px] sm:border-0 sm:bg-transparent sm:p-0">
+                  <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[140px] sm:border-0 sm:bg-transparent sm:px-0">
                     <SelectValue placeholder="任务状态" />
                   </SelectTrigger>
                   <SelectContent>
@@ -989,7 +989,7 @@ export function AiRewriteTaskManager({
                     })
                   }
                 >
-                  <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[132px] sm:border-0 sm:bg-transparent sm:p-0">
+                  <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[132px] sm:border-0 sm:bg-transparent sm:px-0">
                     <SelectValue placeholder="素材类型" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1010,7 +1010,7 @@ export function AiRewriteTaskManager({
                     })
                   }
                 >
-                  <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[120px] sm:border-0 sm:bg-transparent sm:p-0">
+                  <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[120px] sm:border-0 sm:bg-transparent sm:px-0">
                     <SelectValue placeholder="语言" />
                   </SelectTrigger>
                   <SelectContent>

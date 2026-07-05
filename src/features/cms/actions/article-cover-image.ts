@@ -32,6 +32,7 @@ type CoverTaskStatus = "pending" | "running" | "succeeded" | "failed";
 type CoverTaskRow = typeof imageCoverGenerationTasks.$inferSelect;
 
 let isCoverGenerationWorkerRunning = false;
+const finalizedCoverGenerationBatches = new Set<string>();
 
 type EphemeralCoverTask = {
   taskId: number;
@@ -215,11 +216,6 @@ async function processCoverGenerationTask(task: CoverTaskRow) {
   }
 
   await syncImageReferencesForPost(updatedPost.id);
-  revalidateSiteContent([
-    cacheTags.post(updatedPost.id),
-    cacheTags.postSlug(updatedPost.slug),
-    cacheTags.category(updatedPost.categoryId),
-  ]);
 
   await db
     .update(imageCoverGenerationTasks)
@@ -265,11 +261,6 @@ async function runCoverGenerationWorker() {
     }
   } finally {
     isCoverGenerationWorkerRunning = false;
-    revalidatePath("/images/covers");
-    revalidatePath("/images/ai-generate");
-    revalidatePath("/images/list");
-    revalidatePath("/posts/edit");
-    revalidatePath("/posts/drafts");
   }
 }
 
@@ -312,7 +303,6 @@ async function runEphemeralCoverGenerationTask(
         finishedAt: new Date(),
       },
     ]);
-    revalidatePath("/images/list");
   } catch (error) {
     const readableError = formatCoverGenerationError(error);
     ephemeralCoverBatches.set(batchId, [
@@ -325,6 +315,34 @@ async function runEphemeralCoverGenerationTask(
       },
     ]);
   }
+}
+
+function revalidateCoverGenerationAdminPaths() {
+  revalidatePath("/images/covers");
+  revalidatePath("/images/ai-generate");
+  revalidatePath("/images/list");
+  revalidatePath("/posts/edit");
+  revalidatePath("/posts/drafts");
+}
+
+async function getPostCoverRevalidationTags(postIds: number[]) {
+  const uniquePostIds = [...new Set(postIds)];
+  if (uniquePostIds.length === 0) return [];
+
+  const postRows = await db
+    .select({
+      id: posts.id,
+      slug: posts.slug,
+      categoryId: posts.categoryId,
+    })
+    .from(posts)
+    .where(inArray(posts.id, uniquePostIds));
+
+  return postRows.flatMap((post) => [
+    cacheTags.post(post.id),
+    cacheTags.postSlug(post.slug),
+    cacheTags.category(post.categoryId),
+  ]);
 }
 
 export async function generateArticleCoverImageAction(input: {
@@ -511,12 +529,10 @@ export async function getCoverGenerationBatchStatusAction(batchId: string) {
         ).length,
         failedCount: ephemeralTasks.filter((task) => task.status === "failed")
           .length,
-        pendingCount: ephemeralTasks.filter(
-          (task) => task.status === "pending",
-        ).length,
-        runningCount: ephemeralTasks.filter(
-          (task) => task.status === "running",
-        ).length,
+        pendingCount: ephemeralTasks.filter((task) => task.status === "pending")
+          .length,
+        runningCount: ephemeralTasks.filter((task) => task.status === "running")
+          .length,
         done: ephemeralTasks.every(
           (task) => task.status === "succeeded" || task.status === "failed",
         ),
@@ -549,6 +565,85 @@ export async function getCoverGenerationBatchStatusAction(batchId: string) {
       done: tasks.every(
         (task) => task.status === "succeeded" || task.status === "failed",
       ),
+    };
+  } catch (error) {
+    const readableError = formatCoverGenerationError(error);
+
+    return {
+      success: false,
+      error: readableError.detail,
+      errorTitle: readableError.title,
+    };
+  }
+}
+
+export async function finalizeCoverGenerationBatchAction(batchId: string) {
+  try {
+    await requireAdminSession();
+
+    const normalizedBatchId = batchId.trim();
+    if (!normalizedBatchId) {
+      return { success: false, error: "批次号不能为空" };
+    }
+
+    if (finalizedCoverGenerationBatches.has(normalizedBatchId)) {
+      return { success: true, revalidated: false };
+    }
+
+    const ephemeralTasks = ephemeralCoverBatches.get(normalizedBatchId);
+    if (ephemeralTasks) {
+      const done = ephemeralTasks.every(
+        (task) => task.status === "succeeded" || task.status === "failed",
+      );
+      if (!done) {
+        return {
+          success: false,
+          error: "封面生成批次还在运行，请完成后再刷新缓存",
+        };
+      }
+
+      revalidateCoverGenerationAdminPaths();
+      finalizedCoverGenerationBatches.add(normalizedBatchId);
+      return { success: true, revalidated: true };
+    }
+
+    const tasks = await db
+      .select({
+        postId: imageCoverGenerationTasks.postId,
+        status: imageCoverGenerationTasks.status,
+      })
+      .from(imageCoverGenerationTasks)
+      .where(eq(imageCoverGenerationTasks.batchId, normalizedBatchId));
+
+    if (tasks.length === 0) {
+      return { success: false, error: "没有找到这个封面生成批次" };
+    }
+
+    const done = tasks.every(
+      (task) => task.status === "succeeded" || task.status === "failed",
+    );
+    if (!done) {
+      return {
+        success: false,
+        error: "封面生成批次还在运行，请完成后再刷新缓存",
+      };
+    }
+
+    const succeededPostIds = tasks
+      .filter((task) => task.status === "succeeded")
+      .map((task) => task.postId);
+    const tags = await getPostCoverRevalidationTags(succeededPostIds);
+
+    if (tags.length > 0) {
+      revalidateSiteContent(tags);
+    }
+    revalidateCoverGenerationAdminPaths();
+    finalizedCoverGenerationBatches.add(normalizedBatchId);
+
+    return {
+      success: true,
+      revalidated: true,
+      postCount: succeededPostIds.length,
     };
   } catch (error) {
     const readableError = formatCoverGenerationError(error);

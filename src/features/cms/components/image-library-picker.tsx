@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { getImageAssets } from "@/features/cms/actions/images";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -78,8 +79,12 @@ export function ImageLibraryPicker({
           </DialogDescription>
         </DialogHeader>
         <div className="relative">
+          <Label htmlFor="image-library-search" className="sr-only">
+            搜索图片
+          </Label>
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            id="image-library-search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索文件名或 URL"
@@ -118,7 +123,8 @@ export function ImageLibraryPicker({
                 <button
                   key={image.id}
                   type="button"
-                  className="overflow-hidden rounded-lg border border-border/70 bg-background text-left transition-colors hover:border-accent"
+                  className="overflow-hidden rounded-lg border border-border/70 bg-background text-left transition-colors hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  aria-label={`选择图片：${image.originalName}`}
                   onClick={() => handleSelect(image.path)}
                 >
                   <div className="relative aspect-[4/3] bg-muted">

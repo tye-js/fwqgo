@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -24,6 +24,7 @@ import {
 } from "@/features/cms/actions/post";
 import {
   batchGenerateArticleCoverImagesAction,
+  finalizeCoverGenerationBatchAction,
   getCoverGenerationBatchStatusAction,
 } from "@/features/cms/actions/article-cover-image";
 import {
@@ -151,8 +152,10 @@ export function PostList({
   const [activeImportTask, setActiveImportTask] = useState<ImportTask | null>(
     null,
   );
-  const [activeCoverBatch, setActiveCoverBatch] =
-    useState<CoverBatch | null>(null);
+  const [activeCoverBatch, setActiveCoverBatch] = useState<CoverBatch | null>(
+    null,
+  );
+  const finalizedCoverBatchIdsRef = useRef(new Set<string>());
 
   const filteredPosts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -281,6 +284,22 @@ export function PostList({
         return;
       }
 
+      if (!finalizedCoverBatchIdsRef.current.has(activeCoverBatch.batchId)) {
+        const finalizeResult = await finalizeCoverGenerationBatchAction(
+          activeCoverBatch.batchId,
+        );
+        if (stopped) return;
+
+        if (!finalizeResult.success) {
+          notifyActionError(finalizeResult, {
+            fallbackSuggestion: "请刷新页面后确认文章封面和图片列表。",
+          });
+          return;
+        }
+
+        finalizedCoverBatchIdsRef.current.add(activeCoverBatch.batchId);
+      }
+
       const description = describeAdminResult([
         `成功 ${result.successCount ?? 0} 张`,
         (result.failedCount ?? 0) > 0
@@ -368,7 +387,9 @@ export function PostList({
       if (result.error) {
         toast.error(result.error, {
           description:
-            typeof result.message === "string" ? result.message : "请稍后重试。",
+            typeof result.message === "string"
+              ? result.message
+              : "请稍后重试。",
         });
         return;
       }
@@ -393,9 +414,12 @@ export function PostList({
       ]);
 
       if (stats.blocked > 0 || stats.failed > 0) {
-        toast.warning(published ? "批量发布已处理，部分未发布" : "批量转草稿已处理", {
-          description,
-        });
+        toast.warning(
+          published ? "批量发布已处理，部分未发布" : "批量转草稿已处理",
+          {
+            description,
+          },
+        );
       } else {
         toast.success(published ? "批量发布完成" : "批量转草稿完成", {
           description,
@@ -473,7 +497,8 @@ export function PostList({
 
     setBulkAction("english");
     try {
-      const result = await bulkEnqueueEnglishVersionsForPostsAction(selectedIds);
+      const result =
+        await bulkEnqueueEnglishVersionsForPostsAction(selectedIds);
 
       if (result.error) {
         toast.error("批量生成英文失败", {
@@ -566,9 +591,8 @@ export function PostList({
 
     setBulkAction("offers");
     try {
-      const result = await importServerOffersFromSelectedPostsAction(
-        selectedIds,
-      );
+      const result =
+        await importServerOffersFromSelectedPostsAction(selectedIds);
 
       if (!result.success) {
         notifyActionError(result);
@@ -787,9 +811,9 @@ export function PostList({
 
       {activeCoverBatch && !activeCoverBatch.done ? (
         <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs leading-5 text-muted-foreground">
-          封面批次 {activeCoverBatch.batchId} 正在后台处理：
-          成功 {activeCoverBatch.successCount}，运行{" "}
-          {activeCoverBatch.runningCount}，排队 {activeCoverBatch.pendingCount}
+          封面批次 {activeCoverBatch.batchId} 正在后台处理： 成功{" "}
+          {activeCoverBatch.successCount}，运行 {activeCoverBatch.runningCount}
+          ，排队 {activeCoverBatch.pendingCount}
           ，失败 {activeCoverBatch.failedCount}
         </div>
       ) : null}

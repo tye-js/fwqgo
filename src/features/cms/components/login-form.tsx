@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +30,9 @@ export function LoginForm({
   error?: string;
   isPending?: boolean;
 }) {
+  const [showPassword, setShowPassword] = useState(false);
+  const errorId = error ? "login-form-error" : undefined;
+
   return (
     <Card className="mx-auto w-full max-w-sm rounded-lg border-border/70 shadow-sm">
       <CardHeader>
@@ -50,6 +55,8 @@ export function LoginForm({
               autoComplete="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              aria-invalid={Boolean(error)}
+              aria-describedby={errorId}
               required
             />
           </div>
@@ -57,16 +64,38 @@ export function LoginForm({
             <div className="flex items-center">
               <Label htmlFor="password">密码</Label>
             </div>
-            <Input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                aria-invalid={Boolean(error)}
+                aria-describedby={errorId}
+                className="pr-12"
+                required
+              />
+              <button
+                type="button"
+                className="absolute right-1 top-1/2 inline-flex size-10 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                title={showPassword ? "隐藏密码" : "显示密码"}
+                onClick={() => setShowPassword((value) => !value)}
+              >
+                {showPassword ? (
+                  <EyeOff className="size-4" />
+                ) : (
+                  <Eye className="size-4" />
+                )}
+              </button>
+            </div>
           </div>
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          {error ? (
+            <p id="login-form-error" role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
           <Button
             type="submit"
             className="w-full"

@@ -11,7 +11,7 @@ import { RelatedServerOfferCards } from "@/features/public/components/related-se
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { decodeSlug } from "@fwqgo/core/utils";
+import { decodeSlug, parsePositiveInt } from "@fwqgo/core/utils";
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -38,8 +38,7 @@ export async function generateMetadata(
   }
 ): Promise<Metadata> {
   const params = await props.params;
-  const currentPage = Number.parseInt(params.pageNo, 10);
-  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
+  const pageNo = parsePositiveInt(params.pageNo) ?? 1;
   const readableName = decodeSlug(params.category).replace(/[-_]+/g, " ");
   const { data: category } = await getCategoryBySlug(params.category);
   const title = category?.name ?? readableName;
@@ -72,8 +71,7 @@ const CategoryPageContent = async ({
   await connection();
 
   const params = await paramsPromise;
-  const currentPage = Number.parseInt(params.pageNo, 10);
-  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : null;
+  const pageNo = parsePositiveInt(params.pageNo);
   if (!pageNo) {
     notFound();
   }

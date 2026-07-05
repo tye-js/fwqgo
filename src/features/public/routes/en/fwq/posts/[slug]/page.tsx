@@ -28,10 +28,10 @@ import {
 import { renderArticleContentHtml } from "@fwqgo/core/content";
 import { addIdsToHeadings } from "@fwqgo/core/toc";
 import {
-  decodeSlug,
   formatDate,
   isHttpHref,
   isInternalHref,
+  normalizeDecodedSlug,
   toAbsoluteHttpUrl,
 } from "@fwqgo/core/utils";
 import { TableOfContents } from "@/components/toc/table-of-contents";
@@ -65,7 +65,9 @@ export async function generateMetadata({
   await connection();
 
   const { slug } = await params;
-  const decodedSlug = decodeSlug(slug);
+  const decodedSlug = normalizeDecodedSlug(slug);
+  if (!decodedSlug) return {};
+
   const { data } = await getEnglishPostWithTagsBySlug(decodedSlug);
   const post = data?.post;
   const canonicalSlug = post?.enSlug ?? decodedSlug;
@@ -108,7 +110,11 @@ async function EnglishPostContent({ params }: PageProps) {
   await connection();
 
   const { slug } = await params;
-  const decodedSlug = decodeSlug(slug);
+  const decodedSlug = normalizeDecodedSlug(slug);
+  if (!decodedSlug) {
+    notFound();
+  }
+
   const { data, error } = await getEnglishPostWithTagsBySlug(decodedSlug);
 
   if (error || !data?.post) {

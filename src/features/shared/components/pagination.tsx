@@ -80,14 +80,17 @@ export function PaginationComponent({
   };
 
   return (
-    <Pagination className="justify-start overflow-x-auto py-1 sm:justify-center">
+    <Pagination
+      className="justify-start overflow-x-auto py-1 sm:justify-center"
+      aria-label={`分页导航，当前第 ${currentPage} 页，共 ${normalizedTotalPage} 页`}
+    >
       <PaginationContent className="min-w-max flex-nowrap">
         <PaginationItem>
           <PaginationPrevious
             aria-disabled={currentPage === 1}
             className={cn(
               "min-w-11 px-2 sm:px-4 [&>span]:hidden sm:[&>span]:inline",
-              currentPage === 1 && "hidden",
+              currentPage === 1 && "pointer-events-none opacity-45",
             )}
             href={currentPage === 1 ? undefined : getHref(currentPage - 1)}
           />
@@ -112,7 +115,8 @@ export function PaginationComponent({
             aria-disabled={currentPage === normalizedTotalPage}
             className={cn(
               "min-w-11 px-2 sm:px-4 [&>span]:hidden sm:[&>span]:inline",
-              currentPage === normalizedTotalPage && "hidden",
+              currentPage === normalizedTotalPage &&
+                "pointer-events-none opacity-45",
             )}
             href={
               currentPage === normalizedTotalPage

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useMemo, useState, useTransition } from "react";
+import { Fragment, type ReactNode, useMemo, useState, useTransition } from "react";
 import { ExternalLink, Save } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -37,7 +37,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { type getAdminServerOffers } from "@/server/offers/server-offers";
-import { isInternalHref } from "@fwqgo/core/utils";
+import { isInternalHref, isSafePublicHref } from "@fwqgo/core/utils";
 import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
 
 type Offer = Awaited<ReturnType<typeof getAdminServerOffers>>[number];
@@ -84,6 +84,48 @@ function formatPrice(offer: Offer) {
   }
 
   return `${offer.currency === "CNY" ? "¥" : "$"}${amount.toFixed(2)}`;
+}
+
+function cleanText(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed;
+}
+
+function SafeAdminOfferLink({
+  href,
+  children,
+  iconOnly = false,
+  rel = "noopener noreferrer",
+  ariaLabel,
+}: {
+  href: string | null | undefined;
+  children: ReactNode;
+  iconOnly?: boolean;
+  rel?: string;
+  ariaLabel?: string;
+}) {
+  const safeHref = cleanText(href);
+  if (!isSafePublicHref(safeHref)) return null;
+
+  return (
+    <Button asChild size={iconOnly ? "icon" : "sm"} variant="outline">
+      {isInternalHref(safeHref) ? (
+        <Link href={safeHref} aria-label={ariaLabel}>
+          {children}
+        </Link>
+      ) : (
+        <a
+          href={safeHref}
+          target="_blank"
+          rel={rel}
+          aria-label={ariaLabel}
+        >
+          {children}
+        </a>
+      )}
+    </Button>
+  );
 }
 
 function OfferEditForm({ offer, onDone }: { offer: Offer; onDone: () => void }) {
@@ -318,6 +360,7 @@ export function ServerOfferAdminTable({
     (currentPage - 1) * pageSize,
     currentPage * pageSize,
   );
+  const hasSelectedOffers = selectedIds.length > 0;
 
   function toggleSelected(id: number) {
     setSelectedIds((current) =>
@@ -370,7 +413,7 @@ export function ServerOfferAdminTable({
                 updateUrlQuery({ status: value === "all" ? null : value })
               }
             >
-              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[120px] sm:border-0 sm:bg-transparent sm:p-0">
+              <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[120px] sm:border-0 sm:bg-transparent sm:px-0">
                 <SelectValue placeholder="状态" />
               </SelectTrigger>
               <SelectContent>
@@ -390,7 +433,7 @@ export function ServerOfferAdminTable({
                 })
               }
             >
-              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[120px] sm:border-0 sm:bg-transparent sm:p-0">
+              <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[120px] sm:border-0 sm:bg-transparent sm:px-0">
                 <SelectValue placeholder="审核" />
               </SelectTrigger>
               <SelectContent>
@@ -408,7 +451,7 @@ export function ServerOfferAdminTable({
                 updateUrlQuery({ visibility: value === "all" ? null : value })
               }
             >
-              <SelectTrigger className="h-9 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[120px] sm:border-0 sm:bg-transparent sm:p-0">
+              <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[120px] sm:border-0 sm:bg-transparent sm:px-0">
                 <SelectValue placeholder="展示" />
               </SelectTrigger>
               <SelectContent>
@@ -427,7 +470,7 @@ export function ServerOfferAdminTable({
         </div>
         <div className="flex flex-wrap gap-2">
           <Select value={bulkStatus} onValueChange={setBulkStatus}>
-            <SelectTrigger className="h-9 w-28">
+            <SelectTrigger className="min-h-11 w-32">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -442,13 +485,14 @@ export function ServerOfferAdminTable({
             type="button"
             variant="outline"
             size="sm"
-            disabled={isPending}
+            disabled={isPending || !hasSelectedOffers}
+            title={hasSelectedOffers ? "批量修改所选套餐状态" : "请先选择套餐"}
             onClick={() => runBulk({ status: bulkStatus })}
           >
             批量改状态
           </Button>
           <Select value={bulkReviewStatus} onValueChange={setBulkReviewStatus}>
-            <SelectTrigger className="h-9 w-28">
+            <SelectTrigger className="min-h-11 w-32">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -463,7 +507,8 @@ export function ServerOfferAdminTable({
             type="button"
             variant="outline"
             size="sm"
-            disabled={isPending}
+            disabled={isPending || !hasSelectedOffers}
+            title={hasSelectedOffers ? "批量修改所选套餐审核状态" : "请先选择套餐"}
             onClick={() => runBulk({ reviewStatus: bulkReviewStatus })}
           >
             批量审核
@@ -472,7 +517,8 @@ export function ServerOfferAdminTable({
             type="button"
             variant="outline"
             size="sm"
-            disabled={isPending}
+            disabled={isPending || !hasSelectedOffers}
+            title={hasSelectedOffers ? "批量隐藏所选套餐" : "请先选择套餐"}
             onClick={() => runBulk({ visible: false })}
           >
             批量隐藏
@@ -481,7 +527,8 @@ export function ServerOfferAdminTable({
             type="button"
             variant="outline"
             size="sm"
-            disabled={isPending}
+            disabled={isPending || !hasSelectedOffers}
+            title={hasSelectedOffers ? "批量显示所选套餐" : "请先选择套餐"}
             onClick={() => runBulk({ visible: true })}
           >
             批量显示
@@ -489,8 +536,8 @@ export function ServerOfferAdminTable({
         </div>
       </div>
 
-      <div className="rounded-lg border border-border/70 bg-background shadow-sm">
-        <Table>
+      <div className="overflow-x-auto rounded-lg border border-border/70 bg-background shadow-sm">
+        <Table className="min-w-[980px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10" />
@@ -579,28 +626,17 @@ export function ServerOfferAdminTable({
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-2">
-                      {offer.purchaseUrl ? (
-                        <Button asChild size="icon" variant="outline">
-                          <a href={offer.purchaseUrl} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="size-4" />
-                          </a>
-                        </Button>
-                      ) : null}
-                      {offer.articleUrl ? (
-                        <Button asChild size="sm" variant="outline">
-                          {isInternalHref(offer.articleUrl) ? (
-                            <Link href={offer.articleUrl}>文章</Link>
-                          ) : (
-                            <a
-                              href={offer.articleUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              文章
-                            </a>
-                          )}
-                        </Button>
-                      ) : null}
+                      <SafeAdminOfferLink
+                        href={offer.purchaseUrl}
+                        iconOnly
+                        rel="nofollow sponsored noopener noreferrer"
+                        ariaLabel="打开购买入口"
+                      >
+                        <ExternalLink className="size-4" />
+                      </SafeAdminOfferLink>
+                      <SafeAdminOfferLink href={offer.articleUrl}>
+                        文章
+                      </SafeAdminOfferLink>
                     </div>
                   </TableCell>
                   <TableCell className="text-right">

@@ -162,7 +162,7 @@ GitHub Actions and `scripts/deploy-local-build.sh` include the production migrat
 - AI rewrite configuration Max Tokens should apply to both Chinese and English generation paths.
 - English generation should not be blocked or truncated by state from a previous Chinese rewrite process; treat long-running generation steps as separate tasks with clear readable errors.
 - AI cover generation should run in the background when used by automation, with operator-readable error messages.
-- Cover naming: English article covers use an `-en` suffix such as `some-slug-en-cover.webp`; Chinese article covers keep the ordinary cover name unless a specific flow requires otherwise.
+- Cover naming: Chinese article covers use a `-zh` suffix such as `some-slug-zh-cover.webp`; English article covers use an `-en` suffix such as `some-slug-en-cover.webp`.
 
 ## Auth Notes
 

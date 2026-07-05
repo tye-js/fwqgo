@@ -5,7 +5,7 @@ import { LatestPostsSidebar } from "@/features/public/components/latest-posts-si
 import PageCard from "@/features/public/components/page-card";
 import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
 import { PaginationComponent } from "@/features/shared/components/pagination";
-import { decodeSlug } from "@fwqgo/core/utils";
+import { decodeSlug, parsePositiveInt } from "@fwqgo/core/utils";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Hash } from "lucide-react";
@@ -34,8 +34,7 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const params = await props.params;
   const decodedTagSlug = decodeSlug(params.tagSlug);
-  const currentPage = Number.parseInt(params.pageNo, 10);
-  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
+  const pageNo = parsePositiveInt(params.pageNo) ?? 1;
   const readableName = decodedTagSlug.replace(/[-_]+/g, " ");
   const { data: tag } = await getTagBySlug(decodedTagSlug);
   const title = tag?.name ?? readableName;
@@ -69,8 +68,7 @@ async function TagPageContent({
 
   const params = await paramsPromise;
   const decodedTagSlug = decodeSlug(params.tagSlug);
-  const currentPage = Number.parseInt(params.pageNo, 10);
-  const pageNo = Number.isFinite(currentPage) && currentPage > 0 ? currentPage : null;
+  const pageNo = parsePositiveInt(params.pageNo);
 
   if (!pageNo) {
     notFound();

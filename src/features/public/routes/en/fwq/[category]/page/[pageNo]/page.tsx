@@ -20,7 +20,7 @@ import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { decodeSlug } from "@fwqgo/core/utils";
+import { decodeSlug, parsePositiveInt } from "@fwqgo/core/utils";
 import { getServerOffersByKeywords } from "@/server/offers/server-offers";
 
 function getSiteUrl() {
@@ -44,9 +44,7 @@ export async function generateMetadata(props: {
 }): Promise<Metadata> {
   const params = await props.params;
   const decodedCategory = decodeSlug(params.category);
-  const currentPage = Number.parseInt(params.pageNo, 10);
-  const pageNo =
-    Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1;
+  const pageNo = parsePositiveInt(params.pageNo) ?? 1;
   const { data: category } = await getCategoryBySlug(decodedCategory, "en");
   const title = category?.name ?? decodedCategory.replace(/[-_]+/g, " ");
   const canonicalSlug = category?.slug ?? decodedCategory;
@@ -91,9 +89,7 @@ async function CategoryPageContent({
 
   const params = await paramsPromise;
   const decodedCategory = decodeSlug(params.category);
-  const currentPage = Number.parseInt(params.pageNo, 10);
-  const pageNo =
-    Number.isFinite(currentPage) && currentPage > 0 ? currentPage : null;
+  const pageNo = parsePositiveInt(params.pageNo);
   if (!pageNo) notFound();
 
   const { data: category, error: categoryError } = await getCategoryBySlug(

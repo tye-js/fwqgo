@@ -22,6 +22,7 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { parsePositiveInt } from "@fwqgo/core/utils";
 
 type AiRewriteTasksPageVariant = "production" | "task-center";
 type AiRewriteTaskSearchParams = {
@@ -33,8 +34,7 @@ type AiRewriteTaskSearchParams = {
 };
 
 function parsePageNo(value: string | undefined) {
-  const parsed = value ? Number.parseInt(value, 10) : 1;
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+  return parsePositiveInt(value) ?? 1;
 }
 
 function parseAiTaskFilters(

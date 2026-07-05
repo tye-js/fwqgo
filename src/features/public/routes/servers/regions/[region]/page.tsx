@@ -7,7 +7,7 @@ import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
 import { ServerOfferCollectionPage } from "@/features/public/components/server-offer-collection-page";
 import { Card, CardContent } from "@/components/ui/card";
-import { decodeSlug } from "@fwqgo/core/utils";
+import { normalizeDecodedSlug } from "@fwqgo/core/utils";
 import { getServerOfferCollection } from "@/server/offers/server-offers";
 
 type PageProps = {
@@ -22,7 +22,9 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { region } = await params;
-  const value = decodeSlug(region);
+  const value = normalizeDecodedSlug(region);
+  if (!value) return {};
+
   const canonicalUrl = `${getSiteUrl()}/servers/regions/${encodeURIComponent(value)}`;
   const title = `${value}服务器优惠套餐 - 服务器go`;
   const description = `集中查看 ${value} VPS、云服务器和独立服务器套餐，比较价格、线路、优惠码和购买入口。`;
@@ -46,7 +48,11 @@ async function RegionContent({ params }: PageProps) {
   await connection();
 
   const { region } = await params;
-  const value = decodeSlug(region);
+  const value = normalizeDecodedSlug(region);
+  if (!value) {
+    notFound();
+  }
+
   const data = await getServerOfferCollection({ kind: "region", value });
 
   if (!data || data.offers.length === 0) {

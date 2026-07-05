@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -15,6 +15,7 @@ import {
 
 import {
   batchGenerateArticleCoverImagesAction,
+  finalizeCoverGenerationBatchAction,
   getCoverGenerationBatchStatusAction,
 } from "@/features/cms/actions/article-cover-image";
 import {
@@ -45,6 +46,10 @@ import {
   notifyInfo,
   notifySuccess,
 } from "@/lib/admin-toast";
+import {
+  getOptimizedImageSrc,
+  isRenderableImageSrc,
+} from "@fwqgo/core/image-src";
 
 export type CoverGenerationPost = {
   id: number;
@@ -131,6 +136,31 @@ function getResultBadge(result: GenerateResult) {
   };
 }
 
+function CoverPreview({ src, title }: { src: string | null; title: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (!isRenderableImageSrc(src) || failed) {
+    return (
+      <span className="inline-flex h-14 w-24 items-center justify-center rounded-md border border-dashed border-border/70 px-2 text-center text-xs text-muted-foreground">
+        {src ? "封面加载失败" : "无封面"}
+      </span>
+    );
+  }
+
+  return (
+    <div className="relative h-14 w-24 overflow-hidden rounded-md border border-border/70 bg-muted">
+      <Image
+        src={getOptimizedImageSrc(src)}
+        alt={title}
+        fill
+        sizes="96px"
+        className="object-cover"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  );
+}
+
 export function ArticleCoverBatchGenerator({
   posts,
 }: {
@@ -157,6 +187,7 @@ export function ArticleCoverBatchGenerator({
     runningCount: 0,
     done: true,
   });
+  const finalizedBatchIdsRef = useRef(new Set<string>());
 
   const filteredPosts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -250,6 +281,24 @@ export function ArticleCoverBatchGenerator({
     });
   }, []);
 
+  const finalizeBatch = useCallback(async (currentBatchId: string) => {
+    if (finalizedBatchIdsRef.current.has(currentBatchId)) {
+      return true;
+    }
+
+    const result = await finalizeCoverGenerationBatchAction(currentBatchId);
+    if (!result.success) {
+      notifyError({
+        title: result.errorTitle ?? "封面生成已结束，但刷新缓存失败",
+        description: result.error ?? "请刷新页面后确认文章封面。",
+      });
+      return false;
+    }
+
+    finalizedBatchIdsRef.current.add(currentBatchId);
+    return true;
+  }, []);
+
   const refreshBatchStatus = useCallback(
     async (currentBatchId: string, options: { notifyDone?: boolean } = {}) => {
       const result = await getCoverGenerationBatchStatusAction(currentBatchId);
@@ -263,20 +312,25 @@ export function ArticleCoverBatchGenerator({
 
       applyBatchStatus(result);
 
-      if (result.done && options.notifyDone) {
-        notifySuccess({
-          title: "后台封面生成完成",
-          description: describeAdminResult([
-            `成功 ${result.successCount ?? 0} 篇`,
-            (result.failedCount ?? 0) > 0
-              ? `失败 ${result.failedCount ?? 0} 篇`
-              : null,
-          ]),
-        });
+      if (result.done) {
+        const finalized = await finalizeBatch(currentBatchId);
+        if (!finalized) return;
+
+        if (options.notifyDone) {
+          notifySuccess({
+            title: "后台封面生成完成",
+            description: describeAdminResult([
+              `成功 ${result.successCount ?? 0} 篇`,
+              (result.failedCount ?? 0) > 0
+                ? `失败 ${result.failedCount ?? 0} 篇`
+                : null,
+            ]),
+          });
+        }
         router.refresh();
       }
     },
-    [applyBatchStatus, router],
+    [applyBatchStatus, finalizeBatch, router],
   );
 
   useEffect(() => {
@@ -302,6 +356,9 @@ export function ArticleCoverBatchGenerator({
 
       if (result.done && !notifiedDone) {
         notifiedDone = true;
+        const finalized = await finalizeBatch(batchId);
+        if (!finalized) return;
+
         notifySuccess({
           title: "后台封面生成完成",
           description: describeAdminResult([
@@ -324,7 +381,7 @@ export function ArticleCoverBatchGenerator({
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [applyBatchStatus, batchId, isBatchRunning, router]);
+  }, [applyBatchStatus, batchId, finalizeBatch, isBatchRunning, router]);
 
   async function handleGenerate() {
     if (selectedIds.length === 0) {
@@ -382,7 +439,7 @@ export function ArticleCoverBatchGenerator({
               setCoverFilter(value as typeof coverFilter)
             }
           >
-            <SelectTrigger className="h-9 w-36 border-0 bg-transparent px-0 shadow-none focus:ring-0">
+            <SelectTrigger className="min-h-11 w-40 border-0 bg-transparent px-0 shadow-none focus:ring-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -575,21 +632,7 @@ export function ArticleCoverBatchGenerator({
                     </div>
                   </TableCell>
                   <TableCell>
-                    {post.imgUrl ? (
-                      <div className="relative h-14 w-24 overflow-hidden rounded-md border border-border/70">
-                        <Image
-                          src={post.imgUrl}
-                          alt={post.title}
-                          fill
-                          sizes="96px"
-                          className="object-cover"
-                        />
-                      </div>
-                    ) : (
-                      <span className="inline-flex h-14 w-24 items-center justify-center rounded-md border border-dashed border-border/70 text-xs text-muted-foreground">
-                        无封面
-                      </span>
-                    )}
+                    <CoverPreview src={post.imgUrl} title={post.title} />
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1">
