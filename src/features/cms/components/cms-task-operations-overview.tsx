@@ -22,11 +22,13 @@ const sourceLabel: Record<string, string> = {
 
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
+    queued: "排队",
     pending: "排队",
     running: "运行中",
     succeeded: "成功",
     failed: "失败",
     manual_required: "需人工处理",
+    cancelled: "已取消",
   };
 
   return labels[status] ?? status;
@@ -35,7 +37,9 @@ function statusLabel(status: string) {
 function statusVariant(status: string) {
   if (status === "failed") return "destructive" as const;
   if (status === "succeeded") return "default" as const;
-  if (status === "running" || status === "pending") return "secondary" as const;
+  if (status === "running" || status === "pending" || status === "queued") {
+    return "secondary" as const;
+  }
   return "outline" as const;
 }
 
@@ -112,9 +116,9 @@ export function CmsTaskOperationsOverview({
         <div className="rounded-md border border-border/70 bg-muted/20 p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium">后台 worker 快照</p>
+              <p className="text-sm font-medium">持久后台队列</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                记录当前 Node 进程内触发过的后台任务，重启后会重新累计。
+                数据来自队列表，包含锁、心跳、重试次数和失败原因。
               </p>
             </div>
             <Button asChild size="sm" variant="outline">
@@ -124,27 +128,61 @@ export function CmsTaskOperationsOverview({
               </Link>
             </Button>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 overflow-x-auto">
             {summary.backgroundJobs.length > 0 ? (
-              summary.backgroundJobs.map((job) => (
-                <Badge
-                  key={job.key}
-                  variant={
-                    job.lastError
-                      ? "destructive"
-                      : job.running
-                        ? "default"
-                        : "outline"
-                  }
-                  title={job.lastError ?? undefined}
-                >
-                  {job.label} · {job.running ? "运行中" : "空闲"} · 运行
-                  {job.runCount} 次
-                </Badge>
-              ))
+              <Table className="min-w-[760px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>任务</TableHead>
+                    <TableHead className="w-[92px]">状态</TableHead>
+                    <TableHead className="w-[88px]">重试</TableHead>
+                    <TableHead className="w-[124px]">下次运行</TableHead>
+                    <TableHead className="w-[124px]">心跳</TableHead>
+                    <TableHead>失败原因</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {summary.backgroundJobs.map((job) => (
+                    <TableRow key={job.id}>
+                      <TableCell>
+                        <div className="max-w-[260px]">
+                          <p className="truncate text-sm font-medium">
+                            {job.label}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {job.key}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={statusVariant(job.status)}>
+                          {statusLabel(job.status)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs tabular-nums text-muted-foreground">
+                        {job.attempts}/{job.maxAttempts}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {formatTime(job.runAfter)}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {formatTime(job.heartbeatAt)}
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className="line-clamp-2 text-xs text-muted-foreground"
+                          title={job.lastError ?? undefined}
+                        >
+                          {job.lastError ?? "无"}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             ) : (
               <span className="text-xs text-muted-foreground">
-                当前进程暂未记录后台 worker 运行。
+                暂无后台队列记录。
               </span>
             )}
           </div>
