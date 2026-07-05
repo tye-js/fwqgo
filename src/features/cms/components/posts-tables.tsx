@@ -98,7 +98,7 @@ function describeImportStats(data: ImportStats) {
 type ImportTask = {
   taskId: number;
   postId: number | null;
-  status: "pending" | "running" | "succeeded" | "failed";
+  status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
   progress: number;
   message: string | null;
   result: ImportStats | null;

@@ -13,7 +13,12 @@ import {
 
 type ServerOfferImportTask = typeof serverOfferImportTasks.$inferSelect;
 type ServerOfferImportMode = "single" | "bulk";
-type ServerOfferImportStatus = "pending" | "running" | "succeeded" | "failed";
+type ServerOfferImportStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
 
 function revalidateOfferPages() {
   revalidatePath("/servers");
@@ -21,6 +26,12 @@ function revalidateOfferPages() {
   revalidatePath("/servers/hong-kong");
   revalidatePath("/servers/united-states");
   revalidatePath("/servers/cheap-vps");
+  revalidatePath("/ai-tasks");
+}
+
+function revalidateOfferTaskPages(taskId: number) {
+  revalidateOfferPages();
+  revalidatePath(`/ai-tasks/offers/${taskId}`);
 }
 
 function parseResult(value: string | null) {
@@ -53,7 +64,8 @@ export function serializeServerOfferImportTask(task: ServerOfferImportTask) {
     message: task.message,
     result: parseResult(task.result),
     success: status === "succeeded",
-    done: status === "succeeded" || status === "failed",
+    done:
+      status === "succeeded" || status === "failed" || status === "cancelled",
     errorTitle: task.errorTitle ?? undefined,
     errorDetail: task.errorDetail ?? undefined,
     startedAt: task.startedAt?.toISOString() ?? null,
@@ -250,6 +262,98 @@ export async function createServerOfferImportTask(input: {
   }
 
   ensureServerOfferImportWorker();
+  return serializeServerOfferImportTask(task);
+}
+
+export async function retryServerOfferImportTask(taskId: number) {
+  await requireAdminSession();
+
+  const [task] = await db
+    .update(serverOfferImportTasks)
+    .set({
+      status: "pending",
+      progress: 0,
+      message: "等待重新提取套餐",
+      result: null,
+      errorTitle: null,
+      errorDetail: null,
+      startedAt: null,
+      finishedAt: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(serverOfferImportTasks.id, taskId),
+        eq(serverOfferImportTasks.status, "failed"),
+      ),
+    )
+    .returning();
+
+  if (!task) {
+    const [cancelledTask] = await db
+      .update(serverOfferImportTasks)
+      .set({
+        status: "pending",
+        progress: 0,
+        message: "等待恢复套餐提取",
+        result: null,
+        errorTitle: null,
+        errorDetail: null,
+        startedAt: null,
+        finishedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(serverOfferImportTasks.id, taskId),
+          eq(serverOfferImportTasks.status, "cancelled"),
+        ),
+      )
+      .returning();
+
+    if (!cancelledTask) {
+      throw new Error("任务不存在，或当前状态不能恢复");
+    }
+
+    ensureServerOfferImportWorker();
+    revalidateOfferTaskPages(taskId);
+    return serializeServerOfferImportTask(cancelledTask);
+  }
+
+  ensureServerOfferImportWorker();
+  revalidateOfferTaskPages(taskId);
+  return serializeServerOfferImportTask(task);
+}
+
+export async function cancelServerOfferImportTask(taskId: number) {
+  await requireAdminSession();
+
+  const [task] = await db
+    .update(serverOfferImportTasks)
+    .set({
+      status: "cancelled",
+      progress: 0,
+      message: "任务已取消",
+      errorTitle: null,
+      errorDetail: null,
+      finishedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(serverOfferImportTasks.id, taskId),
+        eq(serverOfferImportTasks.status, "pending"),
+      ),
+    )
+    .returning();
+
+  if (!task) {
+    throw new Error(
+      "任务不存在，或当前状态不能取消。运行中任务需要等待本轮结束。",
+    );
+  }
+
+  revalidateOfferTaskPages(taskId);
   return serializeServerOfferImportTask(task);
 }
 

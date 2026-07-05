@@ -65,7 +65,7 @@ type GenerateResult = {
   taskId?: number;
   postId: number;
   title?: string;
-  status?: "pending" | "running" | "succeeded" | "failed";
+  status?: "pending" | "running" | "succeeded" | "failed" | "cancelled";
   success: boolean;
   url?: string;
   assetId?: number;
@@ -126,6 +126,14 @@ function getResultBadge(result: GenerateResult) {
       label: "生成中",
       icon: Loader2,
       variant: "secondary" as const,
+    };
+  }
+
+  if (status === "cancelled") {
+    return {
+      label: "已取消",
+      icon: XCircle,
+      variant: "outline" as const,
     };
   }
 
@@ -276,7 +284,7 @@ export function ArticleCoverBatchGenerator({
       done:
         result.done ??
         resultRows.every((item) =>
-          ["succeeded", "failed"].includes(getResultStatus(item)),
+          ["succeeded", "failed", "cancelled"].includes(getResultStatus(item)),
         ),
     });
   }, []);

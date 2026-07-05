@@ -12,6 +12,10 @@ import { imageCoverGenerationTasks, posts } from "@fwqgo/db/schema";
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import { generateArticleCoverImage } from "@/server/images/generated-cover";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
+import {
+  adminActionFailure,
+  adminActionSuccess,
+} from "@/lib/admin-action-result";
 
 const coverSchema = z.object({
   postId: z.coerce.number().int().positive().optional(),
@@ -28,7 +32,12 @@ const batchCoverSchema = z.object({
   postIds: z.array(z.coerce.number().int().positive()).min(1).max(20),
 });
 
-type CoverTaskStatus = "pending" | "running" | "succeeded" | "failed";
+type CoverTaskStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
 type CoverTaskRow = typeof imageCoverGenerationTasks.$inferSelect;
 
 let isCoverGenerationWorkerRunning = false;
@@ -49,6 +58,7 @@ type EphemeralCoverTask = {
 
 const ephemeralCoverBatches = new Map<string, EphemeralCoverTask[]>();
 const MAX_EPHEMERAL_COVER_BATCHES = 30;
+const terminalCoverTaskStatuses = ["succeeded", "failed", "cancelled"];
 
 function formatCoverGenerationError(error: unknown) {
   const message =
@@ -88,6 +98,8 @@ function serializeCoverTask(task: CoverTaskRow) {
     errorDetail: task.errorDetail ?? undefined,
     startedAt: task.startedAt?.toISOString() ?? null,
     finishedAt: task.finishedAt?.toISOString() ?? null,
+    createdAt: task.createdAt.toISOString(),
+    updatedAt: task.updatedAt?.toISOString() ?? null,
   };
 }
 
@@ -323,6 +335,12 @@ function revalidateCoverGenerationAdminPaths() {
   revalidatePath("/images/list");
   revalidatePath("/posts/edit");
   revalidatePath("/posts/drafts");
+  revalidatePath("/ai-tasks");
+}
+
+function revalidateCoverGenerationTaskPaths(taskId: number) {
+  revalidateCoverGenerationAdminPaths();
+  revalidatePath(`/ai-tasks/covers/${taskId}`);
 }
 
 async function getPostCoverRevalidationTags(postIds: number[]) {
@@ -509,6 +527,110 @@ export async function batchGenerateArticleCoverImagesAction(input: {
   }
 }
 
+export async function retryCoverGenerationTaskAction(taskId: number) {
+  try {
+    await requireAdminSession();
+
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return adminActionFailure(new Error("任务 ID 无效"), {
+        title: "恢复封面生成任务失败",
+        suggestion: "请从任务中心重新打开任务详情。",
+      });
+    }
+
+    const [task] = await db
+      .update(imageCoverGenerationTasks)
+      .set({
+        status: "pending",
+        outputUrl: null,
+        assetId: null,
+        errorTitle: null,
+        errorDetail: null,
+        startedAt: null,
+        finishedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(imageCoverGenerationTasks.id, taskId),
+          inArray(imageCoverGenerationTasks.status, ["failed", "cancelled"]),
+        ),
+      )
+      .returning();
+
+    if (!task) {
+      return adminActionFailure(new Error("任务不存在，或当前状态不能恢复"), {
+        title: "恢复封面生成任务失败",
+        suggestion: "只有失败或已取消的封面任务可以恢复。",
+      });
+    }
+
+    ensureCoverGenerationWorker();
+    revalidateCoverGenerationTaskPaths(taskId);
+    return adminActionSuccess(
+      serializeCoverTask(task),
+      "封面生成任务已重新排队",
+    );
+  } catch (error) {
+    const readableError = formatCoverGenerationError(error);
+    return adminActionFailure(new Error(readableError.detail), {
+      title: readableError.title,
+      suggestion: "请检查生图接口配置和文章封面输入后再恢复。",
+    });
+  }
+}
+
+export async function cancelCoverGenerationTaskAction(taskId: number) {
+  try {
+    await requireAdminSession();
+
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return adminActionFailure(new Error("任务 ID 无效"), {
+        title: "取消封面生成任务失败",
+        suggestion: "请从任务中心重新打开任务详情。",
+      });
+    }
+
+    const [task] = await db
+      .update(imageCoverGenerationTasks)
+      .set({
+        status: "cancelled",
+        errorTitle: null,
+        errorDetail: null,
+        finishedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(imageCoverGenerationTasks.id, taskId),
+          eq(imageCoverGenerationTasks.status, "pending"),
+        ),
+      )
+      .returning();
+
+    if (!task) {
+      return adminActionFailure(
+        new Error(
+          "任务不存在，或当前状态不能取消。运行中任务需要等待本轮结束。",
+        ),
+        {
+          title: "取消封面生成任务失败",
+          suggestion: "只能取消尚未开始执行的排队任务。",
+        },
+      );
+    }
+
+    revalidateCoverGenerationTaskPaths(taskId);
+    return adminActionSuccess(serializeCoverTask(task), "封面生成任务已取消");
+  } catch (error) {
+    const readableError = formatCoverGenerationError(error);
+    return adminActionFailure(new Error(readableError.detail), {
+      title: readableError.title,
+      suggestion: "请刷新任务详情后重试。",
+    });
+  }
+}
+
 export async function getCoverGenerationBatchStatusAction(batchId: string) {
   try {
     await requireAdminSession();
@@ -533,8 +655,8 @@ export async function getCoverGenerationBatchStatusAction(batchId: string) {
           .length,
         runningCount: ephemeralTasks.filter((task) => task.status === "running")
           .length,
-        done: ephemeralTasks.every(
-          (task) => task.status === "succeeded" || task.status === "failed",
+        done: ephemeralTasks.every((task) =>
+          terminalCoverTaskStatuses.includes(task.status),
         ),
       };
     }
@@ -562,8 +684,8 @@ export async function getCoverGenerationBatchStatusAction(batchId: string) {
       failedCount: tasks.filter((task) => task.status === "failed").length,
       pendingCount: tasks.filter((task) => task.status === "pending").length,
       runningCount: tasks.filter((task) => task.status === "running").length,
-      done: tasks.every(
-        (task) => task.status === "succeeded" || task.status === "failed",
+      done: tasks.every((task) =>
+        terminalCoverTaskStatuses.includes(task.status),
       ),
     };
   } catch (error) {
@@ -592,8 +714,8 @@ export async function finalizeCoverGenerationBatchAction(batchId: string) {
 
     const ephemeralTasks = ephemeralCoverBatches.get(normalizedBatchId);
     if (ephemeralTasks) {
-      const done = ephemeralTasks.every(
-        (task) => task.status === "succeeded" || task.status === "failed",
+      const done = ephemeralTasks.every((task) =>
+        terminalCoverTaskStatuses.includes(task.status),
       );
       if (!done) {
         return {
@@ -619,8 +741,8 @@ export async function finalizeCoverGenerationBatchAction(batchId: string) {
       return { success: false, error: "没有找到这个封面生成批次" };
     }
 
-    const done = tasks.every(
-      (task) => task.status === "succeeded" || task.status === "failed",
+    const done = tasks.every((task) =>
+      terminalCoverTaskStatuses.includes(task.status),
     );
     if (!done) {
       return {
