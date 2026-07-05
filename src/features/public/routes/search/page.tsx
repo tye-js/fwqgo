@@ -237,14 +237,26 @@ async function SearchContent({ searchParams }: SearchPageProps) {
   );
 }
 
-export default async function SearchPage(props: SearchPageProps) {
-  const searchParams = await props.searchParams;
-  const language = normalizeLanguage(searchParams.lang);
-  const resolvedSearchParams = Promise.resolve(searchParams);
+async function SearchHeader(props: SearchPageProps) {
+  const params = await props.searchParams;
+  const language = normalizeLanguage(params.lang);
 
+  return <Header language={language} />;
+}
+
+async function SearchFooter(props: SearchPageProps) {
+  const params = await props.searchParams;
+  const language = normalizeLanguage(params.lang);
+
+  return <Footer language={language} />;
+}
+
+export default function SearchPage(props: SearchPageProps) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Header language={language} />
+      <Suspense fallback={<Header />}>
+        <SearchHeader searchParams={props.searchParams} />
+      </Suspense>
       <Suspense
         fallback={
           <main className="container mx-auto flex flex-1 items-center px-4 py-12">
@@ -254,9 +266,11 @@ export default async function SearchPage(props: SearchPageProps) {
           </main>
         }
       >
-        <SearchContent searchParams={resolvedSearchParams} />
+        <SearchContent searchParams={props.searchParams} />
       </Suspense>
-      <Footer language={language} />
+      <Suspense fallback={<Footer />}>
+        <SearchFooter searchParams={props.searchParams} />
+      </Suspense>
     </div>
   );
 }

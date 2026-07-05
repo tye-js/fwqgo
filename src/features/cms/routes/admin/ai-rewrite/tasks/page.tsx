@@ -1,12 +1,16 @@
 import { AiRewriteTaskManager } from "@/features/cms/components/ai-rewrite-task-manager";
 import { AiSourceSiteManager } from "@/features/cms/components/ai-source-site-manager";
 import { CmsTaskOperationsOverview } from "@/features/cms/components/cms-task-operations-overview";
+import { UnifiedTaskList } from "@/features/cms/components/unified-task-list";
 import { getAiSourceSiteList } from "@/features/cms/actions/ai-source-site";
 import {
   getAiRewriteTaskCount,
   getAiRewriteTaskList,
 } from "@/features/cms/actions/ai-rewrite-task";
-import { getCmsTaskOperationsSummary } from "@/features/cms/data/operations";
+import {
+  getCmsTaskOperationsSummary,
+  getUnifiedTaskList,
+} from "@/features/cms/data/operations";
 import {
   aiRewriteTaskSourceTypeFilters,
   aiRewriteTaskStatusFilters,
@@ -33,6 +37,7 @@ type AiRewriteTaskSearchParams = {
   sourceType?: string;
   language?: string;
   query?: string;
+  type?: string;
 };
 
 function parsePageNo(value: string | undefined) {
@@ -89,6 +94,7 @@ export async function AiRewriteTasksPageContent({
     categoriesResult,
     rewriteStyles,
     operationsSummary,
+    unifiedTaskList,
   ] = await Promise.all([
     getAiRewriteTaskList(isTaskCenter ? taskFilters : { pageSize: 50 }),
     getAiRewriteTaskCount(isTaskCenter ? taskFilters : {}),
@@ -96,6 +102,15 @@ export async function AiRewriteTasksPageContent({
     getLeafCategories(),
     getAiRewriteStyleOptions(),
     isTaskCenter ? getCmsTaskOperationsSummary() : Promise.resolve(null),
+    isTaskCenter
+      ? getUnifiedTaskList({
+          type: searchParams.type,
+          status: searchParams.status,
+          query: searchParams.query,
+          pageNo: parsePageNo(searchParams.pageNo),
+          pageSize: 20,
+        })
+      : Promise.resolve(null),
   ]);
   const categories = categoriesResult.data ?? [];
   const runningCount = tasks.filter((task) =>
@@ -109,8 +124,23 @@ export async function AiRewriteTasksPageContent({
   const totalPage = Math.ceil(taskCount / taskFilters.pageSize);
   const pageTitle = isTaskCenter ? "AI任务中心" : "内容生产台";
   const pageDescription = isTaskCenter
-    ? "集中查看 AI 采集、清洗、改写、英文生成、草稿保存的队列进度和失败原因。"
+    ? "集中查看 AI 改写、封面生图、套餐提取的队列进度、步骤日志、失败原因和恢复操作。"
     : "输入来源 URL 后，系统在后台完成采集、清洗、AI 改写和草稿保存。";
+  const allTaskTotal = operationsSummary
+    ? operationsSummary.queues.ai.total +
+      operationsSummary.queues.cover.total +
+      operationsSummary.queues.offer.total
+    : tasks.length;
+  const allTaskActive = operationsSummary
+    ? operationsSummary.queues.ai.active +
+      operationsSummary.queues.cover.active +
+      operationsSummary.queues.offer.active
+    : runningCount;
+  const allTaskFailed = operationsSummary
+    ? operationsSummary.queues.ai.failed +
+      operationsSummary.queues.cover.failed +
+      operationsSummary.queues.offer.failed
+    : failedCount;
 
   return (
     <AdminPageShell
@@ -133,18 +163,18 @@ export async function AiRewriteTasksPageContent({
       <AdminSummaryStrip
         items={[
           {
-            label: "最近任务",
-            value: String(tasks.length),
-            note: "保留最近 50 条",
+            label: isTaskCenter ? "全部任务" : "最近任务",
+            value: String(allTaskTotal),
+            note: isTaskCenter ? "AI、封面、套餐" : "保留最近 50 条",
           },
           {
             label: "处理中",
-            value: String(runningCount),
-            note: "抓取、改写、保存草稿",
+            value: String(allTaskActive),
+            note: isTaskCenter ? "排队和运行中" : "抓取、改写、保存草稿",
           },
           {
-            label: "已生成草稿",
-            value: String(draftCount),
+            label: isTaskCenter ? "失败任务" : "已生成草稿",
+            value: String(isTaskCenter ? allTaskFailed : draftCount),
             note:
               manualRequiredCount > 0
                 ? `${manualRequiredCount} 个草稿需人工处理外链`
@@ -159,9 +189,17 @@ export async function AiRewriteTasksPageContent({
           {operationsSummary ? (
             <CmsTaskOperationsOverview summary={operationsSummary} />
           ) : null}
+          {unifiedTaskList ? (
+            <AdminSectionCard
+              title="全部任务"
+              description="统一查看 AI 改写、封面生图和套餐提取任务；进入详情页可查看步骤日志、失败原因、重试、取消和恢复。"
+            >
+              <UnifiedTaskList result={unifiedTaskList} />
+            </AdminSectionCard>
+          ) : null}
           <AdminSectionCard
-            title="任务看板"
-            description="按任务状态、进度、失败原因和草稿结果查看 AI 处理链路。运行中的任务会自动刷新。"
+            title="AI 改写明细"
+            description="AI 专项列表保留采集来源、语言、模型、Token 和草稿结果等细节。运行中的任务会自动刷新。"
           >
             <AiRewriteTaskManager
               tasks={tasks}

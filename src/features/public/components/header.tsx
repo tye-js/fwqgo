@@ -109,7 +109,49 @@ function nonEmptyTrim(value: string | null | undefined) {
   return trimmed;
 }
 
-const HeaderComponent = async ({
+function HeaderFallback({ language }: { language: PublicLanguage }) {
+  const copy = headerCopy[language];
+
+  return (
+    <header className="sticky top-0 z-50 border-b border-border/70 bg-background/95 backdrop-blur-xl">
+      <div className="container mx-auto px-4">
+        <div className="flex min-h-16 items-center justify-between gap-5">
+          <Link
+            href={language === "en" ? "/en" : "/"}
+            prefetch
+            className="min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            aria-label={copy.homeLabel}
+          >
+            <BrandLogo className="min-w-0" />
+          </Link>
+          <div className="hidden h-10 w-80 rounded-md border border-border/70 bg-muted/30 lg:block" />
+          <Button
+            asChild
+            variant="outline"
+            className="hidden shrink-0 lg:inline-flex"
+          >
+            <Link href={language === "en" ? "/" : "/en"} prefetch>
+              <Globe2 className="size-4" />
+              {copy.languageLabel}
+            </Link>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="lg:hidden"
+            aria-label={copy.navigationTitle}
+            disabled
+          >
+            <Menu className="size-5" />
+          </Button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+const HeaderContent = async ({
   language = "zh",
 }: {
   language?: PublicLanguage;
@@ -368,6 +410,14 @@ const HeaderComponent = async ({
     </header>
   );
 };
+
+function HeaderComponent({ language = "zh" }: { language?: PublicLanguage }) {
+  return (
+    <React.Suspense fallback={<HeaderFallback language={language} />}>
+      <HeaderContent language={language} />
+    </React.Suspense>
+  );
+}
 
 function MobileNavLink({
   children,

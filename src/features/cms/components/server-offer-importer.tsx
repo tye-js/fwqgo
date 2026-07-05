@@ -45,7 +45,7 @@ type ImportStats = {
 type ImportTask = {
   taskId: number;
   mode: "single" | "bulk";
-  status: "pending" | "running" | "succeeded" | "failed";
+  status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
   progress: number;
   message: string | null;
   result: ImportStats | null;
@@ -191,7 +191,11 @@ export function ServerOfferImporter({ posts }: { posts: ImportPostOption[] }) {
         </p>
         {activeTask ? (
           <div className="flex flex-wrap items-center gap-2 rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs">
-            <Badge variant={activeTask.status === "failed" ? "destructive" : "outline"}>
+            <Badge
+              variant={
+                activeTask.status === "failed" ? "destructive" : "outline"
+              }
+            >
               任务 #{activeTask.taskId}
             </Badge>
             <span className="text-muted-foreground">

@@ -11,9 +11,8 @@ import {
 } from "lucide-react";
 
 import { getAiRewriteTaskDetail } from "@/features/cms/actions/ai-rewrite-task";
-import { AiRewriteTaskRetryButton } from "@/features/cms/components/ai-rewrite-task-retry-button";
-import { AiRewriteTaskResolveButton } from "@/features/cms/components/ai-rewrite-task-resolve-button";
 import { AffiliateRewriteAudit } from "@/features/cms/components/affiliate-rewrite-audit";
+import { UnifiedTaskActionButtons } from "@/features/cms/components/unified-task-action-buttons";
 import {
   AdminPageShell,
   AdminSectionCard,
@@ -596,7 +595,8 @@ function TruncationHint({
         当前模型 {task.model ?? "未记录"}，Max Tokens{" "}
         {formatMaybeNumber(task.maxTokens)}，AI 输入{" "}
         {formatMaybeNumber(task.aiInputLength)}，输出{" "}
-        {formatMaybeNumber(task.rewriteOutputLength)}。如果英文 SEO 或正文生成被截断，优先在 AI 改写配置中调大 Max Tokens，或缩短正文输入。
+        {formatMaybeNumber(task.rewriteOutputLength)}。如果英文 SEO
+        或正文生成被截断，优先在 AI 改写配置中调大 Max Tokens，或缩短正文输入。
       </p>
     </div>
   );
@@ -715,15 +715,15 @@ export async function AiRewriteTaskDetailPageContent({
               返回
             </Link>
           </Button>
-          {task.status === "failed" ? (
-            <AiRewriteTaskRetryButton taskId={task.id} />
-          ) : null}
-          {task.status === "cancelled" ? (
-            <AiRewriteTaskRetryButton taskId={task.id} />
-          ) : null}
-          {task.status === "manual_required" ? (
-            <AiRewriteTaskResolveButton taskId={task.id} />
-          ) : null}
+          <UnifiedTaskActionButtons
+            type="ai"
+            taskId={task.id}
+            status={task.status}
+            canRetry={task.status === "failed" || task.status === "cancelled"}
+            canCancel={task.status === "pending"}
+            canResolve={task.status === "manual_required"}
+            size="default"
+          />
           {task.postSlug ? (
             <Button asChild>
               <Link href={`/posts/edit/post/${task.postSlug}`}>编辑草稿</Link>
@@ -737,7 +737,10 @@ export async function AiRewriteTaskDetailPageContent({
         <Stat label="尝试次数" value={task.attempts} />
         <Stat label="模型" value={task.model ?? "-"} />
         <Stat label="Max Tokens" value={formatMaybeNumber(task.maxTokens)} />
-        <Stat label="AI 输入长度" value={formatMaybeNumber(task.aiInputLength)} />
+        <Stat
+          label="AI 输入长度"
+          value={formatMaybeNumber(task.aiInputLength)}
+        />
         <Stat
           label="改写输出长度"
           value={formatMaybeNumber(task.rewriteOutputLength)}
@@ -770,7 +773,11 @@ export async function AiRewriteTaskDetailPageContent({
         title="文章生产链路"
         description="按抓取、清洗、改写、翻译、SEO、封面和返利审计查看每一步产物。"
       >
-        <ProductionChain task={task} diagnostics={diagnostics} report={report} />
+        <ProductionChain
+          task={task}
+          diagnostics={diagnostics}
+          report={report}
+        />
       </AdminSectionCard>
 
       <AdminSectionCard

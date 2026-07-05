@@ -11,8 +11,10 @@ import {
   getErrorMessage,
 } from "@/lib/admin-action-result";
 import {
+  cancelServerOfferImportTask,
   createServerOfferImportTask,
   getServerOfferImportTaskStatus,
+  retryServerOfferImportTask,
 } from "@/server/offers/import-task-runner";
 import {
   bulkUpdateServerOffers,
@@ -21,11 +23,10 @@ import {
   updateServerOffer,
 } from "@/server/offers/server-offers";
 
-const nullableString = z
-  .preprocess(
-    (value) => (typeof value === "string" && value.trim() ? value.trim() : null),
-    z.string().nullable(),
-  );
+const nullableString = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() ? value.trim() : null),
+  z.string().nullable(),
+);
 
 const nullablePrice = nullableString.refine(
   (value) => value === null || Number.isFinite(Number(value)),
@@ -183,6 +184,46 @@ export async function getServerOfferImportTaskStatusAction(taskId: number) {
   }
 }
 
+export async function retryServerOfferImportTaskAction(taskId: number) {
+  try {
+    await requireAdminSession();
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return adminActionFailure(new Error("任务 ID 无效"), {
+        title: "恢复套餐提取任务失败",
+        suggestion: "请从任务中心重新打开任务详情。",
+      });
+    }
+
+    const task = await retryServerOfferImportTask(taskId);
+    return adminActionSuccess(task, "套餐提取任务已重新排队");
+  } catch (error) {
+    return adminActionFailure(error, {
+      title: "恢复套餐提取任务失败",
+      suggestion: "只有失败或已取消的套餐提取任务可以恢复。",
+    });
+  }
+}
+
+export async function cancelServerOfferImportTaskAction(taskId: number) {
+  try {
+    await requireAdminSession();
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return adminActionFailure(new Error("任务 ID 无效"), {
+        title: "取消套餐提取任务失败",
+        suggestion: "请从任务中心重新打开任务详情。",
+      });
+    }
+
+    const task = await cancelServerOfferImportTask(taskId);
+    return adminActionSuccess(task, "套餐提取任务已取消");
+  } catch (error) {
+    return adminActionFailure(error, {
+      title: "取消套餐提取任务失败",
+      suggestion: "只能取消尚未开始执行的排队任务。",
+    });
+  }
+}
+
 export async function updateServerOfferAction(id: number, formData: FormData) {
   try {
     await requireAdminSession();
@@ -236,7 +277,8 @@ export async function bulkUpdateServerOffersAction(input: {
     }
 
     const status =
-      input.status && offerStatuses.includes(input.status as (typeof offerStatuses)[number])
+      input.status &&
+      offerStatuses.includes(input.status as (typeof offerStatuses)[number])
         ? (input.status as (typeof offerStatuses)[number])
         : undefined;
     const result = await bulkUpdateServerOffers({
