@@ -48,6 +48,32 @@ function fillPromptTemplate(
     .replaceAll("{content}", contentText);
 }
 
+function buildLanguagePromptRules(
+  input: Pick<GenerateCoverInput, "language" | "title">,
+) {
+  if (input.language === "en") {
+    return [
+      "English article cover rules:",
+      "- This cover is for an English article and English public page.",
+      "- Ignore any earlier wording that implies a Chinese website, Chinese audience, or Chinese typography.",
+      "- Do not render Chinese characters anywhere in the image.",
+      "- If the image includes readable text, labels, UI fragments, or headline typography, it must be English only.",
+      `- Any visible headline text must be based on this English title: ${input.title.trim()}`,
+      "- Prefer no readable text if the model cannot render clean English.",
+    ].join("\n");
+  }
+
+  return [
+    "Chinese article cover rules:",
+    "- This cover is for a Chinese article and Chinese public page.",
+    "- If readable text appears, use Simplified Chinese only, except standard technical abbreviations such as VPS, CPU, RAM, SSD, GB, and TB.",
+  ].join("\n");
+}
+
+function buildCoverPrompt(template: string, input: GenerateCoverInput) {
+  return `${fillPromptTemplate(template, input)}\n\n${buildLanguagePromptRules(input)}`;
+}
+
 function stripHtml(value: string) {
   return value
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -237,7 +263,7 @@ export async function generateArticleCoverImage(
     throw new Error("生图配置缺少 API Key");
   }
 
-  const prompt = fillPromptTemplate(config.promptTemplate, input);
+  const prompt = buildCoverPrompt(config.promptTemplate, input);
   const endpoint = buildEndpoint(config.baseUrl);
   let response: Response;
   try {
