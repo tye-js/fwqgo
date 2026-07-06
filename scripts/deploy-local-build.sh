@@ -263,14 +263,19 @@ fi
 
 start_release() {
   local target_release="$1"
+  local resolved_release
+  local target_release_id
 
   if [[ ! -f "$target_release/ecosystem.config.cjs" ]]; then
     echo "Invalid release: missing ecosystem.config.cjs in $target_release" >&2
     return 1
   fi
 
+  resolved_release="$(readlink -f "$target_release" 2>/dev/null || printf "%s" "$target_release")"
+  target_release_id="${resolved_release##*/}"
+
   if [[ -f "$target_release/apps/web/server.js" && -f "$target_release/apps/cms/server.js" ]]; then
-    WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
+    RELEASE_ID="$target_release_id" WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
     return
   fi
 

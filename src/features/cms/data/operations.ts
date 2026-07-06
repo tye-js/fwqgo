@@ -19,7 +19,11 @@ import {
   serverOfferImportTasks,
 } from "@fwqgo/db/schema";
 import { ensureCmsBackgroundWorkersForRecoverableTasks } from "@/server/admin/cms-background-workers";
-import { getAdminBackgroundJobSnapshots } from "@/server/admin/background-jobs";
+import {
+  getAdminBackgroundJobSnapshots,
+  getAdminBackgroundWorkerRuntimeSnapshot,
+} from "@/server/admin/background-jobs";
+import { getAdminRuntimeSnapshot } from "@/server/admin/runtime-observability";
 
 type StatusCountRow = {
   status: string;
@@ -494,6 +498,8 @@ export async function getCmsTaskOperationsSummary() {
 
   return {
     generatedAt: new Date().toISOString(),
+    runtime: getAdminRuntimeSnapshot(),
+    backgroundWorker: getAdminBackgroundWorkerRuntimeSnapshot(),
     queues: {
       ai: toStatusSummary(aiStatusRows),
       cover: toStatusSummary(coverStatusRows),

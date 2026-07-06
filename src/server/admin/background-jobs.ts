@@ -57,6 +57,18 @@ export type BackgroundJobSnapshot = {
   updatedAt: string | null;
 };
 
+export type BackgroundWorkerRuntimeSnapshot = {
+  workerId: string;
+  hostname: string;
+  pid: number;
+  isLoopRunning: boolean;
+  registeredJobKeys: string[];
+  concurrency: number;
+  heartbeatIntervalMs: number;
+  heartbeatTimeoutMs: number;
+  generatedAt: string;
+};
+
 const TERMINAL_JOB_STATUSES = ["succeeded", "failed", "cancelled"] as const;
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_CONCURRENCY = 2;
@@ -139,6 +151,20 @@ function startAdminBackgroundJobWorker() {
     .finally(() => {
       workerLoopPromise = null;
     });
+}
+
+export function getAdminBackgroundWorkerRuntimeSnapshot(): BackgroundWorkerRuntimeSnapshot {
+  return {
+    workerId: WORKER_ID,
+    hostname: hostname(),
+    pid: process.pid,
+    isLoopRunning: Boolean(workerLoopPromise),
+    registeredJobKeys: [...jobRunners.keys()].sort(),
+    concurrency: getConcurrency(),
+    heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
+    heartbeatTimeoutMs: HEARTBEAT_TIMEOUT_MS,
+    generatedAt: new Date().toISOString(),
+  };
 }
 
 async function resetStaleBackgroundJobs() {

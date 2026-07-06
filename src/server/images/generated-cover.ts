@@ -23,6 +23,23 @@ type GenerateCoverInput = {
   configId?: number;
 };
 
+type CoverRequestPreview = {
+  configId: number;
+  configName: string;
+  provider: ImageGenerationProvider;
+  model: string;
+  endpointOrigin: string;
+  endpointPath: string;
+  size: string;
+  quality: string;
+  timeoutSeconds: number;
+  promptLength: number;
+  titleLength: number;
+  descriptionLength: number;
+  keywordsLength: number;
+  contentLength: number;
+};
+
 type ImageGenerationResponse = {
   data?: Array<{
     url?: string;
@@ -165,9 +182,12 @@ function getErrorMessage(error: unknown) {
 }
 
 function isTimeoutError(error: unknown) {
+  const message = getErrorMessage(error).toLowerCase();
   return (
-    error instanceof Error &&
-    (error.name === "AbortError" || error.name === "TimeoutError")
+    (error instanceof Error &&
+      (error.name === "AbortError" || error.name === "TimeoutError")) ||
+    message.includes("aborted due to timeout") ||
+    message.includes("operation was aborted")
   );
 }
 
@@ -220,6 +240,46 @@ function buildCoverOriginalName(
     toEnglishFileSlug(input.fileSlug) || toEnglishFileSlug(input.title);
   const language = input.language === "en" ? "en" : "zh";
   return `${baseSlug || "article-cover"}-${language}-cover.png`;
+}
+
+export async function previewArticleCoverImageRequest(
+  input: GenerateCoverInput,
+): Promise<CoverRequestPreview> {
+  if (!input.title.trim()) {
+    throw new Error("生成封面图需要文章标题");
+  }
+
+  const config = await getActiveImageGenerationConfig(input.configId);
+  if (!config) {
+    throw new Error("没有可用的生图配置，请先在设置里启用生图接口");
+  }
+
+  if (!config.apiKey?.trim()) {
+    throw new Error("生图配置缺少 API Key");
+  }
+
+  const prompt = buildCoverPrompt(config.promptTemplate, input);
+  const safeEndpoint = await assertPublicHttpUrl(
+    buildEndpoint(config.baseUrl),
+    "生图接口地址",
+  );
+
+  return {
+    configId: config.id,
+    configName: config.name,
+    provider: config.provider as ImageGenerationProvider,
+    model: config.model,
+    endpointOrigin: safeEndpoint.origin,
+    endpointPath: safeEndpoint.pathname,
+    size: config.size,
+    quality: config.quality,
+    timeoutSeconds: config.timeoutSeconds,
+    promptLength: prompt.length,
+    titleLength: input.title.trim().length,
+    descriptionLength: input.description?.trim().length ?? 0,
+    keywordsLength: input.keywords?.trim().length ?? 0,
+    contentLength: stripHtml(input.content ?? "").length,
+  };
 }
 
 async function downloadImage(url: string, timeoutSeconds: number) {
