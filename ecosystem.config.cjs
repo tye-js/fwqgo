@@ -103,8 +103,12 @@ function createApp({
       ...productionEnv,
       PORT: resolvedPort,
       NODE_ENV: "production",
+      RELEASE_ID:
+        process.env.RELEASE_ID ?? productionEnv.RELEASE_ID ?? "unknown",
       UPLOAD_DIR:
-        process.env.UPLOAD_DIR ?? productionEnv.UPLOAD_DIR ?? "/var/www/uploads",
+        process.env.UPLOAD_DIR ??
+        productionEnv.UPLOAD_DIR ??
+        "/var/www/uploads",
     },
   };
 }

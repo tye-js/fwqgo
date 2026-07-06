@@ -25,7 +25,10 @@ import {
 } from "@fwqgo/db/schema";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { syncImageReferencesForPost } from "@/server/images/assets";
-import { generateArticleCoverImage } from "@/server/images/generated-cover";
+import {
+  generateArticleCoverImage,
+  previewArticleCoverImageRequest,
+} from "@/server/images/generated-cover";
 import { importServerOffersFromPost } from "@/server/offers/server-offers";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import {
@@ -567,6 +570,43 @@ async function generateCoverForDraftPost(input: {
     return { status: "skipped" as const, url: post.imgUrl };
   }
 
+  const coverInput = {
+    title: post.title,
+    description: post.description,
+    keywords: post.keywords,
+    content: post.content,
+    fileSlug: post.slug,
+    language: input.language,
+    uploadedBy: null,
+  };
+  let requestPreview: Awaited<
+    ReturnType<typeof previewArticleCoverImageRequest>
+  >;
+
+  try {
+    requestPreview = await previewArticleCoverImageRequest(coverInput);
+  } catch (error) {
+    await upsertTaskStep({
+      taskId: input.taskId,
+      attempt: input.attempt,
+      stepKey: input.stepKey,
+      stepName: input.stepName,
+      status: "failed",
+      progress: input.progress,
+      message: "草稿已保存，但自动封面图生成前置检查失败",
+      error: getErrorMessage(error),
+      payload: {
+        postId: post.id,
+        language: input.language,
+        titleLength: post.title.length,
+        descriptionLength: post.description?.length ?? 0,
+        keywordsLength: post.keywords?.length ?? 0,
+        contentLength: post.content?.length ?? 0,
+      },
+    });
+    return { status: "failed" as const, url: null };
+  }
+
   await upsertTaskStep({
     taskId: input.taskId,
     attempt: input.attempt,
@@ -578,18 +618,15 @@ async function generateCoverForDraftPost(input: {
       input.language === "en"
         ? "正在自动生成英文文章封面图"
         : "正在自动生成中文文章封面图",
+    payload: {
+      postId: post.id,
+      language: input.language,
+      request: requestPreview,
+    },
   });
 
   try {
-    const generated = await generateArticleCoverImage({
-      title: post.title,
-      description: post.description,
-      keywords: post.keywords,
-      content: post.content,
-      fileSlug: post.slug,
-      language: input.language,
-      uploadedBy: null,
-    });
+    const generated = await generateArticleCoverImage(coverInput);
 
     await db
       .update(posts)
@@ -615,6 +652,7 @@ async function generateCoverForDraftPost(input: {
         postId: post.id,
         url: generated.asset.path,
         assetId: generated.asset.id,
+        request: requestPreview,
       },
     });
 
@@ -630,6 +668,11 @@ async function generateCoverForDraftPost(input: {
       progress: input.progress,
       message: "草稿已保存，但自动封面图生成失败",
       error: getErrorMessage(error),
+      payload: {
+        postId: post.id,
+        language: input.language,
+        request: requestPreview,
+      },
     });
 
     return { status: "failed" as const, url: null };

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ExternalLink, RefreshCw } from "lucide-react";
+import { ExternalLink, RefreshCw, ServerCog } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,122 @@ function formatTime(value: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatUptime(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "-";
+
+  const days = Math.floor(seconds / 86_400);
+  const hours = Math.floor((seconds % 86_400) / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+
+  if (days > 0) return `${days}天 ${hours}小时`;
+  if (hours > 0) return `${hours}小时 ${minutes}分钟`;
+  return `${minutes}分钟`;
+}
+
+function RuntimeValue({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number | boolean | null | undefined;
+}) {
+  const display =
+    typeof value === "boolean" ? (value ? "启用" : "关闭") : (value ?? "-");
+
+  return (
+    <div className="min-w-0 rounded-sm bg-muted/40 px-2.5 py-2">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate font-mono text-xs text-foreground">
+        {display}
+      </p>
+    </div>
+  );
+}
+
+function RuntimeOverview({ summary }: { summary: CmsTaskOperationsSummary }) {
+  const registeredKeys = summary.backgroundWorker.registeredJobKeys;
+
+  return (
+    <div className="rounded-md border border-border/70 bg-muted/20 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 gap-2">
+          <ServerCog className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium">运行态与 worker</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              当前后台进程、发布版本和队列 worker
+              注册状态。排查“旧代码/新代码”“任务是否被领取”先看这里。
+            </p>
+          </div>
+        </div>
+        <Badge
+          variant={
+            summary.backgroundWorker.isLoopRunning ? "default" : "outline"
+          }
+        >
+          {summary.backgroundWorker.isLoopRunning
+            ? "worker 正在轮询"
+            : "worker 空闲"}
+        </Badge>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <RuntimeValue label="Release" value={summary.runtime.releaseId} />
+        <RuntimeValue
+          label="Release 来源"
+          value={summary.runtime.releaseSource}
+        />
+        <RuntimeValue
+          label="进程"
+          value={`${summary.runtime.hostname}:${summary.runtime.pid}`}
+        />
+        <RuntimeValue
+          label="已运行"
+          value={formatUptime(summary.runtime.uptimeSeconds)}
+        />
+        <RuntimeValue label="Node" value={summary.runtime.nodeVersion} />
+        <RuntimeValue
+          label="Basic Auth"
+          value={summary.runtime.cmsBasicAuthEnabled}
+        />
+        <RuntimeValue
+          label="Worker 并发"
+          value={summary.backgroundWorker.concurrency}
+        />
+        <RuntimeValue
+          label="心跳超时"
+          value={`${Math.round(summary.backgroundWorker.heartbeatTimeoutMs / 1000)}秒`}
+        />
+      </div>
+
+      <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        <RuntimeValue label="真实运行目录" value={summary.runtime.realCwd} />
+        <div className="rounded-sm bg-muted/40 px-2.5 py-2">
+          <p className="text-xs text-muted-foreground">已注册 worker key</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {registeredKeys.length > 0 ? (
+              registeredKeys.map((key) => (
+                <Badge
+                  key={key}
+                  variant="outline"
+                  className="font-mono text-[11px]"
+                >
+                  {key}
+                </Badge>
+              ))
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                当前请求内还没有注册 worker。打开任务中心会尝试恢复
+                pending/running 任务。
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function QueueCard({
@@ -107,6 +223,8 @@ export function CmsTaskOperationsOverview({
       description="统一查看 AI 改写、封面生图、套餐提取和后台 worker 的状态；失败和长时间未更新的任务优先处理。"
     >
       <div className="space-y-4">
+        <RuntimeOverview summary={summary} />
+
         <div className="grid gap-3 lg:grid-cols-3">
           <QueueCard title="AI 改写任务" summary={summary.queues.ai} />
           <QueueCard title="封面生图任务" summary={summary.queues.cover} />
