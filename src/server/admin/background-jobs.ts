@@ -218,6 +218,7 @@ async function claimNextBackgroundJob() {
     if (!candidate) return null;
 
     const now = new Date();
+    const nowSqlValue = now.toISOString();
     const [claimedJob] = await db
       .update(adminBackgroundJobs)
       .set({
@@ -226,7 +227,7 @@ async function claimNextBackgroundJob() {
         lockedBy: WORKER_ID,
         lockedAt: now,
         heartbeatAt: now,
-        startedAt: sql`coalesce(${adminBackgroundJobs.startedAt}, ${now})`,
+        startedAt: sql`coalesce(${adminBackgroundJobs.startedAt}, ${nowSqlValue})`,
         finishedAt: null,
         updatedAt: now,
       })

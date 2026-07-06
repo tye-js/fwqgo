@@ -1,7 +1,4 @@
-import { Suspense } from "react";
-import { connection } from "next/server";
 import { getAdminTagCount, getAdminTagList } from "@/features/cms/data/tag";
-import { AdminLoading } from "@/features/cms/components/admin-loading";
 import {
   AdminPageShell,
   AdminSectionCard,
@@ -14,12 +11,10 @@ function parsePageNo(value: string | undefined) {
   return parsePositiveInt(value) ?? 1;
 }
 
-async function TagListWrapper({
-  searchParamsPromise,
-}: {
-  searchParamsPromise: Promise<{ pageNo?: string }>;
+export default async function Page(props: {
+  searchParams: Promise<{ pageNo?: string }>;
 }) {
-  const searchParams = await searchParamsPromise;
+  const searchParams = await props.searchParams;
   const pageNo = parsePageNo(searchParams.pageNo);
   const { data } = await getAdminTagList({ page: pageNo, pageSize: 20 });
   const { data: tagCount } = await getAdminTagCount();
@@ -44,25 +39,5 @@ async function TagListWrapper({
         <PaginationComponent pageNo={pageNo} totalPage={totalPage} />
       </AdminSectionCard>
     </AdminPageShell>
-  );
-}
-
-export default async function Page(props: {
-  searchParams: Promise<{ pageNo?: string }>;
-}) {
-  await connection();
-
-  return (
-    <Suspense
-      fallback={
-        <AdminLoading
-          badge="SEO / 标签"
-          title="正在加载标签 SEO"
-          description="正在读取标签列表和收录状态。"
-        />
-      }
-    >
-      <TagListWrapper searchParamsPromise={props.searchParams} />
-    </Suspense>
   );
 }
