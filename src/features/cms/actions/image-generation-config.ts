@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
+import { isPublicHttpUrl } from "@fwqgo/core/network-url";
 import {
   createImageGenerationConfig,
   deleteImageGenerationConfig,
@@ -12,15 +13,6 @@ import {
   updateImageGenerationConfig,
 } from "@/server/images/generation-config";
 
-function isHttpUrl(value: string) {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 const configSchema = z.object({
   name: z.string().trim().min(1, "名称不能为空"),
   provider: z.enum(imageGenerationProviderOptions),
@@ -28,8 +20,8 @@ const configSchema = z.object({
     .string()
     .trim()
     .url("Base URL 必须是有效 URL")
-    .refine(isHttpUrl, {
-      message: "Base URL 只支持 http 或 https",
+    .refine(isPublicHttpUrl, {
+      message: "Base URL 只允许公网 http/https 地址",
     }),
   apiKey: z.string().trim().optional(),
   model: z.string().trim().min(1, "模型不能为空"),
@@ -37,8 +29,14 @@ const configSchema = z.object({
   size: z.string().trim().min(3, "尺寸不能为空"),
   quality: z.string().trim().min(1, "质量参数不能为空"),
   timeoutSeconds: z.coerce.number().int().min(10).max(300),
-  enabled: z.preprocess((value) => value === "true" || value === true, z.boolean()),
-  isDefault: z.preprocess((value) => value === "true" || value === true, z.boolean()),
+  enabled: z.preprocess(
+    (value) => value === "true" || value === true,
+    z.boolean(),
+  ),
+  isDefault: z.preprocess(
+    (value) => value === "true" || value === true,
+    z.boolean(),
+  ),
 });
 
 function revalidateImageGenerationPages() {

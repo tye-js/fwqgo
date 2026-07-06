@@ -10,11 +10,17 @@ import { ServerOfferTable } from "@/features/public/components/server-offer-tabl
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { getServerOfferTopic, offerTopics } from "@/server/offers/server-offers";
-import { toAbsoluteHttpUrl } from "@fwqgo/core/utils";
+import {
+  getServerOfferTopic,
+  offerTopics,
+} from "@/server/offers/server-offers";
+import { jsonLdScriptContent, toAbsoluteHttpUrl } from "@fwqgo/core/utils";
 
 function getSiteUrl() {
-  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
+    /\/+$/,
+    "",
+  );
 }
 
 export function generateStaticParams() {
@@ -119,70 +125,70 @@ async function ServerTopicContent({
 
   return (
     <main className="flex-1">
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify([itemListJsonLd, faqJsonLd]),
-          }}
-        />
-        <section className="border-b border-border/60 bg-muted/20">
-          <div className="container mx-auto px-4 py-8 md:py-10">
-            <Button asChild variant="ghost" className="mb-5 px-0">
-              <Link href="/servers" prefetch>
-                <ArrowLeft className="size-4" />
-                服务器比价
-              </Link>
-            </Button>
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end">
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <Badge className="bg-primary text-primary-foreground">
-                    结构化套餐
-                  </Badge>
-                  <Badge variant="secondary">按价格排序</Badge>
-                </div>
-                <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-                  {topicInfo.h1}
-                </h1>
-                <p className="max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">
-                  {topicInfo.intro}
-                </p>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLdScriptContent([itemListJsonLd, faqJsonLd]),
+        }}
+      />
+      <section className="border-b border-border/60 bg-muted/20">
+        <div className="container mx-auto px-4 py-8 md:py-10">
+          <Button asChild variant="ghost" className="mb-5 px-0">
+            <Link href="/servers" prefetch>
+              <ArrowLeft className="size-4" />
+              服务器比价
+            </Link>
+          </Button>
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end">
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <Badge className="bg-primary text-primary-foreground">
+                  结构化套餐
+                </Badge>
+                <Badge variant="secondary">按价格排序</Badge>
               </div>
-              <div className="grid gap-3 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Filter className="size-4" />
-                  已筛选 {offers.length} 个可见套餐
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <ArrowUpDown className="size-4" />
-                  默认优先展示推荐和低价套餐
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <MapPin className="size-4" />
-                  购买链接、推广文章、测评文章集中展示
-                </div>
+              <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
+                {topicInfo.h1}
+              </h1>
+              <p className="max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">
+                {topicInfo.intro}
+              </p>
+            </div>
+            <div className="grid gap-3 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Filter className="size-4" />
+                已筛选 {offers.length} 个可见套餐
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <ArrowUpDown className="size-4" />
+                默认优先展示推荐和低价套餐
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <MapPin className="size-4" />
+                购买链接、来源文章、测评文章集中展示
               </div>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section className="container mx-auto px-4 py-8 md:py-10">
-          <ServerOfferTable offers={offers} />
-        </section>
+      <section className="container mx-auto px-4 py-8 md:py-10">
+        <ServerOfferTable offers={offers} />
+      </section>
 
-        <section className="container mx-auto px-4 pb-12">
-          <div className="rounded-lg border border-border/70 bg-background p-5 shadow-sm">
-            <h2 className="text-xl font-semibold">常见问题</h2>
-            <div className="mt-4 grid gap-4 text-sm leading-7 text-muted-foreground md:grid-cols-2">
-              {topicInfo.faq.map((item) => (
-                <div key={item.question} className="rounded-lg bg-muted/30 p-4">
-                  <h3 className="font-medium text-foreground">{item.question}</h3>
-                  <p className="mt-2">{item.answer}</p>
-                </div>
-              ))}
-            </div>
+      <section className="container mx-auto px-4 pb-12">
+        <div className="rounded-lg border border-border/70 bg-background p-5 shadow-sm">
+          <h2 className="text-xl font-semibold">常见问题</h2>
+          <div className="mt-4 grid gap-4 text-sm leading-7 text-muted-foreground md:grid-cols-2">
+            {topicInfo.faq.map((item) => (
+              <div key={item.question} className="rounded-lg bg-muted/30 p-4">
+                <h3 className="font-medium text-foreground">{item.question}</h3>
+                <p className="mt-2">{item.answer}</p>
+              </div>
+            ))}
           </div>
-        </section>
+        </div>
+      </section>
     </main>
   );
 }

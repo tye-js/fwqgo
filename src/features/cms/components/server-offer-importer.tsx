@@ -55,7 +55,7 @@ type ImportTask = {
 };
 
 function describeImportStats(data: ImportStats) {
-  return `扫描 ${data.scannedPosts} 篇，提取 ${data.extracted} 条，新增 ${data.inserted} 条，更新 ${data.updated} 条，跳过 ${data.skipped} 条`;
+  return `扫描 ${data.scannedPosts} 篇，提取有效套餐 ${data.extracted} 条，新增 ${data.inserted} 条，更新 ${data.updated} 条，跳过 ${data.skipped} 条`;
 }
 
 export function ServerOfferImporter({ posts }: { posts: ImportPostOption[] }) {
@@ -135,7 +135,7 @@ export function ServerOfferImporter({ posts }: { posts: ImportPostOption[] }) {
         title: "历史文章提取已加入后台队列",
         description: describeAdminResult([
           `任务 ID ${result.data.taskId}`,
-          "可以停留本页查看进度",
+          "只写入同时包含配置、价格和购买链接的有效套餐",
         ]),
       });
     });
@@ -163,7 +163,7 @@ export function ServerOfferImporter({ posts }: { posts: ImportPostOption[] }) {
         title: "单篇文章提取已加入后台队列",
         description: describeAdminResult([
           `任务 ID ${result.data.taskId}`,
-          "后台会解析表格、正文段落和购买链接",
+          "后台会识别表格或段落里的配置、价格和购买链接",
         ]),
       });
     });
@@ -187,7 +187,7 @@ export function ServerOfferImporter({ posts }: { posts: ImportPostOption[] }) {
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          单篇提取适合刚发布或刚改写的文章。系统会优先解析文章表格，再回退到正文段落。
+          单篇提取适合刚发布或刚改写的文章。系统会优先解析文章表格，再回退到正文段落；缺配置、缺价格或缺购买链接的候选不会导入。
         </p>
         {activeTask ? (
           <div className="flex flex-wrap items-center gap-2 rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs">

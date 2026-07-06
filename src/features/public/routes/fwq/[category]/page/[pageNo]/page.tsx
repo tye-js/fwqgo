@@ -11,7 +11,11 @@ import { RelatedServerOfferCards } from "@/features/public/components/related-se
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { decodeSlug, parsePositiveInt } from "@fwqgo/core/utils";
+import {
+  decodeSlug,
+  jsonLdScriptContent,
+  parsePositiveInt,
+} from "@fwqgo/core/utils";
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -147,7 +151,9 @@ const CategoryPageContent = async ({
     <div className="grid gap-8 xl:grid-cols-[minmax(0,0.82fr)_320px]">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }}
+        dangerouslySetInnerHTML={{
+          __html: jsonLdScriptContent(collectionJsonLd),
+        }}
       />
       <div className="space-y-5">
         {category && <PageCard {...categoryInfo} />}

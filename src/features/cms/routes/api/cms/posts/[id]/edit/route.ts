@@ -1,4 +1,4 @@
-import { isUnauthorizedError } from "@fwqgo/auth/session";
+import { isUnauthorizedError, requireAdminSession } from "@fwqgo/auth/session";
 import { connection } from "next/server";
 import { z } from "zod";
 
@@ -48,6 +48,8 @@ export async function POST(
   await connection();
 
   try {
+    await requireAdminSession();
+
     const { id } = await props.params;
     const postId = Number(id);
     if (!Number.isSafeInteger(postId) || postId <= 0) {

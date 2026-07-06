@@ -1,5 +1,9 @@
 import { sanitizeFileName } from "@fwqgo/core/utils";
 import {
+  assertPublicHttpUrl,
+  fetchPublicHttpUrl,
+} from "@fwqgo/core/network-url";
+import {
   createImageAssetFromBuffer,
   type ImageAssetRow,
 } from "@/server/images/assets";
@@ -66,7 +70,10 @@ function findImageUrl(payload: ImageGenerationResponse): string | null {
   if (payload.data?.[0]?.url) return payload.data[0].url;
   if (payload.image_url) return payload.image_url;
   if (payload.url) return payload.url;
-  if (typeof payload.image === "string" && /^https?:\/\//i.test(payload.image)) {
+  if (
+    typeof payload.image === "string" &&
+    /^https?:\/\//i.test(payload.image)
+  ) {
     return payload.image;
   }
   return null;
@@ -75,7 +82,10 @@ function findImageUrl(payload: ImageGenerationResponse): string | null {
 function findBase64Image(payload: ImageGenerationResponse): string | null {
   if (payload.data?.[0]?.b64_json) return payload.data[0].b64_json;
   if (payload.b64_json) return payload.b64_json;
-  if (typeof payload.image === "string" && !/^https?:\/\//i.test(payload.image)) {
+  if (
+    typeof payload.image === "string" &&
+    !/^https?:\/\//i.test(payload.image)
+  ) {
     return payload.image;
   }
   return null;
@@ -107,7 +117,9 @@ function toEnglishFileSlug(value: string | null | undefined) {
   return slug ?? "";
 }
 
-function buildOriginalName(input: Pick<GenerateCustomImageInput, "fileName" | "prompt">) {
+function buildOriginalName(
+  input: Pick<GenerateCustomImageInput, "fileName" | "prompt">,
+) {
   const baseSlug =
     toEnglishFileSlug(input.fileName) ||
     toEnglishFileSlug(input.prompt) ||
@@ -116,9 +128,13 @@ function buildOriginalName(input: Pick<GenerateCustomImageInput, "fileName" | "p
 }
 
 async function downloadImage(url: string, timeoutSeconds: number) {
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(timeoutSeconds * 1000),
-  });
+  const response = await fetchPublicHttpUrl(
+    url,
+    {
+      signal: AbortSignal.timeout(timeoutSeconds * 1000),
+    },
+    "生图结果图片 URL",
+  );
 
   if (!response.ok) {
     throw new Error(`图片下载失败：HTTP ${response.status}`);
@@ -149,12 +165,14 @@ export async function generateCustomImage(
   }
 
   const endpoint = buildEndpoint(config.baseUrl);
-  const response = await fetch(endpoint, {
+  const safeEndpoint = await assertPublicHttpUrl(endpoint, "生图接口地址");
+  const response = await fetch(safeEndpoint, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       "Content-Type": "application/json",
     },
+    redirect: "error",
     body: JSON.stringify(
       buildRequestBody({
         provider: config.provider as ImageGenerationProvider,

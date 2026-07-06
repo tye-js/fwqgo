@@ -40,7 +40,7 @@ export function RelatedServerOfferCards({
           regionPending: "Region pending",
           linePending: "Line pending",
           buy: "Buy",
-          article: "Article",
+          article: "Source",
         }
       : {
           all: "全部比价",
@@ -48,7 +48,7 @@ export function RelatedServerOfferCards({
           regionPending: "地区待补充",
           linePending: "线路待补充",
           buy: "购买链接",
-          article: "推广文章",
+          article: "来源文章",
         };
 
   return (

@@ -20,6 +20,56 @@ export type ArticleDocument = {
 const safeHrefPattern = /^(https?:|mailto:|tel:|\/|#)/i;
 const markdownLinkPattern =
   /\[([^\]]+)\]\((<([^>]+)>|[^)\s]+)(?:\s+"[^"]*")?\)/g;
+const dangerousArticleTags = new Set([
+  "script",
+  "style",
+  "iframe",
+  "object",
+  "embed",
+  "link",
+  "meta",
+  "base",
+  "form",
+  "input",
+  "button",
+  "select",
+  "textarea",
+  "svg",
+  "math",
+  "canvas",
+]);
+const allowedArticleTags = new Set([
+  "a",
+  "blockquote",
+  "br",
+  "code",
+  "del",
+  "em",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "hr",
+  "i",
+  "img",
+  "li",
+  "ol",
+  "p",
+  "pre",
+  "s",
+  "span",
+  "strong",
+  "table",
+  "tbody",
+  "td",
+  "tfoot",
+  "th",
+  "thead",
+  "tr",
+  "u",
+  "ul",
+]);
 
 function getHeadingId(text: string, usedIds: Map<string, number>) {
   const baseId = slugify(text) || "section";
@@ -43,6 +93,134 @@ export function normalizeArticleHtml(content: string) {
     }
 
     $heading.attr("id", getHeadingId(headingText, usedIds));
+  });
+
+  return $.html();
+}
+
+function isSafeArticleHref(href: string) {
+  const trimmedHref = href.trim();
+
+  if (!trimmedHref || /[\u0000-\u001f\u007f]/.test(trimmedHref)) {
+    return false;
+  }
+
+  if (trimmedHref.startsWith("#")) {
+    return true;
+  }
+
+  if (trimmedHref.startsWith("/") && !trimmedHref.startsWith("//")) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(
+      trimmedHref.startsWith("//") ? `https:${trimmedHref}` : trimmedHref,
+    );
+
+    return ["http:", "https:", "mailto:", "tel:"].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function isSafeArticleImageSrc(src: string) {
+  const trimmedSrc = src.trim();
+
+  if (!trimmedSrc || /[\u0000-\u001f\u007f]/.test(trimmedSrc)) {
+    return false;
+  }
+
+  if (trimmedSrc.startsWith("/uploads/") && !trimmedSrc.startsWith("//")) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(
+      trimmedSrc.startsWith("//") ? `https:${trimmedSrc}` : trimmedSrc,
+    );
+
+    return ["http:", "https:"].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function cleanShortTextAttribute(value: string | undefined) {
+  const trimmed = value?.replace(/\s+/g, " ").trim();
+  return trimmed ? trimmed.slice(0, 300) : null;
+}
+
+function cleanPositiveIntegerAttribute(value: string | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed || !/^\d{1,4}$/.test(trimmed)) return null;
+
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? String(parsed) : null;
+}
+
+function sanitizeArticleHtml(content: string) {
+  const $ = cheerio.load(content, null, false);
+
+  [...dangerousArticleTags].forEach((tag) => {
+    $(tag).remove();
+  });
+
+  $("*").each((_, node) => {
+    const element = node as Element;
+    const $element = $(element);
+    const tagName = String($element.prop("tagName") ?? "").toLowerCase();
+
+    if (!allowedArticleTags.has(tagName)) {
+      $element.replaceWith($element.contents());
+      return;
+    }
+
+    const attrs: Record<string, string> = { ...(element.attribs ?? {}) };
+    Object.keys(attrs).forEach((name) => {
+      $element.removeAttr(name);
+    });
+
+    if (tagName === "a") {
+      const href = attrs.href?.trim();
+      if (href && isSafeArticleHref(href)) {
+        $element.attr("href", href);
+      }
+
+      const title = cleanShortTextAttribute(attrs.title);
+      if (title) {
+        $element.attr("title", title);
+      }
+      return;
+    }
+
+    if (tagName === "img") {
+      const src = attrs.src?.trim();
+      if (src && isSafeArticleImageSrc(src)) {
+        $element.attr("src", src);
+      } else {
+        $element.remove();
+        return;
+      }
+
+      const alt = cleanShortTextAttribute(attrs.alt);
+      if (alt) {
+        $element.attr("alt", alt);
+      }
+
+      const width = cleanPositiveIntegerAttribute(attrs.width);
+      const height = cleanPositiveIntegerAttribute(attrs.height);
+      if (width) $element.attr("width", width);
+      if (height) $element.attr("height", height);
+      return;
+    }
+
+    if (tagName === "td" || tagName === "th") {
+      const colspan = cleanPositiveIntegerAttribute(attrs.colspan);
+      const rowspan = cleanPositiveIntegerAttribute(attrs.rowspan);
+      if (colspan) $element.attr("colspan", colspan);
+      if (rowspan) $element.attr("rowspan", rowspan);
+    }
   });
 
   return $.html();
@@ -337,7 +515,7 @@ export function renderArticleContentHtml(content: string) {
     ? content
     : markdownToArticleHtml(content);
 
-  return enhanceArticleLinks(normalizeArticleHtml(html));
+  return enhanceArticleLinks(normalizeArticleHtml(sanitizeArticleHtml(html)));
 }
 
 function normalizeArticleText(value: string) {

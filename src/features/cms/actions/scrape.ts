@@ -8,6 +8,7 @@ import {
   type ScrapedArticle,
 } from "@fwqgo/scrape/article-scraper";
 import { getAiRewriteContentLimit } from "@fwqgo/ai/article-rewriter";
+import { isPublicHttpUrl } from "@fwqgo/core/network-url";
 import {
   getActiveAiRewriteConfig,
   getAiRewriteConfigs,
@@ -21,7 +22,10 @@ import {
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 
 const urlSchema = z.object({
-  url: z.string().url(),
+  url: z.string().trim().url().refine(isPublicHttpUrl, {
+    message:
+      "抓取 URL 只允许公网 http/https 地址，不能使用 localhost 或内网地址",
+  }),
   rewriteStyleId: z.coerce.number().int().positive().optional(),
 });
 const SCRAPE_ACTION_TIMEOUT_MS = 330_000;

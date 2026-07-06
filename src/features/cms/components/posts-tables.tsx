@@ -92,7 +92,7 @@ type ImportStats = {
 };
 
 function describeImportStats(data: ImportStats) {
-  return `扫描 ${data.scannedPosts} 篇，提取 ${data.extracted} 条，新增 ${data.inserted} 条，更新 ${data.updated} 条，跳过 ${data.skipped} 条`;
+  return `扫描 ${data.scannedPosts} 篇，提取有效套餐 ${data.extracted} 条，新增 ${data.inserted} 条，更新 ${data.updated} 条，跳过 ${data.skipped} 条`;
 }
 
 type ImportTask = {
@@ -603,6 +603,7 @@ export function PostList({
         description: describeAdminResult([
           `处理 ${result.data.requested} 篇`,
           `排队 ${result.data.queued} 个任务`,
+          "只写入同时包含配置、价格和购买链接的有效套餐",
           result.data.failed > 0 ? `失败 ${result.data.failed} 个` : null,
         ]),
       });
@@ -671,7 +672,7 @@ export function PostList({
         title: "套餐提取已加入后台队列",
         description: describeAdminResult([
           `任务 ID ${result.data.taskId}`,
-          "后台会解析文章表格、正文段落和购买链接",
+          "后台会识别文章表格或正文段落里的配置、价格和购买链接",
         ]),
       });
     } catch (error) {

@@ -1,5 +1,9 @@
 import { sanitizeFileName } from "@fwqgo/core/utils";
 import {
+  assertPublicHttpUrl,
+  fetchPublicHttpUrl,
+} from "@fwqgo/core/network-url";
+import {
   createImageAssetFromBuffer,
   type ImageAssetRow,
 } from "@/server/images/assets";
@@ -221,9 +225,13 @@ function buildCoverOriginalName(
 async function downloadImage(url: string, timeoutSeconds: number) {
   let response: Response;
   try {
-    response = await fetch(url, {
-      signal: AbortSignal.timeout(timeoutSeconds * 1000),
-    });
+    response = await fetchPublicHttpUrl(
+      url,
+      {
+        signal: AbortSignal.timeout(timeoutSeconds * 1000),
+      },
+      "生图结果图片 URL",
+    );
   } catch (error) {
     if (isTimeoutError(error)) {
       throw new Error(
@@ -267,12 +275,14 @@ export async function generateArticleCoverImage(
   const endpoint = buildEndpoint(config.baseUrl);
   let response: Response;
   try {
-    response = await fetch(endpoint, {
+    const safeEndpoint = await assertPublicHttpUrl(endpoint, "生图接口地址");
+    response = await fetch(safeEndpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
       },
+      redirect: "error",
       body: JSON.stringify(
         buildRequestBody({
           provider: config.provider as ImageGenerationProvider,

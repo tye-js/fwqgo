@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ServerOfferTable } from "@/features/public/components/server-offer-table";
 import { offerTopics } from "@/server/offers/server-offers";
-import { toAbsoluteHttpUrl } from "@fwqgo/core/utils";
+import { jsonLdScriptContent, toAbsoluteHttpUrl } from "@fwqgo/core/utils";
 
 type CollectionKind = "provider" | "region" | "line";
 
@@ -134,7 +134,9 @@ function formatMinPrice(offers: Offer[]) {
 }
 
 function uniqueValues(values: Array<string | null>) {
-  return [...new Set(values.map((value) => value?.trim()).filter(Boolean))] as string[];
+  return [
+    ...new Set(values.map((value) => value?.trim()).filter(Boolean)),
+  ] as string[];
 }
 
 function getCollectionPath(kind: CollectionKind, value: string) {
@@ -176,7 +178,8 @@ function buildJsonLd(input: {
         category: "VPS and Server Hosting",
         offers: {
           "@type": "Offer",
-          url: toAbsoluteHttpUrl(offer.purchaseUrl, baseUrl) ?? input.canonicalUrl,
+          url:
+            toAbsoluteHttpUrl(offer.purchaseUrl, baseUrl) ?? input.canonicalUrl,
           price: offer.priceAmount ? String(offer.priceAmount) : undefined,
           priceCurrency: offer.currency ?? undefined,
           availability:
@@ -246,7 +249,9 @@ export function ServerOfferCollectionPage({
 }) {
   const copy = kindCopy[kind];
   const canonicalUrl = `${getSiteUrl()}${getCollectionPath(kind, value)}`;
-  const inStockCount = offers.filter((offer) => offer.status === "in_stock").length;
+  const inStockCount = offers.filter(
+    (offer) => offer.status === "in_stock",
+  ).length;
   const providers = uniqueValues(offers.map((offer) => offer.providerName));
   const regions = uniqueValues(offers.map((offer) => offer.region));
   const lines = uniqueValues(offers.map((offer) => offer.lineType));
@@ -261,7 +266,7 @@ export function ServerOfferCollectionPage({
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(
+          __html: jsonLdScriptContent(
             buildJsonLd({
               kind,
               value,
@@ -399,7 +404,9 @@ export function ServerOfferCollectionPage({
             <div className="mt-4 grid gap-4 text-sm leading-7 text-muted-foreground md:grid-cols-2">
               {copy.faq.map((item) => (
                 <div key={item.question} className="rounded-lg bg-muted/30 p-4">
-                  <h3 className="font-medium text-foreground">{item.question}</h3>
+                  <h3 className="font-medium text-foreground">
+                    {item.question}
+                  </h3>
                   <p className="mt-2">{item.answer}</p>
                 </div>
               ))}

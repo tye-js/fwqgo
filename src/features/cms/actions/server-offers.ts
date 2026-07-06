@@ -49,6 +49,12 @@ const nullableInternalOrHttpUrl = nullableString.refine(
 const updateOfferSchema = z.object({
   title: z.string().trim().min(1, "请输入套餐标题"),
   providerName: nullableString,
+  productType: nullableString,
+  cpu: nullableString,
+  memory: nullableString,
+  storage: nullableString,
+  bandwidth: nullableString,
+  traffic: nullableString,
   priceAmount: nullablePrice,
   currency: nullableString,
   billingCycle: nullableString,
@@ -93,7 +99,8 @@ export async function importServerOffersFromPostAction(postId: number) {
     console.error("从单篇文章导入服务器套餐失败:", error);
     return adminActionFailure(error, {
       title: "从单篇文章导入服务器套餐失败",
-      suggestion: "请确认文章存在且正文包含套餐表格或购买链接。",
+      suggestion:
+        "请确认文章存在，且正文或表格里同时包含服务器配置、价格和购买链接。",
     });
   }
 }
@@ -234,6 +241,12 @@ export async function updateServerOfferAction(id: number, formData: FormData) {
     const input = updateOfferSchema.parse({
       title: formData.get("title"),
       providerName: formData.get("providerName"),
+      productType: formData.get("productType"),
+      cpu: formData.get("cpu"),
+      memory: formData.get("memory"),
+      storage: formData.get("storage"),
+      bandwidth: formData.get("bandwidth"),
+      traffic: formData.get("traffic"),
       priceAmount: formData.get("priceAmount"),
       currency: formData.get("currency"),
       billingCycle: formData.get("billingCycle"),

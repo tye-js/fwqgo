@@ -1,8 +1,9 @@
-import { count, desc } from "drizzle-orm";
+import { count, desc, ilike, not, or, type SQL } from "drizzle-orm";
 
 import { db } from "@fwqgo/db";
 import { tags } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
+import { priceLikeTagSearchTerms } from "@/features/cms/lib/tag-price-filter";
 
 export { findBestTagMatch } from "@/features/public/data/tag";
 
@@ -16,6 +17,16 @@ function normalizePagination(page: number, pageSize: number) {
     pageSize: normalizedPageSize,
     offset: (normalizedPage - 1) * normalizedPageSize,
   };
+}
+
+function getNonPriceTagCondition() {
+  const priceConditions: SQL[] = priceLikeTagSearchTerms.flatMap((term) => [
+    ilike(tags.name, `%${term}%`),
+    ilike(tags.slug, `%${term}%`),
+  ]);
+  const priceCondition = or(...priceConditions);
+
+  return priceCondition ? not(priceCondition) : undefined;
 }
 
 export async function getAdminTagList({
@@ -32,6 +43,7 @@ export async function getAdminTagList({
   const result = await db
     .select()
     .from(tags)
+    .where(getNonPriceTagCondition())
     .orderBy(desc(tags.id))
     .offset(pagination.offset)
     .limit(pagination.pageSize);
@@ -42,6 +54,9 @@ export async function getAdminTagList({
 export async function getAdminTagCount() {
   await requireAdminSession();
 
-  const [result] = await db.select({ count: count() }).from(tags);
+  const [result] = await db
+    .select({ count: count() })
+    .from(tags)
+    .where(getNonPriceTagCondition());
   return { data: result?.count ?? 0 };
 }

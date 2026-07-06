@@ -120,7 +120,7 @@ export default async function OfferTaskDetailPage({ params }: PageProps) {
                 label="扫描文章"
                 value={task.result.scannedPosts}
               />
-              <UnifiedTaskStat label="提取套餐" value={task.result.extracted} />
+              <UnifiedTaskStat label="有效套餐" value={task.result.extracted} />
               <UnifiedTaskStat label="新增" value={task.result.inserted} />
               <UnifiedTaskStat label="更新" value={task.result.updated} />
               <UnifiedTaskStat label="跳过" value={task.result.skipped} />

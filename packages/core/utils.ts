@@ -74,7 +74,9 @@ export function parsePositiveInt(value: string | number | null | undefined) {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-export function isInternalHref(href: string | null | undefined): href is string {
+export function isInternalHref(
+  href: string | null | undefined,
+): href is string {
   return Boolean(href?.startsWith("/") && !href.startsWith("//"));
 }
 
@@ -91,6 +93,15 @@ export function isHttpHref(href: string | null | undefined): href is string {
 
 export function isSafePublicHref(href: string | null | undefined) {
   return isInternalHref(href) || isHttpHref(href);
+}
+
+export function jsonLdScriptContent(value: unknown) {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
 }
 
 export function toAbsoluteHttpUrl(

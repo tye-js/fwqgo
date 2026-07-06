@@ -72,7 +72,10 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
   }
 
   if (normalizedData.name.length > MAX_NAME_LENGTH) {
-    return { error: `商家名不能超过 ${MAX_NAME_LENGTH} 个字符`, data: normalizedData };
+    return {
+      error: `商家名不能超过 ${MAX_NAME_LENGTH} 个字符`,
+      data: normalizedData,
+    };
   }
 
   if (
@@ -80,11 +83,17 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
     normalizedData.affValue.length > MAX_TEXT_LENGTH ||
     normalizedData.officialUrl.length > MAX_TEXT_LENGTH
   ) {
-    return { error: `链接和返利值不能超过 ${MAX_TEXT_LENGTH} 个字符`, data: normalizedData };
+    return {
+      error: `链接和返利值不能超过 ${MAX_TEXT_LENGTH} 个字符`,
+      data: normalizedData,
+    };
   }
 
   if (normalizedData.affParam.length > MAX_PARAM_LENGTH) {
-    return { error: `返利参数不能超过 ${MAX_PARAM_LENGTH} 个字符`, data: normalizedData };
+    return {
+      error: `返利参数不能超过 ${MAX_PARAM_LENGTH} 个字符`,
+      data: normalizedData,
+    };
   }
 
   try {
@@ -94,14 +103,20 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
       return { error: "返利链接只支持 http 或 https", data: normalizedData };
     }
   } catch {
-    return { error: "返利链接格式不正确，请填写完整 URL", data: normalizedData };
+    return {
+      error: "返利链接格式不正确，请填写完整 URL",
+      data: normalizedData,
+    };
   }
 
   if (
     normalizedData.officialUrl.includes(" ") ||
     !normalizedData.officialUrl.includes(".")
   ) {
-    return { error: "商家官网请填写域名，例如 example.com", data: normalizedData };
+    return {
+      error: "商家官网请填写域名，例如 example.com",
+      data: normalizedData,
+    };
   }
 
   return { data: normalizedData };
@@ -110,6 +125,8 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
 // 通过href查询affServiceProvider
 export async function getAffValueByHref(hostname: string) {
   try {
+    await requireAdminSession();
+
     // 生成子域名数组，但排除最后一个元素（顶级域名）
     const domainParts = hostname.split(".");
     const possibleDomains = domainParts

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_CONTENT_MATCHERS = ["/fwq", "/go/"];
+const PUBLIC_CONTENT_MATCHERS = ["/fwq", "/en/fwq", "/go/"];
 const ADMIN_PAGE_PREFIXES = [
   "/ai-rewrite",
   "/ai-tasks",
@@ -135,6 +135,7 @@ export const config = {
     "/servers/:path*",
     "/settings/:path*",
     "/fwq/:path*",
+    "/en/fwq/:path*",
     "/go/:path*",
     "/api/auth/:path*",
     "/api/cms/:path*",
