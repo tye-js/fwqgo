@@ -31,6 +31,7 @@ import {
   formatDate,
   isHttpHref,
   isInternalHref,
+  jsonLdScriptContent,
   normalizeDecodedSlug,
   toAbsoluteHttpUrl,
 } from "@fwqgo/core/utils";
@@ -127,7 +128,9 @@ async function EnglishPostContent({ params }: PageProps) {
   }
   const canonicalSlug = post.enSlug ?? decodedSlug;
   const articleUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(canonicalSlug)}`;
-  const contentWithIds = addIdsToHeadings(renderArticleContentHtml(post.content));
+  const contentWithIds = addIdsToHeadings(
+    renderArticleContentHtml(post.content),
+  );
   const relatedPostId = post.translationSourcePostId ?? post.id;
   const [{ data: latestPosts }, relatedOffers] = await Promise.all([
     getLatestPostsForSidebar("en"),
@@ -246,180 +249,190 @@ async function EnglishPostContent({ params }: PageProps) {
                 Contents
               </div>
               <div className="mt-3">
-                <TableOfContents content={contentWithIds} label="Article contents" />
+                <TableOfContents
+                  content={contentWithIds}
+                  label="Article contents"
+                />
               </div>
             </CardContent>
           </Card>
         </aside>
 
         <article className="min-w-0">
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify([
-              blogPostingJsonLd,
-              breadcrumbJsonLd,
-              faqJsonLd,
-              ...offerJsonLd,
-            ]),
-          }}
-        />
-        {post.chineseSlug ? (
-          <Link
-            href={`/fwq/posts/${post.chineseSlug}`}
-            prefetch
-            className="inline-flex items-center gap-2 text-sm text-muted-foreground underline-offset-4 hover:text-primary hover:underline"
-          >
-            <ArrowLeft className="size-4" />
-            Chinese version
-          </Link>
-        ) : null}
-
-        <header className="mt-6 border-b border-border/70 pb-6">
-          <h1 className="font-editorial text-3xl font-semibold leading-tight text-foreground md:text-5xl">
-            {post.title}
-          </h1>
-          {post.description ? (
-            <p className="mt-4 text-base leading-7 text-muted-foreground">
-              {post.description}
-            </p>
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: jsonLdScriptContent([
+                blogPostingJsonLd,
+                breadcrumbJsonLd,
+                faqJsonLd,
+                ...offerJsonLd,
+              ]),
+            }}
+          />
+          {post.chineseSlug ? (
+            <Link
+              href={`/fwq/posts/${post.chineseSlug}`}
+              prefetch
+              className="inline-flex items-center gap-2 text-sm text-muted-foreground underline-offset-4 hover:text-primary hover:underline"
+            >
+              <ArrowLeft className="size-4" />
+              Chinese version
+            </Link>
           ) : null}
-          <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-2">
-              <Clock className="size-4" />
-              {formatDate(post.createdAt, "en-US")}
-            </span>
-            <ArticleShareActions title={post.title} url={articleUrl} language="en" />
-          </div>
-        </header>
 
-        {isRenderableImageSrc(post.imgUrl) ? (
-          <div className="relative mt-6 aspect-[16/9] overflow-hidden rounded-lg border border-border/70 bg-muted/20 md:aspect-[21/9]">
-            <Image
-              src={getOptimizedImageSrc(post.imgUrl)}
-              alt={post.title}
-              width={1440}
-              height={840}
-              sizes="(max-width: 768px) 100vw, 960px"
-              className="h-full w-full object-cover"
-              priority
-            />
-          </div>
-        ) : null}
-
-        <div className="mt-6 xl:hidden">
-          <Card className="rounded-lg border-border/70 bg-background shadow-sm">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <BookOpenText className="size-4 text-accent" />
-                Contents
-              </div>
-              <div className="mt-3">
-                <TableOfContents content={contentWithIds} label="Article contents" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {relatedOffers.length > 0 ? (
-          <section className="mt-6 rounded-lg border border-border/70 bg-muted/20 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <ShoppingCart className="size-4 text-accent" />
-                Related server offers
-              </div>
-              <Badge variant="secondary">{relatedOffers.length} offers</Badge>
+          <header className="mt-6 border-b border-border/70 pb-6">
+            <h1 className="font-editorial text-3xl font-semibold leading-tight text-foreground md:text-5xl">
+              {post.title}
+            </h1>
+            {post.description ? (
+              <p className="mt-4 text-base leading-7 text-muted-foreground">
+                {post.description}
+              </p>
+            ) : null}
+            <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
+              <span className="inline-flex items-center gap-2">
+                <Clock className="size-4" />
+                {formatDate(post.createdAt, "en-US")}
+              </span>
+              <ArticleShareActions
+                title={post.title}
+                url={articleUrl}
+                language="en"
+              />
             </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {relatedOffers.slice(0, 4).map((offer) => (
-                <div
-                  key={offer.id}
-                  className="rounded-lg border border-border/70 bg-background p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="line-clamp-2 text-sm font-medium leading-6">
-                        {offer.title}
-                      </p>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {offer.providerName ?? "Provider pending"} ·{" "}
-                        {offer.region ?? "Region pending"} ·{" "}
-                        {offer.lineType ?? "Line pending"}
-                      </p>
-                    </div>
-                    <Badge>{formatOfferPrice(offer)}</Badge>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {isHttpHref(offer.purchaseUrl) ? (
-                      <a
-                        href={offer.purchaseUrl}
-                        target="_blank"
-                        rel="nofollow noopener noreferrer"
-                        className="text-xs font-medium text-primary underline-offset-4 hover:underline"
-                      >
-                        Buy
-                      </a>
-                    ) : isInternalHref(offer.purchaseUrl) ? (
-                      <Link
-                        href={offer.purchaseUrl}
-                        prefetch={false}
-                        className="text-xs font-medium text-primary underline-offset-4 hover:underline"
-                      >
-                        Buy
-                      </Link>
-                    ) : null}
-                    {offer.articleUrl && isInternalHref(offer.articleUrl) ? (
-                      <Link
-                        href={offer.articleUrl}
-                        prefetch
-                        className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                      >
-                        Article
-                      </Link>
-                    ) : isHttpHref(offer.articleUrl) ? (
-                      <a
-                        href={offer.articleUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                      >
-                        Article
-                      </a>
-                    ) : null}
-                  </div>
+          </header>
+
+          {isRenderableImageSrc(post.imgUrl) ? (
+            <div className="relative mt-6 aspect-[16/9] overflow-hidden rounded-lg border border-border/70 bg-muted/20 md:aspect-[21/9]">
+              <Image
+                src={getOptimizedImageSrc(post.imgUrl)}
+                alt={post.title}
+                width={1440}
+                height={840}
+                sizes="(max-width: 768px) 100vw, 960px"
+                className="h-full w-full object-cover"
+                priority
+              />
+            </div>
+          ) : null}
+
+          <div className="mt-6 xl:hidden">
+            <Card className="rounded-lg border-border/70 bg-background shadow-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <BookOpenText className="size-4 text-accent" />
+                  Contents
                 </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
+                <div className="mt-3">
+                  <TableOfContents
+                    content={contentWithIds}
+                    label="Article contents"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
-        <div
-          className="article-prose font-ui prose-headings:font-editorial prose prose-zinc mt-8 max-w-none prose-p:text-[17px] prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-accent prose-a:underline prose-a:decoration-accent/55 prose-a:underline-offset-4 prose-a:transition-colors hover:prose-a:text-primary hover:prose-a:decoration-primary prose-strong:text-foreground"
-          dangerouslySetInnerHTML={{
-            __html: contentWithIds,
-          }}
-        />
+          {relatedOffers.length > 0 ? (
+            <section className="mt-6 rounded-lg border border-border/70 bg-muted/20 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <ShoppingCart className="size-4 text-accent" />
+                  Related server offers
+                </div>
+                <Badge variant="secondary">{relatedOffers.length} offers</Badge>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {relatedOffers.slice(0, 4).map((offer) => (
+                  <div
+                    key={offer.id}
+                    className="rounded-lg border border-border/70 bg-background p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="line-clamp-2 text-sm font-medium leading-6">
+                          {offer.title}
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {offer.providerName ?? "Provider pending"} ·{" "}
+                          {offer.region ?? "Region pending"} ·{" "}
+                          {offer.lineType ?? "Line pending"}
+                        </p>
+                      </div>
+                      <Badge>{formatOfferPrice(offer)}</Badge>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {isHttpHref(offer.purchaseUrl) ? (
+                        <a
+                          href={offer.purchaseUrl}
+                          target="_blank"
+                          rel="nofollow noopener noreferrer"
+                          className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+                        >
+                          Buy
+                        </a>
+                      ) : isInternalHref(offer.purchaseUrl) ? (
+                        <Link
+                          href={offer.purchaseUrl}
+                          prefetch={false}
+                          className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+                        >
+                          Buy
+                        </Link>
+                      ) : null}
+                      {offer.articleUrl && isInternalHref(offer.articleUrl) ? (
+                        <Link
+                          href={offer.articleUrl}
+                          prefetch
+                          className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                        >
+                          Source
+                        </Link>
+                      ) : isHttpHref(offer.articleUrl) ? (
+                        <a
+                          href={offer.articleUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                        >
+                          Source
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
-        {post.tags.length > 0 ? (
-          <section className="mt-10 border-t border-border/70 pt-6">
-            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <Tags className="size-4 text-accent" />
-              Tags
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {post.tags.map((tag) => (
-                <Link
-                  key={tag.tag.id}
-                  href={`/en/fwq/tags/${tag.tag.slug}/page/1`}
-                  prefetch
-                  className="inline-flex min-h-10 items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
-                  #{tag.tag.name}
-                </Link>
-              ))}
-            </div>
-          </section>
-        ) : null}
+          <div
+            className="article-prose font-ui prose-headings:font-editorial prose prose-zinc mt-8 max-w-none prose-p:text-[17px] prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-accent prose-a:underline prose-a:decoration-accent/55 prose-a:underline-offset-4 prose-a:transition-colors hover:prose-a:text-primary hover:prose-a:decoration-primary prose-strong:text-foreground"
+            dangerouslySetInnerHTML={{
+              __html: contentWithIds,
+            }}
+          />
+
+          {post.tags.length > 0 ? (
+            <section className="mt-10 border-t border-border/70 pt-6">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Tags className="size-4 text-accent" />
+                Tags
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {post.tags.map((tag) => (
+                  <Link
+                    key={tag.tag.id}
+                    href={`/en/fwq/tags/${tag.tag.slug}/page/1`}
+                    prefetch
+                    className="inline-flex min-h-10 items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    #{tag.tag.name}
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null}
         </article>
 
         <aside className="hidden xl:block">

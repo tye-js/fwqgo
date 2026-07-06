@@ -16,11 +16,7 @@ import { slugify } from "@fwqgo/core/utils";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
 import { cacheTags, revalidateSiteContent, tagCache } from "@fwqgo/cache/tags";
 import { db, readDb } from "@fwqgo/db";
-import {
-  affServiceProviders,
-  posts,
-  serverOffers,
-} from "@fwqgo/db/schema";
+import { affServiceProviders, posts, serverOffers } from "@fwqgo/db/schema";
 import { readOutboundShortTarget } from "@/server/links/outbound-short-link";
 
 export const offerStatuses = [
@@ -160,6 +156,7 @@ const pricePatterns = [
 const memoryPatterns = [
   /(?:内存|RAM)\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*(GB|G|MB|M)\b/i,
   /([0-9]+(?:\.[0-9]+)?)\s*(GB|G|MB|M)\s*(?:内存|RAM)\b/i,
+  /[0-9]+\s*(?:核|核心|Core|Cores|vCPU|CPU|C)(?=\b|[0-9\s/,+-])\s*[/,+-]?\s*([0-9]+(?:\.[0-9]+)?)\s*(GB|G|MB|M)\b/i,
 ];
 const storagePatterns = [
   /(?:硬盘|存储|Disk|Storage|SSD|NVMe|HDD)\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*(GB|G|TB|T)\b/i,
@@ -174,7 +171,7 @@ const trafficPatterns = [
   /([0-9]+(?:\.[0-9]+)?)\s*(TB|T|GB|G)\s*(?:流量|Traffic|Transfer)\b/i,
 ];
 const cpuPattern =
-  /([0-9]+)\s*(?:核|核心|Core|Cores|vCPU|CPU)|(?:CPU|vCPU)\s*[:：]?\s*([0-9]+)/i;
+  /(?:CPU|vCPU)\s*[:：]?\s*([0-9]+)|([0-9]+)\s*(?:核|核心|Core|Cores|vCPU|CPU|C)(?=\b|[0-9\s/,+-])/i;
 const ipv4Pattern = /([0-9]+)\s*(?:个)?\s*(?:IPv4|独立IP|IP)/i;
 const promoPattern =
   /(?:优惠码|折扣码|优惠代码|Promo Code|Coupon)\s*[:：]?\s*([A-Za-z0-9_-]+)/i;
@@ -241,6 +238,82 @@ function extractPrice(text: string) {
 
 function isPurchaseHref(value: string | null | undefined) {
   return Boolean(value?.trim() && purchaseHrefPattern.test(value.trim()));
+}
+
+function hasConcreteServerConfiguration(input: {
+  cpu: string | null;
+  memory: string | null;
+  storage: string | null;
+  bandwidth: string | null;
+  traffic: string | null;
+}) {
+  return (
+    [
+      input.cpu,
+      input.memory,
+      input.storage,
+      input.bandwidth,
+      input.traffic,
+    ].filter((value) => Boolean(value?.trim())).length >= 2
+  );
+}
+
+function cleanSpecRaw(value: string | undefined) {
+  const normalized = normalizeSpace(value ?? "");
+  return normalized ? normalized : null;
+}
+
+function extractCpu(text: string) {
+  const match = cpuPattern.exec(text);
+  return cleanSpecRaw(match?.[0]);
+}
+
+function extractMemory(text: string) {
+  const match = findFirstMatch(text, memoryPatterns);
+  if (!match) return null;
+
+  return {
+    ...match,
+    raw: `${match.value}${match.unit}`,
+  };
+}
+
+function extractStorage(text: string) {
+  return findFirstMatch(text, storagePatterns);
+}
+
+function extractBandwidth(text: string) {
+  return findFirstMatch(text, bandwidthPatterns);
+}
+
+function extractTraffic(text: string) {
+  return findFirstMatch(text, trafficPatterns);
+}
+
+function purchaseKeywordText(value: string) {
+  return /购买|订购|下单|入口|链接|buy|order|purchase|cart/i.test(value);
+}
+
+function parseStandaloneMemoryMb(value: string | null | undefined) {
+  const match = value?.match(/([0-9]+(?:\.[0-9]+)?)\s*(GB|G|MB|M)\b/i);
+  return toMb(match?.[1], match?.[2]);
+}
+
+function parseStandaloneStorageGb(value: string | null | undefined) {
+  const match = value?.match(/([0-9]+(?:\.[0-9]+)?)\s*(TB|T|GB|G)\b/i);
+  return toGb(match?.[1], match?.[2]);
+}
+
+function parseStandaloneBandwidthMbps(value: string | null | undefined) {
+  const match = value?.match(
+    /([0-9]+(?:\.[0-9]+)?)\s*(Gbps|G口|Mbps|M口|G|M)\b/i,
+  );
+  return toMbps(match?.[1], match?.[2]);
+}
+
+function parseStandaloneTrafficGb(value: string | null | undefined) {
+  const match = value?.match(/([0-9]+(?:\.[0-9]+)?)\s*(TB|T|GB|G)\b/i);
+  return toGb(match?.[1], match?.[2]);
 }
 
 function detectBillingCycle(text: string) {
@@ -334,20 +407,22 @@ function parseOfferText(input: {
   const price = extractPrice(text);
   if (!price) return null;
 
-  const memoryMatch = findFirstMatch(text, memoryPatterns);
-  const storageMatch = findFirstMatch(text, storagePatterns);
-  const bandwidthMatch = findFirstMatch(text, bandwidthPatterns);
-  const trafficMatch = findFirstMatch(text, trafficPatterns);
-  const cpuMatch = cpuPattern.exec(text);
+  const memoryMatch = extractMemory(text);
+  const storageMatch = extractStorage(text);
+  const bandwidthMatch = extractBandwidth(text);
+  const trafficMatch = extractTraffic(text);
+  const cpu = extractCpu(text);
   const ipv4Match = ipv4Pattern.exec(text);
   const promoMatch = promoPattern.exec(text);
   const title = extractTitle(text, input.sourcePostTitle);
   const purchaseUrl = isPurchaseHref(input.purchaseUrl)
     ? input.purchaseUrl!.trim()
     : null;
+  if (!purchaseUrl) return null;
+
   const articlePrefix = input.sourcePostLanguage === "en" ? "/en" : "";
 
-  return {
+  const offer = {
     title,
     slug: makeOfferSlug({
       sourcePostId: input.sourcePostId,
@@ -357,7 +432,7 @@ function parseOfferText(input: {
     providerName: null,
     providerId: null,
     productType: /独立服务器|dedicated/i.test(text) ? "dedicated" : "vps",
-    cpu: cpuMatch?.[0] ?? null,
+    cpu,
     memory: memoryMatch?.raw ?? null,
     memoryMb: toMb(memoryMatch?.value, memoryMatch?.unit),
     storage: storageMatch?.raw ?? null,
@@ -389,6 +464,12 @@ function parseOfferText(input: {
     sortOrder: 0,
     rawText: text.slice(0, 4000),
   };
+
+  if (!hasConcreteServerConfiguration(offer)) {
+    return null;
+  }
+
+  return offer;
 }
 
 function candidateTextsFromPost(post: {
@@ -405,8 +486,7 @@ function candidateTextsFromPost(post: {
     const headerCells = $(rows[0])
       .find("th,td")
       .toArray()
-      .map((cell) => normalizeSpace($(cell).text()))
-      .filter(Boolean);
+      .map((cell) => normalizeSpace($(cell).text()));
     const firstRowIsHeader =
       $(rows[0]).find("th").length > 0 ||
       headerCells.some((cell) =>
@@ -418,21 +498,40 @@ function candidateTextsFromPost(post: {
     rows.forEach((row, rowIndex) => {
       if (rowIndex === 0 && firstRowIsHeader) return;
 
+      const rowLinks: Array<{
+        href: string;
+        header: string;
+        text: string;
+      }> = [];
       const cells = $(row)
         .find("th,td")
         .toArray()
         .map((cell, cellIndex) => {
           const text = normalizeSpace($(cell).text());
+          const header = headerCells[cellIndex] ?? "";
+          $(cell)
+            .find("a[href]")
+            .toArray()
+            .forEach((link) => {
+              const href = $(link).attr("href");
+              if (isPurchaseHref(href)) {
+                rowLinks.push({
+                  href: href!.trim(),
+                  header,
+                  text: normalizeSpace($(link).text()),
+                });
+              }
+            });
           if (!text) return "";
-          const header = headerCells[cellIndex];
           return header ? `${header}: ${text}` : text;
         });
       const rowText = cells.filter(Boolean).join(" | ");
-      const href = $(row)
-        .find("a[href]")
-        .toArray()
-        .map((link) => $(link).attr("href"))
-        .find((hrefValue) => isPurchaseHref(hrefValue));
+      const href =
+        rowLinks.find((link) =>
+          purchaseKeywordText(`${link.header} ${link.text}`),
+        )?.href ??
+        rowLinks[0]?.href ??
+        null;
       if (rowText) {
         candidates.push({ text: rowText, purchaseUrl: href ?? null });
       }
@@ -446,18 +545,29 @@ function candidateTextsFromPost(post: {
     const text = normalizeSpace($(element).text());
     if (text.length < 12 || text.length > 800) return;
     if (!extractPrice(text)) return;
-    const href = $(element)
+    const links = $(element)
       .find("a[href]")
       .toArray()
-      .map((link) => $(link).attr("href"))
-      .find((hrefValue) => isPurchaseHref(hrefValue));
+      .map((link) => ({
+        href: $(link).attr("href"),
+        text: normalizeSpace($(link).text()),
+      }))
+      .filter((link): link is { href: string; text: string } =>
+        isPurchaseHref(link.href),
+      );
+    const href =
+      links.find((link) => purchaseKeywordText(link.text))?.href ??
+      links[0]?.href ??
+      null;
     candidates.push({ text, purchaseUrl: href ?? null });
   });
 
   return candidates;
 }
 
-async function resolvePurchaseTargetUrl(purchaseUrl: string | null | undefined) {
+async function resolvePurchaseTargetUrl(
+  purchaseUrl: string | null | undefined,
+) {
   if (!purchaseUrl) return null;
 
   const trimmed = purchaseUrl.trim();
@@ -520,6 +630,14 @@ function providerHostFromUrl(value: string | null | undefined) {
   }
 }
 
+function publicPurchasableOfferBaseWhere() {
+  return and(
+    eq(serverOffers.visible, true),
+    isNotNull(serverOffers.priceAmount),
+    sql`nullif(trim(${serverOffers.purchaseUrl}), '') is not null`,
+  );
+}
+
 type OfferSourcePost = {
   id: number;
   title: string;
@@ -529,6 +647,21 @@ type OfferSourcePost = {
 };
 
 type ParsedServerOffer = NonNullable<ReturnType<typeof parseOfferText>>;
+
+type ServerOfferDuplicateKeyInput = {
+  providerName?: string | null;
+  productType?: string | null;
+  memoryMb?: number | null;
+  storageGb?: number | null;
+  bandwidthMbps?: number | null;
+  trafficGb?: number | null;
+  region?: string | null;
+  lineType?: string | null;
+  priceAmount?: string | null;
+  currency?: string | null;
+  billingCycle?: string | null;
+  purchaseUrl?: string | null;
+};
 
 function nullableEq<T>(column: T, value: string | number | null | undefined) {
   return value === null || typeof value === "undefined"
@@ -579,7 +712,7 @@ async function findExistingServerOffer(candidate: ParsedServerOffer) {
 }
 
 function makeDuplicateKey(
-  candidate: ParsedServerOffer,
+  candidate: ServerOfferDuplicateKeyInput,
   resolvedProviderName?: string | null,
 ) {
   return [
@@ -644,12 +777,21 @@ async function importServerOffersFromPostRows(
             title: candidate.title || existing.title,
             providerName: provider?.name ?? candidate.providerName,
             providerId: provider?.id ?? candidate.providerId,
+            productType: candidate.productType,
             cpu: candidate.cpu,
             memory: candidate.memory,
+            memoryMb: candidate.memoryMb,
             storage: candidate.storage,
+            storageGb: candidate.storageGb,
             storageType: candidate.storageType,
             bandwidth: candidate.bandwidth,
+            bandwidthMbps: candidate.bandwidthMbps,
             traffic: candidate.traffic,
+            trafficGb: candidate.trafficGb,
+            region: candidate.region,
+            countryCode: candidate.countryCode,
+            city: candidate.city,
+            lineType: candidate.lineType,
             network: candidate.network,
             ipv4: candidate.ipv4,
             ipv6: candidate.ipv6,
@@ -660,7 +802,6 @@ async function importServerOffersFromPostRows(
             promoCode: candidate.promoCode,
             purchaseUrl: candidate.purchaseUrl,
             articleUrl: candidate.articleUrl,
-            reviewUrl: candidate.reviewUrl,
             rawText: candidate.rawText,
             duplicateKey: makeDuplicateKey(candidate, provider?.name),
             updatedAt: new Date(),
@@ -747,10 +888,11 @@ export async function importServerOffersFromPosts(
 }
 
 function topicWhere(topic: (typeof offerTopics)[number]) {
-  const base = and(eq(serverOffers.visible, true), isNotNull(serverOffers.priceAmount));
+  const base = publicPurchasableOfferBaseWhere();
   const regionConditions =
-    topic.filters.regions?.map((region) => ilike(serverOffers.region, `%${region}%`)) ??
-    [];
+    topic.filters.regions?.map((region) =>
+      ilike(serverOffers.region, `%${region}%`),
+    ) ?? [];
 
   if (topic.filters.maxMonthlyUsd) {
     return and(
@@ -854,7 +996,7 @@ export async function getServerOfferCollection(input: {
     const offers = await readDb
       .select(serverOfferPublicSelect())
       .from(serverOffers)
-      .where(and(eq(serverOffers.visible, true), eq(field, value)))
+      .where(and(publicPurchasableOfferBaseWhere(), eq(field, value)))
       .orderBy(
         desc(serverOffers.featured),
         asc(serverOffers.priceAmount),
@@ -932,7 +1074,12 @@ export async function getLatestServerOffers(limit = 8) {
         createdAt: serverOffers.createdAt,
       })
       .from(serverOffers)
-      .where(and(eq(serverOffers.visible, true), inArray(serverOffers.status, ["in_stock", "preorder", "restocking"])))
+      .where(
+        and(
+          publicPurchasableOfferBaseWhere(),
+          inArray(serverOffers.status, ["in_stock", "preorder", "restocking"]),
+        ),
+      )
       .orderBy(desc(serverOffers.featured), desc(serverOffers.createdAt))
       .limit(limit);
   } catch (error) {
@@ -958,7 +1105,7 @@ export async function getServerOfferCollectionIndex(limit = 80) {
         updatedAt: sql<Date | null>`max(coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt}))`,
       })
       .from(serverOffers)
-      .where(and(eq(serverOffers.visible, true), isNotNull(field)))
+      .where(and(publicPurchasableOfferBaseWhere(), isNotNull(field)))
       .groupBy(field)
       .orderBy(desc(sql`count(*)`), asc(field))
       .limit(limit);
@@ -1004,7 +1151,7 @@ export async function searchServerOffers(input: {
       .from(serverOffers)
       .where(
         and(
-          eq(serverOffers.visible, true),
+          publicPurchasableOfferBaseWhere(),
           or(
             ilike(serverOffers.title, pattern),
             ilike(serverOffers.providerName, pattern),
@@ -1047,7 +1194,7 @@ export async function getServerOffersByKeywords(input: {
       .from(serverOffers)
       .where(
         and(
-          eq(serverOffers.visible, true),
+          publicPurchasableOfferBaseWhere(),
           or(
             ...keywords.flatMap((keyword) => {
               const pattern = `%${keyword}%`;
@@ -1080,6 +1227,11 @@ export async function getAdminServerOffers(limit = 80) {
       title: serverOffers.title,
       providerName: serverOffers.providerName,
       productType: serverOffers.productType,
+      cpu: serverOffers.cpu,
+      memory: serverOffers.memory,
+      storage: serverOffers.storage,
+      bandwidth: serverOffers.bandwidth,
+      traffic: serverOffers.traffic,
       region: serverOffers.region,
       lineType: serverOffers.lineType,
       priceAmount: serverOffers.priceAmount,
@@ -1093,6 +1245,9 @@ export async function getAdminServerOffers(limit = 80) {
       featured: serverOffers.featured,
       visible: serverOffers.visible,
       sourcePostId: serverOffers.sourcePostId,
+      sourcePostTitle: posts.title,
+      sourcePostSlug: posts.slug,
+      sourcePostLanguage: posts.language,
       createdAt: serverOffers.createdAt,
       updatedAt: serverOffers.updatedAt,
       reviewStatus: serverOffers.reviewStatus,
@@ -1101,6 +1256,7 @@ export async function getAdminServerOffers(limit = 80) {
       reviewedAt: serverOffers.reviewedAt,
     })
     .from(serverOffers)
+    .leftJoin(posts, eq(serverOffers.sourcePostId, posts.id))
     .orderBy(desc(serverOffers.createdAt))
     .limit(limit);
 }
@@ -1108,6 +1264,12 @@ export async function getAdminServerOffers(limit = 80) {
 export type ServerOfferUpdateInput = {
   title: string;
   providerName?: string | null;
+  productType?: string | null;
+  cpu?: string | null;
+  memory?: string | null;
+  storage?: string | null;
+  bandwidth?: string | null;
+  traffic?: string | null;
   priceAmount?: string | null;
   currency?: string | null;
   billingCycle?: string | null;
@@ -1127,10 +1289,35 @@ export async function updateServerOffer(
   id: number,
   input: ServerOfferUpdateInput,
 ) {
+  const memoryMb = parseStandaloneMemoryMb(input.memory);
+  const storageGb = parseStandaloneStorageGb(input.storage);
+  const bandwidthMbps = parseStandaloneBandwidthMbps(input.bandwidth);
+  const trafficGb = parseStandaloneTrafficGb(input.traffic);
+  const productType = input.productType ?? "vps";
+
   const [updated] = await db
     .update(serverOffers)
     .set({
       ...input,
+      productType,
+      memoryMb,
+      storageGb,
+      bandwidthMbps,
+      trafficGb,
+      duplicateKey: makeDuplicateKey({
+        providerName: input.providerName,
+        productType,
+        memoryMb,
+        storageGb,
+        bandwidthMbps,
+        trafficGb,
+        region: input.region,
+        lineType: input.lineType,
+        priceAmount: input.priceAmount,
+        currency: input.currency,
+        billingCycle: input.billingCycle,
+        purchaseUrl: input.purchaseUrl,
+      }),
       reviewStatus: input.reviewStatus ?? "reviewed",
       reviewedAt: new Date(),
       updatedAt: new Date(),
@@ -1191,7 +1378,7 @@ export async function getRelatedServerOffersForPost(input: {
 
   const tagText = input.tagNames.join(" ");
   const conditions = [
-    eq(serverOffers.visible, true),
+    publicPurchasableOfferBaseWhere(),
     or(
       eq(serverOffers.sourcePostId, input.postId),
       ...input.tagNames.flatMap((name) => [
@@ -1199,8 +1386,12 @@ export async function getRelatedServerOffersForPost(input: {
         ilike(serverOffers.region, `%${name}%`),
         ilike(serverOffers.lineType, `%${name}%`),
       ]),
-      tagText.includes("香港") ? ilike(serverOffers.region, "%香港%") : undefined,
-      tagText.includes("美国") ? ilike(serverOffers.region, "%美国%") : undefined,
+      tagText.includes("香港")
+        ? ilike(serverOffers.region, "%香港%")
+        : undefined,
+      tagText.includes("美国")
+        ? ilike(serverOffers.region, "%美国%")
+        : undefined,
     ),
   ].filter(Boolean);
 
@@ -1234,7 +1425,9 @@ export async function getRelatedServerOffersForPost(input: {
     .from(serverOffers)
     .where(and(...conditions))
     .orderBy(
-      desc(sql`case when ${serverOffers.sourcePostId} = ${input.postId} then 1 else 0 end`),
+      desc(
+        sql`case when ${serverOffers.sourcePostId} = ${input.postId} then 1 else 0 end`,
+      ),
       desc(serverOffers.featured),
       asc(serverOffers.priceAmount),
     )

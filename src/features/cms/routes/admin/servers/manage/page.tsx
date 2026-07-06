@@ -41,6 +41,16 @@ async function ServerOfferManageContent({
   const total = counts.reduce((sum, item) => sum + item.count, 0);
   const hasMissingPrice = (priceAmount: unknown) =>
     priceAmount === null || priceAmount === undefined || priceAmount === "";
+  const hasMissingSpecs = (
+    offer: Awaited<ReturnType<typeof getAdminServerOffers>>[number],
+  ) =>
+    [
+      offer.cpu,
+      offer.memory,
+      offer.storage,
+      offer.bandwidth,
+      offer.traffic,
+    ].filter((value) => Boolean(value?.trim())).length < 2;
   const qualityIssues = [
     {
       label: "待审核",
@@ -54,6 +64,16 @@ async function ServerOfferManageContent({
       note: "提取结果可能不完整",
     },
     {
+      label: "缺配置",
+      value: offers.filter(hasMissingSpecs).length,
+      note: "至少应有两项 CPU/内存/硬盘/带宽/流量",
+    },
+    {
+      label: "缺购买链接",
+      value: offers.filter((offer) => !offer.purchaseUrl?.trim()).length,
+      note: "不能形成可购买入口",
+    },
+    {
       label: "缺价格",
       value: offers.filter((offer) => hasMissingPrice(offer.priceAmount))
         .length,
@@ -64,20 +84,13 @@ async function ServerOfferManageContent({
       value: offers.filter((offer) => !offer.region).length,
       note: "影响地区专题归类",
     },
-    {
-      label: "重复/合并",
-      value: offers.filter((offer) =>
-        ["duplicate", "merged"].includes(offer.reviewStatus),
-      ).length,
-      note: "需要确认是否隐藏",
-    },
   ];
 
   return (
     <AdminPageShell
       badge="服务器套餐"
       title="人工修正数据"
-      description="编辑自动提取出的价格、地区、线路、状态、购买链接和优惠码。隐藏的套餐不会出现在前台。"
+      description="编辑自动提取出的 CPU、内存、硬盘、带宽、流量、价格、来源文章、购买链接和后续测评文章。隐藏的套餐不会出现在前台。"
     >
       <AdminSummaryStrip
         items={[
@@ -105,9 +118,9 @@ async function ServerOfferManageContent({
       <div id="quality" className="scroll-mt-24">
         <AdminSectionCard
           title="数据质量检查"
-          description="快速查看结构化套餐里最影响前台展示和比价体验的问题。"
+          description="快速查看结构化套餐里最影响前台展示、比价和购买转化的问题。"
         >
-          <div className="grid gap-3 md:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
             {qualityIssues.map((item) => (
               <div
                 key={item.label}

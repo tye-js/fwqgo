@@ -1011,12 +1011,12 @@ export async function getOfferTaskDetail(taskId: number) {
     },
     {
       key: "extract",
-      name: "解析正文与表格",
+      name: "识别配置、价格和购买链接",
       status: stepStatusForTask(task.status),
       description:
         task.status === "failed"
           ? failureMessage(task.errorTitle, task.errorDetail)
-          : (task.message ?? "等待解析文章表格、正文段落和购买链接"),
+          : (task.message ?? "等待识别文章表格或正文段落里的有效套餐"),
       time: serializeDate(task.finishedAt ?? task.updatedAt),
     },
     {
@@ -1028,7 +1028,7 @@ export async function getOfferTaskDetail(taskId: number) {
           ? "failed"
           : "pending",
       description: result
-        ? `提取 ${result.extracted} 条，新增 ${result.inserted} 条，更新 ${result.updated} 条，跳过 ${result.skipped} 条`
+        ? `提取有效套餐 ${result.extracted} 条，新增 ${result.inserted} 条，更新 ${result.updated} 条，跳过 ${result.skipped} 条`
         : "解析成功后写入服务器套餐库",
       time: serializeDate(task.finishedAt),
       payload: task.result,

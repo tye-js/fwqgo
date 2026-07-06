@@ -5,6 +5,7 @@ import {
   defaultMetadataStylePrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
 import { contentToArticleMarkdown } from "@fwqgo/core/content";
+import { assertPublicHttpUrl } from "@fwqgo/core/network-url";
 
 const DEFAULT_AI_REWRITE_TIMEOUT_MS = 300_000;
 const MIN_AI_INPUT_LENGTH = 80;
@@ -547,12 +548,14 @@ async function requestChatCompletionResult(input: {
 
   try {
     const request = async (): Promise<AiRewriteHttpResult> => {
-      const response = await fetch(input.endpoint, {
+      const endpoint = await assertPublicHttpUrl(input.endpoint, "AI 接口地址");
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${input.config.apiKey}`,
           "Content-Type": "application/json",
         },
+        redirect: "error",
         signal: controller.signal,
         body: JSON.stringify({
           model: input.config.model,

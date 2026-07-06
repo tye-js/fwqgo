@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, type ReactNode, useMemo, useState, useTransition } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 import { ExternalLink, Save } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -92,6 +98,25 @@ function cleanText(value: string | null | undefined) {
   return trimmed;
 }
 
+function specsText(offer: {
+  cpu: string | null;
+  memory: string | null;
+  storage: string | null;
+  bandwidth: string | null;
+  traffic: string | null;
+}) {
+  return [
+    offer.cpu,
+    offer.memory,
+    offer.storage,
+    offer.bandwidth,
+    offer.traffic,
+  ]
+    .map(cleanText)
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function SafeAdminOfferLink({
   href,
   children,
@@ -115,12 +140,7 @@ function SafeAdminOfferLink({
           {children}
         </Link>
       ) : (
-        <a
-          href={safeHref}
-          target="_blank"
-          rel={rel}
-          aria-label={ariaLabel}
-        >
+        <a href={safeHref} target="_blank" rel={rel} aria-label={ariaLabel}>
           {children}
         </a>
       )}
@@ -128,7 +148,13 @@ function SafeAdminOfferLink({
   );
 }
 
-function OfferEditForm({ offer, onDone }: { offer: Offer; onDone: () => void }) {
+function OfferEditForm({
+  offer,
+  onDone,
+}: {
+  offer: Offer;
+  onDone: () => void;
+}) {
   const [visible, setVisible] = useState(offer.visible);
   const [featured, setFeatured] = useState(offer.featured);
   const [isPending, startTransition] = useTransition();
@@ -150,8 +176,11 @@ function OfferEditForm({ offer, onDone }: { offer: Offer; onDone: () => void }) 
   }
 
   return (
-    <form action={handleSubmit} className="grid gap-4 rounded-lg border border-border/70 bg-muted/20 p-4">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_180px_140px_140px]">
+    <form
+      action={handleSubmit}
+      className="grid gap-4 rounded-lg border border-border/70 bg-muted/20 p-4"
+    >
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_180px_150px_140px_140px]">
         <div className="space-y-2">
           <Label>标题</Label>
           <Input name="title" defaultValue={offer.title} required />
@@ -159,6 +188,14 @@ function OfferEditForm({ offer, onDone }: { offer: Offer; onDone: () => void }) 
         <div className="space-y-2">
           <Label>商家</Label>
           <Input name="providerName" defaultValue={offer.providerName ?? ""} />
+        </div>
+        <div className="space-y-2">
+          <Label>类型</Label>
+          <Input
+            name="productType"
+            defaultValue={offer.productType ?? "vps"}
+            placeholder="vps / cloud / dedicated"
+          />
         </div>
         <div className="space-y-2">
           <Label>价格</Label>
@@ -179,8 +216,49 @@ function OfferEditForm({ offer, onDone }: { offer: Offer; onDone: () => void }) 
       </div>
       <div className="grid gap-4 lg:grid-cols-5">
         <div className="space-y-2">
+          <Label>CPU</Label>
+          <Input name="cpu" defaultValue={offer.cpu ?? ""} placeholder="2 核" />
+        </div>
+        <div className="space-y-2">
+          <Label>内存</Label>
+          <Input
+            name="memory"
+            defaultValue={offer.memory ?? ""}
+            placeholder="2GB RAM"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>硬盘</Label>
+          <Input
+            name="storage"
+            defaultValue={offer.storage ?? ""}
+            placeholder="40GB NVMe"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>带宽</Label>
+          <Input
+            name="bandwidth"
+            defaultValue={offer.bandwidth ?? ""}
+            placeholder="1Gbps"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>流量</Label>
+          <Input
+            name="traffic"
+            defaultValue={offer.traffic ?? ""}
+            placeholder="1TB/月"
+          />
+        </div>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-5">
+        <div className="space-y-2">
           <Label>周期</Label>
-          <Select name="billingCycle" defaultValue={offer.billingCycle ?? "monthly"}>
+          <Select
+            name="billingCycle"
+            defaultValue={offer.billingCycle ?? "monthly"}
+          >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -247,7 +325,7 @@ function OfferEditForm({ offer, onDone }: { offer: Offer; onDone: () => void }) 
           <Input name="purchaseUrl" defaultValue={offer.purchaseUrl ?? ""} />
         </div>
         <div className="space-y-2">
-          <Label>推广文章</Label>
+          <Label>来源文章</Label>
           <Input name="articleUrl" defaultValue={offer.articleUrl ?? ""} />
         </div>
         <div className="space-y-2">
@@ -327,6 +405,9 @@ export function ServerOfferAdminTable({
           false) ||
         (offer.region?.toLowerCase().includes(normalizedQuery) ?? false) ||
         (offer.lineType?.toLowerCase().includes(normalizedQuery) ?? false) ||
+        specsText(offer).toLowerCase().includes(normalizedQuery) ||
+        (offer.sourcePostTitle?.toLowerCase().includes(normalizedQuery) ??
+          false) ||
         (offer.promoCode?.toLowerCase().includes(normalizedQuery) ?? false);
       const matchesStatus =
         activeFilters.status === "all" || offer.status === activeFilters.status;
@@ -404,7 +485,7 @@ export function ServerOfferAdminTable({
         description={`筛选条件和页码会写入地址栏，当前匹配 ${filteredOffers.length} 条套餐。`}
         searchValue={activeFilters.query}
         onSearchChange={(value) => updateUrlQuery({ query: value || null })}
-        searchPlaceholder="搜索套餐、商家、地区、线路或优惠码"
+        searchPlaceholder="搜索套餐、商家、地区、线路、配置或优惠码"
         filterSlot={
           <>
             <Select
@@ -508,7 +589,9 @@ export function ServerOfferAdminTable({
             variant="outline"
             size="sm"
             disabled={isPending || !hasSelectedOffers}
-            title={hasSelectedOffers ? "批量修改所选套餐审核状态" : "请先选择套餐"}
+            title={
+              hasSelectedOffers ? "批量修改所选套餐审核状态" : "请先选择套餐"
+            }
             onClick={() => runBulk({ reviewStatus: bulkReviewStatus })}
           >
             批量审核
@@ -537,12 +620,13 @@ export function ServerOfferAdminTable({
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border/70 bg-background shadow-sm">
-        <Table className="min-w-[980px]">
+        <Table className="min-w-[1120px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10" />
               <TableHead>套餐</TableHead>
               <TableHead>价格</TableHead>
+              <TableHead>配置</TableHead>
               <TableHead>地区/线路</TableHead>
               <TableHead>状态</TableHead>
               <TableHead>审核</TableHead>
@@ -553,7 +637,7 @@ export function ServerOfferAdminTable({
           <TableBody>
             {pagedOffers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8}>
+                <TableCell colSpan={9}>
                   <AdminTableEmpty
                     title="没有匹配的套餐"
                     description="当前筛选条件下没有可展示套餐。可以清空搜索词，或切换状态、审核、展示筛选。"
@@ -574,12 +658,25 @@ export function ServerOfferAdminTable({
                   <TableCell className="min-w-[260px]">
                     <div className="space-y-2">
                       <p className="line-clamp-2 font-medium">{offer.title}</p>
+                      {offer.sourcePostTitle ? (
+                        <p className="line-clamp-1 text-xs text-muted-foreground">
+                          来源：{offer.sourcePostTitle}
+                        </p>
+                      ) : offer.sourcePostId ? (
+                        <p className="text-xs text-muted-foreground">
+                          来源文章 #{offer.sourcePostId}
+                        </p>
+                      ) : null}
                       <div className="flex flex-wrap gap-2">
                         {offer.providerName ? (
-                          <Badge variant="secondary">{offer.providerName}</Badge>
+                          <Badge variant="secondary">
+                            {offer.providerName}
+                          </Badge>
                         ) : null}
                         {offer.featured ? <Badge>推荐</Badge> : null}
-                        {!offer.visible ? <Badge variant="outline">隐藏</Badge> : null}
+                        {!offer.visible ? (
+                          <Badge variant="outline">隐藏</Badge>
+                        ) : null}
                       </div>
                     </div>
                   </TableCell>
@@ -591,6 +688,11 @@ export function ServerOfferAdminTable({
                       </p>
                     ) : null}
                   </TableCell>
+                  <TableCell className="min-w-[240px]">
+                    <p className="line-clamp-3 text-sm text-muted-foreground">
+                      {specsText(offer) || "配置待补充"}
+                    </p>
+                  </TableCell>
                   <TableCell>
                     <p>{offer.region ?? "-"}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -598,8 +700,14 @@ export function ServerOfferAdminTable({
                     </p>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={offer.status === "in_stock" ? "default" : "secondary"}>
-                      {offerStatusLabels[offer.status as keyof typeof offerStatusLabels] ?? offer.status}
+                    <Badge
+                      variant={
+                        offer.status === "in_stock" ? "default" : "secondary"
+                      }
+                    >
+                      {offerStatusLabels[
+                        offer.status as keyof typeof offerStatusLabels
+                      ] ?? offer.status}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -635,7 +743,10 @@ export function ServerOfferAdminTable({
                         <ExternalLink className="size-4" />
                       </SafeAdminOfferLink>
                       <SafeAdminOfferLink href={offer.articleUrl}>
-                        文章
+                        来源
+                      </SafeAdminOfferLink>
+                      <SafeAdminOfferLink href={offer.reviewUrl}>
+                        测评
                       </SafeAdminOfferLink>
                     </div>
                   </TableCell>
@@ -645,7 +756,9 @@ export function ServerOfferAdminTable({
                       size="sm"
                       variant="outline"
                       onClick={() =>
-                        setEditId((value) => (value === offer.id ? null : offer.id))
+                        setEditId((value) =>
+                          value === offer.id ? null : offer.id,
+                        )
                       }
                     >
                       编辑
@@ -654,7 +767,7 @@ export function ServerOfferAdminTable({
                 </TableRow>
                 {editId === offer.id ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="bg-muted/20">
+                    <TableCell colSpan={9} className="bg-muted/20">
                       <OfferEditForm
                         offer={offer}
                         onDone={() => {

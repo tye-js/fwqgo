@@ -1,11 +1,17 @@
 import * as cheerio from "cheerio";
-import puppeteer, { type Browser } from "puppeteer";
+import puppeteer, { type Browser, type Page } from "puppeteer";
 
 import {
   htmlToArticleMarkdown,
   looksLikeHtmlContent,
   normalizeArticleHtml,
 } from "@fwqgo/core/content";
+import {
+  assertPublicHttpUrl,
+  fetchPublicHttpUrl,
+  parsePublicHttpUrl,
+  requirePublicHttpUrl,
+} from "@fwqgo/core/network-url";
 import RewriteArticle from "@/langchain/rewrite-article";
 import {
   mergeAffiliateReports,
@@ -258,10 +264,14 @@ async function fetchWithCheerio(url: string) {
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
-      headers: browserHeaders,
-      signal: controller.signal,
-    });
+    const response = await fetchPublicHttpUrl(
+      url,
+      {
+        headers: browserHeaders,
+        signal: controller.signal,
+      },
+      "抓取页面",
+    );
     if (!response.ok) {
       throw new Error(`抓取失败：HTTP ${response.status}`);
     }
@@ -277,7 +287,22 @@ async function fetchWithCheerio(url: string) {
   }
 }
 
+async function installSafePuppeteerRequestGuard(page: Page) {
+  await page.setRequestInterception(true);
+  page.on("request", (request) => {
+    const safeUrl = parsePublicHttpUrl(request.url());
+
+    if (!safeUrl) {
+      void request.abort();
+      return;
+    }
+
+    void request.continue();
+  });
+}
+
 async function fetchWithPuppeteer(url: string, rule: SiteRule) {
+  await assertPublicHttpUrl(url, "抓取页面");
   const browser = await puppeteer.launch({
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
     headless: true,
@@ -285,6 +310,7 @@ async function fetchWithPuppeteer(url: string, rule: SiteRule) {
 
   try {
     const page = await browser.newPage();
+    await installSafePuppeteerRequestGuard(page);
     await page.setUserAgent(browserHeaders["User-Agent"]);
     await page.setViewport({ width: 1920, height: 1080 });
     await page.goto(url, { waitUntil: "networkidle0", timeout: 30000 });
@@ -299,11 +325,16 @@ async function fetchWithPuppeteer(url: string, rule: SiteRule) {
 }
 
 async function resolveRedirect(browser: Browser, href: string) {
+  const safeHref = await assertPublicHttpUrl(href, "跳转链接");
   const page = await browser.newPage();
 
   try {
+    await installSafePuppeteerRequestGuard(page);
     await page.setUserAgent(browserHeaders["User-Agent"]);
-    await page.goto(href, { waitUntil: "networkidle0", timeout: 10000 });
+    await page.goto(safeHref.toString(), {
+      waitUntil: "networkidle0",
+      timeout: 10000,
+    });
     return page.url();
   } finally {
     await page.close();
@@ -315,12 +346,15 @@ async function resolveHttpRedirect(href: string) {
   const timeout = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const headResponse = await fetch(href, {
-      headers: browserHeaders,
-      method: "HEAD",
-      redirect: "follow",
-      signal: controller.signal,
-    });
+    const headResponse = await fetchPublicHttpUrl(
+      href,
+      {
+        headers: browserHeaders,
+        method: "HEAD",
+        signal: controller.signal,
+      },
+      "跳转链接",
+    );
 
     if (headResponse.url) {
       return headResponse.url;
@@ -335,12 +369,15 @@ async function resolveHttpRedirect(href: string) {
   const getTimeout = setTimeout(() => getController.abort(), 10000);
 
   try {
-    const response = await fetch(href, {
-      headers: browserHeaders,
-      method: "GET",
-      redirect: "follow",
-      signal: getController.signal,
-    });
+    const response = await fetchPublicHttpUrl(
+      href,
+      {
+        headers: browserHeaders,
+        method: "GET",
+        signal: getController.signal,
+      },
+      "跳转链接",
+    );
 
     await response.body?.cancel();
     return response.url || href;
@@ -381,7 +418,7 @@ async function scrapeByRule(input: {
   allowAiFallback?: boolean;
   aiInputMaxLength?: number;
 }) {
-  const parsedUrl = new URL(input.url);
+  const parsedUrl = requirePublicHttpUrl(input.url, "抓取 URL");
   const diagnostics = createEmptyDiagnostics({
     sourceHost: normalizeHost(parsedUrl.hostname),
     strategy: input.rule.strategy,
@@ -532,7 +569,7 @@ async function scrapeByRule(input: {
 }
 
 export async function scrapeArticle(url: string) {
-  const parsedUrl = new URL(url);
+  const parsedUrl = requirePublicHttpUrl(url, "抓取 URL");
   const rule = findRule(parsedUrl);
   return scrapeByRule({ url, rule });
 }
@@ -543,7 +580,7 @@ export async function scrapeArticleWithOptions(input: {
   allowAiFallback?: boolean;
   aiInputMaxLength?: number;
 }) {
-  const parsedUrl = new URL(input.url);
+  const parsedUrl = requirePublicHttpUrl(input.url, "抓取 URL");
   const rule = findRule(parsedUrl);
   return scrapeByRule({
     url: input.url,

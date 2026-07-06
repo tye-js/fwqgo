@@ -3,6 +3,11 @@ import type { Element } from "domhandler";
 import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { enqueueAiRewriteTask } from "@fwqgo/ai/rewrite-task-runner";
+import {
+  fetchPublicHttpUrl,
+  parsePublicHttpUrl,
+  requirePublicHttpUrl,
+} from "@fwqgo/core/network-url";
 import { db } from "@fwqgo/db";
 import { aiRewriteTasks, sourceMaterials } from "@fwqgo/db/schema";
 
@@ -35,10 +40,14 @@ async function fetchText(url: string) {
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
-      headers: browserHeaders,
-      signal: controller.signal,
-    });
+    const response = await fetchPublicHttpUrl(
+      url,
+      {
+        headers: browserHeaders,
+        signal: controller.signal,
+      },
+      "来源站 URL",
+    );
 
     if (!response.ok) {
       throw new Error(`抓取失败 ${response.status}: ${url}`);
@@ -63,11 +72,8 @@ function normalizeUrl(href: string, baseUrl: string) {
   }
 
   try {
-    const url = new URL(trimmedHref, baseUrl);
-    if (!["http:", "https:"].includes(url.protocol)) {
-      return null;
-    }
-
+    const url = parsePublicHttpUrl(trimmedHref, baseUrl);
+    if (!url) return null;
     url.hash = "";
     return url.toString();
   } catch {
@@ -283,18 +289,22 @@ export async function discoverSourceSiteUrls(input: {
   siteUrl: string;
   feedUrl?: string | null;
 }) {
-  const candidates = input.feedUrl
-    ? [input.feedUrl]
+  const siteUrl = requirePublicHttpUrl(input.siteUrl, "来源站 URL").toString();
+  const feedUrl = input.feedUrl
+    ? requirePublicHttpUrl(input.feedUrl, "Feed URL").toString()
+    : null;
+  const candidates = feedUrl
+    ? [feedUrl]
     : [
-        new URL("/sitemap.xml", input.siteUrl).toString(),
-        new URL("/feed", input.siteUrl).toString(),
-        new URL("/feed.xml", input.siteUrl).toString(),
-        new URL("/rss.xml", input.siteUrl).toString(),
+        new URL("/sitemap.xml", siteUrl).toString(),
+        new URL("/feed", siteUrl).toString(),
+        new URL("/feed.xml", siteUrl).toString(),
+        new URL("/rss.xml", siteUrl).toString(),
       ];
 
   for (const candidate of candidates) {
     try {
-      const urls = await discoverFromXml(candidate, input.siteUrl);
+      const urls = await discoverFromXml(candidate, siteUrl);
       if (urls.length > 0) {
         return urls;
       }
@@ -303,7 +313,7 @@ export async function discoverSourceSiteUrls(input: {
     }
   }
 
-  return discoverFromHome(input.siteUrl);
+  return discoverFromHome(siteUrl);
 }
 
 async function filterExistingTasks(urls: string[]) {

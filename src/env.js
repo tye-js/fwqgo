@@ -1,6 +1,8 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
+const databaseUrl = process.env.DATABASE_URL ?? process.env.READ_DATABASE_URL;
+
 export const env = createEnv({
   /**
    * Specify your server-side environment variables schema here. This way you can ensure the app
@@ -33,7 +35,7 @@ export const env = createEnv({
    * middlewares) or client-side so we need to destruct manually.
    */
   runtimeEnv: {
-    DATABASE_URL: process.env.DATABASE_URL,
+    DATABASE_URL: databaseUrl,
     CMS_DATABASE_URL: process.env.CMS_DATABASE_URL,
     READ_DATABASE_URL: process.env.READ_DATABASE_URL,
     CMS_USERNAME: process.env.CMS_USERNAME,

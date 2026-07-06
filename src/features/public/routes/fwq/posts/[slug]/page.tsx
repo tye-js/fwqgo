@@ -13,6 +13,7 @@ import {
   formatDate,
   isHttpHref,
   isInternalHref,
+  jsonLdScriptContent,
   normalizeDecodedSlug,
   toAbsoluteHttpUrl,
 } from "@fwqgo/core/utils";
@@ -279,7 +280,7 @@ async function PostPageContent({
             <script
               type="application/ld+json"
               dangerouslySetInnerHTML={{
-                __html: JSON.stringify([
+                __html: jsonLdScriptContent([
                   blogPostingJsonLd,
                   breadcrumbJsonLd,
                   faqJsonLd,
@@ -384,13 +385,14 @@ async function PostPageContent({
                               购买链接
                             </Link>
                           ) : null}
-                          {offer.articleUrl && isInternalHref(offer.articleUrl) ? (
+                          {offer.articleUrl &&
+                          isInternalHref(offer.articleUrl) ? (
                             <Link
                               href={offer.articleUrl}
                               prefetch
                               className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                             >
-                              推广文章
+                              来源文章
                             </Link>
                           ) : null}
                         </div>
@@ -546,7 +548,7 @@ async function PostPageContent({
                                   prefetch
                                   className="text-xs font-medium text-muted-foreground hover:text-foreground"
                                 >
-                                  推广文章
+                                  来源文章
                                 </Link>
                               ) : isHttpHref(offer.articleUrl) ? (
                                 <a
@@ -555,7 +557,7 @@ async function PostPageContent({
                                   rel="noopener noreferrer"
                                   className="text-xs font-medium text-muted-foreground hover:text-foreground"
                                 >
-                                  推广文章
+                                  来源文章
                                 </a>
                               ) : null}
                             </div>

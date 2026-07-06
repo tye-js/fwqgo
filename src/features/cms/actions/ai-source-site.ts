@@ -6,23 +6,15 @@ import { z } from "zod";
 
 import { pullSourceSiteToAiTasks } from "@fwqgo/ai/source-site-puller";
 import { requireAdminSession } from "@fwqgo/auth/session";
+import { isPublicHttpUrl } from "@fwqgo/core/network-url";
 import { db } from "@fwqgo/db";
 import { aiRewriteConfigs, aiSourceSites, categories } from "@fwqgo/db/schema";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 
-function isHttpUrl(value: string) {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 const sourceSiteSchema = z.object({
   name: z.string().trim().min(1, "请输入站点名称").max(120),
-  siteUrl: z.string().trim().url("请输入有效站点 URL").refine(isHttpUrl, {
-    message: "站点 URL 只支持 http 或 https",
+  siteUrl: z.string().trim().url("请输入有效站点 URL").refine(isPublicHttpUrl, {
+    message: "站点 URL 只允许公网 http/https 地址",
   }),
   feedUrl: z.preprocess(
     (value) =>
@@ -30,8 +22,8 @@ const sourceSiteSchema = z.object({
     z
       .string()
       .url("请输入有效 Feed URL")
-      .refine(isHttpUrl, {
-        message: "Feed URL 只支持 http 或 https",
+      .refine(isPublicHttpUrl, {
+        message: "Feed URL 只允许公网 http/https 地址",
       })
       .nullable(),
   ),

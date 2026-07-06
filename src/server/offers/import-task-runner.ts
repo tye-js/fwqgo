@@ -119,7 +119,7 @@ async function claimNextTask() {
     .set({
       status: "running",
       progress: 10,
-      message: "正在读取文章并提取套餐",
+      message: "正在读取文章并提取有效套餐",
       errorTitle: null,
       errorDetail: null,
       startedAt: new Date(),
@@ -146,7 +146,7 @@ async function processTask(task: ServerOfferImportTask) {
       .update(serverOfferImportTasks)
       .set({
         progress: 35,
-        message: "正在解析单篇文章中的表格和购买链接",
+        message: "正在识别单篇文章中的配置、价格和购买链接",
         updatedAt: new Date(),
       })
       .where(eq(serverOfferImportTasks.id, task.id));
@@ -173,7 +173,7 @@ async function processTask(task: ServerOfferImportTask) {
     .update(serverOfferImportTasks)
     .set({
       progress: 25,
-      message: "正在扫描历史文章并提取套餐",
+      message: "正在扫描历史文章并提取有效套餐",
       updatedAt: new Date(),
     })
     .where(eq(serverOfferImportTasks.id, task.id));

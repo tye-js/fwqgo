@@ -188,11 +188,7 @@ function SafeActionButton({
           {label}
         </Link>
       ) : (
-        <a
-          href={href}
-          target="_blank"
-          rel={rel ?? "noopener noreferrer"}
-        >
+        <a href={href} target="_blank" rel={rel ?? "noopener noreferrer"}>
           {icon}
           {label}
         </a>
@@ -219,7 +215,7 @@ function OfferActions({ offer }: { offer: Offer }) {
       <SafeActionButton
         href={cleanText(offer.articleUrl)}
         icon={<FileText className="size-4" />}
-        label="推广"
+        label="来源"
       />
       <SafeActionButton
         href={cleanText(offer.reviewUrl)}
@@ -270,9 +266,7 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
               </Link>
             </Badge>
           ) : null}
-          {productType ? (
-            <Badge variant="outline">{productType}</Badge>
-          ) : null}
+          {productType ? <Badge variant="outline">{productType}</Badge> : null}
           {promoCode ? (
             <Badge variant="outline">优惠码 {promoCode}</Badge>
           ) : null}
@@ -320,7 +314,9 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
           <p className="text-xs text-muted-foreground">数据状态</p>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
             最近核验：{getOfferFreshnessLabel(offer)}
-            {offer.validUntil ? ` · 有效期至：${formatShortDate(offer.validUntil)}` : ""}
+            {offer.validUntil
+              ? ` · 有效期至：${formatShortDate(offer.validUntil)}`
+              : ""}
           </p>
         </div>
       </div>
@@ -390,18 +386,14 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
       })
       .sort((left, right) => {
         if (sortKey === "price-desc") {
-          return (
-            priceSortValue(right) - priceSortValue(left)
-          );
+          return priceSortValue(right) - priceSortValue(left);
         }
 
         if (sortKey === "new-desc") {
           return right.id - left.id;
         }
 
-        return (
-          priceSortValue(left) - priceSortValue(right)
-        );
+        return priceSortValue(left) - priceSortValue(right);
       });
   }, [lineType, offers, promoFilter, provider, query, region, sortKey, status]);
 

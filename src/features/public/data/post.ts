@@ -64,10 +64,15 @@ export async function getPublishedPostCountByCategoryId(
   categoryId: number,
   language: PublicLanguage = "zh",
 ) {
+  "use cache";
+  tagCache(cacheTags.posts, cacheTags.category(categoryId));
+
   const [result] = await readDb
     .select({ count: count() })
     .from(posts)
-    .where(and(eq(posts.categoryId, categoryId), publishedPostCondition(language)));
+    .where(
+      and(eq(posts.categoryId, categoryId), publishedPostCondition(language)),
+    );
 
   return { data: result?.count ?? 0 };
 }
@@ -76,18 +81,14 @@ export async function getPostsWithTags(
   limit = 15,
   language: PublicLanguage = "zh",
 ) {
+  "use cache";
+  tagCache(cacheTags.posts, cacheTags.tags);
+
   try {
     const postsData = await readDb.query.posts.findMany({
       where: publishedPostCondition(language),
       orderBy: desc(posts.createdAt),
       limit,
-      with: {
-        tags: {
-          with: {
-            tag: true,
-          },
-        },
-      },
       columns: {
         id: true,
         title: true,
@@ -152,6 +153,9 @@ export async function searchPublishedPosts(input: {
 export async function getHomepagePostsWithTags(
   language: PublicLanguage = "zh",
 ) {
+  "use cache";
+  tagCache(cacheTags.homepage, cacheTags.posts, cacheTags.tags);
+
   try {
     const { data, error } = await getPostsWithTags(40, language);
     if (error || !data) return { data: [], error };
@@ -163,6 +167,9 @@ export async function getHomepagePostsWithTags(
 }
 
 export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
+  "use cache";
+  tagCache(cacheTags.homepage, cacheTags.sidebar, cacheTags.posts);
+
   const promotedPostsPromise = (async () => {
     try {
       return await readDb
@@ -261,8 +268,11 @@ export async function getPostByCategoryId(
 }
 
 export async function getPostBySlug(slug: string) {
+  "use cache";
+
   try {
     const decodedSlug = decodeSlug(slug);
+    tagCache(cacheTags.posts, cacheTags.postSlug(decodedSlug), cacheTags.tags);
     const [post] = await readDb
       .select({
         title: posts.title,
@@ -322,6 +332,9 @@ export async function getRecommendedPosts(
   tagId: number | null,
   currentPostId: number,
 ) {
+  "use cache";
+  tagCache(cacheTags.posts);
+
   try {
     if (!tagId) return { data: [] };
 
@@ -350,8 +363,11 @@ export async function getRecommendedPosts(
 }
 
 export async function getPostWithTagsBySlug(slug: string) {
+  "use cache";
+
   try {
     const decodedSlug = decodeSlug(slug);
+    tagCache(cacheTags.posts, cacheTags.postSlug(decodedSlug), cacheTags.tags);
     const [postRow] = await readDb
       .select({
         id: posts.id,
@@ -425,8 +441,11 @@ export async function getPostWithTagsBySlug(slug: string) {
 }
 
 export async function getEnglishPostWithTagsBySlug(slug: string) {
+  "use cache";
+
   try {
     const decodedSlug = decodeSlug(slug);
+    tagCache(cacheTags.posts, cacheTags.postSlug(decodedSlug), cacheTags.tags);
     const [englishPostRow] = await readDb
       .select({
         id: posts.id,
@@ -540,6 +559,9 @@ export async function getPostsWithTagsByCategoryId(
   pageNo: number,
   language: PublicLanguage = "zh",
 ) {
+  "use cache";
+  tagCache(cacheTags.posts, cacheTags.tags, cacheTags.category(id));
+
   try {
     const postsData = await readDb
       .select({
@@ -565,6 +587,9 @@ export async function getPostsWithTagsByCategoryId(
 }
 
 export async function getPostsByPostId(id: number) {
+  "use cache";
+  tagCache(cacheTags.posts);
+
   try {
     const [prevRows, nextRows] = await Promise.all([
       readDb
@@ -590,6 +615,9 @@ export async function getPostsByPostId(id: number) {
 export async function getLatestPostsForSidebar(
   language: PublicLanguage = "zh",
 ) {
+  "use cache";
+  tagCache(cacheTags.posts, cacheTags.sidebar);
+
   const postsData = await readDb
     .select({
       id: posts.id,

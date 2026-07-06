@@ -8,7 +8,11 @@ import { LatestPostsSidebar } from "@/features/public/components/latest-posts-si
 import PageCard from "@/features/public/components/page-card";
 import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
 import { PaginationComponent } from "@/features/shared/components/pagination";
-import { decodeSlug, parsePositiveInt } from "@fwqgo/core/utils";
+import {
+  decodeSlug,
+  jsonLdScriptContent,
+  parsePositiveInt,
+} from "@fwqgo/core/utils";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Hash } from "lucide-react";
@@ -146,7 +150,9 @@ async function TagPageContent({
     <div className="grid gap-8 xl:grid-cols-[minmax(0,0.82fr)_320px]">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }}
+        dangerouslySetInnerHTML={{
+          __html: jsonLdScriptContent(collectionJsonLd),
+        }}
       />
       <div className="space-y-5">
         {postsWithTag && <PageCard {...cardInfo} />}

@@ -34,13 +34,13 @@ async function TagListWrapper({
     <AdminPageShell
       badge="SEO / 标签"
       title="标签 SEO 管理"
-      description="控制标签聚合页是否进入 sitemap，避免低价值、临时或过细标签稀释收录质量。"
+      description="批量维护标签聚合页的中英文 SEO 字段，价格、优惠、折扣类标签默认不参与运营。"
     >
       <AdminSectionCard
         title="标签列表"
-        description="适合长尾 SEO 的标签保持收录；临时活动、过细配置和随机标签建议关闭收录。"
+        description="支持单个编辑、单个 AI 生成和选中批量 AI 生成；生成结果会写入中文 Description、Keywords、英文标签、英文 slug、英文 Description 和英文 Keywords。"
       >
-        <TagSeoTable tags={data} />
+        <TagSeoTable key={pageNo} tags={data} />
         <PaginationComponent pageNo={pageNo} totalPage={totalPage} />
       </AdminSectionCard>
     </AdminPageShell>

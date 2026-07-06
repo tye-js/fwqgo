@@ -26,7 +26,7 @@ async function ServerOffersAdminContent() {
     <AdminPageShell
       badge="服务器套餐"
       title="提取套餐数据"
-      description="从单篇文章或历史文章中提取服务器套餐。系统优先读取表格行，再回退解析正文段落。"
+      description="从单篇文章或历史文章中提取服务器套餐。只有同时识别到具体配置、价格和购买链接的行或段落才会写入套餐库，并自动连接来源文章。"
     >
       <AdminSummaryStrip
         items={[
@@ -53,7 +53,7 @@ async function ServerOffersAdminContent() {
       />
       <AdminSectionCard
         title="提取套餐数据"
-        description="推荐先选择单篇文章提取，确认效果后再批量扫描历史文章。重复套餐会自动跳过。"
+        description="推荐先选择单篇文章提取，确认效果后再批量扫描历史文章。测评文章链接后续可在套餐校正页补充，重复套餐会自动跳过。"
       >
         <ServerOfferImporter posts={importPosts} />
       </AdminSectionCard>

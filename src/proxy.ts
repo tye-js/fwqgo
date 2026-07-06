@@ -62,7 +62,11 @@ function redirectToPublic(request: NextRequest) {
 }
 
 function isPublicContentPath(pathname: string) {
-  return pathname.startsWith("/fwq") || pathname.startsWith("/go/");
+  return (
+    pathname.startsWith("/fwq") ||
+    pathname.startsWith("/en/fwq") ||
+    pathname.startsWith("/go/")
+  );
 }
 
 function getCmsBasicAuthConfig() {
@@ -205,6 +209,7 @@ export const config = {
     "/servers/:path*",
     "/settings/:path*",
     "/fwq/:path*",
+    "/en/fwq/:path*",
     "/go/:path*",
     "/api/auth/:path*",
     "/api/cms/:path*",
