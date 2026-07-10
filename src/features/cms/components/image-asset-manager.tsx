@@ -221,8 +221,17 @@ export function ImageAssetManager({
   }, [images]);
 
   function runAction(action: () => Promise<void>) {
-    startTransition(() => {
-      void action();
+    startTransition(async () => {
+      try {
+        await action();
+        router.refresh();
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? `图片操作失败：${error.message}`
+            : "图片操作失败，请稍后重试",
+        );
+      }
     });
   }
 
@@ -387,7 +396,6 @@ export function ImageAssetManager({
       delete next[image.id];
       return next;
     });
-    router.refresh();
   }
 
   function getMetadataDraft(image: ImageAssetWithReferences) {
@@ -768,14 +776,11 @@ export function ImageAssetManager({
                         type="file"
                         accept="image/*"
                         hidden
-                        onChange={(event) =>
-                          runAction(() =>
-                            handleReplaceFile(
-                              image.id,
-                              event.target.files?.[0] ?? undefined,
-                            ),
-                          )
-                        }
+                        onChange={(event) => {
+                          const file = event.currentTarget.files?.[0];
+                          event.currentTarget.value = "";
+                          runAction(() => handleReplaceFile(image.id, file));
+                        }}
                       />
                       <Button
                         type="button"
@@ -1145,14 +1150,13 @@ export function ImageAssetManager({
                             type="file"
                             accept="image/*"
                             hidden
-                            onChange={(event) =>
+                            onChange={(event) => {
+                              const file = event.currentTarget.files?.[0];
+                              event.currentTarget.value = "";
                               runAction(() =>
-                                handleReplaceFile(
-                                  image.id,
-                                  event.target.files?.[0] ?? undefined,
-                                ),
-                              )
-                            }
+                                handleReplaceFile(image.id, file),
+                              );
+                            }}
                           />
                           <Button
                             type="button"

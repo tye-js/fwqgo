@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 
@@ -163,7 +163,7 @@ export default function AffManTable({
   const [affParam, setAffParam] = useState("");
   const [affValue, setAffValue] = useState("");
   const [officialUrl, setOfficialUrl] = useState("");
-  const [isDelete, setIsDelete] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [isSave, setIsSave] = useState(false);
   const [isAdd, setIsAdd] = useState(false);
   const [isAddSave, setIsAddSave] = useState(false);
@@ -184,36 +184,7 @@ export default function AffManTable({
     return () => window.clearTimeout(timeoutId);
   }, [initialQuery, query, updateUrlQuery]);
 
-  const filteredData = useMemo(() => {
-    return data.filter((item) => {
-      const matchesFilter =
-        filter === "all" ||
-        (filter === "with-aff" && item.affUrl.trim().length > 0) ||
-        (filter === "empty-aff" && item.affUrl.trim().length === 0);
-
-      return matchesFilter;
-    });
-  }, [data, filter]);
-
-  const sortedData = useMemo(() => {
-    const [sortKey, sortDirection] = sortValue.split("-");
-    const direction = sortDirection === "asc" ? 1 : -1;
-    const result = [...filteredData];
-
-    result.sort((left, right) => {
-      if (sortKey === "name") {
-        return left.name.localeCompare(right.name) * direction;
-      }
-
-      if (sortKey === "officialUrl") {
-        return left.officialUrl.localeCompare(right.officialUrl) * direction;
-      }
-
-      return (left.id - right.id) * direction;
-    });
-
-    return result;
-  }, [filteredData, sortValue]);
+  const sortedData = data;
 
   const allFilteredSelected =
     sortedData.length > 0 &&
@@ -291,8 +262,10 @@ export default function AffManTable({
   }
 
   async function handleDelete(id: number) {
+    if (deletingId !== null) return;
+
     const provider = data.find((item) => item.id === id);
-    setIsDelete(true);
+    setDeletingId(id);
     try {
       const result = await withTimeout(
         deleteAffProvider(id),
@@ -328,7 +301,7 @@ export default function AffManTable({
           error instanceof Error ? error.message : "删除失败，请稍后重试",
       });
     } finally {
-      setIsDelete(false);
+      setDeletingId(null);
     }
   }
 
@@ -520,7 +493,9 @@ export default function AffManTable({
         actionSlot={
           <Button
             variant="destructive"
-            disabled={selectedIds.length === 0 || isBulkDeleting}
+            disabled={
+              selectedIds.length === 0 || isBulkDeleting || deletingId !== null
+            }
             onClick={handleBulkDelete}
             className="min-h-10 w-full sm:w-auto"
           >
@@ -725,7 +700,11 @@ export default function AffManTable({
                           </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button variant="destructive" size="sm">
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                disabled={deletingId !== null}
+                              >
                                 删除
                               </Button>
                             </AlertDialogTrigger>
@@ -744,9 +723,12 @@ export default function AffManTable({
                               <AlertDialogFooter>
                                 <AlertDialogCancel>取消</AlertDialogCancel>
                                 <AlertDialogAction
+                                  disabled={deletingId === item.id}
                                   onClick={() => handleDelete(item.id)}
                                 >
-                                  {isDelete ? "删除中..." : "确定删除"}
+                                  {deletingId === item.id
+                                    ? "删除中..."
+                                    : "确定删除"}
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>

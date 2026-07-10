@@ -35,16 +35,18 @@ async function AffManList({
   )
     ? searchParams.filter!
     : "all";
-  const sort = [
-    "id-desc",
-    "id-asc",
-    "name-asc",
-    "officialUrl-asc",
-  ].includes(searchParams.sort ?? "")
+  const sort = ["id-desc", "id-asc", "name-asc", "officialUrl-asc"].includes(
+    searchParams.sort ?? "",
+  )
     ? searchParams.sort!
     : "id-desc";
-  const { data } = await getAffProviderList({ page: pageNo, query });
-  const { data: postCount } = await getAffProviderCount(query);
+  const { data } = await getAffProviderList({
+    page: pageNo,
+    query,
+    filter,
+    sort,
+  });
+  const { data: postCount } = await getAffProviderCount({ query, filter });
   const totalPage = Math.ceil((postCount ?? 0) / 20);
 
   return (
