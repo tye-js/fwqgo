@@ -4,8 +4,9 @@ import { db } from "@fwqgo/db";
 import { type AffManData } from "@/types";
 import { revalidatePath } from "next/cache";
 import { affServiceProviders } from "@fwqgo/db/schema";
-import { eq, desc, inArray, count, or, ilike } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { requireAdminSession } from "@fwqgo/auth/session";
+import { ilikeContains } from "@/server/db/search";
 
 type AffProviderActionResult =
   | { data: typeof affServiceProviders.$inferSelect | undefined }
@@ -18,6 +19,13 @@ type AffProviderDeleteActionResult =
 const MAX_TEXT_LENGTH = 500;
 const MAX_NAME_LENGTH = 80;
 const MAX_PARAM_LENGTH = 80;
+
+export type AffProviderFilter = "all" | "with-aff" | "empty-aff";
+export type AffProviderSort =
+  | "id-desc"
+  | "id-asc"
+  | "name-asc"
+  | "officialUrl-asc";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -50,6 +58,70 @@ function normalizeOfficialUrl(value: string) {
 
 function normalizeAffUrl(value: string) {
   return normalizeText(value);
+}
+
+function normalizeAffProviderFilter(value: string): AffProviderFilter {
+  return value === "with-aff" || value === "empty-aff" ? value : "all";
+}
+
+function normalizeAffProviderSort(value: string): AffProviderSort {
+  return value === "id-asc" ||
+    value === "name-asc" ||
+    value === "officialUrl-asc"
+    ? value
+    : "id-desc";
+}
+
+function normalizeHostnameInput(value: string) {
+  const normalizedValue = value.trim();
+  if (!normalizedValue) return null;
+
+  try {
+    const parsedUrl = new URL(
+      /^[a-z][a-z\d+.-]*:\/\//i.test(normalizedValue)
+        ? normalizedValue
+        : `http://${normalizedValue}`,
+    );
+
+    if (!parsedUrl.hostname) return null;
+    return parsedUrl.hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    return null;
+  }
+}
+
+function getCandidateDomains(value: string) {
+  const hostname = normalizeHostnameInput(value);
+  if (!hostname?.includes(".")) return [];
+
+  const domainParts = hostname.split(".").filter(Boolean);
+  return domainParts
+    .map((_, index) => domainParts.slice(index).join("."))
+    .filter((domain) => domain.includes("."));
+}
+
+function getAffProviderWhereCondition({
+  query,
+  filter,
+}: {
+  query: string;
+  filter: AffProviderFilter;
+}) {
+  const searchCondition = query
+    ? or(
+        ilikeContains(affServiceProviders.name, query),
+        ilikeContains(affServiceProviders.officialUrl, query),
+        ilikeContains(affServiceProviders.affUrl, query),
+      )
+    : undefined;
+  const filterCondition =
+    filter === "with-aff"
+      ? sql`btrim(${affServiceProviders.affUrl}) <> ''`
+      : filter === "empty-aff"
+        ? sql`btrim(${affServiceProviders.affUrl}) = ''`
+        : undefined;
+
+  return and(searchCondition, filterCondition);
 }
 
 function validateAffProviderInput(data: Omit<AffManData, "id">) {
@@ -127,16 +199,24 @@ export async function getAffValueByHref(hostname: string) {
   try {
     await requireAdminSession();
 
-    // 生成子域名数组，但排除最后一个元素（顶级域名）
-    const domainParts = hostname.split(".");
-    const possibleDomains = domainParts
-      .map((_, index, arr) => arr.slice(index).join("."))
-      .filter((domain) => domain.includes(".")); // 确保至少包含一个点号
-    const [result] = await db
+    const possibleDomains = getCandidateDomains(hostname);
+    if (possibleDomains.length === 0) {
+      return { data: null };
+    }
+
+    const matches = await db
       .select()
       .from(affServiceProviders)
-      .where(inArray(affServiceProviders.officialUrl, possibleDomains))
-      .limit(1);
+      .where(inArray(affServiceProviders.officialUrl, possibleDomains));
+    const matchesByDomain = new Map(
+      matches.map((provider) => [
+        normalizeOfficialUrl(provider.officialUrl),
+        provider,
+      ]),
+    );
+    const result = possibleDomains
+      .map((domain) => matchesByDomain.get(domain))
+      .find((provider) => provider !== undefined);
 
     return { data: result ?? null };
   } catch (error) {
@@ -148,10 +228,14 @@ export async function getAffProviderList({
   page = 1,
   pageSize = 20,
   query = "",
+  filter = "all",
+  sort = "id-desc",
 }: {
   page?: number;
   pageSize?: number;
   query?: string;
+  filter?: string;
+  sort?: string;
 }) {
   await requireAdminSession();
 
@@ -159,49 +243,50 @@ export async function getAffProviderList({
   const normalizedPage = Number.isInteger(page) && page > 0 ? page : 1;
   const normalizedPageSize =
     Number.isInteger(pageSize) && pageSize > 0 ? Math.min(pageSize, 100) : 20;
-  const whereCondition = normalizedQuery
-    ? or(
-        ilike(affServiceProviders.name, `%${normalizedQuery}%`),
-        ilike(affServiceProviders.officialUrl, `%${normalizedQuery}%`),
-        ilike(affServiceProviders.affUrl, `%${normalizedQuery}%`),
-      )
-    : undefined;
+  const normalizedFilter = normalizeAffProviderFilter(filter);
+  const normalizedSort = normalizeAffProviderSort(sort);
+  const whereCondition = getAffProviderWhereCondition({
+    query: normalizedQuery,
+    filter: normalizedFilter,
+  });
+  const orderBy =
+    normalizedSort === "id-asc"
+      ? asc(affServiceProviders.id)
+      : normalizedSort === "name-asc"
+        ? asc(affServiceProviders.name)
+        : normalizedSort === "officialUrl-asc"
+          ? asc(affServiceProviders.officialUrl)
+          : desc(affServiceProviders.id);
 
-  const result = whereCondition
-    ? await db
-        .select()
-        .from(affServiceProviders)
-        .where(whereCondition)
-        .orderBy(desc(affServiceProviders.id))
-        .offset((normalizedPage - 1) * normalizedPageSize)
-        .limit(normalizedPageSize)
-    : await db
-        .select()
-        .from(affServiceProviders)
-        .orderBy(desc(affServiceProviders.id))
-        .offset((normalizedPage - 1) * normalizedPageSize)
-        .limit(normalizedPageSize);
+  const result = await db
+    .select()
+    .from(affServiceProviders)
+    .where(whereCondition)
+    .orderBy(orderBy)
+    .offset((normalizedPage - 1) * normalizedPageSize)
+    .limit(normalizedPageSize);
 
   return { data: result };
 }
 
-export async function getAffProviderCount(query = "") {
+export async function getAffProviderCount({
+  query = "",
+  filter = "all",
+}: {
+  query?: string;
+  filter?: string;
+} = {}) {
   await requireAdminSession();
 
   const normalizedQuery = query.trim();
-  const whereCondition = normalizedQuery
-    ? or(
-        ilike(affServiceProviders.name, `%${normalizedQuery}%`),
-        ilike(affServiceProviders.officialUrl, `%${normalizedQuery}%`),
-        ilike(affServiceProviders.affUrl, `%${normalizedQuery}%`),
-      )
-    : undefined;
-  const [result] = whereCondition
-    ? await db
-        .select({ count: count() })
-        .from(affServiceProviders)
-        .where(whereCondition)
-    : await db.select({ count: count() }).from(affServiceProviders);
+  const whereCondition = getAffProviderWhereCondition({
+    query: normalizedQuery,
+    filter: normalizeAffProviderFilter(filter),
+  });
+  const [result] = await db
+    .select({ count: count() })
+    .from(affServiceProviders)
+    .where(whereCondition);
 
   return { data: result?.count ?? 0 };
 }

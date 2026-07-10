@@ -1,13 +1,4 @@
-import {
-  and,
-  count,
-  desc,
-  eq,
-  ilike,
-  inArray,
-  or,
-  type SQL,
-} from "drizzle-orm";
+import { and, count, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { db } from "@fwqgo/db";
@@ -24,6 +15,7 @@ import {
   getAdminBackgroundWorkerRuntimeSnapshot,
 } from "@/server/admin/background-jobs";
 import { getAdminRuntimeSnapshot } from "@/server/admin/runtime-observability";
+import { ilikeContains } from "@/server/db/search";
 
 type StatusCountRow = {
   status: string;
@@ -604,10 +596,55 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
   const shouldReadAi = filters.type === "all" || filters.type === "ai";
   const shouldReadCover = filters.type === "all" || filters.type === "cover";
   const shouldReadOffer = filters.type === "all" || filters.type === "offer";
-  const queryPattern = filters.query ? `%${filters.query}%` : "";
-  const readLimit = Math.min(filters.offset + filters.pageSize + 60, 300);
+  const readLimit = filters.offset + filters.pageSize;
+  const aiWhere = andMaybe(
+    statusConditions(aiRewriteTasks.status, filters.status),
+    filters.query
+      ? or(
+          ilikeContains(aiRewriteTasks.sourceUrl, filters.query),
+          ilikeContains(aiRewriteTasks.sourceTitle, filters.query),
+          ilikeContains(aiRewriteTasks.resultTitle, filters.query),
+          ilikeContains(aiRewriteTasks.error, filters.query),
+          ilikeContains(posts.title, filters.query),
+          ilikeContains(posts.slug, filters.query),
+        )
+      : undefined,
+  );
+  const coverWhere = andMaybe(
+    statusConditions(imageCoverGenerationTasks.status, filters.status),
+    filters.query
+      ? or(
+          ilikeContains(imageCoverGenerationTasks.title, filters.query),
+          ilikeContains(imageCoverGenerationTasks.batchId, filters.query),
+          ilikeContains(imageCoverGenerationTasks.errorTitle, filters.query),
+          ilikeContains(imageCoverGenerationTasks.errorDetail, filters.query),
+          ilikeContains(posts.title, filters.query),
+          ilikeContains(posts.slug, filters.query),
+        )
+      : undefined,
+  );
+  const offerWhere = andMaybe(
+    statusConditions(serverOfferImportTasks.status, filters.status),
+    filters.query
+      ? or(
+          ilikeContains(serverOfferImportTasks.mode, filters.query),
+          ilikeContains(serverOfferImportTasks.message, filters.query),
+          ilikeContains(serverOfferImportTasks.errorTitle, filters.query),
+          ilikeContains(serverOfferImportTasks.errorDetail, filters.query),
+          ilikeContains(posts.title, filters.query),
+          ilikeContains(posts.slug, filters.query),
+        )
+      : undefined,
+  );
 
-  const [aiRows, coverRows, offerRows] = await Promise.all([
+  const [
+    aiRows,
+    coverRows,
+    offerRows,
+    aiCountRows,
+    coverCountRows,
+    offerCountRows,
+  ] = await Promise.all([
     shouldReadAi
       ? db
           .select({
@@ -631,24 +668,12 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
           })
           .from(aiRewriteTasks)
           .leftJoin(posts, eq(aiRewriteTasks.postId, posts.id))
-          .where(
-            andMaybe(
-              statusConditions(aiRewriteTasks.status, filters.status),
-              filters.query
-                ? or(
-                    ilike(aiRewriteTasks.sourceUrl, queryPattern),
-                    ilike(aiRewriteTasks.sourceTitle, queryPattern),
-                    ilike(aiRewriteTasks.resultTitle, queryPattern),
-                    ilike(aiRewriteTasks.error, queryPattern),
-                    ilike(posts.title, queryPattern),
-                    ilike(posts.slug, queryPattern),
-                  )
-                : undefined,
-            ),
-          )
+          .where(aiWhere)
           .orderBy(
-            desc(aiRewriteTasks.updatedAt),
-            desc(aiRewriteTasks.createdAt),
+            desc(
+              sql`coalesce(${aiRewriteTasks.updatedAt}, ${aiRewriteTasks.createdAt})`,
+            ),
+            desc(aiRewriteTasks.id),
           )
           .limit(readLimit)
       : [],
@@ -673,27 +698,12 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
           })
           .from(imageCoverGenerationTasks)
           .leftJoin(posts, eq(imageCoverGenerationTasks.postId, posts.id))
-          .where(
-            andMaybe(
-              statusConditions(
-                imageCoverGenerationTasks.status,
-                filters.status,
-              ),
-              filters.query
-                ? or(
-                    ilike(imageCoverGenerationTasks.title, queryPattern),
-                    ilike(imageCoverGenerationTasks.batchId, queryPattern),
-                    ilike(imageCoverGenerationTasks.errorTitle, queryPattern),
-                    ilike(imageCoverGenerationTasks.errorDetail, queryPattern),
-                    ilike(posts.title, queryPattern),
-                    ilike(posts.slug, queryPattern),
-                  )
-                : undefined,
-            ),
-          )
+          .where(coverWhere)
           .orderBy(
-            desc(imageCoverGenerationTasks.updatedAt),
-            desc(imageCoverGenerationTasks.createdAt),
+            desc(
+              sql`coalesce(${imageCoverGenerationTasks.updatedAt}, ${imageCoverGenerationTasks.createdAt})`,
+            ),
+            desc(imageCoverGenerationTasks.id),
           )
           .limit(readLimit)
       : [],
@@ -719,26 +729,35 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
           })
           .from(serverOfferImportTasks)
           .leftJoin(posts, eq(serverOfferImportTasks.postId, posts.id))
-          .where(
-            andMaybe(
-              statusConditions(serverOfferImportTasks.status, filters.status),
-              filters.query
-                ? or(
-                    ilike(serverOfferImportTasks.mode, queryPattern),
-                    ilike(serverOfferImportTasks.message, queryPattern),
-                    ilike(serverOfferImportTasks.errorTitle, queryPattern),
-                    ilike(serverOfferImportTasks.errorDetail, queryPattern),
-                    ilike(posts.title, queryPattern),
-                    ilike(posts.slug, queryPattern),
-                  )
-                : undefined,
-            ),
-          )
+          .where(offerWhere)
           .orderBy(
-            desc(serverOfferImportTasks.updatedAt),
-            desc(serverOfferImportTasks.createdAt),
+            desc(
+              sql`coalesce(${serverOfferImportTasks.updatedAt}, ${serverOfferImportTasks.createdAt})`,
+            ),
+            desc(serverOfferImportTasks.id),
           )
           .limit(readLimit)
+      : [],
+    shouldReadAi
+      ? db
+          .select({ value: count() })
+          .from(aiRewriteTasks)
+          .leftJoin(posts, eq(aiRewriteTasks.postId, posts.id))
+          .where(aiWhere)
+      : [],
+    shouldReadCover
+      ? db
+          .select({ value: count() })
+          .from(imageCoverGenerationTasks)
+          .leftJoin(posts, eq(imageCoverGenerationTasks.postId, posts.id))
+          .where(coverWhere)
+      : [],
+    shouldReadOffer
+      ? db
+          .select({ value: count() })
+          .from(serverOfferImportTasks)
+          .leftJoin(posts, eq(serverOfferImportTasks.postId, posts.id))
+          .where(offerWhere)
       : [],
   ]);
 
@@ -822,11 +841,15 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
       (Number.isNaN(leftTime) ? 0 : leftTime)
     );
   });
+  const totalCount =
+    (aiCountRows[0]?.value ?? 0) +
+    (coverCountRows[0]?.value ?? 0) +
+    (offerCountRows[0]?.value ?? 0);
 
   return {
     filters,
-    totalCount: items.length,
-    totalPage: Math.max(1, Math.ceil(items.length / filters.pageSize)),
+    totalCount,
+    totalPage: Math.max(1, Math.ceil(totalCount / filters.pageSize)),
     items: items.slice(filters.offset, filters.offset + filters.pageSize),
   };
 }
