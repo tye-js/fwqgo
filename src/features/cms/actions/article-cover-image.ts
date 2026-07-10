@@ -10,6 +10,7 @@ import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { db } from "@fwqgo/db";
 import { imageCoverGenerationTasks, posts } from "@fwqgo/db/schema";
 import { generateArticleCoverImage } from "@/server/images/generated-cover";
+import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import {
   ensureCoverGenerationWorker,
@@ -55,6 +56,19 @@ type EphemeralCoverTask = {
 
 const ephemeralCoverBatches = new Map<string, EphemeralCoverTask[]>();
 const MAX_EPHEMERAL_COVER_BATCHES = 30;
+
+async function requireActiveImageConfig(configId?: number) {
+  const config = await getActiveImageGenerationConfig(configId);
+  if (!config) {
+    throw new Error(
+      configId
+        ? `指定的生图配置 #${configId} 不存在或已停用`
+        : "当前没有已启用的默认生图配置",
+    );
+  }
+
+  return config;
+}
 
 function serializeEphemeralCoverTask(task: EphemeralCoverTask) {
   return {
@@ -180,6 +194,8 @@ export async function generateArticleCoverImageAction(input: {
   try {
     const session = await requireAdminSession();
     const payload = coverSchema.parse(input);
+    const imageConfig = await requireActiveImageConfig(payload.configId);
+    const boundPayload = { ...payload, configId: imageConfig.id };
 
     if (payload.postId) {
       const [post] = await db
@@ -203,6 +219,10 @@ export async function generateArticleCoverImageAction(input: {
           batchId,
           postId: post.id,
           title: post.title,
+          configId: imageConfig.id,
+          configName: imageConfig.name,
+          provider: imageConfig.provider,
+          model: imageConfig.model,
           status: "pending",
           createdBy: session.userId,
         })
@@ -247,7 +267,7 @@ export async function generateArticleCoverImageAction(input: {
       label: `Article cover generation: ${payload.title}`,
       maxAttempts: 1,
       run: () =>
-        runEphemeralCoverGenerationTask(batchId, payload, session.userId),
+        runEphemeralCoverGenerationTask(batchId, boundPayload, session.userId),
     });
 
     return {
@@ -274,6 +294,7 @@ export async function batchGenerateArticleCoverImagesAction(input: {
   try {
     const session = await requireAdminSession();
     const payload = batchCoverSchema.parse(input);
+    const imageConfig = await requireActiveImageConfig();
     const uniquePostIds = [...new Set(payload.postIds)];
     const postRows = await db
       .select({
@@ -303,6 +324,10 @@ export async function batchGenerateArticleCoverImagesAction(input: {
           batchId,
           postId: post.id,
           title: post.title,
+          configId: imageConfig.id,
+          configName: imageConfig.name,
+          provider: imageConfig.provider,
+          model: imageConfig.model,
           status: "pending",
           createdBy: session.userId,
         })),

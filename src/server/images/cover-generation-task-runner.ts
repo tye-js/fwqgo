@@ -5,6 +5,7 @@ import { imageCoverGenerationTasks, posts } from "@fwqgo/db/schema";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import { generateArticleCoverImage } from "@/server/images/generated-cover";
+import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
 
 export type CoverTaskStatus =
   | "pending"
@@ -50,6 +51,10 @@ export function serializeCoverTask(task: CoverTaskRow) {
     batchId: task.batchId,
     postId: task.postId,
     title: task.title,
+    configId: task.configId ?? undefined,
+    configName: task.configName ?? undefined,
+    provider: task.provider ?? undefined,
+    model: task.model ?? undefined,
     status,
     success: status === "succeeded",
     url: task.outputUrl ?? undefined,
@@ -64,6 +69,42 @@ export function serializeCoverTask(task: CoverTaskRow) {
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt?.toISOString() ?? null,
   };
+}
+
+async function bindCoverTaskConfig(task: CoverTaskRow) {
+  const config = task.configId
+    ? await getActiveImageGenerationConfig(task.configId)
+    : task.configName || task.provider || task.model
+      ? null
+      : await getActiveImageGenerationConfig();
+
+  if (!config) {
+    throw new Error(
+      task.configId
+        ? `任务绑定的生图配置 #${task.configId} 已停用或不存在，请启用原配置后重试`
+        : task.configName || task.provider || task.model
+          ? "任务绑定的生图配置已被删除，请重新创建任务"
+          : "当前没有已启用的默认生图配置",
+    );
+  }
+
+  const [boundTask] = await db
+    .update(imageCoverGenerationTasks)
+    .set({
+      configId: config.id,
+      configName: config.name,
+      provider: config.provider,
+      model: config.model,
+      updatedAt: new Date(),
+    })
+    .where(eq(imageCoverGenerationTasks.id, task.id))
+    .returning();
+
+  if (!boundTask) {
+    throw new Error("封面生成任务配置绑定失败");
+  }
+
+  return boundTask;
 }
 
 async function resetStaleRunningCoverTasks() {
@@ -123,6 +164,7 @@ async function getNextPendingCoverTask() {
 }
 
 async function processCoverGenerationTask(task: CoverTaskRow) {
+  const boundTask = await bindCoverTaskConfig(task);
   const [post] = await db
     .select({
       id: posts.id,
@@ -149,7 +191,8 @@ async function processCoverGenerationTask(task: CoverTaskRow) {
     content: post.content,
     fileSlug: post.slug,
     language: post.language === "en" ? "en" : "zh",
-    uploadedBy: task.createdBy,
+    configId: boundTask.configId ?? undefined,
+    uploadedBy: boundTask.createdBy,
   });
 
   const [updatedPost] = await db
@@ -182,7 +225,7 @@ async function processCoverGenerationTask(task: CoverTaskRow) {
       finishedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(imageCoverGenerationTasks.id, task.id));
+    .where(eq(imageCoverGenerationTasks.id, boundTask.id));
 }
 
 async function runCoverGenerationWorker() {

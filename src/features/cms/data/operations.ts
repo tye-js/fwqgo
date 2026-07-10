@@ -844,6 +844,10 @@ export async function getCoverTaskDetail(taskId: number) {
       batchId: imageCoverGenerationTasks.batchId,
       postId: imageCoverGenerationTasks.postId,
       title: imageCoverGenerationTasks.title,
+      configId: imageCoverGenerationTasks.configId,
+      configName: imageCoverGenerationTasks.configName,
+      provider: imageCoverGenerationTasks.provider,
+      model: imageCoverGenerationTasks.model,
       status: imageCoverGenerationTasks.status,
       outputUrl: imageCoverGenerationTasks.outputUrl,
       errorTitle: imageCoverGenerationTasks.errorTitle,
@@ -896,6 +900,15 @@ export async function getCoverTaskDetail(taskId: number) {
           ? "等待封面生成 worker 领取"
           : "已离开排队状态",
       time: serializeDate(task.updatedAt ?? task.createdAt),
+    },
+    {
+      key: "config",
+      name: "绑定生图配置",
+      status: task.configId ? "success" : "pending",
+      description: task.configId
+        ? `${task.configName ?? `配置 #${task.configId}`} / ${task.model ?? "未记录模型"}`
+        : "等待 worker 为旧任务绑定当前默认配置",
+      time: serializeDate(task.startedAt ?? task.updatedAt),
     },
     {
       key: "generate",

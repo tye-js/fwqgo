@@ -381,11 +381,23 @@ function ConfigForm({
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap gap-5">
           <label className="flex items-center gap-2 text-sm">
-            <Switch checked={enabled} onCheckedChange={setEnabled} />
+            <Switch
+              checked={enabled}
+              onCheckedChange={(checked) => {
+                setEnabled(checked);
+                if (!checked) setIsDefault(false);
+              }}
+            />
             启用
           </label>
           <label className="flex items-center gap-2 text-sm">
-            <Switch checked={isDefault} onCheckedChange={setIsDefault} />
+            <Switch
+              checked={isDefault}
+              onCheckedChange={(checked) => {
+                setIsDefault(checked);
+                if (checked) setEnabled(true);
+              }}
+            />
             默认改写配置
           </label>
         </div>

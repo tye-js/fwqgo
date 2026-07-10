@@ -47,6 +47,7 @@ import {
   getAiRewriteContentLimit,
 } from "@fwqgo/ai/article-rewriter";
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
+import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
 import { shortenMarkdownOutboundLinks } from "@/server/links/outbound-short-link";
 
 const runningTaskIds = new Set<number>();
@@ -281,6 +282,70 @@ async function getTaskAiInputMaxLength(styleId?: number | null) {
     : MAX_AI_MARKDOWN_INPUT_LENGTH;
 }
 
+async function bindTaskConfigs(task: typeof aiRewriteTasks.$inferSelect) {
+  const rewriteConfig = task.rewriteStyleId
+    ? await getActiveAiRewriteConfig(task.rewriteStyleId)
+    : task.rewriteConfigName || task.rewriteProvider || task.rewriteModel
+      ? null
+      : await getActiveAiRewriteConfig();
+
+  if (!rewriteConfig) {
+    throw new Error(
+      task.rewriteStyleId
+        ? `任务绑定的 AI 改写配置 #${task.rewriteStyleId} 已停用或不存在，请启用原配置后重试`
+        : task.rewriteConfigName || task.rewriteProvider || task.rewriteModel
+          ? "任务绑定的 AI 改写配置已被删除，请重新创建任务"
+          : "当前没有可用的默认 AI 改写配置",
+    );
+  }
+
+  const needsImageConfig = task.sourceType !== "seo";
+  const imageConfig = !needsImageConfig
+    ? null
+    : task.imageConfigId
+      ? await getActiveImageGenerationConfig(task.imageConfigId)
+      : task.imageConfigName || task.imageProvider || task.imageModel
+        ? null
+        : await getActiveImageGenerationConfig();
+
+  if (
+    needsImageConfig &&
+    !imageConfig &&
+    (task.imageConfigId ||
+      task.imageConfigName ||
+      task.imageProvider ||
+      task.imageModel)
+  ) {
+    throw new Error(
+      task.imageConfigId
+        ? `任务绑定的生图配置 #${task.imageConfigId} 已停用或不存在，请启用原配置后重试`
+        : "任务绑定的生图配置已被删除，请重新创建任务",
+    );
+  }
+
+  const [boundTask] = await db
+    .update(aiRewriteTasks)
+    .set({
+      rewriteStyleId: rewriteConfig.id,
+      rewriteConfigName: rewriteConfig.name,
+      rewriteProvider: rewriteConfig.provider,
+      rewriteModel: rewriteConfig.model,
+      imageConfigId: imageConfig?.id ?? null,
+      imageConfigName: imageConfig?.name ?? null,
+      imageProvider: imageConfig?.provider ?? null,
+      imageModel: imageConfig?.model ?? null,
+      updatedAt: new Date(),
+    })
+    .where(eq(aiRewriteTasks.id, task.id))
+    .returning();
+
+  if (!boundTask) {
+    throw new Error("AI 任务配置绑定失败");
+  }
+
+  return boundTask;
+}
+
 async function getUniqueEnglishArticleSlug(
   baseSlug: string,
   excludePostId?: number,
@@ -350,6 +415,14 @@ async function createEnglishSeoTask(input: {
         sourceContent: sourceSnapshot,
         resultTitle: input.post.title,
         scrapedHtml: sourceSnapshot,
+        rewriteStyleId: input.parentTask.rewriteStyleId,
+        rewriteConfigName: input.parentTask.rewriteConfigName,
+        rewriteProvider: input.parentTask.rewriteProvider,
+        rewriteModel: input.parentTask.rewriteModel,
+        imageConfigId: input.parentTask.imageConfigId,
+        imageConfigName: input.parentTask.imageConfigName,
+        imageProvider: input.parentTask.imageProvider,
+        imageModel: input.parentTask.imageModel,
         aiInputLength: null,
         rewriteOutputLength: null,
         startedAt: null,
@@ -374,6 +447,13 @@ async function createEnglishSeoTask(input: {
       currentStep: "等待翻译中文改写正文并生成英文 SEO",
       categoryId: input.parentTask.categoryId,
       rewriteStyleId: input.parentTask.rewriteStyleId,
+      rewriteConfigName: input.parentTask.rewriteConfigName,
+      rewriteProvider: input.parentTask.rewriteProvider,
+      rewriteModel: input.parentTask.rewriteModel,
+      imageConfigId: input.parentTask.imageConfigId,
+      imageConfigName: input.parentTask.imageConfigName,
+      imageProvider: input.parentTask.imageProvider,
+      imageModel: input.parentTask.imageModel,
       postId: input.post.id,
       resultTitle: input.post.title,
       scrapedHtml: sourceSnapshot,
@@ -527,8 +607,22 @@ async function generateCoverForDraftPost(input: {
   progress: number;
   postId: number;
   language: "zh" | "en";
+  configId?: number | null;
   force?: boolean;
 }) {
+  if (!input.configId) {
+    await upsertTaskStep({
+      taskId: input.taskId,
+      attempt: input.attempt,
+      stepKey: input.stepKey,
+      stepName: input.stepName,
+      status: "skipped",
+      progress: input.progress,
+      message: "任务创建时没有可用的生图配置，已跳过自动封面",
+    });
+    return { status: "skipped" as const, url: null };
+  }
+
   const [post] = await db
     .select({
       id: posts.id,
@@ -577,6 +671,7 @@ async function generateCoverForDraftPost(input: {
     content: post.content,
     fileSlug: post.slug,
     language: input.language,
+    configId: input.configId ?? undefined,
     uploadedBy: null,
   };
   let requestPreview: Awaited<
@@ -1009,6 +1104,7 @@ async function runEnglishSeoTask(
       progress: 92,
       postId: englishPost.id,
       language: "en",
+      configId: claimedTask.imageConfigId,
       force: shouldForceEnglishCoverGeneration({
         englishImgUrl: englishPost.imgUrl,
         parentImgUrl: post.imgUrl,
@@ -1449,7 +1545,7 @@ export async function runAiRewriteTask(taskId: number) {
   }
 
   try {
-    const [claimedTask] = await db
+    let [claimedTask] = await db
       .update(aiRewriteTasks)
       .set({
         status: "running",
@@ -1470,6 +1566,45 @@ export async function runAiRewriteTask(taskId: number) {
       .returning();
 
     if (!claimedTask) {
+      return;
+    }
+
+    try {
+      claimedTask = await bindTaskConfigs(claimedTask);
+      await upsertTaskStep({
+        taskId: claimedTask.id,
+        attempt: claimedTask.attempts,
+        stepKey: "config_bind",
+        stepName: "绑定 AI 配置",
+        status: "success",
+        progress: 10,
+        message: claimedTask.imageConfigId
+          ? `改写：${claimedTask.rewriteConfigName ?? `#${claimedTask.rewriteStyleId}`}；生图：${claimedTask.imageConfigName ?? `#${claimedTask.imageConfigId}`}`
+          : `改写：${claimedTask.rewriteConfigName ?? `#${claimedTask.rewriteStyleId}`}；未配置自动生图`,
+        payload: {
+          rewrite: {
+            id: claimedTask.rewriteStyleId,
+            name: claimedTask.rewriteConfigName,
+            provider: claimedTask.rewriteProvider,
+            model: claimedTask.rewriteModel,
+          },
+          image: claimedTask.imageConfigId
+            ? {
+                id: claimedTask.imageConfigId,
+                name: claimedTask.imageConfigName,
+                provider: claimedTask.imageProvider,
+                model: claimedTask.imageModel,
+              }
+            : null,
+        },
+      });
+    } catch (error) {
+      await failTask(claimedTask, error, {
+        key: "config_bind",
+        name: "绑定 AI 配置",
+        attempt: claimedTask.attempts,
+        progress: 10,
+      });
       return;
     }
 
@@ -1670,6 +1805,7 @@ export async function runAiRewriteTask(taskId: number) {
         progress: 91,
         postId: post.id,
         language: "zh",
+        configId: claimedTask.imageConfigId,
       });
 
       await upsertTaskStep({

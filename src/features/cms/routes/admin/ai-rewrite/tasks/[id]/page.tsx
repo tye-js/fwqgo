@@ -735,7 +735,13 @@ export async function AiRewriteTaskDetailPageContent({
       <div className="grid gap-4 md:grid-cols-4 xl:grid-cols-6">
         <Stat label="状态" value={statusLabels[task.status] ?? task.status} />
         <Stat label="尝试次数" value={task.attempts} />
+        <Stat label="改写配置" value={task.rewriteStyleName ?? "-"} />
         <Stat label="模型" value={task.model ?? "-"} />
+        <Stat
+          label="生图配置"
+          value={task.imageConfigName ?? "未绑定 / 已跳过"}
+        />
+        <Stat label="生图模型" value={task.imageModel ?? "-"} />
         <Stat label="Max Tokens" value={formatMaybeNumber(task.maxTokens)} />
         <Stat
           label="AI 输入长度"

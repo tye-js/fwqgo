@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import { db } from "@fwqgo/db";
 import { imageGenerationConfigs } from "@fwqgo/db/schema";
@@ -26,6 +26,10 @@ export type ImageGenerationConfigInput = {
   isDefault: boolean;
 };
 
+type ConfigTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+const IMAGE_GENERATION_DEFAULT_LOCK_ID = 9_021_002;
+
 function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.trim().replace(/\/+$/, "");
 }
@@ -36,11 +40,46 @@ function maskApiKey(apiKey: string | null) {
   return `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`;
 }
 
-async function unsetOtherDefaults() {
-  await db
+async function lockDefaultSelection(tx: ConfigTransaction) {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(${IMAGE_GENERATION_DEFAULT_LOCK_ID})`,
+  );
+}
+
+async function unsetOtherDefaults(tx: ConfigTransaction) {
+  await tx
     .update(imageGenerationConfigs)
     .set({ isDefault: false, updatedAt: new Date() })
     .where(eq(imageGenerationConfigs.isDefault, true));
+}
+
+async function ensureEnabledDefault(tx: ConfigTransaction) {
+  const [currentDefault] = await tx
+    .select({ id: imageGenerationConfigs.id })
+    .from(imageGenerationConfigs)
+    .where(
+      and(
+        eq(imageGenerationConfigs.enabled, true),
+        eq(imageGenerationConfigs.isDefault, true),
+      ),
+    )
+    .limit(1);
+
+  if (currentDefault) return;
+
+  const [fallback] = await tx
+    .select({ id: imageGenerationConfigs.id })
+    .from(imageGenerationConfigs)
+    .where(eq(imageGenerationConfigs.enabled, true))
+    .orderBy(desc(imageGenerationConfigs.id))
+    .limit(1);
+
+  if (fallback) {
+    await tx
+      .update(imageGenerationConfigs)
+      .set({ isDefault: true, updatedAt: new Date() })
+      .where(eq(imageGenerationConfigs.id, fallback.id));
+  }
 }
 
 export async function getImageGenerationConfigs() {
@@ -94,28 +133,36 @@ export async function getActiveImageGenerationConfig(configId?: number) {
 export async function createImageGenerationConfig(
   input: ImageGenerationConfigInput,
 ) {
-  if (input.isDefault) {
-    await unsetOtherDefaults();
+  if (input.isDefault && !input.enabled) {
+    throw new Error("默认生图配置必须同时启用");
   }
 
-  const [created] = await db
-    .insert(imageGenerationConfigs)
-    .values({
-      ...input,
-      baseUrl: normalizeBaseUrl(input.baseUrl),
-      apiKey: input.apiKey?.trim() ? input.apiKey.trim() : null,
-    })
-    .returning({ id: imageGenerationConfigs.id });
+  return db.transaction(async (tx) => {
+    await lockDefaultSelection(tx);
+    if (input.isDefault) {
+      await unsetOtherDefaults(tx);
+    }
 
-  return created;
+    const [created] = await tx
+      .insert(imageGenerationConfigs)
+      .values({
+        ...input,
+        baseUrl: normalizeBaseUrl(input.baseUrl),
+        apiKey: input.apiKey?.trim() ? input.apiKey.trim() : null,
+      })
+      .returning({ id: imageGenerationConfigs.id });
+
+    await ensureEnabledDefault(tx);
+    return created;
+  });
 }
 
 export async function updateImageGenerationConfig(
   id: number,
   input: ImageGenerationConfigInput,
 ) {
-  if (input.isDefault) {
-    await unsetOtherDefaults();
+  if (input.isDefault && !input.enabled) {
+    throw new Error("默认生图配置必须同时启用");
   }
 
   const values: Partial<typeof imageGenerationConfigs.$inferInsert> = {
@@ -136,17 +183,29 @@ export async function updateImageGenerationConfig(
     values.apiKey = input.apiKey.trim();
   }
 
-  const [updated] = await db
-    .update(imageGenerationConfigs)
-    .set(values)
-    .where(eq(imageGenerationConfigs.id, id))
-    .returning({ id: imageGenerationConfigs.id });
+  return db.transaction(async (tx) => {
+    await lockDefaultSelection(tx);
+    if (input.isDefault) {
+      await unsetOtherDefaults(tx);
+    }
 
-  return updated;
+    const [updated] = await tx
+      .update(imageGenerationConfigs)
+      .set(values)
+      .where(eq(imageGenerationConfigs.id, id))
+      .returning({ id: imageGenerationConfigs.id });
+
+    await ensureEnabledDefault(tx);
+    return updated;
+  });
 }
 
 export async function deleteImageGenerationConfig(id: number) {
-  await db
-    .delete(imageGenerationConfigs)
-    .where(eq(imageGenerationConfigs.id, id));
+  await db.transaction(async (tx) => {
+    await lockDefaultSelection(tx);
+    await tx
+      .delete(imageGenerationConfigs)
+      .where(eq(imageGenerationConfigs.id, id));
+    await ensureEnabledDefault(tx);
+  });
 }
