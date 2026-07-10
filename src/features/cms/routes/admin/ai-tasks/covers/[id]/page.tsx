@@ -98,13 +98,18 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
         </div>
       }
     >
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
         <UnifiedTaskStat
           label="状态"
           value={statusLabels[task.status] ?? task.status}
         />
         <UnifiedTaskStat label="批次" value={task.batchId} />
         <UnifiedTaskStat label="文章 ID" value={task.postId} />
+        <UnifiedTaskStat
+          label="生图配置"
+          value={task.configName ?? (task.configId ? `#${task.configId}` : "-")}
+        />
+        <UnifiedTaskStat label="模型" value={task.model ?? "-"} />
         <UnifiedTaskStat
           label="更新时间"
           value={formatUnifiedTaskTime(task.updatedAt ?? task.createdAt)}

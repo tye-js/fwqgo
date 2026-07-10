@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import { db } from "@fwqgo/db";
 import { aiRewriteConfigs } from "@fwqgo/db/schema";
@@ -33,6 +33,10 @@ export type AiRewriteConfigInput = {
 };
 
 export type AiRewriteConfig = Awaited<ReturnType<typeof getAiRewriteConfigs>>[number];
+
+type ConfigTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+const AI_REWRITE_DEFAULT_LOCK_ID = 9_021_001;
 
 function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.trim().replace(/\/+$/, "");
@@ -133,41 +137,84 @@ export async function getAiRewriteConfigForStatusCheck(id: number) {
     : null;
 }
 
-async function unsetOtherDefaults() {
-  await db
+async function lockDefaultSelection(tx: ConfigTransaction) {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(${AI_REWRITE_DEFAULT_LOCK_ID})`,
+  );
+}
+
+async function unsetOtherDefaults(tx: ConfigTransaction) {
+  await tx
     .update(aiRewriteConfigs)
     .set({ isDefault: false, updatedAt: new Date() })
     .where(eq(aiRewriteConfigs.isDefault, true));
 }
 
+async function ensureEnabledDefault(tx: ConfigTransaction) {
+  const [currentDefault] = await tx
+    .select({ id: aiRewriteConfigs.id })
+    .from(aiRewriteConfigs)
+    .where(
+      and(
+        eq(aiRewriteConfigs.enabled, true),
+        eq(aiRewriteConfigs.isDefault, true),
+      ),
+    )
+    .limit(1);
+
+  if (currentDefault) return;
+
+  const [fallback] = await tx
+    .select({ id: aiRewriteConfigs.id })
+    .from(aiRewriteConfigs)
+    .where(eq(aiRewriteConfigs.enabled, true))
+    .orderBy(desc(aiRewriteConfigs.id))
+    .limit(1);
+
+  if (fallback) {
+    await tx
+      .update(aiRewriteConfigs)
+      .set({ isDefault: true, updatedAt: new Date() })
+      .where(eq(aiRewriteConfigs.id, fallback.id));
+  }
+}
+
 export async function createAiRewriteConfig(input: AiRewriteConfigInput) {
-  if (input.isDefault) {
-    await unsetOtherDefaults();
+  if (input.isDefault && !input.enabled) {
+    throw new Error("默认 AI 改写配置必须同时启用");
   }
 
-  const [created] = await db
-    .insert(aiRewriteConfigs)
-    .values({
-      ...input,
-      baseUrl: normalizeBaseUrl(input.baseUrl),
-      apiKey: input.apiKey?.trim() ? input.apiKey.trim() : null,
-      basePrompt: input.basePrompt,
-      metadataPrompt: input.metadataPrompt,
-      metadataStylePrompt: input.metadataStylePrompt,
-      englishStylePrompt: input.englishStylePrompt,
-      englishMetadataStylePrompt: input.englishMetadataStylePrompt,
-    })
-    .returning({ id: aiRewriteConfigs.id });
+  return db.transaction(async (tx) => {
+    await lockDefaultSelection(tx);
+    if (input.isDefault) {
+      await unsetOtherDefaults(tx);
+    }
 
-  return created;
+    const [created] = await tx
+      .insert(aiRewriteConfigs)
+      .values({
+        ...input,
+        baseUrl: normalizeBaseUrl(input.baseUrl),
+        apiKey: input.apiKey?.trim() ? input.apiKey.trim() : null,
+        basePrompt: input.basePrompt,
+        metadataPrompt: input.metadataPrompt,
+        metadataStylePrompt: input.metadataStylePrompt,
+        englishStylePrompt: input.englishStylePrompt,
+        englishMetadataStylePrompt: input.englishMetadataStylePrompt,
+      })
+      .returning({ id: aiRewriteConfigs.id });
+
+    await ensureEnabledDefault(tx);
+    return created;
+  });
 }
 
 export async function updateAiRewriteConfig(
   id: number,
   input: AiRewriteConfigInput,
 ) {
-  if (input.isDefault) {
-    await unsetOtherDefaults();
+  if (input.isDefault && !input.enabled) {
+    throw new Error("默认 AI 改写配置必须同时启用");
   }
 
   const values: Partial<typeof aiRewriteConfigs.$inferInsert> = {
@@ -193,15 +240,27 @@ export async function updateAiRewriteConfig(
     values.apiKey = input.apiKey.trim();
   }
 
-  const [updated] = await db
-    .update(aiRewriteConfigs)
-    .set(values)
-    .where(eq(aiRewriteConfigs.id, id))
-    .returning({ id: aiRewriteConfigs.id });
+  return db.transaction(async (tx) => {
+    await lockDefaultSelection(tx);
+    if (input.isDefault) {
+      await unsetOtherDefaults(tx);
+    }
 
-  return updated;
+    const [updated] = await tx
+      .update(aiRewriteConfigs)
+      .set(values)
+      .where(eq(aiRewriteConfigs.id, id))
+      .returning({ id: aiRewriteConfigs.id });
+
+    await ensureEnabledDefault(tx);
+    return updated;
+  });
 }
 
 export async function deleteAiRewriteConfig(id: number) {
-  await db.delete(aiRewriteConfigs).where(eq(aiRewriteConfigs.id, id));
+  await db.transaction(async (tx) => {
+    await lockDefaultSelection(tx);
+    await tx.delete(aiRewriteConfigs).where(eq(aiRewriteConfigs.id, id));
+    await ensureEnabledDefault(tx);
+  });
 }

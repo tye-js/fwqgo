@@ -14,6 +14,7 @@ import {
   foreignKey,
   bigint,
   numeric,
+  check,
 } from "drizzle-orm/pg-core";
 
 // Post table
@@ -440,6 +441,13 @@ export const aiRewriteConfigs = pgTable(
     providerIdx: index("ai_rewrite_configs_provider_idx").on(table.provider),
     enabledIdx: index("ai_rewrite_configs_enabled_idx").on(table.enabled),
     defaultIdx: index("ai_rewrite_configs_isDefault_idx").on(table.isDefault),
+    singleDefault: uniqueIndex("ai_rewrite_configs_single_default_unique")
+      .on(table.isDefault)
+      .where(sql`${table.isDefault} = true`),
+    defaultRequiresEnabled: check(
+      "ai_rewrite_configs_default_requires_enabled",
+      sql`NOT ${table.isDefault} OR ${table.enabled}`,
+    ),
   }),
 );
 
@@ -509,6 +517,13 @@ export const aiRewriteTasks = pgTable(
     error: text("error"),
     categoryId: integer("categoryId").notNull(),
     rewriteStyleId: integer("rewriteStyleId"),
+    rewriteConfigName: text("rewriteConfigName"),
+    rewriteProvider: varchar("rewriteProvider", { length: 40 }),
+    rewriteModel: text("rewriteModel"),
+    imageConfigId: integer("imageConfigId"),
+    imageConfigName: text("imageConfigName"),
+    imageProvider: varchar("imageProvider", { length: 40 }),
+    imageModel: text("imageModel"),
     postId: integer("postId"),
     resultTitle: text("resultTitle"),
     scrapedTitle: text("scrapedTitle"),
@@ -530,6 +545,9 @@ export const aiRewriteTasks = pgTable(
     statusIdx: index("ai_rewrite_tasks_status_idx").on(table.status),
     createdAtIdx: index("ai_rewrite_tasks_createdAt_idx").on(table.createdAt),
     postIdx: index("ai_rewrite_tasks_postId_idx").on(table.postId),
+    imageConfigIdx: index("ai_rewrite_tasks_imageConfigId_idx").on(
+      table.imageConfigId,
+    ),
     statusCreatedAtIdx: index("ai_rewrite_tasks_status_createdAt_idx").on(
       table.status,
       table.createdAt,
@@ -664,6 +682,13 @@ export const imageGenerationConfigs = pgTable(
     defaultIdx: index("image_generation_configs_isDefault_idx").on(
       table.isDefault,
     ),
+    singleDefault: uniqueIndex("image_generation_configs_single_default_unique")
+      .on(table.isDefault)
+      .where(sql`${table.isDefault} = true`),
+    defaultRequiresEnabled: check(
+      "image_generation_configs_default_requires_enabled",
+      sql`NOT ${table.isDefault} OR ${table.enabled}`,
+    ),
   }),
 );
 
@@ -674,6 +699,10 @@ export const imageCoverGenerationTasks = pgTable(
     batchId: varchar("batchId", { length: 64 }).notNull(),
     postId: integer("postId").notNull(),
     title: text("title").notNull(),
+    configId: integer("configId"),
+    configName: text("configName"),
+    provider: varchar("provider", { length: 40 }),
+    model: text("model"),
     status: varchar("status", { length: 24 }).default("pending").notNull(),
     outputUrl: text("outputUrl"),
     assetId: integer("assetId"),
@@ -693,6 +722,9 @@ export const imageCoverGenerationTasks = pgTable(
       table.status,
     ),
     postIdx: index("image_cover_generation_tasks_postId_idx").on(table.postId),
+    configIdx: index("image_cover_generation_tasks_configId_idx").on(
+      table.configId,
+    ),
     postFk: foreignKey({
       columns: [table.postId],
       foreignColumns: [posts.id],
@@ -702,6 +734,11 @@ export const imageCoverGenerationTasks = pgTable(
       columns: [table.assetId],
       foreignColumns: [imageAssets.id],
       name: "image_cover_generation_tasks_assetId_image_assets_id_fk",
+    }).onDelete("set null"),
+    configFk: foreignKey({
+      columns: [table.configId],
+      foreignColumns: [imageGenerationConfigs.id],
+      name: "image_cover_generation_tasks_configId_image_generation_configs_id_fk",
     }).onDelete("set null"),
     creatorFk: foreignKey({
       columns: [table.createdBy],

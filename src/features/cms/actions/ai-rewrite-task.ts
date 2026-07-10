@@ -18,7 +18,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
+import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import { enqueueAiRewriteTask } from "@fwqgo/ai/rewrite-task-runner";
+import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
 import { db } from "@fwqgo/db";
 import {
   aiRewriteConfigs,
@@ -213,16 +215,11 @@ async function validateCategoryAndStyle(input: {
     return "分类不存在";
   }
 
-  if (input.rewriteStyleId) {
-    const [style] = await db
-      .select({ id: aiRewriteConfigs.id })
-      .from(aiRewriteConfigs)
-      .where(eq(aiRewriteConfigs.id, input.rewriteStyleId))
-      .limit(1);
-
-    if (!style) {
-      return "AI 改写配置不存在";
-    }
+  const config = await getActiveAiRewriteConfig(input.rewriteStyleId);
+  if (!config) {
+    return input.rewriteStyleId
+      ? "指定的 AI 改写配置不存在或已停用"
+      : "当前没有已启用的 AI 改写配置";
   }
 
   return null;
@@ -241,6 +238,18 @@ async function createSourceMaterialAndTask(input: {
   createdBy?: string | null;
   currentStep: string;
 }) {
+  const rewriteConfig = await getActiveAiRewriteConfig(
+    input.rewriteStyleId ?? undefined,
+  );
+  if (!rewriteConfig) {
+    throw new Error(
+      input.rewriteStyleId
+        ? "指定的 AI 改写配置不存在或已停用"
+        : "当前没有已启用的 AI 改写配置",
+    );
+  }
+  const imageConfig = await getActiveImageGenerationConfig();
+
   return db.transaction(async (tx) => {
     const [material] = await tx
       .insert(sourceMaterials)
@@ -253,7 +262,7 @@ async function createSourceMaterialAndTask(input: {
         mime: input.sourceFileType ?? null,
         size: input.sourceFileSize ?? null,
         categoryId: input.categoryId,
-        rewriteStyleId: input.rewriteStyleId ?? null,
+        rewriteStyleId: rewriteConfig.id,
         status: "queued",
         createdBy: input.createdBy ?? null,
       })
@@ -273,7 +282,14 @@ async function createSourceMaterialAndTask(input: {
         sourceContent: input.sourceContent ?? null,
         sourceFileName: input.sourceFileName ?? null,
         categoryId: input.categoryId,
-        rewriteStyleId: input.rewriteStyleId ?? null,
+        rewriteStyleId: rewriteConfig.id,
+        rewriteConfigName: rewriteConfig.name,
+        rewriteProvider: rewriteConfig.provider,
+        rewriteModel: rewriteConfig.model,
+        imageConfigId: imageConfig?.id ?? null,
+        imageConfigName: imageConfig?.name ?? null,
+        imageProvider: imageConfig?.provider ?? null,
+        imageModel: imageConfig?.model ?? null,
         status: "pending",
         progress: 0,
         currentStep: input.currentStep,
@@ -676,22 +692,31 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
     const [latestSourceTask] = await db
       .select({
         rewriteStyleId: aiRewriteTasks.rewriteStyleId,
+        imageConfigId: aiRewriteTasks.imageConfigId,
       })
       .from(aiRewriteTasks)
       .where(eq(aiRewriteTasks.postId, parentPost.id))
       .orderBy(desc(aiRewriteTasks.createdAt))
       .limit(1);
 
-    const [defaultStyle] = latestSourceTask?.rewriteStyleId
-      ? []
-      : await db
-          .select({ id: aiRewriteConfigs.id })
-          .from(aiRewriteConfigs)
-          .where(eq(aiRewriteConfigs.enabled, true))
-          .orderBy(desc(aiRewriteConfigs.isDefault), desc(aiRewriteConfigs.id))
-          .limit(1);
-    const rewriteStyleId =
-      latestSourceTask?.rewriteStyleId ?? defaultStyle?.id ?? null;
+    const rewriteConfig = await getActiveAiRewriteConfig(
+      latestSourceTask?.rewriteStyleId ?? undefined,
+    );
+    if (!rewriteConfig) {
+      return {
+        error: latestSourceTask?.rewriteStyleId
+          ? `来源任务绑定的 AI 改写配置 #${latestSourceTask.rewriteStyleId} 已停用或不存在`
+          : "当前没有已启用的默认 AI 改写配置",
+      };
+    }
+    const imageConfig = await getActiveImageGenerationConfig(
+      latestSourceTask?.imageConfigId ?? undefined,
+    );
+    if (latestSourceTask?.imageConfigId && !imageConfig) {
+      return {
+        error: `来源任务绑定的生图配置 #${latestSourceTask.imageConfigId} 已停用或不存在`,
+      };
+    }
 
     const [existingTask] = await db
       .select({
@@ -718,7 +743,14 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
                 currentStep: "等待翻译中文改写正文并生成英文 SEO",
                 error: null,
                 categoryId: parentPost.categoryId,
-                rewriteStyleId,
+                rewriteStyleId: rewriteConfig.id,
+                rewriteConfigName: rewriteConfig.name,
+                rewriteProvider: rewriteConfig.provider,
+                rewriteModel: rewriteConfig.model,
+                imageConfigId: imageConfig?.id ?? null,
+                imageConfigName: imageConfig?.name ?? null,
+                imageProvider: imageConfig?.provider ?? null,
+                imageModel: imageConfig?.model ?? null,
                 postId: parentPost.id,
                 resultTitle: parentPost.title,
                 scrapedTitle: parentPost.title,
@@ -746,7 +778,14 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
               progress: 0,
               currentStep: "等待翻译中文改写正文并生成英文 SEO",
               categoryId: parentPost.categoryId,
-              rewriteStyleId,
+              rewriteStyleId: rewriteConfig.id,
+              rewriteConfigName: rewriteConfig.name,
+              rewriteProvider: rewriteConfig.provider,
+              rewriteModel: rewriteConfig.model,
+              imageConfigId: imageConfig?.id ?? null,
+              imageConfigName: imageConfig?.name ?? null,
+              imageProvider: imageConfig?.provider ?? null,
+              imageModel: imageConfig?.model ?? null,
               postId: parentPost.id,
               resultTitle: parentPost.title,
               scrapedTitle: parentPost.title,
@@ -875,12 +914,7 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
       .from(posts)
       .where(inArray(posts.id, validIds));
     const foundIds = new Set(postRows.map((post) => post.id));
-    const [defaultStyle] = await db
-      .select({ id: aiRewriteConfigs.id })
-      .from(aiRewriteConfigs)
-      .where(eq(aiRewriteConfigs.enabled, true))
-      .orderBy(desc(aiRewriteConfigs.isDefault), desc(aiRewriteConfigs.id))
-      .limit(1);
+    const defaultRewriteConfig = await getActiveAiRewriteConfig();
 
     let queued = 0;
     let running = 0;
@@ -904,8 +938,18 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
         .where(eq(aiRewriteTasks.postId, post.id))
         .orderBy(desc(aiRewriteTasks.createdAt))
         .limit(1);
-      const rewriteStyleId =
-        latestSourceTask?.rewriteStyleId ?? defaultStyle?.id ?? null;
+      const rewriteConfig = latestSourceTask?.rewriteStyleId
+        ? await getActiveAiRewriteConfig(latestSourceTask.rewriteStyleId)
+        : defaultRewriteConfig;
+      if (!rewriteConfig) {
+        errors.push({
+          postId: post.id,
+          reason: latestSourceTask?.rewriteStyleId
+            ? `来源任务绑定的 AI 改写配置 #${latestSourceTask.rewriteStyleId} 已停用或不存在`
+            : "当前没有已启用的默认 AI 改写配置",
+        });
+        continue;
+      }
       const sourceUrl = seoSourceUrl(post.id);
       const [existingTask] = await db
         .select({
@@ -931,7 +975,10 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
                   currentStep: "等待更新文章 SEO",
                   error: null,
                   categoryId: post.categoryId,
-                  rewriteStyleId,
+                  rewriteStyleId: rewriteConfig.id,
+                  rewriteConfigName: rewriteConfig.name,
+                  rewriteProvider: rewriteConfig.provider,
+                  rewriteModel: rewriteConfig.model,
                   postId: post.id,
                   resultTitle: post.title,
                   scrapedTitle: post.title,
@@ -962,7 +1009,10 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
                 progress: 0,
                 currentStep: "等待更新文章 SEO",
                 categoryId: post.categoryId,
-                rewriteStyleId,
+                rewriteStyleId: rewriteConfig.id,
+                rewriteConfigName: rewriteConfig.name,
+                rewriteProvider: rewriteConfig.provider,
+                rewriteModel: rewriteConfig.model,
                 postId: post.id,
                 resultTitle: post.title,
                 scrapedTitle: post.title,
@@ -1085,9 +1135,14 @@ export async function getAiRewriteTaskList(
       currentStep: aiRewriteTasks.currentStep,
       error: aiRewriteTasks.error,
       categoryName: categories.name,
-      rewriteStyleName: aiRewriteConfigs.styleName,
-      model: aiRewriteConfigs.model,
+      rewriteStyleName: aiRewriteTasks.rewriteConfigName,
+      rewriteProvider: aiRewriteTasks.rewriteProvider,
+      model: aiRewriteTasks.rewriteModel,
       maxTokens: aiRewriteConfigs.maxTokens,
+      imageConfigId: aiRewriteTasks.imageConfigId,
+      imageConfigName: aiRewriteTasks.imageConfigName,
+      imageProvider: aiRewriteTasks.imageProvider,
+      imageModel: aiRewriteTasks.imageModel,
       postId: aiRewriteTasks.postId,
       postSlug: posts.slug,
       postTitle: posts.title,
@@ -1152,9 +1207,14 @@ export async function getAiRewriteTaskDetail(id: number) {
       currentStep: aiRewriteTasks.currentStep,
       error: aiRewriteTasks.error,
       categoryName: categories.name,
-      rewriteStyleName: aiRewriteConfigs.styleName,
-      model: aiRewriteConfigs.model,
+      rewriteStyleName: aiRewriteTasks.rewriteConfigName,
+      rewriteProvider: aiRewriteTasks.rewriteProvider,
+      model: aiRewriteTasks.rewriteModel,
       maxTokens: aiRewriteConfigs.maxTokens,
+      imageConfigId: aiRewriteTasks.imageConfigId,
+      imageConfigName: aiRewriteTasks.imageConfigName,
+      imageProvider: aiRewriteTasks.imageProvider,
+      imageModel: aiRewriteTasks.imageModel,
       postId: aiRewriteTasks.postId,
       postSlug: posts.slug,
       postTitle: posts.title,
