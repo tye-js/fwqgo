@@ -75,11 +75,17 @@ const DEFAULT_CONCURRENCY = 2;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
 const MAX_BACKOFF_MS = 15 * 60 * 1000;
+const IDLE_LANE_RECHECK_MS = 500;
+const IDLE_LANE_EXIT_CHECKS = 2;
 const WORKER_ID = `${hostname()}:${process.pid}:${randomUUID()}`;
 
 const jobRunners = new Map<string, Pick<BackgroundJobInput, "label" | "run">>();
 
 let workerLoopPromise: Promise<void> | null = null;
+let workerWakeTimer: ReturnType<typeof setTimeout> | null = null;
+let workerWakeTimerAt = 0;
+let runningBackgroundJobCount = 0;
+let workerWakeVersion = 0;
 
 function getConcurrency() {
   const parsed = Number.parseInt(
@@ -121,6 +127,12 @@ function retryDelayMs(attempts: number) {
   return Math.min(baseMs * 2 ** Math.max(0, attempts - 1), MAX_BACKOFF_MS);
 }
 
+function wait(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function toSnapshot(row: AdminBackgroundJobRow): BackgroundJobSnapshot {
   return {
     id: row.id,
@@ -144,13 +156,43 @@ function toSnapshot(row: AdminBackgroundJobRow): BackgroundJobSnapshot {
 function startAdminBackgroundJobWorker() {
   if (workerLoopPromise) return;
 
+  const wakeVersionAtStart = workerWakeVersion;
   workerLoopPromise = runAdminBackgroundJobWorker()
     .catch((error) => {
       console.error("Admin background job worker failed:", error);
     })
     .finally(() => {
       workerLoopPromise = null;
+      if (workerWakeVersion !== wakeVersionAtStart) {
+        startAdminBackgroundJobWorker();
+      }
     });
+}
+
+function wakeAdminBackgroundJobWorker() {
+  workerWakeVersion += 1;
+  startAdminBackgroundJobWorker();
+}
+
+function scheduleAdminBackgroundJobWorker(runAt: Date) {
+  const runAtMs = runAt.getTime();
+  if (!Number.isFinite(runAtMs) || runAtMs <= Date.now()) {
+    wakeAdminBackgroundJobWorker();
+    return;
+  }
+
+  if (workerWakeTimer && workerWakeTimerAt <= runAtMs) return;
+
+  if (workerWakeTimer) clearTimeout(workerWakeTimer);
+  workerWakeTimerAt = runAtMs;
+  workerWakeTimer = setTimeout(
+    () => {
+      workerWakeTimer = null;
+      workerWakeTimerAt = 0;
+      wakeAdminBackgroundJobWorker();
+    },
+    Math.max(0, runAtMs - Date.now()),
+  );
 }
 
 export function getAdminBackgroundWorkerRuntimeSnapshot(): BackgroundWorkerRuntimeSnapshot {
@@ -313,14 +355,13 @@ async function failOrRetryBackgroundJob(
   const message = truncateErrorMessage(getErrorMessage(error));
   const shouldRetry = job.attempts < job.maxAttempts;
   const now = new Date();
+  const retryAt = new Date(now.getTime() + retryDelayMs(job.attempts));
 
   await db
     .update(adminBackgroundJobs)
     .set({
       status: shouldRetry ? "queued" : "failed",
-      runAfter: shouldRetry
-        ? new Date(now.getTime() + retryDelayMs(job.attempts))
-        : job.runAfter,
+      runAfter: shouldRetry ? retryAt : job.runAfter,
       lockedBy: null,
       lockedAt: null,
       heartbeatAt: null,
@@ -335,6 +376,10 @@ async function failOrRetryBackgroundJob(
         eq(adminBackgroundJobs.lockedBy, WORKER_ID),
       ),
     );
+
+  if (shouldRetry) {
+    scheduleAdminBackgroundJobWorker(retryAt);
+  }
 }
 
 async function runClaimedBackgroundJob(job: AdminBackgroundJobRow) {
@@ -359,10 +404,30 @@ async function runClaimedBackgroundJob(job: AdminBackgroundJobRow) {
 }
 
 async function runBackgroundJobLane() {
+  let consecutiveIdleChecks = 0;
+
   while (true) {
     const job = await claimNextBackgroundJob();
-    if (!job) return;
-    await runClaimedBackgroundJob(job);
+    if (!job) {
+      consecutiveIdleChecks += 1;
+      if (
+        runningBackgroundJobCount === 0 &&
+        consecutiveIdleChecks >= IDLE_LANE_EXIT_CHECKS
+      ) {
+        return;
+      }
+
+      await wait(IDLE_LANE_RECHECK_MS);
+      continue;
+    }
+
+    consecutiveIdleChecks = 0;
+    runningBackgroundJobCount += 1;
+    try {
+      await runClaimedBackgroundJob(job);
+    } finally {
+      runningBackgroundJobCount = Math.max(0, runningBackgroundJobCount - 1);
+    }
   }
 }
 
@@ -383,7 +448,10 @@ async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {
   await resetStaleBackgroundJobs();
 
   const [existingJob] = await db
-    .select({ id: adminBackgroundJobs.id })
+    .select({
+      id: adminBackgroundJobs.id,
+      runAfter: adminBackgroundJobs.runAfter,
+    })
     .from(adminBackgroundJobs)
     .where(
       and(
@@ -403,7 +471,7 @@ async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {
         updatedAt: now,
       })
       .where(eq(adminBackgroundJobs.id, existingJob.id));
-    startAdminBackgroundJobWorker();
+    scheduleAdminBackgroundJobWorker(existingJob.runAfter);
     return false;
   }
 
@@ -421,7 +489,7 @@ async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {
     .onConflictDoNothing()
     .returning({ id: adminBackgroundJobs.id });
 
-  startAdminBackgroundJobWorker();
+  scheduleAdminBackgroundJobWorker(input.runAfter ?? now);
   return Boolean(job);
 }
 
@@ -441,7 +509,7 @@ export async function enqueueAdminBackgroundJob(input: BackgroundJobInput) {
 
 export async function getAdminBackgroundJobSnapshots() {
   await resetStaleBackgroundJobs();
-  startAdminBackgroundJobWorker();
+  wakeAdminBackgroundJobWorker();
 
   const rows = await db
     .select()

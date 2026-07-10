@@ -1,4 +1,5 @@
 import { sanitizeFileName } from "@fwqgo/core/utils";
+import { defaultEnglishCoverPromptTemplate } from "@fwqgo/core/image-generation-prompts";
 import {
   assertPublicHttpUrl,
   fetchPublicHttpUrl,
@@ -70,18 +71,14 @@ function fillPromptTemplate(
 }
 
 function buildLanguagePromptRules(
-  input: Pick<GenerateCoverInput, "language" | "title">,
+  englishPromptTemplate: string,
+  input: Pick<
+    GenerateCoverInput,
+    "language" | "title" | "description" | "keywords" | "content"
+  >,
 ) {
   if (input.language === "en") {
-    return [
-      "English article cover rules:",
-      "- This cover is for an English article and English public page.",
-      "- Ignore any earlier wording that implies a Chinese website, Chinese audience, or Chinese typography.",
-      "- Do not render Chinese characters anywhere in the image.",
-      "- If the image includes readable text, labels, UI fragments, or headline typography, it must be English only.",
-      `- Any visible headline text must be based on this English title: ${input.title.trim()}`,
-      "- Prefer no readable text if the model cannot render clean English.",
-    ].join("\n");
+    return fillPromptTemplate(englishPromptTemplate, input);
   }
 
   return [
@@ -91,8 +88,12 @@ function buildLanguagePromptRules(
   ].join("\n");
 }
 
-function buildCoverPrompt(template: string, input: GenerateCoverInput) {
-  return `${fillPromptTemplate(template, input)}\n\n${buildLanguagePromptRules(input)}`;
+function buildCoverPrompt(
+  template: string,
+  englishPromptTemplate: string,
+  input: GenerateCoverInput,
+) {
+  return `${fillPromptTemplate(template, input)}\n\n${buildLanguagePromptRules(englishPromptTemplate, input)}`;
 }
 
 function stripHtml(value: string) {
@@ -258,7 +259,11 @@ export async function previewArticleCoverImageRequest(
     throw new Error("生图配置缺少 API Key");
   }
 
-  const prompt = buildCoverPrompt(config.promptTemplate, input);
+  const prompt = buildCoverPrompt(
+    config.promptTemplate,
+    config.englishPromptTemplate ?? defaultEnglishCoverPromptTemplate,
+    input,
+  );
   const safeEndpoint = await assertPublicHttpUrl(
     buildEndpoint(config.baseUrl),
     "生图接口地址",
@@ -331,7 +336,11 @@ export async function generateArticleCoverImage(
     throw new Error("生图配置缺少 API Key");
   }
 
-  const prompt = buildCoverPrompt(config.promptTemplate, input);
+  const prompt = buildCoverPrompt(
+    config.promptTemplate,
+    config.englishPromptTemplate ?? defaultEnglishCoverPromptTemplate,
+    input,
+  );
   const endpoint = buildEndpoint(config.baseUrl);
   let response: Response;
   try {

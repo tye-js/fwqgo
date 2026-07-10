@@ -25,10 +25,7 @@ import {
 } from "@fwqgo/db/schema";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { syncImageReferencesForPost } from "@/server/images/assets";
-import {
-  generateArticleCoverImage,
-  previewArticleCoverImageRequest,
-} from "@/server/images/generated-cover";
+import { enqueueArticleCoverGenerationTask } from "@/server/images/cover-generation-task-runner";
 import { importServerOffersFromPost } from "@/server/offers/server-offers";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import {
@@ -599,7 +596,7 @@ async function replacePostTagsByNames(postId: number, tagNames: string[]) {
   return tagRows;
 }
 
-async function generateCoverForDraftPost(input: {
+async function enqueueCoverForDraftPost(input: {
   taskId: number;
   attempt: number;
   stepKey: string;
@@ -627,10 +624,6 @@ async function generateCoverForDraftPost(input: {
     .select({
       id: posts.id,
       title: posts.title,
-      slug: posts.slug,
-      description: posts.description,
-      keywords: posts.keywords,
-      content: posts.content,
       imgUrl: posts.imgUrl,
     })
     .from(posts)
@@ -664,73 +657,16 @@ async function generateCoverForDraftPost(input: {
     return { status: "skipped" as const, url: post.imgUrl };
   }
 
-  const coverInput = {
-    title: post.title,
-    description: post.description,
-    keywords: post.keywords,
-    content: post.content,
-    fileSlug: post.slug,
-    language: input.language,
-    configId: input.configId ?? undefined,
-    uploadedBy: null,
-  };
-  let requestPreview: Awaited<
-    ReturnType<typeof previewArticleCoverImageRequest>
-  >;
-
   try {
-    requestPreview = await previewArticleCoverImageRequest(coverInput);
-  } catch (error) {
-    await upsertTaskStep({
-      taskId: input.taskId,
-      attempt: input.attempt,
-      stepKey: input.stepKey,
-      stepName: input.stepName,
-      status: "failed",
-      progress: input.progress,
-      message: "草稿已保存，但自动封面图生成前置检查失败",
-      error: getErrorMessage(error),
-      payload: {
-        postId: post.id,
-        language: input.language,
-        titleLength: post.title.length,
-        descriptionLength: post.description?.length ?? 0,
-        keywordsLength: post.keywords?.length ?? 0,
-        contentLength: post.content?.length ?? 0,
-      },
-    });
-    return { status: "failed" as const, url: null };
-  }
-
-  await upsertTaskStep({
-    taskId: input.taskId,
-    attempt: input.attempt,
-    stepKey: input.stepKey,
-    stepName: input.stepName,
-    status: "running",
-    progress: input.progress,
-    message:
-      input.language === "en"
-        ? "正在自动生成英文文章封面图"
-        : "正在自动生成中文文章封面图",
-    payload: {
+    const { task, reused } = await enqueueArticleCoverGenerationTask({
+      batchId: `ai-rewrite-${input.taskId}-${input.language}-cover`,
       postId: post.id,
-      language: input.language,
-      request: requestPreview,
-    },
-  });
-
-  try {
-    const generated = await generateArticleCoverImage(coverInput);
-
-    await db
-      .update(posts)
-      .set({
-        imgUrl: generated.asset.path,
-        updatedAt: new Date(),
-      })
-      .where(eq(posts.id, post.id));
-    await syncImageReferencesForPost(post.id);
+      title: post.title,
+      configId: input.configId,
+      createdBy: null,
+      restartTerminal:
+        input.force === true || post.imgUrl == null || post.imgUrl.length === 0,
+    });
 
     await upsertTaskStep({
       taskId: input.taskId,
@@ -741,19 +677,25 @@ async function generateCoverForDraftPost(input: {
       progress: input.progress,
       message:
         input.language === "en"
-          ? "英文封面图已生成并写入文章"
-          : "中文封面图已生成并写入文章",
+          ? `英文封面任务已${reused ? "复用" : "加入"}独立队列 #${task.id}`
+          : `中文封面任务已${reused ? "复用" : "加入"}独立队列 #${task.id}`,
       payload: {
         postId: post.id,
-        url: generated.asset.path,
-        assetId: generated.asset.id,
-        request: requestPreview,
+        language: input.language,
+        coverTaskId: task.id,
+        batchId: task.batchId,
+        status: task.status,
+        reused,
       },
     });
 
-    return { status: "success" as const, url: generated.asset.path };
+    return {
+      status: "queued" as const,
+      coverTaskId: task.id,
+      batchId: task.batchId,
+    };
   } catch (error) {
-    console.error("AI rewrite cover generation failed:", error);
+    console.error("AI rewrite cover enqueue failed:", error);
     await upsertTaskStep({
       taskId: input.taskId,
       attempt: input.attempt,
@@ -761,16 +703,15 @@ async function generateCoverForDraftPost(input: {
       stepName: input.stepName,
       status: "failed",
       progress: input.progress,
-      message: "草稿已保存，但自动封面图生成失败",
+      message: "草稿已保存，但自动封面任务入队失败",
       error: getErrorMessage(error),
       payload: {
         postId: post.id,
         language: input.language,
-        request: requestPreview,
       },
     });
 
-    return { status: "failed" as const, url: null };
+    return { status: "failed" as const, coverTaskId: null, batchId: null };
   }
 }
 
@@ -1096,7 +1037,7 @@ async function runEnglishSeoTask(
       payload: { postId: englishPost.id, enSlug: englishPost.slug },
     });
 
-    await generateCoverForDraftPost({
+    await enqueueCoverForDraftPost({
       taskId: claimedTask.id,
       attempt,
       stepKey: "english_cover",
@@ -1797,7 +1738,7 @@ export async function runAiRewriteTask(taskId: number) {
         payload: { postId: post.id, title: post.title },
       });
 
-      await generateCoverForDraftPost({
+      await enqueueCoverForDraftPost({
         taskId,
         attempt,
         stepKey: "cover_generate",

@@ -1,4 +1,5 @@
-import { and, asc, eq, isNull, lt, or } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, asc, desc, eq, isNull, lt, or } from "drizzle-orm";
 
 import { db } from "@fwqgo/db";
 import { imageCoverGenerationTasks, posts } from "@fwqgo/db/schema";
@@ -15,6 +16,15 @@ export type CoverTaskStatus =
   | "cancelled";
 
 type CoverTaskRow = typeof imageCoverGenerationTasks.$inferSelect;
+
+type EnqueueCoverGenerationTaskInput = {
+  postId: number;
+  title: string;
+  configId?: number | null;
+  createdBy?: string | null;
+  batchId?: string;
+  restartTerminal?: boolean;
+};
 
 let isCoverGenerationWorkerRunning = false;
 
@@ -69,6 +79,96 @@ export function serializeCoverTask(task: CoverTaskRow) {
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt?.toISOString() ?? null,
   };
+}
+
+export async function enqueueArticleCoverGenerationTask(
+  input: EnqueueCoverGenerationTaskInput,
+) {
+  const requestedBatchId = input.batchId?.trim();
+  const batchId = requestedBatchId?.length ? requestedBatchId : randomUUID();
+  const [existingTask] = requestedBatchId
+    ? await db
+        .select()
+        .from(imageCoverGenerationTasks)
+        .where(
+          and(
+            eq(imageCoverGenerationTasks.batchId, batchId),
+            eq(imageCoverGenerationTasks.postId, input.postId),
+          ),
+        )
+        .orderBy(desc(imageCoverGenerationTasks.id))
+        .limit(1)
+    : [];
+
+  if (
+    existingTask &&
+    (existingTask.status === "pending" || existingTask.status === "running")
+  ) {
+    await ensureCoverGenerationWorker();
+    return { task: existingTask, reused: true };
+  }
+
+  if (existingTask?.status === "succeeded" && !input.restartTerminal) {
+    return { task: existingTask, reused: true };
+  }
+
+  const config = await getActiveImageGenerationConfig(
+    input.configId ?? undefined,
+  );
+  if (!config) {
+    throw new Error(
+      input.configId
+        ? `任务绑定的生图配置 #${input.configId} 已停用或不存在`
+        : "当前没有已启用的默认生图配置",
+    );
+  }
+
+  const task = existingTask
+    ? (
+        await db
+          .update(imageCoverGenerationTasks)
+          .set({
+            title: input.title,
+            configId: config.id,
+            configName: config.name,
+            provider: config.provider,
+            model: config.model,
+            status: "pending",
+            outputUrl: null,
+            assetId: null,
+            errorTitle: null,
+            errorDetail: null,
+            createdBy: input.createdBy ?? existingTask.createdBy,
+            startedAt: null,
+            finishedAt: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(imageCoverGenerationTasks.id, existingTask.id))
+          .returning()
+      )[0]
+    : (
+        await db
+          .insert(imageCoverGenerationTasks)
+          .values({
+            batchId,
+            postId: input.postId,
+            title: input.title,
+            configId: config.id,
+            configName: config.name,
+            provider: config.provider,
+            model: config.model,
+            status: "pending",
+            createdBy: input.createdBy ?? null,
+          })
+          .returning()
+      )[0];
+
+  if (!task) {
+    throw new Error("封面生成任务创建失败");
+  }
+
+  await ensureCoverGenerationWorker();
+  return { task, reused: Boolean(existingTask) };
 }
 
 async function bindCoverTaskConfig(task: CoverTaskRow) {

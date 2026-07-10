@@ -218,6 +218,13 @@
       "when": 1783672005856,
       "tag": "0030_misty_talon",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1783680176684,
+      "tag": "0031_chief_agent_brand",
+      "breakpoints": true
     }
   ]
 }
