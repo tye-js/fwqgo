@@ -14,6 +14,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -274,7 +285,6 @@ export function ImageGenerationConfigManager({
 
   async function handleDelete(id: number) {
     const config = configs.find((item) => item.id === id);
-    if (!confirm(`确定删除生图配置「${config?.name ?? id}」吗？`)) return;
 
     try {
       await deleteImageGenerationConfigAction(id);
@@ -363,14 +373,40 @@ export function ImageGenerationConfigManager({
                       >
                         {editId === config.id ? "收起" : "编辑"}
                       </Button>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="icon"
-                        onClick={() => handleDelete(config.id)}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="icon"
+                            aria-label={`删除生图配置：${config.name}`}
+                            title={`删除生图配置：${config.name}`}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              删除这套生图配置？
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              删除后自动封面生成不会再使用这套配置，当前配置为
+                              <span className="mt-2 block font-medium text-destructive">
+                                {config.name} / {config.model}
+                              </span>
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>取消</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDelete(config.id)}
+                            >
+                              确定删除
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </TableCell>
                 </TableRow>

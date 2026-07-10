@@ -89,13 +89,15 @@ type BatchStatusResult = {
 
 function formatTime(value: Date | string | null) {
   if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
 
   return new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function getResultStatus(result: GenerateResult) {
@@ -145,9 +147,10 @@ function getResultBadge(result: GenerateResult) {
 }
 
 function CoverPreview({ src, title }: { src: string | null; title: string }) {
-  const [failed, setFailed] = useState(false);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const hasFailed = Boolean(src) && failedSrc === src;
 
-  if (!isRenderableImageSrc(src) || failed) {
+  if (!isRenderableImageSrc(src) || hasFailed) {
     return (
       <span className="inline-flex h-14 w-24 items-center justify-center rounded-md border border-dashed border-border/70 px-2 text-center text-xs text-muted-foreground">
         {src ? "封面加载失败" : "无封面"}
@@ -163,7 +166,7 @@ function CoverPreview({ src, title }: { src: string | null; title: string }) {
         fill
         sizes="96px"
         className="object-cover"
-        onError={() => setFailed(true)}
+        onError={() => setFailedSrc(src)}
       />
     </div>
   );
@@ -660,7 +663,7 @@ export function ArticleCoverBatchGenerator({
                   <TableCell className="text-right">
                     <Button asChild variant="outline" size="sm">
                       <Link
-                        href={`/posts/edit/post/${post.slug}`}
+                        href={`/posts/edit/post/${encodeURIComponent(post.slug)}`}
                         aria-label={`编辑文章 ${post.title}`}
                       >
                         <ExternalLink className="size-4" />

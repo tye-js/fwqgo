@@ -172,7 +172,7 @@ function HeroArticleTile({
 
   return (
     <Link
-      href={`/fwq/posts/${slug}`}
+      href={`/fwq/posts/${encodeURIComponent(slug)}`}
       prefetch
       className={`glass-card group relative flex flex-col justify-end overflow-hidden rounded-2xl ${
         isLarge ? "min-h-[260px] md:min-h-[420px]" : "min-h-[160px]"
@@ -287,7 +287,7 @@ async function HomeContent() {
                   <Link
                     href={
                       heroPosts[0]
-                        ? `/fwq/posts/${heroPosts[0].slug}`
+                        ? `/fwq/posts/${encodeURIComponent(heroPosts[0].slug)}`
                         : "/fwq/vps/page/1"
                     }
                     prefetch
@@ -350,7 +350,7 @@ async function HomeContent() {
                 {heroPosts.slice(1, 5).map((post) => (
                   <Link
                     key={post.id}
-                    href={`/fwq/posts/${post.slug}`}
+                    href={`/fwq/posts/${encodeURIComponent(post.slug)}`}
                     prefetch
                     className="group grid min-h-[96px] grid-cols-[88px_minmax(0,1fr)] items-start gap-3 rounded-lg border border-border/70 bg-background p-2.5 shadow-sm transition-colors hover:border-accent/35 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:grid-cols-[112px_minmax(0,1fr)_auto]"
                   >
@@ -411,7 +411,7 @@ async function HomeContent() {
               return (
                 <Link
                   key={topic.slug}
-                  href={`/servers/${topic.slug}`}
+                  href={`/servers/${encodeURIComponent(topic.slug)}`}
                   prefetch
                   className="glass-card group rounded-xl p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
@@ -578,7 +578,7 @@ async function HomeContent() {
                   promotedPosts.map((post) => (
                     <Link
                       key={post.id}
-                      href={`/fwq/posts/${post.slug}`}
+                      href={`/fwq/posts/${encodeURIComponent(post.slug)}`}
                       prefetch
                       className="glass-card block rounded-xl p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     >
@@ -622,7 +622,7 @@ async function HomeContent() {
                 {popularPosts.map((post, index) => (
                   <Link
                     key={post.id}
-                    href={`/fwq/posts/${post.slug}`}
+                    href={`/fwq/posts/${encodeURIComponent(post.slug)}`}
                     prefetch
                     className="glass-card block rounded-xl p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >

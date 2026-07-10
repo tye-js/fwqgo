@@ -7,6 +7,8 @@ import {
 import { contentToArticleMarkdown } from "@fwqgo/core/content";
 import { assertPublicHttpUrl } from "@fwqgo/core/network-url";
 
+import { buildOpenAiChatCompletionsEndpoint } from "./openai-compatible";
+
 const DEFAULT_AI_REWRITE_TIMEOUT_MS = 300_000;
 const MIN_AI_INPUT_LENGTH = 80;
 const MIN_REWRITTEN_MARKDOWN_LENGTH = 120;
@@ -711,7 +713,7 @@ export async function rewriteArticleWithAi(
     );
   }
 
-  const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/v1/chat/completions`;
+  const endpoint = buildOpenAiChatCompletionsEndpoint(config.baseUrl);
   const markdownContent = cleanMarkdownText(
     await requestChatCompletion({
       config,
@@ -784,7 +786,7 @@ export async function generateArticleMetadata(
     );
   }
 
-  const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/v1/chat/completions`;
+  const endpoint = buildOpenAiChatCompletionsEndpoint(config.baseUrl);
   const metadataText = await requestChatCompletion({
     config,
     endpoint,
@@ -852,7 +854,7 @@ export async function generateEnglishArticleContent(
     );
   }
 
-  const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/v1/chat/completions`;
+  const endpoint = buildOpenAiChatCompletionsEndpoint(config.baseUrl);
   const contentLimit = getAiRewriteContentLimit(config.maxTokens);
   const userPrompt = buildEnglishContentPrompt({
     ...input,
@@ -934,7 +936,7 @@ export async function generateEnglishMetadata(
 ): Promise<EnglishMetadataOutput> {
   const config = await getVerifiedAiConfig("英文 SEO 生成", options);
   const timeoutMs = getAiRewriteTimeoutMs();
-  const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/v1/chat/completions`;
+  const endpoint = buildOpenAiChatCompletionsEndpoint(config.baseUrl);
   const metadataText = await requestChatCompletion({
     config,
     endpoint,

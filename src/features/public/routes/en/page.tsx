@@ -87,7 +87,7 @@ async function EnglishHomeContent() {
                 <Link
                   href={
                     heroPost
-                      ? `/en/fwq/posts/${heroPost.slug}`
+                      ? `/en/fwq/posts/${encodeURIComponent(heroPost.slug)}`
                       : "#latest-english-articles"
                   }
                   prefetch
@@ -107,7 +107,7 @@ async function EnglishHomeContent() {
 
           {heroPost ? (
             <Link
-              href={`/en/fwq/posts/${heroPost.slug}`}
+              href={`/en/fwq/posts/${encodeURIComponent(heroPost.slug)}`}
               prefetch
               className="group grid gap-4 overflow-hidden rounded-lg border border-border/70 bg-background p-3 shadow-sm md:grid-cols-[280px_minmax(0,1fr)]"
             >
@@ -173,7 +173,7 @@ async function EnglishHomeContent() {
                   promotedPosts.map((post) => (
                     <Link
                       key={post.id}
-                      href={`/en/fwq/posts/${post.slug}`}
+                      href={`/en/fwq/posts/${encodeURIComponent(post.slug)}`}
                       prefetch
                       className="block rounded-md border border-border/70 p-3 text-sm hover:bg-muted/30"
                     >
@@ -202,7 +202,7 @@ async function EnglishHomeContent() {
                   popularPosts.map((post, index) => (
                     <Link
                       key={post.id}
-                      href={`/en/fwq/posts/${post.slug}`}
+                      href={`/en/fwq/posts/${encodeURIComponent(post.slug)}`}
                       prefetch
                       className="flex min-h-11 gap-3 rounded-md border border-border/70 p-3 text-sm hover:bg-muted/30"
                     >

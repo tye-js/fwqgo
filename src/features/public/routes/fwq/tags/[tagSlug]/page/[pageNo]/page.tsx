@@ -127,7 +127,8 @@ async function TagPageContent({
   if ((postsWithTag.totalCount ?? 0) > 0 && postsWithTag.pageNo > totalPage) {
     notFound();
   }
-  const pageUrl = `${getSiteUrl()}/fwq/tags/${encodeURIComponent(decodedTagSlug)}/page/${postsWithTag.pageNo}`;
+  const pageSlug = postsWithTag.slug ?? decodedTagSlug;
+  const pageUrl = `${getSiteUrl()}/fwq/tags/${encodeURIComponent(pageSlug)}/page/${postsWithTag.pageNo}`;
   const collectionJsonLd = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",
@@ -174,7 +175,7 @@ async function TagPageContent({
         <PaginationComponent
           pageNo={postsWithTag.pageNo}
           totalPage={totalPage}
-          basePath={`/fwq/tags/${params.tagSlug}`}
+          basePath={`/fwq/tags/${encodeURIComponent(pageSlug)}`}
         />
       </div>
 

@@ -40,6 +40,35 @@ type AiRewriteTaskSearchParams = {
   type?: string;
 };
 
+type PageDataError = {
+  label: string;
+  message: string;
+};
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "未知错误";
+}
+
+async function loadPageData<T>(
+  label: string,
+  promise: Promise<T>,
+): Promise<{ data: T | null; error: PageDataError | null }> {
+  try {
+    return { data: await promise, error: null };
+  } catch (error) {
+    console.error(`${label} 加载失败:`, error);
+    return {
+      data: null,
+      error: {
+        label,
+        message: getErrorMessage(error),
+      },
+    };
+  }
+}
+
 function parsePageNo(value: string | undefined) {
   return parsePositiveInt(value) ?? 1;
 }
@@ -88,31 +117,58 @@ export async function AiRewriteTasksPageContent({
   const taskFilters = parseAiTaskFilters(searchParams);
   const isTaskCenter = variant === "task-center";
   const [
-    tasks,
-    taskCount,
-    sourceSites,
+    tasksResult,
+    taskCountResult,
+    sourceSitesResult,
     categoriesResult,
-    rewriteStyles,
-    operationsSummary,
-    unifiedTaskList,
+    rewriteStylesResult,
+    operationsSummaryResult,
+    unifiedTaskListResult,
   ] = await Promise.all([
-    getAiRewriteTaskList(isTaskCenter ? taskFilters : { pageSize: 50 }),
-    getAiRewriteTaskCount(isTaskCenter ? taskFilters : {}),
-    getAiSourceSiteList(),
-    getLeafCategories(),
-    getAiRewriteStyleOptions(),
-    isTaskCenter ? getCmsTaskOperationsSummary() : Promise.resolve(null),
-    isTaskCenter
-      ? getUnifiedTaskList({
-          type: searchParams.type,
-          status: searchParams.status,
-          query: searchParams.query,
-          pageNo: parsePageNo(searchParams.pageNo),
-          pageSize: 20,
-        })
-      : Promise.resolve(null),
+    loadPageData(
+      "AI 改写任务列表",
+      getAiRewriteTaskList(isTaskCenter ? taskFilters : { pageSize: 50 }),
+    ),
+    loadPageData(
+      "AI 改写任务数量",
+      getAiRewriteTaskCount(isTaskCenter ? taskFilters : {}),
+    ),
+    loadPageData("来源站列表", getAiSourceSiteList()),
+    loadPageData("分类列表", getLeafCategories()),
+    loadPageData("AI 改写风格", getAiRewriteStyleOptions()),
+    loadPageData(
+      "任务队列健康",
+      isTaskCenter ? getCmsTaskOperationsSummary() : Promise.resolve(null),
+    ),
+    loadPageData(
+      "统一任务列表",
+      isTaskCenter
+        ? getUnifiedTaskList({
+            type: searchParams.type,
+            status: searchParams.status,
+            query: searchParams.query,
+            pageNo: parsePageNo(searchParams.pageNo),
+            pageSize: 20,
+          })
+        : Promise.resolve(null),
+    ),
   ]);
-  const categories = categoriesResult.data ?? [];
+  const dataErrors = [
+    tasksResult.error,
+    taskCountResult.error,
+    sourceSitesResult.error,
+    categoriesResult.error,
+    rewriteStylesResult.error,
+    operationsSummaryResult.error,
+    unifiedTaskListResult.error,
+  ].filter((error): error is PageDataError => Boolean(error));
+  const tasks = tasksResult.data ?? [];
+  const taskCount = taskCountResult.data ?? 0;
+  const sourceSites = sourceSitesResult.data ?? [];
+  const categories = categoriesResult.data?.data ?? [];
+  const rewriteStyles = rewriteStylesResult.data ?? [];
+  const operationsSummary = operationsSummaryResult.data;
+  const unifiedTaskList = unifiedTaskListResult.data;
   const runningCount = tasks.filter((task) =>
     ["pending", "running"].includes(task.status),
   ).length;
@@ -184,6 +240,28 @@ export async function AiRewriteTasksPageContent({
           },
         ]}
       />
+      {dataErrors.length > 0 ? (
+        <AdminSectionCard
+          title="部分数据加载失败"
+          description="页面已尽量展示可用内容；失败模块可按下面的原因检查数据库连接、迁移或后台日志。"
+        >
+          <div className="space-y-2">
+            {dataErrors.map((error) => (
+              <div
+                key={`${error.label}-${error.message}`}
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2"
+              >
+                <p className="text-sm font-medium text-destructive">
+                  {error.label}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {error.message}
+                </p>
+              </div>
+            ))}
+          </div>
+        </AdminSectionCard>
+      ) : null}
       {isTaskCenter ? (
         <>
           {operationsSummary ? (

@@ -662,7 +662,7 @@ function ManualReviewHints({
           ) : null}
           {postSlug ? (
             <Button asChild size="sm">
-              <Link href={`/posts/edit/post/${postSlug}`}>打开草稿审核</Link>
+              <Link href={`/posts/edit/post/${encodeURIComponent(postSlug)}`}>打开草稿审核</Link>
             </Button>
           ) : null}
         </div>
@@ -726,7 +726,7 @@ export async function AiRewriteTaskDetailPageContent({
           />
           {task.postSlug ? (
             <Button asChild>
-              <Link href={`/posts/edit/post/${task.postSlug}`}>编辑草稿</Link>
+              <Link href={`/posts/edit/post/${encodeURIComponent(task.postSlug)}`}>编辑草稿</Link>
             </Button>
           ) : null}
         </div>

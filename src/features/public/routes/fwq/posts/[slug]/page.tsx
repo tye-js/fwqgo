@@ -159,7 +159,7 @@ async function PostPageContent({
       text.toLowerCase().includes(keyword.toLowerCase()),
     );
   });
-  const articleUrl = `${getSiteUrl()}/fwq/posts/${decodedSlug}`;
+  const articleUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`;
   const absoluteImageUrl = toAbsoluteUrl(post.imgUrl);
 
   const blogPostingJsonLd = {
@@ -197,7 +197,7 @@ async function PostPageContent({
         "@type": "ListItem",
         position: 2,
         name: "文章",
-        item: `${getSiteUrl()}/fwq/posts/${decodedSlug}`,
+        item: `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`,
       },
       {
         "@type": "ListItem",
@@ -304,7 +304,7 @@ async function PostPageContent({
                 <PostViewCount slug={decodedSlug} initialViews={post.views} />
                 {post.recommendedTagName ? (
                   <Link
-                    href={`/fwq/tags/${post.recommendedTagSlug ?? post.recommendedTagName}/page/1`}
+                    href={`/fwq/tags/${encodeURIComponent(post.recommendedTagSlug ?? post.recommendedTagName)}/page/1`}
                     prefetch
                     className="inline-flex min-h-11 items-center gap-2 rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
@@ -420,7 +420,7 @@ async function PostPageContent({
                       {post.tags.map((tag) => (
                         <Link
                           key={tag.tag.id}
-                          href={`/fwq/tags/${tag.tag.slug}/page/1`}
+                          href={`/fwq/tags/${encodeURIComponent(tag.tag.slug)}/page/1`}
                           prefetch
                           className="inline-flex min-h-10 items-center rounded-full border border-border/70 px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/10 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         >
@@ -438,7 +438,7 @@ async function PostPageContent({
                   >
                     {prevPost ? (
                       <Link
-                        href={`/fwq/posts/${prevPost.slug}`}
+                        href={`/fwq/posts/${encodeURIComponent(prevPost.slug)}`}
                         prefetch
                         className="group flex min-h-20 items-start gap-3 rounded-lg border border-border/70 bg-muted/20 px-4 py-3.5 transition-colors hover:border-accent/30 hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
@@ -457,7 +457,7 @@ async function PostPageContent({
                     )}
                     {nextPost ? (
                       <Link
-                        href={`/fwq/posts/${nextPost.slug}`}
+                        href={`/fwq/posts/${encodeURIComponent(nextPost.slug)}`}
                         prefetch
                         className="group flex min-h-20 items-start justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 px-4 py-3.5 text-left transition-colors hover:border-accent/30 hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:text-right"
                       >
@@ -486,7 +486,7 @@ async function PostPageContent({
                         {matchedTopics.map((topic) => (
                           <Link
                             key={topic.slug}
-                            href={`/servers/${topic.slug}`}
+                            href={`/servers/${encodeURIComponent(topic.slug)}`}
                             prefetch
                             className="inline-flex min-h-10 items-center rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                           >

@@ -111,6 +111,28 @@ export async function getActiveAiRewriteConfig(styleId?: number) {
   return fallback ?? null;
 }
 
+export async function getAiRewriteConfigForStatusCheck(id: number) {
+  const [config] = await db
+    .select()
+    .from(aiRewriteConfigs)
+    .where(eq(aiRewriteConfigs.id, id))
+    .limit(1);
+
+  return config
+    ? {
+        ...config,
+        provider: config.provider as AiProvider,
+        basePrompt: config.basePrompt ?? defaultBaseRewritePrompt,
+        metadataPrompt: config.metadataPrompt ?? defaultMetadataPrompt,
+        metadataStylePrompt:
+          config.metadataStylePrompt ?? defaultMetadataStylePrompt,
+        englishStylePrompt: config.englishStylePrompt ?? defaultEnglishStylePrompt,
+        englishMetadataStylePrompt:
+          config.englishMetadataStylePrompt ?? defaultEnglishMetadataStylePrompt,
+      }
+    : null;
+}
+
 async function unsetOtherDefaults() {
   await db
     .update(aiRewriteConfigs)

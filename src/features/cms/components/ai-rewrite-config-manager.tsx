@@ -2,18 +2,31 @@
 
 import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BrainCircuit, Plus, Trash2 } from "lucide-react";
+import { Activity, BrainCircuit, Loader2, Plus, Trash2 } from "lucide-react";
 
 import {
+  checkAiRewriteConfigStatusAction,
   createAiRewriteConfigAction,
   deleteAiRewriteConfigAction,
   updateAiRewriteConfigAction,
 } from "@/features/cms/actions/ai-rewrite-config";
+import { type AiRewriteStatusCheckResult } from "@fwqgo/ai/rewrite-status-check";
 import { type getAiRewriteConfigs } from "@fwqgo/ai/rewrite-config";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -74,6 +87,68 @@ function appendBoolean(formData: FormData, key: string, value: boolean) {
 function stringValue(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
+}
+
+function formatCheckTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function CheckResultPanel({
+  result,
+}: {
+  result: AiRewriteStatusCheckResult;
+}) {
+  return (
+    <div className="rounded-md border border-border/70 bg-background p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant={result.success ? "default" : "destructive"}>
+          {result.success ? "接口正常" : result.errorTitle}
+        </Badge>
+        <Badge variant="outline">{result.model ?? "未记录模型"}</Badge>
+        {result.latencyMs !== null ? (
+          <Badge variant="outline">{result.latencyMs}ms</Badge>
+        ) : null}
+        <span className="text-xs text-muted-foreground">
+          {formatCheckTime(result.checkedAt)}
+        </span>
+      </div>
+      <div className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
+        <p>
+          地址：
+          {result.endpointOrigin
+            ? `${result.endpointOrigin}${result.endpointPath ?? ""}`
+            : "未完成请求"}
+        </p>
+        {result.success ? (
+          <>
+            <p>
+              返回：{result.responsePreview || "空"} · finish_reason{" "}
+              {result.finishReason ?? "-"}
+            </p>
+            <p>
+              Tokens：prompt {result.promptTokens ?? "-"} · completion{" "}
+              {result.completionTokens ?? "-"} · total{" "}
+              {result.totalTokens ?? "-"}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="break-words text-destructive">{result.error}</p>
+            <p>建议：{result.suggestion}</p>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function ConfigForm({
@@ -327,6 +402,52 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
   const router = useRouter();
   const [showCreate, setShowCreate] = useState(configs.length === 0);
   const [editId, setEditId] = useState<number | null>(null);
+  const [checkingId, setCheckingId] = useState<number | null>(null);
+  const [checkResults, setCheckResults] = useState<
+    Record<number, AiRewriteStatusCheckResult>
+  >({});
+
+  async function handleCheck(id: number) {
+    const config = configs.find((item) => item.id === id);
+    setCheckingId(id);
+
+    try {
+      const result = await checkAiRewriteConfigStatusAction(id);
+      setCheckResults((current) => ({ ...current, [id]: result }));
+
+      if (result.success) {
+        notifySuccess({
+          title: "AI 接口检测通过",
+          description: describeAdminResult([
+            result.configName,
+            result.model,
+            `${result.latencyMs}ms`,
+            result.responsePreview,
+          ]),
+        });
+        return;
+      }
+
+      notifyError({
+        title: result.errorTitle,
+        description: describeAdminResult([
+          result.configName ?? config?.name,
+          result.error,
+          result.suggestion,
+        ]),
+      });
+    } catch (error) {
+      notifyError({
+        title: "AI 接口检测失败",
+        description: describeAdminResult([
+          config?.name,
+          error instanceof Error ? error.message : "检测请求失败",
+        ]),
+      });
+    } finally {
+      setCheckingId(null);
+    }
+  }
 
   async function handleDelete(id: number) {
     const config = configs.find((item) => item.id === id);
@@ -373,79 +494,131 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
         />
       ) : null}
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>名称</TableHead>
-            <TableHead>服务</TableHead>
-            <TableHead>模型</TableHead>
-            <TableHead>风格</TableHead>
-            <TableHead>Key</TableHead>
-            <TableHead>状态</TableHead>
-            <TableHead className="text-center">操作</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {configs.map((config) => (
-            <Fragment key={config.id}>
-              <TableRow>
-                <TableCell className="font-medium">{config.name}</TableCell>
-                <TableCell>{config.provider}</TableCell>
-                <TableCell>{config.model}</TableCell>
-                <TableCell>{config.styleName}</TableCell>
-                <TableCell>
-                  {config.hasApiKey ? config.apiKeyPreview : "未配置"}
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-2">
-                    {config.enabled ? (
-                      <Badge>启用</Badge>
-                    ) : (
-                      <Badge variant="outline">停用</Badge>
-                    )}
-                    {config.isDefault ? (
-                      <Badge variant="secondary">默认</Badge>
-                    ) : null}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex justify-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        setEditId(editId === config.id ? null : config.id)
-                      }
-                    >
-                      编辑
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleDelete(config.id)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-              {editId === config.id ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="bg-muted/20">
-                    <ConfigForm
-                      config={config}
-                      onDone={() => {
-                        setEditId(null);
-                        router.refresh();
-                      }}
-                    />
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </Fragment>
-          ))}
-        </TableBody>
-      </Table>
+      <div className="overflow-x-auto rounded-lg border border-border/70 bg-background">
+        <Table className="min-w-[980px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>名称</TableHead>
+              <TableHead>服务</TableHead>
+              <TableHead>模型</TableHead>
+              <TableHead>风格</TableHead>
+              <TableHead>Key</TableHead>
+              <TableHead>状态</TableHead>
+              <TableHead>接口检测</TableHead>
+              <TableHead className="text-center">操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {configs.map((config) => {
+              const checkResult = checkResults[config.id];
+
+              return (
+                <Fragment key={config.id}>
+                  <TableRow>
+                    <TableCell className="font-medium">{config.name}</TableCell>
+                    <TableCell>{config.provider}</TableCell>
+                    <TableCell>{config.model}</TableCell>
+                    <TableCell>{config.styleName}</TableCell>
+                    <TableCell>
+                      {config.hasApiKey ? config.apiKeyPreview : "未配置"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-2">
+                        {config.enabled ? (
+                          <Badge>启用</Badge>
+                        ) : (
+                          <Badge variant="outline">停用</Badge>
+                        )}
+                        {config.isDefault ? (
+                          <Badge variant="secondary">默认</Badge>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={checkingId === config.id}
+                        onClick={() => handleCheck(config.id)}
+                      >
+                        {checkingId === config.id ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Activity className="size-4" />
+                        )}
+                        {checkingId === config.id ? "检测中" : "检测"}
+                      </Button>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setEditId(editId === config.id ? null : config.id)
+                          }
+                        >
+                          编辑
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="destructive" size="sm">
+                              <Trash2 className="size-4" />
+                              删除
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                删除这套 AI 改写配置？
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                删除后后续任务不会再使用这套配置，当前配置为
+                                <span className="mt-2 block font-medium text-destructive">
+                                  {config.name} / {config.model}
+                                </span>
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>取消</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDelete(config.id)}
+                              >
+                                确定删除
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                  {checkResult ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="bg-muted/20">
+                        <CheckResultPanel result={checkResult} />
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                  {editId === config.id ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="bg-muted/20">
+                        <ConfigForm
+                          config={config}
+                          onDone={() => {
+                            setEditId(null);
+                            router.refresh();
+                          }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </Fragment>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

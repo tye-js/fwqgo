@@ -180,96 +180,100 @@ export function UnifiedTaskList({ result }: { result: UnifiedTaskListResult }) {
           </p>
         </div>
       ) : (
-        <Table className="min-w-[1120px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[320px]">任务</TableHead>
-              <TableHead className="w-[150px]">状态</TableHead>
-              <TableHead className="w-[130px]">进度</TableHead>
-              <TableHead className="w-[260px]">说明 / 错误</TableHead>
-              <TableHead className="w-[180px]">关联文章</TableHead>
-              <TableHead className="w-[120px]">更新时间</TableHead>
-              <TableHead className="w-[210px] text-right">操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {result.items.map((task) => (
-              <TableRow key={task.uid}>
-                <TableCell>
-                  <Link
-                    href={task.href}
-                    className="group flex min-h-11 items-start gap-2 rounded-sm px-1 py-1 hover:bg-muted/50"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline">{typeLabels[task.type]}</Badge>
-                        <span className="text-xs text-muted-foreground">
-                          #{task.id}
+        <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
+          <Table className="min-w-[1120px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[320px]">任务</TableHead>
+                <TableHead className="w-[150px]">状态</TableHead>
+                <TableHead className="w-[130px]">进度</TableHead>
+                <TableHead className="w-[260px]">说明 / 错误</TableHead>
+                <TableHead className="w-[180px]">关联文章</TableHead>
+                <TableHead className="w-[120px]">更新时间</TableHead>
+                <TableHead className="w-[210px] text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {result.items.map((task) => (
+                <TableRow key={task.uid}>
+                  <TableCell>
+                    <Link
+                      href={task.href}
+                      className="group flex min-h-11 items-start gap-2 rounded-sm px-1 py-1 hover:bg-muted/50"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">
+                            {typeLabels[task.type]}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            #{task.id}
+                          </span>
+                        </span>
+                        <span className="mt-1 line-clamp-2 block text-sm font-medium">
+                          {task.title}
                         </span>
                       </span>
-                      <span className="mt-1 line-clamp-2 block text-sm font-medium">
-                        {task.title}
-                      </span>
-                    </span>
-                    <ExternalLink className="mt-1 size-4 shrink-0 opacity-60 group-hover:opacity-100" />
-                  </Link>
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant={statusVariant(task.status)}>
-                      {statusLabels[task.status] ?? task.status}
-                    </Badge>
-                    <Badge variant="outline">{task.sourceLabel}</Badge>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="space-y-2">
-                    <Progress value={task.progress} />
-                    <p className="text-xs text-muted-foreground">
-                      {task.progress}%
-                    </p>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <p
-                    className={
-                      task.error
-                        ? "line-clamp-3 text-xs leading-5 text-destructive"
-                        : "line-clamp-3 text-xs leading-5 text-muted-foreground"
-                    }
-                  >
-                    {task.error ?? task.description}
-                  </p>
-                </TableCell>
-                <TableCell>
-                  {task.post ? (
-                    <Link
-                      href={`/posts/edit/post/${task.post.slug}`}
-                      className="line-clamp-2 min-h-11 rounded-sm px-1 py-1 text-sm hover:bg-muted/50"
-                    >
-                      {task.post.title}
+                      <ExternalLink className="mt-1 size-4 shrink-0 opacity-60 group-hover:opacity-100" />
                     </Link>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">-</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {formatTime(task.updatedAt ?? task.createdAt)}
-                </TableCell>
-                <TableCell className="text-right">
-                  <UnifiedTaskActionButtons
-                    type={task.type}
-                    taskId={task.id}
-                    status={task.status}
-                    canRetry={task.canRetry}
-                    canCancel={task.canCancel}
-                    canResolve={task.canResolve}
-                  />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant={statusVariant(task.status)}>
+                        {statusLabels[task.status] ?? task.status}
+                      </Badge>
+                      <Badge variant="outline">{task.sourceLabel}</Badge>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="space-y-2">
+                      <Progress value={task.progress} />
+                      <p className="text-xs text-muted-foreground">
+                        {task.progress}%
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <p
+                      className={
+                        task.error
+                          ? "line-clamp-3 text-xs leading-5 text-destructive"
+                          : "line-clamp-3 text-xs leading-5 text-muted-foreground"
+                      }
+                    >
+                      {task.error ?? task.description}
+                    </p>
+                  </TableCell>
+                  <TableCell>
+                    {task.post ? (
+                      <Link
+                        href={`/posts/edit/post/${encodeURIComponent(task.post.slug)}`}
+                        className="line-clamp-2 min-h-11 rounded-sm px-1 py-1 text-sm hover:bg-muted/50"
+                      >
+                        {task.post.title}
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {formatTime(task.updatedAt ?? task.createdAt)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <UnifiedTaskActionButtons
+                      type={task.type}
+                      taskId={task.id}
+                      status={task.status}
+                      canRetry={task.canRetry}
+                      canCancel={task.canCancel}
+                      canResolve={task.canResolve}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       <PaginationComponent pageNo={pageNo} totalPage={result.totalPage} />

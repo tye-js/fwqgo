@@ -840,7 +840,6 @@ export function AiRewriteTaskManager({
       {showCreateForm ? (
         <form
           action={handleSubmit}
-          encType="multipart/form-data"
           className="grid gap-3 rounded-md border border-border/70 bg-card px-4 py-3 lg:grid-cols-[150px_minmax(0,1fr)_180px_180px_auto]"
         >
           <Select
@@ -957,9 +956,7 @@ export function AiRewriteTaskManager({
             title="任务筛选"
             description={`筛选条件和页码会写入地址栏，当前匹配 ${totalCount ?? tasks.length} 个任务。`}
             searchValue={activeFilters.query}
-            onSearchChange={(value) =>
-              updateUrlQuery({ query: value || null })
-            }
+            onSearchChange={(value) => updateUrlQuery({ query: value || null })}
             searchPlaceholder="搜索来源、标题、分类或生成结果"
             filterSlot={
               <>
@@ -1136,7 +1133,7 @@ export function AiRewriteTaskManager({
                         <TableCell>
                           {task.postSlug ? (
                             <Link
-                              href={`/posts/edit/post/${task.postSlug}`}
+                              href={`/posts/edit/post/${encodeURIComponent(task.postSlug)}`}
                               className="inline-flex max-w-[260px] items-start gap-2 text-sm font-medium text-primary hover:underline"
                             >
                               <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
@@ -1167,7 +1164,7 @@ export function AiRewriteTaskManager({
                             {task.postSlug ? (
                               <Button asChild size="sm" variant="outline">
                                 <Link
-                                  href={`/posts/edit/post/${task.postSlug}`}
+                                  href={`/posts/edit/post/${encodeURIComponent(task.postSlug)}`}
                                 >
                                   <ExternalLink className="size-4" />
                                   编辑

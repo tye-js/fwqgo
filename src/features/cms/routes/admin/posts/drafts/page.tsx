@@ -22,6 +22,12 @@ function parsePageNo(value: string | undefined) {
   return parsePositiveInt(value) ?? 1;
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "未知错误";
+}
+
 function languageFilterHref(language: PostLanguageFilter) {
   return language === "all"
     ? "/posts/drafts"
@@ -65,11 +71,20 @@ async function DraftListWrapper({
     language,
   });
 
-  if (error || !posts) {
-    return <div>获取草稿列表失败</div>;
-  }
-
-  const { data: draftCount } = await getDraftPostCount(language);
+  const { data: draftCount, error: countError } = await getDraftPostCount(
+    language,
+  )
+    .then(({ data }) => ({ data, error: null }))
+    .catch((countLoadError: unknown) => {
+      console.error("草稿箱计数加载失败:", countLoadError);
+      return { data: 0, error: getErrorMessage(countLoadError) };
+    });
+  const loadError = error
+    ? getErrorMessage(error)
+    : posts
+      ? countError
+      : "获取草稿列表失败";
+  const visiblePosts = posts ?? [];
   const totalPage = Math.ceil((draftCount ?? 0) / 15);
 
   return (
@@ -97,11 +112,19 @@ async function DraftListWrapper({
           },
           {
             label: "本页草稿",
-            value: String(posts.length),
+            value: String(visiblePosts.length),
             note: "可继续人工编辑",
           },
         ]}
       />
+      {loadError ? (
+        <AdminSectionCard
+          title="草稿列表加载失败"
+          description="无法完整读取草稿列表或分页计数。请检查数据库连接、迁移状态或后台日志。"
+        >
+          <p className="break-words text-sm text-destructive">{loadError}</p>
+        </AdminSectionCard>
+      ) : null}
       <AdminSectionCard
         title="待编辑草稿"
         description="可以继续编辑标题、封面、slug 和发布状态；点击 slug 进入完整编辑页。"
@@ -110,7 +133,7 @@ async function DraftListWrapper({
           <LanguageFilter value={language} />
         </div>
         <PostList
-          posts={posts}
+          posts={visiblePosts}
           editBasePath="/posts/edit"
           defaultStatusFilter="draft"
         />

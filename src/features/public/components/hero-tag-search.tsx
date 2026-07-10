@@ -41,7 +41,7 @@ export function HeroTagSearch() {
       };
 
       if (response.ok && result.found && result.slug) {
-        router.push(`/fwq/tags/${result.slug}/page/1`);
+        router.push(`/fwq/tags/${encodeURIComponent(result.slug)}/page/1`);
         return;
       }
 
