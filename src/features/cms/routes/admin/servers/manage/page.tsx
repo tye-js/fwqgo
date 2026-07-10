@@ -26,6 +26,30 @@ function parsePageNo(value: string | undefined) {
   return parsePositiveInt(value) ?? 1;
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "未知错误";
+}
+
+async function loadServerOfferManageData() {
+  try {
+    const [counts, offers] = await Promise.all([
+      getServerOfferTopicCounts(),
+      getAdminServerOffers(300),
+    ]);
+
+    return { counts, offers, error: null };
+  } catch (error) {
+    console.error("套餐管理页加载套餐数据失败:", error);
+    return {
+      counts: [] as Awaited<ReturnType<typeof getServerOfferTopicCounts>>,
+      offers: [] as Awaited<ReturnType<typeof getAdminServerOffers>>,
+      error: getErrorMessage(error),
+    };
+  }
+}
+
 async function ServerOfferManageContent({
   searchParamsPromise,
 }: {
@@ -34,10 +58,8 @@ async function ServerOfferManageContent({
   await connection();
 
   const searchParams = await searchParamsPromise;
-  const [counts, offers] = await Promise.all([
-    getServerOfferTopicCounts(),
-    getAdminServerOffers(300),
-  ]);
+  const { counts, offers, error: loadError } =
+    await loadServerOfferManageData();
   const total = counts.reduce((sum, item) => sum + item.count, 0);
   const hasMissingPrice = (priceAmount: unknown) =>
     priceAmount === null || priceAmount === undefined || priceAmount === "";
@@ -115,6 +137,14 @@ async function ServerOfferManageContent({
           },
         ]}
       />
+      {loadError ? (
+        <AdminSectionCard
+          title="套餐数据加载失败"
+          description="无法读取套餐列表或专题计数，暂时不能进行人工校正。请检查数据库连接、迁移状态或后台日志。"
+        >
+          <p className="break-words text-sm text-destructive">{loadError}</p>
+        </AdminSectionCard>
+      ) : null}
       <div id="quality" className="scroll-mt-24">
         <AdminSectionCard
           title="数据质量检查"

@@ -48,7 +48,7 @@ export function LatestPostsSidebar({
         </div>
 
         <Link
-          href={`${postPrefix}/${featuredPost.slug}`}
+          href={`${postPrefix}/${encodeURIComponent(featuredPost.slug)}`}
           prefetch
           className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
@@ -78,7 +78,7 @@ export function LatestPostsSidebar({
           {compactPosts.map((post, index) => (
             <Link
               key={post.id}
-              href={`${postPrefix}/${post.slug}`}
+              href={`${postPrefix}/${encodeURIComponent(post.slug)}`}
               prefetch
               className="group grid min-h-16 grid-cols-[28px_1fr_auto] items-center gap-3 px-5 py-3 transition-colors hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >

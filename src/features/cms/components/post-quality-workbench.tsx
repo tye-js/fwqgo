@@ -187,7 +187,7 @@ export function PostQualityWorkbench({
                 <TableCell>
                   {post.relatedPost ? (
                     <Link
-                      href={`/posts/edit/post/${post.relatedPost.slug}`}
+                      href={`/posts/edit/post/${encodeURIComponent(post.relatedPost.slug)}`}
                       className="group flex min-h-11 items-start gap-2 rounded-md border border-border/70 px-3 py-2 text-sm hover:bg-muted/40"
                     >
                       <Languages className="mt-0.5 size-4 shrink-0 text-primary" />
@@ -242,7 +242,7 @@ export function PostQualityWorkbench({
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
                     <Button asChild size="sm" variant="outline">
-                      <Link href={`/posts/edit/post/${post.slug}`}>编辑</Link>
+                      <Link href={`/posts/edit/post/${encodeURIComponent(post.slug)}`}>编辑</Link>
                     </Button>
                   </div>
                 </TableCell>

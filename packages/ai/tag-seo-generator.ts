@@ -2,6 +2,8 @@ import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import { assertPublicHttpUrl } from "@fwqgo/core/network-url";
 import { slugify } from "@fwqgo/core/utils";
 
+import { buildOpenAiChatCompletionsEndpoint } from "./openai-compatible";
+
 const DEFAULT_AI_REWRITE_TIMEOUT_MS = 300_000;
 const TAG_SEO_MAX_TOKENS = 2_000;
 
@@ -386,7 +388,7 @@ export async function generateTagSeoMetadata(
     );
   }
 
-  const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/v1/chat/completions`;
+  const endpoint = buildOpenAiChatCompletionsEndpoint(config.baseUrl);
   const text = await requestTagSeoJson({
     config,
     endpoint,

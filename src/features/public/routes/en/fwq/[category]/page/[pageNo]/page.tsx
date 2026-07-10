@@ -156,7 +156,7 @@ async function CategoryPageContent({
         <PaginationComponent
           pageNo={pageNo}
           totalPage={totalPage}
-          basePath={`/en/fwq/${category.slug}`}
+          basePath={`/en/fwq/${encodeURIComponent(category.slug)}`}
         />
       </div>
 

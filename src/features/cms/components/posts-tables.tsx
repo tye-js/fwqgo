@@ -906,7 +906,7 @@ export function PostList({
                     ) : (
                       <>
                         <Link
-                          href={`${editBasePath ?? pathname}/post/${post.slug}`}
+                          href={`${editBasePath ?? pathname}/post/${encodeURIComponent(post.slug)}`}
                           className="line-clamp-2 text-base font-medium leading-6 text-foreground underline-offset-4 hover:text-accent hover:underline"
                         >
                           {post.title}
@@ -1056,9 +1056,12 @@ export function PostList({
                           }
                         />
                       ) : (
-                        <span className="line-clamp-2 text-sm leading-5">
+                        <Link
+                          href={`${editBasePath ?? pathname}/post/${encodeURIComponent(post.slug)}`}
+                          className="line-clamp-2 text-sm font-medium leading-5 text-foreground underline-offset-4 hover:text-accent hover:underline"
+                        >
                           {post.title}
-                        </span>
+                        </Link>
                       )}
                     </TableCell>
                     <TableCell className="text-nowrap">
@@ -1072,7 +1075,7 @@ export function PostList({
                         />
                       ) : (
                         <Link
-                          href={`${editBasePath ?? pathname}/post/${post.slug}`}
+                          href={`${editBasePath ?? pathname}/post/${encodeURIComponent(post.slug)}`}
                           className="font-medium transition-colors hover:text-accent"
                         >
                           {post.slug}

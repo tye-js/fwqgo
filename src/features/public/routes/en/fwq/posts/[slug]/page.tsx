@@ -272,7 +272,7 @@ async function EnglishPostContent({ params }: PageProps) {
           />
           {post.chineseSlug ? (
             <Link
-              href={`/fwq/posts/${post.chineseSlug}`}
+              href={`/fwq/posts/${encodeURIComponent(post.chineseSlug)}`}
               prefetch
               className="inline-flex items-center gap-2 text-sm text-muted-foreground underline-offset-4 hover:text-primary hover:underline"
             >
@@ -423,7 +423,7 @@ async function EnglishPostContent({ params }: PageProps) {
                 {post.tags.map((tag) => (
                   <Link
                     key={tag.tag.id}
-                    href={`/en/fwq/tags/${tag.tag.slug}/page/1`}
+                    href={`/en/fwq/tags/${encodeURIComponent(tag.tag.slug)}/page/1`}
                     prefetch
                     className="inline-flex min-h-10 items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >

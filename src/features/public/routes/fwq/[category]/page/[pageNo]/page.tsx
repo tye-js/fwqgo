@@ -128,7 +128,7 @@ const CategoryPageContent = async ({
   };
   if (postsError) return <div>加载失败: {postsError}</div>;
   if (!posts) notFound();
-  const pageUrl = `${getSiteUrl()}/fwq/${encodeURIComponent(params.category)}/page/${pageNo}`;
+  const pageUrl = `${getSiteUrl()}/fwq/${encodeURIComponent(category.slug)}/page/${pageNo}`;
   const collectionJsonLd = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",
@@ -173,7 +173,7 @@ const CategoryPageContent = async ({
         <PaginationComponent
           pageNo={pageNo}
           totalPage={totalPage}
-          basePath={`/fwq/${params.category}`}
+          basePath={`/fwq/${encodeURIComponent(category.slug)}`}
         />
       </div>
 

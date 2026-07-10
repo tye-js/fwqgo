@@ -207,7 +207,7 @@ const footerCopy = {
 >;
 
 function categoryHref(slug: string, language: PublicLanguage) {
-  return `${language === "en" ? "/en" : ""}/fwq/${slug}/page/1`;
+  return `${language === "en" ? "/en" : ""}/fwq/${encodeURIComponent(slug)}/page/1`;
 }
 
 function nonEmptyTrim(value: string | null | undefined) {

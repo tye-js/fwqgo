@@ -267,7 +267,7 @@ export function PostProductionContextPanel({
               <div className="mt-3 space-y-2">
                 {relatedPost ? (
                   <Link
-                    href={`/posts/edit/post/${relatedPost.slug}`}
+                    href={`/posts/edit/post/${encodeURIComponent(relatedPost.slug)}`}
                     className="flex items-start gap-2 rounded-md border border-border/70 px-3 py-2 text-sm hover:bg-muted/40"
                   >
                     <Languages className="mt-0.5 size-4 shrink-0 text-primary" />

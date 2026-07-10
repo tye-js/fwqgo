@@ -243,7 +243,7 @@ export default async function Page() {
                 <span>{formatDate(topArticle.createdAt)}</span>
               </div>
               <Link
-                href={`/posts/edit/post/${topArticle.slug}`}
+                href={`/posts/edit/post/${encodeURIComponent(topArticle.slug)}`}
                 className="mt-3 block text-base font-semibold leading-6 underline-offset-4 hover:text-primary hover:underline"
               >
                 {topArticle.title}
@@ -292,7 +292,7 @@ export default async function Page() {
                   <TableRow key={post.id}>
                     <TableCell>
                       <Link
-                        href={`/posts/edit/post/${post.slug}`}
+                        href={`/posts/edit/post/${encodeURIComponent(post.slug)}`}
                         className="line-clamp-1 font-medium underline-offset-4 hover:text-primary hover:underline"
                       >
                         {post.title}
@@ -391,7 +391,7 @@ export default async function Page() {
                   <TableRow key={post.id}>
                     <TableCell>
                       <Link
-                        href={`/posts/edit/post/${post.slug}`}
+                        href={`/posts/edit/post/${encodeURIComponent(post.slug)}`}
                         className="line-clamp-1 font-medium underline-offset-4 hover:text-primary hover:underline"
                       >
                         {post.title}

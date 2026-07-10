@@ -377,7 +377,7 @@ export function ServerOfferCollectionPage({
                 {topicLinks.map((topic) => (
                   <Link
                     key={topic.slug}
-                    href={`/servers/${topic.slug}`}
+                    href={`/servers/${encodeURIComponent(topic.slug)}`}
                     prefetch
                     className="flex min-h-11 items-center justify-between rounded-md border border-border/70 px-3 text-sm text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/5 hover:text-foreground"
                   >

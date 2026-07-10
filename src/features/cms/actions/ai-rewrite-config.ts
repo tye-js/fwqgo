@@ -12,6 +12,7 @@ import {
   getAiRewriteConfigs,
   updateAiRewriteConfig,
 } from "@fwqgo/ai/rewrite-config";
+import { checkAiRewriteConfigStatus } from "@fwqgo/ai/rewrite-status-check";
 
 const configSchema = z.object({
   name: z.string().trim().min(1, "名称不能为空"),
@@ -73,4 +74,10 @@ export async function deleteAiRewriteConfigAction(id: number) {
   await requireAdminSession();
   await deleteAiRewriteConfig(id);
   revalidatePath("/collect/ai-rewrite");
+}
+
+export async function checkAiRewriteConfigStatusAction(id: number) {
+  await requireAdminSession();
+  const configId = z.coerce.number().int().positive().parse(id);
+  return checkAiRewriteConfigStatus(configId);
 }

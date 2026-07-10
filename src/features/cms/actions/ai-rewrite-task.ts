@@ -765,8 +765,8 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
     }
 
     revalidateAiTaskPages(task.id);
-    revalidatePath(`/posts/edit/post/${post.slug}`);
-    revalidatePath(`/posts/edit/post/${parentPost.slug}`);
+    revalidatePath(`/posts/edit/post/${encodeURIComponent(post.slug)}`);
+    revalidatePath(`/posts/edit/post/${encodeURIComponent(parentPost.slug)}`);
 
     return {
       data: {

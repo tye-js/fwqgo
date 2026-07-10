@@ -15,7 +15,7 @@ function ArticleCard({
 }) {
   const postPrefix = language === "en" ? "/en/fwq/posts" : "/fwq/posts";
   const tagPrefix = language === "en" ? "/en/fwq/tags" : "/fwq/tags";
-  const href = `${postPrefix}/${post.slug}`;
+  const href = `${postPrefix}/${encodeURIComponent(post.slug)}`;
   const locale = language === "en" ? "en-US" : "zh-CN";
   const titleId = `article-card-title-${post.id}`;
   const primaryTag = post.tags[0]?.tag;
@@ -58,7 +58,7 @@ function ArticleCard({
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               {primaryTag ? (
                 <Link
-                  href={`${tagPrefix}/${primaryTag.slug}/page/1`}
+                  href={`${tagPrefix}/${encodeURIComponent(primaryTag.slug)}/page/1`}
                   prefetch
                   className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-primary/15 bg-primary/5 px-2.5 font-medium text-primary transition-colors hover:border-primary/30 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
@@ -96,7 +96,7 @@ function ArticleCard({
               {secondaryTags.map((tag) => (
                 <Link
                   key={tag.tag.id}
-                  href={`${tagPrefix}/${tag.tag.slug}/page/1`}
+                  href={`${tagPrefix}/${encodeURIComponent(tag.tag.slug)}/page/1`}
                   prefetch
                   className="inline-flex min-h-9 items-center rounded-md border border-border/70 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >

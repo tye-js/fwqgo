@@ -1,7 +1,27 @@
 import { getImageAssetList, serializeImageAsset } from "@/server/images/assets";
 import { requireAdminSession } from "@fwqgo/auth/session";
-import { AdminPageShell, AdminSummaryStrip } from "@/features/cms/components/admin-page-shell";
+import {
+  AdminPageShell,
+  AdminSectionCard,
+  AdminSummaryStrip,
+} from "@/features/cms/components/admin-page-shell";
 import { ImageAssetManager } from "@/features/cms/components/image-asset-manager";
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "未知错误";
+}
+
+async function loadImageAssets() {
+  try {
+    const data = await getImageAssetList();
+    return { data, error: null };
+  } catch (error) {
+    console.error("图片管理页加载图片资产失败:", error);
+    return { data: [], error: getErrorMessage(error) };
+  }
+}
 
 export default async function ImageListPage({
   searchParams,
@@ -15,7 +35,7 @@ export default async function ImageListPage({
 }) {
   await requireAdminSession();
   const params = await searchParams;
-  const images = await getImageAssetList();
+  const { data: images, error: loadError } = await loadImageAssets();
   const imageTypes = new Set(images.map((image) => image.imageType));
   const imageStatuses = new Set(images.map((image) => image.status));
   const usageFilter = [
@@ -63,6 +83,14 @@ export default async function ImageListPage({
           },
         ]}
       />
+      {loadError ? (
+        <AdminSectionCard
+          title="图片列表加载失败"
+          description="无法读取图片资产列表。上传功能和文章封面字段不会被修改，请检查数据库连接、上传目录或后台日志。"
+        >
+          <p className="break-words text-sm text-destructive">{loadError}</p>
+        </AdminSectionCard>
+      ) : null}
       <ImageAssetManager
         images={images.map(serializeImageAsset)}
         initialQuery={params.query?.trim() ?? ""}

@@ -50,7 +50,7 @@ async function ServersContent() {
     itemListElement: offerTopics.map((topic, index) => ({
       "@type": "ListItem",
       position: index + 1,
-      url: `${getSiteUrl()}/servers/${topic.slug}`,
+      url: `${getSiteUrl()}/servers/${encodeURIComponent(topic.slug)}`,
       name: topic.title,
       description: topic.description,
     })),
@@ -89,7 +89,7 @@ async function ServersContent() {
             return (
               <Link
                 key={topic.slug}
-                href={`/servers/${topic.slug}`}
+                href={`/servers/${encodeURIComponent(topic.slug)}`}
                 prefetch
                 className="group rounded-lg border border-border/70 bg-background p-5 shadow-sm transition-colors hover:border-primary/30 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >

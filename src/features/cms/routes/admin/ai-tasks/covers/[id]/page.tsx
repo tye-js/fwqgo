@@ -92,7 +92,7 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
           />
           {task.post ? (
             <Button asChild>
-              <Link href={`/posts/edit/post/${task.post.slug}`}>编辑文章</Link>
+              <Link href={`/posts/edit/post/${encodeURIComponent(task.post.slug)}`}>编辑文章</Link>
             </Button>
           ) : null}
         </div>

@@ -21,6 +21,12 @@ function parsePageNo(value: string | undefined) {
   return parsePositiveInt(value) ?? 1;
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "未知错误";
+}
+
 function languageFilterHref(language: PostLanguageFilter) {
   return language === "all"
     ? "/posts/edit"
@@ -64,11 +70,18 @@ async function PostListWrapper({
     language,
   });
 
-  if (error || !posts) {
-    return <div>获取文章列表失败</div>;
-  }
-
-  const { data: postCount } = await getPostCount(language);
+  const { data: postCount, error: countError } = await getPostCount(language)
+    .then(({ data }) => ({ data, error: null }))
+    .catch((countLoadError: unknown) => {
+      console.error("文章列表计数加载失败:", countLoadError);
+      return { data: 0, error: getErrorMessage(countLoadError) };
+    });
+  const loadError = error
+    ? getErrorMessage(error)
+    : posts
+      ? countError
+      : "获取文章列表失败";
+  const visiblePosts = posts ?? [];
   const totalPage = Math.ceil((postCount ?? 0) / 15);
 
   return (
@@ -96,11 +109,19 @@ async function PostListWrapper({
           },
           {
             label: "本页数量",
-            value: String(posts.length),
+            value: String(visiblePosts.length),
             note: "当前页可操作文章",
           },
         ]}
       />
+      {loadError ? (
+        <AdminSectionCard
+          title="文章列表加载失败"
+          description="无法完整读取文章列表或分页计数。请检查数据库连接、迁移状态或后台日志。"
+        >
+          <p className="break-words text-sm text-destructive">{loadError}</p>
+        </AdminSectionCard>
+      ) : null}
       <AdminSectionCard
         title="全部文章"
         description="支持快速编辑标题、slug、发布状态和封面链接。"
@@ -108,7 +129,7 @@ async function PostListWrapper({
         <div className="mb-4">
           <LanguageFilter value={language} />
         </div>
-        <PostList posts={posts} />
+        <PostList posts={visiblePosts} />
         <PaginationComponent pageNo={pageNo} totalPage={totalPage} />
       </AdminSectionCard>
     </AdminPageShell>

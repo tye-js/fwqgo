@@ -440,7 +440,7 @@ export async function sitemapServersGET() {
     }),
     ...offerTopics.map((topic) =>
       urlEntry({
-        loc: `${baseUrl}/servers/${topic.slug}`,
+        loc: `${baseUrl}/servers/${encodeURIComponent(topic.slug)}`,
         lastmod,
         changefreq: "daily",
         priority: "0.85",

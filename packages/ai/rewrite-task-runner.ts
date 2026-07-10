@@ -997,7 +997,7 @@ async function runEnglishSeoTask(
       stepName: "写入英文草稿",
       status: "success",
       progress: 88,
-      message: `英文草稿已单独生成：/posts/edit/post/${englishPost.slug}`,
+      message: `英文草稿已单独生成：/posts/edit/post/${encodeURIComponent(englishPost.slug)}`,
       payload: { postId: englishPost.id, enSlug: englishPost.slug },
     });
 
@@ -1260,8 +1260,8 @@ async function runSeoMetadataTask(
     ]);
     revalidatePath("/posts/edit");
     revalidatePath("/posts/drafts");
-    revalidatePath(`/posts/edit/post/${post.slug}`);
-    revalidatePath(`/posts/edit/post/${updateResult.slug}`);
+    revalidatePath(`/posts/edit/post/${encodeURIComponent(post.slug)}`);
+    revalidatePath(`/posts/edit/post/${encodeURIComponent(updateResult.slug)}`);
 
     await updateTask(claimedTask.id, {
       status: "succeeded",

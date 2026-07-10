@@ -23,6 +23,7 @@ await import("../../src/env.js");
 const config = {
   output: "standalone",
   distDir: "../../.next-cms",
+  allowedDevOrigins: ["localhost", "127.0.0.1"],
   images: {
     localPatterns: [
       {
@@ -60,6 +61,26 @@ const config = {
         ? { exclude: ["error", "warn"] }
         : false,
   },
+  /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
+  webpack(config, { dev }) {
+    if (dev) {
+      config.watchOptions = {
+        ...(config.watchOptions ?? {}),
+        ignored: [
+          "**/.deploy/**",
+          "**/.git/**",
+          "**/.next/**",
+          "**/.next-cms/**",
+          "**/.next-web/**",
+          "**/node_modules/**",
+          "**/output/**",
+        ],
+      };
+    }
+
+    return config;
+  },
+  /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 };
 
 export default config;
