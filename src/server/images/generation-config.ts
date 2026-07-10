@@ -19,6 +19,7 @@ export type ImageGenerationConfigInput = {
   apiKey?: string;
   model: string;
   promptTemplate: string;
+  englishPromptTemplate: string;
   size: string;
   quality: string;
   timeoutSeconds: number;
@@ -171,6 +172,7 @@ export async function updateImageGenerationConfig(
     baseUrl: normalizeBaseUrl(input.baseUrl),
     model: input.model,
     promptTemplate: input.promptTemplate,
+    englishPromptTemplate: input.englishPromptTemplate,
     size: input.size,
     quality: input.quality,
     timeoutSeconds: input.timeoutSeconds,

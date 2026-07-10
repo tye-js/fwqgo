@@ -26,6 +26,10 @@ const configSchema = z.object({
   apiKey: z.string().trim().optional(),
   model: z.string().trim().min(1, "模型不能为空"),
   promptTemplate: z.string().trim().min(1, "Prompt 模板不能为空"),
+  englishPromptTemplate: z
+    .string()
+    .trim()
+    .min(1, "英文封面 Prompt 模板不能为空"),
   size: z.string().trim().min(3, "尺寸不能为空"),
   quality: z.string().trim().min(1, "质量参数不能为空"),
   timeoutSeconds: z.coerce.number().int().min(10).max(300),

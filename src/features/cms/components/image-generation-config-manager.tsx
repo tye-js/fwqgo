@@ -41,7 +41,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { defaultCoverPromptTemplate } from "@fwqgo/core/image-generation-prompts";
+import {
+  defaultCoverPromptTemplate,
+  defaultEnglishCoverPromptTemplate,
+} from "@fwqgo/core/image-generation-prompts";
 import {
   describeAdminResult,
   notifyError,
@@ -55,6 +58,7 @@ type Config = {
   baseUrl: string;
   model: string;
   promptTemplate: string;
+  englishPromptTemplate: string | null;
   size: string;
   quality: string;
   timeoutSeconds: number;
@@ -242,7 +246,7 @@ function ConfigForm({
       </div>
 
       <div className="space-y-2">
-        <Label>封面 Prompt 模板</Label>
+        <Label>通用封面 Prompt 模板</Label>
         <Textarea
           name="promptTemplate"
           className="min-h-56 font-mono text-xs leading-5"
@@ -251,6 +255,23 @@ function ConfigForm({
         />
         <p className="text-xs leading-5 text-muted-foreground">
           支持占位符：<code>{"{title}"}</code>、<code>{"{description}"}</code>、
+          <code>{"{keywords}"}</code>、<code>{"{content}"}</code>。
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label>英文封面附加 Prompt</Label>
+        <Textarea
+          name="englishPromptTemplate"
+          className="min-h-72 font-mono text-xs leading-5"
+          defaultValue={
+            config?.englishPromptTemplate ?? defaultEnglishCoverPromptTemplate
+          }
+          required
+        />
+        <p className="text-xs leading-5 text-muted-foreground">
+          仅生成英文文章封面时追加，并覆盖通用模板中冲突的语言和文字要求。支持占位符：
+          <code>{"{title}"}</code>、<code>{"{description}"}</code>、
           <code>{"{keywords}"}</code>、<code>{"{content}"}</code>。
         </p>
       </div>

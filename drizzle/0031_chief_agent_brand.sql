@@ -1,0 +1,1 @@
+ALTER TABLE "image_generation_configs" ADD COLUMN "englishPromptTemplate" text;
