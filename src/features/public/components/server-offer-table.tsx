@@ -112,21 +112,6 @@ function getOfferFreshnessLabel(offer: Offer) {
   );
 }
 
-function getOfferCompleteness(offer: Offer) {
-  const requiredFields = [
-    cleanText(offer.priceAmount),
-    cleanText(offer.currency),
-    cleanText(offer.billingCycle),
-    cleanText(offer.providerName),
-    cleanText(offer.region),
-    cleanText(offer.lineType),
-    specsText(offer),
-    cleanText(offer.purchaseUrl),
-  ];
-  const completed = requiredFields.filter(Boolean).length;
-  return Math.round((completed / requiredFields.length) * 100);
-}
-
 function specsText(offer: Offer) {
   return [
     offer.cpu,
@@ -268,9 +253,10 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
           ) : null}
           {productType ? <Badge variant="outline">{productType}</Badge> : null}
           {promoCode ? (
-            <Badge variant="outline">优惠码 {promoCode}</Badge>
+            <Badge className="bg-primary/10 font-mono text-primary hover:bg-primary/10">
+              优惠码 {promoCode}
+            </Badge>
           ) : null}
-          <Badge variant="outline">完整度 {getOfferCompleteness(offer)}%</Badge>
         </div>
       </div>
 
@@ -413,7 +399,7 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
       <div className="rounded-lg border border-border/70 bg-background p-4 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-            <Filter className="size-4 text-accent" />
+            <Filter className="size-4 text-primary" />
             筛选套餐
           </div>
           <span className="text-xs text-muted-foreground">
@@ -569,12 +555,14 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                   </div>
                 </td>
                 <td className="px-3 py-3">
-                  <p className="font-semibold leading-5 text-foreground">
+                  <p className="font-semibold tabular-nums leading-5 text-foreground">
                     {formatPrice(offer)}
                   </p>
                   {offer.promoCode ? (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      优惠码：{offer.promoCode}
+                    <p className="mt-2 text-xs">
+                      <span className="rounded-sm bg-primary/10 px-1.5 py-0.5 font-mono font-medium text-primary">
+                        {offer.promoCode}
+                      </span>
                     </p>
                   ) : null}
                   <p className="mt-2 text-xs text-muted-foreground">
@@ -621,9 +609,6 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                   >
                     {offerStatusLabels[offer.status] ?? offer.status}
                   </Badge>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    完整度 {getOfferCompleteness(offer)}%
-                  </p>
                 </td>
                 <td className="px-3 py-3">
                   <OfferActions offer={offer} />
