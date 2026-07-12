@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ArrowUp } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
-import { PiRocketLight } from "react-icons/pi";
 
 export function ScrollToTop() {
   const [isVisible, setIsVisible] = useState(false);
@@ -37,11 +38,11 @@ export function ScrollToTop() {
     <Button
       variant="outline"
       size="icon"
-      className="fixed bottom-8 right-4 z-50 rounded-full bg-white/80 shadow-lg backdrop-blur-sm hover:bg-white/90"
+      className="fixed bottom-8 right-4 z-50 size-11 rounded-full bg-background/90 shadow-lg backdrop-blur-sm hover:bg-muted"
       onClick={scrollToTop}
       aria-label="回到顶部"
     >
-      <PiRocketLight className="h-6 w-6 md:h-8 md:w-8" />
+      <ArrowUp className="size-5" />
     </Button>
   );
 }

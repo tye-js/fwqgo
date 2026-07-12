@@ -35,9 +35,8 @@ function ArticleCard({
       key={post.id}
       role="article"
       aria-labelledby={titleId}
-      className="group relative overflow-hidden rounded-lg border-border/70 bg-background shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md"
+      className="group relative overflow-hidden rounded-lg border-border/70 bg-background shadow-sm transition-colors duration-200 hover:border-primary/40"
     >
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-1 bg-primary/0 transition-colors duration-200 group-hover:bg-primary/70" />
       <div className="grid gap-0 md:grid-cols-[220px_minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)]">
         <Link
           href={href}
@@ -50,7 +49,6 @@ function ArticleCard({
             alt={post.title}
             sizes="(max-width: 768px) calc(100vw - 2rem), 240px"
           />
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent,rgba(15,23,42,0.12))]" />
         </Link>
 
         <CardContent className="flex min-w-0 flex-col justify-between p-4 pt-3 md:p-4 lg:p-5">
@@ -60,7 +58,7 @@ function ArticleCard({
                 <Link
                   href={`${tagPrefix}/${encodeURIComponent(primaryTag.slug)}/page/1`}
                   prefetch
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-primary/15 bg-primary/5 px-2.5 font-medium text-primary transition-colors hover:border-primary/30 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-primary/15 bg-primary/5 px-2.5 font-medium text-primary transition-colors hover:border-primary/30 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-9"
                 >
                   <Tags className="size-3" />
                   {primaryTag.name}
@@ -98,7 +96,7 @@ function ArticleCard({
                   key={tag.tag.id}
                   href={`${tagPrefix}/${encodeURIComponent(tag.tag.slug)}/page/1`}
                   prefetch
-                  className="inline-flex min-h-9 items-center rounded-md border border-border/70 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="inline-flex min-h-11 items-center rounded-md border border-border/70 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-9"
                 >
                   #{tag.tag.name}
                 </Link>

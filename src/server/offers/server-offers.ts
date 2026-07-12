@@ -1050,6 +1050,23 @@ export async function getServerOfferTopicCounts() {
   }
 }
 
+export async function getPublicServerOfferCount() {
+  "use cache";
+  tagCache(cacheTags.serverOffers);
+
+  try {
+    const [row] = await readDb
+      .select({ count: sql<number>`count(*)` })
+      .from(serverOffers)
+      .where(publicPurchasableOfferBaseWhere());
+
+    return Number(row?.count ?? 0);
+  } catch (error) {
+    console.error("Failed to count public server offers:", error);
+    return 0;
+  }
+}
+
 export async function getLatestServerOffers(limit = 8) {
   "use cache";
   tagCache(cacheTags.serverOffers);
@@ -1084,6 +1101,27 @@ export async function getLatestServerOffers(limit = 8) {
       .limit(limit);
   } catch (error) {
     console.error("Failed to load latest server offers:", error);
+    return [];
+  }
+}
+
+export async function getPublicServerOffers(limit = 120) {
+  "use cache";
+  tagCache(cacheTags.serverOffers);
+
+  try {
+    return await readDb
+      .select(serverOfferPublicSelect())
+      .from(serverOffers)
+      .where(publicPurchasableOfferBaseWhere())
+      .orderBy(
+        desc(serverOffers.featured),
+        asc(serverOffers.priceAmount),
+        desc(serverOffers.createdAt),
+      )
+      .limit(limit);
+  } catch (error) {
+    console.error("Failed to load public server offers:", error);
     return [];
   }
 }
