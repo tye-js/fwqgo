@@ -1,18 +1,15 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import {
   ArrowRight,
   ArrowUpRight,
+  BadgePercent,
   Gauge,
   MapPin,
-  Search,
   Server,
-  ShieldCheck,
-  Sparkles,
-  Tags,
+  Store,
   Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -25,13 +22,16 @@ import { HeroTagSearch } from "@/features/public/components/hero-tag-search";
 import ArticleCard from "@/features/public/components/article-card";
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
+import {
+  FeaturedOfferList,
+  type FeaturedOffer,
+} from "@/features/public/components/featured-offer-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { isHttpHref, isInternalHref } from "@fwqgo/core/utils";
+import { formatDate, isHttpHref, isInternalHref } from "@fwqgo/core/utils";
 import {
   getLatestServerOffers,
+  getPublicServerOfferCount,
   getServerOfferTopicCounts,
   offerTopics,
 } from "@/server/offers/server-offers";
@@ -65,8 +65,6 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-type LatestOffer = Awaited<ReturnType<typeof getLatestServerOffers>>[number];
-
 const quickIntentLinks = [
   { label: "香港 CN2", href: "/search?q=香港%20CN2" },
   { label: "香港 CMI", href: "/search?q=香港%20CMI" },
@@ -76,35 +74,39 @@ const quickIntentLinks = [
   { label: "优惠码", href: "/search?q=优惠码" },
 ];
 
-const featureCards: Array<{
+const compareEntries: Array<{
   title: string;
   description: string;
   href: string;
   icon: LucideIcon;
+  topicSlug?: string;
 }> = [
   {
-    title: "完整比价工具",
-    description: "集中筛选价格、地区、线路、状态、优惠码和购买入口。",
+    title: "服务器比价",
+    description: "按价格、地区、线路、状态和优惠码筛选全部套餐。",
     href: "/servers",
     icon: Gauge,
   },
   {
     title: "香港服务器",
-    description: "优先查看 CN2、CMI、BGP 和大陆访问优化套餐。",
+    description: "CN2、CMI、BGP 线路，大陆访问延迟低。",
     href: "/servers/hong-kong",
     icon: MapPin,
+    topicSlug: "hong-kong",
   },
   {
     title: "美国服务器",
-    description: "适合外贸建站、海外业务、大带宽和测试环境。",
+    description: "外贸建站、大带宽和海外业务首选。",
     href: "/servers/united-states",
     icon: Server,
+    topicSlug: "united-states",
   },
   {
     title: "便宜 VPS",
-    description: "按低价月付和轻量配置快速找到入门方案。",
+    description: "低价月付、轻量配置，适合测试和入门。",
     href: "/servers/cheap-vps",
     icon: Zap,
+    topicSlug: "cheap-vps",
   },
 ];
 
@@ -112,62 +114,7 @@ function formatCount(value: number) {
   return value.toLocaleString("zh-CN");
 }
 
-function formatOfferPrice(offer: LatestOffer) {
-  if (!offer.priceAmount) return "价格待补充";
-  const amount = Number(offer.priceAmount);
-  if (!Number.isFinite(amount)) return "价格待确认";
-
-  const currency = offer.currency === "CNY" ? "¥" : "$";
-  const cycleMap: Record<string, string> = {
-    monthly: "月付",
-    quarterly: "季付",
-    semiannual: "半年",
-    yearly: "年付",
-  };
-  const cycle = offer.billingCycle
-    ? (cycleMap[offer.billingCycle] ?? offer.billingCycle)
-    : "周期待确认";
-
-  return `${currency}${amount.toFixed(2)} / ${cycle}`;
-}
-
-function SmartLink({
-  href,
-  children,
-  className,
-}: {
-  href: string | null | undefined;
-  children: ReactNode;
-  className: string;
-}) {
-  const safeHref = href?.trim();
-  if (!safeHref) return null;
-
-  if (isInternalHref(safeHref)) {
-    return (
-      <Link href={safeHref} prefetch className={className}>
-        {children}
-      </Link>
-    );
-  }
-
-  if (isHttpHref(safeHref)) {
-    return (
-      <a
-        href={safeHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={className}
-      >
-        {children}
-      </a>
-    );
-  }
-
-  return null;
-}
-
-function topValues(values: Array<string | null>, limit = 4) {
+function topValues(values: Array<string | null>, limit = 5) {
   const counts = new Map<string, number>();
   for (const value of values) {
     const key = value?.trim();
@@ -178,86 +125,42 @@ function topValues(values: Array<string | null>, limit = 4) {
   return [...counts.entries()]
     .sort((left, right) => right[1] - left[1])
     .slice(0, limit)
-    .map(([name, count]) => ({ name, count }));
+    .map(([name]) => name);
 }
 
-function FeatureEntryCard({
-  title,
-  description,
-  href,
-  icon: Icon,
-  count,
-}: {
-  title: string;
-  description: string;
-  href: string;
-  icon: LucideIcon;
-  count?: number;
-}) {
-  return (
-    <Link
-      href={href}
-      prefetch
-      className="group rounded-lg border border-border/70 bg-background/90 p-4 shadow-sm transition-colors hover:border-accent/35 hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <span className="flex size-10 items-center justify-center rounded-md border border-border/70 bg-muted/40 text-accent">
-          <Icon className="size-5" />
-        </span>
-        {typeof count === "number" ? (
-          <Badge variant="secondary">{formatCount(count)} 个套餐</Badge>
-        ) : (
-          <ArrowUpRight className="size-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-        )}
-      </div>
-      <h2 className="mt-4 text-base font-semibold text-foreground">{title}</h2>
-      <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">
-        {description}
-      </p>
-    </Link>
+function PromoCodeLink({ offer }: { offer: FeaturedOffer }) {
+  const providerName = offer.providerName?.trim();
+  const articleHref = offer.articleUrl?.trim();
+  const label = providerName?.length ? providerName : offer.title;
+  const href = articleHref?.length ? articleHref : "/servers";
+  const className =
+    "flex min-h-11 items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm transition-colors hover:border-primary/35 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  const content = (
+    <>
+      <span className="min-w-0 truncate text-foreground">{label}</span>
+      <Badge className="shrink-0 bg-primary/10 font-mono text-primary hover:bg-primary/10">
+        {offer.promoCode}
+      </Badge>
+    </>
   );
-}
 
-function OfferPreviewCard({ offer }: { offer: LatestOffer }) {
-  const meta = [offer.providerName, offer.region, offer.lineType]
-    .map((item) => item?.trim())
-    .filter(Boolean)
-    .join(" · ");
+  if (isInternalHref(href)) {
+    return (
+      <Link href={href} prefetch className={className}>
+        {content}
+      </Link>
+    );
+  }
 
-  return (
-    <article className="rounded-lg border border-border/70 bg-background p-4 shadow-sm transition-colors hover:border-accent/30 hover:bg-muted/20">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">{meta || "套餐信息待补充"}</p>
-          <h3 className="mt-2 line-clamp-2 text-sm font-semibold leading-6 text-foreground">
-            {offer.title}
-          </h3>
-        </div>
-        <Badge variant="outline" className="shrink-0">
-          {offer.status === "in_stock" ? "有货" : "可关注"}
-        </Badge>
-      </div>
-      <p className="mt-3 text-lg font-semibold tracking-tight text-foreground">
-        {formatOfferPrice(offer)}
-      </p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <SmartLink
-          href={offer.purchaseUrl}
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-md bg-foreground px-3 text-xs font-medium text-background transition-colors hover:bg-accent"
-        >
-          购买入口
-          <ArrowUpRight className="size-3.5" />
-        </SmartLink>
-        <SmartLink
-          href={offer.articleUrl}
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-border/70 px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-accent/40 hover:text-accent"
-        >
-          来源文章
-          <ArrowRight className="size-3.5" />
-        </SmartLink>
-      </div>
-    </article>
-  );
+  if (isHttpHref(href)) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+        {content}
+      </a>
+    );
+  }
+
+  return null;
 }
 
 function SidebarArticleLink({
@@ -271,15 +174,15 @@ function SidebarArticleLink({
     <Link
       href={`/fwq/posts/${encodeURIComponent(post.slug)}`}
       prefetch
-      className="group flex gap-3 rounded-md border border-border/70 bg-background px-3 py-3 text-sm transition-colors hover:border-accent/30 hover:bg-muted/20"
+      className="group flex gap-3 rounded-md border border-border/70 bg-background px-3 py-3 text-sm transition-colors hover:border-primary/35 hover:bg-muted/30"
     >
       {typeof rank === "number" ? (
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-muted text-xs font-semibold text-muted-foreground">
           {rank}
         </span>
       ) : null}
       <span className="min-w-0">
-        <span className="line-clamp-2 font-medium leading-5 text-foreground underline-offset-4 group-hover:text-accent group-hover:underline">
+        <span className="line-clamp-2 font-medium leading-5 text-foreground underline-offset-4 group-hover:text-primary group-hover:underline">
           {post.title}
         </span>
         {post.description ? (
@@ -292,263 +195,243 @@ function SidebarArticleLink({
   );
 }
 
+function SectionHeading({
+  title,
+  description,
+}: {
+  title: string;
+  description?: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <h2 className="text-xl font-semibold tracking-tight text-foreground md:text-2xl">
+        {title}
+      </h2>
+      {description ? (
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
+      ) : null}
+    </div>
+  );
+}
+
 async function HomeContent() {
   await connection();
 
-  const [{ data: posts }, { data: sidebarData }, offerCounts, latestOffers] =
-    await Promise.all([
-      getHomepagePostsWithTags(),
-      getHomepageSidebarData(),
-      getServerOfferTopicCounts(),
-      getLatestServerOffers(6),
-    ]);
+  const [
+    { data: posts },
+    { data: sidebarData },
+    offerCounts,
+    latestOffers,
+    totalOfferCount,
+  ] = await Promise.all([
+    getHomepagePostsWithTags(),
+    getHomepageSidebarData(),
+    getServerOfferTopicCounts(),
+    getLatestServerOffers(24),
+    getPublicServerOfferCount(),
+  ]);
 
   const safePosts = posts ?? [];
   const latestArticles = safePosts.slice(0, 8);
   const promotedPosts = sidebarData?.promotedPosts ?? [];
   const popularPosts = sidebarData?.popularPosts ?? [];
+  const featuredOffers = latestOffers.slice(0, 6);
+  const promoOffers = latestOffers
+    .filter((offer) => offer.promoCode?.trim())
+    .slice(0, 4);
   const topProviders = topValues(latestOffers.map((offer) => offer.providerName));
   const topRegions = topValues(latestOffers.map((offer) => offer.region));
-  const latestPromoOffers = latestOffers
-    .filter((offer) => offer.promoCode)
-    .slice(0, 3);
-  const totalTopicOffers = offerCounts.reduce((sum, item) => sum + item.count, 0);
+  const latestOfferUpdatedAt = latestOffers
+    .map((offer) => offer.updatedAt ?? offer.createdAt)
+    .filter((value): value is Date => Boolean(value))
+    .sort((left, right) => right.getTime() - left.getTime())[0];
 
   return (
     <main className="flex-1">
-      <section className="home-grid-surface relative overflow-hidden border-b border-border/60">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/50 to-transparent" />
-        <div className="container relative mx-auto px-4 py-6 md:py-8">
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-stretch">
-            <div className="rounded-lg border border-border/70 bg-background/88 p-5 shadow-sm backdrop-blur md:p-7">
+      {/* 首屏：搜索 + 比价入口 + 真实侧栏模块 */}
+      <section className="home-grid-surface border-b border-border/60">
+        <div className="container mx-auto px-4 py-8 md:py-10">
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_330px]">
+            <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge className="bg-foreground text-background hover:bg-foreground">
-                  FWQGO Intelligence
+                <Badge
+                  variant="outline"
+                  className="border-primary/30 bg-primary/5 text-primary"
+                >
+                  服务器优惠 · 套餐比价
                 </Badge>
-                <Badge variant="secondary">服务器优惠入口</Badge>
+                {totalOfferCount > 0 ? (
+                  <span className="text-xs text-muted-foreground">
+                    已收录 {formatCount(totalOfferCount)} 个可购买套餐
+                    {latestOfferUpdatedAt
+                      ? ` · 更新于 ${formatDate(latestOfferUpdatedAt)}`
+                      : ""}
+                  </span>
+                ) : null}
               </div>
-              <h1 className="font-editorial text-gradient mt-4 max-w-4xl text-3xl font-semibold leading-tight tracking-tight md:text-5xl">
-                把服务器优惠、测评和套餐数据放到同一个决策入口
+              <h1 className="mt-4 max-w-2xl text-3xl font-semibold leading-tight tracking-tight text-foreground md:text-4xl">
+                找服务器优惠，先比价再下单
               </h1>
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">
-                首页负责快速分发：进入比价工具、专题页、标签搜索和最新文章。完整筛选、排序和购买入口集中放在服务器比价页，减少首屏噪音。
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">
+                汇总 VPS、云服务器和独立服务器的价格、地区、线路、库存与优惠码，
+                每个套餐都保留购买入口和来源文章。
               </p>
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-md border border-border/70 bg-muted/25 p-3">
-                  <p className="text-xs text-muted-foreground">结构化套餐</p>
-                  <p className="mt-1 text-2xl font-semibold tracking-tight">
-                    {formatCount(totalTopicOffers)}
-                  </p>
-                </div>
-                <div className="rounded-md border border-border/70 bg-muted/25 p-3">
-                  <p className="text-xs text-muted-foreground">专题入口</p>
-                  <p className="mt-1 text-2xl font-semibold tracking-tight">
-                    {offerTopics.length}
-                  </p>
-                </div>
-                <div className="rounded-md border border-border/70 bg-muted/25 p-3">
-                  <p className="text-xs text-muted-foreground">最新文章</p>
-                  <p className="mt-1 text-2xl font-semibold tracking-tight">
-                    {formatCount(safePosts.length)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Button asChild className="h-10 rounded-md bg-foreground px-5 text-background hover:bg-accent">
-                  <Link href="/servers" prefetch>
-                    打开比价工具
-                    <ArrowRight className="size-4" />
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" className="h-10 rounded-md px-5">
-                  <Link href="/fwq/vps/page/1" prefetch>
-                    浏览推广文章
-                    <ArrowUpRight className="size-4" />
-                  </Link>
-                </Button>
-              </div>
-
-              <div className="mt-5 rounded-lg border border-border/70 bg-background/80 p-3 shadow-sm">
-                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <Search className="size-3.5" />
-                  快速筛选
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {quickIntentLinks.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      prefetch
-                      className="inline-flex min-h-9 items-center rounded-full border border-border/70 bg-background px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-accent/35 hover:bg-accent/5 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mt-4">
+              <div className="mt-5 max-w-2xl">
                 <HeroTagSearch />
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  快速筛选
+                </span>
+                {quickIntentLinks.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    prefetch
+                    className="inline-flex min-h-11 items-center rounded-full border border-border bg-background px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-9 md:px-3"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
               </div>
             </div>
 
-            <aside className="rounded-lg border border-border/70 bg-zinc-950 p-5 text-white shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="flex items-center gap-2 text-sm font-medium text-white">
-                    <Sparkles className="size-4 text-cyan-300" />
-                    今日决策面板
-                  </p>
-                  <p className="mt-2 text-xs leading-5 text-white/60">
-                    少量高价值入口，避免首页变成复杂表格。
-                  </p>
+            <aside className="min-w-0 space-y-4 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
+              <div>
+                <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <BadgePercent className="size-4 text-primary" />
+                  最新优惠码
+                </p>
+                <div className="mt-3 space-y-2">
+                  {promoOffers.length > 0 ? (
+                    promoOffers.map((offer) => (
+                      <PromoCodeLink key={offer.id} offer={offer} />
+                    ))
+                  ) : (
+                    <p className="rounded-md border border-dashed border-border/70 bg-muted/30 px-3 py-4 text-xs leading-5 text-muted-foreground">
+                      暂无带优惠码的套餐，可以先打开比价工具查看全部优惠。
+                    </p>
+                  )}
                 </div>
-                <Badge className="border-white/10 bg-white/10 text-white hover:bg-white/10">
-                  Live
-                </Badge>
               </div>
 
-              <div className="mt-5 space-y-3">
-                {offerTopics.map((topic) => {
-                  const count =
-                    offerCounts.find((item) => item.slug === topic.slug)?.count ?? 0;
-
-                  return (
-                    <Link
-                      key={topic.slug}
-                      href={`/servers/${encodeURIComponent(topic.slug)}`}
-                      prefetch
-                      className="group flex items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.04] px-3 py-3 transition-colors hover:border-cyan-300/40 hover:bg-white/[0.07]"
-                    >
-                      <span>
-                        <span className="block text-sm font-medium text-white">
-                          {topic.title}
-                        </span>
-                        <span className="mt-1 block text-xs text-white/55">
-                          {topic.shortTitle} · {formatCount(count)} 个套餐
-                        </span>
-                      </span>
-                      <ArrowRight className="size-4 text-white/45 transition-transform group-hover:translate-x-0.5 group-hover:text-cyan-300" />
-                    </Link>
-                  );
-                })}
+              <div>
+                <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <Store className="size-4 text-primary" />
+                  热门商家
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {topProviders.length > 0 ? (
+                    topProviders.map((name) => (
+                      <Link
+                        key={name}
+                        href={`/servers/providers/${encodeURIComponent(name)}`}
+                        prefetch
+                        className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary md:min-h-8"
+                      >
+                        {name}
+                      </Link>
+                    ))
+                  ) : (
+                    <span className="text-xs text-muted-foreground">暂无数据</span>
+                  )}
+                </div>
               </div>
 
-              <Separator className="my-5 bg-white/10" />
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium text-white">精选套餐</p>
-                  <Link
-                    href="/servers"
-                    prefetch
-                    className="text-xs text-cyan-200 underline-offset-4 hover:text-white hover:underline"
-                  >
-                    全部筛选
-                  </Link>
+              <div>
+                <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <MapPin className="size-4 text-primary" />
+                  热门地区
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {topRegions.length > 0 ? (
+                    topRegions.map((name) => (
+                      <Link
+                        key={name}
+                        href={`/servers/regions/${encodeURIComponent(name)}`}
+                        prefetch
+                        className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary md:min-h-8"
+                      >
+                        {name}
+                      </Link>
+                    ))
+                  ) : (
+                    <span className="text-xs text-muted-foreground">暂无数据</span>
+                  )}
                 </div>
-                {latestOffers.slice(0, 3).map((offer) => (
-                  <div
-                    key={offer.id}
-                    className="rounded-md border border-white/10 bg-white/[0.04] p-3"
-                  >
-                    <p className="line-clamp-1 text-xs text-white/55">
-                      {[offer.providerName, offer.region].filter(Boolean).join(" · ") ||
-                        "套餐信息"}
-                    </p>
-                    <p className="mt-1 line-clamp-2 text-sm font-medium leading-5 text-white">
-                      {offer.title}
-                    </p>
-                    <p className="mt-2 text-sm font-semibold text-cyan-200">
-                      {formatOfferPrice(offer)}
-                    </p>
-                  </div>
-                ))}
               </div>
             </aside>
+          </div>
+
+          <div className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {compareEntries.map((entry) => {
+              const Icon = entry.icon;
+              const count = entry.topicSlug
+                ? offerCounts.find((item) => item.slug === entry.topicSlug)?.count
+                : totalOfferCount;
+
+              return (
+                <Link
+                  key={entry.href}
+                  href={entry.href}
+                  prefetch
+                  className="group rounded-lg border border-border/70 bg-background p-4 shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="flex size-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+                      <Icon className="size-5" />
+                    </span>
+                    {typeof count === "number" && count > 0 ? (
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {formatCount(count)} 个套餐
+                      </span>
+                    ) : (
+                      <ArrowUpRight className="size-4 text-muted-foreground transition-colors group-hover:text-primary" />
+                    )}
+                  </div>
+                  <h2 className="mt-3 text-base font-semibold text-foreground group-hover:text-primary">
+                    {entry.title}
+                  </h2>
+                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                    {entry.description}
+                  </p>
+                </Link>
+              );
+            })}
           </div>
         </div>
       </section>
 
+      {/* 精选套餐：少量展示，完整筛选在 /servers */}
       <section className="container mx-auto px-4 py-8 md:py-10">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="flex items-center gap-2 text-sm font-medium text-accent">
-              <ShieldCheck className="size-4" />
-              入口分流
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">
-              先选入口，再做深度比较
-            </h2>
-          </div>
-          <Button asChild variant="outline" className="rounded-md">
+          <SectionHeading
+            title="最新精选套餐"
+            description="价格、地区、线路和购买入口一眼可比，下单前请以商家结算页为准。"
+          />
+          <Button asChild variant="outline" size="sm" className="rounded-md">
             <Link href="/servers" prefetch>
-              进入完整工具
+              打开比价工具
               <ArrowRight className="size-4" />
             </Link>
           </Button>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {featureCards.map((card) => {
-            const topic = offerTopics.find((item) => `/servers/${item.slug}` === card.href);
-            const count = topic
-              ? offerCounts.find((item) => item.slug === topic.slug)?.count
-              : undefined;
-
-            return <FeatureEntryCard key={card.href} {...card} count={count} />;
-          })}
-        </div>
+        <FeaturedOfferList offers={featuredOffers} />
       </section>
 
-      <section className="container mx-auto px-4 pb-8 md:pb-10">
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="flex items-center gap-2 text-sm font-medium text-accent">
-              <Server className="size-4" />
-              最新套餐
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">
-              只展示少量精选，完整筛选放在工具页
-            </h2>
-          </div>
-          <Link
-            href="/servers"
-            prefetch
-            className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-accent hover:underline"
-          >
-            打开全部套餐
-          </Link>
-        </div>
-        {latestOffers.length > 0 ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {latestOffers.map((offer) => (
-              <OfferPreviewCard key={offer.id} offer={offer} />
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 p-8 text-center text-sm text-muted-foreground">
-            暂无可展示的结构化套餐。
-          </div>
-        )}
-      </section>
-
-      <section className="container mx-auto grid gap-8 px-4 pb-12 xl:grid-cols-[minmax(0,0.82fr)_320px]">
-        <div className="space-y-4">
+      {/* 最新文章 + 侧栏 */}
+      <section className="container mx-auto grid gap-8 px-4 pb-12 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="flex items-center gap-2 text-sm font-medium text-accent">
-                <Tags className="size-4" />
-                最新内容
-              </p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">
-                新发布的优惠、测评和选购文章
-              </h2>
-            </div>
-            <Button asChild variant="outline" className="rounded-md">
+            <SectionHeading
+              title="最新优惠与测评"
+              description="新发布的服务器优惠、测评和选购指南。"
+            />
+            <Button asChild variant="outline" size="sm" className="rounded-md">
               <Link href="/fwq/vps/page/1" prefetch>
-                查看文章分类
+                全部文章
                 <ArrowRight className="size-4" />
               </Link>
             </Button>
@@ -557,113 +440,70 @@ async function HomeContent() {
           {latestArticles.length > 0 ? (
             latestArticles.map((post) => <ArticleCard key={post.id} post={post} />)
           ) : (
-            <Card className="border-dashed border-border/80 bg-muted/20">
-              <CardContent className="p-8 text-center text-sm text-muted-foreground">
-                暂无文章内容。
-              </CardContent>
-            </Card>
+            <div className="rounded-lg border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-muted-foreground">
+              暂无文章内容。
+            </div>
           )}
         </div>
 
         <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
-          <Card className="rounded-lg border-border/70 bg-background shadow-sm">
-            <CardContent className="space-y-4 p-5">
-              <div>
-                <p className="text-sm font-medium text-foreground">热门筛选</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  根据结构化套餐聚合出的商家和地区。
+          <div className="rounded-lg border border-border/70 bg-background p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-foreground">站长推荐</p>
+              <Badge variant="secondary">精选</Badge>
+            </div>
+            <div className="mt-3 space-y-2">
+              {promotedPosts.length > 0 ? (
+                promotedPosts
+                  .slice(0, 4)
+                  .map((post) => <SidebarArticleLink key={post.id} post={post} />)
+              ) : (
+                <p className="rounded-md border border-dashed border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
+                  当前还没有推荐文章。
                 </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">热门商家</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {topProviders.length > 0 ? (
-                    topProviders.map((item) => (
-                      <Badge key={item.name} variant="secondary">
-                        {item.name} {item.count}
-                      </Badge>
-                    ))
-                  ) : (
-                    <span className="text-xs text-muted-foreground">暂无数据</span>
-                  )}
-                </div>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">热门地区</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {topRegions.length > 0 ? (
-                    topRegions.map((item) => (
-                      <Badge key={item.name} variant="outline">
-                        {item.name} {item.count}
-                      </Badge>
-                    ))
-                  ) : (
-                    <span className="text-xs text-muted-foreground">暂无数据</span>
-                  )}
-                </div>
-              </div>
-              {latestPromoOffers.length > 0 ? (
-                <div>
-                  <p className="text-xs text-muted-foreground">最新优惠码</p>
-                  <div className="mt-2 space-y-2">
-                    {latestPromoOffers.map((offer) => (
-                      <SmartLink
-                        key={offer.id}
-                        href={offer.articleUrl ?? "/servers"}
-                        className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-xs transition-colors hover:border-accent/30 hover:bg-muted/30"
-                      >
-                        <span className="line-clamp-1">
-                          {offer.providerName ?? offer.title}
-                        </span>
-                        <Badge>{offer.promoCode}</Badge>
-                      </SmartLink>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
+              )}
+            </div>
+          </div>
 
-          <Card className="rounded-lg border-border/70 bg-background shadow-sm">
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-foreground">站长推荐</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    近期值得优先查看的内容
-                  </p>
-                </div>
-                <Badge variant="secondary">精选</Badge>
-              </div>
-              <div className="mt-4 space-y-3">
-                {promotedPosts.length > 0 ? (
-                  promotedPosts
-                    .slice(0, 4)
-                    .map((post) => <SidebarArticleLink key={post.id} post={post} />)
-                ) : (
-                  <p className="rounded-md border border-dashed border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-                    当前还没有推荐文章。
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-lg border-border/70 bg-background shadow-sm">
-            <CardContent className="p-5">
-              <p className="text-sm font-medium text-foreground">高浏览量文章</p>
-              <p className="mt-1 text-xs text-muted-foreground">按累计浏览量排序</p>
-              <div className="mt-4 space-y-3">
-                {popularPosts.length > 0 ? (
-                  popularPosts.slice(0, 5).map((post, index) => (
+          <div className="rounded-lg border border-border/70 bg-background p-4 shadow-sm">
+            <p className="text-sm font-semibold text-foreground">高浏览量文章</p>
+            <p className="mt-1 text-xs text-muted-foreground">按累计浏览量排序</p>
+            <div className="mt-3 space-y-2">
+              {popularPosts.length > 0 ? (
+                popularPosts
+                  .slice(0, 5)
+                  .map((post, index) => (
                     <SidebarArticleLink key={post.id} post={post} rank={index + 1} />
                   ))
-                ) : (
-                  <p className="text-sm text-muted-foreground">暂无热门文章。</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+              ) : (
+                <p className="text-sm text-muted-foreground">暂无热门文章。</p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border/70 bg-background p-4 shadow-sm">
+            <p className="text-sm font-semibold text-foreground">服务器专题</p>
+            <div className="mt-3 grid gap-2">
+              {offerTopics.map((topic) => {
+                const count =
+                  offerCounts.find((item) => item.slug === topic.slug)?.count ?? 0;
+
+                return (
+                  <Link
+                    key={topic.slug}
+                    href={`/servers/${encodeURIComponent(topic.slug)}`}
+                    prefetch
+                    className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-border/70 px-3 text-sm text-foreground transition-colors hover:border-primary/35 hover:bg-primary/5 hover:text-primary"
+                  >
+                    <span>{topic.title}</span>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {formatCount(count)}
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
         </aside>
       </section>
     </main>
@@ -674,10 +514,9 @@ export default function Home() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Header />
-      <Separator />
       <Suspense
         fallback={
-          <main className="flex-1 px-4 py-10 text-sm text-muted-foreground">
+          <main className="flex-1 px-4 py-10 text-center text-sm text-muted-foreground">
             正在加载首页内容...
           </main>
         }

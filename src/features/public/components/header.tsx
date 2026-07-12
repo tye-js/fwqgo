@@ -191,7 +191,7 @@ const HeaderContent = async ({
           </Link>
 
           <NavigationMenu className="hidden lg:block">
-            <NavigationMenuList className="rounded-md border border-border/70 bg-background p-1 shadow-sm">
+            <NavigationMenuList className="gap-0.5">
               <NavigationMenuItem>
                 <NavigationMenuTrigger className="rounded-md">
                   {copy.dealsTitle}

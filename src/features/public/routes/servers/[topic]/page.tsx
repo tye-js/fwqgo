@@ -2,14 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { ArrowLeft, ArrowUpDown, Filter, MapPin } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 import Header from "@/features/public/components/header";
 import Footer from "@/features/public/components/footer";
 import { ServerOfferTable } from "@/features/public/components/server-offer-table";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   getServerOfferTopic,
   offerTopics,
@@ -72,6 +70,35 @@ async function ServerTopicContent({
   }
 
   const { topic: topicInfo, offers } = data;
+  const inStockCount = offers.filter(
+    (offer) => offer.status === "in_stock",
+  ).length;
+  const providerCount = new Set(
+    offers
+      .map((offer) => offer.providerName?.trim())
+      .filter((value): value is string => Boolean(value)),
+  ).size;
+  const minPriceOffer = offers
+    .map((offer) => {
+      const amount = Number(offer.priceAmount);
+      if (!offer.priceAmount || !Number.isFinite(amount) || amount < 0) {
+        return null;
+      }
+      return { amount, currency: offer.currency === "CNY" ? "¥" : "$" };
+    })
+    .filter((price): price is NonNullable<typeof price> => Boolean(price))
+    .sort((left, right) => left.amount - right.amount)[0];
+  const summaryStats: Array<{ label: string; value: string }> = [
+    { label: "套餐数", value: offers.length.toLocaleString("zh-CN") },
+    { label: "有货", value: inStockCount.toLocaleString("zh-CN") },
+    { label: "商家", value: providerCount.toLocaleString("zh-CN") },
+    {
+      label: "起价",
+      value: minPriceOffer
+        ? `${minPriceOffer.currency}${minPriceOffer.amount.toFixed(2)}`
+        : "待补充",
+    },
+  ];
   const pageUrl = `${getSiteUrl()}/servers/${topicInfo.slug}`;
   const siteUrl = getSiteUrl();
   const itemListJsonLd = {
@@ -131,44 +158,47 @@ async function ServerTopicContent({
           __html: jsonLdScriptContent([itemListJsonLd, faqJsonLd]),
         }}
       />
-      <section className="border-b border-border/60 bg-muted/20">
-        <div className="container mx-auto px-4 py-8 md:py-10">
-          <Button asChild variant="ghost" className="mb-5 px-0">
-            <Link href="/servers" prefetch>
-              <ArrowLeft className="size-4" />
-              服务器比价
-            </Link>
-          </Button>
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end">
-            <div className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <Badge className="bg-primary text-primary-foreground">
-                  结构化套餐
-                </Badge>
-                <Badge variant="secondary">按价格排序</Badge>
-              </div>
-              <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-                {topicInfo.h1}
-              </h1>
-              <p className="max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">
-                {topicInfo.intro}
-              </p>
-            </div>
-            <div className="grid gap-3 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Filter className="size-4" />
-                已筛选 {offers.length} 个可见套餐
-              </div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <ArrowUpDown className="size-4" />
-                默认优先展示推荐和低价套餐
-              </div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <MapPin className="size-4" />
-                购买链接、来源文章、测评文章集中展示
-              </div>
-            </div>
+      <section className="home-grid-surface border-b border-border/60">
+        <div className="container mx-auto px-4 py-7 md:py-9">
+          <Link
+            href="/servers"
+            prefetch
+            className="inline-flex min-h-9 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+          >
+            <ArrowLeft className="size-4" />
+            返回服务器比价
+          </Link>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Badge
+              variant="outline"
+              className="border-primary/30 bg-primary/5 text-primary"
+            >
+              {topicInfo.shortTitle}专题
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              预筛选套餐 · 价格默认从低到高
+            </span>
           </div>
+          <h1 className="mt-3 max-w-3xl text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+            {topicInfo.h1}
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">
+            {topicInfo.intro}
+          </p>
+
+          <dl className="mt-5 grid max-w-2xl grid-cols-2 gap-3 sm:grid-cols-4">
+            {summaryStats.map((stat) => (
+              <div
+                key={stat.label}
+                className="rounded-md border border-border/70 bg-background px-3 py-2.5 shadow-sm"
+              >
+                <dt className="text-xs text-muted-foreground">{stat.label}</dt>
+                <dd className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-foreground">
+                  {stat.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </section>
 
@@ -177,16 +207,21 @@ async function ServerTopicContent({
       </section>
 
       <section className="container mx-auto px-4 pb-12">
-        <div className="rounded-lg border border-border/70 bg-background p-5 shadow-sm">
-          <h2 className="text-xl font-semibold">常见问题</h2>
-          <div className="mt-4 grid gap-4 text-sm leading-7 text-muted-foreground md:grid-cols-2">
-            {topicInfo.faq.map((item) => (
-              <div key={item.question} className="rounded-lg bg-muted/30 p-4">
-                <h3 className="font-medium text-foreground">{item.question}</h3>
-                <p className="mt-2">{item.answer}</p>
-              </div>
-            ))}
-          </div>
+        <h2 className="text-xl font-semibold tracking-tight text-foreground md:text-2xl">
+          常见问题
+        </h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {topicInfo.faq.map((item) => (
+            <div
+              key={item.question}
+              className="rounded-lg border border-border/70 bg-background p-4 shadow-sm"
+            >
+              <h3 className="font-medium text-foreground">{item.question}</h3>
+              <p className="mt-2 text-sm leading-7 text-muted-foreground">
+                {item.answer}
+              </p>
+            </div>
+          ))}
         </div>
       </section>
     </main>
@@ -203,14 +238,8 @@ export default function ServerTopicPage({
       <Header />
       <Suspense
         fallback={
-          <main className="flex-1">
-            <section className="container mx-auto px-4 py-10">
-              <Card className="border-border/70 bg-background shadow-sm">
-                <CardContent className="p-8 text-center text-sm text-muted-foreground">
-                  正在加载专题套餐...
-                </CardContent>
-              </Card>
-            </section>
+          <main className="flex-1 px-4 py-10 text-center text-sm text-muted-foreground">
+            正在加载专题套餐...
           </main>
         }
       >

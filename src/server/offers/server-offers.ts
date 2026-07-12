@@ -1050,6 +1050,23 @@ export async function getServerOfferTopicCounts() {
   }
 }
 
+export async function getPublicServerOfferCount() {
+  "use cache";
+  tagCache(cacheTags.serverOffers);
+
+  try {
+    const [row] = await readDb
+      .select({ count: sql<number>`count(*)` })
+      .from(serverOffers)
+      .where(publicPurchasableOfferBaseWhere());
+
+    return Number(row?.count ?? 0);
+  } catch (error) {
+    console.error("Failed to count public server offers:", error);
+    return 0;
+  }
+}
+
 export async function getLatestServerOffers(limit = 8) {
   "use cache";
   tagCache(cacheTags.serverOffers);

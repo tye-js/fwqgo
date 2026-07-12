@@ -1,18 +1,8 @@
 import Link from "next/link";
 import type { ComponentProps } from "react";
-import {
-  ArrowLeft,
-  ArrowRight,
-  BadgeCheck,
-  Clock3,
-  Database,
-  Filter,
-  MapPin,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { ServerOfferTable } from "@/features/public/components/server-offer-table";
 import { offerTopics } from "@/server/offers/server-offers";
 import { jsonLdScriptContent, toAbsoluteHttpUrl } from "@fwqgo/core/utils";
@@ -278,66 +268,52 @@ export function ServerOfferCollectionPage({
           ),
         }}
       />
-      <section className="border-b border-border/60 bg-muted/20">
-        <div className="container mx-auto px-4 py-8 md:py-10">
-          <Button asChild variant="ghost" className="mb-5 px-0">
-            <Link href="/servers" prefetch>
-              <ArrowLeft className="size-4" />
-              {copy.backText}
-            </Link>
-          </Button>
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-end">
-            <div className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <Badge className="bg-primary text-primary-foreground">
-                  {copy.badge}
-                </Badge>
-                <Badge variant="secondary">结构化列表</Badge>
-              </div>
-              <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-                {title || `${value}${copy.titleSuffix}`}
-              </h1>
-              <p className="max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">
-                {description}
-              </p>
-            </div>
-            <Card className="border-border/70 bg-background shadow-sm">
-              <CardContent className="grid grid-cols-2 gap-3 p-4 text-sm">
-                <div className="rounded-md bg-muted/30 p-3">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Database className="size-4" />
-                    套餐数
-                  </div>
-                  <p className="mt-2 text-xl font-semibold">{offers.length}</p>
-                </div>
-                <div className="rounded-md bg-muted/30 p-3">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <BadgeCheck className="size-4" />
-                    有货
-                  </div>
-                  <p className="mt-2 text-xl font-semibold">{inStockCount}</p>
-                </div>
-                <div className="rounded-md bg-muted/30 p-3">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Filter className="size-4" />
-                    起价
-                  </div>
-                  <p className="mt-2 text-base font-semibold">
-                    {formatMinPrice(offers)}
-                  </p>
-                </div>
-                <div className="rounded-md bg-muted/30 p-3">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Clock3 className="size-4" />
-                    更新
-                  </div>
-                  <p className="mt-2 text-base font-semibold">
-                    {formatDate(updatedAt)}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+      <section className="home-grid-surface border-b border-border/60">
+        <div className="container mx-auto px-4 py-7 md:py-9">
+          <Link
+            href="/servers"
+            prefetch
+            className="inline-flex min-h-9 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+          >
+            <ArrowLeft className="size-4" />
+            {copy.backText}
+          </Link>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Badge
+              variant="outline"
+              className="border-primary/30 bg-primary/5 text-primary"
+            >
+              {copy.badge}
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              预筛选套餐 · 价格默认从低到高
+            </span>
           </div>
+          <h1 className="mt-3 max-w-3xl text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+            {title || `${value}${copy.titleSuffix}`}
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">
+            {description}
+          </p>
+
+          <dl className="mt-5 grid max-w-2xl grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { label: "套餐数", value: String(offers.length) },
+              { label: "有货", value: String(inStockCount) },
+              { label: "起价", value: formatMinPrice(offers) },
+              { label: "数据更新", value: formatDate(updatedAt) },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className="rounded-md border border-border/70 bg-background px-3 py-2.5 shadow-sm"
+              >
+                <dt className="text-xs text-muted-foreground">{stat.label}</dt>
+                <dd className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-foreground">
+                  {stat.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </section>
 
@@ -347,72 +323,72 @@ export function ServerOfferCollectionPage({
 
       <section className="container mx-auto px-4 pb-12">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <Card className="border-border/70 bg-background shadow-sm">
-            <CardContent className="p-5">
-              <h2 className="text-xl font-semibold">筛选建议</h2>
-              <div className="mt-4 grid gap-4 text-sm leading-7 text-muted-foreground md:grid-cols-3">
-                <div>
-                  <p className="font-medium text-foreground">商家</p>
-                  <p>{providers.slice(0, 5).join("、") || "暂无商家信息"}</p>
-                </div>
-                <div>
-                  <p className="font-medium text-foreground">地区</p>
-                  <p>{regions.slice(0, 5).join("、") || "暂无地区信息"}</p>
-                </div>
-                <div>
-                  <p className="font-medium text-foreground">线路</p>
-                  <p>{lines.slice(0, 5).join("、") || "暂无线路信息"}</p>
-                </div>
+          <div className="rounded-lg border border-border/70 bg-background p-5 shadow-sm">
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">
+              筛选建议
+            </h2>
+            <div className="mt-4 grid gap-4 text-sm leading-7 text-muted-foreground md:grid-cols-3">
+              <div>
+                <p className="font-medium text-foreground">商家</p>
+                <p>{providers.slice(0, 5).join("、") || "暂无商家信息"}</p>
               </div>
-            </CardContent>
-          </Card>
+              <div>
+                <p className="font-medium text-foreground">地区</p>
+                <p>{regions.slice(0, 5).join("、") || "暂无地区信息"}</p>
+              </div>
+              <div>
+                <p className="font-medium text-foreground">线路</p>
+                <p>{lines.slice(0, 5).join("、") || "暂无线路信息"}</p>
+              </div>
+            </div>
+          </div>
 
-          <Card className="border-border/70 bg-background shadow-sm">
-            <CardContent className="p-5">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <MapPin className="size-4 text-accent" />
-                相关入口
-              </div>
-              <div className="mt-4 grid gap-2">
-                {topicLinks.map((topic) => (
-                  <Link
-                    key={topic.slug}
-                    href={`/servers/${encodeURIComponent(topic.slug)}`}
-                    prefetch
-                    className="flex min-h-11 items-center justify-between rounded-md border border-border/70 px-3 text-sm text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/5 hover:text-foreground"
-                  >
-                    {topic.title}
-                    <ArrowRight className="size-4" />
-                  </Link>
-                ))}
+          <div className="rounded-lg border border-border/70 bg-background p-5 shadow-sm">
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">
+              相关入口
+            </h2>
+            <div className="mt-4 grid gap-2">
+              {topicLinks.map((topic) => (
                 <Link
-                  href="/search"
+                  key={topic.slug}
+                  href={`/servers/${encodeURIComponent(topic.slug)}`}
                   prefetch
-                  className="flex min-h-11 items-center justify-between rounded-md border border-border/70 px-3 text-sm text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/5 hover:text-foreground"
+                  className="flex min-h-11 items-center justify-between rounded-md border border-border/70 px-3 text-sm text-foreground transition-colors hover:border-primary/35 hover:bg-primary/5 hover:text-primary"
                 >
-                  搜索更多服务器优惠
+                  {topic.title}
                   <ArrowRight className="size-4" />
                 </Link>
-              </div>
-            </CardContent>
-          </Card>
+              ))}
+              <Link
+                href="/search"
+                prefetch
+                className="flex min-h-11 items-center justify-between rounded-md border border-border/70 px-3 text-sm text-foreground transition-colors hover:border-primary/35 hover:bg-primary/5 hover:text-primary"
+              >
+                搜索更多服务器优惠
+                <ArrowRight className="size-4" />
+              </Link>
+            </div>
+          </div>
         </div>
 
-        <Card className="mt-4 border-border/70 bg-background shadow-sm">
-          <CardContent className="p-5">
-            <h2 className="text-xl font-semibold">常见问题</h2>
-            <div className="mt-4 grid gap-4 text-sm leading-7 text-muted-foreground md:grid-cols-2">
-              {copy.faq.map((item) => (
-                <div key={item.question} className="rounded-lg bg-muted/30 p-4">
-                  <h3 className="font-medium text-foreground">
-                    {item.question}
-                  </h3>
-                  <p className="mt-2">{item.answer}</p>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="mt-8">
+          <h2 className="text-xl font-semibold tracking-tight text-foreground md:text-2xl">
+            常见问题
+          </h2>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {copy.faq.map((item) => (
+              <div
+                key={item.question}
+                className="rounded-lg border border-border/70 bg-background p-4 shadow-sm"
+              >
+                <h3 className="font-medium text-foreground">{item.question}</h3>
+                <p className="mt-2 text-sm leading-7 text-muted-foreground">
+                  {item.answer}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
     </main>
   );
