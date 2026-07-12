@@ -19,12 +19,14 @@ export function HeroTagSearch() {
 
     const normalizedQuery = query.trim();
     if (!normalizedQuery) {
-      setErrorMessage("请输入标签关键词。");
+      setErrorMessage("请输入关键词，例如：香港 CN2、RackNerd、优惠码。");
       return;
     }
 
     setIsPending(true);
     setErrorMessage("");
+
+    const searchHref = `/search?q=${encodeURIComponent(normalizedQuery)}`;
 
     try {
       const response = await fetch(
@@ -45,51 +47,49 @@ export function HeroTagSearch() {
         return;
       }
 
-      setErrorMessage("没有找到对应标签，试试换个地区、线路、品牌或用途词。");
+      router.push(searchHref);
     } catch {
-      setErrorMessage("搜索暂时不可用，请稍后重试。");
+      router.push(searchHref);
     } finally {
       setIsPending(false);
     }
   }
 
   return (
-    <div className="rounded-lg border border-border/70 bg-background/85 p-3 shadow-sm backdrop-blur md:p-4">
-      <form onSubmit={handleSubmit} className="space-y-2.5">
-        <Label htmlFor="hero-tag-search" className="text-sm">
-          搜索服务器标签
-        </Label>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id="hero-tag-search"
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                if (errorMessage) setErrorMessage("");
-              }}
-              placeholder="搜索标签，例如：香港 CN2 / 原生IP / RackNerd"
-              aria-describedby={errorMessage ? "hero-tag-search-error" : undefined}
-              aria-invalid={Boolean(errorMessage)}
-              className="min-h-11 rounded-md border-border/70 bg-background pl-11"
-            />
-          </div>
-          <Button
-            type="submit"
-            disabled={isPending}
-            className="min-h-11 rounded-md px-5"
-          >
-            {isPending ? "搜索中..." : "搜索"}
-          </Button>
+    <form onSubmit={handleSubmit} className="space-y-2">
+      <Label htmlFor="hero-tag-search" className="sr-only">
+        搜索服务器套餐、商家、地区和优惠码
+      </Label>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            id="hero-tag-search"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              if (errorMessage) setErrorMessage("");
+            }}
+            placeholder="搜索套餐、商家、地区、优惠码，例如：香港 CN2"
+            aria-describedby={errorMessage ? "hero-tag-search-error" : undefined}
+            aria-invalid={Boolean(errorMessage)}
+            className="h-12 rounded-md border-border bg-background pl-10 text-sm shadow-sm"
+          />
         </div>
+        <Button
+          type="submit"
+          disabled={isPending}
+          className="h-12 rounded-md px-6 text-sm font-medium"
+        >
+          {isPending ? "搜索中..." : "搜索"}
+        </Button>
+      </div>
 
-        {errorMessage ? (
-          <p id="hero-tag-search-error" className="text-sm text-destructive">
-            {errorMessage}
-          </p>
-        ) : null}
-      </form>
-    </div>
+      {errorMessage ? (
+        <p id="hero-tag-search-error" className="text-sm text-destructive">
+          {errorMessage}
+        </p>
+      ) : null}
+    </form>
   );
 }

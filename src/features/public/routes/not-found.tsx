@@ -28,7 +28,7 @@ const quickCategories = [
 export default function NotFound() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Suspense fallback={<div className="h-[73px] border-b border-border/60" />}>
+      <Suspense fallback={<div className="h-[65px] border-b border-border/60" />}>
         <Header />
       </Suspense>
       <Separator />
