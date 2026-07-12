@@ -1088,6 +1088,27 @@ export async function getLatestServerOffers(limit = 8) {
   }
 }
 
+export async function getPublicServerOffers(limit = 120) {
+  "use cache";
+  tagCache(cacheTags.serverOffers);
+
+  try {
+    return await readDb
+      .select(serverOfferPublicSelect())
+      .from(serverOffers)
+      .where(publicPurchasableOfferBaseWhere())
+      .orderBy(
+        desc(serverOffers.featured),
+        asc(serverOffers.priceAmount),
+        desc(serverOffers.createdAt),
+      )
+      .limit(limit);
+  } catch (error) {
+    console.error("Failed to load public server offers:", error);
+    return [];
+  }
+}
+
 export async function getServerOfferCollectionIndex(limit = 80) {
   type CollectionField =
     | typeof serverOffers.providerName
