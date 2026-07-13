@@ -32,7 +32,10 @@ type TaskActionResult =
   | { success: true; message?: string }
   | { success: false; error?: string; message?: string; errorTitle?: string };
 
-async function retryTask(type: UnifiedTaskActionType, taskId: number) {
+async function retryTask(
+  type: UnifiedTaskActionType,
+  taskId: number,
+): Promise<TaskActionResult> {
   if (type === "ai") {
     const result = await retryAiRewriteTaskAction(taskId);
     return result.error
@@ -104,7 +107,7 @@ export function UnifiedTaskActionButtons({
         title: `${taskLabel}已${status === "cancelled" ? "恢复" : "重试"}`,
         description: describeAdminResult([
           `任务 ID ${taskId}`,
-          "已重新加入后台队列",
+          result.message ?? "已重新加入后台队列",
         ]),
       });
       router.refresh();

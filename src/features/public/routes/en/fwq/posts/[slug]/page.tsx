@@ -1,17 +1,9 @@
 import { Suspense } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import {
-  ArrowLeft,
-  BookOpenText,
-  Clock,
-  ShoppingCart,
-  SquareLibrary,
-  Tags,
-} from "lucide-react";
+import { ArrowLeft, Clock, Tags } from "lucide-react";
 
 import {
   getEnglishPostWithTagsBySlug,
@@ -19,25 +11,24 @@ import {
 } from "@/features/public/data/post";
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
+import {
+  ARTICLE_PROSE_CLASS_NAME,
+  ArticleCover,
+  ArticleDetailHeader,
+  ArticleTocSidebar,
+} from "@/features/public/components/article-detail";
 import { ArticleShareActions } from "@/features/public/components/article-share-actions";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
-import {
-  getOptimizedImageSrc,
-  isRenderableImageSrc,
-} from "@fwqgo/core/image-src";
+import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
+import { isRenderableImageSrc } from "@fwqgo/core/image-src";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
 import { addIdsToHeadings } from "@fwqgo/core/toc";
 import {
   formatDate,
-  isHttpHref,
-  isInternalHref,
   jsonLdScriptContent,
   normalizeDecodedSlug,
   toAbsoluteHttpUrl,
 } from "@fwqgo/core/utils";
-import { TableOfContents } from "@/components/toc/table-of-contents";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { getRelatedServerOffersForPost } from "@/server/offers/server-offers";
 
 function getSiteUrl() {
@@ -60,15 +51,6 @@ function toAbsoluteImageUrl(value: string | null | undefined) {
 type PageProps = {
   params: Promise<{ slug: string }>;
 };
-
-function formatOfferPrice(
-  offer: Awaited<ReturnType<typeof getRelatedServerOffersForPost>>[number],
-) {
-  if (!offer.priceAmount) return "Price pending";
-  const amount = Number(offer.priceAmount);
-  if (!Number.isFinite(amount)) return "Price to confirm";
-  return `${offer.currency === "CNY" ? "¥" : "$"}${amount.toFixed(2)}`;
-}
 
 export async function generateMetadata({
   params,
@@ -247,25 +229,10 @@ async function EnglishPostContent({ params }: PageProps) {
 
   return (
     <main className="flex-1">
-      <div className="container mx-auto grid items-start gap-6 px-4 py-6 xl:grid-cols-[250px_minmax(0,1fr)_300px] 2xl:grid-cols-[270px_minmax(0,900px)_320px]">
-        <aside className="sticky top-20 hidden max-h-[calc(100dvh-96px)] self-start xl:block">
-          <Card className="rounded-lg border-border/70 bg-background shadow-sm">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <BookOpenText className="size-4 text-accent" />
-                Contents
-              </div>
-              <div className="mt-3">
-                <TableOfContents
-                  content={contentWithIds}
-                  label="Article contents"
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </aside>
+      <div className="container mx-auto grid items-start gap-6 px-4 py-4 sm:px-6 md:py-6 xl:grid-cols-[210px_minmax(0,800px)_280px] xl:justify-center">
+        <ArticleTocSidebar content={contentWithIds} label="Contents" />
 
-        <article className="min-w-0">
+        <article className="mx-auto w-full min-w-0 max-w-[820px] xl:mx-0 xl:max-w-none">
           <script
             type="application/ld+json"
             dangerouslySetInnerHTML={{
@@ -277,162 +244,72 @@ async function EnglishPostContent({ params }: PageProps) {
               ]),
             }}
           />
-          {post.chineseSlug ? (
-            <Link
-              href={`/fwq/posts/${encodeURIComponent(post.chineseSlug)}`}
-              prefetch
-              className="inline-flex items-center gap-2 text-sm text-muted-foreground underline-offset-4 hover:text-primary hover:underline"
-            >
-              <ArrowLeft className="size-4" />
-              Chinese version
-            </Link>
-          ) : null}
-
-          <header className="mt-6 border-b border-border/70 pb-6">
-            <h1 className="font-editorial text-3xl font-semibold leading-tight text-foreground md:text-5xl">
-              {post.title}
-            </h1>
-            {post.description ? (
-              <p className="mt-4 text-base leading-7 text-muted-foreground">
-                {post.description}
-              </p>
-            ) : null}
-            <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
-              <span className="inline-flex items-center gap-2">
-                <Clock className="size-4" />
+          <ArticleDetailHeader
+            title={post.title}
+            description={
+              post.description ??
+              "Server deal details, network information, pricing, and buying notes."
+            }
+            eyebrow={
+              post.chineseSlug ? (
+                <Link
+                  href={`/fwq/posts/${encodeURIComponent(post.chineseSlug)}`}
+                  prefetch
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-sm text-sm font-medium text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-8"
+                >
+                  <ArrowLeft className="size-4" aria-hidden="true" />
+                  Read in Chinese
+                </Link>
+              ) : undefined
+            }
+            meta={
+              <span className="inline-flex min-h-8 items-center gap-2 tabular-nums">
+                <Clock className="size-4" aria-hidden="true" />
                 {formatDate(post.createdAt, "en-US")}
               </span>
+            }
+            actions={
               <ArticleShareActions
                 title={post.title}
                 url={articleUrl}
                 language="en"
               />
-            </div>
-          </header>
+            }
+          />
 
-          {isRenderableImageSrc(post.imgUrl) ? (
-            <div className="relative mt-6 aspect-[16/9] overflow-hidden rounded-lg border border-border/70 bg-muted/20 md:aspect-[21/9]">
-              <Image
-                src={getOptimizedImageSrc(post.imgUrl)}
-                alt={post.title}
-                width={1440}
-                height={840}
-                sizes="(max-width: 768px) 100vw, 960px"
-                className="h-full w-full object-cover"
-                priority
+          <div className="mt-5">
+            <ArticleCover src={post.imgUrl} alt={post.title} />
+          </div>
+
+          {relatedOffers.length > 0 ? (
+            <div className="mt-5">
+              <RelatedServerOfferCards
+                title="Related server offers"
+                description="Compare price, region, and network first, then confirm stock and renewal terms on the provider page."
+                offers={relatedOffers}
+                language="en"
               />
             </div>
           ) : null}
 
-          <div className="mt-6 xl:hidden">
-            <Card className="rounded-lg border-border/70 bg-background shadow-sm">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <BookOpenText className="size-4 text-accent" />
-                  Contents
-                </div>
-                <div className="mt-3">
-                  <TableOfContents
-                    content={contentWithIds}
-                    label="Article contents"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {relatedOffers.length > 0 ? (
-            <section className="mt-6 rounded-lg border border-border/70 bg-muted/20 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <ShoppingCart className="size-4 text-accent" />
-                  Related server offers
-                </div>
-                <Badge variant="secondary">{relatedOffers.length} offers</Badge>
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                {relatedOffers.slice(0, 4).map((offer) => (
-                  <div
-                    key={offer.id}
-                    className="rounded-lg border border-border/70 bg-background p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="line-clamp-2 text-sm font-medium leading-6">
-                          {offer.title}
-                        </p>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          {offer.providerName ?? "Provider pending"} ·{" "}
-                          {offer.region ?? "Region pending"} ·{" "}
-                          {offer.lineType ?? "Line pending"}
-                        </p>
-                      </div>
-                      <Badge>{formatOfferPrice(offer)}</Badge>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {isHttpHref(offer.purchaseUrl) ? (
-                        <a
-                          href={offer.purchaseUrl}
-                          target="_blank"
-                          rel="nofollow noopener noreferrer"
-                          className="text-xs font-medium text-primary underline-offset-4 hover:underline"
-                        >
-                          Buy
-                        </a>
-                      ) : isInternalHref(offer.purchaseUrl) ? (
-                        <Link
-                          href={offer.purchaseUrl}
-                          prefetch={false}
-                          className="text-xs font-medium text-primary underline-offset-4 hover:underline"
-                        >
-                          Buy
-                        </Link>
-                      ) : null}
-                      {offer.articleUrl && isInternalHref(offer.articleUrl) ? (
-                        <Link
-                          href={offer.articleUrl}
-                          prefetch
-                          className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                        >
-                          Source
-                        </Link>
-                      ) : isHttpHref(offer.articleUrl) ? (
-                        <a
-                          href={offer.articleUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                        >
-                          Source
-                        </a>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
           <div
-            className="article-prose font-ui prose-headings:font-editorial prose prose-zinc mt-8 max-w-none prose-p:text-[17px] prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-accent prose-a:underline prose-a:decoration-accent/55 prose-a:underline-offset-4 prose-a:transition-colors hover:prose-a:text-primary hover:prose-a:decoration-primary prose-strong:text-foreground"
-            dangerouslySetInnerHTML={{
-              __html: contentWithIds,
-            }}
+            className={`${ARTICLE_PROSE_CLASS_NAME} mt-8`}
+            dangerouslySetInnerHTML={{ __html: contentWithIds }}
           />
 
           {post.tags.length > 0 ? (
-            <section className="mt-10 border-t border-border/70 pt-6">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Tags className="size-4 text-accent" />
+            <section className="mt-10 border-t border-border/70 pt-5">
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Tags className="size-4 text-primary" aria-hidden="true" />
                 Tags
               </div>
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
                 {post.tags.map((tag) => (
                   <Link
                     key={tag.tag.id}
                     href={`/en/fwq/tags/${encodeURIComponent(tag.tag.slug)}/page/1`}
                     prefetch
-                    className="inline-flex min-h-10 items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-8"
                   >
                     #{tag.tag.name}
                   </Link>
@@ -443,64 +320,8 @@ async function EnglishPostContent({ params }: PageProps) {
         </article>
 
         <aside className="hidden xl:block">
-          <div className="sticky top-24 space-y-4">
+          <div className="sticky top-20 space-y-4">
             <LatestPostsSidebar posts={latestPosts ?? []} language="en" />
-            {relatedOffers.length > 0 ? (
-              <Card className="rounded-lg border-border/70 bg-background shadow-sm">
-                <CardContent className="p-5">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <SquareLibrary className="size-4 text-accent" />
-                    Server offer links
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    {relatedOffers.slice(0, 4).map((offer) => {
-                      const href = isHttpHref(offer.purchaseUrl)
-                        ? offer.purchaseUrl
-                        : isInternalHref(offer.purchaseUrl)
-                          ? offer.purchaseUrl
-                          : isHttpHref(offer.articleUrl)
-                            ? offer.articleUrl
-                            : isInternalHref(offer.articleUrl)
-                              ? offer.articleUrl
-                              : "/servers";
-                      const className =
-                        "block rounded-md border border-border/70 p-3 text-sm transition-colors hover:border-accent/30 hover:bg-accent/5";
-                      const content = (
-                        <>
-                          <p className="line-clamp-2 font-medium">
-                            {offer.title}
-                          </p>
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            {formatOfferPrice(offer)}
-                          </p>
-                        </>
-                      );
-
-                      return isHttpHref(href) ? (
-                        <a
-                          key={offer.id}
-                          href={href}
-                          target="_blank"
-                          rel="nofollow sponsored noopener noreferrer"
-                          className={className}
-                        >
-                          {content}
-                        </a>
-                      ) : (
-                        <Link
-                          key={offer.id}
-                          href={href}
-                          prefetch={href !== "/servers" ? false : undefined}
-                          className={className}
-                        >
-                          {content}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            ) : null}
           </div>
         </aside>
       </div>

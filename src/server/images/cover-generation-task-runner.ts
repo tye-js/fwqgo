@@ -192,9 +192,9 @@ async function bindCoverTaskConfig(task: CoverTaskRow) {
   if (!config) {
     throw new Error(
       task.configId
-        ? `任务绑定的生图配置 #${task.configId} 已停用或不存在，请启用原配置后重试`
+        ? `任务绑定的生图配置 #${task.configId} 已停用或不存在，请重试任务以切换到当前默认配置`
         : task.configName || task.provider || task.model
-          ? "任务绑定的生图配置已被删除，请重新创建任务"
+          ? "任务绑定的生图配置已被删除，请重试任务以切换到当前默认配置"
           : "当前没有已启用的默认生图配置",
     );
   }

@@ -368,9 +368,35 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
       });
     }
 
-    const [task] = await db
-      .update(imageCoverGenerationTasks)
-      .set({
+    const [existingTask] = await db
+      .select({ status: imageCoverGenerationTasks.status })
+      .from(imageCoverGenerationTasks)
+      .where(eq(imageCoverGenerationTasks.id, taskId))
+      .limit(1);
+
+    if (
+      !existingTask ||
+      (existingTask.status !== "failed" && existingTask.status !== "cancelled")
+    ) {
+      return adminActionFailure(new Error("任务不存在，或当前状态不能恢复"), {
+        title: "恢复封面生成任务失败",
+        suggestion: "只有失败或已取消的封面任务可以恢复。",
+      });
+    }
+
+    const defaultConfig =
+      existingTask.status === "failed"
+        ? await getActiveImageGenerationConfig()
+        : null;
+    if (existingTask.status === "failed" && !defaultConfig) {
+      return adminActionFailure(new Error("当前没有已启用的默认生图配置"), {
+        title: "封面生成任务重试失败",
+        suggestion: "请先在生图接口配置中启用并设定默认配置。",
+      });
+    }
+
+    const retryValues: Partial<typeof imageCoverGenerationTasks.$inferInsert> =
+      {
         status: "pending",
         outputUrl: null,
         assetId: null,
@@ -379,11 +405,22 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
         startedAt: null,
         finishedAt: null,
         updatedAt: new Date(),
-      })
+      };
+
+    if (defaultConfig) {
+      retryValues.configId = defaultConfig.id;
+      retryValues.configName = defaultConfig.name;
+      retryValues.provider = defaultConfig.provider;
+      retryValues.model = defaultConfig.model;
+    }
+
+    const [task] = await db
+      .update(imageCoverGenerationTasks)
+      .set(retryValues)
       .where(
         and(
           eq(imageCoverGenerationTasks.id, taskId),
-          inArray(imageCoverGenerationTasks.status, ["failed", "cancelled"]),
+          eq(imageCoverGenerationTasks.status, existingTask.status),
         ),
       )
       .returning();
@@ -399,7 +436,9 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
     revalidateCoverGenerationTaskPaths(taskId);
     return adminActionSuccess(
       serializeCoverTask(task),
-      "封面生成任务已重新排队",
+      defaultConfig
+        ? `封面生成任务已切换到默认配置「${defaultConfig.name}」并重新排队`
+        : "封面生成任务已重新排队",
     );
   } catch (error) {
     const readableError = formatCoverGenerationError(error);
