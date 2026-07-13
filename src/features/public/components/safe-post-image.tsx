@@ -40,8 +40,8 @@ export function SafePostImage({
       priority={priority}
       loading={priority ? "eager" : "lazy"}
       fetchPriority={priority ? "high" : "auto"}
-      quality={priority ? 86 : 76}
-      className="object-cover transition-transform duration-500 group-hover:scale-105"
+      quality={75}
+      className="object-cover transition-transform duration-300 group-hover:scale-[1.025]"
       onError={() => setFailed(true)}
     />
   );
