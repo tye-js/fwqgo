@@ -28,6 +28,17 @@ type EnqueueCoverGenerationTaskInput = {
 
 let isCoverGenerationWorkerRunning = false;
 
+const COVER_TASK_TIMEOUT_MS = 6 * 60 * 1000;
+
+class CoverGenerationTimeoutError extends Error {
+  constructor() {
+    super(
+      "封面生图任务超时：任务执行超过 6 分钟，已自动终止并继续处理后续任务。请检查生图接口状态后重试",
+    );
+    this.name = "CoverGenerationTimeoutError";
+  }
+}
+
 export const terminalCoverTaskStatuses: readonly string[] = [
   "succeeded",
   "failed",
@@ -263,8 +274,13 @@ async function getNextPendingCoverTask() {
   return claimedTask ?? null;
 }
 
-async function processCoverGenerationTask(task: CoverTaskRow) {
+async function processCoverGenerationTask(
+  task: CoverTaskRow,
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
   const boundTask = await bindCoverTaskConfig(task);
+  signal.throwIfAborted();
   const [post] = await db
     .select({
       id: posts.id,
@@ -284,6 +300,7 @@ async function processCoverGenerationTask(task: CoverTaskRow) {
     throw new Error("文章不存在或已被删除");
   }
 
+  signal.throwIfAborted();
   const generated = await generateArticleCoverImage({
     title: post.title,
     description: post.description,
@@ -293,8 +310,10 @@ async function processCoverGenerationTask(task: CoverTaskRow) {
     language: post.language === "en" ? "en" : "zh",
     configId: boundTask.configId ?? undefined,
     uploadedBy: boundTask.createdBy,
+    signal,
   });
 
+  signal.throwIfAborted();
   const [updatedPost] = await db
     .update(posts)
     .set({
@@ -312,8 +331,10 @@ async function processCoverGenerationTask(task: CoverTaskRow) {
     throw new Error("封面写入文章失败");
   }
 
+  signal.throwIfAborted();
   await syncImageReferencesForPost(updatedPost.id);
 
+  signal.throwIfAborted();
   await db
     .update(imageCoverGenerationTasks)
     .set({
@@ -328,6 +349,25 @@ async function processCoverGenerationTask(task: CoverTaskRow) {
     .where(eq(imageCoverGenerationTasks.id, boundTask.id));
 }
 
+async function processCoverGenerationTaskWithTimeout(task: CoverTaskRow) {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  const processing = processCoverGenerationTask(task, controller.signal);
+  const timedOut = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      const error = new CoverGenerationTimeoutError();
+      controller.abort(error);
+      reject(error);
+    }, COVER_TASK_TIMEOUT_MS);
+  });
+
+  try {
+    await Promise.race([processing, timedOut]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 async function runCoverGenerationWorker() {
   if (isCoverGenerationWorkerRunning) return;
   isCoverGenerationWorkerRunning = true;
@@ -340,7 +380,7 @@ async function runCoverGenerationWorker() {
       if (!task) break;
 
       try {
-        await processCoverGenerationTask(task);
+        await processCoverGenerationTaskWithTimeout(task);
       } catch (error) {
         const readableError = formatCoverGenerationError(error);
 

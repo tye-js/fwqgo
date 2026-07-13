@@ -1,47 +1,49 @@
 # FWQGO Deployment Reference
 
-## Trigger Boundary
+## Default Deployment
 
-Deploy only on explicit user commands:
+Production deployment is owned by `.github/workflows/deploy.yml`:
 
-- "部署"
-- "构建部署"
-- "发布到服务器"
-- "上线"
-- "run deploy"
-- "npm run deploy"
+1. Prepare and verify the code locally.
+2. Stop without committing or pushing.
+3. The user manually commits and pushes to `main`.
+4. The push triggers GitHub Actions.
+5. GitHub Actions builds both apps, packages the standalone release, uploads it, optionally migrates the database, activates the release, and runs health checks.
 
-Do not deploy just because files changed or tests passed.
+Normal wording such as "部署", "构建部署", "发布到服务器", or "上线" does not authorize `npm run deploy:local`. It also does not authorize an automatic commit or push.
 
-## Local Preconditions
+## Preparation Checks
 
-Run from:
+Run from `/Users/liulu/Desktop/fwqgo`:
 
 ```bash
-/Users/liulu/Desktop/fwqgo
+npm run lint
+npm run typecheck
+SKIP_ENV_VALIDATION=1 npm run build
 ```
 
-Required local files:
+Use `SKIP_ENV_VALIDATION=1` only for local verification. Production builds receive their complete environment from GitHub Actions secrets and variables.
 
-- `package.json`
-- `scripts/deploy-local-build.sh`
-- `ecosystem.config.cjs`
-- `.deploy.env`
+## GitHub Actions Trigger
 
-Do not display `.deploy.env`. It may contain SSH host, user, port, key path, password, or deployment path.
+The workflow runs automatically on a push to `main`. It can also be manually dispatched from GitHub when the user explicitly requests that operation. Do not push or dispatch it on the user's behalf unless explicitly asked.
 
-## Deployment Command
+## Local Docker Fallback
 
-For a full production deployment:
+The local upload script is not the normal deployment path. Use it only when the user explicitly requests the local deployment fallback.
+
+Required local files include `scripts/deploy-local-build.sh`, `ecosystem.config.cjs`, and `.deploy.env`. Do not display `.deploy.env` or any secret it contains.
+
+Explicit fallback command:
 
 ```bash
-npm run deploy
+npm run deploy:local
 ```
 
 For a packaging-only dry run when the user asks for an artifact:
 
 ```bash
-npm run deploy -- --artifact-only
+npm run deploy:local -- --artifact-only
 ```
 
 The deploy script:
@@ -107,4 +109,4 @@ Expected:
 
 ## Database Boundary
 
-Do not run migrations as part of routine deploy. Standalone artifact deploy does not support `RUN_MIGRATIONS=1`; if database changes are part of the release, run `npm run db:migrate` as an explicit separate operation before deployment.
+GitHub Actions owns routine production migrations through `scripts/migrate-prod.mjs`. Do not run a separate production migration unless the user explicitly asks for it and the production schema state has been verified first.

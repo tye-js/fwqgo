@@ -216,7 +216,9 @@ PM2 使用 `ecosystem.config.cjs` 同时运行 `fwqgo-web` 和 `fwqgo-cms`。
 
 ### 生产环境部署
 
-推荐使用本地构建、上传 standalone 产物、服务器 PM2 重载的方式部署。
+默认使用 `.github/workflows/deploy.yml` 部署。用户手动提交并推送到 `main` 后，GitHub Actions 自动完成检查、构建、打包、上传、数据库迁移、PM2 激活和健康检查。
+
+普通的“部署”“上线”指令不应在本机执行上传脚本，也不代表允许自动提交或推送。代码验证完成后，由用户手动 push 触发 GitHub Actions。
 
 服务器需要先准备：
 
@@ -225,56 +227,48 @@ PM2 使用 `ecosystem.config.cjs` 同时运行 `fwqgo-web` 和 `fwqgo-cms`。
 - Nginx 或其他反向代理，将站点流量转发到 `127.0.0.1:3000`
 - `/var/www/uploads`，并在反向代理中暴露为 `/uploads/`
 
-1. **配置部署变量**
-```bash
-cp .deploy.env.example .deploy.env
-```
+1. **准备服务器运行时环境**
 
-编辑 `.deploy.env`，至少填写：
+GitHub Actions 会检查 `/var/www/fwqgo/shared/.env.production`。首次部署前需要在服务器补齐生产环境变量。
 
-```env
-DEPLOY_HOST=your-server-ip
-DEPLOY_USER=root
-DEPLOY_PATH=/var/www/fwqgo
-NEXT_PUBLIC_URL=https://fwqgo.com
-NEXT_PUBLIC_CMS_URL=https://cms.fwqgo.com
-CMS_BASIC_AUTH_USERNAME=fwqgo-admin
-CMS_BASIC_AUTH_PASSWORD=change-this-password
-DATABASE_URL=postgresql://user:password@host:5432/fwqgo
-```
-
-无密码自动部署建议配置 `DEPLOY_SSH_KEY`。如果仍使用 root 密码连接，可以不写密码并在命令执行时交互输入；如需完全自动化，可设置 `DEPLOY_PASSWORD`，但本机需要安装 `sshpass`。
-
-2. **准备服务器运行时环境**
-
-首次部署脚本会检查 `/var/www/fwqgo/shared/.env.production`。如果不存在，会在服务器创建 `.env.production.example` 并停止。根据示例补齐生产环境变量后重新执行部署。
-
-3. **自动构建并部署**
+2. **验证后手动推送**
 
 ```bash
-npm run deploy
+npm run lint
+npm run typecheck
+SKIP_ENV_VALIDATION=1 npm run build
 ```
 
-脚本会执行：
+验证通过后，由用户手动提交并推送到 `main`。不要由自动化代理默认执行 commit 或 push。
+
+3. **GitHub Actions 自动部署**
+
+工作流会执行：
 
 - `npm run typecheck`
 - `npm run lint`
 - `npm run build`
-- 打包 `.next/standalone`、`.next/static`、`public`
+- 打包 Web/CMS standalone 运行时、静态资源和 `public`
 - 上传到服务器 release 目录
+- 按工作流配置执行生产迁移
 - 更新 `current` 软链接
 - `pm2 startOrReload ecosystem.config.cjs --update-env`
+- 检查 Web、CMS 和 PM2 状态
+
+### 本地 Docker 应急部署
+
+本地上传脚本不是默认部署方式。只有在明确要求“使用本地部署脚本”或“本地 Docker 部署”时才使用，并需先配置用户本机的 `.deploy.env`。
+
+完整应急部署：
+
+```bash
+npm run deploy:local
+```
 
 只生成本地部署包：
 
 ```bash
-npm run deploy -- --artifact-only
-```
-
-如需在部署前从本机执行数据库迁移：
-
-```bash
-npm run db:migrate
+npm run deploy:local -- --artifact-only
 ```
 
 ### GitHub Actions 部署
@@ -286,8 +280,9 @@ npm run db:migrate
 ```text
 DEPLOY_HOST=103.117.136.139
 DEPLOY_USER=root
-DEPLOY_SSH_KEY=<private ssh key>
+SSH_PRIVATE_KEY=<private ssh key>
 DATABASE_URL=<production database url>
+READ_DATABASE_URL=<production read-only database url>
 CMS_BASIC_AUTH_USERNAME=<cms basic auth username>
 CMS_BASIC_AUTH_PASSWORD=<cms basic auth password>
 GOOGLE_AI_API_KEY=<optional, only if still used>
@@ -303,32 +298,6 @@ REMOTE_UPLOAD_DIR=/var/www/uploads
 NEXT_PUBLIC_URL=https://fwqgo.com
 NEXT_PUBLIC_CMS_URL=https://cms.fwqgo.com
 ```
-
-4. **手动构建应用**
-```bash
-npm run build
-```
-
-5. **使用PM2部署**
-```bash
-# 安装PM2
-npm install -g pm2
-
-# 启动应用
-pm2 start ecosystem.config.cjs
-
-# 查看状态
-pm2 status
-
-# 查看日志
-pm2 logs
-```
-
-3. **数据库迁移**
-```bash
-npm run db:migrate
-```
-
 
 ## 📈 性能优化
 

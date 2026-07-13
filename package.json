@@ -7,7 +7,7 @@
     "build:web": "next build apps/web --webpack",
     "build:cms": "next build apps/cms --webpack",
     "check": "eslint . && tsc --noEmit",
-    "deploy": "bash scripts/deploy-local-build.sh",
+    "deploy:local": "bash scripts/deploy-local-build.sh",
     "healthcheck:prod": "bash scripts/production-healthcheck.sh",
     "verify:apps": "node scripts/verify-app-boundaries.mjs",
     "db:generate": "drizzle-kit generate",

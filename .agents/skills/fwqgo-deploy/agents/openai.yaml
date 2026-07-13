@@ -1,4 +1,4 @@
 interface:
   display_name: "FWQGO Deploy"
-  short_description: "Build and deploy fwqgo only on explicit request"
-  default_prompt: "Use $fwqgo-deploy to build and deploy fwqgo to the production server."
+  short_description: "Prepare fwqgo for GitHub Actions deployment"
+  default_prompt: "Use $fwqgo-deploy to verify fwqgo for deployment, then stop for my manual push to trigger GitHub Actions."

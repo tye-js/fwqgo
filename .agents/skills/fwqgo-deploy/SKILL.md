@@ -1,32 +1,34 @@
 ---
 name: fwqgo-deploy
-description: Deploy the fwqgo Next.js project to its production server by building a Linux standalone artifact locally in Docker, uploading it, and switching the PM2 release. Use only when the user explicitly asks to deploy, publish, release, build-and-deploy, upload to the server, or verify a deployment for fwqgo; do not use for ordinary code edits, tests, reviews, or local builds unless deployment is explicitly requested.
+description: Prepare and verify fwqgo releases that are deployed by GitHub Actions after the user manually pushes to main. Use when the user asks to deploy, publish, release, prepare a deployment, or verify a fwqgo deployment. Never run the local Docker deployment script for a normal deployment request; use it only when the user explicitly asks for the local deployment fallback.
 ---
 
 # FWQGO Deploy
 
-## Core Rule
+## Default Boundary
 
-Do not deploy implicitly. Treat deployment as production-impacting work and run it only after the user gives an explicit deployment command, such as "部署", "构建部署", "发布到服务器", "上线", or "npm run deploy".
+FWQGO uses `.github/workflows/deploy.yml` as its default production deployment path. A normal request such as "部署", "构建部署", "发布到服务器", or "上线" does not authorize a local Docker deployment, a commit, or a push.
 
-For normal code changes, stop after local verification and tell the user deployment is ready but not run.
+For a normal deployment request:
 
-## Workflow
+1. Inspect the intended change scope.
+2. Run the requested or appropriate local verification.
+3. Check that the GitHub Actions workflow still covers the release requirements.
+4. Stop and tell the user the changes are ready for their manual commit/push.
+5. The user's push to `main` triggers GitHub Actions.
 
-1. Work from `/Users/liulu/Desktop/fwqgo`.
-2. Read project rules in `AGENTS.md` if not already loaded.
-3. Confirm the deployment script exists: `scripts/deploy-local-build.sh`.
-4. Confirm `.deploy.env` exists, but do not print its contents.
-5. Run `npm run deploy` only when the user explicitly requested deployment.
-6. After deployment, verify the server process and public site. Use `references/deployment.md` for exact checks.
+Do not run `npm run deploy:local`, commit, push, or trigger a workflow unless the user explicitly requests that exact action.
+
+## Local Fallback
+
+The local Docker upload path is emergency/manual-only. Use it only if the user explicitly says "使用本地部署脚本", "本地 Docker 部署", or directly requests `npm run deploy:local`. Read `references/deployment.md` before using it.
 
 ## Safety
 
 - Never print `.deploy.env`, private keys, passwords, database URLs, or full PM2 environment dumps.
-- Do not run database migrations during deploy unless the user explicitly asks for migration deployment.
+- Do not run database migrations outside the GitHub Actions release unless the user explicitly asks for a separate migration operation.
 - Do not restart the whole server unless the user explicitly asks and service-level restart is insufficient.
 - Do not revert unrelated dirty worktree changes.
-- If deployment fails after uploading but before activation, inspect the error before retrying.
 
 ## Standard Commands
 
@@ -35,11 +37,9 @@ Use the project npm scripts:
 ```bash
 npm run typecheck
 npm run lint
-npm run deploy
+SKIP_ENV_VALIDATION=1 npm run build
 ```
-
-`npm run deploy` performs local checks, fetches the server production env for build-time configuration, builds a Linux standalone artifact locally in Docker, uploads it using `.deploy.env`, updates `/var/www/fwqgo/current`, and restarts PM2. The production server must not run `next build` during routine deploys.
 
 ## References
 
-Read `references/deployment.md` when preparing to deploy or diagnosing a deployment.
+Read `references/deployment.md` when preparing or diagnosing a deployment, or before using the explicitly requested local fallback.
