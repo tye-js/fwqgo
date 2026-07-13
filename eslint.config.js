@@ -4,6 +4,7 @@ import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 const config = [
   {
     ignores: [
+      ".claude/worktrees/**",
       ".deploy/**",
       ".next/**",
       ".next-web/**",

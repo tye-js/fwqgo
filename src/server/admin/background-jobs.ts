@@ -244,6 +244,29 @@ async function resetStaleBackgroundJobs() {
   await db
     .update(adminBackgroundJobs)
     .set({
+      status: "cancelled",
+      lockedBy: null,
+      lockedAt: null,
+      heartbeatAt: null,
+      lastError: "后台 worker 心跳超时；已有同类型任务排队，旧锁已释放",
+      finishedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        staleRunningWhere,
+        sql`${adminBackgroundJobs.attempts} < ${adminBackgroundJobs.maxAttempts}`,
+        sql`exists (
+          select 1 from "admin_background_jobs" as queued_jobs
+          where queued_jobs."jobKey" = ${adminBackgroundJobs.jobKey}
+            and queued_jobs."status" = 'queued'
+        )`,
+      ),
+    );
+
+  await db
+    .update(adminBackgroundJobs)
+    .set({
       status: "queued",
       lockedBy: null,
       lockedAt: null,
@@ -256,6 +279,11 @@ async function resetStaleBackgroundJobs() {
       and(
         staleRunningWhere,
         sql`${adminBackgroundJobs.attempts} < ${adminBackgroundJobs.maxAttempts}`,
+        sql`not exists (
+          select 1 from "admin_background_jobs" as queued_jobs
+          where queued_jobs."jobKey" = ${adminBackgroundJobs.jobKey}
+            and queued_jobs."status" = 'queued'
+        )`,
       ),
     );
 }

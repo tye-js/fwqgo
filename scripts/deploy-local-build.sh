@@ -6,7 +6,7 @@ DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-$ROOT_DIR/.deploy.env}"
 
 usage() {
   cat <<'EOF'
-Usage: npm run deploy -- [--artifact-only] [--skip-checks]
+Usage: npm run deploy:local -- [--artifact-only] [--skip-checks]
 
 Builds the Next.js standalone release locally inside Docker Linux, uploads the
 standalone artifact, and quickly switches the PM2 release on the server.

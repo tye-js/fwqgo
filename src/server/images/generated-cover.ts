@@ -22,6 +22,7 @@ type GenerateCoverInput = {
   language?: "zh" | "en";
   uploadedBy: string | null;
   configId?: number;
+  signal?: AbortSignal;
 };
 
 type CoverRequestPreview = {
@@ -192,6 +193,21 @@ function isTimeoutError(error: unknown) {
   );
 }
 
+function getAbortSignal(timeoutSeconds: number, signal?: AbortSignal) {
+  const timeoutSignal = AbortSignal.timeout(timeoutSeconds * 1000);
+  return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (!signal?.aborted) return;
+
+  if (signal.reason instanceof Error) {
+    throw signal.reason;
+  }
+
+  throw new Error("封面生图任务已终止");
+}
+
 function getJsonErrorMessage(text: string) {
   try {
     const payload = JSON.parse(text) as {
@@ -287,17 +303,23 @@ export async function previewArticleCoverImageRequest(
   };
 }
 
-async function downloadImage(url: string, timeoutSeconds: number) {
+async function downloadImage(
+  url: string,
+  timeoutSeconds: number,
+  signal?: AbortSignal,
+) {
+  throwIfAborted(signal);
   let response: Response;
   try {
     response = await fetchPublicHttpUrl(
       url,
       {
-        signal: AbortSignal.timeout(timeoutSeconds * 1000),
+        signal: getAbortSignal(timeoutSeconds, signal),
       },
       "生图结果图片 URL",
     );
   } catch (error) {
+    throwIfAborted(signal);
     if (isTimeoutError(error)) {
       throw new Error(
         `图片下载超时：${timeoutSeconds} 秒内没有下载完成，请调大生图配置里的超时时间或检查图片 URL`,
@@ -314,6 +336,7 @@ async function downloadImage(url: string, timeoutSeconds: number) {
   }
 
   const buffer = Buffer.from(await response.arrayBuffer());
+  throwIfAborted(signal);
   return {
     buffer,
     mime: inferMimeFromResponse(response),
@@ -323,6 +346,7 @@ async function downloadImage(url: string, timeoutSeconds: number) {
 export async function generateArticleCoverImage(
   input: GenerateCoverInput,
 ): Promise<{ asset: ImageAssetRow; prompt: string }> {
+  throwIfAborted(input.signal);
   if (!input.title.trim()) {
     throw new Error("生成封面图需要文章标题");
   }
@@ -361,9 +385,10 @@ export async function generateArticleCoverImage(
           quality: config.quality,
         }),
       ),
-      signal: AbortSignal.timeout(config.timeoutSeconds * 1000),
+      signal: getAbortSignal(config.timeoutSeconds, input.signal),
     });
   } catch (error) {
+    throwIfAborted(input.signal);
     if (isTimeoutError(error)) {
       throw new Error(
         `生图接口请求超时：${config.timeoutSeconds} 秒内没有返回结果。请调大「生图配置」里的超时时间，或检查模型/中转服务是否可用`,
@@ -376,6 +401,7 @@ export async function generateArticleCoverImage(
   }
 
   const text = await response.text();
+  throwIfAborted(input.signal);
   if (!response.ok) {
     const providerMessage = getJsonErrorMessage(text);
     throw new Error(
@@ -398,7 +424,7 @@ export async function generateArticleCoverImage(
   const imageUrl = findImageUrl(payload);
   const base64Image = findBase64Image(payload);
   const image = imageUrl
-    ? await downloadImage(imageUrl, config.timeoutSeconds)
+    ? await downloadImage(imageUrl, config.timeoutSeconds, input.signal)
     : base64Image
       ? {
           buffer: Buffer.from(normalizeBase64(base64Image), "base64"),
@@ -412,6 +438,7 @@ export async function generateArticleCoverImage(
     );
   }
 
+  throwIfAborted(input.signal);
   const asset = await createImageAssetFromBuffer({
     buffer: image.buffer,
     mime: image.mime,
@@ -423,6 +450,7 @@ export async function generateArticleCoverImage(
       input.language === "en" ? input.title : toEnglishFileSlug(input.title),
     prompt,
   });
+  throwIfAborted(input.signal);
 
   return { asset, prompt };
 }

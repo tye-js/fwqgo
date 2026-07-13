@@ -90,6 +90,8 @@ Do not commit secrets. Local `.env*` files may exist in the working tree; treat 
 
 This project uses GitHub Actions for deployment.
 
+The default deployment boundary is strict: a normal request such as "部署" means prepare and verify the release, then stop so the user can manually push and let GitHub Actions deploy it. Do not run the local deployment script, commit, or push unless the user explicitly requests that exact action. The local Docker deployment script is an emergency/manual fallback only.
+
 Deployment model:
 
 1. Build and package artifacts via GitHub Actions CI/CD workflow.
@@ -99,7 +101,7 @@ Deployment model:
 
 For database changes, create migrations with `npm run db:generate` and apply them with `npm run db:migrate`. Coordinate migration execution with deployment.
 
-GitHub Actions and `scripts/deploy-local-build.sh` include the production migration step. Keep `scripts/migrate-prod.mjs` and the `drizzle` folder in release payloads.
+GitHub Actions includes the production migration step. Keep `scripts/migrate-prod.mjs` and the `drizzle` folder in release payloads. `scripts/deploy-local-build.sh` is retained only for an explicitly requested local Docker deployment.
 
 ## Coding Rules
 
