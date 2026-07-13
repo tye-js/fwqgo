@@ -1,7 +1,7 @@
-UPDATE "categories"
+UPDATE "categories" AS category
 SET
-  "enName" = COALESCE(NULLIF(BTRIM("enName"), ''), labels."enName"),
-  "enSlug" = COALESCE(NULLIF(BTRIM("enSlug"), ''), labels."enSlug"),
+  "enName" = COALESCE(NULLIF(BTRIM(category."enName"), ''), labels."enName"),
+  "enSlug" = COALESCE(NULLIF(BTRIM(category."enSlug"), ''), labels."enSlug"),
   "updatedAt" = NOW()
 FROM (
   VALUES
@@ -20,7 +20,7 @@ FROM (
     ('large-bandwidth-vps', 'High-Bandwidth Servers', 'high-bandwidth-servers'),
     ('free-vps', 'Free VPS', 'free-vps')
 ) AS labels("slug", "enName", "enSlug")
-WHERE "categories"."slug" = labels."slug";
+WHERE category."slug" = labels."slug";
 
 SELECT SETVAL(
   PG_GET_SERIAL_SEQUENCE('tags', 'id'),

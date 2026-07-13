@@ -26,8 +26,17 @@ function escapeXml(value: string) {
     .replace(/'/g, "&apos;");
 }
 
-function formatLastmod(value: Date | null | undefined) {
-  return (value ?? new Date()).toISOString();
+function formatLastmod(value: Date | string | number | null | undefined) {
+  const date =
+    value instanceof Date
+      ? value
+      : value === null || value === undefined
+        ? new Date()
+        : new Date(value);
+
+  return Number.isNaN(date.getTime())
+    ? new Date().toISOString()
+    : date.toISOString();
 }
 
 function xmlResponse(xml: string) {

@@ -162,6 +162,9 @@ jobs:
           release_dir="$releases_dir/$release_id"
           current_link="$deploy_path/current"
           previous_release="$(readlink -f "$current_link" 2>/dev/null || true)"
+          deployment_stage="prepare release"
+          release_link_switched="false"
+          processes_replaced="false"
 
           mkdir -p "$releases_dir" "$shared_dir" "$upload_dir"
 
@@ -205,26 +208,38 @@ jobs:
             if [[ -n "$previous_release" && -d "$previous_release" ]]; then
               echo "Activation failed. Rolling back to $previous_release..."
               ln -sfn "$previous_release" "$current_link"
-              pm2 delete fwqgo >/dev/null 2>&1 || true
-              pm2 delete fwqgo-web >/dev/null 2>&1 || true
-              pm2 delete fwqgo-cms >/dev/null 2>&1 || true
-              start_release "$previous_release" || true
-              pm2 save || true
+              if [[ "$processes_replaced" == "true" ]]; then
+                pm2 delete fwqgo >/dev/null 2>&1 || true
+                pm2 delete fwqgo-web >/dev/null 2>&1 || true
+                pm2 delete fwqgo-cms >/dev/null 2>&1 || true
+                start_release "$previous_release" || true
+                pm2 save || true
+              else
+                echo "PM2 processes were not replaced; keeping the current processes running."
+              fi
             fi
           }
 
           on_deploy_error() {
             status=$?
             trap - ERR
-            echo "Deployment failed. Recent PM2 logs:"
-            pm2 logs fwqgo-web --lines 80 --nostream || true
-            pm2 logs fwqgo-cms --lines 80 --nostream || true
-            rollback_previous
+            echo "Deployment failed during stage: $deployment_stage" >&2
+            if [[ "$processes_replaced" == "true" ]]; then
+              echo "Recent PM2 logs:"
+              pm2 logs fwqgo-web --lines 80 --nostream || true
+              pm2 logs fwqgo-cms --lines 80 --nostream || true
+            fi
+            if [[ "$release_link_switched" == "true" ]]; then
+              rollback_previous
+            else
+              echo "Current release was not switched; no runtime rollback is required."
+            fi
             exit "$status"
           }
 
           trap on_deploy_error ERR
 
+          deployment_stage="unpack release"
           rm -rf "$release_dir"
           mkdir -p "$release_dir"
           tar -xzf "$remote_artifact" -C "$release_dir"
@@ -237,6 +252,7 @@ jobs:
 
           if [[ "$run_migrations" != "false" ]]; then
             if command -v pg_dump >/dev/null 2>&1; then
+              deployment_stage="database backup"
               backup_dir="$shared_dir/backups/db"
               mkdir -p "$backup_dir"
               set -a
@@ -253,12 +269,17 @@ jobs:
             else
               echo "pg_dump is not installed; skipping database backup before migrations." >&2
             fi
+            deployment_stage="database migration"
             echo "Running production database migrations on server..."
             node "$release_dir/scripts/migrate-prod.mjs"
           fi
 
+          deployment_stage="switch release"
           ln -sfn "$release_dir" "$current_link"
+          release_link_switched="true"
 
+          deployment_stage="restart applications"
+          processes_replaced="true"
           if pm2 describe fwqgo >/dev/null 2>&1; then
             pm2 delete fwqgo
           fi
@@ -304,6 +325,7 @@ jobs:
             return 1
           }
 
+          deployment_stage="local health checks"
           web_status="$(wait_for_http_status "Web" "http://127.0.0.1:${web_port}/" '^(2|3)[0-9][0-9]$')"
           cms_status="$(wait_for_http_status "CMS" "http://127.0.0.1:${cms_port}/" '^(2|3)[0-9][0-9]$|^401$')"
           case "$web_status" in
