@@ -118,7 +118,10 @@ function ConfigForm({
 
     try {
       if (config) {
-        await updateImageGenerationConfigAction(config.id, formData);
+        const result = await updateImageGenerationConfigAction(
+          config.id,
+          formData,
+        );
         notifySuccess({
           title: "生图配置已更新",
           description: describeAdminResult([
@@ -126,16 +129,22 @@ function ConfigForm({
             stringValue(formData, "model"),
             enabled ? "已启用" : "已停用",
             isDefault ? "默认配置" : null,
+            result.reboundFailedTaskCount > 0
+              ? `${result.reboundFailedTaskCount} 个失败任务已切换到最新默认配置`
+              : null,
           ]),
         });
       } else {
-        await createImageGenerationConfigAction(formData);
+        const result = await createImageGenerationConfigAction(formData);
         notifySuccess({
           title: "生图配置已添加",
           description: describeAdminResult([
             stringValue(formData, "name"),
             stringValue(formData, "model"),
             "可在文章编辑页生成封面图",
+            result.reboundFailedTaskCount > 0
+              ? `${result.reboundFailedTaskCount} 个失败任务已切换到最新默认配置`
+              : null,
           ]),
         });
       }
@@ -320,10 +329,16 @@ export function ImageGenerationConfigManager({
     const config = configs.find((item) => item.id === id);
 
     try {
-      await deleteImageGenerationConfigAction(id);
+      const result = await deleteImageGenerationConfigAction(id);
       notifySuccess({
         title: "生图配置已删除",
-        description: describeAdminResult([config?.name, config?.model]),
+        description: describeAdminResult([
+          config?.name,
+          config?.model,
+          result.reboundFailedTaskCount > 0
+            ? `${result.reboundFailedTaskCount} 个失败任务已切换到新的默认配置`
+            : null,
+        ]),
       });
       router.refresh();
     } catch (error) {

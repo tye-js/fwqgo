@@ -47,6 +47,7 @@ function revalidateImageGenerationPages() {
   revalidatePath("/settings/image-generation");
   revalidatePath("/images/ai-generate");
   revalidatePath("/images/covers");
+  revalidatePath("/ai-tasks");
 }
 
 export async function getImageGenerationConfigList() {
@@ -57,8 +58,9 @@ export async function getImageGenerationConfigList() {
 export async function createImageGenerationConfigAction(formData: FormData) {
   await requireAdminSession();
   const input = configSchema.parse(Object.fromEntries(formData));
-  await createImageGenerationConfig(input);
+  const result = await createImageGenerationConfig(input);
   revalidateImageGenerationPages();
+  return result;
 }
 
 export async function updateImageGenerationConfigAction(
@@ -67,12 +69,14 @@ export async function updateImageGenerationConfigAction(
 ) {
   await requireAdminSession();
   const input = configSchema.parse(Object.fromEntries(formData));
-  await updateImageGenerationConfig(id, input);
+  const result = await updateImageGenerationConfig(id, input);
   revalidateImageGenerationPages();
+  return result;
 }
 
 export async function deleteImageGenerationConfigAction(id: number) {
   await requireAdminSession();
-  await deleteImageGenerationConfig(id);
+  const result = await deleteImageGenerationConfig(id);
   revalidateImageGenerationPages();
+  return result;
 }

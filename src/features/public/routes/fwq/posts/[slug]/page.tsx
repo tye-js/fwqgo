@@ -5,14 +5,9 @@ import {
   getPostsByPostId,
 } from "@/features/public/data/post";
 
-import {
-  getOptimizedImageSrc,
-  isRenderableImageSrc,
-} from "@fwqgo/core/image-src";
+import { isRenderableImageSrc } from "@fwqgo/core/image-src";
 import {
   formatDate,
-  isHttpHref,
-  isInternalHref,
   jsonLdScriptContent,
   normalizeDecodedSlug,
   toAbsoluteHttpUrl,
@@ -20,40 +15,34 @@ import {
 import Link from "next/link";
 import type { Metadata } from "next";
 import { connection } from "next/server";
-import { TableOfContents } from "@/components/toc/table-of-contents";
 import {
-  BookOpenText,
+  ArrowRight,
   ArrowLeftToLine,
   ArrowRightToLine,
   Clock,
   SquareLibrary,
   Tags,
 } from "lucide-react";
-import Image from "next/image";
 import { Suspense } from "react";
+import {
+  ARTICLE_PROSE_CLASS_NAME,
+  ArticleCover,
+  ArticleDetailHeader,
+  ArticleTocSidebar,
+} from "@/features/public/components/article-detail";
 import { PostViewCount } from "@/features/public/components/post-view-count";
 import { RecommendedPostCard } from "@/features/public/components/recommended-post-card";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
+import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
 import { WebmasterStatement } from "@/features/public/components/webmaster-statement";
 import { ArticleShareActions } from "@/features/public/components/article-share-actions";
-import { Card, CardContent } from "@/components/ui/card";
 import { notFound } from "next/navigation";
 import {
   getRelatedServerOffersForPost,
   offerTopics,
 } from "@/server/offers/server-offers";
-import { Badge } from "@/components/ui/badge";
 import { addIdsToHeadings } from "@fwqgo/core/toc";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
-
-function formatOfferPrice(
-  offer: Awaited<ReturnType<typeof getRelatedServerOffersForPost>>[number],
-) {
-  if (!offer.priceAmount) return "价格待补充";
-  const amount = Number(offer.priceAmount);
-  if (!Number.isFinite(amount)) return "价格待确认";
-  return `${offer.currency === "CNY" ? "¥" : "$"}${amount.toFixed(2)}`;
-}
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
@@ -145,15 +134,16 @@ async function PostPageContent({
     renderArticleContentHtml(post.content),
   );
 
-  const { data: posts } = await getPostsByPostId(post.id);
+  const [{ data: posts }, { data: latestPosts }, relatedOffers] =
+    await Promise.all([
+      getPostsByPostId(post.id),
+      getLatestPostsForSidebar(),
+      getRelatedServerOffersForPost({
+        postId: post.id,
+        tagNames: post.tags.map((tag) => tag.tag.name),
+      }),
+    ]);
   const [prevPost, nextPost] = posts ?? [null, null];
-  const [{ data: latestPosts }, relatedOffers] = await Promise.all([
-    getLatestPostsForSidebar(),
-    getRelatedServerOffersForPost({
-      postId: post.id,
-      tagNames: post.tags.map((tag) => tag.tag.name),
-    }),
-  ]);
   const matchedTopics = offerTopics.filter((topic) => {
     const text = `${post.title} ${post.description ?? ""} ${post.tags
       .map((tag) => tag.tag.name)
@@ -260,26 +250,12 @@ async function PostPageContent({
     ],
   };
   return (
-    <div className="py-4 md:py-6">
-      <div className="grid items-start gap-6 xl:grid-cols-[250px_minmax(0,1fr)_300px] 2xl:grid-cols-[270px_minmax(0,900px)_320px]">
-        <aside className="sticky top-20 hidden max-h-[calc(100dvh-96px)] self-start xl:block">
-          <div>
-            <Card className="rounded-lg border-border/70 bg-background shadow-sm">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <BookOpenText className="size-4 text-accent" />
-                  本文目录
-                </div>
-                <div className="mt-3">
-                  <TableOfContents content={contentWithIds} />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </aside>
+    <div className="px-4 pb-10 pt-2 sm:px-6 md:pt-4">
+      <div className="grid items-start gap-6 xl:grid-cols-[210px_minmax(0,800px)_280px] xl:justify-center">
+        <ArticleTocSidebar content={contentWithIds} label="本文目录" />
 
-        <div className="min-w-0 space-y-6">
-          <article className="overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm">
+        <div className="mx-auto w-full min-w-0 max-w-[820px] space-y-10 xl:mx-0 xl:max-w-none">
+          <article className="min-w-0">
             <script
               type="application/ld+json"
               dangerouslySetInnerHTML={{
@@ -291,300 +267,192 @@ async function PostPageContent({
                 ]),
               }}
             />
-            <div className="border-b border-border/70 bg-muted/20 px-5 py-5 sm:px-6 md:px-8">
-              <h1 className="font-editorial max-w-4xl text-2xl font-semibold leading-tight text-foreground md:text-4xl">
-                {post.title}
-              </h1>
-              <p className="mt-3 line-clamp-2 max-w-3xl text-sm leading-6 text-muted-foreground md:text-base">
-                {post.description ??
-                  "这篇文章包含线路、机房、价格与使用场景的完整信息，适合继续深入阅读。"}
-              </p>
-              <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
-                <div className="inline-flex items-center gap-2">
-                  <Clock className="size-4" />
-                  {formatDate(post.createdAt)}
-                </div>
-                <PostViewCount slug={decodedSlug} initialViews={post.views} />
-                {post.recommendedTagName ? (
+            <ArticleDetailHeader
+              title={post.title}
+              description={
+                post.description ??
+                "这篇文章包含线路、机房、价格与使用场景的完整信息，适合继续深入阅读。"
+              }
+              eyebrow={
+                post.enSlug ? (
                   <Link
-                    href={`/fwq/tags/${encodeURIComponent(post.recommendedTagSlug ?? post.recommendedTagName)}/page/1`}
+                    href={`/en/fwq/posts/${encodeURIComponent(post.enSlug)}`}
                     prefetch
-                    className="inline-flex min-h-11 items-center gap-2 rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-sm text-sm font-medium text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-8"
                   >
-                    <Tags className="size-4" />
-                    {post.recommendedTagName}
+                    Read in English
+                    <ArrowRight className="size-4" aria-hidden="true" />
                   </Link>
-                ) : null}
+                ) : undefined
+              }
+              meta={
+                <>
+                  <span className="inline-flex min-h-8 items-center gap-2 tabular-nums">
+                    <Clock className="size-4" aria-hidden="true" />
+                    {formatDate(post.createdAt)}
+                  </span>
+                  <PostViewCount slug={decodedSlug} initialViews={post.views} />
+                  {post.recommendedTagName ? (
+                    <Link
+                      href={`/fwq/tags/${encodeURIComponent(post.recommendedTagSlug ?? post.recommendedTagName)}/page/1`}
+                      prefetch
+                      className="inline-flex min-h-11 items-center gap-1.5 rounded-sm transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-8"
+                    >
+                      <Tags className="size-4" aria-hidden="true" />
+                      {post.recommendedTagName}
+                    </Link>
+                  ) : null}
+                </>
+              }
+              actions={
                 <ArticleShareActions title={post.title} url={articleUrl} />
-              </div>
+              }
+            />
+
+            <div className="mt-5">
+              <ArticleCover src={post.imgUrl} alt={post.title} />
             </div>
 
-            <div className="px-5 pb-8 pt-4 sm:px-6 md:px-8 md:pb-10 md:pt-5">
-              <div className="relative aspect-[16/9] max-h-[360px] overflow-hidden rounded-lg border border-border/70 bg-muted/20 md:aspect-[21/9]">
-                {isRenderableImageSrc(post.imgUrl) ? (
-                  <Image
-                    src={getOptimizedImageSrc(post.imgUrl)}
-                    alt={post.title}
-                    width={1440}
-                    height={840}
-                    sizes="(max-width: 768px) 100vw, 960px"
-                    className="h-full w-full object-cover"
-                    priority
-                  />
-                ) : (
-                  <div className="h-full w-full bg-[linear-gradient(135deg,hsl(var(--muted)),hsl(var(--background)))]" />
-                )}
+            {relatedOffers.length > 0 ? (
+              <div className="mt-5">
+                <RelatedServerOfferCards
+                  title="本文相关套餐"
+                  description="先核对价格、地区和线路，再进入商家页面确认库存与续费价格。"
+                  offers={relatedOffers}
+                />
               </div>
+            ) : null}
 
-              {relatedOffers.length > 0 ? (
-                <section className="mt-5 rounded-lg border border-border/70 bg-muted/20 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                      <SquareLibrary className="size-4 text-accent" />
-                      本文相关套餐
-                    </div>
-                    <Link
-                      href="/servers"
-                      prefetch
-                      className="text-xs font-medium text-primary underline-offset-4 hover:underline"
-                    >
-                      查看全部比价
-                    </Link>
+            <div
+              className={`${ARTICLE_PROSE_CLASS_NAME} mt-8`}
+              dangerouslySetInnerHTML={{ __html: contentWithIds }}
+            />
+
+            <div className="mt-10 space-y-8">
+              <WebmasterStatement />
+
+              {post.tags.length > 0 ? (
+                <section className="border-t border-border/70 pt-5">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Tags className="size-4 text-primary" aria-hidden="true" />
+                    本文标签
                   </div>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    {relatedOffers.slice(0, 2).map((offer) => (
-                      <div
-                        key={offer.id}
-                        className="rounded-lg border border-border/70 bg-background p-3"
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                    {post.tags.map((tag) => (
+                      <Link
+                        key={tag.tag.id}
+                        href={`/fwq/tags/${encodeURIComponent(tag.tag.slug)}/page/1`}
+                        prefetch
+                        className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-8"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="line-clamp-2 text-sm font-medium leading-6">
-                              {offer.title}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {offer.providerName ?? "商家待补充"} ·{" "}
-                              {offer.region ?? "地区待补充"}
-                            </p>
-                          </div>
-                          <Badge>{formatOfferPrice(offer)}</Badge>
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {isHttpHref(offer.purchaseUrl) ? (
-                            <a
-                              href={offer.purchaseUrl}
-                              target="_blank"
-                              rel="nofollow sponsored noopener noreferrer"
-                              className="text-xs font-medium text-primary underline-offset-4 hover:underline"
-                            >
-                              购买链接
-                            </a>
-                          ) : isInternalHref(offer.purchaseUrl) ? (
-                            <Link
-                              href={offer.purchaseUrl}
-                              prefetch={false}
-                              className="text-xs font-medium text-primary underline-offset-4 hover:underline"
-                            >
-                              购买链接
-                            </Link>
-                          ) : null}
-                          {offer.articleUrl &&
-                          isInternalHref(offer.articleUrl) ? (
-                            <Link
-                              href={offer.articleUrl}
-                              prefetch
-                              className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                            >
-                              来源文章
-                            </Link>
-                          ) : null}
-                        </div>
-                      </div>
+                        #{tag.tag.name}
+                      </Link>
                     ))}
                   </div>
                 </section>
               ) : null}
 
-              <div className="mt-6 space-y-8">
-                <div
-                  className="article-prose font-ui prose-headings:font-editorial prose-blockquote:font-ui prose-code:font-ui prose prose-zinc max-w-none prose-p:text-base prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-accent prose-a:underline prose-a:decoration-accent/55 prose-a:underline-offset-4 prose-a:transition-colors hover:prose-a:text-primary hover:prose-a:decoration-primary prose-blockquote:border-l-4 prose-blockquote:border-accent prose-blockquote:bg-accent/5 prose-blockquote:px-5 prose-blockquote:py-3 prose-blockquote:text-base prose-strong:text-foreground prose-code:rounded prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:text-sm prose-li:my-2 prose-li:text-foreground/90 prose-img:rounded-lg"
-                  dangerouslySetInnerHTML={{ __html: contentWithIds }}
-                />
-
-                <WebmasterStatement />
-
-                {post.tags && post.tags.length > 0 ? (
-                  <section className="border-t border-border/70 pt-5">
-                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                      <Tags className="size-4 text-accent" />
-                      本文标签
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {post.tags.map((tag) => (
-                        <Link
-                          key={tag.tag.id}
-                          href={`/fwq/tags/${encodeURIComponent(tag.tag.slug)}/page/1`}
-                          prefetch
-                          className="inline-flex min-h-10 items-center rounded-full border border-border/70 px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/10 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        >
-                          #{tag.tag.name}
-                        </Link>
-                      ))}
-                    </div>
-                  </section>
-                ) : null}
-
-                {prevPost || nextPost ? (
-                  <nav
-                    aria-label="上下篇文章"
-                    className="grid gap-3 border-t border-border/70 pt-5 md:grid-cols-2"
-                  >
-                    {prevPost ? (
-                      <Link
-                        href={`/fwq/posts/${encodeURIComponent(prevPost.slug)}`}
-                        prefetch
-                        className="group flex min-h-20 items-start gap-3 rounded-lg border border-border/70 bg-muted/20 px-4 py-3.5 transition-colors hover:border-accent/30 hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      >
-                        <ArrowLeftToLine className="mt-1 size-4 shrink-0 text-muted-foreground" />
-                        <div>
-                          <p className="text-xs text-muted-foreground">
-                            上一篇
-                          </p>
-                          <p className="mt-2 line-clamp-2 text-sm font-medium leading-6 text-foreground transition-colors group-hover:text-accent">
-                            {prevPost.title}
-                          </p>
-                        </div>
-                      </Link>
-                    ) : (
-                      <div className="hidden md:block" />
-                    )}
-                    {nextPost ? (
-                      <Link
-                        href={`/fwq/posts/${encodeURIComponent(nextPost.slug)}`}
-                        prefetch
-                        className="group flex min-h-20 items-start justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 px-4 py-3.5 text-left transition-colors hover:border-accent/30 hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:text-right"
-                      >
-                        <div>
-                          <p className="text-xs text-muted-foreground">
-                            下一篇
-                          </p>
-                          <p className="mt-2 line-clamp-2 text-sm font-medium leading-6 text-foreground transition-colors group-hover:text-accent">
-                            {nextPost.title}
-                          </p>
-                        </div>
-                        <ArrowRightToLine className="mt-1 size-4 shrink-0 text-muted-foreground" />
-                      </Link>
-                    ) : null}
-                  </nav>
-                ) : null}
-
-                {matchedTopics.length > 0 || relatedOffers.length > 0 ? (
-                  <section className="space-y-4 border-t border-border/70 pt-5">
-                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                      <SquareLibrary className="size-4 text-accent" />
-                      相关专题与套餐
-                    </div>
-                    {matchedTopics.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {matchedTopics.map((topic) => (
-                          <Link
-                            key={topic.slug}
-                            href={`/servers/${encodeURIComponent(topic.slug)}`}
-                            prefetch
-                            className="inline-flex min-h-10 items-center rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                          >
-                            {topic.title}
-                          </Link>
-                        ))}
-                        <Link
-                          href="/servers"
-                          prefetch
-                          className="inline-flex min-h-10 items-center rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        >
-                          全部服务器比价
-                        </Link>
+              {prevPost || nextPost ? (
+                <nav
+                  aria-label="上下篇文章"
+                  className="grid gap-3 border-t border-border/70 pt-5 md:grid-cols-2"
+                >
+                  {prevPost ? (
+                    <Link
+                      href={`/fwq/posts/${encodeURIComponent(prevPost.slug)}`}
+                      prefetch
+                      className="group flex min-h-24 items-start gap-3 rounded-md border border-border/70 px-4 py-3.5 transition-colors hover:border-primary/35 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      <ArrowLeftToLine
+                        className="mt-1 size-4 shrink-0 text-muted-foreground group-hover:text-primary"
+                        aria-hidden="true"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">上一篇</p>
+                        <p className="mt-1.5 line-clamp-2 text-sm font-semibold leading-6 text-foreground underline-offset-4 transition-colors group-hover:text-primary group-hover:underline">
+                          {prevPost.title}
+                        </p>
                       </div>
-                    ) : null}
-                    {relatedOffers.length > 0 ? (
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {relatedOffers.slice(0, 4).map((offer) => (
-                          <div
-                            key={offer.id}
-                            className="rounded-lg border border-border/70 bg-muted/20 p-4"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="line-clamp-2 text-sm font-medium leading-6">
-                                  {offer.title}
-                                </p>
-                                <p className="mt-2 text-xs text-muted-foreground">
-                                  {offer.providerName ?? "商家待补充"} ·{" "}
-                                  {offer.region ?? "地区待补充"} ·{" "}
-                                  {offer.lineType ?? "线路待补充"}
-                                </p>
-                              </div>
-                              <Badge>{formatOfferPrice(offer)}</Badge>
-                            </div>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {isHttpHref(offer.purchaseUrl) ? (
-                                <a
-                                  href={offer.purchaseUrl}
-                                  target="_blank"
-                                  rel="nofollow sponsored noopener noreferrer"
-                                  className="text-xs font-medium text-primary hover:underline"
-                                >
-                                  购买链接
-                                </a>
-                              ) : isInternalHref(offer.purchaseUrl) ? (
-                                <Link
-                                  href={offer.purchaseUrl}
-                                  prefetch={false}
-                                  className="text-xs font-medium text-primary hover:underline"
-                                >
-                                  购买链接
-                                </Link>
-                              ) : null}
-                              {offer.articleUrl &&
-                              isInternalHref(offer.articleUrl) ? (
-                                <Link
-                                  href={offer.articleUrl}
-                                  prefetch
-                                  className="text-xs font-medium text-muted-foreground hover:text-foreground"
-                                >
-                                  来源文章
-                                </Link>
-                              ) : isHttpHref(offer.articleUrl) ? (
-                                <a
-                                  href={offer.articleUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-xs font-medium text-muted-foreground hover:text-foreground"
-                                >
-                                  来源文章
-                                </a>
-                              ) : null}
-                            </div>
-                          </div>
-                        ))}
+                    </Link>
+                  ) : (
+                    <div className="hidden md:block" />
+                  )}
+                  {nextPost ? (
+                    <Link
+                      href={`/fwq/posts/${encodeURIComponent(nextPost.slug)}`}
+                      prefetch
+                      className="group flex min-h-24 items-start justify-between gap-3 rounded-md border border-border/70 px-4 py-3.5 text-left transition-colors hover:border-primary/35 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:text-right"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">下一篇</p>
+                        <p className="mt-1.5 line-clamp-2 text-sm font-semibold leading-6 text-foreground underline-offset-4 transition-colors group-hover:text-primary group-hover:underline">
+                          {nextPost.title}
+                        </p>
                       </div>
-                    ) : null}
-                  </section>
-                ) : null}
-              </div>
+                      <ArrowRightToLine
+                        className="mt-1 size-4 shrink-0 text-muted-foreground group-hover:text-primary"
+                        aria-hidden="true"
+                      />
+                    </Link>
+                  ) : null}
+                </nav>
+              ) : null}
+
+              {matchedTopics.length > 0 ? (
+                <section className="border-t border-border/70 pt-5">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <SquareLibrary
+                      className="size-4 text-primary"
+                      aria-hidden="true"
+                    />
+                    继续浏览服务器专题
+                  </div>
+                  <div className="mt-2 grid sm:grid-cols-2 sm:gap-x-5">
+                    {matchedTopics.map((topic) => (
+                      <Link
+                        key={topic.slug}
+                        href={`/servers/${encodeURIComponent(topic.slug)}`}
+                        prefetch
+                        className="group flex min-h-11 items-center justify-between gap-3 border-b border-border/60 text-sm font-medium text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      >
+                        {topic.title}
+                        <ArrowRight
+                          className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary"
+                          aria-hidden="true"
+                        />
+                      </Link>
+                    ))}
+                    <Link
+                      href="/servers"
+                      prefetch
+                      className="group flex min-h-11 items-center justify-between gap-3 border-b border-border/60 text-sm font-medium text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      全部服务器比价
+                      <ArrowRight
+                        className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary"
+                        aria-hidden="true"
+                      />
+                    </Link>
+                  </div>
+                </section>
+              ) : null}
             </div>
           </article>
 
           {recommendedPosts && recommendedPosts.length > 0 && (
-            <section className="space-y-4 rounded-lg border border-border/70 bg-background px-5 py-6 shadow-sm sm:px-6 md:px-8">
+            <section className="space-y-4 border-t border-border/70 pt-7">
               <div className="flex flex-wrap items-center gap-2">
-                <SquareLibrary className="size-5 text-accent" />
-                <h3 className="font-editorial text-2xl font-semibold">
+                <SquareLibrary
+                  className="size-5 text-primary"
+                  aria-hidden="true"
+                />
+                <h2 className="font-editorial text-xl font-semibold md:text-2xl">
                   {post.recommendedTagName
                     ? `推荐阅读 · ${post.recommendedTagName}`
                     : "推荐阅读"}
-                </h3>
+                </h2>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 {recommendedPosts.map((post) => (
                   <RecommendedPostCard key={post.id} post={post} />
                 ))}
@@ -594,7 +462,7 @@ async function PostPageContent({
         </div>
 
         <aside className="hidden xl:block">
-          <div className="sticky top-24 space-y-4">
+          <div className="sticky top-20 space-y-4">
             <LatestPostsSidebar posts={latestPosts ?? []} />
           </div>
         </aside>

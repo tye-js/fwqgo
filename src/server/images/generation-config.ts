@@ -1,7 +1,10 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 
 import { db } from "@fwqgo/db";
-import { imageGenerationConfigs } from "@fwqgo/db/schema";
+import {
+  imageCoverGenerationTasks,
+  imageGenerationConfigs,
+} from "@fwqgo/db/schema";
 
 export const imageGenerationProviderOptions = [
   "openai",
@@ -83,6 +86,40 @@ async function ensureEnabledDefault(tx: ConfigTransaction) {
   }
 }
 
+async function getEnabledDefault(tx: ConfigTransaction) {
+  const [config] = await tx
+    .select()
+    .from(imageGenerationConfigs)
+    .where(
+      and(
+        eq(imageGenerationConfigs.enabled, true),
+        eq(imageGenerationConfigs.isDefault, true),
+      ),
+    )
+    .limit(1);
+
+  return config ?? null;
+}
+
+async function rebindFailedCoverTasks(
+  tx: ConfigTransaction,
+  config: typeof imageGenerationConfigs.$inferSelect,
+) {
+  const reboundTasks = await tx
+    .update(imageCoverGenerationTasks)
+    .set({
+      configId: config.id,
+      configName: config.name,
+      provider: config.provider,
+      model: config.model,
+      updatedAt: new Date(),
+    })
+    .where(eq(imageCoverGenerationTasks.status, "failed"))
+    .returning({ id: imageCoverGenerationTasks.id });
+
+  return reboundTasks.length;
+}
+
 export async function getImageGenerationConfigs() {
   const rows = await db
     .select()
@@ -140,6 +177,7 @@ export async function createImageGenerationConfig(
 
   return db.transaction(async (tx) => {
     await lockDefaultSelection(tx);
+    const previousDefault = await getEnabledDefault(tx);
     if (input.isDefault) {
       await unsetOtherDefaults(tx);
     }
@@ -153,8 +191,21 @@ export async function createImageGenerationConfig(
       })
       .returning({ id: imageGenerationConfigs.id });
 
+    if (!created) {
+      throw new Error("生图配置创建失败");
+    }
+
     await ensureEnabledDefault(tx);
-    return created;
+    const currentDefault = await getEnabledDefault(tx);
+    const shouldRebind =
+      currentDefault &&
+      (currentDefault.id === created.id ||
+        currentDefault.id !== previousDefault?.id);
+    const reboundFailedTaskCount = shouldRebind
+      ? await rebindFailedCoverTasks(tx, currentDefault)
+      : 0;
+
+    return { ...created, reboundFailedTaskCount };
   });
 }
 
@@ -187,6 +238,7 @@ export async function updateImageGenerationConfig(
 
   return db.transaction(async (tx) => {
     await lockDefaultSelection(tx);
+    const previousDefault = await getEnabledDefault(tx);
     if (input.isDefault) {
       await unsetOtherDefaults(tx);
     }
@@ -197,17 +249,38 @@ export async function updateImageGenerationConfig(
       .where(eq(imageGenerationConfigs.id, id))
       .returning({ id: imageGenerationConfigs.id });
 
+    if (!updated) {
+      throw new Error("生图配置不存在或已被删除");
+    }
+
     await ensureEnabledDefault(tx);
-    return updated;
+    const currentDefault = await getEnabledDefault(tx);
+    const shouldRebind =
+      currentDefault &&
+      (currentDefault.id === updated.id ||
+        currentDefault.id !== previousDefault?.id);
+    const reboundFailedTaskCount = shouldRebind
+      ? await rebindFailedCoverTasks(tx, currentDefault)
+      : 0;
+
+    return { ...updated, reboundFailedTaskCount };
   });
 }
 
 export async function deleteImageGenerationConfig(id: number) {
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     await lockDefaultSelection(tx);
+    const previousDefault = await getEnabledDefault(tx);
     await tx
       .delete(imageGenerationConfigs)
       .where(eq(imageGenerationConfigs.id, id));
     await ensureEnabledDefault(tx);
+    const currentDefault = await getEnabledDefault(tx);
+    const reboundFailedTaskCount =
+      currentDefault && currentDefault.id !== previousDefault?.id
+        ? await rebindFailedCoverTasks(tx, currentDefault)
+        : 0;
+
+    return { reboundFailedTaskCount };
   });
 }

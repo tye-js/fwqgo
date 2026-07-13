@@ -1,9 +1,7 @@
 import Link from "next/link";
 import type { ComponentProps } from "react";
-import { ArrowRight, ShoppingCart } from "lucide-react";
+import { ArrowRight, ExternalLink, ShoppingCart } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { type ServerOfferTable } from "@/features/public/components/server-offer-table";
 import { isHttpHref, isInternalHref } from "@fwqgo/core/utils";
 
@@ -52,89 +50,94 @@ export function RelatedServerOfferCards({
         };
 
   return (
-    <Card className="border-border/70 bg-background shadow-sm">
-      <CardContent className="p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <ShoppingCart className="size-4 text-accent" />
-              {title}
-            </div>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              {description}
-            </p>
+    <section className="rounded-lg border border-border/70 bg-muted/20 p-4 md:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <ShoppingCart className="size-4 text-primary" aria-hidden="true" />
+            {title}
           </div>
-          <Link
-            href="/servers"
-            prefetch
-            className="inline-flex min-h-10 items-center gap-2 rounded-md border border-border/70 px-3 text-sm font-medium text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/5 hover:text-accent"
-          >
-            {copy.all}
-            <ArrowRight className="size-4" />
-          </Link>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground md:text-sm md:leading-6">
+            {description}
+          </p>
         </div>
+        <Link
+          href="/servers"
+          prefetch
+          className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-sm text-sm font-semibold text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          {copy.all}
+          <ArrowRight className="size-4" aria-hidden="true" />
+        </Link>
+      </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          {offers.slice(0, 4).map((offer) => (
-            <div
-              key={offer.id}
-              className="rounded-lg border border-border/70 bg-muted/20 p-4"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="line-clamp-2 text-sm font-medium leading-6">
-                    {offer.title}
-                  </p>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {offer.providerName ?? copy.providerPending} ·{" "}
-                    {offer.region ?? copy.regionPending} ·{" "}
-                    {offer.lineType ?? copy.linePending}
-                  </p>
-                </div>
-                <Badge>{formatOfferPrice(offer, language)}</Badge>
+      <div className="mt-3 grid overflow-hidden rounded-md border border-border/70 bg-background md:grid-cols-2">
+        {offers.slice(0, 4).map((offer, index) => (
+          <div
+            key={offer.id}
+            className={`min-w-0 px-3 py-3.5 md:px-4 ${
+              index > 0 ? "border-t border-border/60" : ""
+            } ${index === 1 ? "md:border-t-0" : ""} ${
+              index % 2 === 1 ? "md:border-l" : ""
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="line-clamp-2 text-sm font-semibold leading-6 text-foreground">
+                  {offer.title}
+                </p>
+                <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                  {offer.providerName ?? copy.providerPending} ·{" "}
+                  {offer.region ?? copy.regionPending} ·{" "}
+                  {offer.lineType ?? copy.linePending}
+                </p>
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {isHttpHref(offer.purchaseUrl) ? (
-                  <a
-                    href={offer.purchaseUrl}
-                    target="_blank"
-                    rel="nofollow sponsored noopener noreferrer"
-                    className="text-xs font-medium text-primary underline-offset-4 hover:underline"
-                  >
-                    {copy.buy}
-                  </a>
-                ) : isInternalHref(offer.purchaseUrl) ? (
-                  <Link
-                    href={offer.purchaseUrl}
-                    prefetch={false}
-                    className="text-xs font-medium text-primary underline-offset-4 hover:underline"
-                  >
-                    {copy.buy}
-                  </Link>
-                ) : null}
-                {isInternalHref(offer.articleUrl) ? (
-                  <Link
-                    href={offer.articleUrl}
-                    prefetch
-                    className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                  >
-                    {copy.article}
-                  </Link>
-                ) : isHttpHref(offer.articleUrl) ? (
-                  <a
-                    href={offer.articleUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                  >
-                    {copy.article}
-                  </a>
-                ) : null}
-              </div>
+              <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+                {formatOfferPrice(offer, language)}
+              </span>
             </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+              {isHttpHref(offer.purchaseUrl) ? (
+                <a
+                  href={offer.purchaseUrl}
+                  target="_blank"
+                  rel="nofollow sponsored noopener noreferrer"
+                  className="inline-flex min-h-11 items-center gap-1 text-xs font-semibold text-primary underline underline-offset-4 transition-colors hover:text-primary/80 md:min-h-8"
+                >
+                  {copy.buy}
+                  <ExternalLink className="size-3" aria-hidden="true" />
+                </a>
+              ) : isInternalHref(offer.purchaseUrl) ? (
+                <Link
+                  href={offer.purchaseUrl}
+                  prefetch={false}
+                  className="inline-flex min-h-11 items-center text-xs font-semibold text-primary underline underline-offset-4 transition-colors hover:text-primary/80 md:min-h-8"
+                >
+                  {copy.buy}
+                </Link>
+              ) : null}
+              {isInternalHref(offer.articleUrl) ? (
+                <Link
+                  href={offer.articleUrl}
+                  prefetch
+                  className="inline-flex min-h-11 items-center text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline md:min-h-8"
+                >
+                  {copy.article}
+                </Link>
+              ) : isHttpHref(offer.articleUrl) ? (
+                <a
+                  href={offer.articleUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-11 items-center text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline md:min-h-8"
+                >
+                  {copy.article}
+                </a>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

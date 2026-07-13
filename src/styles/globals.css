@@ -4,9 +4,13 @@
 
 @layer base {
   :root {
-    --font-editorial: "Inter", "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif;
-    --font-ui: "Inter", "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif;
-    
+    --font-editorial:
+      "Inter", "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei",
+      "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif;
+    --font-ui:
+      "Inter", "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei",
+      "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif;
+
     /* Modern Light Theme: Ocean Blue */
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
@@ -14,7 +18,7 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    
+
     /* Vibrant Blue Brand Color */
     --primary: 221.2 83.2% 53.3%;
     --primary-foreground: 210 40% 98%;
@@ -22,11 +26,11 @@
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
-    
+
     /* Accent used as brand text color in this project */
     --accent: 221.2 83.2% 53.3%;
     --accent-foreground: 210 40% 98%;
-    
+
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
@@ -58,7 +62,7 @@
     --card-foreground: 210 40% 98%;
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-    
+
     /* Bright Blue for High Contrast */
     --primary: 217.2 91.2% 59.8%;
     --primary-foreground: 222.2 47.4% 11.2%;
@@ -66,11 +70,11 @@
     --secondary-foreground: 210 40% 98%;
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
-    
+
     /* Accent used as brand text color */
     --accent: 217.2 91.2% 59.8%;
     --accent-foreground: 222.2 47.4% 11.2%;
-    
+
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
@@ -209,7 +213,8 @@
 }
 
 .toc {
-  @apply rounded-lg border border-zinc-100;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
 }
 
 .toc ul {
@@ -225,29 +230,66 @@
 }
 
 @layer components {
+  .article-prose {
+    @apply min-w-0 text-foreground;
+    overflow-wrap: anywhere;
+  }
+
+  .article-prose :where(p) {
+    @apply my-5;
+  }
+
   .article-prose :where(h2) {
-    @apply relative mt-10 scroll-mt-28 border-b border-border pb-2.5 pl-4 text-2xl font-semibold leading-tight text-foreground;
+    @apply relative mb-4 mt-10 scroll-mt-28 border-b border-border pb-3 pl-4 text-xl font-semibold leading-snug text-foreground md:text-2xl;
   }
 
   .article-prose :where(h2)::before {
     content: "";
-    @apply absolute left-0 top-1 h-7 w-1 rounded-full bg-accent;
+    @apply absolute bottom-3 left-0 top-0 w-1 rounded-full bg-primary;
   }
 
   .article-prose :where(h3) {
-    @apply mt-8 scroll-mt-28 rounded-md border border-border/70 bg-muted/45 px-4 py-2 text-xl font-semibold leading-snug text-foreground;
+    @apply mb-3 mt-8 scroll-mt-28 border-l-2 border-primary/50 bg-muted/45 px-3 py-2 text-lg font-semibold leading-snug text-foreground md:text-xl;
   }
 
   .article-prose :where(h4) {
-    @apply mt-7 scroll-mt-28 text-lg font-semibold text-foreground;
+    @apply mb-2 mt-7 scroll-mt-28 text-base font-semibold text-foreground md:text-lg;
   }
 
   .article-prose :where(a) {
     @apply rounded-sm font-semibold text-primary underline decoration-primary/70 decoration-2 underline-offset-4 transition-colors hover:bg-primary/10 hover:text-blue-700 hover:decoration-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
   }
 
+  .article-prose :where(ul, ol) {
+    @apply my-5 space-y-1.5 pl-6;
+  }
+
+  .article-prose :where(li)::marker {
+    @apply font-semibold text-primary;
+  }
+
+  .article-prose :where(blockquote) {
+    @apply my-6 rounded-r-md border-l-4 border-primary bg-primary/5 px-4 py-3 not-italic text-foreground/85;
+  }
+
+  .article-prose :where(pre) {
+    @apply my-6 max-w-full overflow-x-auto rounded-md border border-border bg-zinc-950 p-4 text-sm text-zinc-100 shadow-sm;
+  }
+
+  .article-prose :where(:not(pre) > code) {
+    @apply rounded bg-muted px-1.5 py-0.5 text-sm text-foreground;
+  }
+
+  .article-prose :where(img) {
+    @apply my-6 h-auto max-w-full rounded-lg border border-border/70;
+  }
+
+  .article-prose :where(hr) {
+    @apply my-8 border-border;
+  }
+
   .article-prose :where(table) {
-    @apply my-6 w-full table-fixed rounded-lg border border-border bg-background text-[12px] shadow-sm md:text-[13px];
+    @apply my-6 w-full table-fixed rounded-md border border-border bg-background text-[11px] shadow-sm sm:text-[12px] md:text-[13px];
     border-collapse: separate;
     border-spacing: 0;
   }
@@ -257,12 +299,12 @@
   }
 
   .article-prose :where(th) {
-    @apply break-words border-b border-border px-2 py-2 text-left font-semibold leading-snug text-foreground md:px-2.5;
+    @apply break-words border-b border-border px-1.5 py-2 text-left font-semibold leading-snug text-foreground sm:px-2 md:px-2.5;
     overflow-wrap: anywhere;
   }
 
   .article-prose :where(td) {
-    @apply break-words border-b border-border/70 px-2 py-1.5 align-top leading-snug text-foreground md:py-2;
+    @apply break-words border-b border-border/70 px-1.5 py-1.5 align-top leading-snug text-foreground sm:px-2 md:px-2.5 md:py-2;
     overflow-wrap: anywhere;
   }
 
@@ -300,29 +342,48 @@
 }
 
 .font-editorial {
-  font-family: var(--font-editorial), var(--font-ui), "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif;
+  font-family:
+    var(--font-editorial), var(--font-ui), "PingFang SC", "Microsoft YaHei",
+    "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif;
 }
 
 .font-ui {
-  font-family: var(--font-ui), "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif;
+  font-family:
+    var(--font-ui), "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC",
+    "Helvetica Neue", Arial, sans-serif;
 }
 
 .home-grid-surface {
   background:
-    radial-gradient(120% 120% at 100% 0%, hsl(var(--primary) / 0.06), transparent 55%),
+    radial-gradient(
+      120% 120% at 100% 0%,
+      hsl(var(--primary) / 0.06),
+      transparent 55%
+    ),
     linear-gradient(to bottom, hsl(var(--muted) / 0.5), transparent);
 }
 
 .not-found-surface {
   background:
-    radial-gradient(100% 120% at 100% 0%, hsl(var(--primary) / 0.07), transparent 55%),
+    radial-gradient(
+      100% 120% at 100% 0%,
+      hsl(var(--primary) / 0.07),
+      transparent 55%
+    ),
     linear-gradient(to bottom, hsl(var(--muted) / 0.55), transparent);
 }
 
 .editorial-surface {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.94)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.88),
+      rgba(255, 255, 255, 0.94)
+    ),
     linear-gradient(to right, rgba(24, 24, 27, 0.04) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(24, 24, 27, 0.04) 1px, transparent 1px);
-  background-size: auto, 28px 28px, 28px 28px;
+  background-size:
+    auto,
+    28px 28px,
+    28px 28px;
 }

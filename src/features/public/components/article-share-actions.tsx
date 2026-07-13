@@ -43,20 +43,25 @@ export function ArticleShareActions({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex items-center gap-1">
       <Button
         type="button"
-        variant="outline"
+        variant="ghost"
         size="sm"
-        className="min-h-11"
+        className="min-h-11 px-2.5 text-muted-foreground hover:bg-muted hover:text-primary"
         onClick={copyUrl}
       >
-        <Copy className="size-4" />
+        <Copy className="size-4" aria-hidden="true" />
         {copy.copy}
       </Button>
-      <Button asChild variant="outline" size="sm" className="min-h-11">
+      <Button
+        asChild
+        variant="ghost"
+        size="sm"
+        className="min-h-11 px-2.5 text-muted-foreground hover:bg-muted hover:text-primary"
+      >
         <a href={xUrl} target="_blank" rel="noopener noreferrer">
-          <Share2 className="size-4" />
+          <Share2 className="size-4" aria-hidden="true" />
           {copy.shareX}
         </a>
       </Button>
