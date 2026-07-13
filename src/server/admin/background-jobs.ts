@@ -77,6 +77,8 @@ const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
 const MAX_BACKOFF_MS = 15 * 60 * 1000;
 const IDLE_LANE_RECHECK_MS = 500;
 const IDLE_LANE_EXIT_CHECKS = 2;
+// Serialize stale recovery and enqueue decisions across CMS processes.
+const BACKGROUND_JOB_COORDINATION_LOCK_ID = 1_463_257_901;
 const WORKER_ID = `${hostname()}:${process.pid}:${randomUUID()}`;
 
 const jobRunners = new Map<string, Pick<BackgroundJobInput, "label" | "run">>();
@@ -223,69 +225,112 @@ async function resetStaleBackgroundJobs() {
     ),
   );
 
-  await db
-    .update(adminBackgroundJobs)
-    .set({
-      status: "failed",
-      lockedBy: null,
-      lockedAt: null,
-      heartbeatAt: null,
-      lastError: "后台 worker 心跳超时，且已达到最大重试次数",
-      finishedAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        staleRunningWhere,
-        sql`${adminBackgroundJobs.attempts} >= ${adminBackgroundJobs.maxAttempts}`,
-      ),
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(${BACKGROUND_JOB_COORDINATION_LOCK_ID})`,
     );
 
-  await db
-    .update(adminBackgroundJobs)
-    .set({
-      status: "cancelled",
-      lockedBy: null,
-      lockedAt: null,
-      heartbeatAt: null,
-      lastError: "后台 worker 心跳超时；已有同类型任务排队，旧锁已释放",
-      finishedAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        staleRunningWhere,
-        sql`${adminBackgroundJobs.attempts} < ${adminBackgroundJobs.maxAttempts}`,
-        sql`exists (
-          select 1 from "admin_background_jobs" as queued_jobs
-          where queued_jobs."jobKey" = ${adminBackgroundJobs.jobKey}
-            and queued_jobs."status" = 'queued'
-        )`,
-      ),
-    );
+    await tx
+      .update(adminBackgroundJobs)
+      .set({
+        status: "failed",
+        lockedBy: null,
+        lockedAt: null,
+        heartbeatAt: null,
+        lastError: "后台 worker 心跳超时，且已达到最大重试次数",
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          staleRunningWhere,
+          sql`${adminBackgroundJobs.attempts} >= ${adminBackgroundJobs.maxAttempts}`,
+        ),
+      );
 
-  await db
-    .update(adminBackgroundJobs)
-    .set({
-      status: "queued",
-      lockedBy: null,
-      lockedAt: null,
-      heartbeatAt: null,
-      runAfter: now,
-      lastError: "后台 worker 心跳超时，已自动重新排队",
-      updatedAt: now,
-    })
-    .where(
-      and(
-        staleRunningWhere,
-        sql`${adminBackgroundJobs.attempts} < ${adminBackgroundJobs.maxAttempts}`,
-        sql`not exists (
-          select 1 from "admin_background_jobs" as queued_jobs
-          where queued_jobs."jobKey" = ${adminBackgroundJobs.jobKey}
-            and queued_jobs."status" = 'queued'
-        )`,
-      ),
-    );
+    await tx
+      .update(adminBackgroundJobs)
+      .set({
+        status: "cancelled",
+        lockedBy: null,
+        lockedAt: null,
+        heartbeatAt: null,
+        lastError: "后台 worker 心跳超时；已有同类型任务排队，旧锁已释放",
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          staleRunningWhere,
+          sql`${adminBackgroundJobs.attempts} < ${adminBackgroundJobs.maxAttempts}`,
+          sql`exists (
+            select 1 from "admin_background_jobs" as queued_jobs
+            where queued_jobs."jobKey" = ${adminBackgroundJobs.jobKey}
+              and queued_jobs."status" = 'queued'
+          )`,
+        ),
+      );
+
+    const staleRecoverableRows = await tx
+      .select({
+        id: adminBackgroundJobs.id,
+        jobKey: adminBackgroundJobs.jobKey,
+      })
+      .from(adminBackgroundJobs)
+      .where(
+        and(
+          staleRunningWhere,
+          sql`${adminBackgroundJobs.attempts} < ${adminBackgroundJobs.maxAttempts}`,
+        ),
+      )
+      .orderBy(asc(adminBackgroundJobs.jobKey), asc(adminBackgroundJobs.id));
+    const requeueIds: number[] = [];
+    const duplicateIds: number[] = [];
+    const selectedJobKeys = new Set<string>();
+
+    for (const row of staleRecoverableRows) {
+      if (selectedJobKeys.has(row.jobKey)) {
+        duplicateIds.push(row.id);
+      } else {
+        selectedJobKeys.add(row.jobKey);
+        requeueIds.push(row.id);
+      }
+    }
+
+    if (duplicateIds.length > 0) {
+      await tx
+        .update(adminBackgroundJobs)
+        .set({
+          status: "cancelled",
+          lockedBy: null,
+          lockedAt: null,
+          heartbeatAt: null,
+          lastError: "后台 worker 心跳超时；同类型重复任务已合并",
+          finishedAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(inArray(adminBackgroundJobs.id, duplicateIds), staleRunningWhere),
+        );
+    }
+
+    if (requeueIds.length > 0) {
+      await tx
+        .update(adminBackgroundJobs)
+        .set({
+          status: "queued",
+          lockedBy: null,
+          lockedAt: null,
+          heartbeatAt: null,
+          runAfter: now,
+          lastError: "后台 worker 心跳超时，已自动重新排队",
+          updatedAt: now,
+        })
+        .where(
+          and(inArray(adminBackgroundJobs.id, requeueIds), staleRunningWhere),
+        );
+    }
+  });
 }
 
 async function claimNextBackgroundJob() {
@@ -476,56 +521,12 @@ async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {
 
   await resetStaleBackgroundJobs();
 
-  const [existingJob] = await db
-    .select({
-      id: adminBackgroundJobs.id,
-      runAfter: adminBackgroundJobs.runAfter,
-    })
-    .from(adminBackgroundJobs)
-    .where(
-      and(
-        eq(adminBackgroundJobs.jobKey, input.key),
-        eq(adminBackgroundJobs.status, "queued"),
-      ),
-    )
-    .limit(1);
+  const enqueueResult = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(${BACKGROUND_JOB_COORDINATION_LOCK_ID})`,
+    );
 
-  if (existingJob) {
-    const effectiveRunAfter =
-      existingJob.runAfter.getTime() <= requestedRunAfter.getTime()
-        ? existingJob.runAfter
-        : requestedRunAfter;
-
-    await db
-      .update(adminBackgroundJobs)
-      .set({
-        label: input.label,
-        payload,
-        maxAttempts,
-        runAfter: effectiveRunAfter,
-        updatedAt: now,
-      })
-      .where(eq(adminBackgroundJobs.id, existingJob.id));
-    scheduleAdminBackgroundJobWorker(effectiveRunAfter);
-    return false;
-  }
-
-  const [job] = await db
-    .insert(adminBackgroundJobs)
-    .values({
-      jobKey: input.key,
-      label: input.label,
-      status: "queued",
-      payload,
-      maxAttempts,
-      runAfter: requestedRunAfter,
-      updatedAt: now,
-    })
-    .onConflictDoNothing()
-    .returning({ id: adminBackgroundJobs.id });
-
-  if (!job) {
-    const [concurrentJob] = await db
+    const [existingJob] = await tx
       .select({
         id: adminBackgroundJobs.id,
         runAfter: adminBackgroundJobs.runAfter,
@@ -539,30 +540,80 @@ async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {
       )
       .limit(1);
 
-    if (!concurrentJob) {
-      throw new Error(`后台任务 ${input.key} 入队冲突后未找到排队记录`);
+    if (existingJob) {
+      const effectiveRunAfter =
+        existingJob.runAfter.getTime() <= requestedRunAfter.getTime()
+          ? existingJob.runAfter
+          : requestedRunAfter;
+
+      await tx
+        .update(adminBackgroundJobs)
+        .set({
+          label: input.label,
+          payload,
+          maxAttempts,
+          runAfter: effectiveRunAfter,
+          updatedAt: now,
+        })
+        .where(eq(adminBackgroundJobs.id, existingJob.id));
+      return { created: false, runAfter: effectiveRunAfter };
     }
 
-    const effectiveRunAfter =
-      concurrentJob.runAfter.getTime() <= requestedRunAfter.getTime()
-        ? concurrentJob.runAfter
-        : requestedRunAfter;
-    await db
-      .update(adminBackgroundJobs)
-      .set({
+    const [job] = await tx
+      .insert(adminBackgroundJobs)
+      .values({
+        jobKey: input.key,
         label: input.label,
+        status: "queued",
         payload,
         maxAttempts,
-        runAfter: effectiveRunAfter,
+        runAfter: requestedRunAfter,
         updatedAt: now,
       })
-      .where(eq(adminBackgroundJobs.id, concurrentJob.id));
-    scheduleAdminBackgroundJobWorker(effectiveRunAfter);
-    return false;
-  }
+      .onConflictDoNothing()
+      .returning({ id: adminBackgroundJobs.id });
 
-  scheduleAdminBackgroundJobWorker(requestedRunAfter);
-  return true;
+    if (!job) {
+      const [concurrentJob] = await tx
+        .select({
+          id: adminBackgroundJobs.id,
+          runAfter: adminBackgroundJobs.runAfter,
+        })
+        .from(adminBackgroundJobs)
+        .where(
+          and(
+            eq(adminBackgroundJobs.jobKey, input.key),
+            eq(adminBackgroundJobs.status, "queued"),
+          ),
+        )
+        .limit(1);
+
+      if (!concurrentJob) {
+        throw new Error(`后台任务 ${input.key} 入队冲突后未找到排队记录`);
+      }
+
+      const effectiveRunAfter =
+        concurrentJob.runAfter.getTime() <= requestedRunAfter.getTime()
+          ? concurrentJob.runAfter
+          : requestedRunAfter;
+      await tx
+        .update(adminBackgroundJobs)
+        .set({
+          label: input.label,
+          payload,
+          maxAttempts,
+          runAfter: effectiveRunAfter,
+          updatedAt: now,
+        })
+        .where(eq(adminBackgroundJobs.id, concurrentJob.id));
+      return { created: false, runAfter: effectiveRunAfter };
+    }
+
+    return { created: true, runAfter: requestedRunAfter };
+  });
+
+  scheduleAdminBackgroundJobWorker(enqueueResult.runAfter);
+  return enqueueResult.created;
 }
 
 export async function enqueueAdminBackgroundJob(input: BackgroundJobInput) {
