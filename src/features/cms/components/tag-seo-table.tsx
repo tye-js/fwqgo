@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Edit3, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
@@ -14,6 +14,7 @@ import {
   AdminTableEmpty,
   AdminTableWorkbench,
 } from "@/features/cms/components/admin-table-workbench";
+import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -73,9 +74,16 @@ function hasSeoContent(tag: TagSeoRow) {
   ].some((value) => Boolean(value?.trim()));
 }
 
-export function TagSeoTable({ tags }: { tags: TagSeoRow[] }) {
+export function TagSeoTable({
+  tags,
+  initialQuery,
+}: {
+  tags: TagSeoRow[];
+  initialQuery: string;
+}) {
+  const updateUrlQuery = useUrlQueryUpdater();
   const [rows, setRows] = useState(tags);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [aiPendingId, setAiPendingId] = useState<number | null>(null);
@@ -90,33 +98,24 @@ export function TagSeoTable({ tags }: { tags: TagSeoRow[] }) {
   const [enDescription, setEnDescription] = useState("");
   const [enKeywords, setEnKeywords] = useState("");
 
-  const filteredRows = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+  useEffect(() => {
+    const normalizedInitialQuery = initialQuery.trim();
+    const normalizedQuery = query.trim();
 
-    if (!normalizedQuery) {
-      return rows;
-    }
+    if (normalizedQuery === normalizedInitialQuery) return;
 
-    return rows.filter((row) => {
-      return (
-        row.name.toLowerCase().includes(normalizedQuery) ||
-        row.slug.toLowerCase().includes(normalizedQuery) ||
-        String(row.id).includes(normalizedQuery) ||
-        (row.description ?? "").toLowerCase().includes(normalizedQuery) ||
-        (row.keywords ?? "").toLowerCase().includes(normalizedQuery) ||
-        (row.enName ?? "").toLowerCase().includes(normalizedQuery) ||
-        (row.enSlug ?? "").toLowerCase().includes(normalizedQuery) ||
-        (row.enDescription ?? "").toLowerCase().includes(normalizedQuery) ||
-        (row.enKeywords ?? "").toLowerCase().includes(normalizedQuery)
-      );
-    });
-  }, [query, rows]);
+    const timeoutId = window.setTimeout(() => {
+      updateUrlQuery({ query: normalizedQuery || null });
+    }, 400);
 
-  const visibleSelectedCount = filteredRows.filter((row) =>
+    return () => window.clearTimeout(timeoutId);
+  }, [initialQuery, query, updateUrlQuery]);
+
+  const visibleSelectedCount = rows.filter((row) =>
     selectedIds.has(row.id),
   ).length;
   const allVisibleSelected =
-    filteredRows.length > 0 && visibleSelectedCount === filteredRows.length;
+    rows.length > 0 && visibleSelectedCount === rows.length;
   const selectedRowIds = Array.from(selectedIds).filter((id) =>
     rows.some((row) => row.id === id),
   );
@@ -162,7 +161,7 @@ export function TagSeoTable({ tags }: { tags: TagSeoRow[] }) {
     setSelectedIds((current) => {
       const next = new Set(current);
 
-      for (const row of filteredRows) {
+      for (const row of rows) {
         if (checked) {
           next.add(row.id);
         } else {
@@ -330,7 +329,7 @@ export function TagSeoTable({ tags }: { tags: TagSeoRow[] }) {
     });
   }
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && !initialQuery) {
     return (
       <AdminTableEmpty
         title="暂无可维护的标签"
@@ -366,7 +365,7 @@ export function TagSeoTable({ tags }: { tags: TagSeoRow[] }) {
         }
       />
 
-      {filteredRows.length > 0 ? (
+      {rows.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border border-border/70">
           <Table className="min-w-[1380px]">
             <TableHeader>
@@ -396,7 +395,7 @@ export function TagSeoTable({ tags }: { tags: TagSeoRow[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredRows.map((tag) => {
+              {rows.map((tag) => {
                 const rowAiPending =
                   aiPendingId === tag.id ||
                   (isBatchGenerating && selectedIds.has(tag.id));
