@@ -9,7 +9,11 @@ import { slugify } from "@fwqgo/core/utils";
 import { type CreatePostParams } from "@/types/post.types";
 import { type NewTag, type TagMain } from "@/types";
 import { requireAdminSession } from "@fwqgo/auth/session";
-import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
+import {
+  cacheTags,
+  revalidateSiteContent,
+  revalidateSiteContentFromRouteHandler,
+} from "@fwqgo/cache/tags";
 import { rewriteAffiliateLinks } from "@fwqgo/scrape/affiliate-link-rewriter";
 import {
   createPostRecord,
@@ -45,6 +49,52 @@ function revalidateImageAssetList() {
 function revalidatePostWorkbenches() {
   revalidatePath("/posts/edit");
   revalidatePath("/posts/drafts");
+  revalidatePath("/posts/quality");
+}
+
+async function prepareEditedArticleContent(content: string) {
+  try {
+    return {
+      content: await prepareArticleContentForStorage(content),
+      warnings: [] as string[],
+    };
+  } catch (error) {
+    console.error("文章正文自动链接处理失败，已保留原始正文:", error);
+    return {
+      content,
+      warnings: ["自动短链处理失败，正文已按原始链接保存"],
+    };
+  }
+}
+
+async function runPostSaveMaintenance(input: {
+  postId: number;
+  revalidationTags: string[];
+  routeHandler?: boolean;
+}) {
+  const warnings: string[] = [];
+
+  try {
+    await syncImageReferencesForPost(input.postId);
+  } catch (error) {
+    console.error("文章已保存，但图片引用同步失败:", error);
+    warnings.push("图片引用索引暂未同步，可稍后在图片资产页重建引用");
+  }
+
+  try {
+    revalidateImageAssetList();
+    revalidatePostWorkbenches();
+    if (input.routeHandler) {
+      revalidateSiteContentFromRouteHandler(input.revalidationTags);
+    } else {
+      revalidateSiteContent(input.revalidationTags);
+    }
+  } catch (error) {
+    console.error("文章已保存，但缓存刷新失败:", error);
+    warnings.push("页面缓存刷新延迟，稍后刷新页面即可");
+  }
+
+  return warnings;
 }
 
 function normalizePostIds(ids: number[], limit = 100) {
@@ -111,7 +161,7 @@ async function auditAffiliateLinksForPublish(content: string) {
     sourceHost: new URL(siteBaseUrl).hostname,
     removeInternal: false,
   });
-  const manualLinks = [...report.unmatchedLinks, ...report.invalidLinks];
+  const manualLinks = report.invalidLinks;
   const manualHosts = [
     ...new Set(
       manualLinks
@@ -122,7 +172,7 @@ async function auditAffiliateLinksForPublish(content: string) {
 
   return {
     report,
-    manualRequired: manualLinks.length > 0,
+    manualRequired: report.invalidLinks.length > 0,
     details: {
       totalLinks: report.totalLinks,
       matchedCount: report.matchedLinks.length,
@@ -138,6 +188,68 @@ async function auditAffiliateLinksForPublish(content: string) {
   };
 }
 
+type ManualAffiliateApproval = {
+  approvedAt: string;
+  approvedBy: string;
+  reason: "operator_confirmed";
+};
+
+function getManualAffiliateApproval(
+  value: string | null | undefined,
+): ManualAffiliateApproval | null {
+  if (!value) return null;
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+
+    const approval = (parsed as Record<string, unknown>).manualApproval;
+    if (!approval || typeof approval !== "object" || Array.isArray(approval)) {
+      return null;
+    }
+
+    const record = approval as Record<string, unknown>;
+    if (
+      typeof record.approvedAt !== "string" ||
+      typeof record.approvedBy !== "string" ||
+      record.reason !== "operator_confirmed"
+    ) {
+      return null;
+    }
+
+    return {
+      approvedAt: record.approvedAt,
+      approvedBy: record.approvedBy,
+      reason: "operator_confirmed",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function serializeAffiliateReviewDetails(
+  audit: Awaited<ReturnType<typeof auditAffiliateLinksForPublish>>,
+  manualApproval?: ManualAffiliateApproval | null,
+) {
+  return JSON.stringify({
+    ...audit.details,
+    ...(manualApproval ? { manualApproval } : {}),
+  });
+}
+
+function affiliateAuditMessage(
+  audit: Awaited<ReturnType<typeof auditAffiliateLinksForPublish>>,
+) {
+  const unmatchedNote =
+    audit.details.unmatchedCount > 0
+      ? `另有 ${audit.details.unmatchedCount} 条未命中外链会保留原链接，不影响发布。`
+      : "";
+
+  return `发现 ${audit.details.invalidCount} 条无效链接。${unmatchedNote}请修复无效链接；也可以先保存为草稿，再到发布质检中人工确认。`;
+}
+
 interface UpdatePostTagsParams {
   postId: number;
   oldTags: TagMain[];
@@ -148,19 +260,34 @@ export async function createPost(input: CreatePostInput | CreatePostParams) {
   try {
     await requireAdminSession();
     const postInput = "post" in input ? input.post : input;
+    const publishAudit = postInput.published
+      ? await auditAffiliateLinksForPublish(postInput.content)
+      : null;
 
-    if (postInput.published) {
-      const audit = await auditAffiliateLinksForPublish(postInput.content);
-      if (audit.manualRequired) {
-        return {
-          error: "发布前返利链接检查未通过",
-          message: `发现 ${audit.details.unmatchedCount} 条未命中外链、${audit.details.invalidCount} 条无效链接。请先补充返利规则或保存为草稿：${audit.details.manualHosts.slice(0, 6).join(", ") || "未知域名"}`,
-        };
-      }
+    if (publishAudit?.manualRequired) {
+      return {
+        error: "发布前返利链接检查未通过",
+        message: affiliateAuditMessage(publishAudit),
+      };
     }
 
     const result = await createPostRecord(input);
     if (result.data) {
+      if (publishAudit) {
+        try {
+          await db
+            .update(posts)
+            .set({
+              affiliateReviewDetails:
+                serializeAffiliateReviewDetails(publishAudit),
+              affiliateReviewUpdatedAt: new Date(),
+            })
+            .where(eq(posts.id, result.data.id));
+        } catch (error) {
+          console.error("文章已创建，但返利检查明细保存失败:", error);
+        }
+      }
+
       try {
         revalidateImageAssetList();
         revalidatePostWorkbenches();
@@ -231,6 +358,9 @@ export async function updatePost(input: {
         slug: posts.slug,
         categoryId: posts.categoryId,
         content: posts.content,
+        published: posts.published,
+        affiliateReviewStatus: posts.affiliateReviewStatus,
+        affiliateReviewDetails: posts.affiliateReviewDetails,
         translationSourcePostId: posts.translationSourcePostId,
       })
       .from(posts)
@@ -241,19 +371,29 @@ export async function updatePost(input: {
       return { error: "文章不存在" };
     }
 
-    if (input.published && currentPost?.content) {
-      const audit = await auditAffiliateLinksForPublish(currentPost.content);
+    let publishAudit: Awaited<
+      ReturnType<typeof auditAffiliateLinksForPublish>
+    > | null = null;
+    let manualApproval: ManualAffiliateApproval | null = null;
 
-      if (audit.manualRequired) {
+    if (input.published && currentPost.content) {
+      publishAudit = await auditAffiliateLinksForPublish(currentPost.content);
+      manualApproval =
+        currentPost.affiliateReviewStatus === "passed"
+          ? getManualAffiliateApproval(currentPost.affiliateReviewDetails)
+          : null;
+
+      if (publishAudit.manualRequired && !manualApproval) {
         const [blockedPost] = await db
           .update(posts)
           .set({
             title: input.title,
             slug: input.slug,
             imgUrl: input.imgUrl,
-            published: false,
+            published: currentPost.published,
             affiliateReviewStatus: "manual_required",
-            affiliateReviewDetails: JSON.stringify(audit.details),
+            affiliateReviewDetails:
+              serializeAffiliateReviewDetails(publishAudit),
             affiliateReviewUpdatedAt: new Date(),
             updatedAt: new Date(),
           })
@@ -265,22 +405,22 @@ export async function updatePost(input: {
           });
 
         if (blockedPost) {
-          await syncImageReferencesForPost(blockedPost.id);
-          revalidateImageAssetList();
-          revalidatePostWorkbenches();
-          revalidateSiteContent([
-            cacheTags.post(blockedPost.id),
-            cacheTags.postSlug(blockedPost.slug),
-            cacheTags.category(blockedPost.categoryId),
-            ...(currentPost.slug && currentPost.slug !== blockedPost.slug
-              ? [cacheTags.postSlug(currentPost.slug)]
-              : []),
-          ]);
+          await runPostSaveMaintenance({
+            postId: blockedPost.id,
+            revalidationTags: [
+              cacheTags.post(blockedPost.id),
+              cacheTags.postSlug(blockedPost.slug),
+              cacheTags.category(blockedPost.categoryId),
+              ...(currentPost.slug && currentPost.slug !== blockedPost.slug
+                ? [cacheTags.postSlug(currentPost.slug)]
+                : []),
+            ],
+          });
         }
 
         return {
           error: "发布前返利链接检查未通过",
-          message: `发现 ${audit.details.unmatchedCount} 条未命中外链、${audit.details.invalidCount} 条无效链接。请先补充返利规则或人工确认：${audit.details.manualHosts.slice(0, 6).join(", ") || "未知域名"}`,
+          message: affiliateAuditMessage(publishAudit),
         };
       }
     }
@@ -290,7 +430,13 @@ export async function updatePost(input: {
       .set({
         ...input,
         affiliateReviewStatus: input.published ? "passed" : "pending",
-        affiliateReviewDetails: null,
+        affiliateReviewDetails:
+          input.published && publishAudit
+            ? serializeAffiliateReviewDetails(
+                publishAudit,
+                publishAudit.manualRequired ? manualApproval : null,
+              )
+            : null,
         affiliateReviewUpdatedAt: input.published ? new Date() : null,
         updatedAt: new Date(),
       })
@@ -301,32 +447,27 @@ export async function updatePost(input: {
       return { error: "文章不存在或已被删除" };
     }
 
-    if (post) {
-      const [translationSourcePost] = post.translationSourcePostId
-        ? await db
-            .select({
-              id: posts.id,
-              slug: posts.slug,
-              categoryId: posts.categoryId,
-            })
-            .from(posts)
-            .where(eq(posts.id, post.translationSourcePostId))
-            .limit(1)
-        : [];
-
-      await syncImageReferencesForPost(post.id);
-      revalidateImageAssetList();
-      revalidatePostWorkbenches();
-      revalidateSiteContent([
+    const [translationSourcePost] = post.translationSourcePostId
+      ? await db
+          .select({
+            id: posts.id,
+            slug: posts.slug,
+            categoryId: posts.categoryId,
+          })
+          .from(posts)
+          .where(eq(posts.id, post.translationSourcePostId))
+          .limit(1)
+      : [];
+    const warnings = await runPostSaveMaintenance({
+      postId: post.id,
+      revalidationTags: [
         cacheTags.post(post.id),
         cacheTags.postSlug(post.slug),
         cacheTags.category(post.categoryId),
-        ...(currentPost?.slug && currentPost.slug !== post.slug
+        ...(currentPost.slug && currentPost.slug !== post.slug
           ? [cacheTags.postSlug(currentPost.slug)]
           : []),
-        ...(currentPost?.categoryId
-          ? [cacheTags.category(currentPost.categoryId)]
-          : []),
+        cacheTags.category(currentPost.categoryId),
         ...(translationSourcePost
           ? [
               cacheTags.post(translationSourcePost.id),
@@ -334,12 +475,141 @@ export async function updatePost(input: {
               cacheTags.category(translationSourcePost.categoryId),
             ]
           : []),
-      ]);
+      ],
+    });
+
+    return { data: post, warnings };
+  } catch (error) {
+    console.error("更新文章失败:", error);
+    return { error: "更新文章失败", message: getErrorMessage(error) };
+  }
+}
+
+async function getAffiliateReviewTarget(postId: number) {
+  if (!Number.isSafeInteger(postId) || postId <= 0) {
+    return null;
+  }
+
+  const [post] = await db
+    .select({
+      id: posts.id,
+      title: posts.title,
+      slug: posts.slug,
+      content: posts.content,
+      categoryId: posts.categoryId,
+      translationSourcePostId: posts.translationSourcePostId,
+    })
+    .from(posts)
+    .where(eq(posts.id, postId))
+    .limit(1);
+
+  return post ?? null;
+}
+
+async function revalidateAffiliateReviewTarget(
+  post: NonNullable<Awaited<ReturnType<typeof getAffiliateReviewTarget>>>,
+) {
+  await revalidateChangedPosts([
+    {
+      id: post.id,
+      slug: post.slug,
+      categoryId: post.categoryId,
+      translationSourcePostId: post.translationSourcePostId,
+    },
+  ]);
+}
+
+export async function reviewPostAffiliateLinksAction(postId: number) {
+  try {
+    await requireAdminSession();
+    const post = await getAffiliateReviewTarget(postId);
+
+    if (!post) {
+      return { error: "文章不存在或已被删除" };
     }
 
-    return { data: post };
+    const audit = await auditAffiliateLinksForPublish(post.content);
+    const status = audit.manualRequired ? "manual_required" : "passed";
+    const [updatedPost] = await db
+      .update(posts)
+      .set({
+        affiliateReviewStatus: status,
+        affiliateReviewDetails: serializeAffiliateReviewDetails(audit),
+        affiliateReviewUpdatedAt: new Date(),
+      })
+      .where(eq(posts.id, post.id))
+      .returning({ id: posts.id });
+
+    if (!updatedPost) {
+      return { error: "返利检查结果保存失败" };
+    }
+
+    await revalidateAffiliateReviewTarget(post);
+    return {
+      data: {
+        status,
+        matchedCount: audit.details.matchedCount,
+        unmatchedCount: audit.details.unmatchedCount,
+        invalidCount: audit.details.invalidCount,
+      },
+    };
   } catch (error) {
-    return { error: "更新文章失败", message: error };
+    console.error("重新检查文章返利链接失败:", error);
+    return {
+      error: "返利链接检查失败",
+      message: getErrorMessage(error),
+    };
+  }
+}
+
+export async function approvePostAffiliateReviewAction(postId: number) {
+  try {
+    const session = await requireAdminSession();
+    const post = await getAffiliateReviewTarget(postId);
+
+    if (!post) {
+      return { error: "文章不存在或已被删除" };
+    }
+
+    const audit = await auditAffiliateLinksForPublish(post.content);
+    const manualApproval: ManualAffiliateApproval = {
+      approvedAt: new Date().toISOString(),
+      approvedBy: session.user.username,
+      reason: "operator_confirmed",
+    };
+    const [updatedPost] = await db
+      .update(posts)
+      .set({
+        affiliateReviewStatus: "passed",
+        affiliateReviewDetails: serializeAffiliateReviewDetails(
+          audit,
+          manualApproval,
+        ),
+        affiliateReviewUpdatedAt: new Date(),
+      })
+      .where(eq(posts.id, post.id))
+      .returning({ id: posts.id });
+
+    if (!updatedPost) {
+      return { error: "人工确认结果保存失败" };
+    }
+
+    await revalidateAffiliateReviewTarget(post);
+    return {
+      data: {
+        status: "passed" as const,
+        matchedCount: audit.details.matchedCount,
+        unmatchedCount: audit.details.unmatchedCount,
+        invalidCount: audit.details.invalidCount,
+        approvedBy: session.user.username,
+      },
+    };
+  } catch (error) {
+    console.error("人工确认文章返利链接失败:", error);
+    return {
+      error: "返利链接人工确认失败",
+      message: getErrorMessage(error),
+    };
   }
 }
 
@@ -363,6 +633,8 @@ export async function bulkUpdatePostsPublishedAction(input: {
         categoryId: posts.categoryId,
         content: posts.content,
         published: posts.published,
+        affiliateReviewStatus: posts.affiliateReviewStatus,
+        affiliateReviewDetails: posts.affiliateReviewDetails,
         translationSourcePostId: posts.translationSourcePostId,
       })
       .from(posts)
@@ -395,16 +667,22 @@ export async function bulkUpdatePostsPublishedAction(input: {
       }
 
       try {
+        let affiliateReviewDetails: string | null = null;
+
         if (input.published && post.content) {
           const audit = await auditAffiliateLinksForPublish(post.content);
+          const manualApproval =
+            post.affiliateReviewStatus === "passed"
+              ? getManualAffiliateApproval(post.affiliateReviewDetails)
+              : null;
 
-          if (audit.manualRequired) {
+          if (audit.manualRequired && !manualApproval) {
             const [blockedPost] = await db
               .update(posts)
               .set({
                 published: false,
                 affiliateReviewStatus: "manual_required",
-                affiliateReviewDetails: JSON.stringify(audit.details),
+                affiliateReviewDetails: serializeAffiliateReviewDetails(audit),
                 affiliateReviewUpdatedAt: new Date(),
                 updatedAt: new Date(),
               })
@@ -431,6 +709,11 @@ export async function bulkUpdatePostsPublishedAction(input: {
             });
             continue;
           }
+
+          affiliateReviewDetails = serializeAffiliateReviewDetails(
+            audit,
+            audit.manualRequired ? manualApproval : null,
+          );
         }
 
         const [updatedPost] = await db
@@ -438,7 +721,9 @@ export async function bulkUpdatePostsPublishedAction(input: {
           .set({
             published: input.published,
             affiliateReviewStatus: input.published ? "passed" : "pending",
-            affiliateReviewDetails: null,
+            affiliateReviewDetails: input.published
+              ? affiliateReviewDetails
+              : null,
             affiliateReviewUpdatedAt: input.published ? new Date() : null,
             updatedAt: new Date(),
           })
@@ -486,7 +771,10 @@ export async function bulkUpdatePostsPublishedAction(input: {
     };
   } catch (error) {
     console.error("批量更新文章发布状态失败:", error);
-    return { error: "批量更新文章发布状态失败", message: getErrorMessage(error) };
+    return {
+      error: "批量更新文章发布状态失败",
+      message: getErrorMessage(error),
+    };
   }
 }
 
@@ -506,6 +794,7 @@ export async function updatePostContent(input: {
       .select({
         slug: posts.slug,
         categoryId: posts.categoryId,
+        language: posts.language,
       })
       .from(posts)
       .where(eq(posts.id, input.id))
@@ -540,25 +829,52 @@ export async function updatePostContent(input: {
     let recommendedTag: { id: number; name: string } | null = null;
     if (normalizedRecommendTagName) {
       const [existingTag] = await db
-        .select({ id: tags.id, name: tags.name })
+        .select({ id: tags.id, name: tags.name, enName: tags.enName })
         .from(tags)
-        .where(eq(tags.name, normalizedRecommendTagName))
+        .where(
+          currentPost.language === "en"
+            ? or(
+                eq(tags.enName, normalizedRecommendTagName),
+                eq(tags.name, normalizedRecommendTagName),
+              )
+            : eq(tags.name, normalizedRecommendTagName),
+        )
         .limit(1);
 
       if (!existingTag) {
-        return { error: "推荐标签不存在，请先创建该标签" };
+        return {
+          error:
+            currentPost.language === "en"
+              ? "英文推荐标签不存在，请先添加该英文标签"
+              : "推荐标签不存在，请先创建该标签",
+        };
       }
 
-      recommendedTag = existingTag;
+      const displayName =
+        currentPost.language === "en"
+          ? existingTag.enName?.trim()
+            ? existingTag.enName.trim()
+            : existingTag.name
+          : existingTag.name;
+      if (
+        currentPost.language === "en" &&
+        /\p{Script=Han}/u.test(displayName)
+      ) {
+        return { error: "推荐标签缺少英文名称，请先配置英文标签" };
+      }
+
+      recommendedTag = { id: existingTag.id, name: displayName };
     }
 
     const normalizedImgUrl = input.imgUrl?.trim() ?? "";
+    const preparedContent =
+      await prepareEditedArticleContent(normalizedContent);
 
     const [post] = await db
       .update(posts)
       .set({
         description: normalizedDescription,
-        content: await prepareArticleContentForStorage(normalizedContent),
+        content: preparedContent.content,
         imgUrl: normalizedImgUrl.length > 0 ? normalizedImgUrl : null,
         categoryId: input.categoryId,
         recommendedTagName: recommendedTag?.name ?? null,
@@ -576,24 +892,26 @@ export async function updatePostContent(input: {
       return { error: "文章不存在或已被删除" };
     }
 
-    if (post) {
-      await syncImageReferencesForPost(post.id);
-      revalidateImageAssetList();
-      revalidatePostWorkbenches();
-      revalidateSiteContent([
+    const maintenanceWarnings = await runPostSaveMaintenance({
+      postId: post.id,
+      routeHandler: true,
+      revalidationTags: [
         cacheTags.post(post.id),
         cacheTags.postSlug(post.slug),
         cacheTags.category(post.categoryId),
-        ...(currentPost?.categoryId &&
-        currentPost.categoryId !== post.categoryId
+        ...(currentPost.categoryId !== post.categoryId
           ? [cacheTags.category(currentPost.categoryId)]
           : []),
-      ]);
-    }
+      ],
+    });
 
-    return { success: true };
+    return {
+      success: true,
+      warnings: [...preparedContent.warnings, ...maintenanceWarnings],
+    };
   } catch (error) {
-    return { error: "更新文章失败", message: error };
+    console.error("更新文章正文失败:", error);
+    return { error: "更新文章失败", message: getErrorMessage(error) };
   }
 }
 
@@ -648,6 +966,9 @@ export async function updatePostEnglishContent(input: {
       return { error: "英文 slug 已被其他文章使用" };
     }
 
+    const preparedContent =
+      await prepareEditedArticleContent(normalizedContent);
+
     const [post] = await db
       .update(posts)
       .set({
@@ -655,7 +976,7 @@ export async function updatePostEnglishContent(input: {
         enSlug: normalizedSlug,
         enDescription:
           normalizedDescription.length > 0 ? normalizedDescription : null,
-        enContent: await prepareArticleContentForStorage(normalizedContent),
+        enContent: preparedContent.content,
         enKeywords: normalizedKeywords.length > 0 ? normalizedKeywords : null,
         enImgUrl:
           input.enImgUrl && input.enImgUrl.trim().length > 0
@@ -677,11 +998,9 @@ export async function updatePostEnglishContent(input: {
       return { error: "文章不存在或已被删除" };
     }
 
-    if (post) {
-      await syncImageReferencesForPost(post.id);
-      revalidateImageAssetList();
-      revalidatePostWorkbenches();
-      revalidateSiteContent([
+    const maintenanceWarnings = await runPostSaveMaintenance({
+      postId: post.id,
+      revalidationTags: [
         cacheTags.post(post.id),
         cacheTags.postSlug(post.slug),
         ...(post.enSlug ? [cacheTags.postSlug(post.enSlug)] : []),
@@ -689,10 +1008,13 @@ export async function updatePostEnglishContent(input: {
           ? [cacheTags.postSlug(currentPost.enSlug)]
           : []),
         cacheTags.category(post.categoryId),
-      ]);
-    }
+      ],
+    });
 
-    return { data: post };
+    return {
+      data: post,
+      warnings: [...preparedContent.warnings, ...maintenanceWarnings],
+    };
   } catch (error) {
     console.error("更新英文文章失败:", error);
     return { error: "更新英文文章失败", message: getErrorMessage(error) };
@@ -830,14 +1152,14 @@ export async function updatePostTags({
         newTags
           .map((tag) => {
             const name = normalizeTagName(tag.tag.name);
-            const slug = tag.tag.slug || slugify(name);
+            const slug = (tag.tag.slug || slugify(name)).trim().toLowerCase();
 
             if (!name || !slug) {
               return null;
             }
 
             return [
-              slug,
+              slug.toLowerCase(),
               {
                 tag: {
                   ...tag.tag,
@@ -852,7 +1174,7 @@ export async function updatePostTags({
     );
     await db.transaction(async (tx) => {
       const [targetPost] = await tx
-        .select({ id: posts.id })
+        .select({ id: posts.id, language: posts.language })
         .from(posts)
         .where(eq(posts.id, postId))
         .limit(1);
@@ -861,50 +1183,86 @@ export async function updatePostTags({
         throw new Error("文章不存在或已被删除");
       }
 
-      const tagIds = Array.from(
-        new Set(
-          await Promise.all(
-            uniqueNewTags.map(async (tag) => {
-              const slug = tag.tag.slug;
-              const [existingTag] = await tx
-                .select({ id: tags.id })
-                .from(tags)
-                .where(or(eq(tags.slug, slug), eq(tags.name, tag.tag.name)))
-                .limit(1);
+      const isEnglishPost = targetPost.language === "en";
+      const tagIds: number[] = [];
 
-              if (existingTag) return existingTag.id;
+      for (const tag of uniqueNewTags) {
+        const { id, name, slug } = tag.tag;
+        if (
+          isEnglishPost &&
+          (/\p{Script=Han}/u.test(name) || !/^[a-z0-9-]+$/.test(slug))
+        ) {
+          throw new Error(`英文文章不能使用中文标签：${name}`);
+        }
 
-              const [newTagResult] = await tx
-                .insert(tags)
-                .values({ name: tag.tag.name, slug })
-                .onConflictDoNothing()
-                .returning({ id: tags.id });
+        const [existingById] = id
+          ? await tx
+              .select({ id: tags.id })
+              .from(tags)
+              .where(eq(tags.id, id))
+              .limit(1)
+          : [];
+        if (existingById) {
+          tagIds.push(existingById.id);
+          continue;
+        }
 
-              if (newTagResult) return newTagResult.id;
+        const tagLookupCondition = isEnglishPost
+          ? or(
+              eq(tags.enSlug, slug),
+              eq(tags.slug, slug),
+              eq(tags.enName, name),
+              eq(tags.name, name),
+            )
+          : or(eq(tags.slug, slug), eq(tags.name, name));
+        const [existingTag] = await tx
+          .select({ id: tags.id })
+          .from(tags)
+          .where(tagLookupCondition)
+          .limit(1);
 
-              const [createdByConcurrentRequest] = await tx
-                .select({ id: tags.id })
-                .from(tags)
-                .where(or(eq(tags.slug, slug), eq(tags.name, tag.tag.name)))
-                .limit(1);
+        if (existingTag) {
+          tagIds.push(existingTag.id);
+          continue;
+        }
 
-              if (!createdByConcurrentRequest) {
-                throw new Error(`标签创建失败：${tag.tag.name}`);
-              }
+        const [newTagResult] = await tx
+          .insert(tags)
+          .values(
+            isEnglishPost
+              ? { name, slug, enName: name, enSlug: slug }
+              : { name, slug },
+          )
+          .onConflictDoNothing()
+          .returning({ id: tags.id });
 
-              return createdByConcurrentRequest.id;
-            }),
-          ),
-        ),
-      );
+        if (newTagResult) {
+          tagIds.push(newTagResult.id);
+          continue;
+        }
+
+        const [createdByConcurrentRequest] = await tx
+          .select({ id: tags.id })
+          .from(tags)
+          .where(tagLookupCondition)
+          .limit(1);
+
+        if (!createdByConcurrentRequest) {
+          throw new Error(`标签创建失败：${name}`);
+        }
+
+        tagIds.push(createdByConcurrentRequest.id);
+      }
+
+      const uniqueTagIds = Array.from(new Set(tagIds));
 
       await tx.delete(postTags).where(eq(postTags.postId, postId));
 
-      if (tagIds.length > 0) {
+      if (uniqueTagIds.length > 0) {
         await tx
           .insert(postTags)
           .values(
-            tagIds.map((tagId) => ({
+            uniqueTagIds.map((tagId) => ({
               postId,
               tagId,
             })),
@@ -923,16 +1281,22 @@ export async function updatePostTags({
       .where(eq(posts.id, postId))
       .limit(1);
 
+    const warnings: string[] = [];
     if (post) {
-      revalidateSiteContent([
-        cacheTags.post(post.id),
-        cacheTags.postSlug(post.slug),
-        cacheTags.category(post.categoryId),
-        cacheTags.tags,
-      ]);
+      try {
+        revalidateSiteContentFromRouteHandler([
+          cacheTags.post(post.id),
+          cacheTags.postSlug(post.slug),
+          cacheTags.category(post.categoryId),
+          cacheTags.tags,
+        ]);
+      } catch (error) {
+        console.error("文章标签已保存，但缓存刷新失败:", error);
+        warnings.push("标签已保存，但页面缓存刷新延迟");
+      }
     }
 
-    return { success: true };
+    return { success: true, warnings };
   } catch (error) {
     console.error("更新文章标签失败:", error);
     return { error: "更新文章标签失败", message: getErrorMessage(error) };

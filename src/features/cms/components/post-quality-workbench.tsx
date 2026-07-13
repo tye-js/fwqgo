@@ -16,6 +16,7 @@ import type {
   PostQualityReport,
 } from "@/features/cms/data/post-quality";
 import type { PostLanguageFilter } from "@/features/cms/data/post";
+import { PostAffiliateReviewActions } from "@/features/cms/components/post-affiliate-review-actions";
 
 const languageFilters: Array<{ value: PostLanguageFilter; label: string }> = [
   { value: "all", label: "全部语言" },
@@ -68,6 +69,13 @@ function languageLabel(value: "zh" | "en") {
 
 function publishLabel(value: boolean) {
   return value ? "已发布" : "草稿";
+}
+
+function affiliateStatusLabel(value: string) {
+  if (value === "passed") return "已通过";
+  if (value === "pending") return "待检查";
+  if (value === "manual_required") return "待人工确认";
+  return value;
 }
 
 export function PostQualityWorkbench({
@@ -132,7 +140,7 @@ export function PostQualityWorkbench({
               <TableHead className="w-[210px]">质检问题</TableHead>
               <TableHead className="w-[190px]">中英文关系</TableHead>
               <TableHead className="w-[260px]">封面</TableHead>
-              <TableHead className="w-[130px]">返利/套餐</TableHead>
+              <TableHead className="w-[220px]">返利/套餐</TableHead>
               <TableHead className="w-[120px]">更新时间</TableHead>
               <TableHead className="w-[130px] text-right">操作</TableHead>
             </TableRow>
@@ -225,15 +233,28 @@ export function PostQualityWorkbench({
                     <Badge
                       variant={
                         post.affiliateReviewStatus === "passed"
-                          ? "default"
+                          ? "secondary"
                           : "outline"
                       }
                     >
-                      返利 {post.affiliateReviewStatus}
+                      返利 {affiliateStatusLabel(post.affiliateReviewStatus)}
                     </Badge>
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      命中 {post.affiliateReview.matchedCount} · 未命中{" "}
+                      {post.affiliateReview.unmatchedCount} · 无效{" "}
+                      {post.affiliateReview.invalidCount}
+                    </p>
+                    {post.affiliateReview.manuallyApproved ? (
+                      <Badge variant="outline">已人工确认</Badge>
+                    ) : null}
                     <p className="text-xs text-muted-foreground">
                       套餐 {post.offerCount.toLocaleString("zh-CN")}
                     </p>
+                    <PostAffiliateReviewActions
+                      postId={post.id}
+                      postTitle={post.title}
+                      status={post.affiliateReviewStatus}
+                    />
                   </div>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
@@ -242,7 +263,11 @@ export function PostQualityWorkbench({
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
                     <Button asChild size="sm" variant="outline">
-                      <Link href={`/posts/edit/post/${encodeURIComponent(post.slug)}`}>编辑</Link>
+                      <Link
+                        href={`/posts/edit/post/${encodeURIComponent(post.slug)}`}
+                      >
+                        编辑
+                      </Link>
                     </Button>
                   </div>
                 </TableCell>

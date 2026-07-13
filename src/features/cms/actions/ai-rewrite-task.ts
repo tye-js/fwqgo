@@ -7,8 +7,8 @@ import {
   count,
   desc,
   eq,
-  ilike,
   inArray,
+  isNotNull,
   isNull,
   ne,
   or,
@@ -35,6 +35,7 @@ import {
   aiRewriteTaskStatusFilters,
   type AiRewriteTaskListFilters,
 } from "@/features/cms/lib/ai-rewrite-task-filters";
+import { ilikeContains } from "@/server/db/search";
 
 const taskInputSchema = z.object({
   sourceUrl: z.string().url("请输入有效 URL"),
@@ -170,14 +171,13 @@ function getAiRewriteTaskWhereConditions(
   }
 
   if (filters.query) {
-    const pattern = `%${filters.query}%`;
     conditions.push(
       or(
-        ilike(aiRewriteTasks.sourceUrl, pattern),
-        ilike(aiRewriteTasks.sourceTitle, pattern),
-        ilike(aiRewriteTasks.resultTitle, pattern),
-        ilike(posts.title, pattern),
-        ilike(categories.name, pattern),
+        ilikeContains(aiRewriteTasks.sourceUrl, filters.query),
+        ilikeContains(aiRewriteTasks.sourceTitle, filters.query),
+        ilikeContains(aiRewriteTasks.resultTitle, filters.query),
+        ilikeContains(posts.title, filters.query),
+        ilikeContains(categories.name, filters.query),
       )!,
     );
   }
@@ -611,7 +611,10 @@ export async function cancelAiRewriteTaskAction(taskId: number) {
         updatedAt: new Date(),
       })
       .where(
-        and(eq(aiRewriteTasks.id, taskId), eq(aiRewriteTasks.status, "pending")),
+        and(
+          eq(aiRewriteTasks.id, taskId),
+          eq(aiRewriteTasks.status, "pending"),
+        ),
       )
       .returning({
         id: aiRewriteTasks.id,
@@ -619,7 +622,9 @@ export async function cancelAiRewriteTaskAction(taskId: number) {
       });
 
     if (!task) {
-      return { error: "任务不存在，或当前状态不能取消。运行中任务需要等待本轮结束。" };
+      return {
+        error: "任务不存在，或当前状态不能取消。运行中任务需要等待本轮结束。",
+      };
     }
 
     if (task.sourceMaterialId) {
@@ -763,7 +768,10 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
                 updatedAt: new Date(),
               })
               .where(eq(aiRewriteTasks.id, existingTask.id))
-              .returning({ id: aiRewriteTasks.id, status: aiRewriteTasks.status })
+              .returning({
+                id: aiRewriteTasks.id,
+                status: aiRewriteTasks.status,
+              })
           )[0]
       : (
           await db
@@ -1168,6 +1176,37 @@ export async function getAiRewriteTaskList(
     .orderBy(desc(aiRewriteTasks.createdAt))
     .offset(filters.offset)
     .limit(filters.pageSize);
+}
+
+export async function getAiRewriteTaskStatusSummary() {
+  await requireAdminSession();
+
+  const [statusRows, [draftRow]] = await Promise.all([
+    db
+      .select({ status: aiRewriteTasks.status, count: count() })
+      .from(aiRewriteTasks)
+      .groupBy(aiRewriteTasks.status),
+    db
+      .select({ count: count() })
+      .from(aiRewriteTasks)
+      .where(
+        and(
+          isNotNull(aiRewriteTasks.postId),
+          inArray(aiRewriteTasks.status, ["succeeded", "manual_required"]),
+        ),
+      ),
+  ]);
+  const countByStatus = new Map(
+    statusRows.map((row) => [row.status, Number(row.count) || 0]),
+  );
+
+  return {
+    active:
+      (countByStatus.get("pending") ?? 0) + (countByStatus.get("running") ?? 0),
+    failed: countByStatus.get("failed") ?? 0,
+    manualRequired: countByStatus.get("manual_required") ?? 0,
+    generatedDrafts: Number(draftRow?.count) || 0,
+  };
 }
 
 export async function getAiRewriteTaskCount(

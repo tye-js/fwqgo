@@ -15,8 +15,8 @@ import {
   sql,
   isNotNull,
   or,
-  ilike,
 } from "drizzle-orm";
+import { ilikeContains } from "@/server/db/search";
 
 type PublicLanguage = "zh" | "en";
 
@@ -28,12 +28,25 @@ function publishedChinesePostCondition() {
   return publishedPostCondition("zh");
 }
 
-function localizedTagFields() {
-  return {
-    id: tags.id,
-    name: sql<string>`coalesce(nullif(${tags.enName}, ''), ${tags.name})`,
-    slug: sql<string>`coalesce(nullif(${tags.enSlug}, ''), ${tags.slug})`,
-  };
+function localizeEnglishTag(tag: {
+  id: number;
+  name: string;
+  slug: string;
+  enName: string | null;
+  enSlug: string | null;
+}) {
+  const enName = tag.enName?.trim();
+  const enSlug = tag.enSlug?.trim();
+
+  if (enName && enSlug) {
+    return { id: tag.id, name: enName, slug: enSlug };
+  }
+
+  if (!/\p{Script=Han}/u.test(tag.name) && /^[a-z0-9-]+$/i.test(tag.slug)) {
+    return { id: tag.id, name: tag.name, slug: tag.slug };
+  }
+
+  return null;
 }
 
 async function getPublishedEnglishSlugForSourcePost(postId: number) {
@@ -117,7 +130,6 @@ export async function searchPublishedPosts(input: {
   const language = input.language ?? "zh";
   if (!query) return { data: [] };
 
-  const pattern = `%${query}%`;
   try {
     const postsData = await readDb
       .select({
@@ -133,10 +145,10 @@ export async function searchPublishedPosts(input: {
         and(
           publishedPostCondition(language),
           or(
-            ilike(posts.title, pattern),
-            ilike(posts.description, pattern),
-            ilike(posts.keywords, pattern),
-            ilike(posts.content, pattern),
+            ilikeContains(posts.title, query),
+            ilikeContains(posts.description, query),
+            ilikeContains(posts.keywords, query),
+            ilikeContains(posts.content, query),
           ),
         ),
       )
@@ -532,12 +544,20 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
     const postTagsData = await readDb
       .select({
         tag: {
-          ...localizedTagFields(),
+          id: tags.id,
+          name: tags.name,
+          slug: tags.slug,
+          enName: tags.enName,
+          enSlug: tags.enSlug,
         },
       })
       .from(postTags)
       .innerJoin(tags, eq(postTags.tagId, tags.id))
       .where(eq(postTags.postId, postRow.id));
+    const localizedPostTags = postTagsData
+      .map(({ tag }) => localizeEnglishTag(tag))
+      .filter((tag): tag is NonNullable<typeof tag> => tag !== null)
+      .map((tag) => ({ tag }));
 
     return {
       data: {
@@ -545,7 +565,7 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
           ...postRow,
           imgUrl: postRow.imgUrl ?? postRow.fallbackImgUrl,
           chineseSlug,
-          tags: postTagsData,
+          tags: localizedPostTags,
         },
       },
     };

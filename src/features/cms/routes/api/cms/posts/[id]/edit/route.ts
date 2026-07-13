@@ -30,15 +30,46 @@ function getErrorMessage(error: unknown) {
     return error.issues[0]?.message ?? "请求参数不正确";
   }
 
-  if (error instanceof Error) return error.message;
+  if (error instanceof Error) {
+    const cause =
+      error.cause instanceof Error
+        ? `；原因：${error.cause.message}`
+        : typeof error.cause === "string"
+          ? `；原因：${error.cause}`
+          : "";
+    return `${error.message}${cause}`;
+  }
+
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+
   return typeof error === "string" ? error : "未知错误";
 }
 
 function formatActionError(result: { error?: string; message?: unknown }) {
   if (!result.error) return null;
-  return typeof result.message === "string" && result.message.trim()
-    ? result.message
-    : result.error;
+  if (result.message === undefined || result.message === null) {
+    return result.error;
+  }
+
+  const detail = getErrorMessage(result.message).trim();
+  if (!detail || detail === "未知错误" || detail === result.error) {
+    return result.error;
+  }
+
+  return `${result.error}：${detail}`;
+}
+
+function getActionWarnings(result: { warnings?: string[] }) {
+  return Array.isArray(result.warnings)
+    ? result.warnings.filter((warning) => warning.trim().length > 0)
+    : [];
 }
 
 export async function POST(
@@ -72,10 +103,13 @@ export async function POST(
     });
     const contentError = formatActionError(contentResult);
     if (contentError) {
+      const isServerFailure = contentResult.error === "更新文章失败";
       return adminApiFailure(contentError, {
-        status: 400,
+        status: isServerFailure ? 500 : 400,
         title: "文章正文保存失败",
-        suggestion: "请检查正文、摘要、分类和推荐标签后再保存。",
+        suggestion: isServerFailure
+          ? "请根据上方具体错误检查数据库或服务日志后重试。"
+          : "请检查正文、摘要、分类和推荐标签后再保存。",
       });
     }
 
@@ -86,14 +120,23 @@ export async function POST(
     });
     const tagsError = formatActionError(tagsResult);
     if (tagsError) {
+      const isServerFailure = tagsResult.error === "更新文章标签失败";
       return adminApiFailure(tagsError, {
-        status: 400,
+        status: isServerFailure ? 500 : 400,
         title: "文章标签保存失败",
-        suggestion: "请确认标签名称有效，并至少保留一个标签。",
+        suggestion: isServerFailure
+          ? "正文已保存，请根据上方具体标签错误处理后再次保存。"
+          : "请确认标签名称有效，并至少保留一个标签。",
       });
     }
 
-    return adminApiSuccess({ saved: true });
+    return adminApiSuccess({
+      saved: true,
+      warnings: [
+        ...getActionWarnings(contentResult),
+        ...getActionWarnings(tagsResult),
+      ],
+    });
   } catch (error) {
     console.error("Post edit API failed:", error);
 

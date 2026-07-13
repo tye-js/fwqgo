@@ -17,6 +17,7 @@
     "db:studio": "drizzle-kit studio",
     "links:convert": "tsx scripts/convert-post-links-to-short-slugs.ts",
     "posts:backfill-md-en": "tsx scripts/backfill-post-markdown-and-english.ts",
+    "posts:backfill-en-taxonomy": "tsx scripts/backfill-english-taxonomy.ts",
     "source:pull": "tsx scripts/pull-source-site-to-ai-drafts.ts",
     "db:seed": "tsx src/server/db/seed.ts",
     "dev": "npm run dev:web",

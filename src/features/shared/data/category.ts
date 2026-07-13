@@ -31,8 +31,7 @@ function localizeCategory<
       zhSlug: category.slug,
       name: nonEmptyTrim(category.enName) ?? category.name,
       slug: nonEmptyTrim(category.enSlug) ?? category.slug,
-      description:
-        nonEmptyTrim(category.enDescription) ?? category.description,
+      description: nonEmptyTrim(category.enDescription) ?? category.description,
       keywords: nonEmptyTrim(category.enKeywords) ?? category.keywords,
     };
   }
@@ -94,7 +93,7 @@ export async function getAllCategories() {
   }
 }
 
-export async function getLeafCategories() {
+export async function getLeafCategories(language: PublicLanguage = "zh") {
   try {
     // 获取所有分类
     const allCategories = await readDb.select().from(categories);
@@ -111,7 +110,13 @@ export async function getLeafCategories() {
       .filter((cat) => !parentIds.has(cat.id))
       .map((cat) => ({
         id: cat.id,
-        name: cat.name,
+        name:
+          language === "en"
+            ? (nonEmptyTrim(cat.enName) ??
+              (/\p{Script=Han}/u.test(cat.name)
+                ? `未配置英文分类 · ${nonEmptyTrim(cat.enSlug) ?? cat.slug}`
+                : cat.name))
+            : cat.name,
       }))
       .sort((a, b) => a.id - b.id);
 

@@ -1,12 +1,17 @@
 import { db } from "@fwqgo/db";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import {
+  adminBackgroundJobs,
   aiRewriteConfigs,
   aiRewriteTasks,
+  imageAssetReferences,
+  imageAssets,
   imageCoverGenerationTasks,
   posts,
   categories,
   postTags,
+  serverOfferImportTasks,
+  serverOffers,
   tags,
 } from "@fwqgo/db/schema";
 import { eq, desc, asc, gte, and, count, sql, inArray, or } from "drizzle-orm";
@@ -31,6 +36,33 @@ function serializeDate(value: Date | string | null) {
 
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function localizeCmsTag(
+  tag: {
+    id: number;
+    name: string;
+    slug: string;
+    enName: string | null;
+    enSlug: string | null;
+  },
+  language: string,
+) {
+  if (language !== "en") {
+    return { id: tag.id, name: tag.name, slug: tag.slug };
+  }
+
+  const enName = tag.enName?.trim();
+  const enSlug = tag.enSlug?.trim();
+  if (enName && enSlug) {
+    return { id: tag.id, name: enName, slug: enSlug };
+  }
+
+  if (!/\p{Script=Han}/u.test(tag.name) && /^[a-z0-9-]+$/i.test(tag.slug)) {
+    return { id: tag.id, name: tag.name, slug: tag.slug };
+  }
+
+  return null;
 }
 
 function englishTaskSourceUrl(postId: number) {
@@ -72,6 +104,7 @@ export async function getPostBySlug(slug: string) {
         description: posts.description,
         imgUrl: posts.imgUrl,
         recommendedTagName: posts.recommendedTagName,
+        recommendedTagId: posts.recommendedTagId,
         keywords: posts.keywords,
         categoryId: posts.categoryId,
         enTitle: posts.enTitle,
@@ -100,13 +133,31 @@ export async function getPostBySlug(slug: string) {
           id: tags.id,
           name: tags.name,
           slug: tags.slug,
+          enName: tags.enName,
+          enSlug: tags.enSlug,
         },
       })
       .from(postTags)
       .innerJoin(tags, eq(postTags.tagId, tags.id))
       .where(eq(postTags.postId, post.id));
 
-    return { data: { ...post, tags: postTagsData } };
+    const localizedTags = postTagsData
+      .map(({ tag }) => localizeCmsTag(tag, post.language))
+      .filter((tag): tag is NonNullable<typeof tag> => tag !== null);
+    const localizedRecommendedTag = post.recommendedTagId
+      ? localizedTags.find((tag) => tag.id === post.recommendedTagId)
+      : null;
+
+    return {
+      data: {
+        ...post,
+        recommendedTagName:
+          post.language === "en"
+            ? (localizedRecommendedTag?.name ?? null)
+            : post.recommendedTagName,
+        tags: localizedTags.map((tag) => ({ tag })),
+      },
+    };
   } catch (error) {
     return { error: "通过slug获取文章失败", message: error };
   }
@@ -373,47 +424,102 @@ export async function getDashboardStats() {
 
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const publishedCountExpr = sql<number>`count(${posts.id})`;
-  const totalViewsExpr = sql<number>`coalesce(sum(${posts.views}), 0)`;
+  const trendStart = new Date(now);
+  trendStart.setHours(0, 0, 0, 0);
+  trendStart.setDate(trendStart.getDate() - 6);
+  const categoryPublishedCountExpr = sql<number>`count(${posts.id})::int`;
+  const categoryTotalViewsExpr = sql<number>`coalesce(sum(${posts.views}), 0)`;
+  const trendDayExpr = sql<string>`to_char(date_trunc('day', ${posts.createdAt}), 'YYYY-MM-DD')`;
 
   const [
-    [publishedPostCountResult],
-    [draftPostCountResult],
-    [monthlyNewPostCountResult],
-    [monthlyPublishedPostCountResult],
-    [totalViewsResult],
-    [monthlyReferenceViewsResult],
+    [postSummary],
+    aiStatusRows,
+    coverStatusRows,
+    offerTaskStatusRows,
+    backgroundJobStatusRows,
+    [offerSummary],
+    [imageSummary],
+    trendRows,
     topViewedPosts,
     recentPosts,
     topCategories,
   ] = await Promise.all([
-    db.select({ count: count() }).from(posts).where(eq(posts.published, true)),
-    db.select({ count: count() }).from(posts).where(eq(posts.published, false)),
     db
-      .select({ count: count() })
-      .from(posts)
-      .where(gte(posts.createdAt, monthStart)),
+      .select({
+        totalCount: sql<number>`count(*)::int`,
+        publishedCount: sql<number>`(count(*) filter (where ${posts.published} = true))::int`,
+        draftCount: sql<number>`(count(*) filter (where ${posts.published} = false))::int`,
+        zhPublishedCount: sql<number>`(count(*) filter (where ${posts.published} = true and ${posts.language} = 'zh'))::int`,
+        enPublishedCount: sql<number>`(count(*) filter (where ${posts.published} = true and ${posts.language} = 'en'))::int`,
+        zhDraftCount: sql<number>`(count(*) filter (where ${posts.published} = false and ${posts.language} = 'zh'))::int`,
+        enDraftCount: sql<number>`(count(*) filter (where ${posts.published} = false and ${posts.language} = 'en'))::int`,
+        monthlyNewCount: sql<number>`(count(*) filter (where ${posts.createdAt} >= ${sql.param(monthStart, posts.createdAt)}))::int`,
+        monthlyPublishedCount: sql<number>`(count(*) filter (where ${posts.published} = true and ${posts.createdAt} >= ${sql.param(monthStart, posts.createdAt)}))::int`,
+        totalViews: sql<number>`coalesce(sum(${posts.views}) filter (where ${posts.published} = true), 0)`,
+        monthlyReferenceViews: sql<number>`coalesce(sum(${posts.views}) filter (where ${posts.published} = true and ${posts.createdAt} >= ${sql.param(monthStart, posts.createdAt)}), 0)`,
+        missingCoverCount: sql<number>`(count(*) filter (where coalesce(btrim(${posts.imgUrl}), '') = ''))::int`,
+        affiliateAttentionCount: sql<number>`(count(*) filter (where ${posts.published} = true and ${posts.affiliateReviewStatus} in ('pending', 'manual_required')))::int`,
+        contentAttentionCount: sql<number>`(count(*) filter (where coalesce(btrim(${posts.imgUrl}), '') = '' or (${posts.published} = true and ${posts.affiliateReviewStatus} in ('pending', 'manual_required'))))::int`,
+      })
+      .from(posts),
     db
-      .select({ count: count() })
-      .from(posts)
-      .where(and(eq(posts.published, true), gte(posts.createdAt, monthStart))),
+      .select({ status: aiRewriteTasks.status, count: count() })
+      .from(aiRewriteTasks)
+      .groupBy(aiRewriteTasks.status),
     db
-      .select({ totalViews: totalViewsExpr })
-      .from(posts)
-      .where(eq(posts.published, true)),
+      .select({ status: imageCoverGenerationTasks.status, count: count() })
+      .from(imageCoverGenerationTasks)
+      .groupBy(imageCoverGenerationTasks.status),
     db
-      .select({ totalViews: totalViewsExpr })
+      .select({ status: serverOfferImportTasks.status, count: count() })
+      .from(serverOfferImportTasks)
+      .groupBy(serverOfferImportTasks.status),
+    db
+      .select({ status: adminBackgroundJobs.status, count: count() })
+      .from(adminBackgroundJobs)
+      .groupBy(adminBackgroundJobs.status),
+    db
+      .select({
+        totalCount: sql<number>`count(*)::int`,
+        visibleCount: sql<number>`(count(*) filter (where ${serverOffers.visible} = true))::int`,
+        inStockCount: sql<number>`(count(*) filter (where ${serverOffers.status} = 'in_stock'))::int`,
+        pendingReviewCount: sql<number>`(count(*) filter (where ${serverOffers.reviewStatus} = 'pending'))::int`,
+        needsFixCount: sql<number>`(count(*) filter (where ${serverOffers.reviewStatus} = 'needs_fix'))::int`,
+      })
+      .from(serverOffers),
+    db
+      .select({
+        totalCount: sql<number>`count(*)::int`,
+        unusedCount: sql<number>`(count(*) filter (where not exists (
+          select 1 from ${imageAssetReferences}
+          where ${imageAssetReferences.imageId} = ${imageAssets.id}
+        )))::int`,
+        missingAltCount: sql<number>`(count(*) filter (where coalesce(btrim(${imageAssets.altZh}), '') = '' and coalesce(btrim(${imageAssets.altEn}), '') = ''))::int`,
+      })
+      .from(imageAssets)
+      .where(eq(imageAssets.status, "active")),
+    db
+      .select({
+        day: trendDayExpr,
+        createdCount: sql<number>`count(*)::int`,
+        publishedCount: sql<number>`(count(*) filter (where ${posts.published} = true))::int`,
+      })
       .from(posts)
-      .where(and(eq(posts.published, true), gte(posts.createdAt, monthStart))),
+      .where(gte(posts.createdAt, trendStart))
+      .groupBy(trendDayExpr)
+      .orderBy(trendDayExpr),
     db
       .select({
         id: posts.id,
         title: posts.title,
         slug: posts.slug,
+        language: posts.language,
+        categoryName: categories.name,
         views: posts.views,
         createdAt: posts.createdAt,
       })
       .from(posts)
+      .innerJoin(categories, eq(posts.categoryId, categories.id))
       .where(eq(posts.published, true))
       .orderBy(desc(posts.views), desc(posts.createdAt))
       .limit(5),
@@ -422,19 +528,22 @@ export async function getDashboardStats() {
         id: posts.id,
         title: posts.title,
         slug: posts.slug,
+        language: posts.language,
+        categoryName: categories.name,
         views: posts.views,
         createdAt: posts.createdAt,
         published: posts.published,
       })
       .from(posts)
+      .innerJoin(categories, eq(posts.categoryId, categories.id))
       .orderBy(desc(posts.createdAt))
-      .limit(5),
+      .limit(6),
     db
       .select({
         id: categories.id,
         name: categories.name,
-        publishedCount: publishedCountExpr,
-        totalViews: totalViewsExpr,
+        publishedCount: categoryPublishedCountExpr,
+        totalViews: categoryTotalViewsExpr,
       })
       .from(categories)
       .leftJoin(
@@ -443,31 +552,102 @@ export async function getDashboardStats() {
       )
       .groupBy(categories.id, categories.name)
       .orderBy(
-        desc(publishedCountExpr),
-        desc(totalViewsExpr),
+        desc(categoryPublishedCountExpr),
+        desc(categoryTotalViewsExpr),
         asc(categories.id),
       )
       .limit(5),
   ]);
 
-  const publishedPostCount = publishedPostCountResult?.count ?? 0;
-  const totalViews = totalViewsResult?.totalViews ?? 0;
+  const asNumber = (value: unknown) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const summarizeStatuses = (
+    rows: Array<{ status: string; count: number }>,
+  ) => {
+    const counts = new Map(
+      rows.map((row) => [row.status, asNumber(row.count)] as const),
+    );
+    const value = (...statuses: string[]) =>
+      statuses.reduce((sum, status) => sum + (counts.get(status) ?? 0), 0);
+
+    return {
+      total: Array.from(counts.values()).reduce((sum, count) => sum + count, 0),
+      active: value("queued", "pending", "running"),
+      succeeded: value("succeeded", "success"),
+      failed: value("failed"),
+      manualRequired: value("manual_required"),
+      cancelled: value("cancelled"),
+      attention: value("failed", "manual_required"),
+    };
+  };
+  const formatDayKey = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+  const trendByDay = new Map(trendRows.map((row) => [row.day, row]));
+  const contentTrend = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(trendStart);
+    date.setDate(trendStart.getDate() + index);
+    const row = trendByDay.get(formatDayKey(date));
+
+    return {
+      date,
+      createdCount: asNumber(row?.createdCount),
+      publishedCount: asNumber(row?.publishedCount),
+    };
+  });
+  const publishedPostCount = asNumber(postSummary?.publishedCount);
+  const totalViews = asNumber(postSummary?.totalViews);
 
   return {
     data: {
       overview: {
         publishedPostCount,
-        draftPostCount: draftPostCountResult?.count ?? 0,
-        monthlyNewPostCount: monthlyNewPostCountResult?.count ?? 0,
-        monthlyPublishedPostCount: monthlyPublishedPostCountResult?.count ?? 0,
+        totalPostCount: asNumber(postSummary?.totalCount),
+        draftPostCount: asNumber(postSummary?.draftCount),
+        zhPublishedPostCount: asNumber(postSummary?.zhPublishedCount),
+        enPublishedPostCount: asNumber(postSummary?.enPublishedCount),
+        zhDraftPostCount: asNumber(postSummary?.zhDraftCount),
+        enDraftPostCount: asNumber(postSummary?.enDraftCount),
+        monthlyNewPostCount: asNumber(postSummary?.monthlyNewCount),
+        monthlyPublishedPostCount: asNumber(postSummary?.monthlyPublishedCount),
         totalViews,
-        monthlyReferenceViews: monthlyReferenceViewsResult?.totalViews ?? 0,
+        monthlyReferenceViews: asNumber(postSummary?.monthlyReferenceViews),
+        missingCoverCount: asNumber(postSummary?.missingCoverCount),
+        affiliateAttentionCount: asNumber(postSummary?.affiliateAttentionCount),
+        contentAttentionCount: asNumber(postSummary?.contentAttentionCount),
         averageViewsPerPublishedPost:
           publishedPostCount > 0
             ? Math.round(totalViews / publishedPostCount)
             : 0,
         monthStart,
+        generatedAt: now,
       },
+      taskOverview: {
+        ai: summarizeStatuses(aiStatusRows),
+        cover: summarizeStatuses(coverStatusRows),
+        offer: summarizeStatuses(offerTaskStatusRows),
+        background: summarizeStatuses(backgroundJobStatusRows),
+      },
+      operations: {
+        offers: {
+          totalCount: asNumber(offerSummary?.totalCount),
+          visibleCount: asNumber(offerSummary?.visibleCount),
+          inStockCount: asNumber(offerSummary?.inStockCount),
+          pendingReviewCount: asNumber(offerSummary?.pendingReviewCount),
+          needsFixCount: asNumber(offerSummary?.needsFixCount),
+        },
+        images: {
+          totalCount: asNumber(imageSummary?.totalCount),
+          unusedCount: asNumber(imageSummary?.unusedCount),
+          missingAltCount: asNumber(imageSummary?.missingAltCount),
+        },
+      },
+      contentTrend,
       topViewedPosts,
       recentPosts,
       topCategories: topCategories.map((category) => ({

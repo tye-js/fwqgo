@@ -12,8 +12,10 @@ import {
   ExternalLink,
   FileText,
   Link2,
+  Mail,
   RotateCcw,
   Trash2,
+  Upload,
 } from "lucide-react";
 
 import {
@@ -37,6 +39,7 @@ import { type AffiliateRewriteReport } from "@fwqgo/scrape/affiliate-link-rewrit
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -91,6 +94,13 @@ type RewriteStyleOption = {
   isDefault: boolean;
 };
 
+const sourceTypeOptions = [
+  { value: "url", label: "网址", icon: Link2 },
+  { value: "text", label: "文本", icon: FileText },
+  { value: "email", label: "邮件", icon: Mail },
+  { value: "file", label: "文件", icon: Upload },
+] as const;
+
 const statusLabels: Record<string, string> = {
   pending: "等待中",
   running: "处理中",
@@ -114,13 +124,15 @@ const statusVariants: Record<
 
 function formatTime(value: Date | string | null) {
   if (!value) return "-";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "时间异常";
 
   return new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function parseTaskDiagnostics(value: string | null) {
@@ -840,113 +852,166 @@ export function AiRewriteTaskManager({
       {showCreateForm ? (
         <form
           action={handleSubmit}
-          className="grid gap-3 rounded-md border border-border/70 bg-card px-4 py-3 lg:grid-cols-[150px_minmax(0,1fr)_180px_180px_auto]"
+          className="overflow-hidden rounded-md border border-border/70 bg-card"
         >
-          <Select
-            name="sourceType"
-            value={sourceType}
-            onValueChange={setSourceType}
-          >
-            <SelectTrigger className="min-h-11">
-              <SelectValue placeholder="素材类型" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="url">网址</SelectItem>
-              <SelectItem value="text">手动文本</SelectItem>
-              <SelectItem value="email">邮件素材</SelectItem>
-              <SelectItem value="file">文件导入</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="space-y-2">
+          <div className="flex flex-col gap-3 border-b border-border/60 bg-muted/15 px-3 py-3 md:flex-row md:items-center md:justify-between">
+            <p className="text-xs font-medium text-muted-foreground">
+              素材类型
+            </p>
+            <div
+              role="group"
+              aria-label="选择素材类型"
+              className="grid grid-cols-2 gap-1 rounded-md border border-border/70 bg-background p-1 sm:grid-cols-4"
+            >
+              {sourceTypeOptions.map((option) => {
+                const Icon = option.icon;
+                const active = sourceType === option.value;
+
+                return (
+                  <Button
+                    key={option.value}
+                    type="button"
+                    size="sm"
+                    variant={active ? "secondary" : "ghost"}
+                    aria-pressed={active}
+                    className="h-11 min-h-11 px-3"
+                    onClick={() => setSourceType(option.value)}
+                  >
+                    <Icon className="size-4" />
+                    {option.label}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+
+          <input type="hidden" name="sourceType" value={sourceType} />
+
+          <div className="space-y-3 px-3 py-3 md:px-4 md:py-4">
             {sourceType === "url" ? (
-              <Textarea
-                name="sourceUrls"
-                placeholder="输入要采集并改写的文章 URL，支持一行一个批量提交"
-                required
-                className="min-h-11 lg:min-h-11"
-              />
-            ) : sourceType === "file" ? (
-              <>
-                <Input
-                  name="sourceTitle"
-                  placeholder="素材标题，可留空使用文件名"
-                  className="min-h-11"
-                />
-                <Input
-                  name="sourceFile"
-                  type="file"
-                  accept=".txt,.md,.markdown,.html,.htm,.csv,text/plain,text/markdown,text/html,text/csv"
-                  required
-                  className="min-h-11"
-                />
-                <p className="text-xs leading-5 text-muted-foreground">
-                  支持 txt、md、html、csv，单个文件不超过
-                  2MB。导入后会清洗、替换返利链接并改写为草稿。
-                </p>
-              </>
-            ) : (
-              <>
-                <Input
-                  name="sourceTitle"
-                  placeholder={sourceType === "email" ? "邮件标题" : "素材标题"}
-                  required
-                  className="min-h-11"
-                />
+              <div className="space-y-2">
+                <Label htmlFor="ai-source-urls">文章 URL</Label>
                 <Textarea
-                  name="sourceContent"
-                  placeholder={
-                    sourceType === "email"
-                      ? "粘贴邮件正文，系统会清洗、替换返利链接并改写为草稿"
-                      : "粘贴活动文案、商家素材或配置表，系统会改写为草稿"
-                  }
+                  id="ai-source-urls"
+                  name="sourceUrls"
+                  placeholder="https://example.com/article"
                   required
-                  className="min-h-28"
+                  className="min-h-28 resize-y text-base sm:text-sm"
                 />
-              </>
+              </div>
+            ) : sourceType === "file" ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="ai-source-file-title">素材标题</Label>
+                  <Input
+                    id="ai-source-file-title"
+                    name="sourceTitle"
+                    placeholder="留空使用文件名"
+                    className="min-h-11"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ai-source-file">选择文件</Label>
+                  <Input
+                    id="ai-source-file"
+                    name="sourceFile"
+                    type="file"
+                    accept=".txt,.md,.markdown,.html,.htm,.csv,text/plain,text/markdown,text/html,text/csv"
+                    required
+                    className="min-h-11"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="ai-source-title">
+                    {sourceType === "email" ? "邮件标题" : "素材标题"}
+                  </Label>
+                  <Input
+                    id="ai-source-title"
+                    name="sourceTitle"
+                    required
+                    className="min-h-11"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ai-source-content">
+                    {sourceType === "email" ? "邮件正文" : "素材正文"}
+                  </Label>
+                  <Textarea
+                    id="ai-source-content"
+                    name="sourceContent"
+                    required
+                    className="min-h-40 resize-y text-base sm:text-sm"
+                  />
+                </div>
+              </div>
             )}
           </div>
-          <Select name="categoryId" defaultValue={defaultCategoryId} required>
-            <SelectTrigger className="min-h-11">
-              <SelectValue placeholder="选择分类" />
-            </SelectTrigger>
-            <SelectContent>
-              {categories.map((category) => (
-                <SelectItem key={category.id} value={String(category.id)}>
-                  {category.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            name="rewriteStyleId"
-            defaultValue={
-              defaultRewriteStyleId ? String(defaultRewriteStyleId) : undefined
-            }
-            disabled={rewriteStyles.length === 0}
-          >
-            <SelectTrigger className="min-h-11">
-              <SelectValue
-                placeholder={
-                  rewriteStyles.length > 0 ? "改写风格" : "未配置 AI"
+
+          <div className="grid gap-3 border-t border-border/60 bg-muted/15 px-3 py-3 md:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_auto] md:items-end md:px-4">
+            <div className="space-y-2">
+              <Label htmlFor="ai-task-category">文章分类</Label>
+              <Select
+                name="categoryId"
+                defaultValue={defaultCategoryId}
+                required
+              >
+                <SelectTrigger
+                  id="ai-task-category"
+                  className="min-h-11 bg-background"
+                >
+                  <SelectValue placeholder="选择分类" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={String(category.id)}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ai-task-style">改写风格</Label>
+              <Select
+                name="rewriteStyleId"
+                defaultValue={
+                  defaultRewriteStyleId
+                    ? String(defaultRewriteStyleId)
+                    : undefined
                 }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {rewriteStyles.map((style) => (
-                <SelectItem key={style.id} value={String(style.id)}>
-                  {style.styleName}
-                  {style.isDefault ? "（默认）" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            type="submit"
-            disabled={isSubmitting || categories.length === 0}
-            className="min-h-11"
-          >
-            {isSubmitting ? "加入中..." : "采集并改写"}
-          </Button>
+                disabled={rewriteStyles.length === 0}
+              >
+                <SelectTrigger
+                  id="ai-task-style"
+                  className="min-h-11 bg-background"
+                >
+                  <SelectValue
+                    placeholder={
+                      rewriteStyles.length > 0 ? "选择风格" : "未配置 AI"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {rewriteStyles.map((style) => (
+                    <SelectItem key={style.id} value={String(style.id)}>
+                      {style.styleName}
+                      {style.isDefault ? "（默认）" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              type="submit"
+              disabled={isSubmitting || categories.length === 0}
+              className="w-full md:w-auto"
+            >
+              {isSubmitting ? "正在加入..." : "加入生产队列"}
+            </Button>
+          </div>
         </form>
       ) : null}
 

@@ -25,6 +25,13 @@ type PostQualityIssue = {
   detail: string;
 };
 
+export type PostAffiliateReviewSummary = {
+  matchedCount: number;
+  unmatchedCount: number;
+  invalidCount: number;
+  manuallyApproved: boolean;
+};
+
 export type PostQualityRow = {
   id: number;
   title: string;
@@ -34,6 +41,7 @@ export type PostQualityRow = {
   imgUrl: string | null;
   categoryName: string | null;
   affiliateReviewStatus: string;
+  affiliateReview: PostAffiliateReviewSummary;
   offerCount: number;
   relatedPost: {
     id: number;
@@ -56,6 +64,52 @@ function serializeDate(value: Date | string | null | undefined) {
 
 function normalizeLanguage(value: string | null | undefined): "zh" | "en" {
   return value === "en" ? "en" : "zh";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function countValue(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function parseAffiliateReviewDetails(
+  value: string | null,
+): PostAffiliateReviewSummary {
+  const empty = {
+    matchedCount: 0,
+    unmatchedCount: 0,
+    invalidCount: 0,
+    manuallyApproved: false,
+  };
+
+  if (!value) return empty;
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!isRecord(parsed)) return empty;
+
+    const source = isRecord(parsed.report) ? parsed.report : parsed;
+    const matchedLinks = Array.isArray(source.matchedLinks)
+      ? source.matchedLinks.length
+      : 0;
+    const unmatchedLinks = Array.isArray(source.unmatchedLinks)
+      ? source.unmatchedLinks.length
+      : 0;
+    const invalidLinks = Array.isArray(source.invalidLinks)
+      ? source.invalidLinks.length
+      : 0;
+
+    return {
+      matchedCount: countValue(source.matchedCount, matchedLinks),
+      unmatchedCount: countValue(source.unmatchedCount, unmatchedLinks),
+      invalidCount: countValue(source.invalidCount, invalidLinks),
+      manuallyApproved: isRecord(parsed.manualApproval),
+    };
+  } catch {
+    return empty;
+  }
 }
 
 function normalizeIssueFilter(
@@ -107,6 +161,7 @@ function buildIssues(input: {
   keywords: string | null;
   imgUrl: string | null;
   affiliateReviewStatus: string;
+  affiliateReview: PostAffiliateReviewSummary;
   relatedPost: PostQualityRow["relatedPost"];
   offerCount: number;
 }) {
@@ -154,12 +209,67 @@ function buildIssues(input: {
     });
   }
 
-  if (input.affiliateReviewStatus !== "passed") {
+  if (
+    input.affiliateReviewStatus === "manual_required" &&
+    input.affiliateReview.invalidCount > 0
+  ) {
     issues.push({
       code: "affiliate",
-      label: "返利未通过",
+      label: "返利待人工确认",
       severity: "blocker",
-      detail: `返利审核状态为 ${input.affiliateReviewStatus}，发布前需要确认链接替换。`,
+      detail: `发现 ${input.affiliateReview.invalidCount} 条无效链接；请修复后重新检查，或人工确认当前正文。`,
+    });
+  } else if (input.affiliateReviewStatus === "manual_required") {
+    issues.push({
+      code: "affiliate",
+      label: "返利待复核",
+      severity: "warning",
+      detail: `历史检查记录包含 ${input.affiliateReview.unmatchedCount} 条未命中外链；未命中会保留原链接，可重新检查后自动通过。`,
+    });
+  } else if (input.affiliateReviewStatus === "pending") {
+    issues.push({
+      code: "affiliate",
+      label: "返利待检查",
+      severity: "warning",
+      detail: "正文修改后尚未重新检查；发布时会自动检查，也可在这里手动检查。",
+    });
+  } else if (
+    input.affiliateReviewStatus === "passed" &&
+    input.affiliateReview.invalidCount > 0 &&
+    input.affiliateReview.manuallyApproved
+  ) {
+    issues.push({
+      code: "affiliate",
+      label: "返利人工通过",
+      severity: "warning",
+      detail: `${input.affiliateReview.invalidCount} 条特殊或无效链接已由管理员确认，不阻止发布。`,
+    });
+  } else if (
+    input.affiliateReviewStatus === "passed" &&
+    input.affiliateReview.invalidCount > 0
+  ) {
+    issues.push({
+      code: "affiliate",
+      label: "返利状态异常",
+      severity: "blocker",
+      detail: `审核记录仍有 ${input.affiliateReview.invalidCount} 条无效链接，但没有人工确认记录，请重新检查。`,
+    });
+  } else if (
+    input.affiliateReviewStatus === "passed" &&
+    input.affiliateReview.unmatchedCount > 0
+  ) {
+    issues.push({
+      code: "affiliate",
+      label: "部分外链未命中",
+      severity: "warning",
+      detail: `${input.affiliateReview.unmatchedCount} 条有效外链没有对应返利商家，已保留原链接，不阻止发布。`,
+    });
+  } else if (input.affiliateReviewStatus !== "passed") {
+    issues.push({
+      code: "affiliate",
+      label: "返利状态异常",
+      severity: "warning",
+      detail: `无法识别审核状态 ${input.affiliateReviewStatus}，请重新检查。`,
     });
   }
 
@@ -206,6 +316,7 @@ export async function getPostQualityReport(input: {
       description: posts.description,
       keywords: posts.keywords,
       affiliateReviewStatus: posts.affiliateReviewStatus,
+      affiliateReviewDetails: posts.affiliateReviewDetails,
       translationSourcePostId: posts.translationSourcePostId,
       categoryName: categories.name,
       createdAt: posts.createdAt,
@@ -299,6 +410,9 @@ export async function getPostQualityReport(input: {
       offerCountByPostId.get(post.id) ?? 0,
       relatedOfferCount,
     );
+    const affiliateReview = parseAffiliateReviewDetails(
+      post.affiliateReviewDetails,
+    );
     const normalizedRelatedPost = relatedPost
       ? {
           id: relatedPost.id,
@@ -318,6 +432,7 @@ export async function getPostQualityReport(input: {
       imgUrl: post.imgUrl,
       categoryName: post.categoryName,
       affiliateReviewStatus: post.affiliateReviewStatus,
+      affiliateReview,
       offerCount,
       relatedPost: normalizedRelatedPost,
       issues: buildIssues({
@@ -326,6 +441,7 @@ export async function getPostQualityReport(input: {
         keywords: post.keywords,
         imgUrl: post.imgUrl,
         affiliateReviewStatus: post.affiliateReviewStatus,
+        affiliateReview,
         relatedPost: normalizedRelatedPost,
         offerCount,
       }),

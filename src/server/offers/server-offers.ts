@@ -17,6 +17,7 @@ import { renderArticleContentHtml } from "@fwqgo/core/content";
 import { cacheTags, revalidateSiteContent, tagCache } from "@fwqgo/cache/tags";
 import { db, readDb } from "@fwqgo/db";
 import { affServiceProviders, posts, serverOffers } from "@fwqgo/db/schema";
+import { ilikeContains } from "@/server/db/search";
 import { readOutboundShortTarget } from "@/server/links/outbound-short-link";
 
 export const offerStatuses = [
@@ -1182,7 +1183,6 @@ export async function searchServerOffers(input: {
   const query = input.query.trim();
   if (!query) return [];
 
-  const pattern = `%${query}%`;
   try {
     return await readDb
       .select(serverOfferPublicSelect())
@@ -1191,12 +1191,12 @@ export async function searchServerOffers(input: {
         and(
           publicPurchasableOfferBaseWhere(),
           or(
-            ilike(serverOffers.title, pattern),
-            ilike(serverOffers.providerName, pattern),
-            ilike(serverOffers.region, pattern),
-            ilike(serverOffers.lineType, pattern),
-            ilike(serverOffers.promoCode, pattern),
-            ilike(serverOffers.rawText, pattern),
+            ilikeContains(serverOffers.title, query),
+            ilikeContains(serverOffers.providerName, query),
+            ilikeContains(serverOffers.region, query),
+            ilikeContains(serverOffers.lineType, query),
+            ilikeContains(serverOffers.promoCode, query),
+            ilikeContains(serverOffers.rawText, query),
           ),
         ),
       )

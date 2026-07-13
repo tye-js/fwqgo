@@ -2,7 +2,15 @@
 
 import { Fragment, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, Play, Plus, Settings2, Trash2 } from "lucide-react";
+import {
+  ExternalLink,
+  ListChecks,
+  LoaderCircle,
+  Play,
+  Plus,
+  Settings2,
+  Trash2,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -24,6 +32,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   describeAdminResult,
   notifyError,
@@ -66,13 +85,15 @@ type LastRunResult = {
 
 function formatTime(value: Date | string | null) {
   if (!value) return "未执行";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "时间异常";
 
   return new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function inputNameFromForm(formData: FormData) {
@@ -146,7 +167,7 @@ function SourceRunResultPanel({
   onClose?: () => void;
 }) {
   return (
-    <div className="space-y-3 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
+    <div className="space-y-3 rounded-md border border-border/70 bg-background p-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-foreground">本次抓取结果</p>
@@ -308,7 +329,7 @@ function SourceSiteForm({
   return (
     <form
       action={handleSubmit}
-      className="grid gap-4 rounded-lg border border-border/70 bg-muted/20 p-4"
+      className="grid gap-3 rounded-md border border-border/70 bg-background p-3"
     >
       <div className="grid gap-4 lg:grid-cols-[minmax(180px,0.35fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <div className="space-y-2">
@@ -394,7 +415,12 @@ function SourceSiteForm({
             <Switch checked={enabled} onCheckedChange={setEnabled} />
             启用
           </label>
-          <Button type="submit" disabled={isSaving || categories.length === 0}>
+          <Button
+            type="submit"
+            size="sm"
+            variant="secondary"
+            disabled={isSaving || categories.length === 0}
+          >
             <Settings2 className="size-4" />
             {isSaving ? "保存中..." : "保存"}
           </Button>
@@ -418,6 +444,7 @@ export function AiSourceSiteManager({
   const [editId, setEditId] = useState<number | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [runningId, setRunningId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [lastRunResult, setLastRunResult] = useState<LastRunResult | null>(
     null,
   );
@@ -494,6 +521,9 @@ export function AiSourceSiteManager({
   }
 
   async function handleDelete(id: number) {
+    if (deletingId !== null) return;
+
+    setDeletingId(id);
     try {
       const result = await deleteAiSourceSiteAction(id);
 
@@ -524,19 +554,22 @@ export function AiSourceSiteManager({
           error instanceof Error ? error.message : "删除失败",
         ]),
       });
+    } finally {
+      setDeletingId(null);
     }
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <div className="flex justify-end">
         <Button
           type="button"
+          size="sm"
           variant="outline"
           onClick={() => setShowCreate((value) => !value)}
         >
           <Plus className="size-4" />
-          添加来源站
+          {showCreate ? "收起配置" : "添加来源站"}
         </Button>
       </div>
 
@@ -558,15 +591,15 @@ export function AiSourceSiteManager({
         />
       ) : null}
 
-      <div className="rounded-lg border border-border/70 bg-background shadow-sm">
-        <Table>
+      <div className="overflow-hidden rounded-md border border-border/70 bg-card">
+        <Table className="min-w-[980px]">
           <TableHeader>
             <TableRow>
               <TableHead>来源站</TableHead>
               <TableHead>配置</TableHead>
               <TableHead>最近执行</TableHead>
               <TableHead>状态</TableHead>
-              <TableHead className="text-right">操作</TableHead>
+              <TableHead className="w-[240px] text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -619,55 +652,96 @@ export function AiSourceSiteManager({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={site.enabled ? "default" : "secondary"}>
+                      <Badge variant={site.enabled ? "secondary" : "outline"}>
                         {site.enabled ? "启用" : "停用"}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex justify-end gap-1.5">
                         <Button
                           type="button"
                           size="sm"
+                          variant="secondary"
                           disabled={!site.enabled || runningId === site.id}
                           onClick={() => void handleRun(site.id)}
                         >
-                          <Play className="size-4" />
-                          {runningId === site.id ? "抓取中" : "抓取新页面"}
+                          {runningId === site.id ? (
+                            <LoaderCircle className="size-4 animate-spin" />
+                          ) : (
+                            <Play className="size-4" />
+                          )}
+                          {runningId === site.id ? "抓取中" : "抓取"}
                         </Button>
                         <Button
                           type="button"
-                          size="sm"
+                          size="icon"
                           variant="outline"
+                          aria-label={`查看 ${site.name} 最近抓取结果`}
+                          title="查看最近抓取结果"
                           onClick={() =>
                             setDetailId((value) =>
                               value === site.id ? null : site.id,
                             )
                           }
                         >
-                          查看结果
+                          <ListChecks className="size-4" />
                         </Button>
                         <Button
                           type="button"
-                          size="sm"
+                          size="icon"
                           variant="outline"
+                          aria-label={`配置来源站：${site.name}`}
+                          title="配置来源站"
                           onClick={() =>
                             setEditId((value) =>
                               value === site.id ? null : site.id,
                             )
                           }
                         >
-                          配置
+                          <Settings2 className="size-4" />
                         </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          aria-label={`删除来源站：${site.name}`}
-                          title={`删除来源站：${site.name}`}
-                          onClick={() => void handleDelete(site.id)}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="outline"
+                              className="text-muted-foreground hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive"
+                              aria-label={`删除来源站：${site.name}`}
+                              title="删除来源站"
+                              disabled={deletingId !== null}
+                            >
+                              {deletingId === site.id ? (
+                                <LoaderCircle className="size-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="size-4" />
+                              )}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                删除来源站“{site.name}”？
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                删除后不会影响已经创建的 AI
+                                任务和草稿，但该站点将不能继续批量抓取。
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>取消</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="border border-destructive/30 bg-background text-destructive hover:bg-destructive/10"
+                                disabled={deletingId !== null}
+                                onClick={() => void handleDelete(site.id)}
+                              >
+                                {deletingId === site.id
+                                  ? "删除中..."
+                                  : "确认删除"}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </TableCell>
                   </TableRow>
