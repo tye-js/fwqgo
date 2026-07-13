@@ -227,7 +227,18 @@ function sanitizeArticleHtml(content: string) {
 }
 
 export function looksLikeHtmlContent(value: string) {
-  return /<\/?[a-z][\s\S]*>/i.test(value);
+  const hasMarkdownBlocks = value
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .some((line) => isMarkdownBlockStart(line));
+
+  if (hasMarkdownBlocks) {
+    return false;
+  }
+
+  return /<(?:article|section|div|p|h[1-6]|blockquote|pre|table|thead|tbody|tfoot|tr|td|th|ul|ol|li)\b/i.test(
+    value,
+  );
 }
 
 function escapeHtml(value: string) {

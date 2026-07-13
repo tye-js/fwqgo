@@ -79,6 +79,10 @@ function findAlternateHref(targetLanguage: PublicLanguage) {
   return match?.href ? toInternalHref(match.href) : undefined;
 }
 
+function getLocationKey(pathname: string, searchParams: URLSearchParams) {
+  return `${pathname}?${searchParams.toString()}`;
+}
+
 export const LanguageSwitchLink = React.forwardRef<
   HTMLAnchorElement,
   LanguageSwitchLinkProps
@@ -90,9 +94,11 @@ export const LanguageSwitchLink = React.forwardRef<
     const pathname = usePathname() || "/";
     const searchParams = useSearchParams();
     const targetLanguage = currentLanguage === "en" ? "zh" : "en";
-    const [alternateHref, setAlternateHref] = React.useState<
-      string | undefined
-    >();
+    const locationKey = getLocationKey(pathname, searchParams);
+    const [alternate, setAlternate] = React.useState<{
+      locationKey: string;
+      href?: string;
+    } | null>(null);
 
     const fallback = React.useMemo(() => {
       return (
@@ -102,8 +108,14 @@ export const LanguageSwitchLink = React.forwardRef<
     }, [fallbackHref, pathname, searchParams, targetLanguage]);
 
     React.useEffect(() => {
-      setAlternateHref(findAlternateHref(targetLanguage));
-    }, [pathname, searchParams, targetLanguage]);
+      setAlternate({
+        locationKey,
+        href: findAlternateHref(targetLanguage),
+      });
+    }, [locationKey, targetLanguage]);
+
+    const alternateHref =
+      alternate?.locationKey === locationKey ? alternate.href : undefined;
 
     return (
       <Link

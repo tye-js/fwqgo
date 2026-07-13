@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,7 @@ export function CreatePostWorkbench({
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const mutationRef = useRef<"publish" | "draft" | null>(null);
   const [recommendTag, setRecommendTag] = useState<CreatePostTag>({ name: "" });
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [tagInput, setTagInput] = useState("");
@@ -95,10 +96,10 @@ export function CreatePostWorkbench({
     setTags(tags.filter((tag) => tag.name !== tagName));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    // 添加阻止事件冒泡
-    e.stopPropagation();
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (mutationRef.current) return;
+
     const missingFields = getMissingRequiredFields({ title, content, description });
     if (missingFields.length > 0) {
       toast.error(`发布前请补全：${missingFields.join("、")}`);
@@ -110,6 +111,7 @@ export function CreatePostWorkbench({
     }
 
     try {
+      mutationRef.current = "publish";
       setIsSubmitting(true);
       // 向数据库中插入文章
       const result = await createPost({
@@ -137,11 +139,14 @@ export function CreatePostWorkbench({
       console.error("创建文章失败:", error);
       toast.error("创建文章失败，请重试");
     } finally {
+      mutationRef.current = null;
       setIsSubmitting(false);
     }
   };
 
   const handleSaveDraft = async () => {
+    if (mutationRef.current) return;
+
     const missingFields = getMissingRequiredFields({ title, content, description });
     if (missingFields.length > 0) {
       toast.error(`保存草稿前请补全：${missingFields.join("、")}`);
@@ -153,6 +158,7 @@ export function CreatePostWorkbench({
     }
 
     try {
+      mutationRef.current = "draft";
       setIsSaving(true);
 
       const result = await createPost({
@@ -174,11 +180,20 @@ export function CreatePostWorkbench({
         return;
       }
 
-      toast.success("保存文章成功");
+      toast.success("草稿保存成功");
+      if (result.data?.slug) {
+        router.push(
+          `/posts/edit/post/${encodeURIComponent(result.data.slug)}`,
+        );
+        router.refresh();
+      } else {
+        router.push("/posts/drafts");
+      }
     } catch (error) {
       console.error("保存文章失败:", error);
       toast.error("保存文章失败，请重试");
     } finally {
+      mutationRef.current = null;
       setIsSaving(false);
     }
   };
@@ -198,7 +213,10 @@ export function CreatePostWorkbench({
           setTags={setTags}
         />
       </AdminSectionCard>
-      <form className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+      <form
+        className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]"
+        onSubmit={handleSubmit}
+      >
         <AdminSectionCard title="正文编辑器" description="文章主体内容会在这里完成。">
           <div className="space-y-2">
             <label className="text-sm font-medium">文章内容</label>
@@ -421,16 +439,15 @@ export function CreatePostWorkbench({
             <Button
               type="button"
               variant="secondary"
-              disabled={isSaving}
+              disabled={isSaving || isSubmitting}
               className="md:min-w-[140px]"
               onClick={handleSaveDraft}
             >
               {isSaving ? "存储中..." : "存为草稿"}
             </Button>
             <Button
-              type="button"
-              disabled={isSubmitting}
-              onClick={handleSubmit}
+              type="submit"
+              disabled={isSubmitting || isSaving}
               className="md:min-w-[140px]"
             >
               {isSubmitting ? "发布中..." : "发布文章"}

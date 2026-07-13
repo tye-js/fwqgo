@@ -2,7 +2,7 @@
 
 import { writeDb } from "@fwqgo/db";
 import { posts } from "@fwqgo/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 export async function incrementPostViews({ slug }: { slug: string }) {
   try {
@@ -11,7 +11,7 @@ export async function incrementPostViews({ slug }: { slug: string }) {
       .set({
         views: sql`${posts.views} + 1`,
       })
-      .where(eq(posts.slug, slug))
+      .where(and(eq(posts.slug, slug), eq(posts.published, true)))
       .returning({ id: posts.id });
 
     return updatedPosts.length > 0;

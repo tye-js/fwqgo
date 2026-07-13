@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 
 import { looksLikeHtmlContent, normalizeArticleHtml } from "@fwqgo/core/content";
 import { slugify } from "@fwqgo/core/utils";
@@ -100,7 +100,7 @@ async function getOrCreateTagByName(
   const [existingTag] = await tx
     .select({ id: tags.id, name: tags.name })
     .from(tags)
-    .where(eq(tags.slug, input.slug))
+    .where(or(eq(tags.slug, input.slug), eq(tags.name, input.name)))
     .limit(1);
 
   if (existingTag) {
@@ -120,7 +120,7 @@ async function getOrCreateTagByName(
   const [createdByConcurrentRequest] = await tx
     .select({ id: tags.id, name: tags.name })
     .from(tags)
-    .where(eq(tags.slug, input.slug))
+    .where(or(eq(tags.slug, input.slug), eq(tags.name, input.name)))
     .limit(1);
 
   if (!createdByConcurrentRequest) {
@@ -138,11 +138,19 @@ export async function createPostRecord(
   const result = await db.transaction((tx) => createPostRecordInTransaction(input, tx));
 
   if (result.data) {
-    await syncImageReferencesForPost(result.data.id);
+    try {
+      await syncImageReferencesForPost(result.data.id);
+    } catch (error) {
+      console.error("文章已创建，但图片引用同步失败:", error);
+    }
   }
 
   if (result.data && shouldRevalidate) {
-    revalidateSiteContent(result.revalidateTags);
+    try {
+      revalidateSiteContent(result.revalidateTags);
+    } catch (error) {
+      console.error("文章已创建，但缓存刷新失败:", error);
+    }
   }
 
   if (result.error) {
@@ -158,6 +166,16 @@ export async function createPostRecordInTransaction(
 ) {
   const postInput = "post" in input ? input.post : input;
   const inputTags = uniqueTagsBySlug("tags" in input ? input.tags : []);
+  const normalizedTitle = postInput.title.trim();
+  const normalizedDescription = postInput.description?.trim() ?? "";
+
+  if (!normalizedTitle) {
+    return { error: "文章标题不能为空" };
+  }
+
+  if (!normalizedDescription) {
+    return { error: "文章摘要不能为空" };
+  }
 
   const [category] = await tx
     .select({ id: categories.id, slug: categories.slug })
@@ -169,10 +187,17 @@ export async function createPostRecordInTransaction(
     return { error: "分类不存在" };
   }
 
-  const slug = slugify(postInput.title);
+  const slug = slugify(normalizedTitle);
+  if (!slug) {
+    return { error: "文章标题需要包含中文、英文或数字" };
+  }
+
   const normalizedContent = await prepareArticleContentForStorage(
     postInput.content,
   );
+  if (!normalizedContent) {
+    return { error: "文章正文不能为空" };
+  }
 
   const [existingPost] = await tx
     .select({ id: posts.id })
@@ -216,13 +241,22 @@ export async function createPostRecordInTransaction(
     .insert(posts)
     .values({
       ...postInput,
+      title: normalizedTitle,
+      description: normalizedDescription,
       slug,
       content: normalizedContent,
       keywords: normalizeSeoKeywords(postInput.keywords),
       recommendedTagName: recommendedTag?.name ?? null,
       recommendedTagId: recommendedTag?.id ?? null,
+      affiliateReviewStatus: postInput.published ? "passed" : "pending",
+      affiliateReviewUpdatedAt: postInput.published ? new Date() : null,
     })
+    .onConflictDoNothing({ target: posts.slug })
     .returning();
+
+  if (!post) {
+    return { error: "文章已存在，请修改标题后重试" };
+  }
 
   if (post && tagRows.length > 0) {
     await tx.insert(postTags).values(

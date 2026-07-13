@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import * as cheerio from "cheerio";
 import { revalidatePath } from "next/cache";
 
@@ -541,7 +541,7 @@ async function ensureTagRowsByName(tagNames: string[]) {
     const [existingTag] = await db
       .select({ id: tags.id, name: tags.name, slug: tags.slug })
       .from(tags)
-      .where(eq(tags.slug, tag.slug))
+      .where(or(eq(tags.slug, tag.slug), eq(tags.name, tag.name)))
       .limit(1);
 
     if (existingTag) {
@@ -563,7 +563,7 @@ async function ensureTagRowsByName(tagNames: string[]) {
     const [createdByConcurrentTask] = await db
       .select({ id: tags.id, name: tags.name, slug: tags.slug })
       .from(tags)
-      .where(eq(tags.slug, tag.slug))
+      .where(or(eq(tags.slug, tag.slug), eq(tags.name, tag.name)))
       .limit(1);
 
     if (createdByConcurrentTask) {

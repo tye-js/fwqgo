@@ -4,6 +4,7 @@ import * as cheerio from "cheerio";
 import { revalidatePath } from "next/cache";
 
 import { db } from "@fwqgo/db";
+import { renderArticleContentHtml } from "@fwqgo/core/content";
 import { slugify } from "@fwqgo/core/utils";
 import { type CreatePostParams } from "@/types/post.types";
 import { type NewTag, type TagMain } from "@/types";
@@ -21,7 +22,7 @@ import {
   syncImageReferencesForPost,
 } from "@/server/images/assets";
 import { posts, categories, tags, postTags } from "@fwqgo/db/schema";
-import { eq, and, inArray, ne } from "drizzle-orm";
+import { eq, and, inArray, ne, or } from "drizzle-orm";
 
 function normalizeTagName(name: string) {
   return name.trim();
@@ -103,7 +104,7 @@ async function revalidateChangedPosts(
 
 async function auditAffiliateLinksForPublish(content: string) {
   const siteBaseUrl = process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com";
-  const $ = cheerio.load(content, null, false);
+  const $ = cheerio.load(renderArticleContentHtml(content), null, false);
   const report = await rewriteAffiliateLinks({
     $,
     baseUrl: siteBaseUrl,
@@ -146,10 +147,26 @@ interface UpdatePostTagsParams {
 export async function createPost(input: CreatePostInput | CreatePostParams) {
   try {
     await requireAdminSession();
+    const postInput = "post" in input ? input.post : input;
+
+    if (postInput.published) {
+      const audit = await auditAffiliateLinksForPublish(postInput.content);
+      if (audit.manualRequired) {
+        return {
+          error: "发布前返利链接检查未通过",
+          message: `发现 ${audit.details.unmatchedCount} 条未命中外链、${audit.details.invalidCount} 条无效链接。请先补充返利规则或保存为草稿：${audit.details.manualHosts.slice(0, 6).join(", ") || "未知域名"}`,
+        };
+      }
+    }
+
     const result = await createPostRecord(input);
     if (result.data) {
-      revalidateImageAssetList();
-      revalidatePostWorkbenches();
+      try {
+        revalidateImageAssetList();
+        revalidatePostWorkbenches();
+      } catch (error) {
+        console.error("文章已创建，但后台列表刷新失败:", error);
+      }
     }
     return result;
   } catch (error) {
@@ -804,7 +821,6 @@ export async function deletePostsByIds(ids: number[]) {
 
 export async function updatePostTags({
   postId,
-  oldTags,
   newTags,
 }: UpdatePostTagsParams) {
   try {
@@ -834,87 +850,63 @@ export async function updatePostTags({
           .filter((tag): tag is NonNullable<typeof tag> => tag !== null),
       ).values(),
     );
-    const newTagSlugs = new Set(uniqueNewTags.map((tag) => tag.tag.slug));
-
-    // 找出需要添加的标签
-    const tagsToAdd = uniqueNewTags.filter(
-      (newTag) =>
-        !oldTags.some((oldTag) => oldTag.tag.slug === newTag.tag.slug),
-    );
-
-    // 找出需要删除的标签
-    const tagsToRemove = oldTags.filter(
-      (oldTag) => !newTagSlugs.has(oldTag.tag.slug),
-    );
-
-    // 使用事务处理
     await db.transaction(async (tx) => {
-      // 1. 删除需要移除的标签文章关联
-      if (tagsToRemove.length > 0) {
-        await tx.delete(postTags).where(
-          and(
-            eq(postTags.postId, postId),
-            inArray(
-              postTags.tagId,
-              tagsToRemove.map((tag) => tag.tag.id),
-            ),
-          ),
-        );
+      const [targetPost] = await tx
+        .select({ id: posts.id })
+        .from(posts)
+        .where(eq(posts.id, postId))
+        .limit(1);
+
+      if (!targetPost) {
+        throw new Error("文章不存在或已被删除");
       }
 
-      // 2. 创建新标签并获取它们的ID
-      if (tagsToAdd.length > 0) {
-        const createdTagsIdArray = Array.from(
-          new Set(
-            await Promise.all(
-              tagsToAdd.map(async (tag) => {
-                const slug = tag.tag.slug || slugify(tag.tag.name);
-                const [existingTag] = await tx
-                  .select({ id: tags.id })
-                  .from(tags)
-                  .where(eq(tags.slug, slug))
-                  .limit(1);
+      const tagIds = Array.from(
+        new Set(
+          await Promise.all(
+            uniqueNewTags.map(async (tag) => {
+              const slug = tag.tag.slug;
+              const [existingTag] = await tx
+                .select({ id: tags.id })
+                .from(tags)
+                .where(or(eq(tags.slug, slug), eq(tags.name, tag.tag.name)))
+                .limit(1);
 
-                if (existingTag) {
-                  return existingTag.id;
-                }
+              if (existingTag) return existingTag.id;
 
-                const [newTagResult] = await tx
-                  .insert(tags)
-                  .values({
-                    name: tag.tag.name,
-                    slug,
-                  })
-                  .onConflictDoNothing()
-                  .returning({ id: tags.id });
+              const [newTagResult] = await tx
+                .insert(tags)
+                .values({ name: tag.tag.name, slug })
+                .onConflictDoNothing()
+                .returning({ id: tags.id });
 
-                if (newTagResult) {
-                  return newTagResult.id;
-                }
+              if (newTagResult) return newTagResult.id;
 
-                const [createdByConcurrentRequest] = await tx
-                  .select({ id: tags.id })
-                  .from(tags)
-                  .where(eq(tags.slug, slug))
-                  .limit(1);
+              const [createdByConcurrentRequest] = await tx
+                .select({ id: tags.id })
+                .from(tags)
+                .where(or(eq(tags.slug, slug), eq(tags.name, tag.tag.name)))
+                .limit(1);
 
-                if (!createdByConcurrentRequest) {
-                  throw new Error(`标签创建失败：${tag.tag.name}`);
-                }
+              if (!createdByConcurrentRequest) {
+                throw new Error(`标签创建失败：${tag.tag.name}`);
+              }
 
-                return createdByConcurrentRequest.id;
-              }),
-            ),
+              return createdByConcurrentRequest.id;
+            }),
           ),
-        );
+        ),
+      );
 
-        // 向数据库中插入文章标签关联
+      await tx.delete(postTags).where(eq(postTags.postId, postId));
+
+      if (tagIds.length > 0) {
         await tx
           .insert(postTags)
           .values(
-            createdTagsIdArray.map((tagId) => ({
-              postId: postId,
-              tagId: tagId,
+            tagIds.map((tagId) => ({
+              postId,
+              tagId,
             })),
           )
           .onConflictDoNothing();
