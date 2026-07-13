@@ -266,7 +266,7 @@ function buildTaskSteps({
   const hasDiagnostics = Boolean(diagnostics);
   const hasCleanHtml = Boolean(scrapedHtml);
   const report = diagnostics?.affiliateReport;
-  const hasUnmatchedLinks = (report?.unmatchedLinks.length ?? 0) > 0;
+  const hasInvalidLinks = (report?.invalidLinks.length ?? 0) > 0;
   const isFailed = status === "failed";
   const isRunning = status === "running";
 
@@ -306,14 +306,14 @@ function buildTaskSteps({
     {
       name: "识别商户与返利链接",
       status: report
-        ? hasUnmatchedLinks
+        ? hasInvalidLinks
           ? "manual_required"
           : "success"
         : hasDiagnostics
           ? "skipped"
           : "pending",
       description: report
-        ? `命中 ${report.matchedLinks.length} 条，未命中 ${report.unmatchedLinks.length} 条，移除站内 ${report.internalLinksRemoved} 条`
+        ? `命中 ${report.matchedLinks.length} 条，未命中 ${report.unmatchedLinks.length} 条（保留原链），无效 ${report.invalidLinks.length} 条`
         : isEnglishTask
           ? "英文任务复用中文草稿中的链接，不重复做采集诊断"
           : "暂无返利链接诊断",
@@ -349,14 +349,14 @@ function buildTaskSteps({
     {
       name: "等待人工审核",
       status: postId
-        ? hasUnmatchedLinks
+        ? hasInvalidLinks
           ? "manual_required"
           : "success"
         : "pending",
-      description: hasUnmatchedLinks
-        ? "存在未命中外链，发布前建议补充返利规则或人工确认"
+      description: hasInvalidLinks
+        ? "存在无效链接，发布前需要修复或人工确认"
         : postId
-          ? "可以进入文章编辑页继续校对并发布"
+          ? "可以进入文章编辑页继续校对并发布；未命中外链会保留原 URL"
           : "草稿生成后进入人工审核",
     },
   ];
@@ -534,12 +534,12 @@ function ProductionChain({
     {
       title: "返利审计",
       status: report
-        ? report.unmatchedLinks.length > 0 || report.invalidLinks.length > 0
+        ? report.invalidLinks.length > 0
           ? "manual_required"
           : "success"
         : "pending",
       detail: report
-        ? `命中 ${report.matchedLinks.length}，未命中 ${report.unmatchedLinks.length}，无效 ${report.invalidLinks.length}`
+        ? `命中 ${report.matchedLinks.length}，未命中 ${report.unmatchedLinks.length}（保留原链），无效 ${report.invalidLinks.length}`
         : diagnostics?.usedAiRewrite
           ? "英文任务不重复采集返利诊断"
           : "等待链接替换记录",
@@ -624,13 +624,16 @@ function ManualReviewHints({
   return (
     <AdminSectionCard
       title="人工处理建议"
-      description="把需要运营介入的事项集中显示，减少发布前漏检。"
+      description="无效链接需要人工处理；未命中外链保留原 URL，仅作为返利配置优化建议。"
     >
       <div className="space-y-3">
         {unmatchedHosts.length > 0 ? (
           <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
             <p className="text-sm font-medium text-amber-700">
-              发现未配置返利规则的外链域名
+              可选：为这些外链域名补充返利规则
+            </p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              未配置不会阻止发布，正文会继续使用原链接。
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               {unmatchedHosts.slice(0, 16).map((host) => (
@@ -662,7 +665,9 @@ function ManualReviewHints({
           ) : null}
           {postSlug ? (
             <Button asChild size="sm">
-              <Link href={`/posts/edit/post/${encodeURIComponent(postSlug)}`}>打开草稿审核</Link>
+              <Link href={`/posts/edit/post/${encodeURIComponent(postSlug)}`}>
+                打开草稿审核
+              </Link>
             </Button>
           ) : null}
         </div>
@@ -726,7 +731,11 @@ export async function AiRewriteTaskDetailPageContent({
           />
           {task.postSlug ? (
             <Button asChild>
-              <Link href={`/posts/edit/post/${encodeURIComponent(task.postSlug)}`}>编辑草稿</Link>
+              <Link
+                href={`/posts/edit/post/${encodeURIComponent(task.postSlug)}`}
+              >
+                编辑草稿
+              </Link>
             </Button>
           ) : null}
         </div>

@@ -18,6 +18,7 @@ import { db } from "@fwqgo/db";
 import {
   aiRewriteTasks,
   aiTaskSteps,
+  categories,
   postTags,
   posts,
   sourceMaterials,
@@ -42,7 +43,9 @@ import {
   generateEnglishMetadata,
   generateArticleMetadata,
   getAiRewriteContentLimit,
+  type EnglishMetadataOutput,
 } from "@fwqgo/ai/article-rewriter";
+import { applyEnglishTaxonomyToPost } from "@fwqgo/ai/english-taxonomy";
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
 import { shortenMarkdownOutboundLinks } from "@/server/links/outbound-short-link";
@@ -226,17 +229,14 @@ async function failTask(
 
 function needsManualAffiliateReview(diagnostics: ScrapeDiagnostics) {
   const report = diagnostics.affiliateReport;
-  return (
-    (report?.unmatchedLinks.length ?? 0) + (report?.invalidLinks.length ?? 0) >
-    0
-  );
+  return (report?.invalidLinks.length ?? 0) > 0;
 }
 
 function finishedStepText(input: {
   manualRequired: boolean;
   offerExtraction: "pending" | "success" | "failed";
 }) {
-  const reviewText = input.manualRequired ? "，存在未命中外链，需人工审核" : "";
+  const reviewText = input.manualRequired ? "，存在无效链接，需人工审核" : "";
 
   if (input.offerExtraction === "success") {
     return `草稿已保存，套餐提取完成${reviewText}`;
@@ -491,29 +491,6 @@ function getEnglishParentPostId(
   return Number.isInteger(parsed) && parsed > 0 ? parsed : claimedTask.postId;
 }
 
-async function syncPostTagsFromSource(input: {
-  sourcePostId: number;
-  targetPostId: number;
-}) {
-  const sourceTags = await db
-    .select({ tagId: postTags.tagId })
-    .from(postTags)
-    .where(eq(postTags.postId, input.sourcePostId));
-
-  await db.transaction(async (tx) => {
-    await tx.delete(postTags).where(eq(postTags.postId, input.targetPostId));
-
-    if (sourceTags.length > 0) {
-      await tx.insert(postTags).values(
-        sourceTags.map((tag) => ({
-          postId: input.targetPostId,
-          tagId: tag.tagId,
-        })),
-      );
-    }
-  });
-}
-
 function uniqueTagNames(tagNames: string[]) {
   const seenSlugs = new Set<string>();
   const result: Array<{ name: string; slug: string }> = [];
@@ -720,8 +697,6 @@ async function upsertEnglishDraftPost(input: {
     id: number;
     categoryId: number;
     imgUrl: string | null;
-    recommendedTagName: string | null;
-    recommendedTagId: number | null;
   };
   existingPostId: number | null;
   title: string;
@@ -729,6 +704,7 @@ async function upsertEnglishDraftPost(input: {
   description: string;
   keywords: string[];
   content: string;
+  metadata: EnglishMetadataOutput;
 }) {
   const [existingByTask] = input.existingPostId
     ? await db
@@ -793,8 +769,8 @@ async function upsertEnglishDraftPost(input: {
           language: "en",
           translationSourcePostId: input.parentPost.id,
           categoryId: input.parentPost.categoryId,
-          recommendedTagName: input.parentPost.recommendedTagName,
-          recommendedTagId: input.parentPost.recommendedTagId,
+          recommendedTagName: null,
+          recommendedTagId: null,
           published: false,
           updatedAt: new Date(),
         })
@@ -817,8 +793,8 @@ async function upsertEnglishDraftPost(input: {
           language: "en",
           translationSourcePostId: input.parentPost.id,
           categoryId: input.parentPost.categoryId,
-          recommendedTagName: input.parentPost.recommendedTagName,
-          recommendedTagId: input.parentPost.recommendedTagId,
+          recommendedTagName: null,
+          recommendedTagId: null,
           published: false,
           affiliateReviewStatus: "pending",
         })
@@ -833,9 +809,10 @@ async function upsertEnglishDraftPost(input: {
     throw new Error("英文草稿保存失败");
   }
 
-  await syncPostTagsFromSource({
-    sourcePostId: input.parentPost.id,
-    targetPostId: post.id,
+  await applyEnglishTaxonomyToPost({
+    postId: post.id,
+    categoryId: input.parentPost.categoryId,
+    metadata: input.metadata,
   });
   await syncImageReferencesForPost(post.id);
 
@@ -872,11 +849,14 @@ async function runEnglishSeoTask(
         content: posts.content,
         imgUrl: posts.imgUrl,
         categoryId: posts.categoryId,
-        recommendedTagName: posts.recommendedTagName,
-        recommendedTagId: posts.recommendedTagId,
+        categoryName: categories.name,
+        categorySlug: categories.slug,
+        categoryEnName: categories.enName,
+        categoryEnSlug: categories.enSlug,
         enSlug: posts.enSlug,
       })
       .from(posts)
+      .innerJoin(categories, eq(posts.categoryId, categories.id))
       .where(eq(posts.id, parentPostId))
       .limit(1);
 
@@ -959,7 +939,7 @@ async function runEnglishSeoTask(
       stepName: "生成英文 SEO 信息",
       status: "running",
       progress: 68,
-      message: "正在单独生成英文标题、slug、摘要和关键词",
+      message: "正在生成英文标题、分类、标签和 SEO 元信息",
     });
     await updateTask(claimedTask.id, {
       progress: 68,
@@ -973,6 +953,12 @@ async function runEnglishSeoTask(
         description: post.description,
         keywords: post.keywords,
         enContent,
+        category: {
+          name: post.categoryName,
+          slug: post.categorySlug,
+          enName: post.categoryEnName,
+          enSlug: post.categoryEnSlug,
+        },
       },
       { styleId: claimedTask.rewriteStyleId ?? undefined },
     );
@@ -988,6 +974,7 @@ async function runEnglishSeoTask(
       description: english.enDescription,
       keywords: english.enKeywords,
       content: enContent,
+      metadata: english,
     });
 
     await upsertTaskStep({
@@ -1002,6 +989,10 @@ async function runEnglishSeoTask(
         enTitle: english.enTitle,
         enSlug: englishPost.slug,
         enKeywords: english.enKeywords,
+        enCategoryName: english.enCategoryName,
+        enCategorySlug: english.enCategorySlug,
+        enTags: english.enTags,
+        enRecommendTagName: english.enRecommendTagName,
       },
     });
 
@@ -1104,9 +1095,14 @@ async function runSeoMetadataTask(
         keywords: posts.keywords,
         content: posts.content,
         categoryId: posts.categoryId,
+        categoryName: categories.name,
+        categorySlug: categories.slug,
+        categoryEnName: categories.enName,
+        categoryEnSlug: categories.enSlug,
         language: posts.language,
       })
       .from(posts)
+      .innerJoin(categories, eq(posts.categoryId, categories.id))
       .where(eq(posts.id, claimedTask.postId))
       .limit(1);
 
@@ -1155,7 +1151,7 @@ async function runSeoMetadataTask(
       progress: 45,
       message:
         post.language === "en"
-          ? "正在生成英文标题、slug、摘要和关键词"
+          ? "正在生成英文标题、分类、标签和 SEO 元信息"
           : "正在生成中文标题、摘要、关键词和标签",
     });
 
@@ -1168,6 +1164,12 @@ async function runSeoMetadataTask(
               description: post.description,
               keywords: post.keywords,
               enContent: markdownInput.markdown,
+              category: {
+                name: post.categoryName,
+                slug: post.categorySlug,
+                enName: post.categoryEnName,
+                enSlug: post.categoryEnSlug,
+              },
             },
             { styleId: claimedTask.rewriteStyleId ?? undefined },
           );
@@ -1191,6 +1193,13 @@ async function runSeoMetadataTask(
               slug: posts.slug,
               categoryId: posts.categoryId,
             });
+          const taxonomy = updatedPost
+            ? await applyEnglishTaxonomyToPost({
+                postId: post.id,
+                categoryId: post.categoryId,
+                metadata,
+              })
+            : null;
 
           return {
             updatedPost,
@@ -1198,7 +1207,7 @@ async function runSeoMetadataTask(
             slug: nextSlug,
             description: metadata.enDescription,
             keywords: metadata.enKeywords,
-            tagCount: null as number | null,
+            tagCount: taxonomy?.tags.length ?? null,
           };
         })()
       : await (async () => {

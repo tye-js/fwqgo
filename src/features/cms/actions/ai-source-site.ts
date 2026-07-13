@@ -190,9 +190,22 @@ export async function updateAiSourceSiteAction(id: number, formData: FormData) {
 export async function deleteAiSourceSiteAction(id: number) {
   try {
     await requireAdminSession();
-    await db.delete(aiSourceSites).where(eq(aiSourceSites.id, id));
+
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      return { error: "来源站 ID 不正确" };
+    }
+
+    const [deleted] = await db
+      .delete(aiSourceSites)
+      .where(eq(aiSourceSites.id, id))
+      .returning({ id: aiSourceSites.id });
+
+    if (!deleted) {
+      return { error: "来源站配置不存在或已被删除" };
+    }
+
     revalidateAiTaskPages();
-    return { data: true };
+    return { data: deleted };
   } catch (error) {
     console.error("删除来源站配置失败:", error);
     return { error: getErrorMessage(error) };
@@ -319,6 +332,7 @@ async function runAiSourceSiteInBackground(site: SourceSiteRunInput) {
         updatedAt: new Date(),
       })
       .where(eq(aiSourceSites.id, site.id));
+    throw error;
   } finally {
     revalidateAiTaskPages();
   }

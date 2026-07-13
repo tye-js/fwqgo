@@ -98,6 +98,11 @@ export default function EditPost({
       return;
     }
 
+    if (postLanguage === "en" && /\p{Script=Han}/u.test(name)) {
+      toast.error("英文文章只能添加英文标签");
+      return;
+    }
+
     const normalizedName = name.toLowerCase();
     if (
       tags.some((tag) => tag.tag.name.trim().toLowerCase() === normalizedName)
@@ -173,6 +178,10 @@ export default function EditPost({
           message: string;
           suggestion?: string;
         };
+        data?: {
+          saved?: boolean;
+          warnings?: string[];
+        };
       } | null;
       if (!response.ok || result?.success === false || result?.error) {
         notifyActionError(
@@ -187,7 +196,11 @@ export default function EditPost({
         return;
       }
 
-      toast.success("更新文章成功");
+      const warnings = result?.data?.warnings?.filter(Boolean) ?? [];
+      toast.success("更新文章成功", {
+        description:
+          warnings.length > 0 ? `注意：${warnings.join("；")}` : undefined,
+      });
     } catch (error) {
       console.error("更新文章失败:", error);
       toast.error(

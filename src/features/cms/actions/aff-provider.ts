@@ -9,11 +9,11 @@ import { requireAdminSession } from "@fwqgo/auth/session";
 import { ilikeContains } from "@/server/db/search";
 
 type AffProviderActionResult =
-  | { data: typeof affServiceProviders.$inferSelect | undefined }
+  | { data: typeof affServiceProviders.$inferSelect }
   | { error: string; message: string };
 
 type AffProviderDeleteActionResult =
-  | { data: number | typeof affServiceProviders.$inferSelect | undefined }
+  | { data: number | typeof affServiceProviders.$inferSelect }
   | { error: string; message: string };
 
 const MAX_TEXT_LENGTH = 500;
@@ -297,6 +297,10 @@ export async function updateAffProvider(
   try {
     await requireAdminSession();
 
+    if (!Number.isSafeInteger(data.id) || data.id <= 0) {
+      return { error: "更新返利商家失败", message: "商家 ID 不正确" };
+    }
+
     const validation = validateAffProviderInput(data);
     if (validation.error) {
       return { error: "更新返利商家失败", message: validation.error };
@@ -335,6 +339,13 @@ export async function updateAffProvider(
       .where(eq(affServiceProviders.id, data.id))
       .returning();
 
+    if (!result) {
+      return {
+        error: "更新返利商家失败",
+        message: "商家不存在或已被删除，请刷新列表后重试",
+      };
+    }
+
     revalidatePath("/collect/aff-man");
     return { data: result };
   } catch (error) {
@@ -357,6 +368,13 @@ export async function deleteAffProvider(
       .delete(affServiceProviders)
       .where(eq(affServiceProviders.id, id))
       .returning();
+
+    if (!result) {
+      return {
+        error: "删除返利商家失败",
+        message: "商家不存在或已被删除，请刷新列表后确认",
+      };
+    }
 
     revalidatePath("/collect/aff-man");
     return { data: result };
@@ -433,6 +451,13 @@ export async function addAffProvider(
       .insert(affServiceProviders)
       .values(normalizedData)
       .returning();
+
+    if (!result) {
+      return {
+        error: "新增返利商家失败",
+        message: "数据库没有返回新增记录，请刷新列表后确认",
+      };
+    }
 
     revalidatePath("/collect/aff-man");
     return { data: result };

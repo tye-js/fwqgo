@@ -1,4 +1,4 @@
-import { cacheTag, revalidatePath, updateTag } from "next/cache";
+import { cacheTag, revalidatePath, revalidateTag, updateTag } from "next/cache";
 
 export const cacheTags = {
   categories: "categories",
@@ -22,8 +22,8 @@ export function tagCache(...tags: string[]) {
   cacheTag(...tags);
 }
 
-export function revalidateSiteContent(tags: string[] = []) {
-  const uniqueTags = new Set([
+function getSiteContentTags(tags: string[]) {
+  return new Set([
     cacheTags.posts,
     cacheTags.homepage,
     cacheTags.sidebar,
@@ -31,11 +31,9 @@ export function revalidateSiteContent(tags: string[] = []) {
     cacheTags.serverOffers,
     ...tags,
   ]);
+}
 
-  for (const tag of uniqueTags) {
-    updateTag(tag);
-  }
-
+function revalidateSitePaths() {
   revalidatePath("/");
   revalidatePath("/sitemap.xml");
   revalidatePath("/sitemap-posts.xml");
@@ -43,4 +41,20 @@ export function revalidateSiteContent(tags: string[] = []) {
   revalidatePath("/sitemap-categories.xml");
   revalidatePath("/sitemap-tags.xml");
   revalidatePath("/sitemap-servers.xml");
+}
+
+export function revalidateSiteContent(tags: string[] = []) {
+  for (const tag of getSiteContentTags(tags)) {
+    updateTag(tag);
+  }
+
+  revalidateSitePaths();
+}
+
+export function revalidateSiteContentFromRouteHandler(tags: string[] = []) {
+  for (const tag of getSiteContentTags(tags)) {
+    revalidateTag(tag, { expire: 0 });
+  }
+
+  revalidateSitePaths();
 }

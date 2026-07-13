@@ -14,6 +14,7 @@ import {
 
 import { enqueueEnglishVersionForPostAction } from "@/features/cms/actions/ai-rewrite-task";
 import { AffiliateRewriteAudit } from "@/features/cms/components/affiliate-rewrite-audit";
+import { PostAffiliateReviewActions } from "@/features/cms/components/post-affiliate-review-actions";
 import { AdminSectionCard } from "@/features/cms/components/admin-page-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ const statusLabels: Record<string, string> = {
   failed: "失败",
   cancelled: "已取消",
   success: "成功",
+  passed: "已通过",
   skipped: "跳过",
 };
 
@@ -48,6 +50,7 @@ const statusVariants: Record<
   running: "secondary",
   succeeded: "default",
   success: "default",
+  passed: "secondary",
   manual_required: "secondary",
   failed: "destructive",
   cancelled: "outline",
@@ -84,7 +87,9 @@ function numberValue(value: unknown, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-function normalizeAffiliateReport(value: unknown): AffiliateRewriteReport | null {
+function normalizeAffiliateReport(
+  value: unknown,
+): AffiliateRewriteReport | null {
   const report = isRecord(value) ? value : null;
   if (!report) {
     return null;
@@ -150,9 +155,8 @@ function parseAffiliateReviewDetails(value: string | null) {
 
   try {
     const parsed: unknown = JSON.parse(value);
-    const source = isRecord(parsed) && isRecord(parsed.report)
-      ? parsed.report
-      : parsed;
+    const source =
+      isRecord(parsed) && isRecord(parsed.report) ? parsed.report : parsed;
     return {
       report: normalizeAffiliateReport(source),
       summary: isRecord(parsed) ? parsed : null,
@@ -298,8 +302,7 @@ export function PostProductionContextPanel({
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
-                {context.currentPost.language === "zh" ||
-                context.sourcePost ? (
+                {context.currentPost.language === "zh" || context.sourcePost ? (
                   <RegenerateEnglishButton
                     postId={context.sourcePost?.id ?? context.currentPost.id}
                   />
@@ -358,11 +361,18 @@ export function PostProductionContextPanel({
                         </span>
                       </div>
                       <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                        {task.currentStep ?? task.error ?? task.resultTitle ?? "-"}
+                        {task.currentStep ??
+                          task.error ??
+                          task.resultTitle ??
+                          "-"}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
-                        <Badge variant="outline">{task.model ?? "未记录模型"}</Badge>
-                        <Badge variant="outline">Max {task.maxTokens ?? "-"}</Badge>
+                        <Badge variant="outline">
+                          {task.model ?? "未记录模型"}
+                        </Badge>
+                        <Badge variant="outline">
+                          Max {task.maxTokens ?? "-"}
+                        </Badge>
                         <Badge variant="outline">
                           输入 {task.aiInputLength ?? "-"}
                         </Badge>
@@ -420,11 +430,17 @@ export function PostProductionContextPanel({
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={context.currentPost.affiliateReviewStatus} />
             <Badge variant="outline">
-              更新时间 {formatTime(context.currentPost.affiliateReviewUpdatedAt)}
+              更新时间{" "}
+              {formatTime(context.currentPost.affiliateReviewUpdatedAt)}
             </Badge>
             <Button asChild size="sm" variant="outline">
               <Link href="/collect/aff-man">补返利规则</Link>
             </Button>
+            <PostAffiliateReviewActions
+              postId={context.currentPost.id}
+              postTitle={context.currentPost.title}
+              status={context.currentPost.affiliateReviewStatus}
+            />
           </div>
 
           {affiliateReview.report ? (
@@ -432,10 +448,10 @@ export function PostProductionContextPanel({
           ) : affiliateReview.summary ? (
             <div className="rounded-md border border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
               <p>
-                总链接 {numberValue(affiliateReview.summary.totalLinks)}，
-                命中 {numberValue(affiliateReview.summary.matchedCount)}，
-                未命中 {numberValue(affiliateReview.summary.unmatchedCount)}，
-                无效 {numberValue(affiliateReview.summary.invalidCount)}
+                总链接 {numberValue(affiliateReview.summary.totalLinks)}， 命中{" "}
+                {numberValue(affiliateReview.summary.matchedCount)}， 未命中{" "}
+                {numberValue(affiliateReview.summary.unmatchedCount)}， 无效{" "}
+                {numberValue(affiliateReview.summary.invalidCount)}
               </p>
             </div>
           ) : (

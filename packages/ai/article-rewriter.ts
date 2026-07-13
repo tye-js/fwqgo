@@ -34,12 +34,16 @@ export interface ArticleRewriteOutput {
   recommendTagName: string;
 }
 
-export interface EnglishSeoVersionOutput {
-  enTitle: string;
-  enSlug: string;
-  enDescription: string;
-  enKeywords: string[];
-  enContent: string;
+export interface EnglishTaxonomyTag {
+  name: string;
+  slug: string;
+}
+
+export interface EnglishMetadataCategoryInput {
+  name: string;
+  slug: string;
+  enName?: string | null;
+  enSlug?: string | null;
 }
 
 export interface EnglishMetadataOutput {
@@ -47,6 +51,14 @@ export interface EnglishMetadataOutput {
   enSlug: string;
   enDescription: string;
   enKeywords: string[];
+  enTags: EnglishTaxonomyTag[];
+  enRecommendTagName: string;
+  enCategoryName: string | null;
+  enCategorySlug: string | null;
+}
+
+export interface EnglishSeoVersionOutput extends EnglishMetadataOutput {
+  enContent: string;
 }
 
 export type ArticleMetadataOutput = Omit<
@@ -59,6 +71,10 @@ type EnglishSeoVersionRawOutput = Partial<{
   enSlug: string;
   enDescription: string;
   enKeywords: unknown;
+  enTags: unknown;
+  enRecommendTagName: string;
+  enCategoryName: string;
+  enCategorySlug: string;
   enContent: string;
 }>;
 
@@ -267,6 +283,7 @@ function buildEnglishMetadataPrompt(input: {
   description: string | null;
   keywords: string | null;
   enContent: string;
+  category?: EnglishMetadataCategoryInput | null;
   metadataStylePrompt?: string | null;
   maxContentLength?: number;
 }) {
@@ -279,6 +296,10 @@ function buildEnglishMetadataPrompt(input: {
     ),
   );
 
+  const categoryContext = input.category
+    ? `\nSource category:\n- Chinese name: ${input.category.name}\n- Source slug: ${input.category.slug}\n- Existing English name: ${input.category.enName ?? ""}\n- Existing English slug: ${input.category.enSlug ?? ""}\n`
+    : "";
+
   return `You are an SEO editor for an English VPS/server deals website.
 
 Generate English SEO metadata from the translated English Markdown body.
@@ -290,7 +311,10 @@ Requirements:
 4. enSlug must be short, lowercase, ASCII only, words separated by hyphens.
 5. enDescription should be within 160 characters.
 6. enKeywords should contain 2 to 6 English SEO keywords.
-7. Do not invent missing specs, prices, discounts or claims.
+7. enTags should contain 2 to 6 concise English topic tags derived from the article. Do not output Chinese tags.
+8. enRecommendTagName must exactly match one item in enTags.
+9. When source category information is provided, enCategoryName must be a concise natural English category name and enCategorySlug must be lowercase ASCII words separated by hyphens.
+10. Do not invent missing specs, prices, discounts or claims.
 
 SEO style:
 ${style}
@@ -300,7 +324,11 @@ JSON shape:
   "enTitle": "English SEO title",
   "enSlug": "english-seo-slug",
   "enDescription": "English meta description, within 160 characters",
-  "enKeywords": ["keyword 1", "keyword 2"]
+  "enKeywords": ["keyword 1", "keyword 2"],
+  "enTags": ["English tag 1", "English tag 2"],
+  "enRecommendTagName": "English tag 1",
+  "enCategoryName": "English category name",
+  "enCategorySlug": "english-category-slug"
 }
 
 Original Chinese title:
@@ -311,6 +339,7 @@ ${input.description ?? ""}
 
 Original Chinese keywords:
 ${input.keywords ?? ""}
+${categoryContext}
 
 English Markdown:
 ${input.enContent.slice(0, metadataInputLength)}`;
@@ -336,6 +365,12 @@ function normalizeStringArray(value: unknown) {
   }
 
   return [];
+}
+
+function nonEmptyTrim(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  return trimmed;
 }
 
 function normalizeMetadata(
@@ -458,6 +493,7 @@ function normalizeEnglishMetadata(
   fallback: {
     title: string;
     description: string | null;
+    category?: EnglishMetadataCategoryInput | null;
   },
 ): EnglishMetadataOutput {
   const enTitle =
@@ -469,6 +505,52 @@ function normalizeEnglishMetadata(
       ? raw.enDescription.trim().slice(0, 180)
       : (fallback.description ?? enTitle).slice(0, 180);
 
+  const enKeywords = normalizeStringArray(raw.enKeywords).slice(0, 6);
+  const rawTagNames = normalizeStringArray(raw.enTags);
+  const candidateTagNames = rawTagNames.length > 0 ? rawTagNames : enKeywords;
+  const enTags: EnglishTaxonomyTag[] = [];
+  const seenTagSlugs = new Set<string>();
+
+  for (const candidate of candidateTagNames) {
+    const name = candidate.trim().slice(0, 80);
+    const slug = normalizeEnglishSlug(name, name);
+
+    if (!name || /\p{Script=Han}/u.test(name) || seenTagSlugs.has(slug)) {
+      continue;
+    }
+
+    seenTagSlugs.add(slug);
+    enTags.push({ name, slug });
+    if (enTags.length >= 6) break;
+  }
+
+  const requestedRecommendTagName =
+    typeof raw.enRecommendTagName === "string"
+      ? raw.enRecommendTagName.trim()
+      : "";
+  const recommendedTag =
+    enTags.find(
+      (tag) =>
+        tag.name.toLowerCase() === requestedRecommendTagName.toLowerCase(),
+    ) ?? enTags[0];
+  const category = fallback.category;
+  const enCategoryName = category
+    ? (typeof raw.enCategoryName === "string" && raw.enCategoryName.trim()
+        ? raw.enCategoryName.trim()
+        : (nonEmptyTrim(category.enName) ?? "")
+      ).slice(0, 120)
+    : null;
+  const enCategorySlug = category
+    ? normalizeEnglishSlug(
+        typeof raw.enCategorySlug === "string"
+          ? raw.enCategorySlug
+          : (category.enSlug ?? ""),
+        nonEmptyTrim(enCategoryName) ??
+          nonEmptyTrim(category.enSlug) ??
+          "server-deals",
+      )
+    : null;
+
   return {
     enTitle,
     enSlug: normalizeEnglishSlug(
@@ -476,11 +558,18 @@ function normalizeEnglishMetadata(
       enTitle,
     ),
     enDescription,
-    enKeywords: normalizeStringArray(raw.enKeywords).slice(0, 6),
+    enKeywords,
+    enTags,
+    enRecommendTagName: recommendedTag?.name ?? "",
+    enCategoryName,
+    enCategorySlug,
   };
 }
 
-function validateEnglishMetadata(output: EnglishMetadataOutput) {
+function validateEnglishMetadata(
+  output: EnglishMetadataOutput,
+  requireCategory: boolean,
+) {
   const issues: string[] = [];
 
   if (output.enTitle.length < 8) {
@@ -497,6 +586,26 @@ function validateEnglishMetadata(output: EnglishMetadataOutput) {
 
   if (output.enKeywords.length === 0) {
     issues.push("英文关键词为空");
+  }
+
+  if (output.enTags.length < 2) {
+    issues.push("英文标签少于 2 个");
+  }
+
+  if (!output.enRecommendTagName) {
+    issues.push("英文推荐标签为空");
+  }
+
+  if (requireCategory && !output.enCategoryName) {
+    issues.push("英文分类名称为空");
+  }
+
+  if (output.enCategoryName && /\p{Script=Han}/u.test(output.enCategoryName)) {
+    issues.push("英文分类名称不能包含中文");
+  }
+
+  if (requireCategory && !output.enCategorySlug) {
+    issues.push("英文分类 slug 为空");
   }
 
   if (issues.length > 0) {
@@ -931,6 +1040,7 @@ export async function generateEnglishMetadata(
     description: string | null;
     keywords: string | null;
     enContent: string;
+    category?: EnglishMetadataCategoryInput | null;
   },
   options: { styleId?: number } = {},
 ): Promise<EnglishMetadataOutput> {
@@ -951,15 +1061,20 @@ export async function generateEnglishMetadata(
       description: input.description,
       keywords: input.keywords,
       enContent: input.enContent,
+      category: input.category,
       metadataStylePrompt: config.englishMetadataStylePrompt,
       maxContentLength: getAiRewriteContentLimit(config.maxTokens),
     }),
   });
   const output = normalizeEnglishMetadata(
     parseJsonResponse<EnglishSeoVersionRawOutput>(metadataText),
-    { title: input.title, description: input.description },
+    {
+      title: input.title,
+      description: input.description,
+      category: input.category,
+    },
   );
-  validateEnglishMetadata(output);
+  validateEnglishMetadata(output, Boolean(input.category));
 
   return output;
 }

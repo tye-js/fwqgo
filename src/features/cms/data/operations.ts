@@ -9,7 +9,6 @@ import {
   posts,
   serverOfferImportTasks,
 } from "@fwqgo/db/schema";
-import { ensureCmsBackgroundWorkersForRecoverableTasks } from "@/server/admin/cms-background-workers";
 import {
   getAdminBackgroundJobSnapshots,
   getAdminBackgroundWorkerRuntimeSnapshot,
@@ -268,7 +267,6 @@ function activeTaskRowToStaleTask(input: {
 
 export async function getCmsTaskOperationsSummary() {
   await requireAdminSession();
-  await ensureCmsBackgroundWorkersForRecoverableTasks();
 
   const [
     aiStatusRows,

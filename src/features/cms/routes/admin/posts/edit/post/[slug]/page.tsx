@@ -16,8 +16,9 @@ export default async function EditPostPage(props: {
   const params = await props.params;
   const { slug } = params;
   const { data: post, error } = await getPostBySlug(slug);
-  const { data: categories, error: categoriesError } =
-    await getLeafCategories();
+  const { data: categories, error: categoriesError } = await getLeafCategories(
+    post?.language === "en" ? "en" : "zh",
+  );
   if (categoriesError || !categories) {
     return (
       <AdminPageShell title="修改文章" description="文章编辑页">

@@ -30,11 +30,21 @@ function localizeTag<
   },
 >(tag: T, language: PublicLanguage) {
   if (language === "en") {
+    const enName = nonEmptyTrim(tag.enName);
+    const enSlug = nonEmptyTrim(tag.enSlug);
+    if (!enName || !enSlug) {
+      if (/\p{Script=Han}/u.test(tag.name) || !/^[a-z0-9-]+$/i.test(tag.slug)) {
+        return null;
+      }
+
+      return tag;
+    }
+
     return {
       ...tag,
       zhSlug: tag.slug,
-      name: nonEmptyTrim(tag.enName) ?? tag.name,
-      slug: nonEmptyTrim(tag.enSlug) ?? tag.slug,
+      name: enName,
+      slug: enSlug,
       description: nonEmptyTrim(tag.enDescription) ?? tag.description,
       keywords: nonEmptyTrim(tag.enKeywords) ?? tag.keywords,
     };
@@ -109,6 +119,9 @@ export async function getPostsWithTagsByTagSlug(
       return { data: null };
     }
     const localizedTag = localizeTag(tag, language);
+    if (!localizedTag) {
+      return { data: null };
+    }
 
     const [countResult] = await readDb
       .select({ count: count() })

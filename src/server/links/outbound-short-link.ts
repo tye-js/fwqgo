@@ -12,6 +12,20 @@ let providerCache: Promise<
   Array<typeof affServiceProviders.$inferSelect>
 > | null = null;
 
+function getAffiliateProviders() {
+  if (!providerCache) {
+    const request = db.select().from(affServiceProviders);
+    providerCache = request;
+    void request.catch(() => {
+      if (providerCache === request) {
+        providerCache = null;
+      }
+    });
+  }
+
+  return providerCache;
+}
+
 function makeSlug(seed: number) {
   let value = seed;
   let slug = "";
@@ -58,8 +72,7 @@ function normalizeProviderDomain(value: string) {
 }
 
 async function getAffiliateTargetUrl(url: URL) {
-  providerCache ??= db.select().from(affServiceProviders);
-  const providers = await providerCache;
+  const providers = await getAffiliateProviders();
   const targetHost = normalizeHost(url.hostname);
   const matchedProvider = providers.find((provider) => {
     const officialDomain = normalizeProviderDomain(provider.officialUrl);

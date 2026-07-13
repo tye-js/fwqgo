@@ -470,6 +470,7 @@ async function runAdminBackgroundJobWorker() {
 
 async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {
   const now = new Date();
+  const requestedRunAfter = input.runAfter ?? now;
   const payload = serializePayload(input.payload);
   const maxAttempts = normalizeMaxAttempts(input.maxAttempts);
 
@@ -490,16 +491,22 @@ async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {
     .limit(1);
 
   if (existingJob) {
+    const effectiveRunAfter =
+      existingJob.runAfter.getTime() <= requestedRunAfter.getTime()
+        ? existingJob.runAfter
+        : requestedRunAfter;
+
     await db
       .update(adminBackgroundJobs)
       .set({
         label: input.label,
         payload,
         maxAttempts,
+        runAfter: effectiveRunAfter,
         updatedAt: now,
       })
       .where(eq(adminBackgroundJobs.id, existingJob.id));
-    scheduleAdminBackgroundJobWorker(existingJob.runAfter);
+    scheduleAdminBackgroundJobWorker(effectiveRunAfter);
     return false;
   }
 
@@ -511,14 +518,51 @@ async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {
       status: "queued",
       payload,
       maxAttempts,
-      runAfter: input.runAfter ?? now,
+      runAfter: requestedRunAfter,
       updatedAt: now,
     })
     .onConflictDoNothing()
     .returning({ id: adminBackgroundJobs.id });
 
-  scheduleAdminBackgroundJobWorker(input.runAfter ?? now);
-  return Boolean(job);
+  if (!job) {
+    const [concurrentJob] = await db
+      .select({
+        id: adminBackgroundJobs.id,
+        runAfter: adminBackgroundJobs.runAfter,
+      })
+      .from(adminBackgroundJobs)
+      .where(
+        and(
+          eq(adminBackgroundJobs.jobKey, input.key),
+          eq(adminBackgroundJobs.status, "queued"),
+        ),
+      )
+      .limit(1);
+
+    if (!concurrentJob) {
+      throw new Error(`后台任务 ${input.key} 入队冲突后未找到排队记录`);
+    }
+
+    const effectiveRunAfter =
+      concurrentJob.runAfter.getTime() <= requestedRunAfter.getTime()
+        ? concurrentJob.runAfter
+        : requestedRunAfter;
+    await db
+      .update(adminBackgroundJobs)
+      .set({
+        label: input.label,
+        payload,
+        maxAttempts,
+        runAfter: effectiveRunAfter,
+        updatedAt: now,
+      })
+      .where(eq(adminBackgroundJobs.id, concurrentJob.id));
+    scheduleAdminBackgroundJobWorker(effectiveRunAfter);
+    return false;
+  }
+
+  scheduleAdminBackgroundJobWorker(requestedRunAfter);
+  return true;
 }
 
 export async function enqueueAdminBackgroundJob(input: BackgroundJobInput) {
@@ -531,14 +575,11 @@ export async function enqueueAdminBackgroundJob(input: BackgroundJobInput) {
     return await enqueueAdminBackgroundJobInternal(input);
   } catch (error) {
     console.error(`Failed to enqueue background job ${input.key}:`, error);
-    return false;
+    throw error;
   }
 }
 
 export async function getAdminBackgroundJobSnapshots() {
-  await resetStaleBackgroundJobs();
-  wakeAdminBackgroundJobWorker();
-
   const rows = await db
     .select()
     .from(adminBackgroundJobs)

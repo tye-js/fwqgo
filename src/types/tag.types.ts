@@ -7,7 +7,7 @@ export interface TagMain {
 }
 
 export interface NewTag {
-  tag: Pick<Tag, "name" | "slug">;
+  tag: Pick<Tag, "name" | "slug"> & Partial<Pick<Tag, "id">>;
 }
 
 export type TagName = Pick<Tag, "name">;
