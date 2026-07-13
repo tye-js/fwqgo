@@ -62,10 +62,14 @@ function redirectToPublic(request: NextRequest) {
 }
 
 function isPublicContentPath(pathname: string) {
+  return ["/fwq", "/en/fwq", "/go"].some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
+function isCmsApiPath(pathname: string) {
   return (
-    pathname.startsWith("/fwq") ||
-    pathname.startsWith("/en/fwq") ||
-    pathname.startsWith("/go/")
+    CMS_API_PATHS.has(pathname) || pathname.startsWith("/api/cms/")
   );
 }
 
@@ -180,6 +184,13 @@ export function proxy(request: NextRequest) {
 
   if (isCmsHost(hostname) && isCmsAdminPath(pathname)) {
     if (!sessionId) {
+      if (isCmsApiPath(pathname)) {
+        return NextResponse.json(
+          { error: "未登录或登录已过期" },
+          { status: 401 },
+        );
+      }
+
       return NextResponse.redirect(new URL("/login", request.url));
     }
 

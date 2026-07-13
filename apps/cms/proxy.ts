@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_CONTENT_MATCHERS = ["/fwq", "/en/fwq", "/go/"];
+const PUBLIC_CONTENT_PREFIXES = ["/fwq", "/en/fwq", "/go"];
 const ADMIN_PAGE_PREFIXES = [
   "/ai-rewrite",
   "/ai-tasks",
@@ -76,7 +76,13 @@ function redirectToPublic(request: NextRequest) {
 }
 
 function isPublicContentPath(pathname: string) {
-  return PUBLIC_CONTENT_MATCHERS.some((prefix) => pathname.startsWith(prefix));
+  return PUBLIC_CONTENT_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
+function isProtectedCmsApiPath(pathname: string) {
+  return PROTECTED_API_PATHS.has(pathname) || pathname.startsWith("/api/cms/");
 }
 
 function isProtectedCmsPath(pathname: string) {
@@ -106,6 +112,13 @@ export function proxy(request: NextRequest) {
     const sessionId = request.cookies.get("session_id")?.value;
 
     if (!sessionId) {
+      if (isProtectedCmsApiPath(pathname)) {
+        return NextResponse.json(
+          { error: "未登录或登录已过期" },
+          { status: 401 },
+        );
+      }
+
       return NextResponse.redirect(new URL("/login", request.url));
     }
 

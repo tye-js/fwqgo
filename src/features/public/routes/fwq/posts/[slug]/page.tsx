@@ -44,6 +44,7 @@ import {
 } from "@/server/offers/server-offers";
 import { Badge } from "@/components/ui/badge";
 import { addIdsToHeadings } from "@fwqgo/core/toc";
+import { renderArticleContentHtml } from "@fwqgo/core/content";
 
 function formatOfferPrice(
   offer: Awaited<ReturnType<typeof getRelatedServerOffersForPost>>[number],
@@ -140,7 +141,9 @@ async function PostPageContent({
   const { post, recommendedPosts } = data;
 
   if (!post) notFound();
-  const contentWithIds = addIdsToHeadings(post.content);
+  const contentWithIds = addIdsToHeadings(
+    renderArticleContentHtml(post.content),
+  );
 
   const { data: posts } = await getPostsByPostId(post.id);
   const [prevPost, nextPost] = posts ?? [null, null];

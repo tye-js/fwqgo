@@ -11,16 +11,20 @@ export function PostViewCount({
   initialViews: number;
 }) {
   const [views, setViews] = useState(initialViews);
-  const hasTrackedRef = useRef(false);
+  const renderedSlugRef = useRef(slug);
+  const trackedSlugRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (hasTrackedRef.current) {
+    if (renderedSlugRef.current !== slug) {
+      renderedSlugRef.current = slug;
+      setViews(initialViews);
+    }
+
+    if (trackedSlugRef.current === slug) {
       return;
     }
 
-    hasTrackedRef.current = true;
-
-    let isActive = true;
+    trackedSlugRef.current = slug;
 
     void fetch(`/api/posts/${encodeURIComponent(slug)}/view`, {
       method: "POST",
@@ -35,7 +39,7 @@ export function PostViewCount({
         return (await response.json()) as { counted?: boolean };
       })
       .then((result) => {
-        if (isActive && result?.counted) {
+        if (trackedSlugRef.current === slug && result?.counted) {
           setViews((currentViews) => currentViews + 1);
         }
       })
@@ -43,10 +47,7 @@ export function PostViewCount({
         // Ignore tracking failures so the page remains interactive.
       });
 
-    return () => {
-      isActive = false;
-    };
-  }, [slug]);
+  }, [initialViews, slug]);
 
   return (
     <div className="hidden items-center gap-1 md:flex">

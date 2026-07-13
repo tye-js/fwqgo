@@ -47,6 +47,16 @@ function getSiteUrl() {
   );
 }
 
+function toAbsoluteImageUrl(value: string | null | undefined) {
+  if (!isRenderableImageSrc(value)) return undefined;
+
+  try {
+    return new URL(value, getSiteUrl()).toString();
+  } catch {
+    return undefined;
+  }
+}
+
 type PageProps = {
   params: Promise<{ slug: string }>;
 };
@@ -80,9 +90,7 @@ export async function generateMetadata({
   const title = post?.title ?? readableTitle;
   const description =
     post?.description ?? `${readableTitle} server and VPS deal article.`;
-  const image = post?.imgUrl
-    ? new URL(post.imgUrl, getSiteUrl()).toString()
-    : undefined;
+  const image = toAbsoluteImageUrl(post?.imgUrl);
 
   return {
     title: `${title} - fwqgo`,
@@ -128,6 +136,7 @@ async function EnglishPostContent({ params }: PageProps) {
   }
   const canonicalSlug = post.enSlug ?? decodedSlug;
   const articleUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(canonicalSlug)}`;
+  const absoluteImageUrl = toAbsoluteImageUrl(post.imgUrl);
   const contentWithIds = addIdsToHeadings(
     renderArticleContentHtml(post.content),
   );
@@ -144,9 +153,7 @@ async function EnglishPostContent({ params }: PageProps) {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
     headline: post.title,
-    image: post.imgUrl
-      ? new URL(post.imgUrl, getSiteUrl()).toString()
-      : undefined,
+    image: absoluteImageUrl,
     description: post.description,
     inLanguage: "en",
     datePublished: post.createdAt,

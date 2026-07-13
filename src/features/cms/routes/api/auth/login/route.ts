@@ -16,6 +16,8 @@ const loginSchema = z.object({
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
 const MAX_FAILED_LOGIN_ATTEMPTS = 8;
+const INVALID_PASSWORD_HASH =
+  "$2b$12$0o3Y6jZ9leQTD33zjL.feeHeFXM0S6eYzKl31bz6EuI1IobmzerUi";
 type LoginAttemptState = {
   count: number;
   resetAt: number;
@@ -36,11 +38,16 @@ function getClientIp(request: Request) {
   const forwardedFor = request.headers.get("x-forwarded-for");
   const realIp = request.headers.get("x-real-ip");
   const connectingIp = request.headers.get("cf-connecting-ip");
+  const proxyForwardedIp = forwardedFor
+    ?.split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .at(-1);
 
   return (
-    forwardedFor?.split(",")[0]?.trim() ??
     realIp?.trim() ??
     connectingIp?.trim() ??
+    proxyForwardedIp ??
     "unknown"
   );
 }
@@ -123,18 +130,12 @@ export async function POST(request: Request) {
       .where(eq(users.username, username))
       .limit(1);
 
-    if (!user) recordFailedLoginAttempt(attemptKeys);
+    const isValidPassword = await compare(
+      password,
+      user?.password ?? INVALID_PASSWORD_HASH,
+    );
 
-    if (!user)
-      return adminApiFailure("用户名或密码错误", {
-        status: 401,
-        title: "登录失败",
-        suggestion: "请确认账号和密码后重试。",
-      });
-
-    const isValidPassword = await compare(password, user.password);
-
-    if (!isValidPassword) {
+    if (!user || !isValidPassword) {
       recordFailedLoginAttempt(attemptKeys);
       return adminApiFailure("用户名或密码错误", {
         status: 401,
