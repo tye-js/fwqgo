@@ -1,8 +1,14 @@
 import Link from "next/link";
-import { ExternalLink, RefreshCw, ServerCog } from "lucide-react";
+import {
+  Activity,
+  AlertCircle,
+  ChevronDown,
+  CircleCheck,
+  Clock3,
+  ServerCog,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -11,7 +17,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AdminSectionCard } from "@/features/cms/components/admin-page-shell";
 import type { CmsTaskOperationsSummary } from "@/features/cms/data/operations";
 
 const sourceLabel: Record<string, string> = {
@@ -77,138 +82,193 @@ function RuntimeValue({
     typeof value === "boolean" ? (value ? "启用" : "关闭") : (value ?? "-");
 
   return (
-    <div className="min-w-0 rounded-sm bg-muted/40 px-2.5 py-2">
+    <div className="min-w-0 border-l-2 border-border px-2.5 py-1">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 truncate font-mono text-xs text-foreground">
+      <p
+        className="mt-1 truncate font-mono text-xs text-foreground"
+        title={String(display)}
+      >
         {display}
       </p>
     </div>
   );
 }
 
-function RuntimeOverview({ summary }: { summary: CmsTaskOperationsSummary }) {
-  const registeredKeys = summary.backgroundWorker.registeredJobKeys;
-
-  return (
-    <div className="rounded-md border border-border/70 bg-muted/20 p-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 gap-2">
-          <ServerCog className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0">
-            <p className="text-sm font-medium">运行态与 worker</p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              当前后台进程、发布版本和队列 worker
-              注册状态。排查“旧代码/新代码”“任务是否被领取”先看这里。
-            </p>
-          </div>
-        </div>
-        <Badge
-          variant={
-            summary.backgroundWorker.isLoopRunning ? "default" : "outline"
-          }
-        >
-          {summary.backgroundWorker.isLoopRunning
-            ? "worker 正在轮询"
-            : "worker 空闲"}
-        </Badge>
-      </div>
-
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <RuntimeValue label="Release" value={summary.runtime.releaseId} />
-        <RuntimeValue
-          label="Release 来源"
-          value={summary.runtime.releaseSource}
-        />
-        <RuntimeValue
-          label="进程"
-          value={`${summary.runtime.hostname}:${summary.runtime.pid}`}
-        />
-        <RuntimeValue
-          label="已运行"
-          value={formatUptime(summary.runtime.uptimeSeconds)}
-        />
-        <RuntimeValue label="Node" value={summary.runtime.nodeVersion} />
-        <RuntimeValue
-          label="Basic Auth"
-          value={summary.runtime.cmsBasicAuthEnabled}
-        />
-        <RuntimeValue
-          label="Worker 并发"
-          value={summary.backgroundWorker.concurrency}
-        />
-        <RuntimeValue
-          label="心跳超时"
-          value={`${Math.round(summary.backgroundWorker.heartbeatTimeoutMs / 1000)}秒`}
-        />
-      </div>
-
-      <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-        <RuntimeValue label="真实运行目录" value={summary.runtime.realCwd} />
-        <div className="rounded-sm bg-muted/40 px-2.5 py-2">
-          <p className="text-xs text-muted-foreground">已注册 worker key</p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {registeredKeys.length > 0 ? (
-              registeredKeys.map((key) => (
-                <Badge
-                  key={key}
-                  variant="outline"
-                  className="font-mono text-[11px]"
-                >
-                  {key}
-                </Badge>
-              ))
-            ) : (
-              <span className="text-xs text-muted-foreground">
-                当前请求内还没有注册 worker。打开任务中心会尝试恢复
-                pending/running 任务。
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function QueueCard({
+function QueueSummaryLink({
+  type,
   title,
   summary,
 }: {
+  type: "ai" | "cover" | "offer";
   title: string;
   summary: CmsTaskOperationsSummary["queues"]["ai"];
 }) {
   return (
-    <div className="rounded-md border border-border/70 bg-background p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium">{title}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            总计 {summary.total.toLocaleString("zh-CN")} 个任务
-          </p>
-        </div>
-        <Badge variant={summary.failed > 0 ? "destructive" : "outline"}>
-          失败 {summary.failed}
+    <Link
+      href={`/ai-tasks?type=${type}`}
+      className="group min-w-0 px-3 py-2.5 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium">{title}</span>
+        <span className="text-xs tabular-nums text-muted-foreground">
+          共 {summary.total}
+        </span>
+      </div>
+      <div className="mt-1.5 flex items-center gap-4 text-xs">
+        <span className="text-muted-foreground">
+          处理中{" "}
+          <strong className="font-semibold tabular-nums text-foreground">
+            {summary.active}
+          </strong>
+        </span>
+        <span
+          className={
+            summary.failed > 0 ? "text-destructive" : "text-muted-foreground"
+          }
+        >
+          失败{" "}
+          <strong className="font-semibold tabular-nums">
+            {summary.failed}
+          </strong>
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+function SystemDiagnostics({ summary }: { summary: CmsTaskOperationsSummary }) {
+  const registeredKeys = summary.backgroundWorker.registeredJobKeys;
+
+  return (
+    <details className="group overflow-hidden rounded-md border border-border/70 bg-background">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 px-3 py-2 text-sm outline-none transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <ServerCog className="size-4 shrink-0 text-muted-foreground" />
+        <span className="font-medium">系统诊断</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+          发布版本、进程、worker、心跳和重试队列
+        </span>
+        <Badge
+          variant={
+            summary.backgroundWorker.isLoopRunning ? "secondary" : "outline"
+          }
+        >
+          {summary.backgroundWorker.isLoopRunning ? "轮询中" : "空闲"}
         </Badge>
+        <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180" />
+      </summary>
+
+      <div className="space-y-4 border-t border-border/70 p-3">
+        <div className="grid gap-x-3 gap-y-3 sm:grid-cols-2 xl:grid-cols-4">
+          <RuntimeValue label="Release" value={summary.runtime.releaseId} />
+          <RuntimeValue
+            label="Release 来源"
+            value={summary.runtime.releaseSource}
+          />
+          <RuntimeValue
+            label="进程"
+            value={`${summary.runtime.hostname}:${summary.runtime.pid}`}
+          />
+          <RuntimeValue
+            label="已运行"
+            value={formatUptime(summary.runtime.uptimeSeconds)}
+          />
+          <RuntimeValue label="Node" value={summary.runtime.nodeVersion} />
+          <RuntimeValue
+            label="Basic Auth"
+            value={summary.runtime.cmsBasicAuthEnabled}
+          />
+          <RuntimeValue
+            label="Worker 并发"
+            value={summary.backgroundWorker.concurrency}
+          />
+          <RuntimeValue
+            label="心跳超时"
+            value={`${Math.round(summary.backgroundWorker.heartbeatTimeoutMs / 1000)}秒`}
+          />
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
+          <RuntimeValue label="真实运行目录" value={summary.runtime.realCwd} />
+          <div className="min-w-0 border-l-2 border-border px-2.5 py-1">
+            <p className="text-xs text-muted-foreground">已注册 worker key</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {registeredKeys.length > 0 ? (
+                registeredKeys.map((key) => (
+                  <Badge
+                    key={key}
+                    variant="outline"
+                    className="font-mono text-[11px]"
+                  >
+                    {key}
+                  </Badge>
+                ))
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  暂无注册记录
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto rounded-md border border-border/70">
+          {summary.backgroundJobs.length > 0 ? (
+            <Table className="min-w-[760px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>后台任务</TableHead>
+                  <TableHead className="w-[92px]">状态</TableHead>
+                  <TableHead className="w-[76px]">重试</TableHead>
+                  <TableHead className="w-[116px]">下次运行</TableHead>
+                  <TableHead className="w-[116px]">心跳</TableHead>
+                  <TableHead>失败原因</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {summary.backgroundJobs.map((job) => (
+                  <TableRow key={job.id}>
+                    <TableCell>
+                      <p className="max-w-[260px] truncate text-sm font-medium">
+                        {job.label}
+                      </p>
+                      <p className="max-w-[260px] truncate font-mono text-xs text-muted-foreground">
+                        {job.key}
+                      </p>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={statusVariant(job.status)}>
+                        {statusLabel(job.status)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs tabular-nums text-muted-foreground">
+                      {job.attempts}/{job.maxAttempts}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatTime(job.runAfter)}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatTime(job.heartbeatAt)}
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className="line-clamp-2 text-xs text-muted-foreground"
+                        title={job.lastError ?? undefined}
+                      >
+                        {job.lastError ?? "无"}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="p-3 text-xs text-muted-foreground">
+              暂无后台队列记录。
+            </p>
+          )}
+        </div>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-        <div className="rounded-sm bg-muted/50 px-2 py-1.5">
-          <p className="text-muted-foreground">处理中</p>
-          <p className="mt-0.5 font-semibold tabular-nums">{summary.active}</p>
-        </div>
-        <div className="rounded-sm bg-muted/50 px-2 py-1.5">
-          <p className="text-muted-foreground">成功</p>
-          <p className="mt-0.5 font-semibold tabular-nums">
-            {summary.succeeded}
-          </p>
-        </div>
-        <div className="rounded-sm bg-muted/50 px-2 py-1.5">
-          <p className="text-muted-foreground">人工</p>
-          <p className="mt-0.5 font-semibold tabular-nums">
-            {summary.manualRequired}
-          </p>
-        </div>
-      </div>
-    </div>
+    </details>
   );
 }
 
@@ -217,192 +277,111 @@ export function CmsTaskOperationsOverview({
 }: {
   summary: CmsTaskOperationsSummary;
 }) {
+  const totalActive =
+    summary.queues.ai.active +
+    summary.queues.cover.active +
+    summary.queues.offer.active;
+  const totalFailed =
+    summary.queues.ai.failed +
+    summary.queues.cover.failed +
+    summary.queues.offer.failed;
+  const staleCount = summary.staleTasks.length;
+  const hasAttentionItems = totalFailed > 0 || staleCount > 0;
+  const latestFailure = summary.recentFailures[0];
+
   return (
-    <AdminSectionCard
-      title="任务队列健康"
-      description="统一查看 AI 改写、封面生图、套餐提取和后台 worker 的状态；失败和长时间未更新的任务优先处理。"
-    >
-      <div className="space-y-4">
-        <RuntimeOverview summary={summary} />
-
-        <div className="grid gap-3 lg:grid-cols-3">
-          <QueueCard title="AI 改写任务" summary={summary.queues.ai} />
-          <QueueCard title="封面生图任务" summary={summary.queues.cover} />
-          <QueueCard title="套餐提取任务" summary={summary.queues.offer} />
-        </div>
-
-        <div className="rounded-md border border-border/70 bg-muted/20 p-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium">持久后台队列</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                数据来自队列表，包含锁、心跳、重试次数和失败原因。
-              </p>
-            </div>
-            <Button asChild size="sm" variant="outline">
-              <Link href="/ai-tasks">
-                <RefreshCw className="size-4" />
-                刷新
-              </Link>
-            </Button>
-          </div>
-          <div className="mt-3 overflow-x-auto">
-            {summary.backgroundJobs.length > 0 ? (
-              <Table className="min-w-[760px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>任务</TableHead>
-                    <TableHead className="w-[92px]">状态</TableHead>
-                    <TableHead className="w-[88px]">重试</TableHead>
-                    <TableHead className="w-[124px]">下次运行</TableHead>
-                    <TableHead className="w-[124px]">心跳</TableHead>
-                    <TableHead>失败原因</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {summary.backgroundJobs.map((job) => (
-                    <TableRow key={job.id}>
-                      <TableCell>
-                        <div className="max-w-[260px]">
-                          <p className="truncate text-sm font-medium">
-                            {job.label}
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {job.key}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={statusVariant(job.status)}>
-                          {statusLabel(job.status)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs tabular-nums text-muted-foreground">
-                        {job.attempts}/{job.maxAttempts}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {formatTime(job.runAfter)}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {formatTime(job.heartbeatAt)}
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className="line-clamp-2 text-xs text-muted-foreground"
-                          title={job.lastError ?? undefined}
-                        >
-                          {job.lastError ?? "无"}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <span className="text-xs text-muted-foreground">
-                暂无后台队列记录。
-              </span>
-            )}
+    <section aria-label="任务队列概览" className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          {hasAttentionItems ? (
+            <AlertCircle className="size-5 shrink-0 text-destructive" />
+          ) : totalActive > 0 ? (
+            <Activity className="size-5 shrink-0 text-primary" />
+          ) : (
+            <CircleCheck className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">
+              {hasAttentionItems
+                ? `${totalFailed + staleCount} 项需要关注`
+                : totalActive > 0
+                  ? `${totalActive} 个任务正在处理`
+                  : "任务队列正常"}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {summary.backgroundWorker.isLoopRunning
+                ? `Worker 正在轮询，并发 ${summary.backgroundWorker.concurrency}`
+                : "Worker 当前空闲，新任务入队后会自动启动"}
+            </p>
           </div>
         </div>
-
-        <div className="grid gap-4 xl:grid-cols-2">
-          <div className="space-y-2">
-            <p className="text-sm font-medium">最近失败</p>
-            {summary.recentFailures.length > 0 ? (
-              <Table className="min-w-[620px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>任务</TableHead>
-                    <TableHead>原因</TableHead>
-                    <TableHead className="w-[108px]">时间</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {summary.recentFailures.map((task) => (
-                    <TableRow key={`${task.source}-${task.id}`}>
-                      <TableCell>
-                        <Link
-                          href={task.href}
-                          className="group flex min-h-11 items-start gap-2 rounded-sm px-1 py-1 hover:bg-muted/50"
-                        >
-                          <span className="min-w-0 flex-1">
-                            <span className="flex flex-wrap items-center gap-2">
-                              <Badge variant="destructive">
-                                {sourceLabel[task.source]}
-                              </Badge>
-                              <span className="text-xs text-muted-foreground">
-                                #{task.id}
-                              </span>
-                            </span>
-                            <span className="mt-1 line-clamp-2 block text-sm">
-                              {task.title}
-                            </span>
-                          </span>
-                          <ExternalLink className="mt-1 size-4 shrink-0 opacity-60 group-hover:opacity-100" />
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        <p className="line-clamp-3 text-xs leading-5 text-muted-foreground">
-                          {task.message}
-                        </p>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {formatTime(task.updatedAt ?? task.createdAt)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="rounded-md border border-dashed border-border p-4 text-xs text-muted-foreground">
-                暂无失败任务。
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-sm font-medium">疑似卡住</p>
-            {summary.staleTasks.length > 0 ? (
-              <Table className="min-w-[560px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>任务</TableHead>
-                    <TableHead className="w-[96px]">状态</TableHead>
-                    <TableHead className="w-[108px]">未更新</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {summary.staleTasks.map((task) => (
-                    <TableRow key={`${task.source}-${task.id}`}>
-                      <TableCell>
-                        <Link
-                          href={task.href}
-                          className="line-clamp-2 min-h-11 rounded-sm px-1 py-1 text-sm hover:bg-muted/50"
-                        >
-                          {sourceLabel[task.source]} #{task.id} · {task.title}
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={statusVariant(task.status)}>
-                          {statusLabel(task.status)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {task.ageMinutes ?? "-"} 分钟
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="rounded-md border border-dashed border-border p-4 text-xs text-muted-foreground">
-                暂无超过 15 分钟未更新的排队或运行任务。
-              </div>
-            )}
-          </div>
-        </div>
+        <Badge variant={hasAttentionItems ? "destructive" : "outline"}>
+          {hasAttentionItems ? "需要处理" : "运行正常"}
+        </Badge>
       </div>
-    </AdminSectionCard>
+
+      <div className="grid divide-y divide-border/70 overflow-hidden rounded-md border border-border/70 bg-background sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+        <QueueSummaryLink
+          type="ai"
+          title="AI 改写"
+          summary={summary.queues.ai}
+        />
+        <QueueSummaryLink
+          type="cover"
+          title="封面生图"
+          summary={summary.queues.cover}
+        />
+        <QueueSummaryLink
+          type="offer"
+          title="套餐提取"
+          summary={summary.queues.offer}
+        />
+      </div>
+
+      {hasAttentionItems ? (
+        <div className="grid divide-y divide-destructive/20 overflow-hidden rounded-md border border-destructive/30 bg-destructive/5 md:grid-cols-[180px_180px_minmax(0,1fr)] md:divide-x md:divide-y-0">
+          <Link
+            href="/ai-tasks?status=failed"
+            className="flex min-h-11 items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <span className="text-destructive">失败任务</span>
+            <strong className="tabular-nums text-destructive">
+              {totalFailed}
+            </strong>
+          </Link>
+          <Link
+            href="/ai-tasks?status=active"
+            className="flex min-h-11 items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <span className="flex items-center gap-2 text-destructive">
+              <Clock3 className="size-4" />
+              疑似卡住
+            </span>
+            <strong className="tabular-nums text-destructive">
+              {staleCount}
+            </strong>
+          </Link>
+          {latestFailure ? (
+            <Link
+              href={latestFailure.href}
+              className="min-w-0 px-3 py-2 hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            >
+              <p className="text-xs text-destructive">
+                最近失败 · {sourceLabel[latestFailure.source]} #
+                {latestFailure.id}
+              </p>
+              <p
+                className="mt-0.5 truncate text-xs text-muted-foreground"
+                title={latestFailure.message}
+              >
+                {latestFailure.message}
+              </p>
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+
+      <SystemDiagnostics summary={summary} />
+    </section>
   );
 }
