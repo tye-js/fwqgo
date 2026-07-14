@@ -111,6 +111,9 @@ jobs:
           cp -R public .next-web/standalone/public
           cp -R public .next-cms/standalone/public
 
+      - name: Smoke test built applications
+        run: npm run smoke:built
+
       - name: Package release
         shell: bash
         run: |

@@ -2,6 +2,12 @@ import { revalidatePath } from "next/cache";
 import { and, asc, eq, isNull, lt, or } from "drizzle-orm";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
+import {
+  createTaskLeaseOwner,
+  getTaskLeaseExpiry,
+  withTaskLeaseHeartbeat,
+} from "@fwqgo/core/task-lease";
+import { structuredLog } from "@fwqgo/core/structured-log";
 import { db } from "@fwqgo/db";
 import { posts, serverOfferImportTasks } from "@fwqgo/db/schema";
 import { getErrorMessage } from "@/lib/admin-action-result";
@@ -75,9 +81,9 @@ export function serializeServerOfferImportTask(task: ServerOfferImportTask) {
 }
 
 async function resetStaleRunningTasks() {
-  const staleBefore = new Date(Date.now() - 15 * 60 * 1000);
+  const now = new Date();
 
-  await db
+  const recovered = await db
     .update(serverOfferImportTasks)
     .set({
       status: "pending",
@@ -86,23 +92,32 @@ async function resetStaleRunningTasks() {
       errorTitle: null,
       errorDetail: null,
       startedAt: null,
-      updatedAt: new Date(),
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      heartbeatAt: null,
+      updatedAt: now,
     })
     .where(
       and(
         eq(serverOfferImportTasks.status, "running"),
         or(
-          lt(serverOfferImportTasks.updatedAt, staleBefore),
-          and(
-            isNull(serverOfferImportTasks.updatedAt),
-            lt(serverOfferImportTasks.startedAt, staleBefore),
-          ),
+          isNull(serverOfferImportTasks.leaseExpiresAt),
+          lt(serverOfferImportTasks.leaseExpiresAt, now),
         ),
       ),
-    );
+    )
+    .returning({ id: serverOfferImportTasks.id });
+  if (recovered.length > 0) {
+    structuredLog("warn", "offers.tasks_recovered", {
+      count: recovered.length,
+      taskIds: recovered.map((task) => task.id),
+    });
+  }
 }
 
 async function claimNextTask() {
+  const leaseOwner = createTaskLeaseOwner("server-offer-import");
+  const now = new Date();
   const [task] = await db
     .select({ id: serverOfferImportTasks.id })
     .from(serverOfferImportTasks)
@@ -122,8 +137,11 @@ async function claimNextTask() {
       message: "正在读取文章并提取有效套餐",
       errorTitle: null,
       errorDetail: null,
-      startedAt: new Date(),
-      updatedAt: new Date(),
+      startedAt: now,
+      leaseOwner,
+      leaseExpiresAt: getTaskLeaseExpiry(now),
+      heartbeatAt: now,
+      updatedAt: now,
     })
     .where(
       and(
@@ -137,6 +155,13 @@ async function claimNextTask() {
 }
 
 async function processTask(task: ServerOfferImportTask) {
+  if (!task.leaseOwner) {
+    throw new Error("套餐提取任务缺少租约所有者");
+  }
+  const ownedTaskWhere = and(
+    eq(serverOfferImportTasks.id, task.id),
+    eq(serverOfferImportTasks.leaseOwner, task.leaseOwner),
+  );
   if (task.mode === "single") {
     if (!task.postId) {
       throw new Error("单篇提取任务缺少文章 ID");
@@ -149,7 +174,7 @@ async function processTask(task: ServerOfferImportTask) {
         message: "正在识别单篇文章中的配置、价格和购买链接",
         updatedAt: new Date(),
       })
-      .where(eq(serverOfferImportTasks.id, task.id));
+      .where(ownedTaskWhere);
 
     const result = await importServerOffersFromPost(task.postId, {
       revalidate: false,
@@ -163,9 +188,12 @@ async function processTask(task: ServerOfferImportTask) {
         message: "单篇文章套餐提取完成",
         result: JSON.stringify(result),
         finishedAt: new Date(),
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        heartbeatAt: null,
         updatedAt: new Date(),
       })
-      .where(eq(serverOfferImportTasks.id, task.id));
+      .where(ownedTaskWhere);
     return;
   }
 
@@ -176,7 +204,7 @@ async function processTask(task: ServerOfferImportTask) {
       message: "正在扫描历史文章并提取有效套餐",
       updatedAt: new Date(),
     })
-    .where(eq(serverOfferImportTasks.id, task.id));
+    .where(ownedTaskWhere);
 
   const result = await importServerOffersFromPosts({ revalidate: false });
 
@@ -188,9 +216,33 @@ async function processTask(task: ServerOfferImportTask) {
       message: "历史文章套餐提取完成",
       result: JSON.stringify(result),
       finishedAt: new Date(),
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      heartbeatAt: null,
       updatedAt: new Date(),
     })
-    .where(eq(serverOfferImportTasks.id, task.id));
+    .where(ownedTaskWhere);
+}
+
+async function renewTaskLease(task: ServerOfferImportTask) {
+  if (!task.leaseOwner) return false;
+  const now = new Date();
+  const rows = await db
+    .update(serverOfferImportTasks)
+    .set({
+      heartbeatAt: now,
+      leaseExpiresAt: getTaskLeaseExpiry(now),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(serverOfferImportTasks.id, task.id),
+        eq(serverOfferImportTasks.status, "running"),
+        eq(serverOfferImportTasks.leaseOwner, task.leaseOwner),
+      ),
+    )
+    .returning({ id: serverOfferImportTasks.id });
+  return rows.length > 0;
 }
 
 async function runServerOfferImportWorker() {
@@ -203,9 +255,18 @@ async function runServerOfferImportWorker() {
     }
 
     try {
-      await processTask(task);
+      await withTaskLeaseHeartbeat({
+        renew: () => renewTaskLease(task),
+        run: () => processTask(task),
+      });
       revalidateOfferPages();
     } catch (error) {
+      structuredLog("error", "offers.task_failed", {
+        taskId: task.id,
+        postId: task.postId,
+        leaseOwner: task.leaseOwner,
+        error,
+      });
       await db
         .update(serverOfferImportTasks)
         .set({
@@ -215,9 +276,17 @@ async function runServerOfferImportWorker() {
           errorTitle: "套餐提取失败",
           errorDetail: getErrorMessage(error),
           finishedAt: new Date(),
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          heartbeatAt: null,
           updatedAt: new Date(),
         })
-        .where(eq(serverOfferImportTasks.id, task.id));
+        .where(
+          and(
+            eq(serverOfferImportTasks.id, task.id),
+            eq(serverOfferImportTasks.leaseOwner, task.leaseOwner ?? ""),
+          ),
+        );
     }
   }
 }
