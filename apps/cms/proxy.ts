@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { getCmsSessionId } from "@fwqgo/auth/session-cookie";
+
 const PUBLIC_CONTENT_PREFIXES = ["/fwq", "/en/fwq", "/go"];
 const ADMIN_PAGE_PREFIXES = [
   "/ai-rewrite",
@@ -42,12 +44,24 @@ function decodeBasicAuthCredentials(value: string) {
 }
 
 function unauthorizedBasicAuthResponse() {
-  return new NextResponse("Authentication required", {
-    status: 401,
-    headers: {
-      "WWW-Authenticate": 'Basic realm="fwqgo CMS", charset="UTF-8"',
-    },
-  });
+  return withPrivateNoStore(
+    new NextResponse("Authentication required", {
+      status: 401,
+      headers: {
+        "WWW-Authenticate": 'Basic realm="fwqgo CMS", charset="UTF-8"',
+      },
+    }),
+  );
+}
+
+function withPrivateNoStore(response: NextResponse) {
+  response.headers.set(
+    "Cache-Control",
+    "private, no-store, max-age=0, must-revalidate",
+  );
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
 }
 
 function enforceCmsBasicAuth(request: NextRequest) {
@@ -72,7 +86,7 @@ function enforceCmsBasicAuth(request: NextRequest) {
 function redirectToPublic(request: NextRequest) {
   const target = new URL(request.nextUrl.pathname, getPublicOrigin());
   target.search = request.nextUrl.search;
-  return NextResponse.redirect(target);
+  return withPrivateNoStore(NextResponse.redirect(target));
 }
 
 function isPublicContentPath(pathname: string) {
@@ -109,29 +123,32 @@ export function proxy(request: NextRequest) {
   }
 
   if (isProtectedCmsPath(pathname)) {
-    const sessionId = request.cookies.get("session_id")?.value;
+    const sessionId = getCmsSessionId(request.cookies);
 
     if (!sessionId) {
       if (isProtectedCmsApiPath(pathname)) {
-        return NextResponse.json(
-          { error: "未登录或登录已过期" },
-          { status: 401 },
+        return withPrivateNoStore(
+          NextResponse.json({ error: "未登录或登录已过期" }, { status: 401 }),
         );
       }
 
-      return NextResponse.redirect(new URL("/login", request.url));
+      return withPrivateNoStore(
+        NextResponse.redirect(new URL("/login", request.url)),
+      );
     }
 
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set("x-session-id", sessionId);
-    return NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
+    return withPrivateNoStore(
+      NextResponse.next({
+        request: {
+          headers: requestHeaders,
+        },
+      }),
+    );
   }
 
-  return NextResponse.next();
+  return withPrivateNoStore(NextResponse.next());
 }
 
 export const config = {

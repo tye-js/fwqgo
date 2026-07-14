@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { and, eq, gt } from "drizzle-orm";
 
+import { getCmsSessionId } from "@fwqgo/auth/session-cookie";
 import { db } from "@fwqgo/db";
 import { sessions, users } from "@fwqgo/db/schema";
 
@@ -11,7 +12,9 @@ export class UnauthorizedError extends Error {
   }
 }
 
-export async function getValidSessionById(sessionId: string | null | undefined) {
+export async function getValidSessionById(
+  sessionId: string | null | undefined,
+) {
   if (!sessionId) {
     return null;
   }
@@ -35,7 +38,7 @@ export async function getValidSessionById(sessionId: string | null | undefined) 
 }
 
 export async function getCurrentSession() {
-  const sessionId = (await cookies()).get("session_id")?.value;
+  const sessionId = getCmsSessionId(await cookies());
   return getValidSessionById(sessionId);
 }
 
