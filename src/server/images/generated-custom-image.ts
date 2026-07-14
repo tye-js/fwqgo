@@ -1,5 +1,10 @@
 import { sanitizeFileName } from "@fwqgo/core/utils";
 import {
+  buildImageGenerationEndpoint,
+  formatImageGenerationHttpError,
+  normalizeImageGenerationResultUrl,
+} from "@fwqgo/core/image-generation-endpoint";
+import {
   assertPublicHttpUrl,
   fetchPublicHttpUrl,
 } from "@fwqgo/core/network-url";
@@ -31,13 +36,6 @@ type ImageGenerationResponse = {
   url?: string;
   b64_json?: string;
 };
-
-function buildEndpoint(baseUrl: string) {
-  const normalized = baseUrl.replace(/\/+$/, "");
-  if (/\/v1\/images\/generations$/i.test(normalized)) return normalized;
-  if (/\/images\/generations$/i.test(normalized)) return normalized;
-  return `${normalized}/v1/images/generations`;
-}
 
 function buildRequestBody(input: {
   provider: ImageGenerationProvider;
@@ -164,7 +162,7 @@ export async function generateCustomImage(
     throw new Error("生图配置缺少 API Key");
   }
 
-  const endpoint = buildEndpoint(config.baseUrl);
+  const endpoint = buildImageGenerationEndpoint(config.baseUrl);
   const safeEndpoint = await assertPublicHttpUrl(endpoint, "生图接口地址");
   const response = await fetch(safeEndpoint, {
     method: "POST",
@@ -188,7 +186,12 @@ export async function generateCustomImage(
   const text = await response.text();
   if (!response.ok) {
     throw new Error(
-      `生图接口请求失败：HTTP ${response.status} ${text.slice(0, 240)}`,
+      formatImageGenerationHttpError({
+        status: response.status,
+        statusText: response.statusText,
+        responseText: text,
+        baseUrl: config.baseUrl,
+      }),
     );
   }
 
@@ -202,7 +205,10 @@ export async function generateCustomImage(
   const imageUrl = findImageUrl(payload);
   const base64Image = findBase64Image(payload);
   const image = imageUrl
-    ? await downloadImage(imageUrl, config.timeoutSeconds)
+    ? await downloadImage(
+        normalizeImageGenerationResultUrl(imageUrl, endpoint),
+        config.timeoutSeconds,
+      )
     : base64Image
       ? {
           buffer: Buffer.from(normalizeBase64(base64Image), "base64"),

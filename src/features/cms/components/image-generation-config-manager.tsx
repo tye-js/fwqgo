@@ -213,7 +213,8 @@ function ConfigForm({
             required
           />
           <p className="text-xs leading-5 text-muted-foreground">
-            可填服务根地址，也可直接填 /v1/images/generations 完整地址。
+            可填服务根地址，也可直接填 /v1/images/generations
+            完整地址。若服务商区分文本和图片主机，必须填写图片专用地址。
           </p>
         </div>
         <div className="space-y-2">
