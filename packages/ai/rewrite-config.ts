@@ -38,11 +38,11 @@ type ConfigTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const AI_REWRITE_DEFAULT_LOCK_ID = 9_021_001;
 
-function normalizeBaseUrl(baseUrl: string) {
+export function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.trim().replace(/\/+$/, "");
 }
 
-function maskApiKey(apiKey: string | null) {
+export function maskApiKey(apiKey: string | null) {
   if (!apiKey) return null;
   if (apiKey.length <= 8) return "********";
   return `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`;

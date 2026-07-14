@@ -92,7 +92,7 @@ function failed(input: {
   };
 }
 
-function classifyHttpError(input: {
+export function classifyHttpError(input: {
   status: number;
   statusText: string;
   payload: ChatCompletionStatusResponse | null;
@@ -144,7 +144,7 @@ function classifyHttpError(input: {
   };
 }
 
-function parseStatusResponse(text: string) {
+export function parseStatusResponse(text: string) {
   try {
     return JSON.parse(text || "{}") as ChatCompletionStatusResponse;
   } catch {
