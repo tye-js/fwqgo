@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
@@ -9,6 +9,7 @@ import {
   AdminTableWorkbench,
 } from "@/features/cms/components/admin-table-workbench";
 import { Button } from "@/components/ui/button";
+import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
 import {
   Table,
   TableBody,
@@ -36,26 +37,35 @@ function formatDate(value: string) {
   });
 }
 
-export function ShortLinkTable({ links }: { links: ShortLinkRow[] }) {
-  const [query, setQuery] = useState("");
+export function ShortLinkTable({
+  links,
+  initialQuery = "",
+  publicOrigin: initialPublicOrigin = "",
+}: {
+  links: ShortLinkRow[];
+  initialQuery?: string;
+  publicOrigin?: string;
+}) {
+  const updateUrlQuery = useUrlQueryUpdater();
+  const [query, setQuery] = useState(initialQuery);
+  const publicOrigin = initialPublicOrigin.replace(/\/+$/, "");
 
-  const filteredLinks = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return links;
+  useEffect(() => {
+    const normalizedQuery = query.trim();
+    if (normalizedQuery === initialQuery.trim()) return;
 
-    return links.filter((link) => {
-      return (
-        link.slug.toLowerCase().includes(normalizedQuery) ||
-        link.targetUrl.toLowerCase().includes(normalizedQuery)
-      );
-    });
-  }, [links, query]);
+    const timeoutId = window.setTimeout(() => {
+      updateUrlQuery({ query: normalizedQuery || null });
+    }, 400);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [initialQuery, query, updateUrlQuery]);
 
   async function copyShortLink(slug: string) {
-    const publicOrigin =
-      process.env.NEXT_PUBLIC_URL?.replace(/\/+$/, "") ??
+    const resolvedOrigin =
+      publicOrigin ||
       window.location.origin.replace(/^https:\/\/cms\./, "https://");
-    const url = `${publicOrigin}/go/${slug}`;
+    const url = `${resolvedOrigin}/go/${slug}`;
     try {
       await navigator.clipboard.writeText(url);
       toast.success("短链已复制", {
@@ -78,13 +88,13 @@ export function ShortLinkTable({ links }: { links: ShortLinkRow[] }) {
         searchPlaceholder="搜索 slug 或目标 URL"
       />
 
-      {filteredLinks.length === 0 ? (
+      {links.length === 0 ? (
         <AdminTableEmpty
           title="没有匹配的短链"
           description="发布包含外部链接的文章后，系统会自动生成短链。"
         />
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border/70 bg-background shadow-sm">
+        <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
           <Table className="min-w-[760px]">
             <TableHeader>
               <TableRow>
@@ -95,7 +105,7 @@ export function ShortLinkTable({ links }: { links: ShortLinkRow[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredLinks.map((link) => (
+              {links.map((link) => (
                 <TableRow key={link.id}>
                   <TableCell className="font-mono text-sm">
                     /go/{link.slug}
@@ -126,7 +136,11 @@ export function ShortLinkTable({ links }: { links: ShortLinkRow[] }) {
                       </Button>
                       <Button asChild size="icon" variant="outline">
                         <a
-                          href={`/go/${link.slug}`}
+                          href={
+                            publicOrigin
+                              ? `${publicOrigin}/go/${link.slug}`
+                              : `/go/${link.slug}`
+                          }
                           target="_blank"
                           rel="noopener noreferrer"
                           aria-label={`打开 /go/${link.slug}`}

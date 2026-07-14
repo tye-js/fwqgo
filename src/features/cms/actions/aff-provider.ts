@@ -7,6 +7,7 @@ import { affServiceProviders } from "@fwqgo/db/schema";
 import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { ilikeContains } from "@/server/db/search";
+import { clearOutboundAffiliateProviderCache } from "@/server/links/outbound-short-link";
 
 type AffProviderActionResult =
   | { data: typeof affServiceProviders.$inferSelect }
@@ -220,7 +221,10 @@ export async function getAffValueByHref(hostname: string) {
 
     return { data: result ?? null };
   } catch (error) {
-    return { error: "查询关联服务商失败", message: error };
+    return {
+      error: "查询关联服务商失败",
+      message: getErrorMessage(error),
+    };
   }
 }
 
@@ -346,6 +350,7 @@ export async function updateAffProvider(
       };
     }
 
+    clearOutboundAffiliateProviderCache();
     revalidatePath("/collect/aff-man");
     return { data: result };
   } catch (error) {
@@ -376,6 +381,7 @@ export async function deleteAffProvider(
       };
     }
 
+    clearOutboundAffiliateProviderCache();
     revalidatePath("/collect/aff-man");
     return { data: result };
   } catch (error) {
@@ -401,7 +407,10 @@ export async function deleteAffProviders(
       .where(inArray(affServiceProviders.id, validIds))
       .returning({ id: affServiceProviders.id });
 
-    revalidatePath("/collect/aff-man");
+    if (result.length > 0) {
+      clearOutboundAffiliateProviderCache();
+      revalidatePath("/collect/aff-man");
+    }
     return { data: result.length };
   } catch (error) {
     console.error("批量删除返利商家失败:", error);
@@ -459,6 +468,7 @@ export async function addAffProvider(
       };
     }
 
+    clearOutboundAffiliateProviderCache();
     revalidatePath("/collect/aff-man");
     return { data: result };
   } catch (error) {

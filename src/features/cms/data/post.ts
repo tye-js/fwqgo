@@ -14,10 +14,34 @@ import {
   serverOffers,
   tags,
 } from "@fwqgo/db/schema";
-import { eq, desc, asc, gte, and, count, sql, inArray, or } from "drizzle-orm";
+import {
+  eq,
+  desc,
+  asc,
+  gte,
+  and,
+  count,
+  sql,
+  inArray,
+  or,
+  type SQL,
+} from "drizzle-orm";
 import { decodeSlug } from "@fwqgo/core/utils";
+import { ilikeContains } from "@/server/db/search";
 
 export type PostLanguageFilter = "all" | "zh" | "en";
+export type PostStatusFilter = "all" | "published" | "draft";
+export type PostSort =
+  | "id-desc"
+  | "id-asc"
+  | "title-asc"
+  | "slug-asc"
+  | "published-desc";
+
+function getDataErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  return typeof error === "string" ? error : "未知错误";
+}
 
 export function normalizePostLanguageFilter(
   value: string | undefined,
@@ -25,8 +49,62 @@ export function normalizePostLanguageFilter(
   return value === "zh" || value === "en" ? value : "all";
 }
 
+export function normalizePostStatusFilter(
+  value: string | undefined,
+): PostStatusFilter {
+  return value === "published" || value === "draft" ? value : "all";
+}
+
+export function normalizePostSort(value: string | undefined): PostSort {
+  return value === "id-asc" ||
+    value === "title-asc" ||
+    value === "slug-asc" ||
+    value === "published-desc"
+    ? value
+    : "id-desc";
+}
+
 function postLanguageCondition(language: PostLanguageFilter) {
   return language === "all" ? sql`true` : eq(posts.language, language);
+}
+
+function postSearchCondition(query: string) {
+  const normalizedQuery = query.trim().slice(0, 160);
+  if (!normalizedQuery) return undefined;
+
+  return or(
+    ilikeContains(posts.title, normalizedQuery),
+    ilikeContains(posts.slug, normalizedQuery),
+  );
+}
+
+function postStatusCondition(status: PostStatusFilter) {
+  if (status === "published") return eq(posts.published, true);
+  if (status === "draft") return eq(posts.published, false);
+  return undefined;
+}
+
+function postListCondition(input: {
+  language: PostLanguageFilter;
+  status: PostStatusFilter;
+  query: string;
+}) {
+  return and(
+    postLanguageCondition(input.language),
+    postStatusCondition(input.status),
+    postSearchCondition(input.query),
+  );
+}
+
+function postListOrderBy(sort: PostSort): SQL[] {
+  if (sort === "id-asc") return [asc(posts.id)];
+  if (sort === "title-asc") return [asc(posts.title), desc(posts.id)];
+  if (sort === "slug-asc") return [asc(posts.slug), desc(posts.id)];
+  if (sort === "published-desc") {
+    return [desc(posts.published), desc(posts.id)];
+  }
+
+  return [desc(posts.id)];
 }
 
 function serializeDate(value: Date | string | null) {
@@ -159,7 +237,10 @@ export async function getPostBySlug(slug: string) {
       },
     };
   } catch (error) {
-    return { error: "通过slug获取文章失败", message: error };
+    return {
+      error: "通过slug获取文章失败",
+      message: getDataErrorMessage(error),
+    };
   }
 }
 
@@ -325,10 +406,16 @@ export async function getPosts({
   pageNo = 1,
   pageSize = 10,
   language = "all",
+  query = "",
+  status = "all",
+  sort = "id-desc",
 }: {
   pageNo?: number;
   pageSize?: number;
   language?: PostLanguageFilter;
+  query?: string;
+  status?: PostStatusFilter;
+  sort?: PostSort;
 }) {
   try {
     await requireAdminSession();
@@ -349,14 +436,17 @@ export async function getPosts({
         language: posts.language,
       })
       .from(posts)
-      .where(postLanguageCondition(language))
-      .orderBy(desc(posts.createdAt))
+      .where(postListCondition({ language, status, query }))
+      .orderBy(...postListOrderBy(sort))
       .offset(pagination.offset)
       .limit(pagination.pageSize);
 
     return { data: postsData };
   } catch (error) {
-    return { error: "获取文章列表失败", message: error };
+    return {
+      error: "获取文章列表失败",
+      message: getDataErrorMessage(error),
+    };
   }
 }
 
@@ -364,10 +454,14 @@ export async function getDraftPosts({
   pageNo = 1,
   pageSize = 15,
   language = "all",
+  query = "",
+  sort = "id-desc",
 }: {
   pageNo?: number;
   pageSize?: number;
   language?: PostLanguageFilter;
+  query?: string;
+  sort?: PostSort;
 }) {
   try {
     await requireAdminSession();
@@ -388,34 +482,51 @@ export async function getDraftPosts({
         language: posts.language,
       })
       .from(posts)
-      .where(and(eq(posts.published, false), postLanguageCondition(language)))
-      .orderBy(desc(posts.createdAt))
+      .where(postListCondition({ language, status: "draft", query }))
+      .orderBy(...postListOrderBy(sort))
       .offset(pagination.offset)
       .limit(pagination.pageSize);
 
     return { data: postsData };
   } catch (error) {
-    return { error: "获取草稿列表失败", message: error };
+    return {
+      error: "获取草稿列表失败",
+      message: getDataErrorMessage(error),
+    };
   }
 }
 
-export async function getDraftPostCount(language: PostLanguageFilter = "all") {
+export async function getDraftPostCount({
+  language = "all",
+  query = "",
+}: {
+  language?: PostLanguageFilter;
+  query?: string;
+} = {}) {
   await requireAdminSession();
 
   const [result] = await db
     .select({ count: count() })
     .from(posts)
-    .where(and(eq(posts.published, false), postLanguageCondition(language)));
+    .where(postListCondition({ language, status: "draft", query }));
   return { data: result?.count ?? 0 };
 }
 
-export async function getPostCount(language: PostLanguageFilter = "all") {
+export async function getPostCount({
+  language = "all",
+  query = "",
+  status = "all",
+}: {
+  language?: PostLanguageFilter;
+  query?: string;
+  status?: PostStatusFilter;
+} = {}) {
   await requireAdminSession();
 
   const [result] = await db
     .select({ count: count() })
     .from(posts)
-    .where(postLanguageCondition(language));
+    .where(postListCondition({ language, status, query }));
   return { data: result?.count ?? 0 };
 }
 

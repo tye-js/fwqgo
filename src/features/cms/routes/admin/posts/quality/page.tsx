@@ -26,7 +26,29 @@ async function PostQualityWrapper({
   const report = await getPostQualityReport({
     language: searchParams.language,
     issue: searchParams.issue,
+  }).catch((error: unknown) => {
+    console.error("发布质检页加载失败:", error);
+    return null;
   });
+
+  if (!report) {
+    return (
+      <AdminPageShell
+        badge="文章管理"
+        title="发布质检"
+        description="发布前检查 SEO、封面、中英文关系、返利审核和套餐提取结果。"
+      >
+        <AdminSectionCard
+          title="质检数据加载失败"
+          description="无法读取文章质检结果。文章不会被修改，请检查数据库连接、迁移状态或后台日志。"
+        >
+          <p className="text-sm text-destructive">
+            当前无法生成质检报告，请稍后刷新重试。
+          </p>
+        </AdminSectionCard>
+      </AdminPageShell>
+    );
+  }
 
   return (
     <AdminPageShell

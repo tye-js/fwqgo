@@ -85,8 +85,8 @@ export function CustomImageGenerator() {
   }
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,0.65fr)]">
-      <div className="space-y-4 rounded-lg border border-border/70 bg-background p-5 shadow-sm">
+    <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.65fr)]">
+      <div className="min-w-0 space-y-4 rounded-md border border-border/70 bg-background p-4">
         <div className="space-y-2">
           <Label htmlFor="custom-image-prompt">生图要求</Label>
           <Textarea
@@ -133,7 +133,7 @@ export function CustomImageGenerator() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-border/70 bg-background p-5 shadow-sm">
+      <div className="min-w-0 rounded-md border border-border/70 bg-background p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-foreground">生成结果</p>
@@ -171,7 +171,7 @@ export function CustomImageGenerator() {
         <div className="mt-4">
           {generated ? (
             <div className="space-y-3">
-              <div className="relative aspect-video overflow-hidden rounded-lg border border-border/70 bg-muted">
+              <div className="relative aspect-video overflow-hidden rounded-md border border-border/70 bg-muted">
                 <Image
                   src={generated.url}
                   alt={altZh || prompt}
@@ -186,7 +186,7 @@ export function CustomImageGenerator() {
               </div>
             </div>
           ) : (
-            <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed border-border/70 bg-muted/30 text-sm text-muted-foreground">
+            <div className="flex aspect-video items-center justify-center rounded-md border border-dashed border-border/70 bg-muted/30 text-sm text-muted-foreground">
               等待生成图片
             </div>
           )}

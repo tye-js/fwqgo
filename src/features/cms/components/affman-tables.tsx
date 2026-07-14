@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -491,17 +492,37 @@ export default function AffManTable({
           </div>
         }
         actionSlot={
-          <Button
-            variant="destructive"
-            disabled={
-              selectedIds.length === 0 || isBulkDeleting || deletingId !== null
-            }
-            onClick={handleBulkDelete}
-            className="min-h-10 w-full sm:w-auto"
-          >
-            <Trash2 className="size-4" />
-            {isBulkDeleting ? "删除中..." : "批量删除"}
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="destructive"
+                disabled={
+                  selectedIds.length === 0 ||
+                  isBulkDeleting ||
+                  deletingId !== null
+                }
+                className="min-h-11 w-full sm:w-auto"
+              >
+                <Trash2 className="size-4" />
+                {isBulkDeleting ? "删除中..." : "批量删除"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>删除选中的返利商家？</AlertDialogTitle>
+                <AlertDialogDescription>
+                  将永久删除 {selectedIds.length}{" "}
+                  条返利规则，后续文章将无法再命中这些商家。此操作不可撤销。
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>取消</AlertDialogCancel>
+                <AlertDialogAction onClick={handleBulkDelete}>
+                  确认删除
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         }
       />
 
@@ -512,43 +533,63 @@ export default function AffManTable({
         </p>
         {isAdd ? (
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_140px_140px_1fr_auto]">
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="商家名"
-            />
-            <Input
-              value={affUrl}
-              onChange={(e) => setAffUrl(e.target.value)}
-              placeholder="返利链接"
-            />
-            <Input
-              value={affParam}
-              onChange={(e) => setAffParam(e.target.value)}
-              placeholder="返利参数"
-            />
-            <Input
-              value={affValue}
-              onChange={(e) => setAffValue(e.target.value)}
-              placeholder="返利值"
-            />
-            <Input
-              value={officialUrl}
-              onChange={(e) => setOfficialUrl(e.target.value)}
-              placeholder="商家官网"
-            />
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="space-y-1.5">
+              <Label htmlFor="new-aff-provider-name">商家名</Label>
+              <Input
+                id="new-aff-provider-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="例如 RackNerd"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-aff-provider-url">返利链接</Label>
+              <Input
+                id="new-aff-provider-url"
+                value={affUrl}
+                onChange={(e) => setAffUrl(e.target.value)}
+                placeholder="https://..."
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-aff-provider-param">返利参数</Label>
+              <Input
+                id="new-aff-provider-param"
+                value={affParam}
+                onChange={(e) => setAffParam(e.target.value)}
+                placeholder="affid"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-aff-provider-value">返利值</Label>
+              <Input
+                id="new-aff-provider-value"
+                value={affValue}
+                onChange={(e) => setAffValue(e.target.value)}
+                placeholder="123"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-aff-provider-domain">官网域名</Label>
+              <Input
+                id="new-aff-provider-domain"
+                value={officialUrl}
+                onChange={(e) => setOfficialUrl(e.target.value)}
+                placeholder="example.com"
+              />
+            </div>
+            <div className="flex flex-col gap-2 self-end sm:flex-row">
               <Button
                 variant="secondary"
                 onClick={() => setIsAdd(false)}
-                className="min-h-10"
+                className="min-h-11"
               >
                 取消
               </Button>
               <Button
                 disabled={isAddSave}
                 onClick={handleAdd}
-                className="min-h-10"
+                className="min-h-11"
               >
                 {isAddSave ? "添加中..." : "添加"}
               </Button>

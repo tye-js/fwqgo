@@ -18,27 +18,54 @@ function normalizeLanguage(value?: string): "zh" | "en" {
   return value === "en" ? "en" : "zh";
 }
 
+const homepagePromotedSorts = new Set([
+  "sortOrder-asc",
+  "sortOrder-desc",
+  "postId-desc",
+  "title-asc",
+]);
+
+function normalizeSort(value?: string) {
+  return homepagePromotedSorts.has(value ?? "") ? value! : "sortOrder-asc";
+}
+
 function languageHref(language: "zh" | "en") {
   return language === "zh"
     ? "/collect/homepage-promoted"
     : "/collect/homepage-promoted?language=en";
 }
 
+function getActionErrorMessage(result: { error?: string; message?: unknown }) {
+  if (!result.error) return null;
+  if (typeof result.message === "string" && result.message.trim()) {
+    return `${result.error}：${result.message}`;
+  }
+  return result.error;
+}
+
 async function HomepagePromotedPostContent({
   searchParamsPromise,
 }: {
-  searchParamsPromise: Promise<{ language?: string }>;
+  searchParamsPromise: Promise<{
+    language?: string;
+    query?: string;
+    sort?: string;
+  }>;
 }) {
   const searchParams = await searchParamsPromise;
   const language = normalizeLanguage(searchParams.language);
-  const [{ data, error }, { data: postOptions }] = await Promise.all([
+  const query = searchParams.query?.trim().slice(0, 160) ?? "";
+  const sort = normalizeSort(searchParams.sort);
+  const [listResult, optionsResult] = await Promise.all([
     getHomepagePromotedPostList(language),
     getPublishedPostOptions(language),
   ]);
-
-  if (error || !data) {
-    return <div>获取首页推荐文章配置失败</div>;
-  }
+  const data = listResult.data ?? [];
+  const postOptions = optionsResult.data ?? [];
+  const loadErrors = [
+    getActionErrorMessage(listResult),
+    getActionErrorMessage(optionsResult),
+  ].filter((message): message is string => Boolean(message));
 
   return (
     <AdminPageShell
@@ -81,15 +108,31 @@ async function HomepagePromotedPostContent({
           },
         ]}
       />
+      {loadErrors.length > 0 ? (
+        <AdminSectionCard
+          title="首页推荐数据加载不完整"
+          description="页面会保留仍可用的内容；请检查数据库连接、文章语言或后台日志后再操作。"
+        >
+          <div className="space-y-1">
+            {loadErrors.map((message) => (
+              <p key={message} className="break-words text-sm text-destructive">
+                {message}
+              </p>
+            ))}
+          </div>
+        </AdminSectionCard>
+      ) : null}
       <AdminSectionCard
         title="推荐位管理"
         description="通过文章 ID 和排序值控制首页推荐区展示内容。"
       >
         <HomepagePromotedPostTable
-          key={language}
+          key={`${language}:${query}:${sort}`}
           data={data}
           postOptions={postOptions ?? []}
           language={language}
+          initialQuery={query}
+          initialSort={sort}
         />
       </AdminSectionCard>
     </AdminPageShell>
@@ -97,7 +140,11 @@ async function HomepagePromotedPostContent({
 }
 
 export default function HomepagePromotedPostPage(props: {
-  searchParams: Promise<{ language?: string }>;
+  searchParams: Promise<{
+    language?: string;
+    query?: string;
+    sort?: string;
+  }>;
 }) {
   return (
     <Suspense

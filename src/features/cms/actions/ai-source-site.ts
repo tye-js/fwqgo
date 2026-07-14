@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { pullSourceSiteToAiTasks } from "@fwqgo/ai/source-site-puller";
+import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { isPublicHttpUrl } from "@fwqgo/core/network-url";
 import { db } from "@fwqgo/db";
@@ -85,19 +86,15 @@ async function assertCategoryExists(categoryId: number) {
   }
 }
 
-async function assertRewriteStyleExists(rewriteStyleId?: number | null) {
-  if (!rewriteStyleId) {
-    return;
-  }
-
-  const [style] = await db
-    .select({ id: aiRewriteConfigs.id })
-    .from(aiRewriteConfigs)
-    .where(eq(aiRewriteConfigs.id, rewriteStyleId))
-    .limit(1);
+async function assertRewriteStyleAvailable(rewriteStyleId?: number | null) {
+  const style = await getActiveAiRewriteConfig(rewriteStyleId ?? undefined);
 
   if (!style) {
-    throw new Error("AI 改写配置不存在");
+    throw new Error(
+      rewriteStyleId
+        ? "AI 改写配置不存在或已停用"
+        : "当前没有已启用的默认 AI 改写配置",
+    );
   }
 }
 
@@ -140,7 +137,7 @@ export async function createAiSourceSiteAction(formData: FormData) {
     const input = parseSourceSiteFormData(formData);
 
     await assertCategoryExists(input.categoryId);
-    await assertRewriteStyleExists(input.rewriteStyleId);
+    await assertRewriteStyleAvailable(input.rewriteStyleId);
 
     await db.insert(aiSourceSites).values({
       ...input,
@@ -162,7 +159,7 @@ export async function updateAiSourceSiteAction(id: number, formData: FormData) {
     const input = parseSourceSiteFormData(formData);
 
     await assertCategoryExists(input.categoryId);
-    await assertRewriteStyleExists(input.rewriteStyleId);
+    await assertRewriteStyleAvailable(input.rewriteStyleId);
 
     const [updated] = await db
       .update(aiSourceSites)
@@ -229,6 +226,9 @@ export async function runAiSourceSiteAction(id: number) {
     if (!site.enabled) {
       return { error: "来源站已停用" };
     }
+
+    await assertCategoryExists(site.categoryId);
+    await assertRewriteStyleAvailable(site.rewriteStyleId);
 
     await db
       .update(aiSourceSites)

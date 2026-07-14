@@ -102,11 +102,7 @@ function formatCheckTime(value: string) {
   });
 }
 
-function CheckResultPanel({
-  result,
-}: {
-  result: AiRewriteStatusCheckResult;
-}) {
+function CheckResultPanel({ result }: { result: AiRewriteStatusCheckResult }) {
   return (
     <div className="rounded-md border border-border/70 bg-background p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
@@ -214,7 +210,7 @@ function ConfigForm({
   return (
     <form
       action={handleSubmit}
-      className="grid gap-4 rounded-lg border border-border/70 bg-muted/20 p-4"
+      className="grid gap-4 rounded-md border border-border/70 bg-muted/20 p-4"
     >
       <div className="grid gap-4 md:grid-cols-3">
         <div className="space-y-2">
@@ -506,7 +502,7 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
         />
       ) : null}
 
-      <div className="overflow-x-auto rounded-lg border border-border/70 bg-background">
+      <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
         <Table className="min-w-[980px]">
           <TableHeader>
             <TableRow>
@@ -628,6 +624,16 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
                 </Fragment>
               );
             })}
+            {configs.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={8}
+                  className="h-28 text-center text-sm text-muted-foreground"
+                >
+                  暂无 AI 改写配置。请先添加并启用一套配置，再创建内容生产任务。
+                </TableCell>
+              </TableRow>
+            ) : null}
           </TableBody>
         </Table>
       </div>

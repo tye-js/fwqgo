@@ -9,10 +9,14 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import { ServerOfferAdminTable } from "@/features/cms/components/server-offer-admin-table";
 import {
+  getAdminServerOfferQualitySummary,
   getAdminServerOffers,
   getServerOfferTopicCounts,
 } from "@/server/offers/server-offers";
 import { parsePositiveInt } from "@fwqgo/core/utils";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { FileSearch } from "lucide-react";
 
 type ServerOfferManageSearchParams = {
   pageNo?: string;
@@ -32,19 +36,42 @@ function getErrorMessage(error: unknown) {
   return "未知错误";
 }
 
-async function loadServerOfferManageData() {
+async function loadServerOfferManageData(
+  filters: ServerOfferManageSearchParams,
+) {
   try {
-    const [counts, offers] = await Promise.all([
+    const [counts, offerPage, quality] = await Promise.all([
       getServerOfferTopicCounts(),
-      getAdminServerOffers(300),
+      getAdminServerOffers({
+        page: parsePageNo(filters.pageNo),
+        pageSize: 20,
+        query: filters.query,
+        status: filters.status,
+        reviewStatus: filters.reviewStatus,
+        visibility: filters.visibility,
+      }),
+      getAdminServerOfferQualitySummary(),
     ]);
 
-    return { counts, offers, error: null };
+    return { counts, offerPage, quality, error: null };
   } catch (error) {
     console.error("套餐管理页加载套餐数据失败:", error);
     return {
       counts: [] as Awaited<ReturnType<typeof getServerOfferTopicCounts>>,
-      offers: [] as Awaited<ReturnType<typeof getAdminServerOffers>>,
+      offerPage: {
+        rows: [] as Awaited<ReturnType<typeof getAdminServerOffers>>["rows"],
+        total: 0,
+        page: 1,
+        pageSize: 20,
+      },
+      quality: {
+        pending: 0,
+        needsFix: 0,
+        missingSpecs: 0,
+        missingPurchaseUrl: 0,
+        missingPrice: 0,
+        missingRegion: 0,
+      },
       error: getErrorMessage(error),
     };
   }
@@ -58,52 +85,42 @@ async function ServerOfferManageContent({
   await connection();
 
   const searchParams = await searchParamsPromise;
-  const { counts, offers, error: loadError } =
-    await loadServerOfferManageData();
+  const {
+    counts,
+    offerPage,
+    quality,
+    error: loadError,
+  } = await loadServerOfferManageData(searchParams);
   const total = counts.reduce((sum, item) => sum + item.count, 0);
-  const hasMissingPrice = (priceAmount: unknown) =>
-    priceAmount === null || priceAmount === undefined || priceAmount === "";
-  const hasMissingSpecs = (
-    offer: Awaited<ReturnType<typeof getAdminServerOffers>>[number],
-  ) =>
-    [
-      offer.cpu,
-      offer.memory,
-      offer.storage,
-      offer.bandwidth,
-      offer.traffic,
-    ].filter((value) => Boolean(value?.trim())).length < 2;
   const qualityIssues = [
     {
       label: "待审核",
-      value: offers.filter((offer) => offer.reviewStatus === "pending").length,
+      value: quality.pending,
       note: "需要人工确认字段",
     },
     {
       label: "需修正",
-      value: offers.filter((offer) => offer.reviewStatus === "needs_fix")
-        .length,
+      value: quality.needsFix,
       note: "提取结果可能不完整",
     },
     {
       label: "缺配置",
-      value: offers.filter(hasMissingSpecs).length,
+      value: quality.missingSpecs,
       note: "至少应有两项 CPU/内存/硬盘/带宽/流量",
     },
     {
       label: "缺购买链接",
-      value: offers.filter((offer) => !offer.purchaseUrl?.trim()).length,
+      value: quality.missingPurchaseUrl,
       note: "不能形成可购买入口",
     },
     {
       label: "缺价格",
-      value: offers.filter((offer) => hasMissingPrice(offer.priceAmount))
-        .length,
+      value: quality.missingPrice,
       note: "影响前台比价排序",
     },
     {
       label: "缺地区",
-      value: offers.filter((offer) => !offer.region).length,
+      value: quality.missingRegion,
       note: "影响地区专题归类",
     },
   ];
@@ -113,6 +130,14 @@ async function ServerOfferManageContent({
       badge="服务器套餐"
       title="人工修正数据"
       description="编辑自动提取出的 CPU、内存、硬盘、带宽、流量、价格、来源文章、购买链接和后续测评文章。隐藏的套餐不会出现在前台。"
+      actions={
+        <Button asChild variant="outline" size="sm">
+          <Link href="/posts/edit">
+            <FileSearch className="size-4" />
+            从文章提取
+          </Link>
+        </Button>
+      }
     >
       <AdminSummaryStrip
         items={[
@@ -150,16 +175,13 @@ async function ServerOfferManageContent({
           title="数据质量检查"
           description="快速查看结构化套餐里最影响前台展示、比价和购买转化的问题。"
         >
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <div className="grid gap-px overflow-hidden rounded-md border border-border/70 bg-border/70 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
             {qualityIssues.map((item) => (
-              <div
-                key={item.label}
-                className="rounded-lg border border-border/70 bg-muted/20 p-4"
-              >
+              <div key={item.label} className="bg-background px-3 py-3">
                 <p className="text-xs font-medium text-muted-foreground">
                   {item.label}
                 </p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">
+                <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">
                   {item.value}
                 </p>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -175,9 +197,11 @@ async function ServerOfferManageContent({
         description="对提取后的结构化套餐做人工审核、补字段、改状态和控制前台展示。"
       >
         <ServerOfferAdminTable
-          offers={offers}
+          key={`${offerPage.page}:${searchParams.query ?? ""}:${searchParams.status ?? "all"}:${searchParams.reviewStatus ?? "all"}:${searchParams.visibility ?? "all"}`}
+          offers={offerPage.rows}
+          totalCount={offerPage.total}
           initialFilters={{
-            pageNo: parsePageNo(searchParams.pageNo),
+            pageNo: offerPage.page,
             query: searchParams.query?.trim() ?? "",
             status: searchParams.status ?? "all",
             reviewStatus: searchParams.reviewStatus ?? "all",

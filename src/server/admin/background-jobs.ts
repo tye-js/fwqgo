@@ -511,6 +511,45 @@ async function runAdminBackgroundJobWorker() {
   await Promise.all(
     Array.from({ length: laneCount }, () => runBackgroundJobLane()),
   );
+  await scheduleBlockedBackgroundJobRecovery();
+}
+
+async function scheduleBlockedBackgroundJobRecovery() {
+  const [blockedJob] = await db
+    .select({
+      heartbeatAt: adminBackgroundJobs.heartbeatAt,
+      lockedAt: adminBackgroundJobs.lockedAt,
+    })
+    .from(adminBackgroundJobs)
+    .where(
+      and(
+        eq(adminBackgroundJobs.status, "running"),
+        sql`exists (
+          select 1 from "admin_background_jobs" as queued_jobs
+          where queued_jobs."jobKey" = ${adminBackgroundJobs.jobKey}
+            and queued_jobs."status" = 'queued'
+        )`,
+      ),
+    )
+    .orderBy(
+      asc(
+        sql`coalesce(${adminBackgroundJobs.heartbeatAt}, ${adminBackgroundJobs.lockedAt})`,
+      ),
+    )
+    .limit(1);
+
+  if (!blockedJob) return;
+
+  const lastActivity = blockedJob.heartbeatAt ?? blockedJob.lockedAt;
+  const recoveryAt = new Date(
+    Math.max(
+      Date.now() + IDLE_LANE_RECHECK_MS,
+      (lastActivity?.getTime() ?? Date.now()) +
+        HEARTBEAT_TIMEOUT_MS +
+        IDLE_LANE_RECHECK_MS,
+    ),
+  );
+  scheduleAdminBackgroundJobWorker(recoveryAt);
 }
 
 async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {

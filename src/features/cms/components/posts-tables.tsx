@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -45,6 +45,7 @@ import {
   AdminTableEmpty,
   AdminTableWorkbench,
 } from "@/features/cms/components/admin-table-workbench";
+import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
 import { ImageLibraryPicker } from "@/features/cms/components/image-library-picker";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -132,17 +133,24 @@ function languageLabel(value: string) {
 export function PostList({
   posts,
   editBasePath,
+  initialQuery = "",
   defaultStatusFilter = "all",
+  initialSort = "id-desc",
+  lockStatusFilter = false,
 }: {
   posts: PostListProp[];
   editBasePath?: string;
+  initialQuery?: string;
   defaultStatusFilter?: PostStatusFilter;
+  initialSort?: string;
+  lockStatusFilter?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState(defaultStatusFilter);
-  const [sortValue, setSortValue] = useState("id-desc");
+  const updateUrlQuery = useUrlQueryUpdater();
+  const [query, setQuery] = useState(initialQuery);
+  const statusFilter = defaultStatusFilter;
+  const sortValue = initialSort;
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editPostId, setEditPostId] = useState<number | null>(null);
   const [editPostData, setEditPostData] = useState<PostListProp | null>(null);
@@ -157,51 +165,23 @@ export function PostList({
   );
   const finalizedCoverBatchIdsRef = useRef(new Set<string>());
 
-  const filteredPosts = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    return posts.filter((post) => {
-      const matchesQuery =
-        normalizedQuery.length === 0 ||
-        post.title.toLowerCase().includes(normalizedQuery) ||
-        post.slug.toLowerCase().includes(normalizedQuery);
-
-      const matchesStatus =
-        statusFilter === "all" ||
-        (statusFilter === "published" && post.published) ||
-        (statusFilter === "draft" && !post.published);
-
-      return matchesQuery && matchesStatus;
-    });
-  }, [posts, query, statusFilter]);
-
-  const sortedPosts = useMemo(() => {
-    const [sortKey, sortDirection] = sortValue.split("-");
-    const direction = sortDirection === "asc" ? 1 : -1;
-    const result = [...filteredPosts];
-
-    result.sort((left, right) => {
-      if (sortKey === "title") {
-        return left.title.localeCompare(right.title) * direction;
-      }
-
-      if (sortKey === "slug") {
-        return left.slug.localeCompare(right.slug) * direction;
-      }
-
-      if (sortKey === "published") {
-        return (Number(left.published) - Number(right.published)) * direction;
-      }
-
-      return (left.id - right.id) * direction;
-    });
-
-    return result;
-  }, [filteredPosts, sortValue]);
+  const sortedPosts = posts;
 
   const allFilteredSelected =
     sortedPosts.length > 0 &&
     sortedPosts.every((post) => selectedIds.includes(post.id));
+
+  useEffect(() => {
+    const normalizedInitialQuery = initialQuery.trim();
+    const normalizedQuery = query.trim();
+    if (normalizedQuery === normalizedInitialQuery) return;
+
+    const timeoutId = window.setTimeout(() => {
+      updateUrlQuery({ query: normalizedQuery || null });
+    }, 400);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [initialQuery, query, updateUrlQuery]);
 
   useEffect(() => {
     if (!activeImportTask || activeImportTask.done) return;
@@ -712,22 +692,35 @@ export function PostList({
         selectionCount={selectedIds.length}
         filterSlot={
           <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
+            {!lockStatusFilter ? (
+              <Select
+                value={statusFilter}
+                onValueChange={(value) =>
+                  updateUrlQuery({
+                    query: query.trim() || null,
+                    status: value === "all" ? null : value,
+                  })
+                }
+              >
+                <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[132px] sm:border-0 sm:bg-transparent sm:px-0">
+                  <SelectValue placeholder="全部状态" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部状态</SelectItem>
+                  <SelectItem value="published">已发布</SelectItem>
+                  <SelectItem value="draft">草稿</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : null}
             <Select
-              value={statusFilter}
+              value={sortValue}
               onValueChange={(value) =>
-                setStatusFilter(value as PostStatusFilter)
+                updateUrlQuery({
+                  query: query.trim() || null,
+                  sort: value === "id-desc" ? null : value,
+                })
               }
             >
-              <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[132px] sm:border-0 sm:bg-transparent sm:px-0">
-                <SelectValue placeholder="全部状态" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="published">已发布</SelectItem>
-                <SelectItem value="draft">草稿</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={sortValue} onValueChange={setSortValue}>
               <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[152px] sm:border-0 sm:bg-transparent sm:px-0">
                 <SelectValue placeholder="排序方式" />
               </SelectTrigger>
@@ -797,15 +790,33 @@ export function PostList({
               <FileSearch className="size-4" />
               {bulkAction === "offers" ? "排队中..." : "提取套餐"}
             </Button>
-            <Button
-              variant="destructive"
-              disabled={bulkDisabled}
-              onClick={handleBulkDelete}
-              className="min-h-11 w-full sm:w-auto"
-            >
-              <Trash2 className="size-4" />
-              {bulkAction === "delete" ? "删除中..." : "批量删除"}
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="destructive"
+                  disabled={bulkDisabled}
+                  className="min-h-11 w-full sm:w-auto"
+                >
+                  <Trash2 className="size-4" />
+                  {bulkAction === "delete" ? "删除中..." : "批量删除"}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>删除选中的文章？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    将永久删除 {selectedIds.length}{" "}
+                    篇文章及其关联关系，此操作不可撤销。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>取消</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleBulkDelete}>
+                    确认删除
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         }
       />

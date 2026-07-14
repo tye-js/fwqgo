@@ -15,6 +15,7 @@ import {
 import { slugify } from "@fwqgo/core/utils";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
 import { cacheTags, revalidateSiteContent, tagCache } from "@fwqgo/cache/tags";
+import { requireAdminSession } from "@fwqgo/auth/session";
 import { db, readDb } from "@fwqgo/db";
 import { affServiceProviders, posts, serverOffers } from "@fwqgo/db/schema";
 import { ilikeContains } from "@/server/db/search";
@@ -1258,8 +1259,105 @@ export async function getServerOffersByKeywords(input: {
   }
 }
 
-export async function getAdminServerOffers(limit = 80) {
-  return readDb
+export type AdminServerOfferFilters = {
+  page?: number;
+  pageSize?: number;
+  query?: string;
+  status?: string;
+  reviewStatus?: string;
+  visibility?: string;
+};
+
+function normalizeAdminServerOfferFilters(input: AdminServerOfferFilters = {}) {
+  const page =
+    Number.isInteger(input.page) && (input.page ?? 0) > 0 ? input.page! : 1;
+  const pageSize =
+    Number.isInteger(input.pageSize) && (input.pageSize ?? 0) > 0
+      ? Math.min(input.pageSize!, 100)
+      : 20;
+  const status = offerStatuses.includes(input.status as OfferStatus)
+    ? (input.status as OfferStatus)
+    : "all";
+  const reviewStatus = offerReviewStatuses.includes(
+    input.reviewStatus as OfferReviewStatus,
+  )
+    ? (input.reviewStatus as OfferReviewStatus)
+    : "all";
+  const visibility = ["visible", "hidden", "featured"].includes(
+    input.visibility ?? "",
+  )
+    ? input.visibility!
+    : "all";
+
+  return {
+    page,
+    pageSize,
+    query: input.query?.trim().slice(0, 160) ?? "",
+    status,
+    reviewStatus,
+    visibility,
+  };
+}
+
+function getAdminServerOfferWhere(
+  filters: ReturnType<typeof normalizeAdminServerOfferFilters>,
+) {
+  const queryCondition = filters.query
+    ? or(
+        ilikeContains(serverOffers.title, filters.query),
+        ilikeContains(serverOffers.providerName, filters.query),
+        ilikeContains(serverOffers.region, filters.query),
+        ilikeContains(serverOffers.lineType, filters.query),
+        ilikeContains(serverOffers.cpu, filters.query),
+        ilikeContains(serverOffers.memory, filters.query),
+        ilikeContains(serverOffers.storage, filters.query),
+        ilikeContains(serverOffers.bandwidth, filters.query),
+        ilikeContains(serverOffers.traffic, filters.query),
+        ilikeContains(serverOffers.promoCode, filters.query),
+        ilikeContains(posts.title, filters.query),
+      )
+    : undefined;
+  const statusCondition =
+    filters.status === "all"
+      ? undefined
+      : eq(serverOffers.status, filters.status);
+  const reviewStatusCondition =
+    filters.reviewStatus === "all"
+      ? undefined
+      : eq(serverOffers.reviewStatus, filters.reviewStatus);
+  const visibilityCondition =
+    filters.visibility === "visible"
+      ? eq(serverOffers.visible, true)
+      : filters.visibility === "hidden"
+        ? eq(serverOffers.visible, false)
+        : filters.visibility === "featured"
+          ? eq(serverOffers.featured, true)
+          : undefined;
+
+  return and(
+    queryCondition,
+    statusCondition,
+    reviewStatusCondition,
+    visibilityCondition,
+  );
+}
+
+export async function getAdminServerOffers(
+  input: AdminServerOfferFilters = {},
+) {
+  await requireAdminSession();
+
+  const filters = normalizeAdminServerOfferFilters(input);
+  const whereCondition = getAdminServerOfferWhere(filters);
+  const [countRow] = await readDb
+    .select({ count: sql<number>`count(*)::int` })
+    .from(serverOffers)
+    .leftJoin(posts, eq(serverOffers.sourcePostId, posts.id))
+    .where(whereCondition);
+  const total = Number(countRow?.count ?? 0);
+  const totalPage = Math.max(1, Math.ceil(total / filters.pageSize));
+  const page = Math.min(filters.page, totalPage);
+  const rows = await readDb
     .select({
       id: serverOffers.id,
       title: serverOffers.title,
@@ -1295,8 +1393,42 @@ export async function getAdminServerOffers(limit = 80) {
     })
     .from(serverOffers)
     .leftJoin(posts, eq(serverOffers.sourcePostId, posts.id))
+    .where(whereCondition)
     .orderBy(desc(serverOffers.createdAt))
-    .limit(limit);
+    .offset((page - 1) * filters.pageSize)
+    .limit(filters.pageSize);
+
+  return { rows, total, page, pageSize: filters.pageSize };
+}
+
+export async function getAdminServerOfferQualitySummary() {
+  await requireAdminSession();
+
+  const [row] = await readDb
+    .select({
+      pending: sql<number>`count(*) filter (where ${serverOffers.reviewStatus} = 'pending')::int`,
+      needsFix: sql<number>`count(*) filter (where ${serverOffers.reviewStatus} = 'needs_fix')::int`,
+      missingSpecs: sql<number>`count(*) filter (where
+        ((case when btrim(coalesce(${serverOffers.cpu}, '')) <> '' then 1 else 0 end) +
+         (case when btrim(coalesce(${serverOffers.memory}, '')) <> '' then 1 else 0 end) +
+         (case when btrim(coalesce(${serverOffers.storage}, '')) <> '' then 1 else 0 end) +
+         (case when btrim(coalesce(${serverOffers.bandwidth}, '')) <> '' then 1 else 0 end) +
+         (case when btrim(coalesce(${serverOffers.traffic}, '')) <> '' then 1 else 0 end)) < 2
+      )::int`,
+      missingPurchaseUrl: sql<number>`count(*) filter (where btrim(coalesce(${serverOffers.purchaseUrl}, '')) = '')::int`,
+      missingPrice: sql<number>`count(*) filter (where ${serverOffers.priceAmount} is null)::int`,
+      missingRegion: sql<number>`count(*) filter (where btrim(coalesce(${serverOffers.region}, '')) = '')::int`,
+    })
+    .from(serverOffers);
+
+  return {
+    pending: Number(row?.pending ?? 0),
+    needsFix: Number(row?.needsFix ?? 0),
+    missingSpecs: Number(row?.missingSpecs ?? 0),
+    missingPurchaseUrl: Number(row?.missingPurchaseUrl ?? 0),
+    missingPrice: Number(row?.missingPrice ?? 0),
+    missingRegion: Number(row?.missingRegion ?? 0),
+  };
 }
 
 export type ServerOfferUpdateInput = {

@@ -195,10 +195,8 @@ function seoSourceUrl(postId: number) {
 
 function normalizePostIds(postIds: number[], limit = 50) {
   return [
-    ...new Set(
-      postIds.filter((id) => Number.isInteger(id) && id > 0).slice(0, limit),
-    ),
-  ];
+    ...new Set(postIds.filter((id) => Number.isInteger(id) && id > 0)),
+  ].slice(0, limit);
 }
 
 async function validateCategoryAndStyle(input: {

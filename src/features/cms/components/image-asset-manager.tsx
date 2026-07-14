@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   Copy,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
   FileSearch,
   RefreshCw,
@@ -62,7 +64,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
-import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
 
 type ImageReference = {
   id: number;
@@ -105,6 +106,23 @@ type ImageMetadataDraft = {
   altEn: string;
 };
 
+const IMAGE_PAGE_SIZE = 24;
+
+function replaceImageAssetUrlQuery(
+  updates: Record<string, string | null | undefined>,
+) {
+  const url = new URL(window.location.href);
+  for (const [key, value] of Object.entries(updates)) {
+    const normalizedValue = value?.trim();
+    if (normalizedValue) {
+      url.searchParams.set(key, normalizedValue);
+    } else {
+      url.searchParams.delete(key);
+    }
+  }
+  window.history.replaceState(window.history.state, "", url);
+}
+
 export function ImageAssetManager({
   images,
   initialQuery = "",
@@ -119,11 +137,11 @@ export function ImageAssetManager({
   initialStatusFilter?: string;
 }) {
   const router = useRouter();
-  const updateUrlQuery = useUrlQueryUpdater();
   const [query, setQuery] = useState(initialQuery);
   const [usageFilter, setUsageFilter] = useState(initialUsageFilter);
   const [typeFilter, setTypeFilter] = useState(initialTypeFilter);
   const [statusFilter, setStatusFilter] = useState(initialStatusFilter);
+  const [page, setPage] = useState(1);
   const [isPending, startTransition] = useTransition();
   const [replacementPathById, setReplacementPathById] = useState<
     Record<number, string>
@@ -136,11 +154,11 @@ export function ImageAssetManager({
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      updateUrlQuery({ query: query || null }, { resetPage: false });
+      replaceImageAssetUrlQuery({ query: query || null });
     }, 400);
 
     return () => window.clearTimeout(timeoutId);
-  }, [query, updateUrlQuery]);
+  }, [query]);
 
   const filteredImages = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -219,6 +237,15 @@ export function ImageAssetManager({
     }
     return counts;
   }, [images]);
+  const totalPage = Math.max(
+    1,
+    Math.ceil(filteredImages.length / IMAGE_PAGE_SIZE),
+  );
+  const currentPage = Math.min(page, totalPage);
+  const visibleImages = filteredImages.slice(
+    (currentPage - 1) * IMAGE_PAGE_SIZE,
+    currentPage * IMAGE_PAGE_SIZE,
+  );
 
   function runAction(action: () => Promise<void>) {
     startTransition(async () => {
@@ -447,7 +474,10 @@ export function ImageAssetManager({
         title="图片资产库"
         description="支持搜索文件名、URL、alt 和 prompt，按引用、类型、状态筛选，并对未使用图片做清理。"
         searchValue={query}
-        onSearchChange={setQuery}
+        onSearchChange={(value) => {
+          setQuery(value);
+          setPage(1);
+        }}
         searchPlaceholder="搜索文件名、URL、alt 或 prompt"
         filterSlot={
           <div className="grid w-full gap-2 sm:grid-cols-3">
@@ -455,10 +485,10 @@ export function ImageAssetManager({
               value={usageFilter}
               onValueChange={(value) => {
                 setUsageFilter(value);
-                updateUrlQuery(
-                  { filter: value === "all" ? null : value },
-                  { resetPage: false },
-                );
+                setPage(1);
+                replaceImageAssetUrlQuery({
+                  filter: value === "all" ? null : value,
+                });
               }}
             >
               <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:px-0">
@@ -477,10 +507,10 @@ export function ImageAssetManager({
               value={typeFilter}
               onValueChange={(value) => {
                 setTypeFilter(value);
-                updateUrlQuery(
-                  { type: value === "all" ? null : value },
-                  { resetPage: false },
-                );
+                setPage(1);
+                replaceImageAssetUrlQuery({
+                  type: value === "all" ? null : value,
+                });
               }}
             >
               <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:px-0">
@@ -499,10 +529,10 @@ export function ImageAssetManager({
               value={statusFilter}
               onValueChange={(value) => {
                 setStatusFilter(value);
-                updateUrlQuery(
-                  { status: value === "all" ? null : value },
-                  { resetPage: false },
-                );
+                setPage(1);
+                replaceImageAssetUrlQuery({
+                  status: value === "all" ? null : value,
+                });
               }}
             >
               <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:border-0 sm:bg-transparent sm:px-0">
@@ -576,7 +606,9 @@ export function ImageAssetManager({
       />
 
       <div className="flex flex-wrap gap-2">
-        <Badge variant="outline">当前显示 {filteredImages.length} 张</Badge>
+        <Badge variant="outline">
+          匹配 {filteredImages.length} 张 · 第 {currentPage}/{totalPage} 页
+        </Badge>
         <Badge
           variant={qualitySummary.totalIssues > 0 ? "secondary" : "outline"}
         >
@@ -597,7 +629,7 @@ export function ImageAssetManager({
       ) : (
         <>
           <div className="grid gap-3 md:hidden">
-            {filteredImages.map((image) => {
+            {visibleImages.map((image) => {
               const isUsed = image.references.length > 0;
               const qualityIssues = getImageQualityIssues(
                 image,
@@ -848,7 +880,7 @@ export function ImageAssetManager({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredImages.map((image) => {
+                {visibleImages.map((image) => {
                   const isUsed = image.references.length > 0;
                   const qualityIssues = getImageQualityIssues(
                     image,
@@ -1163,6 +1195,7 @@ export function ImageAssetManager({
                             variant="outline"
                             size="icon"
                             title="替换文件"
+                            aria-label={`替换图片文件：${image.originalName}`}
                             disabled={isPending}
                             onClick={() =>
                               fileInputRefs.current[image.id]?.click()
@@ -1178,6 +1211,7 @@ export function ImageAssetManager({
                                 size="icon"
                                 disabled={isPending || isUsed}
                                 title={isUsed ? "被引用时不能删除" : "删除图片"}
+                                aria-label={`删除图片：${image.originalName}`}
                               >
                                 <Trash2 className="size-4" />
                               </Button>
@@ -1211,6 +1245,41 @@ export function ImageAssetManager({
               </TableBody>
             </Table>
           </div>
+          {totalPage > 1 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-3">
+              <p className="text-xs tabular-nums text-muted-foreground">
+                当前显示 {(currentPage - 1) * IMAGE_PAGE_SIZE + 1}-
+                {Math.min(currentPage * IMAGE_PAGE_SIZE, filteredImages.length)}
+                ，共 {filteredImages.length} 张
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11"
+                  disabled={currentPage <= 1}
+                  onClick={() => setPage((value) => Math.max(1, value - 1))}
+                >
+                  <ChevronLeft className="size-4" />
+                  上一页
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11"
+                  disabled={currentPage >= totalPage}
+                  onClick={() =>
+                    setPage((value) => Math.min(totalPage, value + 1))
+                  }
+                >
+                  下一页
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </>
       )}
     </div>
