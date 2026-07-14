@@ -1,10 +1,14 @@
 import { db } from "@fwqgo/db";
 import { compare } from "bcryptjs";
-import { cookies } from "next/headers";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { users, sessions } from "@fwqgo/db/schema";
 import { eq } from "drizzle-orm";
+import {
+  clearLegacyCmsSessionCookies,
+  getCmsSessionCookieName,
+  getCmsSessionCookieOptions,
+} from "@fwqgo/auth/session-cookie";
 
 import { adminApiFailure, adminApiSuccess } from "@/lib/admin-api-response";
 
@@ -45,10 +49,7 @@ function getClientIp(request: Request) {
     .at(-1);
 
   return (
-    realIp?.trim() ??
-    connectingIp?.trim() ??
-    proxyForwardedIp ??
-    "unknown"
+    realIp?.trim() ?? connectingIp?.trim() ?? proxyForwardedIp ?? "unknown"
   );
 }
 
@@ -166,15 +167,19 @@ export async function POST(request: Request) {
       });
     }
 
-    (await cookies()).set("session_id", session.id, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      expires: session.expires,
-    });
+    const response = adminApiSuccess({ authenticated: true });
+    response.cookies.set(
+      getCmsSessionCookieName(),
+      session.id,
+      getCmsSessionCookieOptions(session.expires),
+    );
+    clearLegacyCmsSessionCookies(response);
+    response.headers.set(
+      "Cache-Control",
+      "private, no-store, max-age=0, must-revalidate",
+    );
 
-    return adminApiSuccess({ authenticated: true });
+    return response;
   } catch {
     return adminApiFailure("登录失败", {
       status: 500,

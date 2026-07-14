@@ -1,15 +1,40 @@
 "use client";
 
 import { LoginForm } from "@/features/cms/components/login-form";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 export default function Page() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
-  const router = useRouter();
+
+  useEffect(() => {
+    let disposed = false;
+
+    const restoreValidSession = async () => {
+      try {
+        const response = await fetch("/api/auth/verify-session", {
+          method: "POST",
+          cache: "no-store",
+          credentials: "same-origin",
+        });
+        if (!response.ok || disposed) return;
+
+        const result = (await response.json()) as { valid?: boolean };
+        if (result.valid && !disposed) {
+          window.location.replace("/");
+        }
+      } catch {
+        // Keep the login form available while the server is recovering.
+      }
+    };
+
+    void restoreValidSession();
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   const handleLogin = async () => {
     setIsPending(true);
@@ -18,13 +43,14 @@ export default function Page() {
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
+        cache: "no-store",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       });
 
       if (res.ok) {
-        router.push("/");
-        router.refresh();
+        window.location.replace("/");
         return;
       }
 

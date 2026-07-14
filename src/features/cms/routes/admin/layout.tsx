@@ -14,6 +14,7 @@ import {
 import AppBreadcrumb from "@/components/endpoint/app-breadcrumb";
 import { validateSession } from "@/features/cms/actions/validate-session";
 import { AdminLoading } from "@/features/cms/components/admin-loading";
+import { CmsReleaseGuard } from "@/features/cms/components/cms-release-guard";
 
 export const metadata: Metadata = {
   title: "后台系统",
@@ -24,15 +25,17 @@ export const metadata: Metadata = {
 async function SessionGuard() {
   const headersList = await headers();
   const sessionId = headersList.get("x-session-id");
-  // 验证 session
   if (!sessionId) redirect("/login");
+
+  let isValid = false;
   try {
-    const isValid = await validateSession(sessionId);
-    if (!isValid) redirect("/login");
+    isValid = await validateSession(sessionId);
   } catch (error) {
-    console.error(error);
-    redirect("/login");
+    console.error("Session validation failed:", error);
+    redirect("/login?reason=session_check_failed");
   }
+
+  if (!isValid) redirect("/api/auth/session-expired");
   return null;
 }
 
@@ -46,6 +49,7 @@ export default function CreateLayout({
       <Suspense fallback={null}>
         <SessionGuard />
       </Suspense>
+      <CmsReleaseGuard releaseId={process.env.RELEASE_ID ?? "local"} />
       <Toaster
         position="top-right"
         expand

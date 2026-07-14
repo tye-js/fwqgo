@@ -1,11 +1,7 @@
 "use client";
 
-import {
-  BadgeCheck,
-  Bell,
-  ChevronsUpDown,
-  LogOut,
-} from "lucide-react";
+import { useState } from "react";
+import { BadgeCheck, Bell, ChevronsUpDown, LogOut } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -34,6 +30,23 @@ export function NavUser({
   };
 }) {
   const { isMobile } = useSidebar();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      window.location.replace("/login");
+    } catch {
+      window.location.replace("/api/auth/session-expired");
+    }
+  };
 
   return (
     <SidebarMenu>
@@ -83,9 +96,15 @@ export function NavUser({
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={isLoggingOut}
+              onSelect={(event) => {
+                event.preventDefault();
+                void handleLogout();
+              }}
+            >
               <LogOut />
-              退出登录
+              {isLoggingOut ? "正在退出..." : "退出登录"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
