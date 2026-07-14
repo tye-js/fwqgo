@@ -1,4 +1,4 @@
-import { desc } from "drizzle-orm";
+import { count, desc, or } from "drizzle-orm";
 
 import {
   AdminPageShell,
@@ -6,24 +6,79 @@ import {
   AdminSummaryStrip,
 } from "@/features/cms/components/admin-page-shell";
 import { ShortLinkTable } from "@/features/cms/components/short-link-table";
+import { PaginationComponent } from "@/features/shared/components/pagination";
+import { ilikeContains } from "@/server/db/search";
 import { db } from "@fwqgo/db";
 import { outboundLinks } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
+import { parsePositiveInt } from "@fwqgo/core/utils";
 
-export default async function ShortLinksPage() {
+const PAGE_SIZE = 20;
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "未知错误";
+}
+
+async function loadShortLinks({
+  pageNo,
+  query,
+}: {
+  pageNo: number;
+  query: string;
+}) {
+  const searchCondition = query
+    ? or(
+        ilikeContains(outboundLinks.slug, query),
+        ilikeContains(outboundLinks.targetUrl, query),
+      )
+    : undefined;
+
+  try {
+    const [links, countRows] = await Promise.all([
+      db
+        .select({
+          id: outboundLinks.id,
+          slug: outboundLinks.slug,
+          targetUrl: outboundLinks.targetUrl,
+          createdAt: outboundLinks.createdAt,
+          updatedAt: outboundLinks.updatedAt,
+        })
+        .from(outboundLinks)
+        .where(searchCondition)
+        .orderBy(desc(outboundLinks.createdAt))
+        .offset((pageNo - 1) * PAGE_SIZE)
+        .limit(PAGE_SIZE),
+      db.select({ value: count() }).from(outboundLinks).where(searchCondition),
+    ]);
+
+    return { links, totalCount: countRows[0]?.value ?? 0, error: null };
+  } catch (error) {
+    console.error("短链管理页加载失败:", error);
+    return { links: [], totalCount: 0, error: getErrorMessage(error) };
+  }
+}
+
+export default async function ShortLinksPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ pageNo?: string; query?: string }>;
+}) {
   await requireAdminSession();
 
-  const links = await db
-    .select({
-      id: outboundLinks.id,
-      slug: outboundLinks.slug,
-      targetUrl: outboundLinks.targetUrl,
-      createdAt: outboundLinks.createdAt,
-      updatedAt: outboundLinks.updatedAt,
-    })
-    .from(outboundLinks)
-    .orderBy(desc(outboundLinks.createdAt))
-    .limit(300);
+  const params = await searchParams;
+  const pageNo = parsePositiveInt(params.pageNo) ?? 1;
+  const query = params.query?.trim().slice(0, 200) ?? "";
+  const {
+    links,
+    totalCount,
+    error: loadError,
+  } = await loadShortLinks({
+    pageNo,
+    query,
+  });
+  const totalPage = Math.ceil(totalCount / PAGE_SIZE);
 
   return (
     <AdminPageShell
@@ -34,9 +89,9 @@ export default async function ShortLinksPage() {
       <AdminSummaryStrip
         items={[
           {
-            label: "短链数量",
-            value: String(links.length),
-            note: "当前最多展示最近 300 条",
+            label: query ? "匹配短链" : "短链总数",
+            value: String(totalCount),
+            note: query ? `搜索：${query}` : "数据库中的全部短链",
           },
           {
             label: "跳转路径",
@@ -50,14 +105,26 @@ export default async function ShortLinksPage() {
           },
         ]}
       />
+      {loadError ? (
+        <AdminSectionCard
+          title="短链列表加载失败"
+          description="无法读取短链或分页数量。文章数据不会受影响，请检查数据库连接、迁移状态或后台日志。"
+        >
+          <p className="break-words text-sm text-destructive">{loadError}</p>
+        </AdminSectionCard>
+      ) : null}
       <AdminSectionCard>
         <ShortLinkTable
+          key={`${pageNo}:${query}`}
+          initialQuery={query}
+          publicOrigin={process.env.NEXT_PUBLIC_URL?.replace(/\/+$/, "") ?? ""}
           links={links.map((link) => ({
             ...link,
             createdAt: link.createdAt.toISOString(),
             updatedAt: link.updatedAt?.toISOString() ?? null,
           }))}
         />
+        <PaginationComponent pageNo={pageNo} totalPage={totalPage} />
       </AdminSectionCard>
     </AdminPageShell>
   );

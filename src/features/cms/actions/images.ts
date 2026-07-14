@@ -1,23 +1,25 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { desc, or } from "drizzle-orm";
 
 import {
   auditAndRepairImageAssets,
   convertExistingUploadsToWebp,
   deleteImageAsset,
-  getImageAssetList,
   importExistingUploads,
   rebuildImageReferences,
   rebuildResponsiveImageVariants,
   replaceImageAssetFile,
   replaceImageReferences,
   renameImageAssetFile,
-  serializeImageAsset,
   updateImageAssetMetadata,
 } from "@/server/images/assets";
 import { requireAdminSession } from "@fwqgo/auth/session";
+import { db } from "@fwqgo/db";
+import { imageAssets } from "@fwqgo/db/schema";
 import { revalidateSiteContent, cacheTags } from "@fwqgo/cache/tags";
+import { ilikeContains } from "@/server/db/search";
 
 function revalidateImageWorkbenches() {
   revalidatePath("/images/list");
@@ -26,10 +28,28 @@ function revalidateImageWorkbenches() {
   revalidatePath("/images/covers");
 }
 
-export async function getImageAssets() {
+export async function getImageAssetPickerOptions(query = "") {
   await requireAdminSession();
-  const images = await getImageAssetList();
-  return { data: images.map(serializeImageAsset) };
+  const normalizedQuery = query.trim().slice(0, 160);
+  const searchCondition = normalizedQuery
+    ? or(
+        ilikeContains(imageAssets.path, normalizedQuery),
+        ilikeContains(imageAssets.originalName, normalizedQuery),
+      )
+    : undefined;
+  const images = await db
+    .select({
+      id: imageAssets.id,
+      path: imageAssets.path,
+      thumbPath: imageAssets.thumbPath,
+      originalName: imageAssets.originalName,
+    })
+    .from(imageAssets)
+    .where(searchCondition)
+    .orderBy(desc(imageAssets.createdAt))
+    .limit(80);
+
+  return { data: images };
 }
 
 export async function importUploadImagesAction() {

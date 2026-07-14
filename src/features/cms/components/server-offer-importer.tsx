@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
-import { DatabaseZap, FileSearch } from "lucide-react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { DatabaseZap, FileSearch, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -10,6 +10,7 @@ import {
   importServerOffersFromPostsAction,
 } from "@/features/cms/actions/server-offers";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -64,9 +65,26 @@ export function ServerOfferImporter({ posts }: { posts: ImportPostOption[] }) {
   const [selectedPostId, setSelectedPostId] = useState(
     posts[0]?.id ? String(posts[0].id) : "",
   );
+  const [postQuery, setPostQuery] = useState("");
   const [activeTask, setActiveTask] = useState<ImportTask | null>(null);
   const isTaskRunning =
     activeTask?.status === "pending" || activeTask?.status === "running";
+  const visiblePosts = useMemo(() => {
+    const normalizedQuery = postQuery.trim().toLowerCase();
+    if (!normalizedQuery) return posts;
+
+    return posts.filter(
+      (post) =>
+        post.title.toLowerCase().includes(normalizedQuery) ||
+        post.slug.toLowerCase().includes(normalizedQuery) ||
+        String(post.id).includes(normalizedQuery),
+    );
+  }, [postQuery, posts]);
+  const selectedPost = posts.find((post) => String(post.id) === selectedPostId);
+  const selectablePosts =
+    selectedPost && !visiblePosts.some((post) => post.id === selectedPost.id)
+      ? [selectedPost, ...visiblePosts]
+      : visiblePosts;
 
   useEffect(() => {
     if (!activeTask || activeTask.done) return;
@@ -170,24 +188,48 @@ export function ServerOfferImporter({ posts }: { posts: ImportPostOption[] }) {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
-      <div className="space-y-2">
-        <Label htmlFor="server-offer-import-post">选择单篇文章</Label>
-        <Select value={selectedPostId} onValueChange={setSelectedPostId}>
-          <SelectTrigger id="server-offer-import-post" className="min-h-10">
-            <SelectValue placeholder="选择要提取套餐的文章" />
-          </SelectTrigger>
-          <SelectContent>
-            {posts.map((post) => (
-              <SelectItem key={post.id} value={String(post.id)}>
-                {post.title}
-                {post.published ? "" : "（草稿）"}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+    <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+      <div className="min-w-0 space-y-3">
+        <div className="grid gap-3 md:grid-cols-[minmax(180px,0.42fr)_minmax(0,1fr)]">
+          <div className="space-y-2">
+            <Label htmlFor="server-offer-import-query">搜索文章</Label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="server-offer-import-query"
+                value={postQuery}
+                onChange={(event) => setPostQuery(event.target.value)}
+                placeholder="标题、slug 或 ID"
+                className="pl-9"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="server-offer-import-post">选择单篇文章</Label>
+            <Select value={selectedPostId} onValueChange={setSelectedPostId}>
+              <SelectTrigger id="server-offer-import-post" className="min-h-11">
+                <SelectValue placeholder="选择要提取套餐的文章" />
+              </SelectTrigger>
+              <SelectContent>
+                {selectablePosts.length > 0 ? (
+                  selectablePosts.map((post) => (
+                    <SelectItem key={post.id} value={String(post.id)}>
+                      #{post.id} {post.title}
+                      {post.published ? "" : "（草稿）"}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="__empty" disabled>
+                    没有匹配的文章
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         <p className="text-xs text-muted-foreground">
-          单篇提取适合刚发布或刚改写的文章。系统会优先解析文章表格，再回退到正文段落；缺配置、缺价格或缺购买链接的候选不会导入。
+          当前匹配 {visiblePosts.length}{" "}
+          篇。系统会优先解析文章表格，再回退到正文段落；缺配置、缺价格或缺购买链接的候选不会导入。
         </p>
         {activeTask ? (
           <div className="flex flex-wrap items-center gap-2 rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs">

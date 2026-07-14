@@ -104,18 +104,8 @@ const data = {
 
     {
       title: "服务器套餐",
-      url: "/servers",
+      url: "/servers/manage",
       icon: Server,
-      items: [
-        {
-          title: "套餐看板",
-          url: "/servers",
-        },
-        {
-          title: "人工校正",
-          url: "/servers/manage",
-        },
-      ],
     },
     {
       title: "SEO运营",

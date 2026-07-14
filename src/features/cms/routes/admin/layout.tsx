@@ -42,7 +42,7 @@ export default function CreateLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="cms-theme min-h-screen bg-background">
+    <div className="cms-theme min-h-screen bg-background [&_input]:text-sm max-sm:[&_input]:text-base [&_textarea]:text-sm max-sm:[&_textarea]:text-base">
       <Suspense fallback={null}>
         <SessionGuard />
       </Suspense>

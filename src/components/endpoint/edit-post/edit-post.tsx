@@ -43,6 +43,7 @@ import {
   AdminSectionCard,
 } from "@/features/cms/components/admin-page-shell";
 import { type getPostProductionContext } from "@/features/cms/data/post";
+import { isRenderableImageSrc } from "@fwqgo/core/image-src";
 interface Category {
   id: number;
   name: string;
@@ -134,6 +135,7 @@ export default function EditPost({
     e.preventDefault();
     const normalizedContent = content.trim();
     const normalizedDescription = (description ?? "").trim();
+    const normalizedImageUrl = imageUrl.trim();
     const parsedCategoryId = Number(categoryId);
 
     if (!normalizedContent || !normalizedDescription) {
@@ -152,6 +154,12 @@ export default function EditPost({
       toast.error("请添加标签");
       return;
     }
+    if (normalizedImageUrl && !isRenderableImageSrc(normalizedImageUrl)) {
+      toast.error("封面地址格式不正确", {
+        description: "请填写完整的 http(s) URL 或 /uploads/ 图片路径。",
+      });
+      return;
+    }
     try {
       setIsSubmitting(true);
       const response = await fetch(`/api/cms/posts/${post.post.id}/edit`, {
@@ -160,7 +168,7 @@ export default function EditPost({
         body: JSON.stringify({
           description: normalizedDescription,
           content: normalizedContent,
-          imgUrl: imageUrl || null,
+          imgUrl: normalizedImageUrl || null,
           categoryId: parsedCategoryId,
           recommendTagName: recommendTagName.trim(),
           keywords: limitKeywordInput(keywords),
@@ -277,7 +285,10 @@ export default function EditPost({
         <PostProductionContextPanel context={productionContext} />
       ) : null}
 
-      <form className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
+      <form
+        className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]"
+        onSubmit={handleSubmit}
+      >
         <AdminSectionCard title="正文编辑" description={postMeta.title}>
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -381,7 +392,7 @@ export default function EditPost({
                     value={categoryId}
                     onValueChange={(value) => setCategoryId(value)}
                   >
-                    <SelectTrigger className="h-10 w-full">
+                    <SelectTrigger className="min-h-11 w-full">
                       <SelectValue placeholder="选择分类" />
                     </SelectTrigger>
                     <SelectContent>
@@ -403,7 +414,7 @@ export default function EditPost({
                 <div className="space-y-2">
                   <label className="text-sm font-medium">推荐标签</label>
                   <Input
-                    className="h-10"
+                    className="min-h-11"
                     value={recommendTagName}
                     onChange={(e) => setRecommendTagName(e.target.value)}
                     placeholder="用于详情页内链推荐"
@@ -413,7 +424,7 @@ export default function EditPost({
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">标签</label>
-                <div className="flex min-h-10 flex-wrap items-center gap-2 rounded-md border border-border/70 bg-background p-2">
+                <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-md border border-border/70 bg-background p-2">
                   {tags.map((tag) => (
                     <Badge
                       key={tag.tag.name}
@@ -488,7 +499,7 @@ export default function EditPost({
                   关键词之间用逗号分隔，建议 2-6 个，单个关键词保持简短。
                 </p>
                 <Input
-                  className="h-10 w-full"
+                  className="min-h-11 w-full"
                   value={keywords}
                   onChange={(e) =>
                     setKeywords(limitKeywordInput(e.target.value))
@@ -541,16 +552,15 @@ export default function EditPost({
             </div>
           </AdminSectionCard>
 
-          <div className="sticky bottom-4 rounded-lg border border-border/70 bg-background/95 p-3 shadow-sm backdrop-blur">
+          <div className="sticky bottom-4 rounded-md border border-border/70 bg-background/95 p-3 shadow-sm backdrop-blur">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs leading-5 text-muted-foreground">
                 保存后会更新文章正文、分类、推荐标签、关键词和标签关系。
               </p>
               <Button
-                type="button"
+                type="submit"
                 disabled={isSubmitting}
-                onClick={handleSubmit}
-                className="h-10 min-w-32"
+                className="min-h-11 min-w-32"
               >
                 <Save className="size-4" />
                 {isSubmitting ? "更新中..." : "更新文章"}

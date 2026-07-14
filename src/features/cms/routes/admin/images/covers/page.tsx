@@ -9,6 +9,9 @@ import {
   AdminSummaryStrip,
 } from "@/features/cms/components/admin-page-shell";
 import { ArticleCoverBatchGenerator } from "@/features/cms/components/article-cover-batch-generator";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { Settings2 } from "lucide-react";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -44,8 +47,7 @@ async function loadCoverGenerationPosts() {
 export default async function ArticleCoverGenerationPage() {
   await requireAdminSession();
 
-  const { data: postRows, error: loadError } =
-    await loadCoverGenerationPosts();
+  const { data: postRows, error: loadError } = await loadCoverGenerationPosts();
   const missingCoverCount = postRows.filter((post) => !post.imgUrl).length;
   const draftCount = postRows.filter((post) => !post.published).length;
 
@@ -54,6 +56,14 @@ export default async function ArticleCoverGenerationPage() {
       badge="AI生图"
       title="文章封面生成"
       description="批量选择文章生成封面图，并自动写入文章封面字段。"
+      actions={
+        <Button asChild variant="outline" size="sm">
+          <Link href="/settings/image-generation">
+            <Settings2 className="size-4" />
+            生图接口配置
+          </Link>
+        </Button>
+      }
     >
       <AdminSummaryStrip
         items={[

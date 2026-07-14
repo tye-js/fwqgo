@@ -1,3 +1,5 @@
+import { connection } from "next/server";
+
 import {
   AdminPageShell,
   AdminSectionCard,
@@ -7,7 +9,18 @@ import { AiRewriteConfigManager } from "@/features/cms/components/ai-rewrite-con
 import { getAiRewriteConfigList } from "@/features/cms/actions/ai-rewrite-config";
 
 export default async function AiRewriteConfigPage() {
-  const configs = await getAiRewriteConfigList();
+  await connection();
+
+  const result = await getAiRewriteConfigList()
+    .then((configs) => ({ configs, error: null }))
+    .catch((error: unknown) => {
+      console.error("AI 改写配置页加载失败:", error);
+      return {
+        configs: [] as Awaited<ReturnType<typeof getAiRewriteConfigList>>,
+        error: error instanceof Error ? error.message : "未知错误",
+      };
+    });
+  const { configs } = result;
   const enabledCount = configs.filter((config) => config.enabled).length;
   const defaultConfig = configs.find((config) => config.isDefault);
 
@@ -36,11 +49,19 @@ export default async function AiRewriteConfigPage() {
           },
         ]}
       />
+      {result.error ? (
+        <AdminSectionCard
+          title="AI 改写配置加载失败"
+          description="无法读取现有配置，暂时不要新增或修改。请检查数据库连接、迁移状态或后台日志。"
+        >
+          <p className="break-words text-sm text-destructive">{result.error}</p>
+        </AdminSectionCard>
+      ) : null}
       <AdminSectionCard
         title="改写服务"
         description="API Key 不会在页面完整回显；编辑时留空会保留原密钥。第三方接口只要兼容 /v1/chat/completions 即可接入。"
       >
-        <AiRewriteConfigManager configs={configs} />
+        {result.error ? null : <AiRewriteConfigManager configs={configs} />}
       </AdminSectionCard>
     </AdminPageShell>
   );

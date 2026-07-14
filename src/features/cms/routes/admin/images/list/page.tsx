@@ -6,6 +6,9 @@ import {
   AdminSummaryStrip,
 } from "@/features/cms/components/admin-page-shell";
 import { ImageAssetManager } from "@/features/cms/components/image-asset-manager";
+import { Button } from "@/components/ui/button";
+import { ImagePlus } from "lucide-react";
+import Link from "next/link";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -52,7 +55,9 @@ export default async function ImageListPage({
   const statusFilter = imageStatuses.has(params.status ?? "")
     ? params.status!
     : "all";
-  const usedCount = images.filter((image) => image.references.length > 0).length;
+  const usedCount = images.filter(
+    (image) => image.references.length > 0,
+  ).length;
   const needsWebpCount = images.filter(
     (image) => image.mime !== "image/webp" && image.mime !== "image/gif",
   ).length;
@@ -63,6 +68,14 @@ export default async function ImageListPage({
       badge="图片资产"
       title="图片管理"
       description="集中查看上传图片、引用状态和文件信息，清理未使用图片前会先做引用检查。"
+      actions={
+        <Button asChild variant="outline" size="sm">
+          <Link href="/images/upload">
+            <ImagePlus className="size-4" />
+            上传图片
+          </Link>
+        </Button>
+      }
     >
       <AdminSummaryStrip
         items={[

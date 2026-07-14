@@ -12,6 +12,10 @@ let providerCache: Promise<
   Array<typeof affServiceProviders.$inferSelect>
 > | null = null;
 
+export function clearOutboundAffiliateProviderCache() {
+  providerCache = null;
+}
+
 function getAffiliateProviders() {
   if (!providerCache) {
     const request = db.select().from(affServiceProviders);

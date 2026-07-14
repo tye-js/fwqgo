@@ -3,7 +3,11 @@ import {
   getPosts,
   getPostCount,
   normalizePostLanguageFilter,
+  normalizePostSort,
+  normalizePostStatusFilter,
   type PostLanguageFilter,
+  type PostSort,
+  type PostStatusFilter,
 } from "@/features/cms/data/post";
 import { AdminLoading } from "@/features/cms/components/admin-loading";
 import {
@@ -27,13 +31,34 @@ function getErrorMessage(error: unknown) {
   return "未知错误";
 }
 
-function languageFilterHref(language: PostLanguageFilter) {
-  return language === "all"
-    ? "/posts/edit"
-    : `/posts/edit?language=${language}`;
+type PostListSearchParams = {
+  pageNo?: string;
+  language?: string;
+  query?: string;
+  status?: string;
+  sort?: string;
+};
+
+function languageFilterHref(
+  language: PostLanguageFilter,
+  filters: { query: string; status: PostStatusFilter; sort: PostSort },
+) {
+  const params = new URLSearchParams();
+  if (language !== "all") params.set("language", language);
+  if (filters.query) params.set("query", filters.query);
+  if (filters.status !== "all") params.set("status", filters.status);
+  if (filters.sort !== "id-desc") params.set("sort", filters.sort);
+  const query = params.toString();
+  return query ? `/posts/edit?${query}` : "/posts/edit";
 }
 
-function LanguageFilter({ value }: { value: PostLanguageFilter }) {
+function LanguageFilter({
+  value,
+  filters,
+}: {
+  value: PostLanguageFilter;
+  filters: { query: string; status: PostStatusFilter; sort: PostSort };
+}) {
   const items: Array<{ value: PostLanguageFilter; label: string }> = [
     { value: "all", label: "全部语言" },
     { value: "zh", label: "中文" },
@@ -49,7 +74,9 @@ function LanguageFilter({ value }: { value: PostLanguageFilter }) {
           size="sm"
           variant={value === item.value ? "default" : "outline"}
         >
-          <Link href={languageFilterHref(item.value)}>{item.label}</Link>
+          <Link href={languageFilterHref(item.value, filters)}>
+            {item.label}
+          </Link>
         </Button>
       ))}
     </div>
@@ -59,18 +86,28 @@ function LanguageFilter({ value }: { value: PostLanguageFilter }) {
 async function PostListWrapper({
   searchParamsPromise,
 }: {
-  searchParamsPromise: Promise<{ pageNo?: string; language?: string }>;
+  searchParamsPromise: Promise<PostListSearchParams>;
 }) {
   const searchParams = await searchParamsPromise;
   const pageNo = parsePageNo(searchParams.pageNo);
   const language = normalizePostLanguageFilter(searchParams.language);
+  const query = searchParams.query?.trim().slice(0, 160) ?? "";
+  const status = normalizePostStatusFilter(searchParams.status);
+  const sort = normalizePostSort(searchParams.sort);
   const { data: posts, error } = await getPosts({
     pageNo,
     pageSize: 15,
     language,
+    query,
+    status,
+    sort,
   });
 
-  const { data: postCount, error: countError } = await getPostCount(language)
+  const { data: postCount, error: countError } = await getPostCount({
+    language,
+    query,
+    status,
+  })
     .then(({ data }) => ({ data, error: null }))
     .catch((countLoadError: unknown) => {
       console.error("文章列表计数加载失败:", countLoadError);
@@ -127,9 +164,15 @@ async function PostListWrapper({
         description="支持快速编辑标题、slug、发布状态和封面链接。"
       >
         <div className="mb-4">
-          <LanguageFilter value={language} />
+          <LanguageFilter value={language} filters={{ query, status, sort }} />
         </div>
-        <PostList posts={visiblePosts} />
+        <PostList
+          key={`${pageNo}:${language}:${query}:${status}:${sort}`}
+          posts={visiblePosts}
+          initialQuery={query}
+          defaultStatusFilter={status}
+          initialSort={sort}
+        />
         <PaginationComponent pageNo={pageNo} totalPage={totalPage} />
       </AdminSectionCard>
     </AdminPageShell>
@@ -137,7 +180,7 @@ async function PostListWrapper({
 }
 
 export default function EditPage(props: {
-  searchParams: Promise<{ pageNo?: string; language?: string }>;
+  searchParams: Promise<PostListSearchParams>;
 }) {
   return (
     <Suspense

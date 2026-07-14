@@ -10,11 +10,18 @@ import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 
 type HomepageLanguage = "zh" | "en";
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  return typeof error === "string" ? error : "未知错误";
+}
+
 function normalizeHomepageLanguage(language?: string): HomepageLanguage {
   return language === "en" ? "en" : "zh";
 }
 
-export async function getHomepagePromotedPostList(language: HomepageLanguage = "zh") {
+export async function getHomepagePromotedPostList(
+  language: HomepageLanguage = "zh",
+) {
   try {
     await requireAdminSession();
     const normalizedLanguage = normalizeHomepageLanguage(language);
@@ -40,7 +47,7 @@ export async function getHomepagePromotedPostList(language: HomepageLanguage = "
 
     return { data: result };
   } catch (error) {
-    return { error: "获取首页推荐文章失败", message: error };
+    return { error: "获取首页推荐文章失败", message: getErrorMessage(error) };
   }
 }
 
@@ -104,7 +111,7 @@ export async function addHomepagePromotedPost(input: {
 
     return { data: result };
   } catch (error) {
-    return { error: "保存首页推荐文章失败", message: error };
+    return { error: "保存首页推荐文章失败", message: getErrorMessage(error) };
   }
 }
 
@@ -147,7 +154,7 @@ export async function updateHomepagePromotedPost(input: {
 
     return { data: result };
   } catch (error) {
-    return { error: "更新首页推荐文章失败", message: error };
+    return { error: "更新首页推荐文章失败", message: getErrorMessage(error) };
   }
 }
 
@@ -182,7 +189,7 @@ export async function deleteHomepagePromotedPost(
 
     return { data: result };
   } catch (error) {
-    return { error: "删除首页推荐文章失败", message: error };
+    return { error: "删除首页推荐文章失败", message: getErrorMessage(error) };
   }
 }
 
@@ -217,11 +224,16 @@ export async function deleteHomepagePromotedPosts(
 
     return { data: result.length };
   } catch (error) {
-    return { error: "批量删除首页推荐文章失败", message: error };
+    return {
+      error: "批量删除首页推荐文章失败",
+      message: getErrorMessage(error),
+    };
   }
 }
 
-export async function getPublishedPostOptions(language: HomepageLanguage = "zh") {
+export async function getPublishedPostOptions(
+  language: HomepageLanguage = "zh",
+) {
   try {
     await requireAdminSession();
     const normalizedLanguage = normalizeHomepageLanguage(language);
@@ -234,12 +246,14 @@ export async function getPublishedPostOptions(language: HomepageLanguage = "zh")
         language: posts.language,
       })
       .from(posts)
-      .where(and(eq(posts.published, true), eq(posts.language, normalizedLanguage)))
+      .where(
+        and(eq(posts.published, true), eq(posts.language, normalizedLanguage)),
+      )
       .orderBy(desc(posts.createdAt))
       .limit(100);
 
     return { data: result };
   } catch (error) {
-    return { error: "获取文章选项失败", message: error };
+    return { error: "获取文章选项失败", message: getErrorMessage(error) };
   }
 }

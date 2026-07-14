@@ -519,7 +519,6 @@ export function ArticleCoverBatchGenerator({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-7"
                 onClick={() => refreshBatchStatus(batchId)}
               >
                 刷新状态
@@ -569,29 +568,42 @@ export function ArticleCoverBatchGenerator({
                     </p>
                   )}
                 </div>
-                {(() => {
-                  const badge = getResultBadge(result);
-                  const Icon = badge.icon;
-                  return (
-                    <Badge variant={badge.variant}>
-                      <Icon
-                        className={
-                          getResultStatus(result) === "running"
-                            ? "size-3.5 animate-spin"
-                            : "size-3.5"
-                        }
-                      />
-                      {badge.label}
-                    </Badge>
-                  );
-                })()}
+                <div className="flex shrink-0 items-center gap-2">
+                  {(() => {
+                    const badge = getResultBadge(result);
+                    const Icon = badge.icon;
+                    return (
+                      <Badge variant={badge.variant}>
+                        <Icon
+                          className={
+                            getResultStatus(result) === "running"
+                              ? "size-3.5 animate-spin"
+                              : "size-3.5"
+                          }
+                        />
+                        {badge.label}
+                      </Badge>
+                    );
+                  })()}
+                  {result.taskId ? (
+                    <Button asChild variant="outline" size="icon">
+                      <Link
+                        href={`/ai-tasks/covers/${result.taskId}`}
+                        aria-label={`查看封面任务 ${result.taskId}`}
+                        title="查看任务详情"
+                      >
+                        <ExternalLink className="size-4" />
+                      </Link>
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>
         </div>
       ) : null}
 
-      <div className="overflow-x-auto rounded-lg border border-border/70 bg-background shadow-sm">
+      <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
         {filteredPosts.length === 0 ? (
           <AdminTableEmpty
             title="没有匹配的文章"

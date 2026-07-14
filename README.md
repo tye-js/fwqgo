@@ -1,237 +1,227 @@
-# 🚀 服务器go
+# FWQGO（服务器go）
 
-> 专业的服务器优惠信息聚合平台，为用户提供最全面、最新的VPS、云服务器、独立服务器等优惠信息
+FWQGO 是一个面向服务器、VPS 和云产品优惠内容的双应用平台。公开站负责中文/英文内容、服务器套餐专题和 SEO，独立 CMS 负责采集、AI 改写、文章审核、媒体资产、返利链接与运营配置。
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.2-black?style=flat-square&logo=next.js)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19.2-blue?style=flat-square&logo=react)](https://reactjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4.3-38B2AC?style=flat-square&logo=tailwind-css)](https://tailwindcss.com/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Latest-336791?style=flat-square&logo=postgresql)](https://www.postgresql.org/)
+[![React](https://img.shields.io/badge/React-19.2-149ECA?style=flat-square&logo=react)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-24-5FA04E?style=flat-square&logo=node.js)](https://nodejs.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-4169E1?style=flat-square&logo=postgresql)](https://www.postgresql.org/)
 
-## ✨ 项目特色
+## 应用架构
 
-- 🎯 **专业聚合** - 汇总国内外优质服务器优惠信息
-- 🤖 **智能采集** - 自动化内容采集与AI优化
-- 💰 **返利管理** - 智能返利链接替换系统
-- 📱 **响应式设计** - 完美适配移动端和桌面端
-- ⚡ **极速体验** - Turbopack构建，毫秒级热更新
-- 🔍 **SEO优化** - 完整的SEO策略和动态sitemap
+| 应用 | 目录       | 默认端口 | 生产域名                | 数据库职责                                 |
+| ---- | ---------- | -------: | ----------------------- | ------------------------------------------ |
+| Web  | `apps/web` |   `3000` | `https://fwqgo.com`     | 公开内容使用只读连接；必要的埋点使用写连接 |
+| CMS  | `apps/cms` |   `3100` | `https://cms.fwqgo.com` | 使用具备增删改查权限的写连接               |
 
-## 🏗️ 技术架构
+两个应用位于同一仓库，共享 `src/features`、`packages/db`、`packages/core` 和 UI 基础组件，但拥有独立入口、构建产物和 PM2 进程。
 
-### 前端技术栈
-- **框架**: Next.js 16 App Router，`apps/web` 和 `apps/cms` 双应用
-- **UI库**: React 19 + Radix UI + shadcn/ui
-- **样式**: Tailwind CSS + CSS Variables
-- **状态管理**: React Hook Form + Zod
-- **构建工具**: Turbopack (默认) + Webpack (备用)
+CMS 路由直接从根路径开始，例如 `/ai-rewrite/tasks`、`/posts/edit` 和 `/images/list`。项目不再使用 `/end` 前缀。
 
-### 后端技术栈
-- **数据库**: PostgreSQL + Drizzle ORM
-- **认证**: 自定义Session认证系统
-- **爬虫**: Puppeteer + Cheerio
-- **AI**: LangChain + Google Generative AI
-- **部署**: PM2 + Node.js
+## 主要能力
 
-## 🚀 快速开始
+### 公开站
+
+- 中文主站和 `/en` 英文路由树，文章、分类和标签使用独立语言字段。
+- 文章详情、分类聚合、标签聚合、搜索和首页推荐。
+- 服务器套餐库及地区、线路、商家、专题等筛选页。
+- Markdown 正文渲染，保留表格中的真实链接和推广链接。
+- 短链跳转、返利链接、相关文章与套餐内链。
+- canonical、hreflang、sitemap、robots 和站点/分类/标签 SEO 配置。
+- Next.js Image、响应式图片和公开页面缓存。
+
+### CMS
+
+- AI 内容生产台、统一任务中心、任务步骤、失败原因、重试、取消和人工处理。
+- 网页抓取与正文清洗，按 Markdown 管线生成中文草稿和英文 SEO 草稿。
+- Markdown 文章编辑、草稿箱、文章列表、发布质检和中英文分类/标签。
+- 返利商家、链接命中诊断、短链跳转和首页推荐管理。
+- 服务器套餐提取、去重、审核、人工修正和状态管理。
+- 图片上传、WebP 处理、图片资产、引用关系、AI 生图和批量封面生成。
+- 中文/英文主页 SEO、分类 SEO 和标签 SEO。
+- DeepSeek、OpenAI 及第三方 OpenAI 兼容改写接口；OpenAI Images、Image2 及兼容生图接口。
+
+### AI 内容管线
+
+文章生产的主流程为：
+
+1. 抓取 HTML。
+2. 清洗为内部文章文档，移除样式、广告和无关模块。
+3. 压缩为 Markdown 输入，同时保留链接、表格和关键套餐信息。
+4. 改写中文正文。
+5. 单独生成中文标题、摘要、关键词和 slug。
+6. 成功后保存中文草稿。
+7. 使用改写后的中文 Markdown 生成英文正文。
+8. 单独生成英文 SEO 字段并保存为关联的英文草稿。
+
+正文改写与 SEO 生成使用独立步骤和风格配置。后台任务会记录输入、输出、进度和可读错误，避免单个失败任务阻塞整个队列。
+
+## 本地开发
 
 ### 环境要求
 
-- Node.js 18.0.0+
-- PostgreSQL 14.0+
-- npm 或 bun
+- Node.js 24（CI 与生产版本；最低建议 Node.js 20.9）
+- npm
+- PostgreSQL 14+
+- macOS 或 Linux；涉及网页抓取时需满足 Puppeteer 的运行依赖
 
-### 安装步骤
+### 安装
 
-1. **克隆项目**
 ```bash
-git clone https://github.com/your-username/fwqgo.git
+git clone git@github.com:tye-js/fwqgo.git
 cd fwqgo
+npm ci
 ```
 
-2. **安装依赖**
-```bash
-npm install
-# 或使用 bun
-bun install
-```
+仓库不提供包含连接信息的 `.env.example`。请在本地创建用户自有的 `.env.development`，不要提交真实凭据：
 
-3. **环境配置**
-```bash
-cp .env.example .env
-```
-
-编辑 `.env` 文件，配置以下环境变量：
 ```env
-DATABASE_URL="postgresql://username:password@localhost:5432/fwqgo"
-NEXT_PUBLIC_URL="http://localhost:3000"
+# 迁移和通用回退连接；本地开发应指向开发数据库
+DATABASE_URL=postgresql://app_user:password@127.0.0.1:5432/fwqgo
+
+# 推荐：CMS 显式使用写角色
+CMS_DATABASE_URL=postgresql://cms_user:password@127.0.0.1:5432/fwqgo
+
+# 推荐：公开内容查询使用只读角色
+READ_DATABASE_URL=postgresql://read_user:password@127.0.0.1:5432/fwqgo
+
+NEXT_PUBLIC_URL=http://localhost:3000
+NEXT_PUBLIC_CMS_URL=http://localhost:3100
+
+# 可选：CMS 外层 Basic Auth
+CMS_BASIC_AUTH_USERNAME=local-admin
+CMS_BASIC_AUTH_PASSWORD=change-this-password
+
+# 默认关闭；仅在确实需要公开注册时开启
+ENABLE_PUBLIC_SIGNUP=false
 ```
 
-4. **数据库设置**
-```bash
-# 生成数据库迁移文件
-npm run db:generate
+也可以只提供基础 `DATABASE_URL`，再使用 `CMS_USERNAME` / `CMS_PASSWORD` 和 `READ_USERNAME` / `READ_PASSWORD` 替换其中的数据库用户名与密码。完整的 `CMS_DATABASE_URL` 和 `READ_DATABASE_URL` 优先级更高。
 
-# 执行数据库迁移
-npm run db:migrate
+数据库连接解析顺序：
 
-# (可选) 填充测试数据
-npm run db:seed
-```
+- 写连接：`CMS_DATABASE_URL` → `DATABASE_URL` 加 CMS 凭据 → `DATABASE_URL`。
+- 读连接：`READ_DATABASE_URL` → `DATABASE_URL` 加只读凭据 → 写连接。
 
-5. **启动开发服务器**
+AI 改写和生图的 Base URL、模型与 API Key 在 CMS 的“系统设置”中维护，不需要写入项目级 AI 环境变量。
+
+### 启动应用
+
+分别在两个终端运行：
+
 ```bash
 npm run dev:web
 npm run dev:cms
 ```
 
-访问 [http://localhost:3000](http://localhost:3000) 查看前台，访问 [http://localhost:3100](http://localhost:3100) 查看 CMS。
+- Web：<http://localhost:3000>
+- CMS：<http://localhost:3100>
 
-## 📁 项目结构
+## 仓库结构
 
-```
+```text
 apps/
-├── web/                   # 公开前台 Next 应用，运行在 3000
-└── cms/                   # CMS 后台 Next 应用，运行在 3100
+├── web/                       # 公开站 Next.js 应用
+└── cms/                       # CMS Next.js 应用
 src/
 ├── features/
-│   ├── public/            # 前台 routes、components、data、actions
-│   ├── cms/               # 后台 routes、components、data、actions
-│   └── shared/            # 前后台共享 routes/data/components
-├── components/            # shadcn/ui 和跨功能 UI 组件
-├── lib/                   # 兼容工具导出
-├── server/                # 服务端业务能力：auth/cache/scrape/ai/images 等
-├── styles/                # 全局样式
-└── types/                 # TypeScript 类型定义
+│   ├── public/                # 公开路由、组件、查询和 action
+│   ├── cms/                   # CMS 路由、组件、查询和管理 action
+│   └── shared/                # 双应用共享的路由与组件
+├── components/                # shadcn/Radix 与跨功能组件
+├── server/
+│   ├── auth/                  # 管理员会话与权限
+│   ├── cache/                 # 缓存标签与 revalidation
+│   ├── images/                # 图片资产和处理
+│   ├── links/                 # 返利与短链
+│   ├── offers/                # 服务器套餐
+│   └── scrape/                # 抓取与清洗
+├── lib/                       # 共享工具
+└── styles/                    # 全局样式
 packages/
-├── core/                  # 可复用核心工具
-└── db/                    # Drizzle schema、数据库连接和 DB helper
-drizzle/                   # 数据库迁移
-public/                    # 静态资产
+├── ai/                        # AI 配置、生成器、任务执行器
+├── auth/                      # 共享认证能力
+├── cache/                     # 共享缓存能力
+├── core/                      # 内容、URL 和通用核心能力
+├── db/                        # Drizzle schema、读写连接和数据库 helper
+└── scrape/                    # 可复用抓取能力
+drizzle/                       # 版本化数据库迁移
+scripts/                       # 迁移、健康检查、回填和部署工具
+public/                        # 静态资源
 ```
 
-## 🎯 核心功能
+## CMS 功能入口
 
-### 📝 内容管理系统
-- **文章管理**: 创建、编辑、发布文章
-- **分类管理**: 支持层级分类结构
-- **标签系统**: 灵活的多标签关联
-- **SEO优化**: 完整的SEO字段支持
-- **富文本编辑**: 基于TipTap的现代编辑器
+| 一级菜单   | 子功能                                |
+| ---------- | ------------------------------------- |
+| 数据面板   | 内容、任务、草稿、流量和运行状态概览  |
+| 内容生产   | AI 生产台、AI 任务中心、草稿箱        |
+| 文章管理   | 文章列表、发布质检                    |
+| 媒体中心   | 图片资产、上传图片、AI 生图、封面生图 |
+| 服务器套餐 | 套餐提取结果审核与人工修正            |
+| SEO 运营   | 主页 SEO、分类 SEO、标签 SEO          |
+| 推广链接   | 返利商家、短链跳转、首页推荐          |
+| 系统设置   | AI 改写配置、生图接口配置             |
 
-### 🤖 智能采集系统
-- **多站点支持**: 支持多个服务器信息网站
-- **内容清理**: 自动移除广告和无关内容
-- **链接处理**: 智能返利链接替换
-- **AI优化**: 使用LangChain进行内容重写和优化
+所有 CMS 管理 mutation 都应先通过服务端管理员会话校验，并为操作者返回可读错误。
 
-### 💰 返利管理
-- **多服务商**: 支持多个云服务商返利
-- **自动替换**: 智能识别和替换返利链接
-- **灵活配置**: 支持不同的返利参数格式
+## 数据库与迁移
 
-### 🎨 用户界面
-- **现代设计**: 基于shadcn/ui的现代化界面
-- **响应式**: 完美适配各种设备尺寸
-- **暗色模式**: 支持明暗主题切换
-- **无障碍**: 遵循WCAG无障碍标准
+Schema 源文件是 `packages/db/schema.ts`，迁移文件位于 `drizzle/`。
 
-## 📊 数据库设计
+主要数据域：
 
-### 核心数据表
-- **posts**: 文章内容和元数据
-- **categories**: 分类层级结构
-- **tags**: 标签管理
-- **post_tags**: 文章标签关联
-- **users**: 用户管理
-- **sessions**: 会话认证
-- **aff_service_providers**: 返利服务商配置
+- 内容：`posts`、`categories`、`tags`、`post_tags`、文章中英文关联。
+- 认证：`users`、`accounts`、`sessions`、验证令牌。
+- AI：改写配置、来源素材、改写任务、任务步骤、来源站和后台作业。
+- 媒体：`image_assets`、图片引用、生图配置和封面生成任务。
+- 运营：返利商家、短链、首页推荐、站点 SEO。
+- 套餐：`server_offers`、套餐导入任务及来源文章关联。
 
-### 关系设计
-- 文章与分类：一对多关系
-- 文章与标签：多对多关系
-- 分类支持层级结构
-- 完整的用户认证体系
-
-## 🛠️ 开发指南
-
-### 可用脚本
+常用命令：
 
 ```bash
-# 开发
-npm run dev          # 启动开发服务器 (Turbopack)
-npm run dev:webpack  # 启动开发服务器 (Webpack)
-
-# 构建
-npm run build        # 构建生产版本
-npm run start        # 启动生产服务器
-npm run preview      # 构建并启动预览
-
-# 数据库
-npm run db:generate  # 生成迁移文件
-npm run db:migrate   # 执行迁移
-npm run db:push      # 推送schema变更
-npm run db:studio    # 打开Drizzle Studio
-npm run db:seed      # 填充测试数据
-
-# 代码质量
-npm run lint         # 运行ESLint
-npm run lint:fix     # 自动修复ESLint问题
-npm run typecheck    # TypeScript类型检查
-npm run format:write # 格式化代码
-npm run format:check # 检查代码格式
+npm run db:generate       # schema 变更后生成迁移
+npm run db:migrate        # 本地执行版本化迁移
+npm run db:migrate:prod   # 使用生产迁移脚本
+npm run db:studio         # 打开 Drizzle Studio
+npm run db:seed           # 写入开发种子数据
 ```
 
-### 开发规范
+不要在生产环境直接使用 `db:push`。对已有数据库执行迁移前，必须同时检查实际表结构和 Drizzle 迁移记录；如果表或字段已经存在但缺少迁移基线，应先修复基线。
 
-1. **代码风格**: 使用Prettier + ESLint
-2. **提交规范**: 遵循Conventional Commits
-3. **类型安全**: 严格的TypeScript配置
-4. **组件规范**: 使用shadcn/ui组件库
+## 常用命令
 
-### 环境变量
+| 命令                       | 用途                         |
+| -------------------------- | ---------------------------- |
+| `npm run dev:web`          | 启动 Web 开发服务，端口 3000 |
+| `npm run dev:cms`          | 启动 CMS 开发服务，端口 3100 |
+| `npm run build:web`        | 构建 Web                     |
+| `npm run build:cms`        | 构建 CMS                     |
+| `npm run build`            | 依次构建双应用并检查应用边界 |
+| `npm run start:web`        | 启动 Web 生产构建            |
+| `npm run start:cms`        | 启动 CMS 生产构建            |
+| `npm run verify:apps`      | 验证 Web/CMS 路由和产物边界  |
+| `npm run lint`             | ESLint 检查                  |
+| `npm run typecheck`        | TypeScript 类型检查          |
+| `npm run check`            | 依次执行 lint 和 typecheck   |
+| `npm run healthcheck:prod` | 检查生产域名、跳转和关键路由 |
 
-| 变量名            | 描述                 | 示例                                       |
-| ----------------- | -------------------- | ------------------------------------------ |
-| `DATABASE_URL`    | PostgreSQL连接字符串 | `postgresql://user:pass@localhost:5432/db` |
-| `NEXT_PUBLIC_URL` | 网站公开URL          | `https://fwqgo.com`                        |
-| `NEXT_PUBLIC_CMS_URL` | 后台管理公开URL      | `https://cms.fwqgo.com`                    |
-| `CMS_BASIC_AUTH_USERNAME` | CMS Basic Auth 用户名 | `fwqgo-admin`                              |
-| `CMS_BASIC_AUTH_PASSWORD` | CMS Basic Auth 密码   | `change-this-password`                     |
-| `NODE_ENV`        | 运行环境             | `development` / `production`               |
+历史数据维护脚本还包括：
 
-### 前台和后台域名
+```bash
+npm run links:convert
+npm run posts:backfill-md-en
+npm run posts:backfill-en-taxonomy
+npm run source:pull
+```
 
-当前采用同仓库双 Next 应用部署：
+运行回填脚本前应先备份数据库，并确认目标环境。
 
-- `fwqgo.com` 和 `www.fwqgo.com` 代理到 `fwqgo-web`，端口 `3000`。
-- `cms.fwqgo.com` 代理到 `fwqgo-cms`，端口 `3100`。
-- 主站访问 `/end/*` 或 `/login` 会跳转到 CMS 域名。
-- CMS 域名访问公开文章、服务器专题和短链路径会跳回主站，避免重复收录。
-- CMS 域名支持 Basic Auth + 管理员登录双层保护。
+## 质量检查
 
-PM2 使用 `ecosystem.config.cjs` 同时运行 `fwqgo-web` 和 `fwqgo-cms`。
-
-## 🚀 部署指南
-
-### 生产环境部署
-
-默认使用 `.github/workflows/deploy.yml` 部署。用户手动提交并推送到 `main` 后，GitHub Actions 自动完成检查、构建、打包、上传、数据库迁移、PM2 激活和健康检查。
-
-普通的“部署”“上线”指令不应在本机执行上传脚本，也不代表允许自动提交或推送。代码验证完成后，由用户手动 push 触发 GitHub Actions。
-
-服务器需要先准备：
-
-- Node.js 和 PM2
-- PostgreSQL 连接信息
-- Nginx 或其他反向代理，将站点流量转发到 `127.0.0.1:3000`
-- `/var/www/uploads`，并在反向代理中暴露为 `/uploads/`
-
-1. **准备服务器运行时环境**
-
-GitHub Actions 会检查 `/var/www/fwqgo/shared/.env.production`。首次部署前需要在服务器补齐生产环境变量。
-
-2. **验证后手动推送**
+提交前建议依次运行：
 
 ```bash
 npm run lint
@@ -239,56 +229,54 @@ npm run typecheck
 SKIP_ENV_VALIDATION=1 npm run build
 ```
 
-验证通过后，由用户手动提交并推送到 `main`。不要由自动化代理默认执行 commit 或 push。
+`SKIP_ENV_VALIDATION=1` 只用于本地缺少真实环境变量时验证构建。生产构建必须提供完整环境变量。
 
-3. **GitHub Actions 自动部署**
+## 部署
 
-工作流会执行：
+默认部署方式是 GitHub Actions。用户手动提交并推送到 `main` 后，`.github/workflows/deploy.yml` 会构建并发布。普通的“部署”请求只表示准备并验证发布，不授权自动提交、推送或执行本地部署脚本。
 
-- `npm run typecheck`
-- `npm run lint`
-- `npm run build`
-- 打包 Web/CMS standalone 运行时、静态资源和 `public`
-- 上传到服务器 release 目录
-- 按工作流配置执行生产迁移
-- 更新 `current` 软链接
-- `pm2 startOrReload ecosystem.config.cjs --update-env`
-- 检查 Web、CMS 和 PM2 状态
+发布流程：
 
-### 本地 Docker 应急部署
+1. 使用 Node.js 24 安装依赖、执行 typecheck 和 lint。
+2. 构建 Web/CMS standalone 产物并验证应用边界。
+3. 上传 release，保留共享生产环境文件和 `/var/www/uploads`。
+4. 可选执行数据库备份与 Drizzle 迁移。
+5. 切换 `current` 软链接并重启 `fwqgo-web`、`fwqgo-cms`。
+6. 检查本地端口、公开域名、CMS 登录跳转和 PM2 状态。
+7. 激活失败时尝试回滚到上一份有效 release。
 
-本地上传脚本不是默认部署方式。只有在明确要求“使用本地部署脚本”或“本地 Docker 部署”时才使用，并需先配置用户本机的 `.deploy.env`。
+### 服务器前置条件
 
-完整应急部署：
+- Node.js 24、PM2、Nginx。
+- PostgreSQL 连接；执行迁移的 `DATABASE_URL` 需要迁移权限。
+- Nginx 将公开站转发到 `127.0.0.1:3000`，CMS 转发到 `127.0.0.1:3100`。
+- `/var/www/fwqgo/shared/.env.production` 保存运行时环境变量。
+- `/var/www/uploads` 持久化用户图片，并由 Nginx 暴露为 `/uploads/`。
+- 建议安装 `pg_dump`，以便迁移前自动备份。
 
-```bash
-npm run deploy:local
-```
-
-只生成本地部署包：
-
-```bash
-npm run deploy:local -- --artifact-only
-```
-
-### GitHub Actions 部署
-
-仓库包含 `.github/workflows/deploy.yml`，支持 push 到 `main` 自动部署，也支持在 GitHub Actions 页面手动触发。手动触发时可以选择是否先执行数据库迁移。
-
-需要在 GitHub 仓库配置这些 Secrets：
+GitHub Actions Secrets：
 
 ```text
-DEPLOY_HOST=103.117.136.139
-DEPLOY_USER=root
-SSH_PRIVATE_KEY=<private ssh key>
-DATABASE_URL=<production database url>
-READ_DATABASE_URL=<production read-only database url>
-CMS_BASIC_AUTH_USERNAME=<cms basic auth username>
-CMS_BASIC_AUTH_PASSWORD=<cms basic auth password>
-GOOGLE_AI_API_KEY=<optional, only if still used>
+DEPLOY_HOST
+DEPLOY_USER
+SSH_PRIVATE_KEY
+DATABASE_URL
+READ_DATABASE_URL
+CMS_BASIC_AUTH_USERNAME
+CMS_BASIC_AUTH_PASSWORD
 ```
 
-可选配置这些 Variables：
+按数据库角色方案可额外配置：
+
+```text
+CMS_DATABASE_URL
+CMS_USERNAME
+CMS_PASSWORD
+READ_USERNAME
+READ_PASSWORD
+```
+
+GitHub Actions Variables：
 
 ```text
 DEPLOY_PORT=22
@@ -299,69 +287,27 @@ NEXT_PUBLIC_URL=https://fwqgo.com
 NEXT_PUBLIC_CMS_URL=https://cms.fwqgo.com
 ```
 
-## 📈 性能优化
+Actions Secrets 用于 CI 构建和连接校验，不会替代服务器上的共享 `.env.production`。两处配置应保持一致，但都不能提交到仓库。
 
-- **Turbopack**: 极速开发构建体验
-- **图片优化**: Next.js Image组件自动优化
-- **字体优化**: next/font/google预加载
-- **代码分割**: 自动代码分割和懒加载
-- **缓存策略**: 合理的浏览器和CDN缓存
-- **SEO优化**: 服务端渲染和静态生成
+### 本地应急部署
 
-## 🔒 安全特性
+`scripts/deploy-local-build.sh` 仅作为明确要求时使用的应急方案：
 
-- **输入验证**: Zod schema验证
-- **SQL注入防护**: Drizzle ORM参数化查询
-- **XSS防护**: React内置XSS防护
-- **CSRF防护**: Next.js内置CSRF保护
-- **会话管理**: 安全的会话认证系统
-
-## 🤝 贡献指南
-
-1. Fork 项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 打开 Pull Request
-
-### 提交规范
-
-使用 [Conventional Commits](https://www.conventionalcommits.org/) 规范：
-
-```
-feat: 添加新功能
-fix: 修复bug
-docs: 更新文档
-style: 代码格式调整
-refactor: 代码重构
-test: 添加测试
-chore: 构建过程或辅助工具的变动
+```bash
+npm run deploy:local
 ```
 
-## 📄 许可证
+常规发布不要运行该命令。
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
+## 安全约束
 
-## 🙏 致谢
+- 不提交 `.env*`、数据库 URL、API Key、SSH 私钥或 Basic Auth 凭据。
+- CMS 同时使用外层 Basic Auth 和服务端管理员会话；管理 action 必须校验会话。
+- 公开注册默认关闭，只有 `ENABLE_PUBLIC_SIGNUP=true` 时开放。
+- Web 使用只读数据库角色处理公开查询；迁移、CMS mutation 和埋点使用最小必要写权限。
+- API 与 Server Action 不向客户端返回数据库连接、堆栈或原始服务端异常。
+- 生产迁移前备份数据库，图片目录单独持久化和备份。
 
-- [Next.js](https://nextjs.org/) - React框架
-- [Tailwind CSS](https://tailwindcss.com/) - CSS框架
-- [shadcn/ui](https://ui.shadcn.com/) - UI组件库
-- [Drizzle ORM](https://orm.drizzle.team/) - TypeScript ORM
-- [Radix UI](https://www.radix-ui.com/) - 无障碍UI组件
+## License
 
-## 📞 联系方式
-
-- 网站: [https://fwqgo.com](https://fwqgo.com)
-- 邮箱: contact@fwqgo.com
-- 问题反馈: [GitHub Issues](https://github.com/your-username/fwqgo/issues)
-
----
-
-<div align="center">
-
-**[⬆ 回到顶部](#-服务器go)**
-
-Made with ❤️ by 服务器go Team
-
-</div>
+本项目使用 [MIT License](LICENSE)。

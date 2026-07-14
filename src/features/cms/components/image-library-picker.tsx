@@ -1,11 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import { Images, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 
-import { getImageAssets } from "@/features/cms/actions/images";
+import { getImageAssetPickerOptions } from "@/features/cms/actions/images";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,8 +18,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { type ImageAssetWithReferences } from "@/features/cms/components/image-asset-manager";
 import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
+
+type PickerImage = {
+  id: number;
+  path: string;
+  thumbPath: string | null;
+  originalName: string;
+};
 
 export function ImageLibraryPicker({
   onSelect,
@@ -30,33 +36,39 @@ export function ImageLibraryPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [images, setImages] = useState<ImageAssetWithReferences[]>([]);
-  const [isPending, startTransition] = useTransition();
+  const [images, setImages] = useState<PickerImage[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!open || images.length > 0) return;
+    if (!open) return;
 
-    startTransition(() => {
-      void getImageAssets()
-        .then((result) => {
-          setImages(result.data);
-        })
-        .catch(() => {
-          toast.error("读取图片库失败");
-        });
-    });
-  }, [images.length, open]);
-
-  const filteredImages = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return images;
-
-    return images.filter(
-      (image) =>
-        image.path.toLowerCase().includes(normalizedQuery) ||
-        image.originalName.toLowerCase().includes(normalizedQuery),
+    let cancelled = false;
+    const timeoutId = window.setTimeout(
+      () => {
+        setIsLoading(true);
+        void getImageAssetPickerOptions(query)
+          .then((result) => {
+            if (!cancelled) setImages(result.data);
+          })
+          .catch((error: unknown) => {
+            if (cancelled) return;
+            toast.error("读取图片库失败", {
+              description:
+                error instanceof Error ? error.message : "请稍后重试。",
+            });
+          })
+          .finally(() => {
+            if (!cancelled) setIsLoading(false);
+          });
+      },
+      query.trim() ? 350 : 0,
     );
-  }, [images, query]);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [open, query]);
 
   function handleSelect(path: string) {
     onSelect(path);
@@ -92,7 +104,7 @@ export function ImageLibraryPicker({
           />
         </div>
         <div className="max-h-[60vh] overflow-y-auto">
-          {isPending ? (
+          {isLoading ? (
             <div className="space-y-3" role="status" aria-live="polite">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
@@ -102,9 +114,9 @@ export function ImageLibraryPicker({
                 {Array.from({ length: 8 }, (_, index) => (
                   <div
                     key={index}
-                    className="overflow-hidden rounded-lg border border-border/70 bg-background"
+                    className="overflow-hidden rounded-md border border-border/70 bg-background"
                   >
-                    <Skeleton className="aspect-[4/3] w-full rounded-none" />
+                    <Skeleton className="aspect-video w-full rounded-none" />
                     <div className="space-y-2 p-3">
                       <Skeleton className="h-4 w-3/4" />
                       <Skeleton className="h-3 w-full" />
@@ -113,23 +125,23 @@ export function ImageLibraryPicker({
                 ))}
               </div>
             </div>
-          ) : filteredImages.length === 0 ? (
+          ) : images.length === 0 ? (
             <div className="py-10 text-center text-sm text-muted-foreground">
-              没有匹配的图片
+              {query.trim() ? "没有匹配的图片" : "图片库暂无可用图片"}
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {filteredImages.map((image) => (
+              {images.map((image) => (
                 <button
                   key={image.id}
                   type="button"
-                  className="overflow-hidden rounded-lg border border-border/70 bg-background text-left transition-colors hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="overflow-hidden rounded-md border border-border/70 bg-background text-left transition-colors hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   aria-label={`选择图片：${image.originalName}`}
                   onClick={() => handleSelect(image.path)}
                 >
-                  <div className="relative aspect-[4/3] bg-muted">
+                  <div className="relative aspect-video bg-muted">
                     <Image
-                      src={getOptimizedImageSrc(image.path)}
+                      src={getOptimizedImageSrc(image.thumbPath ?? image.path)}
                       alt={image.originalName}
                       fill
                       sizes="240px"

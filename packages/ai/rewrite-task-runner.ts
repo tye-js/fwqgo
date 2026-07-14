@@ -1473,7 +1473,53 @@ async function getNextPendingAiRewriteTaskId() {
   return task?.id ?? null;
 }
 
+async function recoverInterruptedAiRewriteTasks() {
+  const now = new Date();
+  const recoveredTasks = await db.transaction(async (tx) => {
+    const rows = await tx
+      .update(aiRewriteTasks)
+      .set({
+        status: "pending",
+        progress: 0,
+        currentStep: "检测到上次执行中断，已自动重新排队",
+        error: null,
+        startedAt: null,
+        finishedAt: null,
+        updatedAt: now,
+      })
+      .where(eq(aiRewriteTasks.status, "running"))
+      .returning({
+        id: aiRewriteTasks.id,
+        sourceMaterialId: aiRewriteTasks.sourceMaterialId,
+      });
+    const sourceMaterialIds = [
+      ...new Set(
+        rows
+          .map((row) => row.sourceMaterialId)
+          .filter((id): id is number => typeof id === "number"),
+      ),
+    ];
+
+    if (sourceMaterialIds.length > 0) {
+      await tx
+        .update(sourceMaterials)
+        .set({ status: "queued", updatedAt: now })
+        .where(inArray(sourceMaterials.id, sourceMaterialIds));
+    }
+
+    return rows;
+  });
+
+  if (recoveredTasks.length > 0) {
+    console.warn(
+      `Recovered ${recoveredTasks.length} interrupted AI rewrite task(s)`,
+    );
+  }
+}
+
 async function runAiRewriteWorker() {
+  await recoverInterruptedAiRewriteTasks();
+
   while (true) {
     const taskId = await getNextPendingAiRewriteTaskId();
     if (!taskId) return;

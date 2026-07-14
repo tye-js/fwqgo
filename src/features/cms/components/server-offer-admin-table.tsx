@@ -46,7 +46,7 @@ import { type getAdminServerOffers } from "@/server/offers/server-offers";
 import { isInternalHref, isSafePublicHref } from "@fwqgo/core/utils";
 import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
 
-type Offer = Awaited<ReturnType<typeof getAdminServerOffers>>[number];
+type Offer = Awaited<ReturnType<typeof getAdminServerOffers>>["rows"][number];
 type ServerOfferTableFilters = {
   pageNo: number;
   query: string;
@@ -363,9 +363,11 @@ function normalizeFilterValue(
 
 export function ServerOfferAdminTable({
   offers,
+  totalCount,
   initialFilters,
 }: {
   offers: Offer[];
+  totalCount: number;
   initialFilters: ServerOfferTableFilters;
 }) {
   const router = useRouter();
@@ -394,53 +396,10 @@ export function ServerOfferAdminTable({
       "featured",
     ]),
   };
-  const filteredOffers = useMemo(() => {
-    const normalizedQuery = activeFilters.query.trim().toLowerCase();
-
-    return offers.filter((offer) => {
-      const matchesQuery =
-        !normalizedQuery ||
-        offer.title.toLowerCase().includes(normalizedQuery) ||
-        (offer.providerName?.toLowerCase().includes(normalizedQuery) ??
-          false) ||
-        (offer.region?.toLowerCase().includes(normalizedQuery) ?? false) ||
-        (offer.lineType?.toLowerCase().includes(normalizedQuery) ?? false) ||
-        specsText(offer).toLowerCase().includes(normalizedQuery) ||
-        (offer.sourcePostTitle?.toLowerCase().includes(normalizedQuery) ??
-          false) ||
-        (offer.promoCode?.toLowerCase().includes(normalizedQuery) ?? false);
-      const matchesStatus =
-        activeFilters.status === "all" || offer.status === activeFilters.status;
-      const matchesReviewStatus =
-        activeFilters.reviewStatus === "all" ||
-        offer.reviewStatus === activeFilters.reviewStatus;
-      const matchesVisibility =
-        activeFilters.visibility === "all" ||
-        (activeFilters.visibility === "visible" && offer.visible) ||
-        (activeFilters.visibility === "hidden" && !offer.visible) ||
-        (activeFilters.visibility === "featured" && offer.featured);
-
-      return (
-        matchesQuery &&
-        matchesStatus &&
-        matchesReviewStatus &&
-        matchesVisibility
-      );
-    });
-  }, [
-    activeFilters.query,
-    activeFilters.reviewStatus,
-    activeFilters.status,
-    activeFilters.visibility,
-    offers,
-  ]);
   const pageSize = 20;
-  const totalPage = Math.max(1, Math.ceil(filteredOffers.length / pageSize));
+  const totalPage = Math.max(1, Math.ceil(totalCount / pageSize));
   const currentPage = Math.min(Math.max(activeFilters.pageNo, 1), totalPage);
-  const pagedOffers = filteredOffers.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize,
-  );
+  const pagedOffers = offers;
   const hasSelectedOffers = selectedIds.length > 0;
 
   function toggleSelected(id: number) {
@@ -482,7 +441,7 @@ export function ServerOfferAdminTable({
     <div className="space-y-4">
       <AdminTableWorkbench
         title="套餐筛选"
-        description={`筛选条件和页码会写入地址栏，当前匹配 ${filteredOffers.length} 条套餐。`}
+        description={`筛选条件和页码会写入地址栏，当前匹配 ${totalCount} 条套餐。`}
         searchValue={activeFilters.query}
         onSearchChange={(value) => updateUrlQuery({ query: value || null })}
         searchPlaceholder="搜索套餐、商家、地区、线路、配置或优惠码"
@@ -545,9 +504,9 @@ export function ServerOfferAdminTable({
           </>
         }
       />
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 bg-background p-3 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/70 bg-background p-3">
         <div className="text-sm text-muted-foreground">
-          已选择 {selectedIds.length} / {filteredOffers.length} 条
+          已选择 {selectedIds.length} / {totalCount} 条
         </div>
         <div className="flex flex-wrap gap-2">
           <Select value={bulkStatus} onValueChange={setBulkStatus}>
@@ -619,7 +578,7 @@ export function ServerOfferAdminTable({
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border/70 bg-background shadow-sm">
+      <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
         <Table className="min-w-[1120px]">
           <TableHeader>
             <TableRow>

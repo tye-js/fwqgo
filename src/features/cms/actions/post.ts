@@ -98,11 +98,10 @@ async function runPostSaveMaintenance(input: {
 }
 
 function normalizePostIds(ids: number[], limit = 100) {
-  return [
-    ...new Set(
-      ids.filter((id) => Number.isInteger(id) && id > 0).slice(0, limit),
-    ),
-  ];
+  return [...new Set(ids.filter((id) => Number.isInteger(id) && id > 0))].slice(
+    0,
+    limit,
+  );
 }
 
 async function revalidateChangedPosts(
@@ -339,7 +338,10 @@ export async function updatePostByRecommendedTagName(
 
     return { data: result };
   } catch (error) {
-    return { error: "更新文章推荐标签失败", message: error };
+    return {
+      error: "更新文章推荐标签失败",
+      message: getErrorMessage(error),
+    };
   }
 }
 
@@ -352,6 +354,39 @@ export async function updatePost(input: {
 }) {
   try {
     await requireAdminSession();
+
+    if (!Number.isSafeInteger(input.id) || input.id <= 0) {
+      return { error: "文章 ID 不正确" };
+    }
+
+    const normalizedTitle = input.title.trim();
+    const normalizedSlug = input.slug.trim();
+    let normalizedImgUrl = input.imgUrl?.trim() ?? null;
+    if (normalizedImgUrl === "") normalizedImgUrl = null;
+
+    if (!normalizedTitle) {
+      return { error: "文章标题不能为空" };
+    }
+
+    if (normalizedTitle.length > 300) {
+      return { error: "文章标题不能超过 300 个字符" };
+    }
+
+    if (!normalizedSlug) {
+      return { error: "文章 slug 不能为空" };
+    }
+
+    if (normalizedSlug.length > 360) {
+      return { error: "文章 slug 不能超过 360 个字符" };
+    }
+
+    if (/[\s/?#]/.test(normalizedSlug)) {
+      return { error: "文章 slug 不能包含空格、斜杠、问号或井号" };
+    }
+
+    if (typeof input.published !== "boolean") {
+      return { error: "文章发布状态不正确" };
+    }
 
     const [currentPost] = await db
       .select({
@@ -371,6 +406,16 @@ export async function updatePost(input: {
       return { error: "文章不存在" };
     }
 
+    const [duplicatedSlugPost] = await db
+      .select({ id: posts.id })
+      .from(posts)
+      .where(and(eq(posts.slug, normalizedSlug), ne(posts.id, input.id)))
+      .limit(1);
+
+    if (duplicatedSlugPost) {
+      return { error: "文章 slug 已被其他文章使用" };
+    }
+
     let publishAudit: Awaited<
       ReturnType<typeof auditAffiliateLinksForPublish>
     > | null = null;
@@ -387,9 +432,9 @@ export async function updatePost(input: {
         const [blockedPost] = await db
           .update(posts)
           .set({
-            title: input.title,
-            slug: input.slug,
-            imgUrl: input.imgUrl,
+            title: normalizedTitle,
+            slug: normalizedSlug,
+            imgUrl: normalizedImgUrl,
             published: currentPost.published,
             affiliateReviewStatus: "manual_required",
             affiliateReviewDetails:
@@ -428,7 +473,10 @@ export async function updatePost(input: {
     const [post] = await db
       .update(posts)
       .set({
-        ...input,
+        title: normalizedTitle,
+        slug: normalizedSlug,
+        imgUrl: normalizedImgUrl,
+        published: input.published,
         affiliateReviewStatus: input.published ? "passed" : "pending",
         affiliateReviewDetails:
           input.published && publishAudit
@@ -1071,7 +1119,7 @@ export async function deletePostById(id: number) {
 
     return { data: "删除文章成功" };
   } catch (error) {
-    return { error: "删除文章失败", message: error };
+    return { error: "删除文章失败", message: getErrorMessage(error) };
   }
 }
 
@@ -1137,7 +1185,10 @@ export async function deletePostsByIds(ids: number[]) {
 
     return { data: deletedPosts.length };
   } catch (error) {
-    return { error: "批量删除文章失败", message: error };
+    return {
+      error: "批量删除文章失败",
+      message: getErrorMessage(error),
+    };
   }
 }
 

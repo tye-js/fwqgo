@@ -13,13 +13,31 @@ import {
   getServerOfferTopicCounts,
 } from "@/server/offers/server-offers";
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "未知错误";
+}
+
 async function ServerOffersAdminContent() {
   await connection();
 
-  const [counts, importPosts] = await Promise.all([
+  const result = await Promise.all([
     getServerOfferTopicCounts(),
     getServerOfferImportPostOptions(),
-  ]);
+  ])
+    .then(([counts, importPosts]) => ({ counts, importPosts, error: null }))
+    .catch((error: unknown) => {
+      console.error("套餐提取页加载失败:", error);
+      return {
+        counts: [] as Awaited<ReturnType<typeof getServerOfferTopicCounts>>,
+        importPosts: [] as Awaited<
+          ReturnType<typeof getServerOfferImportPostOptions>
+        >,
+        error: getErrorMessage(error),
+      };
+    });
+  const { counts, importPosts, error: loadError } = result;
   const total = counts.reduce((sum, item) => sum + item.count, 0);
 
   return (
@@ -51,11 +69,19 @@ async function ServerOffersAdminContent() {
           },
         ]}
       />
+      {loadError ? (
+        <AdminSectionCard
+          title="套餐提取数据加载失败"
+          description="无法读取可选文章或专题计数，暂时不能创建提取任务。请检查数据库连接、迁移状态或后台日志。"
+        >
+          <p className="break-words text-sm text-destructive">{loadError}</p>
+        </AdminSectionCard>
+      ) : null}
       <AdminSectionCard
         title="提取套餐数据"
         description="推荐先选择单篇文章提取，确认效果后再批量扫描历史文章。测评文章链接后续可在套餐校正页补充，重复套餐会自动跳过。"
       >
-        <ServerOfferImporter posts={importPosts} />
+        {loadError ? null : <ServerOfferImporter posts={importPosts} />}
       </AdminSectionCard>
     </AdminPageShell>
   );

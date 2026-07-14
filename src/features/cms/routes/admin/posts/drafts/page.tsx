@@ -5,7 +5,9 @@ import {
   getDraftPostCount,
   getDraftPosts,
   normalizePostLanguageFilter,
+  normalizePostSort,
   type PostLanguageFilter,
+  type PostSort,
 } from "@/features/cms/data/post";
 import { AdminLoading } from "@/features/cms/components/admin-loading";
 import {
@@ -28,13 +30,32 @@ function getErrorMessage(error: unknown) {
   return "未知错误";
 }
 
-function languageFilterHref(language: PostLanguageFilter) {
-  return language === "all"
-    ? "/posts/drafts"
-    : `/posts/drafts?language=${language}`;
+type DraftListSearchParams = {
+  pageNo?: string;
+  language?: string;
+  query?: string;
+  sort?: string;
+};
+
+function languageFilterHref(
+  language: PostLanguageFilter,
+  filters: { query: string; sort: PostSort },
+) {
+  const params = new URLSearchParams();
+  if (language !== "all") params.set("language", language);
+  if (filters.query) params.set("query", filters.query);
+  if (filters.sort !== "id-desc") params.set("sort", filters.sort);
+  const query = params.toString();
+  return query ? `/posts/drafts?${query}` : "/posts/drafts";
 }
 
-function LanguageFilter({ value }: { value: PostLanguageFilter }) {
+function LanguageFilter({
+  value,
+  filters,
+}: {
+  value: PostLanguageFilter;
+  filters: { query: string; sort: PostSort };
+}) {
   const items: Array<{ value: PostLanguageFilter; label: string }> = [
     { value: "all", label: "全部语言" },
     { value: "zh", label: "中文" },
@@ -50,7 +71,9 @@ function LanguageFilter({ value }: { value: PostLanguageFilter }) {
           size="sm"
           variant={value === item.value ? "default" : "outline"}
         >
-          <Link href={languageFilterHref(item.value)}>{item.label}</Link>
+          <Link href={languageFilterHref(item.value, filters)}>
+            {item.label}
+          </Link>
         </Button>
       ))}
     </div>
@@ -60,20 +83,25 @@ function LanguageFilter({ value }: { value: PostLanguageFilter }) {
 async function DraftListWrapper({
   searchParamsPromise,
 }: {
-  searchParamsPromise: Promise<{ pageNo?: string; language?: string }>;
+  searchParamsPromise: Promise<DraftListSearchParams>;
 }) {
   const searchParams = await searchParamsPromise;
   const pageNo = parsePageNo(searchParams.pageNo);
   const language = normalizePostLanguageFilter(searchParams.language);
+  const query = searchParams.query?.trim().slice(0, 160) ?? "";
+  const sort = normalizePostSort(searchParams.sort);
   const { data: posts, error } = await getDraftPosts({
     pageNo,
     pageSize: 15,
     language,
+    query,
+    sort,
   });
 
-  const { data: draftCount, error: countError } = await getDraftPostCount(
+  const { data: draftCount, error: countError } = await getDraftPostCount({
     language,
-  )
+    query,
+  })
     .then(({ data }) => ({ data, error: null }))
     .catch((countLoadError: unknown) => {
       console.error("草稿箱计数加载失败:", countLoadError);
@@ -130,12 +158,16 @@ async function DraftListWrapper({
         description="可以继续编辑标题、封面、slug 和发布状态；点击 slug 进入完整编辑页。"
       >
         <div className="mb-4">
-          <LanguageFilter value={language} />
+          <LanguageFilter value={language} filters={{ query, sort }} />
         </div>
         <PostList
+          key={`${pageNo}:${language}:${query}:${sort}`}
           posts={visiblePosts}
           editBasePath="/posts/edit"
+          initialQuery={query}
           defaultStatusFilter="draft"
+          initialSort={sort}
+          lockStatusFilter
         />
         <PaginationComponent pageNo={pageNo} totalPage={totalPage} />
       </AdminSectionCard>
@@ -144,7 +176,7 @@ async function DraftListWrapper({
 }
 
 export default function DraftsPage(props: {
-  searchParams: Promise<{ pageNo?: string; language?: string }>;
+  searchParams: Promise<DraftListSearchParams>;
 }) {
   return (
     <Suspense

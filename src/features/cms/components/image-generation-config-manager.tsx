@@ -166,7 +166,7 @@ function ConfigForm({
   return (
     <form
       action={handleSubmit}
-      className="grid gap-4 rounded-lg border border-border/70 bg-muted/20 p-4"
+      className="grid gap-4 rounded-md border border-border/70 bg-muted/20 p-4"
     >
       <div className="grid gap-4 md:grid-cols-3">
         <div className="space-y-2">
@@ -375,8 +375,8 @@ export function ImageGenerationConfigManager({
         />
       ) : null}
 
-      <div className="overflow-hidden rounded-lg border border-border/70">
-        <Table>
+      <div className="overflow-x-auto rounded-md border border-border/70">
+        <Table className="min-w-[860px]">
           <TableHeader>
             <TableRow>
               <TableHead>名称</TableHead>

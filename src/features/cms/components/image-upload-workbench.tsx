@@ -9,11 +9,15 @@ import {
   ImagePlus,
   Loader2,
   RotateCcw,
+  X,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { AdminSectionCard } from "@/features/cms/components/admin-page-shell";
+import {
+  AdminSectionCard,
+  AdminSummaryStrip,
+} from "@/features/cms/components/admin-page-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -29,6 +33,14 @@ import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
 import { cn } from "@fwqgo/core/utils";
 
 type UploadStatus = "pending" | "uploading" | "success" | "error";
+
+const MAX_UPLOAD_SIZE = 8 * 1024 * 1024;
+const ACCEPTED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
 
 type UploadItem = {
   id: string;
@@ -47,13 +59,38 @@ export function ImageUploadWorkbench() {
   const summary = useMemo(() => {
     const success = items.filter((item) => item.status === "success").length;
     const failed = items.filter((item) => item.status === "error").length;
-    return { success, failed, total: items.length };
+    const pending = items.filter(
+      (item) => item.status === "pending" || item.status === "uploading",
+    ).length;
+    return { success, failed, pending, total: items.length };
   }, [items]);
 
   function handleSelect(files: FileList | null) {
     if (!files?.length) return;
 
-    const nextItems = Array.from(files).map((file) => ({
+    const existingKeys = new Set(
+      items.map(
+        (item) =>
+          `${item.file.name}:${item.file.size}:${item.file.lastModified}`,
+      ),
+    );
+    const nextKeys = new Set<string>();
+    let duplicateCount = 0;
+    let invalidCount = 0;
+    const selectedFiles = Array.from(files).filter((file) => {
+      if (!ACCEPTED_IMAGE_TYPES.has(file.type) || file.size > MAX_UPLOAD_SIZE) {
+        invalidCount += 1;
+        return false;
+      }
+      const key = `${file.name}:${file.size}:${file.lastModified}`;
+      if (existingKeys.has(key) || nextKeys.has(key)) {
+        duplicateCount += 1;
+        return false;
+      }
+      nextKeys.add(key);
+      return true;
+    });
+    const nextItems = selectedFiles.map((file) => ({
       id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
       file,
       status: "pending" as const,
@@ -62,7 +99,17 @@ export function ImageUploadWorkbench() {
       message: null,
     }));
 
-    setItems((prev) => [...nextItems, ...prev]);
+    if (nextItems.length > 0) {
+      setItems((prev) => [...nextItems, ...prev]);
+    }
+    if (duplicateCount > 0) {
+      toast.info(`已跳过 ${duplicateCount} 个重复文件`);
+    }
+    if (invalidCount > 0) {
+      toast.warning(`已跳过 ${invalidCount} 个不符合要求的文件`, {
+        description: "仅支持 JPEG、PNG、WebP、GIF，单张最大 8MB。",
+      });
+    }
     if (inputRef.current) {
       inputRef.current.value = "";
     }
@@ -220,18 +267,29 @@ export function ImageUploadWorkbench() {
         </div>
       </AdminSectionCard>
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <Metric
-          label="待处理"
-          value={String(summary.total - summary.success)}
-        />
-        <Metric label="已完成" value={String(summary.success)} />
-        <Metric label="失败" value={String(summary.failed)} />
-      </div>
+      <AdminSummaryStrip
+        items={[
+          {
+            label: "队列总数",
+            value: String(summary.total),
+            note: "本次选择的图片",
+          },
+          {
+            label: "待处理",
+            value: String(summary.pending),
+            note: "待上传或上传中",
+          },
+          {
+            label: "已完成",
+            value: String(summary.success),
+            note: summary.failed > 0 ? `失败 ${summary.failed} 张` : "全部正常",
+          },
+        ]}
+      />
 
       <AdminSectionCard>
         {items.length === 0 ? (
-          <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 text-center">
+          <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 rounded-md border border-dashed border-border bg-muted/30 text-center">
             <ImagePlus className="size-9 text-muted-foreground" />
             <div>
               <p className="font-medium text-foreground">还没有选择图片</p>
@@ -241,7 +299,7 @@ export function ImageUploadWorkbench() {
             </div>
           </div>
         ) : (
-          <Table>
+          <Table className="min-w-[880px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[96px]">预览</TableHead>
@@ -351,6 +409,22 @@ export function ImageUploadWorkbench() {
                           </Button>
                         </>
                       ) : null}
+                      {item.status !== "uploading" ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          title="从队列移除"
+                          aria-label={`从上传队列移除 ${item.file.name}`}
+                          onClick={() =>
+                            setItems((prev) =>
+                              prev.filter((current) => current.id !== item.id),
+                            )
+                          }
+                        >
+                          <X className="size-4" />
+                        </Button>
+                      ) : null}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -359,15 +433,6 @@ export function ImageUploadWorkbench() {
           </Table>
         )}
       </AdminSectionCard>
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-border/70 bg-card px-4 py-3 shadow-sm">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-foreground">{value}</p>
     </div>
   );
 }

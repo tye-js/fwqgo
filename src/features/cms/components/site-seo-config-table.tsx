@@ -93,7 +93,7 @@ export function SiteSeoConfigTable({ data }: { data: SiteSeoConfigRow[] }) {
 
   return (
     <>
-      <div className="rounded-lg border border-border/70">
+      <div className="overflow-x-auto rounded-md border border-border/70">
         <Table className="min-w-[920px]">
           <TableHeader>
             <TableRow>
@@ -129,6 +129,16 @@ export function SiteSeoConfigTable({ data }: { data: SiteSeoConfigRow[] }) {
                 </TableCell>
               </TableRow>
             ))}
+            {rows.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={6}
+                  className="h-28 text-center text-sm text-muted-foreground"
+                >
+                  暂无可编辑的主页 SEO 配置。
+                </TableCell>
+              </TableRow>
+            ) : null}
           </TableBody>
         </Table>
       </div>

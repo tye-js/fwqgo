@@ -370,7 +370,7 @@ function SourceSiteForm({
             }
             required
           >
-            <SelectTrigger>
+            <SelectTrigger className="min-h-11">
               <SelectValue placeholder="选择分类" />
             </SelectTrigger>
             <SelectContent>
@@ -385,7 +385,7 @@ function SourceSiteForm({
         <div className="space-y-2">
           <Label>改写风格</Label>
           <Select name="rewriteStyleId" defaultValue={defaultRewriteStyleId}>
-            <SelectTrigger>
+            <SelectTrigger className="min-h-11">
               <SelectValue placeholder="使用默认改写风格" />
             </SelectTrigger>
             <SelectContent>
@@ -411,13 +411,12 @@ function SourceSiteForm({
           />
         </div>
         <div className="flex items-end justify-between gap-4">
-          <label className="flex min-h-10 items-center gap-2 text-sm">
+          <label className="flex min-h-11 items-center gap-2 text-sm">
             <Switch checked={enabled} onCheckedChange={setEnabled} />
             启用
           </label>
           <Button
             type="submit"
-            size="sm"
             variant="secondary"
             disabled={isSaving || categories.length === 0}
           >
@@ -591,7 +590,7 @@ export function AiSourceSiteManager({
         />
       ) : null}
 
-      <div className="overflow-hidden rounded-md border border-border/70 bg-card">
+      <div className="overflow-x-auto rounded-md border border-border/70 bg-card">
         <Table className="min-w-[980px]">
           <TableHeader>
             <TableRow>

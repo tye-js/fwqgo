@@ -31,11 +31,7 @@ type NavItem = {
   }[];
 };
 
-export function NavMain({
-  items,
-}: {
-  items: NavItem[];
-}) {
+export function NavMain({ items }: { items: NavItem[] }) {
   const pathname = usePathname();
   const normalizeUrl = (url: string) => {
     const path = url.split("#")[0]?.split("?")[0] ?? url;
@@ -55,8 +51,9 @@ export function NavMain({
         : normalizedPathname === item.normalizedUrl ||
           normalizedPathname.startsWith(`${item.normalizedUrl}/`),
     )
-    .sort((left, right) => right.normalizedUrl.length - left.normalizedUrl.length)[0]
-    ?.url;
+    .sort(
+      (left, right) => right.normalizedUrl.length - left.normalizedUrl.length,
+    )[0]?.url;
 
   return (
     <SidebarGroup className="p-1.5">
@@ -72,7 +69,7 @@ export function NavMain({
                   asChild
                   tooltip={item.title}
                   isActive={item.isActive}
-                  className="h-10"
+                  className="h-11"
                 >
                   <Link href={item.url}>
                     {item.icon && <item.icon />}
@@ -95,7 +92,7 @@ export function NavMain({
                   <SidebarMenuButton
                     tooltip={item.title}
                     isActive={item.isActive}
-                    className="h-10"
+                    className="h-11"
                   >
                     {item.icon && <item.icon />}
                     <span>{item.title}</span>
@@ -110,7 +107,7 @@ export function NavMain({
                           asChild
                           isActive={subItem.url === activeSubItemUrl}
                           size="sm"
-                          className="min-h-10"
+                          className="min-h-11"
                         >
                           <Link href={subItem.url}>
                             <span>{subItem.title}</span>

@@ -17,6 +17,12 @@ function parsePageNo(value: string | undefined) {
   return parsePositiveInt(value) ?? 1;
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "未知错误";
+}
+
 async function AffManList({
   searchParamsPromise,
 }: {
@@ -40,13 +46,25 @@ async function AffManList({
   )
     ? searchParams.sort!
     : "id-desc";
-  const { data } = await getAffProviderList({
-    page: pageNo,
-    query,
-    filter,
-    sort,
-  });
-  const { data: postCount } = await getAffProviderCount({ query, filter });
+  const result = await Promise.all([
+    getAffProviderList({
+      page: pageNo,
+      query,
+      filter,
+      sort,
+    }),
+    getAffProviderCount({ query, filter }),
+  ])
+    .then(([listResult, countResult]) => ({
+      data: listResult.data ?? [],
+      postCount: countResult.data ?? 0,
+      error: null,
+    }))
+    .catch((error: unknown) => {
+      console.error("返利商家管理页加载失败:", error);
+      return { data: [], postCount: 0, error: getErrorMessage(error) };
+    });
+  const { data, postCount, error: loadError } = result;
   const totalPage = Math.ceil((postCount ?? 0) / 20);
 
   return (
@@ -74,6 +92,14 @@ async function AffManList({
           },
         ]}
       />
+      {loadError ? (
+        <AdminSectionCard
+          title="返利商家列表加载失败"
+          description="无法读取返利规则或分页数量。请检查数据库连接、迁移状态或后台日志后再操作。"
+        >
+          <p className="break-words text-sm text-destructive">{loadError}</p>
+        </AdminSectionCard>
+      ) : null}
       <AdminSectionCard>
         <AffManTable
           key={`${query}-${filter}-${sort}`}
