@@ -111,6 +111,14 @@ home_status="$(curl "${CURL_RETRY_ARGS[@]}" -sS -o /dev/null -w '%{http_code}' -
 [[ "$home_status" == "200" ]] || fail "Homepage returned HTTP $home_status"
 printf 'homepage=%s\n' "$home_status"
 
+log "Checking application health endpoints"
+web_health_status="$(curl "${CURL_RETRY_ARGS[@]}" -sS -o /dev/null -w '%{http_code}' --max-time 20 "$SITE_URL/api/health")"
+cms_health_result="$(read_cms_status_redirect "$CMS_URL/api/health")"
+cms_health_status="$(printf '%s\n' "$cms_health_result" | sed -n '1p')"
+[[ "$web_health_status" == "200" ]] || fail "Web health endpoint returned HTTP $web_health_status"
+[[ "$cms_health_status" == "200" ]] || fail "CMS health endpoint returned HTTP $cms_health_status"
+printf 'web_health=%s cms_health=%s\n' "$web_health_status" "$cms_health_status"
+
 log "Checking public admin redirect to CMS"
 public_admin_status="$(curl "${CURL_RETRY_ARGS[@]}" -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$SITE_URL/ai-rewrite/tasks")"
 printf 'public_admin=%s\n' "$public_admin_status"

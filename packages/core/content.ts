@@ -935,7 +935,7 @@ export function contentToArticleMarkdown(
 
   const maxLength = options.maxLength ?? Infinity;
   const truncated = trimmed.length > maxLength;
-  const markdown = truncated ? trimmed.slice(0, maxLength) : trimmed;
+  const markdown = truncated ? trimmed.slice(0, maxLength).trimEnd() : trimmed;
 
   return {
     document: {

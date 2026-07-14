@@ -3,6 +3,7 @@ import { hostname } from "node:os";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   inArray,
@@ -15,6 +16,12 @@ import {
 
 import { db } from "@fwqgo/db";
 import { adminBackgroundJobs } from "@fwqgo/db/schema";
+import {
+  getBackgroundJobRetentionCutoff,
+  getBackgroundJobRetryDelayMs,
+  normalizeBackgroundJobMaxAttempts,
+  normalizeBackgroundJobRetentionDays,
+} from "@fwqgo/core/background-job-policy";
 
 type AdminBackgroundJobStatus =
   | "queued"
@@ -66,17 +73,17 @@ export type BackgroundWorkerRuntimeSnapshot = {
   concurrency: number;
   heartbeatIntervalMs: number;
   heartbeatTimeoutMs: number;
+  retentionDays: number;
   generatedAt: string;
 };
 
 const TERMINAL_JOB_STATUSES = ["succeeded", "failed", "cancelled"] as const;
-const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_CONCURRENCY = 2;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
-const MAX_BACKOFF_MS = 15 * 60 * 1000;
 const IDLE_LANE_RECHECK_MS = 500;
 const IDLE_LANE_EXIT_CHECKS = 2;
+const TERMINAL_JOB_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 // Serialize stale recovery and enqueue decisions across CMS processes.
 const BACKGROUND_JOB_COORDINATION_LOCK_ID = 1_463_257_901;
 const WORKER_ID = `${hostname()}:${process.pid}:${randomUUID()}`;
@@ -88,6 +95,7 @@ let workerWakeTimer: ReturnType<typeof setTimeout> | null = null;
 let workerWakeTimerAt = 0;
 let runningBackgroundJobCount = 0;
 let workerWakeVersion = 0;
+let lastTerminalJobCleanupAt = 0;
 
 function getConcurrency() {
   const parsed = Number.parseInt(
@@ -108,11 +116,6 @@ function truncateErrorMessage(value: string) {
   return value.length > 5_000 ? `${value.slice(0, 5_000)}...` : value;
 }
 
-function normalizeMaxAttempts(value: number | undefined) {
-  if (!value || !Number.isFinite(value)) return DEFAULT_MAX_ATTEMPTS;
-  return Math.max(1, Math.min(20, Math.trunc(value)));
-}
-
 function serializePayload(payload: unknown) {
   if (payload === undefined || payload === null) return null;
   if (typeof payload === "string") return payload;
@@ -122,11 +125,6 @@ function serializePayload(payload: unknown) {
   } catch {
     return JSON.stringify({ error: "payload_not_serializable" });
   }
-}
-
-function retryDelayMs(attempts: number) {
-  const baseMs = 30_000;
-  return Math.min(baseMs * 2 ** Math.max(0, attempts - 1), MAX_BACKOFF_MS);
 }
 
 function wait(ms: number) {
@@ -207,8 +205,39 @@ export function getAdminBackgroundWorkerRuntimeSnapshot(): BackgroundWorkerRunti
     concurrency: getConcurrency(),
     heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
     heartbeatTimeoutMs: HEARTBEAT_TIMEOUT_MS,
+    retentionDays: normalizeBackgroundJobRetentionDays(
+      process.env.ADMIN_BACKGROUND_JOB_RETENTION_DAYS,
+    ),
     generatedAt: new Date().toISOString(),
   };
+}
+
+async function pruneTerminalBackgroundJobs() {
+  const now = Date.now();
+  if (now - lastTerminalJobCleanupAt < TERMINAL_JOB_CLEANUP_INTERVAL_MS) {
+    return 0;
+  }
+  lastTerminalJobCleanupAt = now;
+
+  const retentionDays = normalizeBackgroundJobRetentionDays(
+    process.env.ADMIN_BACKGROUND_JOB_RETENTION_DAYS,
+  );
+  const cutoff = getBackgroundJobRetentionCutoff(new Date(now), retentionDays);
+  const terminalWhere = and(
+    inArray(adminBackgroundJobs.status, [...TERMINAL_JOB_STATUSES]),
+    lt(adminBackgroundJobs.createdAt, cutoff),
+  );
+  const [result] = await db
+    .select({ count: count() })
+    .from(adminBackgroundJobs)
+    .where(terminalWhere);
+  const removableCount = result?.count ?? 0;
+
+  if (removableCount > 0) {
+    await db.delete(adminBackgroundJobs).where(terminalWhere);
+  }
+
+  return removableCount;
 }
 
 async function resetStaleBackgroundJobs() {
@@ -428,7 +457,9 @@ async function failOrRetryBackgroundJob(
   const message = truncateErrorMessage(getErrorMessage(error));
   const shouldRetry = job.attempts < job.maxAttempts;
   const now = new Date();
-  const retryAt = new Date(now.getTime() + retryDelayMs(job.attempts));
+  const retryAt = new Date(
+    now.getTime() + getBackgroundJobRetryDelayMs(job.attempts),
+  );
 
   await db
     .update(adminBackgroundJobs)
@@ -506,6 +537,10 @@ async function runBackgroundJobLane() {
 
 async function runAdminBackgroundJobWorker() {
   await resetStaleBackgroundJobs();
+  const prunedCount = await pruneTerminalBackgroundJobs();
+  if (prunedCount > 0) {
+    console.info(`Pruned ${prunedCount} expired background job record(s)`);
+  }
 
   const laneCount = Math.max(1, Math.min(8, getConcurrency()));
   await Promise.all(
@@ -556,7 +591,7 @@ async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {
   const now = new Date();
   const requestedRunAfter = input.runAfter ?? now;
   const payload = serializePayload(input.payload);
-  const maxAttempts = normalizeMaxAttempts(input.maxAttempts);
+  const maxAttempts = normalizeBackgroundJobMaxAttempts(input.maxAttempts);
 
   await resetStaleBackgroundJobs();
 

@@ -61,6 +61,21 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Unit tests
+        run: npm test
+
+      - name: Verify deployment workflow
+        run: npm run verify:deploy
+
+      - name: Verify migration manifest
+        run: npm run verify:migrations
+
+      - name: Verify security boundaries
+        run: npm run verify:security
+
+      - name: Verify public cache boundaries
+        run: npm run verify:cache
+
       - name: Validate required secrets
         shell: bash
         run: |
@@ -108,6 +123,7 @@ jobs:
           ln -sfn "../../.next-cms" ".deploy/payload-$RELEASE_ID/apps/cms/.next"
           cp -R drizzle ".deploy/payload-$RELEASE_ID/drizzle"
           cp scripts/migrate-prod.mjs ".deploy/payload-$RELEASE_ID/scripts/migrate-prod.mjs"
+          cp scripts/migration-manifest.mjs ".deploy/payload-$RELEASE_ID/scripts/migration-manifest.mjs"
           mkdir -p ".deploy/payload-$RELEASE_ID/node_modules"
           cp -R node_modules/drizzle-orm node_modules/postgres ".deploy/payload-$RELEASE_ID/node_modules/"
           cp ecosystem.config.cjs ".deploy/payload-$RELEASE_ID/ecosystem.config.cjs"
@@ -326,14 +342,14 @@ jobs:
           }
 
           deployment_stage="local health checks"
-          web_status="$(wait_for_http_status "Web" "http://127.0.0.1:${web_port}/" '^(2|3)[0-9][0-9]$')"
-          cms_status="$(wait_for_http_status "CMS" "http://127.0.0.1:${cms_port}/" '^(2|3)[0-9][0-9]$|^401$')"
+          web_status="$(wait_for_http_status "Web" "http://127.0.0.1:${web_port}/api/health" '^200$')"
+          cms_status="$(wait_for_http_status "CMS" "http://127.0.0.1:${cms_port}/api/health" '^200$')"
           case "$web_status" in
-            2*|3*) ;;
+            200) ;;
             *) echo "Web local health check failed: HTTP $web_status" >&2; exit 1 ;;
           esac
           case "$cms_status" in
-            2*|3*|401) ;;
+            200) ;;
             *) echo "CMS local health check failed: HTTP $cms_status" >&2; exit 1 ;;
           esac
           trap - ERR
@@ -382,8 +398,19 @@ jobs:
             [[ ( "$status" == "307" || "$status" == "302" ) && "$path" == "/login" && ( -z "$host" || "$host" == "$CMS_HOST" ) ]]
           }
 
+          cms_auth_args=()
+          if [[ -n "${CMS_BASIC_AUTH_USERNAME:-}" && -n "${CMS_BASIC_AUTH_PASSWORD:-}" ]]; then
+            cms_auth_args=(-u "$CMS_BASIC_AUTH_USERNAME:$CMS_BASIC_AUTH_PASSWORD")
+          fi
+
           homepage="$(curl "${CURL_RETRY_ARGS[@]}" -sS -o /dev/null -w '%{http_code}' --max-time 20 "$SITE_URL/")"
           [[ "$homepage" == "200" ]] || { echo "::error::Homepage returned $homepage"; exit 1; }
+
+          web_health="$(curl "${CURL_RETRY_ARGS[@]}" -sS -o /dev/null -w '%{http_code}' --max-time 20 "$SITE_URL/api/health")"
+          [[ "$web_health" == "200" ]] || { echo "::error::Web health endpoint returned $web_health"; exit 1; }
+
+          cms_health="$(curl "${CURL_RETRY_ARGS[@]}" -sS "${cms_auth_args[@]}" -o /dev/null -w '%{http_code}' --max-time 20 "$CMS_URL/api/health")"
+          [[ "$cms_health" == "200" ]] || { echo "::error::CMS health endpoint returned $cms_health"; exit 1; }
 
           public_admin_result="$(read_curl_status_redirect "$SITE_URL/ai-rewrite/tasks")"
           public_admin_status="$(printf '%s\n' "$public_admin_result" | sed -n '1p')"
@@ -400,11 +427,6 @@ jobs:
           if [[ "$cms_unauth_status" != "401" ]] && ! is_cms_login_redirect "$cms_unauth_status" "$cms_unauth_redirect"; then
             echo "::error::Unexpected CMS unauth response. Status: $cms_unauth_status Redirect: ${cms_unauth_redirect:-none}"
             exit 1
-          fi
-
-          cms_auth_args=()
-          if [[ -n "${CMS_BASIC_AUTH_USERNAME:-}" && -n "${CMS_BASIC_AUTH_PASSWORD:-}" ]]; then
-            cms_auth_args=(-u "$CMS_BASIC_AUTH_USERNAME:$CMS_BASIC_AUTH_PASSWORD")
           fi
 
           cms_home_result="$(read_curl_status_redirect "$CMS_URL/" "${cms_auth_args[@]}")"

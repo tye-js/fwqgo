@@ -257,6 +257,9 @@ export async function getPostByCategoryId(
   id: number,
   language: PublicLanguage = "zh",
 ) {
+  "use cache";
+  tagCache(cacheTags.posts, cacheTags.tags, cacheTags.category(id));
+
   try {
     const postsData = await readDb
       .select({
@@ -275,7 +278,8 @@ export async function getPostByCategoryId(
 
     return { data: postsWithTags };
   } catch (error) {
-    return { error: "通过分类id获取文章列表失败", message: error };
+    console.error("Failed to load public category posts:", error);
+    return { error: "通过分类id获取文章列表失败" };
   }
 }
 

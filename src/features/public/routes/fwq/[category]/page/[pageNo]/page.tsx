@@ -97,14 +97,14 @@ const CategoryPageContent = async ({
   );
   if (categoryError) return <div>加载失败: {categoryError}</div>;
   if (!category) notFound();
-  const { data: posts, error: postsError } = await getPostsWithTagsByCategoryId(
-    category.id,
-    pageNo,
-  );
-  const { data: totalCount } = await getPublishedPostCountByCategoryId(
-    category.id,
-  );
-  const [{ data: latestPosts }, relatedOffers] = await Promise.all([
+  const [
+    { data: posts, error: postsError },
+    { data: totalCount },
+    { data: latestPosts },
+    relatedOffers,
+  ] = await Promise.all([
+    getPostsWithTagsByCategoryId(category.id, pageNo),
+    getPublishedPostCountByCategoryId(category.id),
     getLatestPostsForSidebar(),
     getServerOffersByKeywords({
       keywords: [category.name, ...splitKeywords(category.keywords)],
