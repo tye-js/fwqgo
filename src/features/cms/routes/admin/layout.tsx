@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/sidebar";
 import AppBreadcrumb from "@/components/endpoint/app-breadcrumb";
 import { validateSession } from "@/features/cms/actions/validate-session";
-import { AdminLoading } from "@/features/cms/components/admin-loading";
 import { CmsReleaseGuard } from "@/features/cms/components/cms-release-guard";
 
 export const metadata: Metadata = {
@@ -81,9 +80,7 @@ export default function CreateLayout({
               </div>
             </header>
             <div className="min-w-0 overflow-x-hidden">
-              <Suspense fallback={<AdminLoading title="正在加载后台" />}>
-                {children}
-              </Suspense>
+              {children}
             </div>
           </SidebarInset>
         </SidebarProvider>
