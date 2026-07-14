@@ -6,6 +6,7 @@ import { imageCoverGenerationTasks, posts } from "@fwqgo/db/schema";
 import {
   createTaskLeaseOwner,
   getTaskLeaseExpiry,
+  TaskLeaseLostError,
   withTaskLeaseHeartbeat,
 } from "@fwqgo/core/task-lease";
 import { structuredLog } from "@fwqgo/core/structured-log";
@@ -343,6 +344,9 @@ async function processCoverGenerationTask(
   });
 
   signal.throwIfAborted();
+  if (!(await renewCoverTaskLease(boundTask))) {
+    throw new TaskLeaseLostError();
+  }
   const [updatedPost] = await db
     .update(posts)
     .set({
@@ -362,28 +366,7 @@ async function processCoverGenerationTask(
 
   signal.throwIfAborted();
   await syncImageReferencesForPost(updatedPost.id);
-
-  signal.throwIfAborted();
-  await db
-    .update(imageCoverGenerationTasks)
-    .set({
-      status: "succeeded",
-      outputUrl: generated.asset.path,
-      assetId: generated.asset.id,
-      errorTitle: null,
-      errorDetail: null,
-      finishedAt: new Date(),
-      leaseOwner: null,
-      leaseExpiresAt: null,
-      heartbeatAt: null,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(imageCoverGenerationTasks.id, boundTask.id),
-        eq(imageCoverGenerationTasks.leaseOwner, boundTask.leaseOwner ?? ""),
-      ),
-    );
+  return generated;
 }
 
 async function renewCoverTaskLease(task: CoverTaskRow) {
@@ -407,9 +390,15 @@ async function renewCoverTaskLease(task: CoverTaskRow) {
   return rows.length > 0;
 }
 
-async function processCoverGenerationTaskWithTimeout(task: CoverTaskRow) {
+async function processCoverGenerationTaskWithTimeout(
+  task: CoverTaskRow,
+  leaseSignal: AbortSignal,
+) {
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | null = null;
+  const abortForLostLease = () => controller.abort(leaseSignal.reason);
+  if (leaseSignal.aborted) abortForLostLease();
+  else leaseSignal.addEventListener("abort", abortForLostLease, { once: true });
   const processing = processCoverGenerationTask(task, controller.signal);
   const timedOut = new Promise<never>((_, reject) => {
     timeout = setTimeout(() => {
@@ -420,9 +409,10 @@ async function processCoverGenerationTaskWithTimeout(task: CoverTaskRow) {
   });
 
   try {
-    await Promise.race([processing, timedOut]);
+    return await Promise.race([processing, timedOut]);
   } finally {
     if (timeout) clearTimeout(timeout);
+    leaseSignal.removeEventListener("abort", abortForLostLease);
   }
 }
 
@@ -438,10 +428,38 @@ async function runCoverGenerationWorker() {
       if (!task) break;
 
       try {
-        await withTaskLeaseHeartbeat({
+        const generated = await withTaskLeaseHeartbeat({
           renew: () => renewCoverTaskLease(task),
-          run: () => processCoverGenerationTaskWithTimeout(task),
+          run: (signal) => processCoverGenerationTaskWithTimeout(task, signal),
+          onRenewError: (error) =>
+            structuredLog("error", "cover.task_heartbeat_failed", {
+              taskId: task.id,
+              leaseOwner: task.leaseOwner,
+              error,
+            }),
         });
+        const completed = await db
+          .update(imageCoverGenerationTasks)
+          .set({
+            status: "succeeded",
+            outputUrl: generated.asset.path,
+            assetId: generated.asset.id,
+            errorTitle: null,
+            errorDetail: null,
+            finishedAt: new Date(),
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            heartbeatAt: null,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(imageCoverGenerationTasks.id, task.id),
+              eq(imageCoverGenerationTasks.leaseOwner, task.leaseOwner ?? ""),
+            ),
+          )
+          .returning({ id: imageCoverGenerationTasks.id });
+        if (completed.length === 0) throw new TaskLeaseLostError();
       } catch (error) {
         const readableError = formatCoverGenerationError(error);
         structuredLog("error", "cover.task_failed", {

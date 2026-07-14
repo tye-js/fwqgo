@@ -3,6 +3,13 @@ import { randomUUID } from "node:crypto";
 export const TASK_LEASE_DURATION_MS = 2 * 60 * 1000;
 export const TASK_LEASE_HEARTBEAT_MS = 20 * 1000;
 
+export class TaskLeaseLostError extends Error {
+  constructor() {
+    super("Task lease ownership was lost while processing");
+    this.name = "TaskLeaseLostError";
+  }
+}
+
 export function createTaskLeaseOwner(queue: string) {
   return `${queue}:${process.pid}:${randomUUID()}`;
 }
@@ -23,17 +30,38 @@ export function isTaskLeaseExpired(
 
 export async function withTaskLeaseHeartbeat<T>(input: {
   renew: () => Promise<boolean>;
-  run: () => Promise<T>;
+  run: (signal: AbortSignal) => Promise<T>;
   intervalMs?: number;
   onRenewError?: (error: unknown) => void;
 }) {
+  const controller = new AbortController();
+  let renewalRunning = false;
+  let leaseLostError: TaskLeaseLostError | null = null;
   const interval = setInterval(() => {
-    void input.renew().catch((error) => input.onRenewError?.(error));
+    if (renewalRunning || leaseLostError) return;
+    renewalRunning = true;
+    void input
+      .renew()
+      .then((owned) => {
+        if (!owned && !leaseLostError) {
+          leaseLostError = new TaskLeaseLostError();
+          controller.abort(leaseLostError);
+        }
+      })
+      .catch((error) => input.onRenewError?.(error))
+      .finally(() => {
+        renewalRunning = false;
+      });
   }, input.intervalMs ?? TASK_LEASE_HEARTBEAT_MS);
   interval.unref?.();
 
   try {
-    return await input.run();
+    const result = await input.run(controller.signal);
+    if (leaseLostError) throw new TaskLeaseLostError();
+    return result;
+  } catch (error) {
+    if (leaseLostError) throw new TaskLeaseLostError();
+    throw error;
   } finally {
     clearInterval(interval);
   }

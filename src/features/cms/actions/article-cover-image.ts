@@ -404,6 +404,9 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
         errorDetail: null,
         startedAt: null,
         finishedAt: null,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        heartbeatAt: null,
         updatedAt: new Date(),
       };
 
@@ -467,6 +470,9 @@ export async function cancelCoverGenerationTaskAction(taskId: number) {
         errorTitle: null,
         errorDetail: null,
         finishedAt: new Date(),
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        heartbeatAt: null,
         updatedAt: new Date(),
       })
       .where(

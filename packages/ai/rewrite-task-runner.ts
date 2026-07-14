@@ -13,6 +13,7 @@ import {
   createTaskLeaseOwner,
   getTaskLeaseExpiry,
   TASK_LEASE_HEARTBEAT_MS,
+  TaskLeaseLostError,
 } from "@fwqgo/core/task-lease";
 import { structuredLog } from "@fwqgo/core/structured-log";
 import {
@@ -133,6 +134,26 @@ async function updateTask(
           )
         : eq(aiRewriteTasks.id, taskId),
     );
+}
+
+async function renewAiTaskLease(task: typeof aiRewriteTasks.$inferSelect) {
+  if (!task.leaseOwner) throw new TaskLeaseLostError();
+  const now = new Date();
+  const renewed = await db
+    .update(aiRewriteTasks)
+    .set({
+      heartbeatAt: now,
+      leaseExpiresAt: getTaskLeaseExpiry(now),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(aiRewriteTasks.id, task.id),
+        eq(aiRewriteTasks.leaseOwner, task.leaseOwner),
+      ),
+    )
+    .returning({ id: aiRewriteTasks.id });
+  if (renewed.length === 0) throw new TaskLeaseLostError();
 }
 
 async function updateSourceMaterialStatus(
@@ -992,6 +1013,7 @@ async function runEnglishSeoTask(
       claimedTask.postId && claimedTask.postId !== post.id
         ? claimedTask.postId
         : null;
+    await renewAiTaskLease(claimedTask);
     const englishPost = await upsertEnglishDraftPost({
       parentPost: post,
       existingPostId: existingEnglishPostId,
@@ -1199,6 +1221,7 @@ async function runSeoMetadataTask(
             },
             { styleId: claimedTask.rewriteStyleId ?? undefined },
           );
+          await renewAiTaskLease(claimedTask);
           const nextSlug = await getUniqueEnglishArticleSlug(
             metadata.enSlug || metadata.enTitle,
             post.id,
@@ -1241,6 +1264,7 @@ async function runSeoMetadataTask(
             { markdownContent: markdownInput.markdown },
             { styleId: claimedTask.rewriteStyleId ?? undefined },
           );
+          await renewAiTaskLease(claimedTask);
           const nextSlug = await getUniqueEnglishArticleSlug(
             metadata.title,
             post.id,
@@ -1580,6 +1604,8 @@ export async function runAiRewriteTask(taskId: number) {
 
   let leaseHeartbeat: ReturnType<typeof setInterval> | null = null;
   let leaseOwner: string | null = null;
+  let leaseHeartbeatRunning = false;
+  let leaseLost = false;
 
   try {
     leaseOwner = createTaskLeaseOwner("ai-rewrite");
@@ -1611,29 +1637,22 @@ export async function runAiRewriteTask(taskId: number) {
       return;
     }
 
+    const leasedTask = claimedTask;
     runningTaskLeaseOwners.set(taskId, leaseOwner);
     leaseHeartbeat = setInterval(() => {
-      const now = new Date();
-      void db
-        .update(aiRewriteTasks)
-        .set({
-          heartbeatAt: now,
-          leaseExpiresAt: getTaskLeaseExpiry(now),
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(aiRewriteTasks.id, taskId),
-            eq(aiRewriteTasks.status, "running"),
-            eq(aiRewriteTasks.leaseOwner, leaseOwner!),
-          ),
-        )
+      if (leaseHeartbeatRunning || leaseLost) return;
+      leaseHeartbeatRunning = true;
+      void renewAiTaskLease(leasedTask)
         .catch((error) => {
+          if (error instanceof TaskLeaseLostError) leaseLost = true;
           structuredLog("error", "ai.task_heartbeat_failed", {
             taskId,
             leaseOwner,
             error,
           });
+        })
+        .finally(() => {
+          leaseHeartbeatRunning = false;
         });
     }, TASK_LEASE_HEARTBEAT_MS);
     leaseHeartbeat.unref?.();
@@ -1795,6 +1814,7 @@ export async function runAiRewriteTask(taskId: number) {
         message: "正在写入文章草稿",
       });
 
+      await renewAiTaskLease(claimedTask);
       const post = claimedTask.postId
         ? {
             id: claimedTask.postId,
@@ -2018,20 +2038,28 @@ export async function runAiRewriteTask(taskId: number) {
   } finally {
     if (leaseHeartbeat) clearInterval(leaseHeartbeat);
     if (leaseOwner) {
-      await db
-        .update(aiRewriteTasks)
-        .set({
-          leaseOwner: null,
-          leaseExpiresAt: null,
-          heartbeatAt: null,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(aiRewriteTasks.id, taskId),
-            eq(aiRewriteTasks.leaseOwner, leaseOwner),
-          ),
-        );
+      try {
+        await db
+          .update(aiRewriteTasks)
+          .set({
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            heartbeatAt: null,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(aiRewriteTasks.id, taskId),
+              eq(aiRewriteTasks.leaseOwner, leaseOwner),
+            ),
+          );
+      } catch (error) {
+        structuredLog("error", "ai.task_lease_release_failed", {
+          taskId,
+          leaseOwner,
+          error,
+        });
+      }
     }
     runningTaskLeaseOwners.delete(taskId);
     runningTaskIds.delete(taskId);

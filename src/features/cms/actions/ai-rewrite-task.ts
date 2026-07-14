@@ -504,6 +504,9 @@ export async function retryAiRewriteTaskAction(taskId: number) {
         updatedAt: new Date(),
         startedAt: null,
         finishedAt: null,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        heartbeatAt: null,
       })
       .where(
         and(
@@ -731,7 +734,7 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
       .orderBy(desc(aiRewriteTasks.createdAt))
       .limit(1);
 
-    const task = existingTask
+    let task = existingTask
       ? existingTask.status === "running"
         ? existingTask
         : (
@@ -763,9 +766,17 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
                 diagnostics: null,
                 startedAt: null,
                 finishedAt: null,
+                leaseOwner: null,
+                leaseExpiresAt: null,
+                heartbeatAt: null,
                 updatedAt: new Date(),
               })
-              .where(eq(aiRewriteTasks.id, existingTask.id))
+              .where(
+                and(
+                  eq(aiRewriteTasks.id, existingTask.id),
+                  ne(aiRewriteTasks.status, "running"),
+                ),
+              )
               .returning({
                 id: aiRewriteTasks.id,
                 status: aiRewriteTasks.status,
@@ -799,6 +810,14 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
             })
             .returning({ id: aiRewriteTasks.id, status: aiRewriteTasks.status })
         )[0];
+
+    if (!task && existingTask) {
+      [task] = await db
+        .select({ id: aiRewriteTasks.id, status: aiRewriteTasks.status })
+        .from(aiRewriteTasks)
+        .where(eq(aiRewriteTasks.id, existingTask.id))
+        .limit(1);
+    }
 
     if (!task) {
       return { error: "英文生成任务创建失败" };
@@ -966,7 +985,7 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
         .where(eq(aiRewriteTasks.sourceUrl, sourceUrl))
         .orderBy(desc(aiRewriteTasks.createdAt))
         .limit(1);
-      const task = existingTask
+      let task = existingTask
         ? existingTask.status === "running"
           ? existingTask
           : (
@@ -994,9 +1013,17 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
                   diagnostics: null,
                   startedAt: null,
                   finishedAt: null,
+                  leaseOwner: null,
+                  leaseExpiresAt: null,
+                  heartbeatAt: null,
                   updatedAt: new Date(),
                 })
-                .where(eq(aiRewriteTasks.id, existingTask.id))
+                .where(
+                  and(
+                    eq(aiRewriteTasks.id, existingTask.id),
+                    ne(aiRewriteTasks.status, "running"),
+                  ),
+                )
                 .returning({
                   id: aiRewriteTasks.id,
                   status: aiRewriteTasks.status,
@@ -1029,6 +1056,14 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
                 status: aiRewriteTasks.status,
               })
           )[0];
+
+      if (!task && existingTask) {
+        [task] = await db
+          .select({ id: aiRewriteTasks.id, status: aiRewriteTasks.status })
+          .from(aiRewriteTasks)
+          .where(eq(aiRewriteTasks.id, existingTask.id))
+          .limit(1);
+      }
 
       if (!task) {
         errors.push({ postId: post.id, reason: "SEO 任务创建失败" });
@@ -1101,10 +1136,22 @@ export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
         currentStep: "人工审核已完成",
         error: null,
         finishedAt: new Date(),
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        heartbeatAt: null,
         updatedAt: new Date(),
       })
-      .where(eq(aiRewriteTasks.id, taskId))
+      .where(
+        and(
+          eq(aiRewriteTasks.id, taskId),
+          eq(aiRewriteTasks.status, "manual_required"),
+        ),
+      )
       .returning({ id: aiRewriteTasks.id });
+
+    if (!updated) {
+      return { error: "任务状态已经变化，请刷新后重试" };
+    }
 
     if (task.sourceMaterialId) {
       await db

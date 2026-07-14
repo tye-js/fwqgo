@@ -42,3 +42,18 @@ void test("prunes expired keys and never exceeds its entry cap", () => {
   tracker.getRetryAfterSeconds(["b", "c"], 30_000);
   assert.equal(tracker.size, 0);
 });
+
+void test("starts a fresh window after a lock expires", () => {
+  const tracker = new BoundedAttemptTracker({
+    maxAttempts: 2,
+    windowMs: 60_000,
+    lockMs: 1_000,
+    maxEntries: 10,
+  });
+  tracker.recordAttempt(["ip:1"], 0);
+  tracker.recordAttempt(["ip:1"], 1);
+  assert.equal(tracker.getRetryAfterSeconds(["ip:1"], 500), 1);
+
+  tracker.recordAttempt(["ip:1"], 1_001);
+  assert.equal(tracker.getRetryAfterSeconds(["ip:1"], 1_001), 0);
+});

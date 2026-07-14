@@ -5,6 +5,7 @@ import { requireAdminSession } from "@fwqgo/auth/session";
 import {
   createTaskLeaseOwner,
   getTaskLeaseExpiry,
+  TaskLeaseLostError,
   withTaskLeaseHeartbeat,
 } from "@fwqgo/core/task-lease";
 import { structuredLog } from "@fwqgo/core/structured-log";
@@ -154,10 +155,11 @@ async function claimNextTask() {
   return claimedTask ?? null;
 }
 
-async function processTask(task: ServerOfferImportTask) {
+async function processTask(task: ServerOfferImportTask, signal: AbortSignal) {
   if (!task.leaseOwner) {
     throw new Error("套餐提取任务缺少租约所有者");
   }
+  signal.throwIfAborted();
   const ownedTaskWhere = and(
     eq(serverOfferImportTasks.id, task.id),
     eq(serverOfferImportTasks.leaseOwner, task.leaseOwner),
@@ -179,22 +181,9 @@ async function processTask(task: ServerOfferImportTask) {
     const result = await importServerOffersFromPost(task.postId, {
       revalidate: false,
     });
-
-    await db
-      .update(serverOfferImportTasks)
-      .set({
-        status: "succeeded",
-        progress: 100,
-        message: "单篇文章套餐提取完成",
-        result: JSON.stringify(result),
-        finishedAt: new Date(),
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        heartbeatAt: null,
-        updatedAt: new Date(),
-      })
-      .where(ownedTaskWhere);
-    return;
+    signal.throwIfAborted();
+    if (!(await renewTaskLease(task))) throw new TaskLeaseLostError();
+    return { result, message: "单篇文章套餐提取完成" };
   }
 
   await db
@@ -207,21 +196,9 @@ async function processTask(task: ServerOfferImportTask) {
     .where(ownedTaskWhere);
 
   const result = await importServerOffersFromPosts({ revalidate: false });
-
-  await db
-    .update(serverOfferImportTasks)
-    .set({
-      status: "succeeded",
-      progress: 100,
-      message: "历史文章套餐提取完成",
-      result: JSON.stringify(result),
-      finishedAt: new Date(),
-      leaseOwner: null,
-      leaseExpiresAt: null,
-      heartbeatAt: null,
-      updatedAt: new Date(),
-    })
-    .where(ownedTaskWhere);
+  signal.throwIfAborted();
+  if (!(await renewTaskLease(task))) throw new TaskLeaseLostError();
+  return { result, message: "历史文章套餐提取完成" };
 }
 
 async function renewTaskLease(task: ServerOfferImportTask) {
@@ -255,10 +232,37 @@ async function runServerOfferImportWorker() {
     }
 
     try {
-      await withTaskLeaseHeartbeat({
+      const output = await withTaskLeaseHeartbeat({
         renew: () => renewTaskLease(task),
-        run: () => processTask(task),
+        run: (signal) => processTask(task, signal),
+        onRenewError: (error) =>
+          structuredLog("error", "offers.task_heartbeat_failed", {
+            taskId: task.id,
+            leaseOwner: task.leaseOwner,
+            error,
+          }),
       });
+      const completed = await db
+        .update(serverOfferImportTasks)
+        .set({
+          status: "succeeded",
+          progress: 100,
+          message: output.message,
+          result: JSON.stringify(output.result),
+          finishedAt: new Date(),
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          heartbeatAt: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(serverOfferImportTasks.id, task.id),
+            eq(serverOfferImportTasks.leaseOwner, task.leaseOwner ?? ""),
+          ),
+        )
+        .returning({ id: serverOfferImportTasks.id });
+      if (completed.length === 0) throw new TaskLeaseLostError();
       revalidateOfferPages();
     } catch (error) {
       structuredLog("error", "offers.task_failed", {
@@ -359,6 +363,9 @@ export async function retryServerOfferImportTask(taskId: number) {
       errorDetail: null,
       startedAt: null,
       finishedAt: null,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      heartbeatAt: null,
       updatedAt: new Date(),
     })
     .where(
@@ -381,6 +388,9 @@ export async function retryServerOfferImportTask(taskId: number) {
         errorDetail: null,
         startedAt: null,
         finishedAt: null,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        heartbeatAt: null,
         updatedAt: new Date(),
       })
       .where(
@@ -417,6 +427,9 @@ export async function cancelServerOfferImportTask(taskId: number) {
       errorTitle: null,
       errorDetail: null,
       finishedAt: new Date(),
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      heartbeatAt: null,
       updatedAt: new Date(),
     })
     .where(

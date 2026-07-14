@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { open } from "node:fs/promises";
 
 import {
   normalizeUploadPath,
@@ -8,6 +8,7 @@ import {
   createWeakFileEtag,
   matchesHttpCacheValidators,
 } from "@fwqgo/core/http-cache";
+import { readResponseBodyWithLimit } from "@fwqgo/core/bounded-response-body";
 import {
   attachRequestId,
   getRequestId,
@@ -20,6 +21,13 @@ const MAX_REMOTE_IMAGE_BYTES = 12 * 1024 * 1024;
 const REMOTE_UPLOAD_HOSTS = new Set(["fwqgo.com", "cms.fwqgo.com"]);
 const NEGATIVE_CACHE_TTL_MS = 60_000;
 const MAX_NEGATIVE_CACHE_ENTRIES = 500;
+const ALLOWED_REMOTE_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+]);
 type RemoteImage = { file: Buffer; contentType: string };
 const remoteImageRequests = new Map<string, Promise<RemoteImage | null>>();
 const missingRemoteImages = new Map<string, number>();
@@ -41,6 +49,10 @@ function getMimeType(filePath: string) {
 
   if (lowerFilePath.endsWith(".webp")) {
     return "image/webp";
+  }
+
+  if (lowerFilePath.endsWith(".avif")) {
+    return "image/avif";
   }
 
   return "application/octet-stream";
@@ -94,8 +106,12 @@ async function fetchRemoteUploadImageUncached(publicPath: string) {
       continue;
     }
 
-    const contentType = response.headers.get("content-type")?.split(";")[0];
-    if (!contentType?.startsWith("image/")) {
+    const contentType = response.headers
+      .get("content-type")
+      ?.split(";")[0]
+      ?.trim()
+      .toLowerCase();
+    if (!contentType || !ALLOWED_REMOTE_IMAGE_TYPES.has(contentType)) {
       await response.body?.cancel();
       continue;
     }
@@ -112,10 +128,12 @@ async function fetchRemoteUploadImageUncached(publicPath: string) {
       continue;
     }
 
-    const file = Buffer.from(await response.arrayBuffer());
-    if (file.byteLength > MAX_REMOTE_IMAGE_BYTES) {
-      continue;
-    }
+    const body = await readResponseBodyWithLimit(
+      response,
+      MAX_REMOTE_IMAGE_BYTES,
+    );
+    if (!body) continue;
+    const file = Buffer.from(body);
 
     return { file, contentType };
   }
@@ -133,6 +151,7 @@ async function fetchRemoteUploadImage(publicPath: string) {
   if (existingRequest) return existingRequest;
 
   const request = fetchRemoteUploadImageUncached(publicPath)
+    .catch(() => null)
     .then((image) => {
       if (!image) {
         missingRemoteImages.set(publicPath, Date.now() + NEGATIVE_CACHE_TTL_MS);
@@ -193,46 +212,49 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const fileStat = await stat(filePath);
+    const fileHandle = await open(filePath, "r");
+    try {
+      const fileStat = await fileHandle.stat();
+      if (!fileStat.isFile()) {
+        return respond(new NextResponse("Image not found", { status: 404 }));
+      }
 
-    if (!fileStat.isFile()) {
-      return respond(new NextResponse("Image not found", { status: 404 }));
-    }
-
-    const etag = createWeakFileEtag(fileStat.size, fileStat.mtimeMs);
-    if (
-      matchesHttpCacheValidators({
-        headers: request.headers,
-        etag,
-        lastModified: fileStat.mtime,
-      })
-    ) {
-      return respond(
-        new NextResponse(null, {
-          status: 304,
-          headers: {
-            "Cache-Control": "public, max-age=31536000, immutable",
-            ETag: etag,
-            "Last-Modified": fileStat.mtime.toUTCString(),
-            "X-Content-Type-Options": "nosniff",
-          },
-        }),
-      );
-    }
-
-    const file = await readFile(filePath);
-
-    return respond(
-      new NextResponse(file, {
-        headers: imageHeaders({
-          cacheControl: "public, max-age=31536000, immutable",
-          contentLength: fileStat.size,
-          contentType,
+      const etag = createWeakFileEtag(fileStat.size, fileStat.mtimeMs);
+      if (
+        matchesHttpCacheValidators({
+          headers: request.headers,
           etag,
           lastModified: fileStat.mtime,
+        })
+      ) {
+        return respond(
+          new NextResponse(null, {
+            status: 304,
+            headers: {
+              "Cache-Control": "public, max-age=31536000, immutable",
+              ETag: etag,
+              "Last-Modified": fileStat.mtime.toUTCString(),
+              "X-Content-Type-Options": "nosniff",
+            },
+          }),
+        );
+      }
+
+      const file = await fileHandle.readFile();
+      return respond(
+        new NextResponse(file, {
+          headers: imageHeaders({
+            cacheControl: "public, max-age=31536000, immutable",
+            contentLength: file.byteLength,
+            contentType,
+            etag,
+            lastModified: fileStat.mtime,
+          }),
         }),
-      }),
-    );
+      );
+    } finally {
+      await fileHandle.close();
+    }
   } catch (localError) {
     if (normalizedPublicPath.startsWith("/uploads/")) {
       try {

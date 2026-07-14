@@ -1,9 +1,8 @@
 import { spawn } from "node:child_process";
+import { createServer } from "node:net";
 import path from "node:path";
 
 const root = process.cwd();
-const webPort = 4300;
-const cmsPort = 4310;
 /** @type {import("node:child_process").ChildProcess[]} */
 const processes = [];
 /** @type {string[]} */
@@ -20,12 +19,33 @@ function startServer(name, cwd, entry, port) {
     stream.on("data", (chunk) => output.push(`[${name}] ${chunk}`));
   }
   processes.push(child);
+  return child;
 }
 
-/** @param {string} url @param {Record<string, string>} [headers] */
-async function waitForServer(url, headers = {}) {
+/** @param {Set<number>} [excluded] */
+async function getAvailablePort(excluded = new Set()) {
+  const server = createServer();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen({ port: 0, host: "127.0.0.1" }, () => resolve(undefined));
+  });
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  await new Promise((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve(undefined))),
+  );
+  if (!port) throw new Error("Failed to allocate a smoke-test port");
+  if (excluded.has(port)) return getAvailablePort(excluded);
+  return port;
+}
+
+/** @param {string} url @param {import("node:child_process").ChildProcess} child @param {Record<string, string>} [headers] */
+async function waitForServer(url, child, headers = {}) {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`Server process exited before becoming ready: ${url}`);
+    }
     try {
       return await fetch(url, { headers, redirect: "manual" });
     } catch {
@@ -51,9 +71,9 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-/** @param {string} origin @param {string} service @param {Record<string, string>} [headers] */
-async function checkHealth(origin, service, headers = {}) {
-  const response = await waitForServer(`${origin}/api/health`, headers);
+/** @param {string} origin @param {string} service @param {import("node:child_process").ChildProcess} child @param {Record<string, string>} [headers] */
+async function checkHealth(origin, service, child, headers = {}) {
+  const response = await waitForServer(`${origin}/api/health`, child, headers);
   const body = await response.text();
   assert(
     [200, 503].includes(response.status),
@@ -70,13 +90,15 @@ async function checkHealth(origin, service, headers = {}) {
 }
 
 async function run() {
-  startServer(
+  const webPort = await getAvailablePort();
+  const cmsPort = await getAvailablePort(new Set([webPort]));
+  const webProcess = startServer(
     "web",
     path.join(root, ".next-web", "standalone"),
     path.join("apps", "web", "server.js"),
     webPort,
   );
-  startServer(
+  const cmsProcess = startServer(
     "cms",
     path.join(root, ".next-cms", "standalone"),
     path.join("apps", "cms", "server.js"),
@@ -87,8 +109,8 @@ async function run() {
   const cmsOrigin = `http://127.0.0.1:${cmsPort}`;
   const authHeaders = basicAuthHeaders();
   await Promise.all([
-    checkHealth(webOrigin, "web"),
-    checkHealth(cmsOrigin, "cms", authHeaders),
+    checkHealth(webOrigin, "web", webProcess),
+    checkHealth(cmsOrigin, "cms", cmsProcess, authHeaders),
   ]);
 
   const webAdmin = await fetch(`${webOrigin}/login?from=smoke`, {
@@ -150,8 +172,10 @@ try {
 } finally {
   for (const child of processes) child.kill("SIGTERM");
   await Promise.all(
-    processes.map(
-      (child) => new Promise((resolve) => child.once("exit", resolve)),
+    processes.map((child) =>
+      child.exitCode !== null || child.signalCode !== null
+        ? Promise.resolve()
+        : new Promise((resolve) => child.once("exit", resolve)),
     ),
   );
 }
