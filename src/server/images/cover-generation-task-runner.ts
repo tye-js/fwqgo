@@ -3,6 +3,12 @@ import { and, asc, desc, eq, isNull, lt, or } from "drizzle-orm";
 
 import { db } from "@fwqgo/db";
 import { imageCoverGenerationTasks, posts } from "@fwqgo/db/schema";
+import {
+  createTaskLeaseOwner,
+  getTaskLeaseExpiry,
+  withTaskLeaseHeartbeat,
+} from "@fwqgo/core/task-lease";
+import { structuredLog } from "@fwqgo/core/structured-log";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import { generateArticleCoverImage } from "@/server/images/generated-cover";
@@ -152,6 +158,9 @@ export async function enqueueArticleCoverGenerationTask(
             createdBy: input.createdBy ?? existingTask.createdBy,
             startedAt: null,
             finishedAt: null,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            heartbeatAt: null,
             updatedAt: new Date(),
           })
           .where(eq(imageCoverGenerationTasks.id, existingTask.id))
@@ -183,6 +192,9 @@ export async function enqueueArticleCoverGenerationTask(
 }
 
 async function bindCoverTaskConfig(task: CoverTaskRow) {
+  if (!task.leaseOwner) {
+    throw new Error("封面生成任务缺少租约所有者");
+  }
   const config = task.configId
     ? await getActiveImageGenerationConfig(task.configId)
     : task.configName || task.provider || task.model
@@ -208,7 +220,12 @@ async function bindCoverTaskConfig(task: CoverTaskRow) {
       model: config.model,
       updatedAt: new Date(),
     })
-    .where(eq(imageCoverGenerationTasks.id, task.id))
+    .where(
+      and(
+        eq(imageCoverGenerationTasks.id, task.id),
+        eq(imageCoverGenerationTasks.leaseOwner, task.leaseOwner),
+      ),
+    )
     .returning();
 
   if (!boundTask) {
@@ -219,32 +236,41 @@ async function bindCoverTaskConfig(task: CoverTaskRow) {
 }
 
 async function resetStaleRunningCoverTasks() {
-  const staleBefore = new Date(Date.now() - 15 * 60 * 1000);
+  const now = new Date();
 
-  await db
+  const recovered = await db
     .update(imageCoverGenerationTasks)
     .set({
       status: "pending",
       errorTitle: null,
       errorDetail: null,
       startedAt: null,
-      updatedAt: new Date(),
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      heartbeatAt: null,
+      updatedAt: now,
     })
     .where(
       and(
         eq(imageCoverGenerationTasks.status, "running"),
         or(
-          lt(imageCoverGenerationTasks.updatedAt, staleBefore),
-          and(
-            isNull(imageCoverGenerationTasks.updatedAt),
-            lt(imageCoverGenerationTasks.startedAt, staleBefore),
-          ),
+          isNull(imageCoverGenerationTasks.leaseExpiresAt),
+          lt(imageCoverGenerationTasks.leaseExpiresAt, now),
         ),
       ),
-    );
+    )
+    .returning({ id: imageCoverGenerationTasks.id });
+  if (recovered.length > 0) {
+    structuredLog("warn", "cover.tasks_recovered", {
+      count: recovered.length,
+      taskIds: recovered.map((task) => task.id),
+    });
+  }
 }
 
 async function getNextPendingCoverTask() {
+  const leaseOwner = createTaskLeaseOwner("cover-generation");
+  const now = new Date();
   const [task] = await db
     .select({ id: imageCoverGenerationTasks.id })
     .from(imageCoverGenerationTasks)
@@ -260,8 +286,11 @@ async function getNextPendingCoverTask() {
       status: "running",
       errorTitle: null,
       errorDetail: null,
-      startedAt: new Date(),
-      updatedAt: new Date(),
+      startedAt: now,
+      leaseOwner,
+      leaseExpiresAt: getTaskLeaseExpiry(now),
+      heartbeatAt: now,
+      updatedAt: now,
     })
     .where(
       and(
@@ -344,9 +373,38 @@ async function processCoverGenerationTask(
       errorTitle: null,
       errorDetail: null,
       finishedAt: new Date(),
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      heartbeatAt: null,
       updatedAt: new Date(),
     })
-    .where(eq(imageCoverGenerationTasks.id, boundTask.id));
+    .where(
+      and(
+        eq(imageCoverGenerationTasks.id, boundTask.id),
+        eq(imageCoverGenerationTasks.leaseOwner, boundTask.leaseOwner ?? ""),
+      ),
+    );
+}
+
+async function renewCoverTaskLease(task: CoverTaskRow) {
+  if (!task.leaseOwner) return false;
+  const now = new Date();
+  const rows = await db
+    .update(imageCoverGenerationTasks)
+    .set({
+      heartbeatAt: now,
+      leaseExpiresAt: getTaskLeaseExpiry(now),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(imageCoverGenerationTasks.id, task.id),
+        eq(imageCoverGenerationTasks.status, "running"),
+        eq(imageCoverGenerationTasks.leaseOwner, task.leaseOwner),
+      ),
+    )
+    .returning({ id: imageCoverGenerationTasks.id });
+  return rows.length > 0;
 }
 
 async function processCoverGenerationTaskWithTimeout(task: CoverTaskRow) {
@@ -380,9 +438,18 @@ async function runCoverGenerationWorker() {
       if (!task) break;
 
       try {
-        await processCoverGenerationTaskWithTimeout(task);
+        await withTaskLeaseHeartbeat({
+          renew: () => renewCoverTaskLease(task),
+          run: () => processCoverGenerationTaskWithTimeout(task),
+        });
       } catch (error) {
         const readableError = formatCoverGenerationError(error);
+        structuredLog("error", "cover.task_failed", {
+          taskId: task.id,
+          postId: task.postId,
+          leaseOwner: task.leaseOwner,
+          error,
+        });
 
         await db
           .update(imageCoverGenerationTasks)
@@ -391,9 +458,17 @@ async function runCoverGenerationWorker() {
             errorTitle: readableError.title,
             errorDetail: readableError.detail,
             finishedAt: new Date(),
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            heartbeatAt: null,
             updatedAt: new Date(),
           })
-          .where(eq(imageCoverGenerationTasks.id, task.id));
+          .where(
+            and(
+              eq(imageCoverGenerationTasks.id, task.id),
+              eq(imageCoverGenerationTasks.leaseOwner, task.leaseOwner ?? ""),
+            ),
+          );
       }
     }
   } finally {

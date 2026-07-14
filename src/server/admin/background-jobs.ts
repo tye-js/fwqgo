@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm";
 
 import { db } from "@fwqgo/db";
+import { structuredLog } from "@fwqgo/core/structured-log";
 import { adminBackgroundJobs } from "@fwqgo/db/schema";
 import {
   getBackgroundJobRetentionCutoff,
@@ -159,7 +160,7 @@ function startAdminBackgroundJobWorker() {
   const wakeVersionAtStart = workerWakeVersion;
   workerLoopPromise = runAdminBackgroundJobWorker()
     .catch((error) => {
-      console.error("Admin background job worker failed:", error);
+      structuredLog("error", "background.worker_failed", { error });
     })
     .finally(() => {
       workerLoopPromise = null;
@@ -492,7 +493,12 @@ async function runClaimedBackgroundJob(job: AdminBackgroundJobRow) {
 
   const interval = setInterval(() => {
     void heartbeat(job.id).catch((error) => {
-      console.error(`Background job heartbeat failed: ${job.jobKey}`, error);
+      structuredLog("error", "background.heartbeat_failed", {
+        jobId: job.id,
+        jobKey: job.jobKey,
+        workerId: WORKER_ID,
+        error,
+      });
     });
   }, HEARTBEAT_INTERVAL_MS);
 
@@ -500,7 +506,13 @@ async function runClaimedBackgroundJob(job: AdminBackgroundJobRow) {
     await runner.run({ job, payload: job.payload });
     await completeBackgroundJob(job.id);
   } catch (error) {
-    console.error(`${runner.label} failed:`, error);
+    structuredLog("error", "background.job_failed", {
+      jobId: job.id,
+      jobKey: job.jobKey,
+      workerId: WORKER_ID,
+      label: runner.label,
+      error,
+    });
     await failOrRetryBackgroundJob(job, error);
   } finally {
     clearInterval(interval);
@@ -539,7 +551,7 @@ async function runAdminBackgroundJobWorker() {
   await resetStaleBackgroundJobs();
   const prunedCount = await pruneTerminalBackgroundJobs();
   if (prunedCount > 0) {
-    console.info(`Pruned ${prunedCount} expired background job record(s)`);
+    structuredLog("info", "background.jobs_pruned", { count: prunedCount });
   }
 
   const laneCount = Math.max(1, Math.min(8, getConcurrency()));
@@ -699,7 +711,10 @@ export async function enqueueAdminBackgroundJob(input: BackgroundJobInput) {
   try {
     return await enqueueAdminBackgroundJobInternal(input);
   } catch (error) {
-    console.error(`Failed to enqueue background job ${input.key}:`, error);
+    structuredLog("error", "background.enqueue_failed", {
+      jobKey: input.key,
+      error,
+    });
     throw error;
   }
 }

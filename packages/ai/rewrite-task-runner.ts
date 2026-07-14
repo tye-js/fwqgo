@@ -1,4 +1,4 @@
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import * as cheerio from "cheerio";
 import { revalidatePath } from "next/cache";
 
@@ -9,6 +9,12 @@ import {
   normalizeArticleHtml,
 } from "@fwqgo/core/content";
 import { slugify } from "@fwqgo/core/utils";
+import {
+  createTaskLeaseOwner,
+  getTaskLeaseExpiry,
+  TASK_LEASE_HEARTBEAT_MS,
+} from "@fwqgo/core/task-lease";
+import { structuredLog } from "@fwqgo/core/structured-log";
 import {
   createPostRecordInTransaction,
   getErrorMessage,
@@ -51,6 +57,7 @@ import { getActiveImageGenerationConfig } from "@/server/images/generation-confi
 import { shortenMarkdownOutboundLinks } from "@/server/links/outbound-short-link";
 
 const runningTaskIds = new Set<number>();
+const runningTaskLeaseOwners = new Map<number, string>();
 const MAX_AI_MARKDOWN_INPUT_LENGTH = 14_000;
 
 function normalizeCoverUrlForLanguageCheck(value: string | null | undefined) {
@@ -114,10 +121,18 @@ async function updateTask(
   taskId: number,
   values: Partial<typeof aiRewriteTasks.$inferInsert>,
 ) {
+  const leaseOwner = runningTaskLeaseOwners.get(taskId);
   await db
     .update(aiRewriteTasks)
     .set({ ...values, updatedAt: new Date() })
-    .where(eq(aiRewriteTasks.id, taskId));
+    .where(
+      leaseOwner
+        ? and(
+            eq(aiRewriteTasks.id, taskId),
+            eq(aiRewriteTasks.leaseOwner, leaseOwner),
+          )
+        : eq(aiRewriteTasks.id, taskId),
+    );
 }
 
 async function updateSourceMaterialStatus(
@@ -333,7 +348,14 @@ async function bindTaskConfigs(task: typeof aiRewriteTasks.$inferSelect) {
       imageModel: imageConfig?.model ?? null,
       updatedAt: new Date(),
     })
-    .where(eq(aiRewriteTasks.id, task.id))
+    .where(
+      task.leaseOwner
+        ? and(
+            eq(aiRewriteTasks.id, task.id),
+            eq(aiRewriteTasks.leaseOwner, task.leaseOwner),
+          )
+        : eq(aiRewriteTasks.id, task.id),
+    )
     .returning();
 
   if (!boundTask) {
@@ -672,7 +694,11 @@ async function enqueueCoverForDraftPost(input: {
       batchId: task.batchId,
     };
   } catch (error) {
-    console.error("AI rewrite cover enqueue failed:", error);
+    structuredLog("error", "ai.cover_enqueue_failed", {
+      taskId: input.taskId,
+      postId: input.postId,
+      error,
+    });
     await upsertTaskStep({
       taskId: input.taskId,
       attempt: input.attempt,
@@ -1485,9 +1511,20 @@ async function recoverInterruptedAiRewriteTasks() {
         error: null,
         startedAt: null,
         finishedAt: null,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        heartbeatAt: null,
         updatedAt: now,
       })
-      .where(eq(aiRewriteTasks.status, "running"))
+      .where(
+        and(
+          eq(aiRewriteTasks.status, "running"),
+          or(
+            isNull(aiRewriteTasks.leaseExpiresAt),
+            lt(aiRewriteTasks.leaseExpiresAt, now),
+          ),
+        ),
+      )
       .returning({
         id: aiRewriteTasks.id,
         sourceMaterialId: aiRewriteTasks.sourceMaterialId,
@@ -1511,9 +1548,10 @@ async function recoverInterruptedAiRewriteTasks() {
   });
 
   if (recoveredTasks.length > 0) {
-    console.warn(
-      `Recovered ${recoveredTasks.length} interrupted AI rewrite task(s)`,
-    );
+    structuredLog("warn", "ai.tasks_recovered", {
+      count: recoveredTasks.length,
+      taskIds: recoveredTasks.map((task) => task.id),
+    });
   }
 }
 
@@ -1540,7 +1578,12 @@ export async function runAiRewriteTask(taskId: number) {
     runningTaskIds.add(taskId);
   }
 
+  let leaseHeartbeat: ReturnType<typeof setInterval> | null = null;
+  let leaseOwner: string | null = null;
+
   try {
+    leaseOwner = createTaskLeaseOwner("ai-rewrite");
+    const claimedAt = new Date();
     let [claimedTask] = await db
       .update(aiRewriteTasks)
       .set({
@@ -1548,10 +1591,13 @@ export async function runAiRewriteTask(taskId: number) {
         progress: 10,
         currentStep: "准备抓取",
         error: null,
-        startedAt: new Date(),
+        startedAt: claimedAt,
         finishedAt: null,
         attempts: sql`${aiRewriteTasks.attempts} + 1`,
-        updatedAt: new Date(),
+        leaseOwner,
+        leaseExpiresAt: getTaskLeaseExpiry(claimedAt),
+        heartbeatAt: claimedAt,
+        updatedAt: claimedAt,
       })
       .where(
         and(
@@ -1564,6 +1610,33 @@ export async function runAiRewriteTask(taskId: number) {
     if (!claimedTask) {
       return;
     }
+
+    runningTaskLeaseOwners.set(taskId, leaseOwner);
+    leaseHeartbeat = setInterval(() => {
+      const now = new Date();
+      void db
+        .update(aiRewriteTasks)
+        .set({
+          heartbeatAt: now,
+          leaseExpiresAt: getTaskLeaseExpiry(now),
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(aiRewriteTasks.id, taskId),
+            eq(aiRewriteTasks.status, "running"),
+            eq(aiRewriteTasks.leaseOwner, leaseOwner!),
+          ),
+        )
+        .catch((error) => {
+          structuredLog("error", "ai.task_heartbeat_failed", {
+            taskId,
+            leaseOwner,
+            error,
+          });
+        });
+    }, TASK_LEASE_HEARTBEAT_MS);
+    leaseHeartbeat.unref?.();
 
     try {
       claimedTask = await bindTaskConfigs(claimedTask);
@@ -1773,7 +1846,12 @@ export async function runAiRewriteTask(taskId: number) {
           finishedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(aiRewriteTasks.id, taskId))
+        .where(
+          and(
+            eq(aiRewriteTasks.id, taskId),
+            eq(aiRewriteTasks.leaseOwner, claimedTask.leaseOwner ?? ""),
+          ),
+        )
         .returning({ id: aiRewriteTasks.id });
 
       if (!updatedTask) {
@@ -1866,7 +1944,11 @@ export async function runAiRewriteTask(taskId: number) {
         });
         offerExtractionStatus = "success";
       } catch (offerError) {
-        console.error("Server offer extraction failed:", offerError);
+        structuredLog("error", "ai.offer_extraction_failed", {
+          taskId,
+          postId: post.id,
+          error: offerError,
+        });
         await upsertTaskStep({
           taskId,
           attempt,
@@ -1910,7 +1992,11 @@ export async function runAiRewriteTask(taskId: number) {
         });
         await enqueueAiRewriteTask(englishTaskId);
       } catch (englishTaskError) {
-        console.error("English SEO task creation failed:", englishTaskError);
+        structuredLog("error", "ai.english_task_enqueue_failed", {
+          taskId,
+          postId: post.id,
+          error: englishTaskError,
+        });
         await upsertTaskStep({
           taskId,
           attempt,
@@ -1930,6 +2016,24 @@ export async function runAiRewriteTask(taskId: number) {
       await failTask(claimedTask, error, activeStep);
     }
   } finally {
+    if (leaseHeartbeat) clearInterval(leaseHeartbeat);
+    if (leaseOwner) {
+      await db
+        .update(aiRewriteTasks)
+        .set({
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          heartbeatAt: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(aiRewriteTasks.id, taskId),
+            eq(aiRewriteTasks.leaseOwner, leaseOwner),
+          ),
+        );
+    }
+    runningTaskLeaseOwners.delete(taskId);
     runningTaskIds.delete(taskId);
   }
 }

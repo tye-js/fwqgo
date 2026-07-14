@@ -87,6 +87,17 @@ export const posts = pgTable(
     categoryPublishedCreatedAtIdx: index(
       "posts_categoryId_published_createdAt_idx",
     ).on(table.categoryId, table.published, table.createdAt),
+    categoryLanguagePublishedCreatedAtIdx: index(
+      "posts_categoryId_language_published_createdAt_idx",
+    ).on(table.categoryId, table.language, table.published, table.createdAt),
+    translationSourceLanguagePublishedUpdatedAtIdx: index(
+      "posts_translationSource_language_published_updatedAt_idx",
+    ).on(
+      table.translationSourcePostId,
+      table.language,
+      table.published,
+      table.updatedAt,
+    ),
     publishedIdIdx: index("posts_published_id_idx").on(
       table.published,
       table.id,
@@ -537,6 +548,9 @@ export const aiRewriteTasks = pgTable(
     updatedAt: timestamp("updatedAt"),
     startedAt: timestamp("startedAt"),
     finishedAt: timestamp("finishedAt"),
+    leaseOwner: varchar("leaseOwner", { length: 128 }),
+    leaseExpiresAt: timestamp("leaseExpiresAt"),
+    heartbeatAt: timestamp("heartbeatAt"),
   },
   (table) => ({
     sourceMaterialIdx: index("ai_rewrite_tasks_sourceMaterialId_idx").on(
@@ -552,6 +566,9 @@ export const aiRewriteTasks = pgTable(
       table.status,
       table.createdAt,
     ),
+    statusLeaseExpiresAtIdx: index(
+      "ai_rewrite_tasks_status_leaseExpiresAt_idx",
+    ).on(table.status, table.leaseExpiresAt),
     sourceUrlCreatedAtIdx: index("ai_rewrite_tasks_sourceUrl_createdAt_idx").on(
       table.sourceUrl,
       table.createdAt,
@@ -714,6 +731,9 @@ export const imageCoverGenerationTasks = pgTable(
     finishedAt: timestamp("finishedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
+    leaseOwner: varchar("leaseOwner", { length: 128 }),
+    leaseExpiresAt: timestamp("leaseExpiresAt"),
+    heartbeatAt: timestamp("heartbeatAt"),
   },
   (table) => ({
     batchIdx: index("image_cover_generation_tasks_batchId_idx").on(
@@ -722,6 +742,12 @@ export const imageCoverGenerationTasks = pgTable(
     statusIdx: index("image_cover_generation_tasks_status_idx").on(
       table.status,
     ),
+    statusCreatedAtIdx: index(
+      "image_cover_generation_tasks_status_createdAt_idx",
+    ).on(table.status, table.createdAt),
+    statusLeaseExpiresAtIdx: index(
+      "image_cover_generation_tasks_status_leaseExpiresAt_idx",
+    ).on(table.status, table.leaseExpiresAt),
     postIdx: index("image_cover_generation_tasks_postId_idx").on(table.postId),
     configIdx: index("image_cover_generation_tasks_configId_idx").on(
       table.configId,
@@ -766,6 +792,9 @@ export const serverOfferImportTasks = pgTable(
     finishedAt: timestamp("finishedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
+    leaseOwner: varchar("leaseOwner", { length: 128 }),
+    leaseExpiresAt: timestamp("leaseExpiresAt"),
+    heartbeatAt: timestamp("heartbeatAt"),
   },
   (table) => ({
     modeIdx: index("server_offer_import_tasks_mode_idx").on(table.mode),
@@ -774,6 +803,9 @@ export const serverOfferImportTasks = pgTable(
     statusCreatedAtIdx: index(
       "server_offer_import_tasks_status_createdAt_idx",
     ).on(table.status, table.createdAt),
+    statusLeaseExpiresAtIdx: index(
+      "server_offer_import_tasks_status_leaseExpiresAt_idx",
+    ).on(table.status, table.leaseExpiresAt),
     postFk: foreignKey({
       columns: [table.postId],
       foreignColumns: [posts.id],

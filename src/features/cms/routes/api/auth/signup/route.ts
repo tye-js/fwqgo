@@ -4,8 +4,33 @@ import { z } from "zod";
 import { users } from "@fwqgo/db/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { BoundedAttemptTracker } from "@fwqgo/core/bounded-attempt-tracker";
+import { getTrustedClientIp } from "@fwqgo/core/client-ip";
+import {
+  attachRequestId,
+  getRequestId,
+  structuredLog,
+} from "@fwqgo/core/structured-log";
 
 import { adminApiFailure, adminApiSuccess } from "@/lib/admin-api-response";
+
+const SIGNUP_WINDOW_MS = 60 * 60 * 1000;
+const MAX_SIGNUP_ATTEMPTS = 5;
+const globalForSignupRateLimit = globalThis as unknown as {
+  signupAttemptTracker?: BoundedAttemptTracker;
+};
+const signupAttemptTracker =
+  globalForSignupRateLimit.signupAttemptTracker ??
+  new BoundedAttemptTracker({
+    maxAttempts: MAX_SIGNUP_ATTEMPTS,
+    windowMs: SIGNUP_WINDOW_MS,
+    lockMs: SIGNUP_WINDOW_MS,
+    maxEntries: 5_000,
+  });
+
+if (process.env.NODE_ENV !== "production") {
+  globalForSignupRateLimit.signupAttemptTracker = signupAttemptTracker;
+}
 
 const registerSchema = z
   .object({
@@ -27,27 +52,50 @@ const registerSchema = z
   });
 
 export async function POST(request: Request) {
+  const requestId = getRequestId(request.headers);
+  const respond = <T extends Response>(response: T) =>
+    attachRequestId(response, requestId);
+
   try {
     if (process.env.ENABLE_PUBLIC_SIGNUP !== "true") {
-      return adminApiFailure("注册入口已关闭", {
-        status: 403,
-        title: "注册失败",
-        suggestion: "请在服务器环境变量中确认 ENABLE_PUBLIC_SIGNUP 是否需要开启。",
-      });
+      return respond(
+        adminApiFailure("注册入口已关闭", {
+          status: 403,
+          title: "注册失败",
+          suggestion:
+            "请在服务器环境变量中确认 ENABLE_PUBLIC_SIGNUP 是否需要开启。",
+        }),
+      );
     }
+
+    const clientIp = getTrustedClientIp(request.headers) ?? "unknown";
+    const attemptKey = `signup:${clientIp}`;
+    const retryAfterSeconds = signupAttemptTracker.getRetryAfterSeconds([
+      attemptKey,
+    ]);
+    if (retryAfterSeconds > 0) {
+      return respond(
+        adminApiFailure("注册尝试过多，请稍后再试", {
+          status: 429,
+          headers: { "Retry-After": String(retryAfterSeconds) },
+          title: "注册失败",
+          suggestion: `当前来源已临时限速，请约 ${Math.ceil(retryAfterSeconds / 60)} 分钟后再试。`,
+        }),
+      );
+    }
+    signupAttemptTracker.recordAttempt([attemptKey]);
 
     const body = registerSchema.safeParse(
       await request.json().catch(() => null),
     );
 
     if (!body.success) {
-      return adminApiFailure(
-        body.error.issues[0]?.message ?? "注册信息格式不正确",
-        {
+      return respond(
+        adminApiFailure(body.error.issues[0]?.message ?? "注册信息格式不正确", {
           status: 400,
           title: "注册失败",
           suggestion: "请按页面提示检查用户名、密码和确认密码。",
-        },
+        }),
       );
     }
 
@@ -61,11 +109,13 @@ export async function POST(request: Request) {
       .limit(1);
 
     if (existingUser) {
-      return adminApiFailure("用户名已存在", {
-        status: 400,
-        title: "注册失败",
-        suggestion: "请换一个用户名后重试。",
-      });
+      return respond(
+        adminApiFailure("用户名已存在", {
+          status: 400,
+          title: "注册失败",
+          suggestion: "请换一个用户名后重试。",
+        }),
+      );
     }
 
     // 密码加密
@@ -79,12 +129,16 @@ export async function POST(request: Request) {
       updatedAt: new Date(),
     });
 
-    return adminApiSuccess({ created: true });
-  } catch {
-    return adminApiFailure("注册失败，请重试", {
-      status: 500,
-      title: "注册失败",
-      suggestion: "请稍后重试，仍失败请检查服务端日志和数据库连接。",
-    });
+    structuredLog("info", "cms.auth.signup_succeeded", { requestId });
+    return respond(adminApiSuccess({ created: true }));
+  } catch (error) {
+    structuredLog("error", "cms.auth.signup_failed", { requestId, error });
+    return respond(
+      adminApiFailure("注册失败，请重试", {
+        status: 500,
+        title: "注册失败",
+        suggestion: "请稍后重试，仍失败请检查服务端日志和数据库连接。",
+      }),
+    );
   }
 }

@@ -14,6 +14,7 @@
     "verify:migrations": "node scripts/verify-migrations.mjs",
     "verify:security": "tsx scripts/verify-security-boundaries.ts",
     "verify:cache": "tsx scripts/verify-public-cache-boundaries.ts",
+    "smoke:built": "node scripts/smoke-built-apps.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:migrate:prod": "node scripts/migrate-prod.mjs",

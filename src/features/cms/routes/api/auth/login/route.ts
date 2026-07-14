@@ -5,6 +5,12 @@ import { randomUUID } from "crypto";
 import { users, sessions } from "@fwqgo/db/schema";
 import { eq } from "drizzle-orm";
 import { getTrustedClientIp } from "@fwqgo/core/client-ip";
+import { BoundedAttemptTracker } from "@fwqgo/core/bounded-attempt-tracker";
+import {
+  attachRequestId,
+  getRequestId,
+  structuredLog,
+} from "@fwqgo/core/structured-log";
 import {
   clearLegacyCmsSessionCookies,
   getCmsSessionCookieName,
@@ -23,20 +29,20 @@ const LOGIN_LOCK_MS = 15 * 60 * 1000;
 const MAX_FAILED_LOGIN_ATTEMPTS = 8;
 const INVALID_PASSWORD_HASH =
   "$2b$12$0o3Y6jZ9leQTD33zjL.feeHeFXM0S6eYzKl31bz6EuI1IobmzerUi";
-type LoginAttemptState = {
-  count: number;
-  resetAt: number;
-  lockedUntil: number;
-};
 const globalForLoginRateLimit = globalThis as unknown as {
-  failedLoginAttempts?: Map<string, LoginAttemptState>;
+  loginAttemptTracker?: BoundedAttemptTracker;
 };
-const failedLoginAttempts =
-  globalForLoginRateLimit.failedLoginAttempts ??
-  new Map<string, LoginAttemptState>();
+const loginAttemptTracker =
+  globalForLoginRateLimit.loginAttemptTracker ??
+  new BoundedAttemptTracker({
+    maxAttempts: MAX_FAILED_LOGIN_ATTEMPTS,
+    windowMs: LOGIN_WINDOW_MS,
+    lockMs: LOGIN_LOCK_MS,
+    maxEntries: 20_000,
+  });
 
 if (process.env.NODE_ENV !== "production") {
-  globalForLoginRateLimit.failedLoginAttempts = failedLoginAttempts;
+  globalForLoginRateLimit.loginAttemptTracker = loginAttemptTracker;
 }
 
 function getLoginAttemptKeys(request: Request, username: string) {
@@ -45,58 +51,33 @@ function getLoginAttemptKeys(request: Request, username: string) {
 }
 
 function getLoginRetryAfterSeconds(keys: string[]) {
-  const now = Date.now();
-
-  for (const key of keys) {
-    const state = failedLoginAttempts.get(key);
-    if (!state) continue;
-
-    if (state.resetAt <= now) {
-      failedLoginAttempts.delete(key);
-      continue;
-    }
-
-    if (state.lockedUntil > now) {
-      return Math.ceil((state.lockedUntil - now) / 1000);
-    }
-  }
-
-  return 0;
+  return loginAttemptTracker.getRetryAfterSeconds(keys);
 }
 
 function recordFailedLoginAttempt(keys: string[]) {
-  const now = Date.now();
-
-  for (const key of keys) {
-    const previous = failedLoginAttempts.get(key);
-    const state =
-      previous && previous.resetAt > now
-        ? previous
-        : { count: 0, resetAt: now + LOGIN_WINDOW_MS, lockedUntil: 0 };
-
-    state.count += 1;
-    if (state.count >= MAX_FAILED_LOGIN_ATTEMPTS) {
-      state.lockedUntil = now + LOGIN_LOCK_MS;
-    }
-
-    failedLoginAttempts.set(key, state);
-  }
+  loginAttemptTracker.recordAttempt(keys);
 }
 
 function clearFailedLoginAttempts(keys: string[]) {
-  keys.forEach((key) => failedLoginAttempts.delete(key));
+  loginAttemptTracker.clear(keys);
 }
 
 export async function POST(request: Request) {
+  const requestId = getRequestId(request.headers);
+  const respond = <T extends Response>(response: T) =>
+    attachRequestId(response, requestId);
+
   try {
     const body = loginSchema.safeParse(await request.json().catch(() => null));
 
     if (!body.success) {
-      return adminApiFailure("请输入有效的用户名和密码", {
-        status: 400,
-        title: "登录失败",
-        suggestion: "请检查用户名不少于 3 个字符，密码不少于 6 个字符。",
-      });
+      return respond(
+        adminApiFailure("请输入有效的用户名和密码", {
+          status: 400,
+          title: "登录失败",
+          suggestion: "请检查用户名不少于 3 个字符，密码不少于 6 个字符。",
+        }),
+      );
     }
 
     const { username, password } = body.data;
@@ -104,11 +85,14 @@ export async function POST(request: Request) {
     const retryAfterSeconds = getLoginRetryAfterSeconds(attemptKeys);
 
     if (retryAfterSeconds > 0) {
-      return adminApiFailure("登录尝试过多，请稍后再试", {
-        status: 429,
-        title: "登录失败",
-        suggestion: `为了保护后台账号，当前来源已临时限速，请约 ${Math.ceil(retryAfterSeconds / 60)} 分钟后再试。`,
-      });
+      return respond(
+        adminApiFailure("登录尝试过多，请稍后再试", {
+          status: 429,
+          headers: { "Retry-After": String(retryAfterSeconds) },
+          title: "登录失败",
+          suggestion: `为了保护后台账号，当前来源已临时限速，请约 ${Math.ceil(retryAfterSeconds / 60)} 分钟后再试。`,
+        }),
+      );
     }
 
     const [user] = await db
@@ -124,11 +108,13 @@ export async function POST(request: Request) {
 
     if (!user || !isValidPassword) {
       recordFailedLoginAttempt(attemptKeys);
-      return adminApiFailure("用户名或密码错误", {
-        status: 401,
-        title: "登录失败",
-        suggestion: "请确认账号和密码后重试。",
-      });
+      return respond(
+        adminApiFailure("用户名或密码错误", {
+          status: 401,
+          title: "登录失败",
+          suggestion: "请确认账号和密码后重试。",
+        }),
+      );
     }
 
     clearFailedLoginAttempts(attemptKeys);
@@ -146,11 +132,13 @@ export async function POST(request: Request) {
       .returning();
 
     if (!session) {
-      return adminApiFailure("会话创建失败", {
-        status: 500,
-        title: "登录失败",
-        suggestion: "请稍后重试，仍失败请检查数据库会话表。",
-      });
+      return respond(
+        adminApiFailure("会话创建失败", {
+          status: 500,
+          title: "登录失败",
+          suggestion: "请稍后重试，仍失败请检查数据库会话表。",
+        }),
+      );
     }
 
     const response = adminApiSuccess({ authenticated: true });
@@ -165,12 +153,19 @@ export async function POST(request: Request) {
       "private, no-store, max-age=0, must-revalidate",
     );
 
-    return response;
-  } catch {
-    return adminApiFailure("登录失败", {
-      status: 500,
-      title: "登录失败",
-      suggestion: "请稍后重试，仍失败请检查服务端日志。",
+    structuredLog("info", "cms.auth.login_succeeded", {
+      requestId,
+      userId: user.id,
     });
+    return respond(response);
+  } catch (error) {
+    structuredLog("error", "cms.auth.login_failed", { requestId, error });
+    return respond(
+      adminApiFailure("登录失败", {
+        status: 500,
+        title: "登录失败",
+        suggestion: "请稍后重试，仍失败请检查服务端日志。",
+      }),
+    );
   }
 }
