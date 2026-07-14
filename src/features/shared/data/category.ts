@@ -60,6 +60,9 @@ export async function getCategoryBySlug(
   slug: string,
   language: PublicLanguage = "zh",
 ) {
+  "use cache";
+  tagCache(cacheTags.categories, cacheTags.categorySlug(slug));
+
   try {
     const [category] = await readDb
       .select()
@@ -73,7 +76,8 @@ export async function getCategoryBySlug(
 
     return { data: category ? localizeCategory(category, language) : null };
   } catch (error) {
-    return { error: "获取分类失败", message: error };
+    console.error("Failed to load public category:", error);
+    return { error: "获取分类失败" };
   }
 }
 

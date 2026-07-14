@@ -2,8 +2,10 @@
 
 import { type CreatePostParams } from "@/types/post.types";
 import { createPost as createPostWithTags } from "@/features/cms/actions/post";
+import { requireAdminSession } from "@fwqgo/auth/session";
 
 export async function createPost(input: CreatePostParams) {
+  await requireAdminSession();
   const result = await createPostWithTags(input);
 
   if (result.error) {

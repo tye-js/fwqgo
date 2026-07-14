@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import {

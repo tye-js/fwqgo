@@ -7,7 +7,10 @@ import {
 import { contentToArticleMarkdown } from "@fwqgo/core/content";
 import { assertPublicHttpUrl } from "@fwqgo/core/network-url";
 
-import { buildOpenAiChatCompletionsEndpoint } from "./openai-compatible";
+import {
+  buildOpenAiChatCompletionsEndpoint,
+  parseAiJsonObject,
+} from "./openai-compatible";
 
 const DEFAULT_AI_REWRITE_TIMEOUT_MS = 300_000;
 const MIN_AI_INPUT_LENGTH = 80;
@@ -120,37 +123,6 @@ export function getAiRewriteContentLimit(maxTokens: number) {
   return Number.isFinite(maxTokens) && maxTokens > 0
     ? Math.floor(maxTokens)
     : 8192;
-}
-
-function cleanJsonText(text: string) {
-  return text
-    .replace(/^```(?:json)?/i, "")
-    .replace(/```$/i, "")
-    .trim();
-}
-
-function parseJsonResponse<T>(text: string): T {
-  const cleaned = cleanJsonText(text);
-  try {
-    return JSON.parse(cleaned) as T;
-  } catch (error) {
-    const match = /\{[\s\S]*\}/.exec(cleaned);
-    if (!match) {
-      throw createReadableError(
-        "AI 元信息生成失败：返回内容不是 JSON",
-        `返回开头：${cleaned.slice(0, 120) || "空"}`,
-      );
-    }
-
-    try {
-      return JSON.parse(match[0]) as T;
-    } catch {
-      throw createReadableError(
-        "AI 元信息生成失败：JSON 格式损坏",
-        error instanceof Error ? error.message : "无法解析模型返回值",
-      );
-    }
-  }
 }
 
 function buildHtmlRewritePrompt(content: string, stylePrompt: string) {
@@ -866,7 +838,10 @@ export async function rewriteArticleWithAi(
     ),
   });
   const metadata = normalizeMetadata(
-    parseJsonResponse<Partial<ArticleMetadataOutput>>(metadataText),
+    parseAiJsonObject<Partial<ArticleMetadataOutput>>(
+      metadataText,
+      "AI 元信息生成失败",
+    ),
     markdownContent,
   );
   validateMetadata(metadata);
@@ -912,7 +887,10 @@ export async function generateArticleMetadata(
     ),
   });
   const metadata = normalizeMetadata(
-    parseJsonResponse<Partial<ArticleMetadataOutput>>(metadataText),
+    parseAiJsonObject<Partial<ArticleMetadataOutput>>(
+      metadataText,
+      "AI 元信息生成失败",
+    ),
     normalizedContent,
   );
   validateMetadata(metadata);
@@ -1067,7 +1045,10 @@ export async function generateEnglishMetadata(
     }),
   });
   const output = normalizeEnglishMetadata(
-    parseJsonResponse<EnglishSeoVersionRawOutput>(metadataText),
+    parseAiJsonObject<EnglishSeoVersionRawOutput>(
+      metadataText,
+      "英文 SEO 元信息生成失败",
+    ),
     {
       title: input.title,
       description: input.description,

@@ -95,6 +95,9 @@ CMS_BASIC_AUTH_PASSWORD=change-this-password
 
 # 默认关闭；仅在确实需要公开注册时开启
 ENABLE_PUBLIC_SIGNUP=false
+
+# 可选：通用后台调度记录保留天数，默认 14，范围 1-365
+ADMIN_BACKGROUND_JOB_RETENTION_DAYS=14
 ```
 
 也可以只提供基础 `DATABASE_URL`，再使用 `CMS_USERNAME` / `CMS_PASSWORD` 和 `READ_USERNAME` / `READ_PASSWORD` 替换其中的数据库用户名与密码。完整的 `CMS_DATABASE_URL` 和 `READ_DATABASE_URL` 优先级更高。
@@ -202,10 +205,15 @@ npm run db:seed           # 写入开发种子数据
 | `npm run build`            | 依次构建双应用并检查应用边界 |
 | `npm run start:web`        | 启动 Web 生产构建            |
 | `npm run start:cms`        | 启动 CMS 生产构建            |
+| `npm test`                 | 运行核心业务回归测试         |
 | `npm run verify:apps`      | 验证 Web/CMS 路由和产物边界  |
+| `npm run verify:deploy`    | 验证 Actions 远端激活脚本    |
+| `npm run verify:migrations` | 验证迁移 journal 与 SQL 文件 |
+| `npm run verify:security`   | 验证 CMS 鉴权和数据库边界    |
+| `npm run verify:cache`      | 验证公开站关键读取缓存边界   |
 | `npm run lint`             | ESLint 检查                  |
 | `npm run typecheck`        | TypeScript 类型检查          |
-| `npm run check`            | 依次执行 lint 和 typecheck   |
+| `npm run check`            | 执行静态、测试、部署和迁移校验 |
 | `npm run healthcheck:prod` | 检查生产域名、跳转和关键路由 |
 
 历史数据维护脚本还包括：
@@ -226,6 +234,7 @@ npm run source:pull
 ```bash
 npm run lint
 npm run typecheck
+npm test
 SKIP_ENV_VALIDATION=1 npm run build
 ```
 
@@ -237,12 +246,12 @@ SKIP_ENV_VALIDATION=1 npm run build
 
 发布流程：
 
-1. 使用 Node.js 24 安装依赖、执行 typecheck 和 lint。
+1. 使用 Node.js 24 安装依赖，执行 typecheck、lint、部署脚本和迁移完整性校验。
 2. 构建 Web/CMS standalone 产物并验证应用边界。
 3. 上传 release，保留共享生产环境文件和 `/var/www/uploads`。
 4. 可选执行数据库备份与 Drizzle 迁移。
 5. 切换 `current` 软链接并重启 `fwqgo-web`、`fwqgo-cms`。
-6. 检查本地端口、公开域名、CMS 登录跳转和 PM2 状态。
+6. 通过 `/api/health` 验证 Web 只读角色和 CMS 写角色权限，再检查公开域名、CMS 登录跳转和 PM2 状态。
 7. 激活失败时尝试回滚到上一份有效 release。
 
 ### 服务器前置条件

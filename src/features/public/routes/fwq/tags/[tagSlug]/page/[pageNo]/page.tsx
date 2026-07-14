@@ -1,7 +1,4 @@
-import {
-  getPostsWithTagsByTagSlug,
-  getTagBySlug,
-} from "@/features/public/data/tag";
+import { getPostsWithTagsByTagSlug } from "@/features/public/data/tag";
 import { getLatestPostsForSidebar } from "@/features/public/data/post";
 import ArticleCard from "@/features/public/components/article-card";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
@@ -44,7 +41,7 @@ export async function generateMetadata(props: {
   const decodedTagSlug = decodeSlug(params.tagSlug);
   const pageNo = parsePositiveInt(params.pageNo) ?? 1;
   const readableName = decodedTagSlug.replace(/[-_]+/g, " ");
-  const { data: tag } = await getTagBySlug(decodedTagSlug);
+  const { data: tag } = await getPostsWithTagsByTagSlug(decodedTagSlug, pageNo);
   const title = tag?.name ?? readableName;
   const description =
     tag?.description ?? `${title}相关服务器、VPS、优惠和测评文章。`;

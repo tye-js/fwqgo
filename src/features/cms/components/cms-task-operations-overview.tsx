@@ -185,6 +185,10 @@ function SystemDiagnostics({ summary }: { summary: CmsTaskOperationsSummary }) {
             label="心跳超时"
             value={`${Math.round(summary.backgroundWorker.heartbeatTimeoutMs / 1000)}秒`}
           />
+          <RuntimeValue
+            label="任务记录保留"
+            value={`${summary.backgroundWorker.retentionDays}天`}
+          />
         </div>
 
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">

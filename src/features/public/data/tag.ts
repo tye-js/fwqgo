@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 
 import { slugify } from "@fwqgo/core/utils";
+import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { readDb } from "@fwqgo/db";
 import { attachTagsToPosts } from "@fwqgo/db/post-tags";
 import { postTags, posts, tags } from "@fwqgo/db/schema";
@@ -57,6 +58,9 @@ export async function getTagBySlug(
   tagSlug: string,
   language: PublicLanguage = "zh",
 ) {
+  "use cache";
+  tagCache(cacheTags.tags, cacheTags.tagSlug(tagSlug));
+
   try {
     const [tag] = await readDb
       .select({
@@ -81,7 +85,8 @@ export async function getTagBySlug(
 
     return { data: tag ? localizeTag(tag, language) : null };
   } catch (error) {
-    return { error: error, message: "通过标签 slug 查询标签信息失败" };
+    console.error("Failed to load public tag:", error);
+    return { error: "通过标签 slug 查询标签信息失败" };
   }
 }
 
@@ -90,6 +95,9 @@ export async function getPostsWithTagsByTagSlug(
   pageNo = 1,
   language: PublicLanguage = "zh",
 ) {
+  "use cache";
+  tagCache(cacheTags.posts, cacheTags.tags, cacheTags.tagSlug(tagSlug));
+
   try {
     const currentPage = Number.isFinite(pageNo) && pageNo > 0 ? pageNo : 1;
 
@@ -123,28 +131,32 @@ export async function getPostsWithTagsByTagSlug(
       return { data: null };
     }
 
-    const [countResult] = await readDb
-      .select({ count: count() })
-      .from(postTags)
-      .innerJoin(posts, eq(posts.id, postTags.postId))
-      .where(and(eq(postTags.tagId, tag.id), publishedPostCondition(language)));
-
-    // 获取该标签下的文章
-    const tagPosts = await readDb
-      .select({
-        id: posts.id,
-        title: posts.title,
-        description: posts.description,
-        slug: posts.slug,
-        imgUrl: posts.imgUrl,
-        createdAt: posts.createdAt,
-      })
-      .from(posts)
-      .innerJoin(postTags, eq(posts.id, postTags.postId))
-      .where(and(eq(postTags.tagId, tag.id), publishedPostCondition(language)))
-      .orderBy(desc(posts.createdAt))
-      .offset((currentPage - 1) * 10)
-      .limit(10);
+    const [[countResult], tagPosts] = await Promise.all([
+      readDb
+        .select({ count: count() })
+        .from(postTags)
+        .innerJoin(posts, eq(posts.id, postTags.postId))
+        .where(
+          and(eq(postTags.tagId, tag.id), publishedPostCondition(language)),
+        ),
+      readDb
+        .select({
+          id: posts.id,
+          title: posts.title,
+          description: posts.description,
+          slug: posts.slug,
+          imgUrl: posts.imgUrl,
+          createdAt: posts.createdAt,
+        })
+        .from(posts)
+        .innerJoin(postTags, eq(posts.id, postTags.postId))
+        .where(
+          and(eq(postTags.tagId, tag.id), publishedPostCondition(language)),
+        )
+        .orderBy(desc(posts.createdAt))
+        .offset((currentPage - 1) * 10)
+        .limit(10),
+    ]);
 
     const postsWithTags = await attachTagsToPosts(tagPosts, language);
 
@@ -157,7 +169,8 @@ export async function getPostsWithTagsByTagSlug(
 
     return { data: result };
   } catch (error) {
-    return { error: error, message: "通过标签获取文章信息失败" };
+    console.error("Failed to load public tag posts:", error);
+    return { error: "通过标签获取文章信息失败" };
   }
 }
 

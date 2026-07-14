@@ -4,6 +4,7 @@ import { z } from "zod";
 import { randomUUID } from "crypto";
 import { users, sessions } from "@fwqgo/db/schema";
 import { eq } from "drizzle-orm";
+import { getTrustedClientIp } from "@fwqgo/core/client-ip";
 import {
   clearLegacyCmsSessionCookies,
   getCmsSessionCookieName,
@@ -38,23 +39,8 @@ if (process.env.NODE_ENV !== "production") {
   globalForLoginRateLimit.failedLoginAttempts = failedLoginAttempts;
 }
 
-function getClientIp(request: Request) {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  const realIp = request.headers.get("x-real-ip");
-  const connectingIp = request.headers.get("cf-connecting-ip");
-  const proxyForwardedIp = forwardedFor
-    ?.split(",")
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .at(-1);
-
-  return (
-    realIp?.trim() ?? connectingIp?.trim() ?? proxyForwardedIp ?? "unknown"
-  );
-}
-
 function getLoginAttemptKeys(request: Request, username: string) {
-  const ip = getClientIp(request);
+  const ip = getTrustedClientIp(request.headers) ?? "unknown";
   return [`ip:${ip}`, `ip-user:${ip}:${username.toLowerCase()}`];
 }
 

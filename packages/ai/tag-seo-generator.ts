@@ -2,7 +2,10 @@ import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import { assertPublicHttpUrl } from "@fwqgo/core/network-url";
 import { slugify } from "@fwqgo/core/utils";
 
-import { buildOpenAiChatCompletionsEndpoint } from "./openai-compatible";
+import {
+  buildOpenAiChatCompletionsEndpoint,
+  parseAiJsonObject,
+} from "./openai-compatible";
 
 const DEFAULT_AI_REWRITE_TIMEOUT_MS = 300_000;
 const TAG_SEO_MAX_TOKENS = 2_000;
@@ -72,38 +75,6 @@ function getTagSeoMaxTokens(maxTokens: number) {
 
 function createReadableError(message: string, detail?: string) {
   return new Error(detail ? `${message}；原因：${detail}` : message);
-}
-
-function cleanJsonText(text: string) {
-  return text
-    .replace(/^```(?:json)?/i, "")
-    .replace(/```$/i, "")
-    .trim();
-}
-
-function parseJsonResponse<T>(text: string): T {
-  const cleaned = cleanJsonText(text);
-
-  try {
-    return JSON.parse(cleaned) as T;
-  } catch (error) {
-    const match = /\{[\s\S]*\}/.exec(cleaned);
-    if (!match) {
-      throw createReadableError(
-        "标签 SEO AI 生成失败：返回内容不是 JSON",
-        `返回开头：${cleaned.slice(0, 120) || "空"}`,
-      );
-    }
-
-    try {
-      return JSON.parse(match[0]) as T;
-    } catch {
-      throw createReadableError(
-        "标签 SEO AI 生成失败：JSON 格式损坏",
-        error instanceof Error ? error.message : "无法解析模型返回值",
-      );
-    }
-  }
 }
 
 function normalizeStringArray(value: unknown) {
@@ -397,7 +368,7 @@ export async function generateTagSeoMetadata(
     userPrompt: buildTagSeoPrompt(input),
   });
   const output = normalizeTagSeoOutput(
-    parseJsonResponse<RawTagSeoOutput>(text),
+    parseAiJsonObject<RawTagSeoOutput>(text, "标签 SEO AI 生成失败"),
     input,
   );
 
