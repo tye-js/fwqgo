@@ -1,4 +1,9 @@
 import { sanitizeFileName } from "@fwqgo/core/utils";
+import {
+  buildImageGenerationEndpoint,
+  formatImageGenerationHttpError,
+  normalizeImageGenerationResultUrl,
+} from "@fwqgo/core/image-generation-endpoint";
 import { defaultEnglishCoverPromptTemplate } from "@fwqgo/core/image-generation-prompts";
 import {
   assertPublicHttpUrl,
@@ -107,13 +112,6 @@ function stripHtml(value: string) {
     .trim();
 }
 
-function buildEndpoint(baseUrl: string) {
-  const normalized = baseUrl.replace(/\/+$/, "");
-  if (/\/v1\/images\/generations$/i.test(normalized)) return normalized;
-  if (/\/images\/generations$/i.test(normalized)) return normalized;
-  return `${normalized}/v1/images/generations`;
-}
-
 function buildRequestBody(input: {
   provider: ImageGenerationProvider;
   model: string;
@@ -208,22 +206,6 @@ function throwIfAborted(signal?: AbortSignal) {
   throw new Error("封面生图任务已终止");
 }
 
-function getJsonErrorMessage(text: string) {
-  try {
-    const payload = JSON.parse(text) as {
-      error?: { message?: string; code?: string | number; type?: string };
-      message?: string;
-      detail?: string;
-    };
-    const message =
-      payload.error?.message ?? payload.message ?? payload.detail ?? "";
-    const code = payload.error?.code ? `（${payload.error.code}）` : "";
-    return message ? `${message}${code}` : "";
-  } catch {
-    return "";
-  }
-}
-
 function summarizeJsonShape(payload: ImageGenerationResponse) {
   const keys = Object.keys(payload).slice(0, 12);
   const dataKeys = payload.data?.[0] ? Object.keys(payload.data[0]) : [];
@@ -281,7 +263,7 @@ export async function previewArticleCoverImageRequest(
     input,
   );
   const safeEndpoint = await assertPublicHttpUrl(
-    buildEndpoint(config.baseUrl),
+    buildImageGenerationEndpoint(config.baseUrl),
     "生图接口地址",
   );
 
@@ -365,7 +347,7 @@ export async function generateArticleCoverImage(
     config.englishPromptTemplate ?? defaultEnglishCoverPromptTemplate,
     input,
   );
-  const endpoint = buildEndpoint(config.baseUrl);
+  const endpoint = buildImageGenerationEndpoint(config.baseUrl);
   let response: Response;
   try {
     const safeEndpoint = await assertPublicHttpUrl(endpoint, "生图接口地址");
@@ -403,11 +385,13 @@ export async function generateArticleCoverImage(
   const text = await response.text();
   throwIfAborted(input.signal);
   if (!response.ok) {
-    const providerMessage = getJsonErrorMessage(text);
     throw new Error(
-      providerMessage
-        ? `生图接口请求失败：HTTP ${response.status} ${response.statusText}；${providerMessage}`
-        : `生图接口请求失败：HTTP ${response.status} ${response.statusText}；返回内容：${text.slice(0, 240) || "空"}`,
+      formatImageGenerationHttpError({
+        status: response.status,
+        statusText: response.statusText,
+        responseText: text,
+        baseUrl: config.baseUrl,
+      }),
     );
   }
 
@@ -424,7 +408,11 @@ export async function generateArticleCoverImage(
   const imageUrl = findImageUrl(payload);
   const base64Image = findBase64Image(payload);
   const image = imageUrl
-    ? await downloadImage(imageUrl, config.timeoutSeconds, input.signal)
+    ? await downloadImage(
+        normalizeImageGenerationResultUrl(imageUrl, endpoint),
+        config.timeoutSeconds,
+        input.signal,
+      )
     : base64Image
       ? {
           buffer: Buffer.from(normalizeBase64(base64Image), "base64"),
