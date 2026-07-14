@@ -63,14 +63,17 @@ export class BoundedAttemptTracker {
   recordAttempt(keys: string[], now = Date.now()) {
     for (const key of new Set(keys.filter(Boolean))) {
       const previous = this.states.get(key);
-      const state =
-        previous && previous.resetAt > now
-          ? { ...previous }
-          : {
-              count: 0,
-              resetAt: now + this.options.windowMs,
-              lockedUntil: 0,
-            };
+      const previousWindowIsUsable =
+        previous &&
+        previous.resetAt > now &&
+        (previous.lockedUntil === 0 || previous.lockedUntil > now);
+      const state = previousWindowIsUsable
+        ? { ...previous }
+        : {
+            count: 0,
+            resetAt: now + this.options.windowMs,
+            lockedUntil: 0,
+          };
 
       state.count += 1;
       if (state.count >= this.options.maxAttempts) {
