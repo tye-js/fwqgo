@@ -32,10 +32,13 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       CMS_DATABASE_URL: ${{ secrets.CMS_DATABASE_URL }}
       READ_DATABASE_URL: ${{ secrets.READ_DATABASE_URL }}
+      ANALYTICS_DATABASE_URL: ${{ secrets.ANALYTICS_DATABASE_URL || secrets.DATABASE_URL }}
       CMS_USERNAME: ${{ secrets.CMS_USERNAME }}
       READ_USERNAME: ${{ secrets.READ_USERNAME }}
       CMS_PASSWORD: ${{ secrets.CMS_PASSWORD }}
       READ_PASSWORD: ${{ secrets.READ_PASSWORD }}
+      WEB_REVALIDATION_SECRET: ${{ secrets.WEB_REVALIDATION_SECRET }}
+      WEB_REVALIDATION_URL: ${{ vars.WEB_REVALIDATION_URL || 'http://127.0.0.1:3000/api/internal/revalidate' }}
       NEXT_PUBLIC_URL: ${{ vars.NEXT_PUBLIC_URL || 'https://fwqgo.com' }}
       NEXT_PUBLIC_CMS_URL: ${{ vars.NEXT_PUBLIC_CMS_URL || 'https://cms.fwqgo.com' }}
       CMS_BASIC_AUTH_USERNAME: ${{ secrets.CMS_BASIC_AUTH_USERNAME }}
@@ -86,6 +89,7 @@ jobs:
             SSH_PRIVATE_KEY
             DATABASE_URL
             READ_DATABASE_URL
+            WEB_REVALIDATION_SECRET
             CMS_BASIC_AUTH_USERNAME
             CMS_BASIC_AUTH_PASSWORD
           )
@@ -127,6 +131,7 @@ jobs:
           cp -R drizzle ".deploy/payload-$RELEASE_ID/drizzle"
           cp scripts/migrate-prod.mjs ".deploy/payload-$RELEASE_ID/scripts/migrate-prod.mjs"
           cp scripts/migration-manifest.mjs ".deploy/payload-$RELEASE_ID/scripts/migration-manifest.mjs"
+          cp scripts/merge-runtime-env.mjs ".deploy/payload-$RELEASE_ID/scripts/merge-runtime-env.mjs"
           mkdir -p ".deploy/payload-$RELEASE_ID/node_modules"
           cp -R node_modules/drizzle-orm node_modules/postgres ".deploy/payload-$RELEASE_ID/node_modules/"
           cp ecosystem.config.cjs ".deploy/payload-$RELEASE_ID/ecosystem.config.cjs"
@@ -149,7 +154,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          runtime_env=".deploy/runtime-$RELEASE_ID.env"
+          umask 077
+          printf 'ANALYTICS_DATABASE_URL=%s\nWEB_REVALIDATION_SECRET=%s\nWEB_REVALIDATION_URL=%s\n' \
+            "$ANALYTICS_DATABASE_URL" \
+            "$WEB_REVALIDATION_SECRET" \
+            "$WEB_REVALIDATION_URL" > "$runtime_env"
           scp -P "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key ".deploy/fwqgo-$RELEASE_ID.tar.gz" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/fwqgo-$RELEASE_ID.tar.gz"
+          scp -P "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key "$runtime_env" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/fwqgo-$RELEASE_ID.runtime.env"
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
@@ -168,6 +180,7 @@ jobs:
           keep_releases="$4"
           upload_dir="$5"
           run_migrations="$6"
+          runtime_env_override="$7"
 
           case "$deploy_path" in
             ""|"/"|"/var"|"/var/www")
@@ -242,6 +255,7 @@ jobs:
           on_deploy_error() {
             status=$?
             trap - ERR
+            rm -f "$runtime_env_override"
             echo "Deployment failed during stage: $deployment_stage" >&2
             if [[ "$processes_replaced" == "true" ]]; then
               echo "Recent PM2 logs:"
@@ -263,6 +277,12 @@ jobs:
           mkdir -p "$release_dir"
           tar -xzf "$remote_artifact" -C "$release_dir"
           ln -sfn "$shared_dir/.env.production" "$release_dir/.env.production"
+
+          deployment_stage="configure runtime environment"
+          node "$release_dir/scripts/merge-runtime-env.mjs" \
+            "$shared_dir/.env.production" \
+            "$runtime_env_override"
+          rm -f "$runtime_env_override"
 
           [[ -f "$release_dir/apps/web/server.js" && -f "$release_dir/apps/cms/server.js" ]] || {
             echo "Artifact is missing web or cms standalone server.js" >&2
@@ -362,7 +382,7 @@ jobs:
           REMOTE_SCRIPT
 
           ssh -p "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
-            "bash -s -- '$DEPLOY_PATH' '$RELEASE_ID' '/tmp/fwqgo-$RELEASE_ID.tar.gz' '$KEEP_RELEASES' '$REMOTE_UPLOAD_DIR' '$RUN_MIGRATIONS'" < "$remote_script"
+            "bash -s -- '$DEPLOY_PATH' '$RELEASE_ID' '/tmp/fwqgo-$RELEASE_ID.tar.gz' '$KEEP_RELEASES' '$REMOTE_UPLOAD_DIR' '$RUN_MIGRATIONS' '/tmp/fwqgo-$RELEASE_ID.runtime.env'" < "$remote_script"
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}

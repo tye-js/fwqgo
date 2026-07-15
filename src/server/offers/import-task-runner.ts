@@ -17,6 +17,7 @@ import {
   importServerOffersFromPost,
   importServerOffersFromPosts,
 } from "@/server/offers/server-offers";
+import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 
 type ServerOfferImportTask = typeof serverOfferImportTasks.$inferSelect;
 type ServerOfferImportMode = "single" | "bulk";
@@ -263,7 +264,9 @@ async function runServerOfferImportWorker() {
         )
         .returning({ id: serverOfferImportTasks.id });
       if (completed.length === 0) throw new TaskLeaseLostError();
-      revalidateOfferPages();
+      await notifyPublicWebCache("offer.changed", {
+        topicSlugs: ["hong-kong", "united-states", "cheap-vps"],
+      });
     } catch (error) {
       structuredLog("error", "offers.task_failed", {
         taskId: task.id,

@@ -32,3 +32,11 @@ export async function readResponseBodyWithLimit(
   }
   return result;
 }
+
+export async function readResponseTextWithLimit(
+  response: Response,
+  maxBytes: number,
+) {
+  const body = await readResponseBodyWithLimit(response, maxBytes);
+  return body ? new TextDecoder().decode(body) : null;
+}

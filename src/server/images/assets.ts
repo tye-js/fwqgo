@@ -33,7 +33,9 @@ const ALLOWED_UPLOAD_TYPES = new Set([
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp"]);
 
 export type ImageAssetRow = typeof imageAssets.$inferSelect;
-export type ImageAssetListItem = Awaited<ReturnType<typeof getImageAssetList>>[number];
+export type ImageAssetListItem = Awaited<
+  ReturnType<typeof getImageAssetList>
+>[number];
 
 type ImageReference = {
   imageId: number;
@@ -140,10 +142,7 @@ function inferMimeFromExtension(fileName: string) {
 
 function buildOutputName(originalName: string, mime: string) {
   const sanitizedName = sanitizeFileName(originalName);
-  const ext =
-    mime === "image/gif"
-      ? path.extname(sanitizedName) || ".gif"
-      : ".webp";
+  const ext = mime === "image/gif" ? ".gif" : ".webp";
   const base = path.basename(sanitizedName, path.extname(sanitizedName));
   return `${Date.now()}-${base}${ext}`;
 }
@@ -186,7 +185,9 @@ function buildRenamedPublicPath(input: {
   currentPath: string;
   nextName: string;
 }) {
-  const current = path.parse(path.basename(normalizeUploadPath(input.currentPath)));
+  const current = path.parse(
+    path.basename(normalizeUploadPath(input.currentPath)),
+  );
   const sanitized = sanitizeFileName(input.nextName.trim());
   const parsed = path.parse(path.basename(sanitized));
   const baseName = (parsed.name || current.name).trim();
@@ -200,6 +201,10 @@ function buildRenamedPublicPath(input: {
     throw new Error("图片名称只支持 jpg、jpeg、png、gif、webp 后缀");
   }
 
+  if (ext !== current.ext.toLowerCase()) {
+    throw new Error("只能修改文件名，不能通过重命名修改图片格式");
+  }
+
   return `${UPLOAD_PUBLIC_PREFIX}${baseName}${ext}`;
 }
 
@@ -210,7 +215,9 @@ async function optimizeUpload(buffer: Buffer, mime: string) {
 
   const sharp = await loadSharp();
   if (!sharp) {
-    throw new Error("图片转 WebP 需要 sharp，请先确认服务器构建产物包含 sharp。");
+    throw new Error(
+      "图片转 WebP 需要 sharp，请先确认服务器构建产物包含 sharp。",
+    );
   }
 
   const optimized = await sharp(buffer)
@@ -227,6 +234,58 @@ async function optimizeUpload(buffer: Buffer, mime: string) {
   return { buffer: optimized, mime: "image/webp" };
 }
 
+async function optimizeReplacementUpload(input: {
+  buffer: Buffer;
+  sourceMime: string;
+  targetPath: string;
+}) {
+  const targetExt = path.extname(input.targetPath).toLowerCase();
+  const sourceIsGif = input.sourceMime === "image/gif";
+  const targetIsGif = targetExt === ".gif";
+
+  if (sourceIsGif !== targetIsGif) {
+    throw new Error(
+      "GIF 与静态图片不能互相替换，否则原图片 URL 会与文件格式不一致",
+    );
+  }
+  if (targetIsGif) {
+    return { buffer: input.buffer, mime: "image/gif" };
+  }
+
+  const sharp = await loadSharp();
+  if (!sharp) {
+    throw new Error("替换图片需要 sharp，请先确认服务器构建产物包含 sharp。");
+  }
+
+  const pipeline = sharp(input.buffer).rotate().resize({
+    width: 1600,
+    height: 1600,
+    fit: "inside",
+    withoutEnlargement: true,
+  });
+
+  if (targetExt === ".jpg" || targetExt === ".jpeg") {
+    return {
+      buffer: await pipeline.jpeg({ quality: 84, mozjpeg: true }).toBuffer(),
+      mime: "image/jpeg",
+    };
+  }
+  if (targetExt === ".png") {
+    return {
+      buffer: await pipeline.png({ compressionLevel: 9 }).toBuffer(),
+      mime: "image/png",
+    };
+  }
+  if (targetExt === ".webp") {
+    return {
+      buffer: await pipeline.webp({ quality: 82, effort: 4 }).toBuffer(),
+      mime: "image/webp",
+    };
+  }
+
+  throw new Error("当前图片 URL 的文件格式不支持原路径替换");
+}
+
 async function createResponsiveVariants(input: {
   buffer: Buffer;
   mime: string;
@@ -238,7 +297,9 @@ async function createResponsiveVariants(input: {
 
   const sharp = await loadSharp();
   if (!sharp) {
-    throw new Error("生成响应式图片需要 sharp，请先确认服务器构建产物包含 sharp。");
+    throw new Error(
+      "生成响应式图片需要 sharp，请先确认服务器构建产物包含 sharp。",
+    );
   }
 
   const [thumbPath, largePath] = await Promise.all([
@@ -449,10 +510,7 @@ export async function createImageAssetFromBuffer(input: {
   return asset!;
 }
 
-export async function replaceImageAssetFile(input: {
-  id: number;
-  file: File;
-}) {
+export async function replaceImageAssetFile(input: { id: number; file: File }) {
   if (!ALLOWED_UPLOAD_TYPES.has(input.file.type)) {
     throw new Error("Invalid file type");
   }
@@ -472,7 +530,11 @@ export async function replaceImageAssetFile(input: {
   }
 
   const originalBuffer = Buffer.from(await input.file.arrayBuffer());
-  const optimized = await optimizeUpload(originalBuffer, input.file.type);
+  const optimized = await optimizeReplacementUpload({
+    buffer: originalBuffer,
+    sourceMime: input.file.type,
+    targetPath: asset.path,
+  });
   const dimensions = await getDimensions(optimized.buffer);
   const filePath = uploadPathToFilePath(asset.path);
 
@@ -606,7 +668,10 @@ export async function renameImageAssetFile(input: {
     ? `${UPLOAD_PUBLIC_PREFIX}${buildVariantName(nextPath, "large")}`
     : null;
 
-  const renamedFiles: Array<{ fromPath: string | null; toPath: string | null }> = [];
+  const renamedFiles: Array<{
+    fromPath: string | null;
+    toPath: string | null;
+  }> = [];
 
   try {
     await renameUploadFileIfPresent({ fromPath: asset.path, toPath: nextPath });
@@ -696,13 +761,18 @@ export async function renameImageAssetFile(input: {
 export async function convertExistingUploadsToWebp() {
   const sharp = await loadSharp();
   if (!sharp) {
-    throw new Error("图片转 WebP 需要 sharp，请先确认服务器构建产物包含 sharp。");
+    throw new Error(
+      "图片转 WebP 需要 sharp，请先确认服务器构建产物包含 sharp。",
+    );
   }
 
   const uploadDir = getUploadDir();
   await mkdir(uploadDir, { recursive: true });
 
-  const assets = await db.select().from(imageAssets).orderBy(sql`${imageAssets.createdAt} desc`);
+  const assets = await db
+    .select()
+    .from(imageAssets)
+    .orderBy(sql`${imageAssets.createdAt} desc`);
   let converted = 0;
   let skipped = 0;
   const failed: Array<{ path: string; error: string }> = [];
@@ -733,7 +803,9 @@ export async function convertExistingUploadsToWebp() {
       }
 
       const parsed = path.parse(path.basename(currentPath));
-      const nextPublicPath = await getAvailablePublicPath(`${parsed.name}.webp`);
+      const nextPublicPath = await getAvailablePublicPath(
+        `${parsed.name}.webp`,
+      );
       const nextFilePath = uploadPathToFilePath(nextPublicPath);
       const optimized = await sharp(currentFilePath)
         .rotate()
@@ -1097,7 +1169,9 @@ function extractUploadPathsFromHtml(html: string | null) {
   const encodedMatches = html.match(/(?:path|src|url)=([^"'&<>\s]+)/g) ?? [];
 
   for (const item of [...uploadMatches, ...encodedMatches]) {
-    const candidate = item.includes("=") ? item.split("=").slice(1).join("=") : item;
+    const candidate = item.includes("=")
+      ? item.split("=").slice(1).join("=")
+      : item;
     const uploadPath = toUploadPath(candidate);
     if (uploadPath) {
       paths.add(uploadPath);
@@ -1273,7 +1347,9 @@ export async function deleteImageReferencesForPosts(postIds: number[]) {
 }
 
 export async function rebuildImageReferences() {
-  const assets = await db.select({ id: imageAssets.id, path: imageAssets.path }).from(imageAssets);
+  const assets = await db
+    .select({ id: imageAssets.id, path: imageAssets.path })
+    .from(imageAssets);
   const findAsset = createAssetFinder(assets);
   const references: ImageReference[] = [];
 
@@ -1387,10 +1463,9 @@ export async function replaceImageReferences(input: {
     return { error: "替换图片不存在，请先上传或导入该图片" };
   }
 
-  const siteBaseUrl = (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
-    /\/+$/,
-    "",
-  );
+  const siteBaseUrl = (
+    process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com"
+  ).replace(/\/+$/, "");
   const absoluteAssetPath = `${siteBaseUrl}${asset.path}`;
   const absoluteReplacementPath = `${siteBaseUrl}${replacementPath}`;
 
@@ -1401,7 +1476,9 @@ export async function replaceImageReferences(input: {
         imgUrl: sql`replace(replace(${posts.imgUrl}, ${absoluteAssetPath}, ${absoluteReplacementPath}), ${asset.path}, ${replacementPath})`,
         updatedAt: new Date(),
       })
-      .where(sql`${posts.imgUrl} like ${`%${asset.path}%`} or ${posts.imgUrl} like ${`%${absoluteAssetPath}%`}`);
+      .where(
+        sql`${posts.imgUrl} like ${`%${asset.path}%`} or ${posts.imgUrl} like ${`%${absoluteAssetPath}%`}`,
+      );
 
     await tx
       .update(posts)
@@ -1409,7 +1486,9 @@ export async function replaceImageReferences(input: {
         content: sql`replace(replace(${posts.content}, ${absoluteAssetPath}, ${absoluteReplacementPath}), ${asset.path}, ${replacementPath})`,
         updatedAt: new Date(),
       })
-      .where(sql`${posts.content} like ${`%${asset.path}%`} or ${posts.content} like ${`%${absoluteAssetPath}%`}`);
+      .where(
+        sql`${posts.content} like ${`%${asset.path}%`} or ${posts.content} like ${`%${absoluteAssetPath}%`}`,
+      );
 
     await tx
       .update(users)
@@ -1417,7 +1496,9 @@ export async function replaceImageReferences(input: {
         image: sql`replace(replace(${users.image}, ${absoluteAssetPath}, ${absoluteReplacementPath}), ${asset.path}, ${replacementPath})`,
         updatedAt: new Date(),
       })
-      .where(sql`${users.image} like ${`%${asset.path}%`} or ${users.image} like ${`%${absoluteAssetPath}%`}`);
+      .where(
+        sql`${users.image} like ${`%${asset.path}%`} or ${users.image} like ${`%${absoluteAssetPath}%`}`,
+      );
   });
 
   await rebuildImageReferences();

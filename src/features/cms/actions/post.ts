@@ -27,6 +27,7 @@ import {
 } from "@/server/images/assets";
 import { posts, categories, tags, postTags } from "@fwqgo/db/schema";
 import { eq, and, inArray, ne, or } from "drizzle-orm";
+import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 
 function normalizeTagName(name: string) {
   return name.trim();
@@ -89,6 +90,9 @@ async function runPostSaveMaintenance(input: {
     } else {
       revalidateSiteContent(input.revalidationTags);
     }
+    await notifyPublicWebCache("post.changed", {
+      postIds: [input.postId],
+    });
   } catch (error) {
     console.error("文章已保存，但缓存刷新失败:", error);
     warnings.push("页面缓存刷新延迟，稍后刷新页面即可");
@@ -149,6 +153,20 @@ async function revalidateChangedPosts(
       cacheTags.category(post.categoryId),
     ]),
   ]);
+  await notifyPublicWebCache("post.changed", {
+    postIds: [
+      ...changedPosts.map((post) => post.id),
+      ...translationSourcePosts.map((post) => post.id),
+    ],
+    postSlugs: [
+      ...changedPosts.map((post) => post.slug),
+      ...translationSourcePosts.map((post) => post.slug),
+    ],
+    categoryIds: [
+      ...changedPosts.map((post) => post.categoryId),
+      ...translationSourcePosts.map((post) => post.categoryId),
+    ],
+  });
 }
 
 async function auditAffiliateLinksForPublish(content: string) {
@@ -334,6 +352,11 @@ export async function updatePostByRecommendedTagName(
         cacheTags.post(result.id),
         cacheTags.postSlug(result.slug),
       ]);
+      await notifyPublicWebCache("post.changed", {
+        postIds: [result.id],
+        postSlugs: [result.slug],
+        categoryIds: [result.categoryId],
+      });
     }
 
     return { data: result };
@@ -1116,6 +1139,21 @@ export async function deletePostById(id: number) {
           ]
         : []),
     ]);
+    await notifyPublicWebCache("post.changed", {
+      postIds: [
+        deletedPost.id,
+        ...(translationSourcePost ? [translationSourcePost.id] : []),
+      ],
+      postSlugs: [
+        deletedPost.slug,
+        ...(deletedPost.enSlug ? [deletedPost.enSlug] : []),
+        ...(translationSourcePost ? [translationSourcePost.slug] : []),
+      ],
+      categoryIds: [
+        deletedPost.categoryId,
+        ...(translationSourcePost ? [translationSourcePost.categoryId] : []),
+      ],
+    });
 
     return { data: "删除文章成功" };
   } catch (error) {
@@ -1182,6 +1220,23 @@ export async function deletePostsByIds(ids: number[]) {
         cacheTags.category(post.categoryId),
       ]),
     ]);
+    await notifyPublicWebCache("post.changed", {
+      postIds: [
+        ...deletedPosts.map((post) => post.id),
+        ...translationSourcePosts.map((post) => post.id),
+      ],
+      postSlugs: [
+        ...deletedPosts.flatMap((post) => [
+          post.slug,
+          ...(post.enSlug ? [post.enSlug] : []),
+        ]),
+        ...translationSourcePosts.map((post) => post.slug),
+      ],
+      categoryIds: [
+        ...deletedPosts.map((post) => post.categoryId),
+        ...translationSourcePosts.map((post) => post.categoryId),
+      ],
+    });
 
     return { data: deletedPosts.length };
   } catch (error) {
@@ -1341,6 +1396,11 @@ export async function updatePostTags({
           cacheTags.category(post.categoryId),
           cacheTags.tags,
         ]);
+        await notifyPublicWebCache("post.changed", {
+          postIds: [post.id],
+          postSlugs: [post.slug],
+          categoryIds: [post.categoryId],
+        });
       } catch (error) {
         console.error("文章标签已保存，但缓存刷新失败:", error);
         warnings.push("标签已保存，但页面缓存刷新延迟");

@@ -4,6 +4,6 @@ function escapeLikePattern(value: string) {
   return value.replace(/[!%_]/g, "!$&");
 }
 
-export function ilikeContains(column: AnyColumn, value: string): SQL {
+export function ilikeContains(column: AnyColumn | SQL, value: string): SQL {
   return sql`${column} ILIKE ${`%${escapeLikePattern(value)}%`} ESCAPE '!'`;
 }

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { readResponseBodyWithLimit } from "../packages/core/bounded-response-body";
+import {
+  readResponseBodyWithLimit,
+  readResponseTextWithLimit,
+} from "../packages/core/bounded-response-body";
 
 void test("reads a response body within the byte limit", async () => {
   const body = await readResponseBodyWithLimit(
@@ -17,4 +20,9 @@ void test("stops reading a response body after the byte limit", async () => {
     3,
   );
   assert.equal(body, null);
+});
+
+void test("decodes bounded response text", async () => {
+  const text = await readResponseTextWithLimit(new Response("中文内容"), 32);
+  assert.equal(text, "中文内容");
 });

@@ -341,10 +341,13 @@ export function ImageUploadWorkbench() {
                     {item.url ? (
                       <button
                         type="button"
-                        className="max-w-[320px] truncate text-left text-xs text-muted-foreground hover:text-accent"
+                        className="flex min-h-10 max-w-[320px] items-center gap-1.5 rounded-md px-2 text-left text-xs text-muted-foreground underline-offset-4 transition-colors hover:bg-muted hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => void handleCopy(item.url!)}
+                        aria-label={`复制图片 URL：${item.url}`}
+                        title="复制图片 URL"
                       >
-                        {item.url}
+                        <Copy className="size-3.5 shrink-0" aria-hidden="true" />
+                        <span className="truncate">{item.url}</span>
                       </button>
                     ) : (
                       <span className="text-sm text-muted-foreground">

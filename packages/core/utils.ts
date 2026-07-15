@@ -122,24 +122,24 @@ export function toAbsoluteHttpUrl(
 }
 
 export function sanitizeFileName(fileName: string) {
-  // 获取文件扩展名
   const lastDotIndex = fileName.lastIndexOf(".");
-  const ext = lastDotIndex !== -1 ? fileName.slice(lastDotIndex) : "";
+  const rawExt = lastDotIndex > 0 ? fileName.slice(lastDotIndex) : "";
+  const ext = rawExt.replace(/[^.a-zA-Z0-9_-]/g, "").slice(0, 20);
   const nameWithoutExt =
-    lastDotIndex !== -1 ? fileName.slice(0, lastDotIndex) : fileName;
+    lastDotIndex > 0 ? fileName.slice(0, lastDotIndex) : fileName;
+  const maxLength = Math.max(1, 200 - ext.length);
+  let encodedName = "";
 
-  // 编码文件名（不包括扩展名）
-  const encodedName = encodeURIComponent(nameWithoutExt);
+  for (const character of nameWithoutExt.normalize("NFC")) {
+    const encodedCharacter = encodeURIComponent(character).replace(
+      /[!'()*]/g,
+      (value) => `%${value.charCodeAt(0).toString(16).toUpperCase()}`,
+    );
+    if (encodedName.length + encodedCharacter.length > maxLength) break;
+    encodedName += encodedCharacter;
+  }
 
-  // 限制编码后的文件名长度（保留扩展名）
-  const maxLength = 200 - ext.length;
-  const truncatedName =
-    encodedName.length > maxLength
-      ? encodedName.slice(0, maxLength)
-      : encodedName;
-
-  // 返回处理后的文件名（带扩展名）
-  return `${truncatedName}${ext}`;
+  return `${encodedName || "file"}${ext}`;
 }
 
 // 判断时间是不是24小时内

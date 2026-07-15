@@ -152,7 +152,9 @@ function verifyPublicDatabaseImports(errors: string[]) {
         const isViewMutation = filePath.endsWith(
           path.join("public", "actions", "post-views.ts"),
         );
-        const allowedNames = new Set(isViewMutation ? ["writeDb"] : ["readDb"]);
+        const allowedNames = new Set(
+          isViewMutation ? ["analyticsDb"] : ["readDb"],
+        );
         const invalidNames = names.filter((name) => !allowedNames.has(name));
 
         if (invalidNames.length > 0) {
@@ -167,13 +169,35 @@ function verifyPublicDatabaseImports(errors: string[]) {
   return checkedFiles;
 }
 
+function verifyPublicRevalidationRoute(errors: string[]) {
+  const filePath = path.join(
+    root,
+    "src/features/public/routes/api/internal/revalidate/route.ts",
+  );
+  const source = fs.readFileSync(filePath, "utf8");
+  for (const requiredText of [
+    "WEB_REVALIDATION_SECRET",
+    "timingSafeEqual",
+    "publicCacheEvents",
+    "MAX_BODY_BYTES",
+  ]) {
+    if (!source.includes(requiredText)) {
+      errors.push(
+        `${path.relative(root, filePath)} is missing ${requiredText}`,
+      );
+    }
+  }
+  return 1;
+}
+
 const errors: string[] = [];
 const actionCount = verifyCmsActions(errors);
 const apiCount = verifyCmsApiRoutes(errors);
 const publicFileCount = verifyPublicDatabaseImports(errors);
+const internalRouteCount = verifyPublicRevalidationRoute(errors);
 
 if (errors.length > 0) fail(errors);
 
 console.log(
-  `Security boundaries verified: cmsActions=${actionCount}, protectedCmsRoutes=${apiCount}, publicFiles=${publicFileCount}`,
+  `Security boundaries verified: cmsActions=${actionCount}, protectedCmsRoutes=${apiCount}, publicFiles=${publicFileCount}, protectedInternalRoutes=${internalRouteCount}`,
 );

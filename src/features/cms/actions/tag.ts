@@ -9,6 +9,7 @@ import { db } from "@fwqgo/db";
 import { tags } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
+import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 import { isPriceLikeTag } from "@/features/cms/lib/tag-price-filter";
 
 const createTagSchema = z.object({
@@ -205,7 +206,11 @@ async function createTagRecord(
 
 export async function createTag(input: z.infer<typeof createTagSchema>) {
   await requireAdminSession();
-  return createTagRecord(input);
+  const result = await createTagRecord(input);
+  if (!("error" in result)) {
+    await notifyPublicWebCache("taxonomy.changed", { tagIds: [result.id] });
+  }
+  return result;
 }
 
 export async function createTags(inputTags: z.infer<typeof createTagSchema>[]) {
@@ -222,6 +227,9 @@ export async function createTags(inputTags: z.infer<typeof createTagSchema>[]) {
   );
 
   revalidateSiteContent([cacheTags.tags]);
+  await notifyPublicWebCache("taxonomy.changed", {
+    tagIds: resultTags.map((tag) => tag.id),
+  });
 
   return { data: resultTags };
 }
@@ -252,6 +260,7 @@ export async function updateTagIndexable(
   }
 
   revalidateSiteContent([cacheTags.tags, cacheTags.tagSlug(tag.slug)]);
+  await notifyPublicWebCache("taxonomy.changed", { tagIds: [tag.id] });
 
   return { data: tag };
 }
@@ -335,6 +344,7 @@ async function saveTagSeo(
       ? [cacheTags.tagSlug(currentTag.enSlug)]
       : []),
   ]);
+  await notifyPublicWebCache("taxonomy.changed", { tagIds: [tag.id] });
 
   return { data: tag };
 }

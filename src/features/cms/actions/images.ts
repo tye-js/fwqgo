@@ -20,6 +20,7 @@ import { db } from "@fwqgo/db";
 import { imageAssets } from "@fwqgo/db/schema";
 import { revalidateSiteContent, cacheTags } from "@fwqgo/cache/tags";
 import { ilikeContains } from "@/server/db/search";
+import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 
 function revalidateImageWorkbenches() {
   revalidatePath("/images/list");
@@ -71,6 +72,7 @@ export async function rebuildResponsiveImageVariantsAction() {
   const data = await rebuildResponsiveImageVariants();
   revalidateImageWorkbenches();
   revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
+  await notifyPublicWebCache("image.changed");
   return { data };
 }
 
@@ -79,6 +81,7 @@ export async function auditAndRepairImageAssetsAction() {
   const data = await auditAndRepairImageAssets();
   revalidateImageWorkbenches();
   revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
+  await notifyPublicWebCache("image.changed");
   return { data };
 }
 
@@ -87,6 +90,7 @@ export async function convertUploadImagesToWebpAction() {
   const data = await convertExistingUploadsToWebp();
   revalidateImageWorkbenches();
   revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
+  await notifyPublicWebCache("image.changed");
   return { data };
 }
 
@@ -94,6 +98,7 @@ export async function deleteImageAssetAction(id: number) {
   await requireAdminSession();
   const result = await deleteImageAsset(id);
   revalidateImageWorkbenches();
+  await notifyPublicWebCache("image.changed");
   return result;
 }
 
@@ -109,6 +114,7 @@ export async function replaceImageAssetFileAction(formData: FormData) {
   const data = await replaceImageAssetFile({ id, file });
   revalidateImageWorkbenches();
   revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
+  await notifyPublicWebCache("image.changed");
   return {
     data: {
       ...data,
@@ -126,6 +132,7 @@ export async function replaceImageReferencesAction(input: {
   const result = await replaceImageReferences(input);
   revalidateImageWorkbenches();
   revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
+  await notifyPublicWebCache("image.changed");
   return result;
 }
 
@@ -137,6 +144,7 @@ export async function renameImageAssetFileAction(input: {
   const result = await renameImageAssetFile(input);
   revalidateImageWorkbenches();
   revalidateSiteContent([cacheTags.posts, cacheTags.homepage]);
+  await notifyPublicWebCache("image.changed");
   return result;
 }
 
@@ -152,5 +160,6 @@ export async function updateImageAssetMetadataAction(input: {
   await requireAdminSession();
   const result = await updateImageAssetMetadata(input);
   revalidateImageWorkbenches();
+  await notifyPublicWebCache("image.changed");
   return result;
 }

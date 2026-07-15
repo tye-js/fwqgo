@@ -27,9 +27,8 @@ import { usePathname } from "next/navigation";
 
 const data = {
   user: {
-    name: "fwqgo",
-    email: "m@example.com",
-    avatar: "/avatars/shadcn.jpg",
+    name: "管理员",
+    email: "CMS 管理后台",
   },
   teams: [
     {
@@ -106,6 +105,16 @@ const data = {
       title: "服务器套餐",
       url: "/servers/manage",
       icon: Server,
+      items: [
+        {
+          title: "套餐管理",
+          url: "/servers/manage",
+        },
+        {
+          title: "库存监控",
+          url: "/servers/monitor",
+        },
+      ],
     },
     {
       title: "SEO运营",
@@ -140,7 +149,7 @@ const data = {
           url: "/collect/short-links",
         },
         {
-          title: "首页推荐",
+          title: "首页推广位",
           url: "/collect/homepage-promoted",
         },
       ],

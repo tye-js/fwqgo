@@ -1,5 +1,6 @@
 import { readDb } from "@fwqgo/db";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
+import { cacheLife } from "next/cache";
 import { decodeSlug } from "@fwqgo/core/utils";
 import { attachTagsToPosts } from "@fwqgo/db/post-tags";
 import { posts, tags, postTags, homepagePromotedPosts } from "@fwqgo/db/schema";
@@ -166,6 +167,7 @@ export async function getHomepagePostsWithTags(
   language: PublicLanguage = "zh",
 ) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 300, expire: 3_600 });
   tagCache(cacheTags.homepage, cacheTags.posts, cacheTags.tags);
 
   try {
@@ -180,6 +182,7 @@ export async function getHomepagePostsWithTags(
 
 export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 300, expire: 3_600 });
   tagCache(cacheTags.homepage, cacheTags.sidebar, cacheTags.posts);
 
   const promotedPostsPromise = (async () => {

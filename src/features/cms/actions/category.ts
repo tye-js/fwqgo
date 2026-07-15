@@ -10,6 +10,7 @@ import { db } from "@fwqgo/db";
 import { categories } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
+import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 
 const updateCategorySeoSchema = z.object({
   id: z.number().int().positive("分类 ID 不正确"),
@@ -217,6 +218,9 @@ async function saveCategorySeo(
     slug: category.slug,
     enSlug: category.enSlug,
     previousEnSlug: currentCategory.enSlug,
+  });
+  await notifyPublicWebCache("taxonomy.changed", {
+    categoryIds: [category.id],
   });
 
   return { data: category };

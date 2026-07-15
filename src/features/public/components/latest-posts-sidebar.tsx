@@ -38,7 +38,9 @@ export function LatestPostsSidebar({
               {language === "en" ? "Latest articles" : "最新文章"}
             </div>
             <Link
-              href={language === "en" ? "/en" : "/"}
+              href={
+                language === "en" ? "/en/fwq/vps/page/1" : "/fwq/vps/page/1"
+              }
               prefetch
               className="inline-flex min-h-9 items-center rounded-md text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >

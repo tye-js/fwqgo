@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Suspense } from "react";
 import { connection } from "next/server";
-import { ArrowLeft } from "lucide-react";
+import { Suspense } from "react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 
 import Header from "@/features/public/components/header";
 import Footer from "@/features/public/components/footer";
@@ -61,7 +61,6 @@ async function ServerTopicContent({
   params: Promise<{ topic: string }>;
 }) {
   await connection();
-
   const { topic } = await params;
   const data = await getServerOfferTopic(topic);
 
@@ -70,6 +69,10 @@ async function ServerTopicContent({
   }
 
   const { topic: topicInfo, offers } = data;
+  const inventoryHref =
+    topicInfo.slug === "cheap-vps"
+      ? "/servers?maxPrice=8&stock=all"
+      : `/servers?region=${topicInfo.slug}&stock=all`;
   const inStockCount = offers.filter(
     (offer) => offer.status === "in_stock",
   ).length;
@@ -84,10 +87,17 @@ async function ServerTopicContent({
       if (!offer.priceAmount || !Number.isFinite(amount) || amount < 0) {
         return null;
       }
-      return { amount, currency: offer.currency === "CNY" ? "¥" : "$" };
+      const monthlyPriceUsd = Number(offer.monthlyPriceUsd);
+      return {
+        amount,
+        currency: offer.currency === "CNY" ? "¥" : "$",
+        monthlyPriceUsd: Number.isFinite(monthlyPriceUsd)
+          ? monthlyPriceUsd
+          : amount,
+      };
     })
     .filter((price): price is NonNullable<typeof price> => Boolean(price))
-    .sort((left, right) => left.amount - right.amount)[0];
+    .sort((left, right) => left.monthlyPriceUsd - right.monthlyPriceUsd)[0];
   const summaryStats: Array<{ label: string; value: string }> = [
     { label: "套餐数", value: offers.length.toLocaleString("zh-CN") },
     { label: "有货", value: inStockCount.toLocaleString("zh-CN") },
@@ -199,6 +209,14 @@ async function ServerTopicContent({
               </div>
             ))}
           </dl>
+          <Link
+            href={inventoryHref}
+            prefetch
+            className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            在库存工具中筛选全部套餐
+            <ArrowRight className="size-4" />
+          </Link>
         </div>
       </section>
 

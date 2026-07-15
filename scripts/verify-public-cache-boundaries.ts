@@ -31,6 +31,7 @@ const requirements = new Map<string, string[]>([
     [
       "getServerOfferTopic",
       "getServerOfferCollection",
+      "getServerOfferCollectionIndex",
       "getServerOfferTopicCounts",
       "getPublicServerOfferCount",
       "getLatestServerOffers",
@@ -39,7 +40,22 @@ const requirements = new Map<string, string[]>([
       "getServerOffersByKeywords",
     ],
   ],
+  [
+    "src/server/homepage/homepage-slots.ts",
+    ["getActiveHomepageSlots"],
+  ],
 ]);
+const staticRouteRequirements = [
+  "src/features/public/routes/servers/providers/[provider]/page.tsx",
+  "src/features/public/routes/servers/regions/[region]/page.tsx",
+  "src/features/public/routes/servers/lines/[line]/page.tsx",
+];
+const partialRuntimeRouteRequirements = [
+  "src/features/public/routes/page.tsx",
+  "src/features/public/routes/en/page.tsx",
+  "src/features/public/routes/servers/page.tsx",
+  "src/features/public/routes/servers/[topic]/page.tsx",
+];
 
 function readSourceFile(relativePath: string) {
   const filePath = path.join(root, relativePath);
@@ -69,6 +85,27 @@ function hasUseCacheDirective(fn: ts.FunctionDeclaration) {
   );
 }
 
+function inspectCacheStrategy(fn: ts.FunctionDeclaration, sourceFile: ts.SourceFile) {
+  const bodyText = fn.body?.getText(sourceFile) ?? "";
+  if (hasUseCacheDirective(fn)) {
+    return {
+      cached: true,
+      tagged: bodyText.includes("tagCache("),
+      expiring: true,
+    };
+  }
+
+  if (bodyText.includes("unstable_cache(")) {
+    return {
+      cached: true,
+      tagged: /\btags\s*:/.test(bodyText),
+      expiring: /\brevalidate\s*:/.test(bodyText),
+    };
+  }
+
+  return { cached: false, tagged: false, expiring: false };
+}
+
 const errors: string[] = [];
 let checkedFunctions = 0;
 
@@ -86,14 +123,38 @@ for (const [relativePath, functionNames] of requirements) {
       errors.push(`${relativePath}:${functionName} was not found`);
       continue;
     }
-    if (!hasUseCacheDirective(fn)) {
+    const strategy = inspectCacheStrategy(fn, sourceFile);
+    if (!strategy.cached) {
       errors.push(
-        `${relativePath}:${functionName} must start with "use cache"`,
+        `${relativePath}:${functionName} must use "use cache" or unstable_cache()`,
       );
     }
-    if (!fn.body.getText(sourceFile).includes("tagCache(")) {
+    if (!strategy.tagged) {
       errors.push(`${relativePath}:${functionName} must declare cache tags`);
     }
+    if (!strategy.expiring) {
+      errors.push(
+        `${relativePath}:${functionName} unstable_cache() must declare revalidate`,
+      );
+    }
+  }
+}
+
+for (const relativePath of staticRouteRequirements) {
+  const sourceFile = readSourceFile(relativePath);
+  if (sourceFile.getFullText().includes("connection(")) {
+    errors.push(`${relativePath} must keep its public data behind cached loaders`);
+  }
+}
+
+for (const relativePath of partialRuntimeRouteRequirements) {
+  const sourceFile = readSourceFile(relativePath);
+  const sourceText = sourceFile.getFullText();
+  if (!sourceText.includes("connection(")) {
+    errors.push(`${relativePath} must postpone runtime data with connection()`);
+  }
+  if (!sourceText.includes("<Suspense")) {
+    errors.push(`${relativePath} must place runtime data behind Suspense`);
   }
 }
 
@@ -104,5 +165,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-  `Public cache boundaries verified: cachedFunctions=${checkedFunctions}`,
+  `Public cache boundaries verified: cachedFunctions=${checkedFunctions}, staticRoutes=${staticRouteRequirements.length}, pprRoutes=${partialRuntimeRouteRequirements.length}`,
 );

@@ -119,10 +119,10 @@ function HeaderFallback({ language }: { language: PublicLanguage }) {
           <Link
             href={language === "en" ? "/en" : "/"}
             prefetch
-            className="min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             aria-label={copy.homeLabel}
           >
-            <BrandLogo className="min-w-0" />
+            <BrandLogo compact />
           </Link>
           <div className="hidden h-10 w-80 rounded-md border border-border/70 bg-muted/30 lg:block" />
           <Button
@@ -184,10 +184,10 @@ const HeaderContent = async ({
           <Link
             href={language === "en" ? "/en" : "/"}
             prefetch
-            className="min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             aria-label={copy.homeLabel}
           >
-            <BrandLogo className="min-w-0" />
+            <BrandLogo compact />
           </Link>
 
           <NavigationMenu className="hidden lg:block">
@@ -216,7 +216,7 @@ const HeaderContent = async ({
                   </ul>
                 </NavigationMenuContent>
               </NavigationMenuItem>
-              {safeCategories.map((category) =>
+              {safeCategories.slice(0, 4).map((category) =>
                 category.children.length > 0 ? (
                   <NavigationMenuItem key={category.id}>
                     <NavigationMenuTrigger className="rounded-md">
@@ -253,6 +253,26 @@ const HeaderContent = async ({
                   </NavigationMenuItem>
                 ),
               )}
+              {safeCategories.length > 4 ? (
+                <NavigationMenuItem>
+                  <NavigationMenuTrigger className="rounded-md">
+                    {copy.articleCategories}
+                  </NavigationMenuTrigger>
+                  <NavigationMenuContent>
+                    <ul className="grid w-[420px] gap-3 p-4 md:w-[520px] md:grid-cols-2">
+                      {safeCategories.slice(4).map((category) => (
+                        <ListItem
+                          key={category.id}
+                          title={category.name}
+                          href={categoryHref(category.slug, language)}
+                        >
+                          {category.description}
+                        </ListItem>
+                      ))}
+                    </ul>
+                  </NavigationMenuContent>
+                </NavigationMenuItem>
+              ) : null}
               {error ? (
                 <NavigationMenuItem>
                   <NavigationMenuLink asChild>

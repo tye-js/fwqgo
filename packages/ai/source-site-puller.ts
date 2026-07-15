@@ -10,6 +10,7 @@ import {
   parsePublicHttpUrl,
   requirePublicHttpUrl,
 } from "@fwqgo/core/network-url";
+import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import { db } from "@fwqgo/db";
 import { aiRewriteTasks, sourceMaterials } from "@fwqgo/db/schema";
 
@@ -28,6 +29,7 @@ type DiscoveredSourceUrl = {
 
 const MAX_CHILD_SITEMAPS = 8;
 const FETCH_TIMEOUT_MS = 15_000;
+const MAX_SOURCE_DOCUMENT_BYTES = 8 * 1024 * 1024;
 
 export type SourceSitePullInput = {
   siteUrl: string;
@@ -55,7 +57,14 @@ async function fetchText(url: string) {
       throw new Error(`抓取失败 ${response.status}: ${url}`);
     }
 
-    return await response.text();
+    const text = await readResponseTextWithLimit(
+      response,
+      MAX_SOURCE_DOCUMENT_BYTES,
+    );
+    if (text === null) {
+      throw new Error(`抓取失败：来源站响应超过 8 MB 限制：${url}`);
+    }
+    return text;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error(`抓取超时：${url}`);

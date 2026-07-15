@@ -1,0 +1,1 @@
+CREATE INDEX "server_offer_checks_checkedAt_idx" ON "server_offer_checks" USING btree ("checkedAt");

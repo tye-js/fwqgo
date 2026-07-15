@@ -104,15 +104,16 @@ function formatMinPrice(offers: Offer[]) {
       return {
         value,
         currency: offer.currency === "CNY" ? "¥" : "$",
-        monthlySortValue:
-          (offer.currency === "CNY" ? value / 7.2 : value) /
-          (offer.billingCycle === "yearly"
-            ? 12
-            : offer.billingCycle === "semiannual"
-              ? 6
-              : offer.billingCycle === "quarterly"
-                ? 3
-                : 1),
+        monthlySortValue: Number.isFinite(Number(offer.monthlyPriceUsd))
+          ? Number(offer.monthlyPriceUsd)
+          : (offer.currency === "CNY" ? value / 7.2 : value) /
+            (offer.billingCycle === "yearly"
+              ? 12
+              : offer.billingCycle === "semiannual"
+                ? 6
+                : offer.billingCycle === "quarterly"
+                  ? 3
+                  : 1),
       };
     })
     .filter((price): price is NonNullable<typeof price> => Boolean(price))
@@ -225,6 +226,8 @@ function buildJsonLd(input: {
 export function ServerOfferCollectionPage({
   kind,
   value,
+  slug,
+  toolHref,
   title,
   description,
   offers,
@@ -232,13 +235,15 @@ export function ServerOfferCollectionPage({
 }: {
   kind: CollectionKind;
   value: string;
+  slug: string;
+  toolHref: string;
   title: string;
   description: string;
   offers: Offer[];
   updatedAt?: Date | string | null;
 }) {
   const copy = kindCopy[kind];
-  const canonicalUrl = `${getSiteUrl()}${getCollectionPath(kind, value)}`;
+  const canonicalUrl = `${getSiteUrl()}${getCollectionPath(kind, slug)}`;
   const inStockCount = offers.filter(
     (offer) => offer.status === "in_stock",
   ).length;
@@ -314,6 +319,14 @@ export function ServerOfferCollectionPage({
               </div>
             ))}
           </dl>
+          <Link
+            href={toolHref}
+            prefetch
+            className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            在库存工具中继续筛选
+            <ArrowRight className="size-4" />
+          </Link>
         </div>
       </section>
 
@@ -348,6 +361,14 @@ export function ServerOfferCollectionPage({
               相关入口
             </h2>
             <div className="mt-4 grid gap-2">
+              <Link
+                href={toolHref}
+                prefetch
+                className="flex min-h-11 items-center justify-between rounded-md border border-primary/30 bg-primary/5 px-3 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
+              >
+                打开当前条件筛选
+                <ArrowRight className="size-4" />
+              </Link>
               {topicLinks.map((topic) => (
                 <Link
                   key={topic.slug}

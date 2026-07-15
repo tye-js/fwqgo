@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Suspense } from "react";
 import { connection } from "next/server";
+import { Suspense } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -24,6 +24,11 @@ import ArticleCard from "@/features/public/components/article-card";
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
 import {
+  HomepagePrimaryPromotion,
+  HomepagePromotionGrid,
+  HomepageSidebarPromotions,
+} from "@/features/public/components/homepage-promotion-slots";
+import {
   FeaturedOfferList,
   type FeaturedOffer,
 } from "@/features/public/components/featured-offer-list";
@@ -37,6 +42,7 @@ import {
   getServerOfferTopicCounts,
   offerTopics,
 } from "@/server/offers/server-offers";
+import { getActiveHomepageSlots } from "@/server/homepage/homepage-slots";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
@@ -86,7 +92,8 @@ const compareEntries: Array<{
 }> = [
   {
     title: "Compare all offers",
-    description: "Filter every offer by price, region, line, status, and coupon.",
+    description:
+      "Filter every offer by price, region, line, status, and coupon.",
     href: "/servers",
     icon: Gauge,
   },
@@ -226,30 +233,67 @@ function SectionHeading({
 
 async function EnglishHomeContent() {
   await connection();
-
   const [
     { data: posts },
     { data: sidebarData },
     offerCounts,
     latestOffers,
     totalOfferCount,
+    homepageSlots,
   ] = await Promise.all([
     getHomepagePostsWithTags("en"),
     getHomepageSidebarData("en"),
     getServerOfferTopicCounts(),
     getLatestServerOffers(24),
     getPublicServerOfferCount(),
+    getActiveHomepageSlots("en"),
   ]);
 
   const safePosts = posts ?? [];
   const latestArticles = safePosts.slice(0, 8);
   const promotedPosts = sidebarData?.promotedPosts ?? [];
   const popularPosts = sidebarData?.popularPosts ?? [];
-  const featuredOffers = latestOffers.slice(0, 6);
+  const heroPrimarySlot = homepageSlots.find(
+    (slot) => slot.placement === "hero_primary",
+  );
+  const promoGridSlots = homepageSlots.filter(
+    (slot) => slot.placement === "promo_grid",
+  );
+  const sidebarSlots = homepageSlots.filter(
+    (slot) => slot.placement === "sidebar",
+  );
+  const configuredFeaturedOffers: FeaturedOffer[] = homepageSlots
+    .filter(
+      (slot) =>
+        slot.placement === "featured_offers" &&
+        slot.contentType === "offer" &&
+        slot.offerId &&
+        slot.offerTitle,
+    )
+    .map((slot) => ({
+      id: slot.offerId!,
+      title: slot.offerTitle!,
+      providerName: slot.offerProviderName,
+      region: slot.offerRegion,
+      lineType: slot.offerLineType,
+      priceAmount: slot.offerPriceAmount,
+      currency: slot.offerCurrency,
+      billingCycle: slot.offerBillingCycle,
+      promoCode: slot.offerPromoCode,
+      purchaseUrl: slot.resolvedTargetUrl ?? slot.offerPurchaseUrl,
+      articleUrl: slot.offerArticleUrl,
+      status: slot.offerStatus ?? "in_stock",
+    }));
+  const featuredOffers =
+    configuredFeaturedOffers.length > 0
+      ? configuredFeaturedOffers.slice(0, 6)
+      : latestOffers.slice(0, 6);
   const promoOffers = latestOffers
     .filter((offer) => offer.promoCode?.trim())
     .slice(0, 4);
-  const topProviders = topValues(latestOffers.map((offer) => offer.providerName));
+  const topProviders = topValues(
+    latestOffers.map((offer) => offer.providerName),
+  );
   const topRegions = topValues(latestOffers.map((offer) => offer.region));
   const latestOfferUpdatedAt = latestOffers
     .map((offer) => offer.updatedAt ?? offer.createdAt)
@@ -326,83 +370,88 @@ async function EnglishHomeContent() {
               </div>
             </div>
 
-            <aside className="min-w-0 space-y-4 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
-              <div>
-                <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  <BadgePercent className="size-4 text-primary" />
-                  Latest coupon codes
-                </p>
-                <div className="mt-3 space-y-2">
-                  {promoOffers.length > 0 ? (
-                    promoOffers.map((offer) => (
-                      <PromoCodeLink key={offer.id} offer={offer} />
-                    ))
-                  ) : (
-                    <p className="rounded-md border border-dashed border-border/70 bg-muted/30 px-3 py-4 text-xs leading-5 text-muted-foreground">
-                      No coupon offers right now. Open the comparison tool for
-                      the full list.
-                    </p>
-                  )}
+            {heroPrimarySlot ? (
+              <HomepagePrimaryPromotion slot={heroPrimarySlot} language="en" />
+            ) : (
+              <aside className="min-w-0 space-y-4 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
+                <div>
+                  <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <BadgePercent className="size-4 text-primary" />
+                    Latest coupon codes
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {promoOffers.length > 0 ? (
+                      promoOffers.map((offer) => (
+                        <PromoCodeLink key={offer.id} offer={offer} />
+                      ))
+                    ) : (
+                      <p className="rounded-md border border-dashed border-border/70 bg-muted/30 px-3 py-4 text-xs leading-5 text-muted-foreground">
+                        No coupon offers right now. Open the comparison tool for
+                        the full list.
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  <Store className="size-4 text-primary" />
-                  Popular providers
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {topProviders.length > 0 ? (
-                    topProviders.map((name) => (
-                      <Link
-                        key={name}
-                        href={`/servers/providers/${encodeURIComponent(name)}`}
-                        prefetch
-                        className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary md:min-h-8"
-                      >
-                        {name}
-                      </Link>
-                    ))
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      No data yet
-                    </span>
-                  )}
+                <div>
+                  <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Store className="size-4 text-primary" />
+                    Popular providers
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {topProviders.length > 0 ? (
+                      topProviders.map((name) => (
+                        <Link
+                          key={name}
+                          href={`/servers/providers/${encodeURIComponent(name)}`}
+                          prefetch
+                          className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary md:min-h-8"
+                        >
+                          {name}
+                        </Link>
+                      ))
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        No data yet
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  <MapPin className="size-4 text-primary" />
-                  Popular regions
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {topRegions.length > 0 ? (
-                    topRegions.map((name) => (
-                      <Link
-                        key={name}
-                        href={`/servers/regions/${encodeURIComponent(name)}`}
-                        prefetch
-                        className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary md:min-h-8"
-                      >
-                        {name}
-                      </Link>
-                    ))
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      No data yet
-                    </span>
-                  )}
+                <div>
+                  <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <MapPin className="size-4 text-primary" />
+                    Popular regions
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {topRegions.length > 0 ? (
+                      topRegions.map((name) => (
+                        <Link
+                          key={name}
+                          href={`/servers/regions/${encodeURIComponent(name)}`}
+                          prefetch
+                          className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary md:min-h-8"
+                        >
+                          {name}
+                        </Link>
+                      ))
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        No data yet
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </aside>
+              </aside>
+            )}
           </div>
 
           <div className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {compareEntries.map((entry) => {
               const Icon = entry.icon;
               const count = entry.topicSlug
-                ? offerCounts.find((item) => item.slug === entry.topicSlug)?.count
+                ? offerCounts.find((item) => item.slug === entry.topicSlug)
+                    ?.count
                 : totalOfferCount;
 
               return (
@@ -436,6 +485,18 @@ async function EnglishHomeContent() {
           </div>
         </div>
       </section>
+
+      {promoGridSlots.length > 0 ? (
+        <section className="container mx-auto px-4 pt-8 md:pt-10">
+          <div className="mb-4">
+            <SectionHeading
+              title="Special picks"
+              description="Current campaigns, selected articles, and featured resources."
+            />
+          </div>
+          <HomepagePromotionGrid slots={promoGridSlots} />
+        </section>
+      ) : null}
 
       <section className="container mx-auto px-4 py-8 md:py-10">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
@@ -489,10 +550,14 @@ async function EnglishHomeContent() {
               <Badge variant="secondary">Featured</Badge>
             </div>
             <div className="mt-3 space-y-2">
-              {promotedPosts.length > 0 ? (
+              {sidebarSlots.length > 0 ? (
+                <HomepageSidebarPromotions slots={sidebarSlots} />
+              ) : promotedPosts.length > 0 ? (
                 promotedPosts
                   .slice(0, 4)
-                  .map((post) => <SidebarArticleLink key={post.id} post={post} />)
+                  .map((post) => (
+                    <SidebarArticleLink key={post.id} post={post} />
+                  ))
               ) : (
                 <p className="rounded-md border border-dashed border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
                   No English picks configured yet.

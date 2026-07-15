@@ -17,6 +17,7 @@ import { parsePositiveInt } from "@fwqgo/core/utils";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { FileSearch } from "lucide-react";
+import { getProviderOptionsForMonitoring } from "@/server/offers/provider-monitor";
 
 type ServerOfferManageSearchParams = {
   pageNo?: string;
@@ -40,7 +41,7 @@ async function loadServerOfferManageData(
   filters: ServerOfferManageSearchParams,
 ) {
   try {
-    const [counts, offerPage, quality] = await Promise.all([
+    const [counts, offerPage, quality, providers] = await Promise.all([
       getServerOfferTopicCounts(),
       getAdminServerOffers({
         page: parsePageNo(filters.pageNo),
@@ -51,9 +52,10 @@ async function loadServerOfferManageData(
         visibility: filters.visibility,
       }),
       getAdminServerOfferQualitySummary(),
+      getProviderOptionsForMonitoring(),
     ]);
 
-    return { counts, offerPage, quality, error: null };
+    return { counts, offerPage, quality, providers, error: null };
   } catch (error) {
     console.error("套餐管理页加载套餐数据失败:", error);
     return {
@@ -72,6 +74,7 @@ async function loadServerOfferManageData(
         missingPrice: 0,
         missingRegion: 0,
       },
+      providers: [] as Awaited<ReturnType<typeof getProviderOptionsForMonitoring>>,
       error: getErrorMessage(error),
     };
   }
@@ -89,6 +92,7 @@ async function ServerOfferManageContent({
     counts,
     offerPage,
     quality,
+    providers,
     error: loadError,
   } = await loadServerOfferManageData(searchParams);
   const total = counts.reduce((sum, item) => sum + item.count, 0);
@@ -199,6 +203,7 @@ async function ServerOfferManageContent({
         <ServerOfferAdminTable
           key={`${offerPage.page}:${searchParams.query ?? ""}:${searchParams.status ?? "all"}:${searchParams.reviewStatus ?? "all"}:${searchParams.visibility ?? "all"}`}
           offers={offerPage.rows}
+          providers={providers}
           totalCount={offerPage.total}
           initialFilters={{
             pageNo: offerPage.page,

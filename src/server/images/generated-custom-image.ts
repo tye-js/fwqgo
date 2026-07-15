@@ -1,9 +1,15 @@
 import { sanitizeFileName } from "@fwqgo/core/utils";
+import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import {
   buildImageGenerationEndpoint,
   formatImageGenerationHttpError,
   normalizeImageGenerationResultUrl,
 } from "@fwqgo/core/image-generation-endpoint";
+import {
+  extractGeneratedImageSource,
+  readGeneratedImageResponse,
+  type ImageGenerationResponse,
+} from "@fwqgo/core/image-generation-response";
 import {
   assertPublicHttpUrl,
   fetchPublicHttpUrl,
@@ -25,17 +31,8 @@ type GenerateCustomImageInput = {
   configId?: number;
 };
 
-type ImageGenerationResponse = {
-  data?: Array<{
-    url?: string;
-    b64_json?: string;
-    revised_prompt?: string;
-  }>;
-  image?: string;
-  image_url?: string;
-  url?: string;
-  b64_json?: string;
-};
+const MAX_IMAGE_API_RESPONSE_BYTES = 24 * 1024 * 1024;
+const MAX_GENERATED_IMAGE_BYTES = 16 * 1024 * 1024;
 
 function buildRequestBody(input: {
   provider: ImageGenerationProvider;
@@ -64,42 +61,6 @@ function buildRequestBody(input: {
   };
 }
 
-function findImageUrl(payload: ImageGenerationResponse): string | null {
-  if (payload.data?.[0]?.url) return payload.data[0].url;
-  if (payload.image_url) return payload.image_url;
-  if (payload.url) return payload.url;
-  if (
-    typeof payload.image === "string" &&
-    /^https?:\/\//i.test(payload.image)
-  ) {
-    return payload.image;
-  }
-  return null;
-}
-
-function findBase64Image(payload: ImageGenerationResponse): string | null {
-  if (payload.data?.[0]?.b64_json) return payload.data[0].b64_json;
-  if (payload.b64_json) return payload.b64_json;
-  if (
-    typeof payload.image === "string" &&
-    !/^https?:\/\//i.test(payload.image)
-  ) {
-    return payload.image;
-  }
-  return null;
-}
-
-function inferMimeFromResponse(response: Response) {
-  const contentType = response.headers.get("content-type")?.split(";")[0];
-  if (contentType?.startsWith("image/")) return contentType;
-  return "image/png";
-}
-
-function normalizeBase64(value: string) {
-  const commaIndex = value.indexOf(",");
-  return commaIndex >= 0 ? value.slice(commaIndex + 1) : value;
-}
-
 function toEnglishFileSlug(value: string | null | undefined) {
   const slug = value
     ?.trim()
@@ -126,21 +87,39 @@ function buildOriginalName(
 }
 
 async function downloadImage(url: string, timeoutSeconds: number) {
-  const response = await fetchPublicHttpUrl(
-    url,
-    {
-      signal: AbortSignal.timeout(timeoutSeconds * 1000),
-    },
-    "生图结果图片 URL",
-  );
-
-  if (!response.ok) {
-    throw new Error(`图片下载失败：HTTP ${response.status}`);
+  let response: Response;
+  try {
+    response = await fetchPublicHttpUrl(
+      url,
+      {
+        signal: AbortSignal.timeout(timeoutSeconds * 1000),
+      },
+      "生图结果图片 URL",
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "未知错误";
+    if (
+      error instanceof Error &&
+      (error.name === "AbortError" || error.name === "TimeoutError")
+    ) {
+      throw new Error(`图片下载超时：${timeoutSeconds} 秒内没有下载完成`);
+    }
+    throw new Error(`图片下载失败：${message}`);
   }
 
+  if (!response.ok) {
+    throw new Error(
+      `图片下载失败：HTTP ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const downloaded = await readGeneratedImageResponse(
+    response,
+    MAX_GENERATED_IMAGE_BYTES,
+  );
   return {
-    buffer: Buffer.from(await response.arrayBuffer()),
-    mime: inferMimeFromResponse(response),
+    buffer: Buffer.from(downloaded.bytes),
+    mime: downloaded.mime,
   };
 }
 
@@ -163,27 +142,49 @@ export async function generateCustomImage(
   }
 
   const endpoint = buildImageGenerationEndpoint(config.baseUrl);
-  const safeEndpoint = await assertPublicHttpUrl(endpoint, "生图接口地址");
-  const response = await fetch(safeEndpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    redirect: "error",
-    body: JSON.stringify(
-      buildRequestBody({
-        provider: config.provider as ImageGenerationProvider,
-        model: config.model,
-        prompt,
-        size: config.size,
-        quality: config.quality,
-      }),
-    ),
-    signal: AbortSignal.timeout(config.timeoutSeconds * 1000),
-  });
+  let response: Response;
+  try {
+    const safeEndpoint = await assertPublicHttpUrl(endpoint, "生图接口地址");
+    response = await fetch(safeEndpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      redirect: "error",
+      body: JSON.stringify(
+        buildRequestBody({
+          provider: config.provider as ImageGenerationProvider,
+          model: config.model,
+          prompt,
+          size: config.size,
+          quality: config.quality,
+        }),
+      ),
+      signal: AbortSignal.timeout(config.timeoutSeconds * 1000),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "未知错误";
+    if (
+      error instanceof Error &&
+      (error.name === "AbortError" || error.name === "TimeoutError")
+    ) {
+      throw new Error(
+        `生图接口请求超时：${config.timeoutSeconds} 秒内没有返回结果`,
+      );
+    }
+    throw new Error(`生图接口连接失败：${message}`);
+  }
 
-  const text = await response.text();
+  const text = await readResponseTextWithLimit(
+    response,
+    MAX_IMAGE_API_RESPONSE_BYTES,
+  );
+  if (text === null) {
+    throw new Error(
+      "生图接口响应过大，已停止读取；请检查接口是否返回了异常内容",
+    );
+  }
   if (!response.ok) {
     throw new Error(
       formatImageGenerationHttpError({
@@ -202,19 +203,19 @@ export async function generateCustomImage(
     throw new Error("生图接口返回的不是有效 JSON");
   }
 
-  const imageUrl = findImageUrl(payload);
-  const base64Image = findBase64Image(payload);
-  const image = imageUrl
-    ? await downloadImage(
-        normalizeImageGenerationResultUrl(imageUrl, endpoint),
-        config.timeoutSeconds,
-      )
-    : base64Image
-      ? {
-          buffer: Buffer.from(normalizeBase64(base64Image), "base64"),
-          mime: "image/png",
-        }
-      : null;
+  const imageSource = extractGeneratedImageSource(payload);
+  const image =
+    imageSource?.kind === "url"
+      ? await downloadImage(
+          normalizeImageGenerationResultUrl(imageSource.value, endpoint),
+          config.timeoutSeconds,
+        )
+      : imageSource?.kind === "bytes"
+        ? {
+            buffer: Buffer.from(imageSource.bytes),
+            mime: imageSource.mime,
+          }
+        : null;
 
   if (!image) {
     throw new Error("生图接口没有返回图片 URL 或 base64 图片数据");

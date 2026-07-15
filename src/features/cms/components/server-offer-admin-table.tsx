@@ -8,7 +8,7 @@ import {
   useState,
   useTransition,
 } from "react";
-import { ExternalLink, Save } from "lucide-react";
+import { Activity, ExternalLink, Plus, Save, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -43,10 +43,24 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { type getAdminServerOffers } from "@/server/offers/server-offers";
+import { type getProviderOptionsForMonitoring } from "@/server/offers/provider-monitor";
 import { isInternalHref, isSafePublicHref } from "@fwqgo/core/utils";
 import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
 
 type Offer = Awaited<ReturnType<typeof getAdminServerOffers>>["rows"][number];
+type Provider = Awaited<
+  ReturnType<typeof getProviderOptionsForMonitoring>
+>[number];
+type EditablePrice = {
+  key: string;
+  billingCycle: string;
+  amount: string;
+  originalAmount: string;
+  currency: string;
+  purchaseUrl: string;
+  active: boolean;
+  validUntil: string;
+};
 type ServerOfferTableFilters = {
   pageNo: number;
   query: string;
@@ -96,6 +110,221 @@ function cleanText(value: string | null | undefined) {
   const trimmed = value?.trim();
   if (!trimmed) return null;
   return trimmed;
+}
+
+function toDateTimeLocal(value: Date | null | undefined) {
+  if (!value) return "";
+  const offset = value.getTimezoneOffset() * 60_000;
+  return new Date(value.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function initialEditablePrices(offer: Offer): EditablePrice[] {
+  if (offer.prices.length > 0) {
+    return offer.prices.map((price) => ({
+      key: String(price.id),
+      billingCycle: price.billingCycle,
+      amount: price.amount,
+      originalAmount: price.originalAmount ?? "",
+      currency: price.currency,
+      purchaseUrl: price.purchaseUrl ?? "",
+      active: price.active,
+      validUntil: toDateTimeLocal(price.validUntil),
+    }));
+  }
+  if (offer.priceAmount) {
+    return [
+      {
+        key: "legacy",
+        billingCycle: offer.billingCycle ?? "monthly",
+        amount: offer.priceAmount,
+        originalAmount: "",
+        currency: offer.currency ?? "USD",
+        purchaseUrl: offer.purchaseUrl ?? "",
+        active: true,
+        validUntil: toDateTimeLocal(offer.validUntil),
+      },
+    ];
+  }
+  return [];
+}
+
+function PriceRowsEditor({
+  prices,
+  onChange,
+}: {
+  prices: EditablePrice[];
+  onChange: (prices: EditablePrice[]) => void;
+}) {
+  function updatePrice(key: string, patch: Partial<EditablePrice>) {
+    onChange(
+      prices.map((price) =>
+        price.key === key ? { ...price, ...patch } : price,
+      ),
+    );
+  }
+
+  function addPrice() {
+    onChange([
+      ...prices,
+      {
+        key: `new-${Date.now()}-${prices.length}`,
+        billingCycle: "monthly",
+        amount: "",
+        originalAmount: "",
+        currency: "USD",
+        purchaseUrl: "",
+        active: true,
+        validUntil: "",
+      },
+    ]);
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">多周期价格</p>
+          <p className="text-xs text-muted-foreground">
+            系统使用启用价格中最低的美元月价参与前台排序。
+          </p>
+        </div>
+        <Button type="button" size="sm" variant="outline" onClick={addPrice}>
+          <Plus className="size-4" />
+          添加价格
+        </Button>
+      </div>
+      {prices.length === 0 ? (
+        <div className="rounded-md border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+          暂无价格，套餐仍可保存，但不会参与按价格筛选。
+        </div>
+      ) : null}
+      {prices.map((price, index) => (
+        <div
+          key={price.key}
+          className="grid gap-3 border-t border-border/60 pt-3 first:border-t-0 first:pt-0 lg:grid-cols-[140px_120px_100px_120px_minmax(180px,1fr)_auto]"
+        >
+          <div className="space-y-2">
+            <Label>付款周期</Label>
+            <Select
+              value={price.billingCycle}
+              onValueChange={(value) =>
+                updatePrice(price.key, { billingCycle: value })
+              }
+            >
+              <SelectTrigger className="min-h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="monthly">月付</SelectItem>
+                <SelectItem value="quarterly">季付</SelectItem>
+                <SelectItem value="semiannual">半年付</SelectItem>
+                <SelectItem value="yearly">年付</SelectItem>
+                <SelectItem value="biennial">两年付</SelectItem>
+                <SelectItem value="triennial">三年付</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`offer-price-${price.key}`}>现价</Label>
+            <Input
+              id={`offer-price-${price.key}`}
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.01"
+              value={price.amount}
+              onChange={(event) =>
+                updatePrice(price.key, { amount: event.target.value })
+              }
+              required
+              className="min-h-11"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>币种</Label>
+            <Select
+              value={price.currency}
+              onValueChange={(value) =>
+                updatePrice(price.key, { currency: value })
+              }
+            >
+              <SelectTrigger className="min-h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="USD">USD</SelectItem>
+                <SelectItem value="CNY">CNY</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`offer-original-price-${price.key}`}>原价</Label>
+            <Input
+              id={`offer-original-price-${price.key}`}
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.01"
+              value={price.originalAmount}
+              onChange={(event) =>
+                updatePrice(price.key, { originalAmount: event.target.value })
+              }
+              className="min-h-11"
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor={`offer-price-url-${price.key}`}>专属购买链接</Label>
+              <Input
+                id={`offer-price-url-${price.key}`}
+                value={price.purchaseUrl}
+                onChange={(event) =>
+                  updatePrice(price.key, { purchaseUrl: event.target.value })
+                }
+                placeholder="留空使用套餐购买链接"
+                className="min-h-11"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`offer-price-valid-${price.key}`}>有效期</Label>
+              <Input
+                id={`offer-price-valid-${price.key}`}
+                type="datetime-local"
+                value={price.validUntil}
+                onChange={(event) =>
+                  updatePrice(price.key, { validUntil: event.target.value })
+                }
+                className="min-h-11"
+              />
+            </div>
+          </div>
+          <div className="flex items-end gap-2 pb-0.5">
+            <label className="flex min-h-11 items-center gap-2 text-xs">
+              <Switch
+                checked={price.active}
+                onCheckedChange={(checked) =>
+                  updatePrice(price.key, { active: checked })
+                }
+              />
+              启用
+            </label>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label={`删除第 ${index + 1} 个价格`}
+              title="删除价格"
+              onClick={() =>
+                onChange(prices.filter((item) => item.key !== price.key))
+              }
+            >
+              <Trash2 className="size-4 text-destructive" />
+            </Button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function specsText(offer: {
@@ -150,18 +379,41 @@ function SafeAdminOfferLink({
 
 function OfferEditForm({
   offer,
+  providers,
   onDone,
 }: {
   offer: Offer;
+  providers: Provider[];
   onDone: () => void;
 }) {
   const [visible, setVisible] = useState(offer.visible);
   const [featured, setFeatured] = useState(offer.featured);
+  const [lockedFields, setLockedFields] = useState<string[]>(
+    offer.lockedFields ?? [],
+  );
+  const [prices, setPrices] = useState<EditablePrice[]>(() =>
+    initialEditablePrices(offer),
+  );
   const [isPending, startTransition] = useTransition();
 
   function handleSubmit(formData: FormData) {
     formData.set("visible", visible ? "true" : "false");
     formData.set("featured", featured ? "true" : "false");
+    if (formData.get("providerId") === "none") {
+      formData.set("providerId", "");
+    }
+    formData.set("lockedFieldsJson", JSON.stringify(lockedFields));
+    formData.set(
+      "pricesJson",
+      JSON.stringify(
+        prices.map(({ key: _key, ...price }) => ({
+          ...price,
+          originalAmount: price.originalAmount || null,
+          purchaseUrl: price.purchaseUrl || null,
+          validUntil: price.validUntil || null,
+        })),
+      ),
+    );
 
     startTransition(async () => {
       const result = await updateServerOfferAction(offer.id, formData);
@@ -175,43 +427,89 @@ function OfferEditForm({
     });
   }
 
+  function toggleLockedField(field: string, checked: boolean) {
+    setLockedFields((current) =>
+      checked
+        ? [...new Set([...current, field])]
+        : current.filter((item) => item !== field),
+    );
+  }
+
   return (
     <form
       action={handleSubmit}
       className="grid gap-4 rounded-lg border border-border/70 bg-muted/20 p-4"
     >
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_180px_150px_140px_140px]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(260px,1fr)_220px_220px]">
         <div className="space-y-2">
-          <Label>标题</Label>
-          <Input name="title" defaultValue={offer.title} required />
-        </div>
-        <div className="space-y-2">
-          <Label>商家</Label>
-          <Input name="providerName" defaultValue={offer.providerName ?? ""} />
-        </div>
-        <div className="space-y-2">
-          <Label>类型</Label>
+          <Label htmlFor={`offer-title-${offer.id}`}>标题</Label>
           <Input
-            name="productType"
-            defaultValue={offer.productType ?? "vps"}
-            placeholder="vps / cloud / dedicated"
+            id={`offer-title-${offer.id}`}
+            name="title"
+            defaultValue={offer.title}
+            required
+            className="min-h-11"
           />
         </div>
         <div className="space-y-2">
-          <Label>价格</Label>
-          <Input name="priceAmount" defaultValue={offer.priceAmount ?? ""} />
-        </div>
-        <div className="space-y-2">
-          <Label>币种</Label>
-          <Select name="currency" defaultValue={offer.currency ?? "USD"}>
-            <SelectTrigger>
-              <SelectValue />
+          <Label>关联厂商</Label>
+          <Select
+            name="providerId"
+            defaultValue={offer.providerId ? String(offer.providerId) : "none"}
+          >
+            <SelectTrigger className="min-h-11">
+              <SelectValue placeholder="未关联" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="USD">USD</SelectItem>
-              <SelectItem value="CNY">CNY</SelectItem>
+              <SelectItem value="none">未关联厂商</SelectItem>
+              {providers.map((provider) => (
+                <SelectItem key={provider.id} value={String(provider.id)}>
+                  {provider.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`offer-provider-name-${offer.id}`}>展示商家名</Label>
+          <Input
+            id={`offer-provider-name-${offer.id}`}
+            name="providerName"
+            defaultValue={offer.providerName ?? ""}
+            className="min-h-11"
+          />
+        </div>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="space-y-2">
+          <Label htmlFor={`offer-external-id-${offer.id}`}>厂商产品 ID</Label>
+          <Input
+            id={`offer-external-id-${offer.id}`}
+            name="externalProductId"
+            defaultValue={offer.externalProductId ?? ""}
+            placeholder="用于库存接口匹配"
+            className="min-h-11 font-mono"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`offer-product-group-${offer.id}`}>产品组</Label>
+          <Input
+            id={`offer-product-group-${offer.id}`}
+            name="productGroup"
+            defaultValue={offer.productGroup ?? ""}
+            placeholder="例如 Los Angeles VPS"
+            className="min-h-11"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`offer-product-type-${offer.id}`}>类型</Label>
+          <Input
+            id={`offer-product-type-${offer.id}`}
+            name="productType"
+            defaultValue={offer.productType ?? "vps"}
+            placeholder="vps / cloud / dedicated"
+            className="min-h-11"
+          />
         </div>
       </div>
       <div className="grid gap-4 lg:grid-cols-5">
@@ -252,36 +550,27 @@ function OfferEditForm({
           />
         </div>
       </div>
-      <div className="grid gap-4 lg:grid-cols-5">
-        <div className="space-y-2">
-          <Label>周期</Label>
-          <Select
-            name="billingCycle"
-            defaultValue={offer.billingCycle ?? "monthly"}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="monthly">月付</SelectItem>
-              <SelectItem value="quarterly">季付</SelectItem>
-              <SelectItem value="semiannual">半年</SelectItem>
-              <SelectItem value="yearly">年付</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="grid gap-4 lg:grid-cols-4">
         <div className="space-y-2">
           <Label>地区</Label>
-          <Input name="region" defaultValue={offer.region ?? ""} />
+          <Input
+            name="region"
+            defaultValue={offer.region ?? ""}
+            className="min-h-11"
+          />
         </div>
         <div className="space-y-2">
           <Label>线路</Label>
-          <Input name="lineType" defaultValue={offer.lineType ?? ""} />
+          <Input
+            name="lineType"
+            defaultValue={offer.lineType ?? ""}
+            className="min-h-11"
+          />
         </div>
         <div className="space-y-2">
           <Label>状态</Label>
           <Select name="status" defaultValue={offer.status}>
-            <SelectTrigger>
+            <SelectTrigger className="min-h-11">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -296,7 +585,7 @@ function OfferEditForm({
         <div className="space-y-2">
           <Label>审核</Label>
           <Select name="reviewStatus" defaultValue={offer.reviewStatus}>
-            <SelectTrigger>
+            <SelectTrigger className="min-h-11">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -309,28 +598,115 @@ function OfferEditForm({
           </Select>
         </div>
       </div>
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_260px]">
         <div className="space-y-2">
           <Label>优惠码</Label>
-          <Input name="promoCode" defaultValue={offer.promoCode ?? ""} />
+          <Input
+            name="promoCode"
+            defaultValue={offer.promoCode ?? ""}
+            className="min-h-11"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`offer-valid-until-${offer.id}`}>套餐有效期</Label>
+          <Input
+            id={`offer-valid-until-${offer.id}`}
+            name="validUntil"
+            type="datetime-local"
+            defaultValue={toDateTimeLocal(offer.validUntil)}
+            className="min-h-11"
+          />
         </div>
         <div className="space-y-2">
           <Label>重复 Key</Label>
-          <Input value={offer.duplicateKey ?? ""} readOnly />
+          <Input value={offer.duplicateKey ?? ""} readOnly className="min-h-11" />
         </div>
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-2">
           <Label>购买链接</Label>
-          <Input name="purchaseUrl" defaultValue={offer.purchaseUrl ?? ""} />
+          <Input
+            name="purchaseUrl"
+            defaultValue={offer.purchaseUrl ?? ""}
+            className="min-h-11"
+          />
         </div>
         <div className="space-y-2">
           <Label>来源文章</Label>
-          <Input name="articleUrl" defaultValue={offer.articleUrl ?? ""} />
+          <Input
+            name="articleUrl"
+            defaultValue={offer.articleUrl ?? ""}
+            className="min-h-11"
+          />
         </div>
         <div className="space-y-2">
           <Label>测评文章</Label>
-          <Input name="reviewUrl" defaultValue={offer.reviewUrl ?? ""} />
+          <Input
+            name="reviewUrl"
+            defaultValue={offer.reviewUrl ?? ""}
+            className="min-h-11"
+          />
+        </div>
+      </div>
+      <div className="rounded-md border border-border/70 bg-background p-3">
+        <PriceRowsEditor prices={prices} onChange={setPrices} />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
+        <fieldset className="rounded-md border border-border/70 bg-background p-3">
+          <legend className="px-1 text-sm font-medium">自动监控锁定字段</legend>
+          <p className="mb-3 text-xs text-muted-foreground">
+            锁定后，厂商库存接口不会覆盖对应的人工内容。
+          </p>
+          <div className="flex flex-wrap gap-x-5 gap-y-3">
+            {([
+              ["title", "标题"],
+              ["status", "库存状态"],
+              ["price", "价格"],
+              ["purchaseUrl", "购买链接"],
+            ] as const).map(([field, label]) => (
+              <label key={field} className="flex min-h-11 items-center gap-2 text-sm">
+                <Checkbox
+                  checked={lockedFields.includes(field)}
+                  onCheckedChange={(checked) =>
+                    toggleLockedField(field, checked === true)
+                  }
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <div className="rounded-md border border-border/70 bg-background p-3">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Activity className="size-4 text-muted-foreground" />
+            最近探测
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            当前状态：{offer.checkStatus} · 上次探测：
+            {offer.lastCheckedAt ? toDateTimeLocal(offer.lastCheckedAt).replace("T", " ") : "无"}
+          </p>
+          <div className="mt-3 space-y-2">
+            {offer.recentChecks.length > 0 ? (
+              offer.recentChecks.map((check) => (
+                <div
+                  key={check.id}
+                  className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2 text-xs first:border-t-0 first:pt-0"
+                >
+                  <span>
+                    {toDateTimeLocal(check.checkedAt).replace("T", " ")} · {check.status}
+                  </span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {check.priceAmount
+                      ? `${check.currency === "CNY" ? "¥" : "$"}${check.priceAmount}`
+                      : "无价格"}
+                    {check.responseTimeMs === null ? "" : ` · ${check.responseTimeMs} ms`}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-muted-foreground">暂无探测记录。</p>
+            )}
+          </div>
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -363,10 +739,12 @@ function normalizeFilterValue(
 
 export function ServerOfferAdminTable({
   offers,
+  providers,
   totalCount,
   initialFilters,
 }: {
   offers: Offer[];
+  providers: Provider[];
   totalCount: number;
   initialFilters: ServerOfferTableFilters;
 }) {
@@ -626,6 +1004,16 @@ export function ServerOfferAdminTable({
                           来源文章 #{offer.sourcePostId}
                         </p>
                       ) : null}
+                      {offer.externalProductId ? (
+                        <p className="font-mono text-xs text-muted-foreground">
+                          PID {offer.externalProductId}
+                          {offer.productGroup ? ` · ${offer.productGroup}` : ""}
+                        </p>
+                      ) : offer.productGroup ? (
+                        <p className="text-xs text-muted-foreground">
+                          {offer.productGroup}
+                        </p>
+                      ) : null}
                       <div className="flex flex-wrap gap-2">
                         {offer.providerName ? (
                           <Badge variant="secondary">
@@ -644,6 +1032,11 @@ export function ServerOfferAdminTable({
                     {offer.promoCode ? (
                       <p className="mt-1 text-xs text-muted-foreground">
                         {offer.promoCode}
+                      </p>
+                    ) : null}
+                    {offer.monthlyPriceUsd ? (
+                      <p className="mt-1 text-xs tabular-nums text-muted-foreground">
+                        约 ${Number(offer.monthlyPriceUsd).toFixed(2)} / 月
                       </p>
                     ) : null}
                   </TableCell>
@@ -668,6 +1061,13 @@ export function ServerOfferAdminTable({
                         offer.status as keyof typeof offerStatusLabels
                       ] ?? offer.status}
                     </Badge>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {offer.checkStatus === "ok"
+                        ? "探测正常"
+                        : offer.checkStatus === "failed"
+                          ? "探测失败"
+                          : "待探测"}
+                    </p>
                   </TableCell>
                   <TableCell>
                     <div className="space-y-1">
@@ -729,6 +1129,7 @@ export function ServerOfferAdminTable({
                     <TableCell colSpan={9} className="bg-muted/20">
                       <OfferEditForm
                         offer={offer}
+                        providers={providers}
                         onDone={() => {
                           setEditId(null);
                           router.refresh();
