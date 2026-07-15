@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   buildImageGenerationEndpoint,
   formatImageGenerationHttpError,
+  getImageGenerationRetryDelayMs,
+  isUncertainImageGenerationHttpStatus,
   normalizeImageGenerationResultUrl,
 } from "../packages/core/image-generation-endpoint";
 
@@ -73,4 +75,24 @@ void test("preserves public image result URLs", () => {
     ),
     "https://cdn.example.com/cover.png",
   );
+});
+
+void test("uses provider rate-limit windows before the default retry delay", () => {
+  assert.equal(
+    getImageGenerationRetryDelayMs({ retryAfter: "45" }),
+    45_000,
+  );
+  assert.equal(
+    getImageGenerationRetryDelayMs({
+      responseText:
+        "You have reached the request limit: maximum 2 requests in 5 minutes",
+    }),
+    5 * 60 * 1000,
+  );
+});
+
+void test("recognizes gateway timeouts with an uncertain upstream result", () => {
+  assert.equal(isUncertainImageGenerationHttpStatus(524), true);
+  assert.equal(isUncertainImageGenerationHttpStatus(504), true);
+  assert.equal(isUncertainImageGenerationHttpStatus(429), false);
 });

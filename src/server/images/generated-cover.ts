@@ -3,9 +3,17 @@ import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import {
   buildImageGenerationEndpoint,
   formatImageGenerationHttpError,
+  getImageGenerationRetryDelayMs,
+  ImageGenerationConnectionInterruptedError,
+  ImageGenerationRateLimitError,
+  isUncertainImageGenerationHttpStatus,
   normalizeImageGenerationResultUrl,
 } from "@fwqgo/core/image-generation-endpoint";
-import { defaultEnglishCoverPromptTemplate } from "@fwqgo/core/image-generation-prompts";
+import {
+  defaultEnglishCoverPromptTemplate,
+  getMandatoryCoverVisualRules,
+  renderCoverPromptTemplate,
+} from "@fwqgo/core/image-generation-prompts";
 import {
   extractGeneratedImageSource,
   readGeneratedImageResponse,
@@ -58,35 +66,30 @@ const MAX_GENERATED_IMAGE_BYTES = 16 * 1024 * 1024;
 
 function fillPromptTemplate(
   template: string,
-  input: Pick<
-    GenerateCoverInput,
-    "title" | "description" | "keywords" | "content"
-  >,
+  input: Pick<GenerateCoverInput, "description" | "keywords">,
 ) {
-  const contentText = stripHtml(input.content ?? "").slice(0, 1200);
-
-  return template
-    .replaceAll("{title}", input.title.trim())
-    .replaceAll("{description}", input.description?.trim() ?? "")
-    .replaceAll("{keywords}", input.keywords?.trim() ?? "")
-    .replaceAll("{content}", contentText);
+  return renderCoverPromptTemplate(template, input);
 }
 
 function buildLanguagePromptRules(
   englishPromptTemplate: string,
   input: Pick<
     GenerateCoverInput,
-    "language" | "title" | "description" | "keywords" | "content"
+    "language" | "description" | "keywords"
   >,
 ) {
   if (input.language === "en") {
-    return fillPromptTemplate(englishPromptTemplate, input);
+    return [
+      fillPromptTemplate(englishPromptTemplate, input),
+      getMandatoryCoverVisualRules("en"),
+    ].join("\n\n");
   }
 
   return [
     "Chinese article cover rules:",
     "- This cover is for a Chinese article and Chinese public page.",
     "- If readable text appears, use Simplified Chinese only, except standard technical abbreviations such as VPS, CPU, RAM, SSD, GB, and TB.",
+    getMandatoryCoverVisualRules("zh"),
   ].join("\n");
 }
 
@@ -141,6 +144,24 @@ function getErrorMessage(error: unknown) {
   return "未知错误";
 }
 
+function getErrorDiagnostic(error: unknown) {
+  const message = getErrorMessage(error);
+  const cause =
+    error && typeof error === "object" && "cause" in error
+      ? (error as { cause?: unknown }).cause
+      : null;
+  const rawCode =
+    cause && typeof cause === "object" && "code" in cause
+      ? (cause as { code?: unknown }).code
+      : null;
+  const code =
+    typeof rawCode === "string" || typeof rawCode === "number"
+      ? String(rawCode).trim()
+      : "";
+
+  return code && !message.includes(code) ? `${message}（${code}）` : message;
+}
+
 function isTimeoutError(error: unknown) {
   const message = getErrorMessage(error).toLowerCase();
   return (
@@ -168,7 +189,28 @@ function throwIfAborted(signal?: AbortSignal) {
 
 function summarizeJsonShape(payload: ImageGenerationResponse) {
   const keys = Object.keys(payload).slice(0, 12);
-  const dataKeys = payload.data?.[0] ? Object.keys(payload.data[0]) : [];
+  const payloadData: unknown = payload.data;
+  const topLevelData: unknown = Array.isArray(payloadData)
+    ? (payloadData as unknown[])[0]
+    : payloadData && typeof payloadData === "object"
+      ? payloadData
+      : null;
+  const topLevelRecord =
+    topLevelData && typeof topLevelData === "object"
+      ? (topLevelData as Record<string, unknown>)
+      : null;
+  const nestedValue: unknown = topLevelRecord?.data;
+  const nestedData: unknown = Array.isArray(nestedValue)
+    ? (nestedValue as unknown[])[0]
+    : null;
+  const firstDataItem: unknown = nestedData ?? topLevelData;
+  const firstDataRecord =
+    firstDataItem && typeof firstDataItem === "object"
+      ? (firstDataItem as Record<string, unknown>)
+      : null;
+  const dataKeys = firstDataRecord
+    ? Object.keys(firstDataRecord).slice(0, 12)
+    : [];
   const parts = [
     keys.length > 0 ? `顶层字段：${keys.join(", ")}` : null,
     dataKeys.length > 0 ? `data[0] 字段：${dataKeys.join(", ")}` : null,
@@ -312,8 +354,10 @@ export async function generateArticleCoverImage(
   );
   const endpoint = buildImageGenerationEndpoint(config.baseUrl);
   let response: Response;
+  let requestStarted = false;
   try {
     const safeEndpoint = await assertPublicHttpUrl(endpoint, "生图接口地址");
+    requestStarted = true;
     response = await fetch(safeEndpoint, {
       method: "POST",
       headers: {
@@ -335,20 +379,32 @@ export async function generateArticleCoverImage(
   } catch (error) {
     throwIfAborted(input.signal);
     if (isTimeoutError(error)) {
-      throw new Error(
-        `生图接口请求超时：${config.timeoutSeconds} 秒内没有返回结果。请调大「生图配置」里的超时时间，或检查模型/中转服务是否可用`,
+      throw new ImageGenerationConnectionInterruptedError(
+        `生图接口响应中断：${config.timeoutSeconds} 秒内没有收到完整结果；上游任务可能仍在生成，本地暂时无法取得图片。请先到服务商任务页确认，避免立即重复生成`,
       );
     }
 
-    throw new Error(
-      `生图接口连接失败：${getErrorMessage(error)}。请检查 Base URL、网络和中转服务状态`,
-    );
+    if (requestStarted) {
+      throw new ImageGenerationConnectionInterruptedError(
+        `生图接口连接中断：未收到完整图片响应；上游任务可能仍在生成，本地暂时无法取得图片。请先到服务商任务页确认，避免立即重复生成；底层错误：${getErrorDiagnostic(error)}`,
+      );
+    }
+
+    throw new Error(`生图接口地址校验失败：${getErrorDiagnostic(error)}`);
   }
 
-  const text = await readResponseTextWithLimit(
-    response,
-    MAX_IMAGE_API_RESPONSE_BYTES,
-  );
+  let text: string | null;
+  try {
+    text = await readResponseTextWithLimit(
+      response,
+      MAX_IMAGE_API_RESPONSE_BYTES,
+    );
+  } catch (error) {
+    throwIfAborted(input.signal);
+    throw new ImageGenerationConnectionInterruptedError(
+      `生图接口响应中断：已收到响应头，但图片数据没有传输完整；上游任务可能已经成功，本地暂时无法取得图片。请先到服务商任务页确认，避免立即重复生成；底层错误：${getErrorDiagnostic(error)}`,
+    );
+  }
   throwIfAborted(input.signal);
   if (text === null) {
     throw new Error(
@@ -356,14 +412,28 @@ export async function generateArticleCoverImage(
     );
   }
   if (!response.ok) {
-    throw new Error(
-      formatImageGenerationHttpError({
-        status: response.status,
-        statusText: response.statusText,
+    const httpError = formatImageGenerationHttpError({
+      status: response.status,
+      statusText: response.statusText,
+      responseText: text,
+      baseUrl: config.baseUrl,
+    });
+    if (response.status === 429) {
+      const retryAfterMs = getImageGenerationRetryDelayMs({
+        retryAfter: response.headers.get("retry-after"),
         responseText: text,
-        baseUrl: config.baseUrl,
-      }),
-    );
+      });
+      throw new ImageGenerationRateLimitError(
+        `${httpError}；预计等待 ${Math.max(1, Math.ceil(retryAfterMs / 60_000))} 分钟后重试`,
+        retryAfterMs,
+      );
+    }
+    if (isUncertainImageGenerationHttpStatus(response.status)) {
+      throw new ImageGenerationConnectionInterruptedError(
+        `${httpError}；上游任务可能仍在生成，本地暂时无法取得图片。请先到服务商任务页确认，避免立即重复生成`,
+      );
+    }
+    throw new Error(httpError);
   }
 
   let payload: ImageGenerationResponse;

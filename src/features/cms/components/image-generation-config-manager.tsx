@@ -264,8 +264,8 @@ function ConfigForm({
           required
         />
         <p className="text-xs leading-5 text-muted-foreground">
-          支持占位符：<code>{"{title}"}</code>、<code>{"{description}"}</code>、
-          <code>{"{keywords}"}</code>、<code>{"{content}"}</code>。
+          支持占位符：<code>{"{description}"}</code>、
+          <code>{"{keywords}"}</code>。系统会自动追加中英文语言约束和旗帜限制。
         </p>
       </div>
 
@@ -281,8 +281,7 @@ function ConfigForm({
         />
         <p className="text-xs leading-5 text-muted-foreground">
           仅生成英文文章封面时追加，并覆盖通用模板中冲突的语言和文字要求。支持占位符：
-          <code>{"{title}"}</code>、<code>{"{description}"}</code>、
-          <code>{"{keywords}"}</code>、<code>{"{content}"}</code>。
+          <code>{"{description}"}</code>、<code>{"{keywords}"}</code>。
         </p>
       </div>
 

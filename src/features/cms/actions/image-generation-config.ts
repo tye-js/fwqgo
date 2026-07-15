@@ -13,6 +13,15 @@ import {
   updateImageGenerationConfig,
 } from "@/server/images/generation-config";
 
+const removedCoverPlaceholderPattern = /\{(?:title|content)\}/i;
+const promptTemplateSchema = z
+  .string()
+  .trim()
+  .min(1, "Prompt 模板不能为空")
+  .refine((value) => !removedCoverPlaceholderPattern.test(value), {
+    message: "Prompt 不再支持 {title} 或 {content}，请删除后保存",
+  });
+
 const configSchema = z.object({
   name: z.string().trim().min(1, "名称不能为空"),
   provider: z.enum(imageGenerationProviderOptions),
@@ -25,11 +34,8 @@ const configSchema = z.object({
     }),
   apiKey: z.string().trim().optional(),
   model: z.string().trim().min(1, "模型不能为空"),
-  promptTemplate: z.string().trim().min(1, "Prompt 模板不能为空"),
-  englishPromptTemplate: z
-    .string()
-    .trim()
-    .min(1, "英文封面 Prompt 模板不能为空"),
+  promptTemplate: promptTemplateSchema,
+  englishPromptTemplate: promptTemplateSchema,
   size: z.string().trim().min(3, "尺寸不能为空"),
   quality: z.string().trim().min(1, "质量参数不能为空"),
   timeoutSeconds: z.coerce.number().int().min(10).max(300),

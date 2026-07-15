@@ -3,6 +3,10 @@ import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import {
   buildImageGenerationEndpoint,
   formatImageGenerationHttpError,
+  getImageGenerationRetryDelayMs,
+  ImageGenerationConnectionInterruptedError,
+  ImageGenerationRateLimitError,
+  isUncertainImageGenerationHttpStatus,
   normalizeImageGenerationResultUrl,
 } from "@fwqgo/core/image-generation-endpoint";
 import {
@@ -33,6 +37,24 @@ type GenerateCustomImageInput = {
 
 const MAX_IMAGE_API_RESPONSE_BYTES = 24 * 1024 * 1024;
 const MAX_GENERATED_IMAGE_BYTES = 16 * 1024 * 1024;
+
+function getErrorDiagnostic(error: unknown) {
+  const message = error instanceof Error ? error.message : "未知错误";
+  const cause =
+    error && typeof error === "object" && "cause" in error
+      ? (error as { cause?: unknown }).cause
+      : null;
+  const rawCode =
+    cause && typeof cause === "object" && "code" in cause
+      ? (cause as { code?: unknown }).code
+      : null;
+  const code =
+    typeof rawCode === "string" || typeof rawCode === "number"
+      ? String(rawCode).trim()
+      : "";
+
+  return code && !message.includes(code) ? `${message}（${code}）` : message;
+}
 
 function buildRequestBody(input: {
   provider: ImageGenerationProvider;
@@ -143,8 +165,10 @@ export async function generateCustomImage(
 
   const endpoint = buildImageGenerationEndpoint(config.baseUrl);
   let response: Response;
+  let requestStarted = false;
   try {
     const safeEndpoint = await assertPublicHttpUrl(endpoint, "生图接口地址");
+    requestStarted = true;
     response = await fetch(safeEndpoint, {
       method: "POST",
       headers: {
@@ -169,31 +193,57 @@ export async function generateCustomImage(
       error instanceof Error &&
       (error.name === "AbortError" || error.name === "TimeoutError")
     ) {
-      throw new Error(
-        `生图接口请求超时：${config.timeoutSeconds} 秒内没有返回结果`,
+      throw new ImageGenerationConnectionInterruptedError(
+        `生图接口响应中断：${config.timeoutSeconds} 秒内没有收到完整结果；上游任务可能仍在生成，本地暂时无法取得图片。请先到服务商任务页确认，避免立即重复生成`,
       );
     }
-    throw new Error(`生图接口连接失败：${message}`);
+    if (requestStarted) {
+      throw new ImageGenerationConnectionInterruptedError(
+        `生图接口连接中断：未收到完整图片响应；上游任务可能仍在生成，本地暂时无法取得图片。请先到服务商任务页确认，避免立即重复生成；底层错误：${getErrorDiagnostic(error)}`,
+      );
+    }
+    throw new Error(`生图接口地址校验失败：${message}`);
   }
 
-  const text = await readResponseTextWithLimit(
-    response,
-    MAX_IMAGE_API_RESPONSE_BYTES,
-  );
+  let text: string | null;
+  try {
+    text = await readResponseTextWithLimit(
+      response,
+      MAX_IMAGE_API_RESPONSE_BYTES,
+    );
+  } catch (error) {
+    throw new ImageGenerationConnectionInterruptedError(
+      `生图接口响应中断：已收到响应头，但图片数据没有传输完整；上游任务可能已经成功，本地暂时无法取得图片。请先到服务商任务页确认，避免立即重复生成；底层错误：${getErrorDiagnostic(error)}`,
+    );
+  }
   if (text === null) {
     throw new Error(
       "生图接口响应过大，已停止读取；请检查接口是否返回了异常内容",
     );
   }
   if (!response.ok) {
-    throw new Error(
-      formatImageGenerationHttpError({
-        status: response.status,
-        statusText: response.statusText,
+    const httpError = formatImageGenerationHttpError({
+      status: response.status,
+      statusText: response.statusText,
+      responseText: text,
+      baseUrl: config.baseUrl,
+    });
+    if (response.status === 429) {
+      const retryAfterMs = getImageGenerationRetryDelayMs({
+        retryAfter: response.headers.get("retry-after"),
         responseText: text,
-        baseUrl: config.baseUrl,
-      }),
-    );
+      });
+      throw new ImageGenerationRateLimitError(
+        `${httpError}；预计等待 ${Math.max(1, Math.ceil(retryAfterMs / 60_000))} 分钟后重试`,
+        retryAfterMs,
+      );
+    }
+    if (isUncertainImageGenerationHttpStatus(response.status)) {
+      throw new ImageGenerationConnectionInterruptedError(
+        `${httpError}；上游任务可能仍在生成，本地暂时无法取得图片。请先到服务商任务页确认，避免立即重复生成`,
+      );
+    }
+    throw new Error(httpError);
   }
 
   let payload: ImageGenerationResponse;

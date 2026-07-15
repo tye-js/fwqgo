@@ -1,5 +1,78 @@
 import { isBlockedNetworkHostname } from "./network-url";
 
+const DEFAULT_IMAGE_RATE_LIMIT_RETRY_MS = 5 * 60 * 1000;
+const MIN_IMAGE_RATE_LIMIT_RETRY_MS = 5 * 1000;
+const MAX_IMAGE_RATE_LIMIT_RETRY_MS = 30 * 60 * 1000;
+
+export class ImageGenerationRateLimitError extends Error {
+  readonly retryAfterMs: number;
+
+  constructor(message: string, retryAfterMs: number) {
+    super(message);
+    this.name = "ImageGenerationRateLimitError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+export class ImageGenerationConnectionInterruptedError extends Error {
+  readonly pauseAfterMs: number;
+
+  constructor(
+    message: string,
+    pauseAfterMs = DEFAULT_IMAGE_RATE_LIMIT_RETRY_MS,
+  ) {
+    super(message);
+    this.name = "ImageGenerationConnectionInterruptedError";
+    this.pauseAfterMs = pauseAfterMs;
+  }
+}
+
+function clampRetryDelay(value: number) {
+  return Math.min(
+    MAX_IMAGE_RATE_LIMIT_RETRY_MS,
+    Math.max(MIN_IMAGE_RATE_LIMIT_RETRY_MS, value),
+  );
+}
+
+export function getImageGenerationRetryDelayMs(input: {
+  retryAfter?: string | null;
+  responseText?: string;
+  nowMs?: number;
+}) {
+  const retryAfter = input.retryAfter?.trim();
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return clampRetryDelay(seconds * 1000);
+    }
+
+    const retryAt = Date.parse(retryAfter);
+    if (Number.isFinite(retryAt)) {
+      return clampRetryDelay(retryAt - (input.nowMs ?? Date.now()));
+    }
+  }
+
+  const minuteWindow = input.responseText?.match(
+    /(?:maximum\s+\d+\s+requests?\s+in|try\s+again\s+in)\s+(\d+)\s+minutes?/i,
+  )?.[1];
+  if (minuteWindow) {
+    return clampRetryDelay(Number(minuteWindow) * 60 * 1000);
+  }
+
+  const secondWindow = input.responseText?.match(
+    /(?:retry|try\s+again)\s+(?:after|in)\s+(\d+)\s+seconds?/i,
+  )?.[1];
+  if (secondWindow) {
+    return clampRetryDelay(Number(secondWindow) * 1000);
+  }
+
+  return DEFAULT_IMAGE_RATE_LIMIT_RETRY_MS;
+}
+
+export function isUncertainImageGenerationHttpStatus(status: number) {
+  return status === 408 || status === 504 || status === 524;
+}
+
 export function buildImageGenerationEndpoint(baseUrl: string) {
   const normalized = baseUrl.trim().replace(/\/+$/, "");
   if (/\/v1\/images\/generations$/i.test(normalized)) return normalized;

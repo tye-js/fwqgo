@@ -1,15 +1,14 @@
 import { readResponseBodyWithLimit } from "./bounded-response-body";
 
 export type ImageGenerationResponse = {
-  data?: Array<{
-    url?: string;
-    b64_json?: string;
-    revised_prompt?: string;
-  }>;
-  image?: string;
-  image_url?: string;
-  url?: string;
-  b64_json?: string;
+  data?: unknown;
+  image?: unknown;
+  image_url?: unknown;
+  url?: unknown;
+  data_url?: unknown;
+  result_url?: unknown;
+  b64_json?: unknown;
+  base64?: unknown;
   output?: unknown;
 };
 
@@ -122,42 +121,103 @@ function decodeBase64Image(value: string, fallbackMime = "image/png") {
   return { kind: "bytes", bytes, mime: detectedMime } as const;
 }
 
-function firstNonEmpty(values: Array<string | null | undefined>) {
-  return values.find((value) => value?.trim())?.trim() ?? null;
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function collectResultRecords(
+  value: unknown,
+  depth = 0,
+): Array<Record<string, unknown>> {
+  if (depth > 3) return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectResultRecords(item, depth + 1));
+  }
+
+  const record = asRecord(value);
+  if (!record) return [];
+
+  return [
+    record,
+    ...collectResultRecords(record.data, depth + 1),
+    ...collectResultRecords(record.output, depth + 1),
+  ];
+}
+
+function toNonEmptyString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function looksLikeImageUrl(value: string) {
+  return (
+    /^https?:\/\//i.test(value) ||
+    /^\.{1,2}\//.test(value) ||
+    (value.startsWith("/") && !isValidRawBase64(value))
+  );
+}
+
+function parseUrlCandidate(value: unknown) {
+  const candidate = toNonEmptyString(value);
+  if (!candidate) return null;
+  if (DATA_URI_PATTERN.test(candidate)) return decodeBase64Image(candidate);
+  if (looksLikeImageUrl(candidate)) {
+    return { kind: "url", value: candidate } as const;
+  }
+  if (isValidRawBase64(candidate)) return decodeBase64Image(candidate);
+  return null;
+}
+
+function parseBase64Candidate(value: unknown) {
+  const candidate = toNonEmptyString(value);
+  return candidate ? decodeBase64Image(candidate) : null;
+}
+
+function parseAmbiguousCandidate(value: unknown) {
+  const candidate = toNonEmptyString(value);
+  if (!candidate) return null;
+  if (DATA_URI_PATTERN.test(candidate) || isValidRawBase64(candidate)) {
+    return decodeBase64Image(candidate);
+  }
+  return looksLikeImageUrl(candidate)
+    ? ({ kind: "url", value: candidate } as const)
+    : null;
 }
 
 export function extractGeneratedImageSource(
   payload: ImageGenerationResponse,
 ): GeneratedImageSource | null {
-  const explicitUrl = firstNonEmpty([
-    payload.data?.[0]?.url,
-    payload.image_url,
-    payload.url,
-  ]);
-  if (explicitUrl) return { kind: "url", value: explicitUrl };
+  const root = asRecord(payload);
+  if (!root) return null;
 
-  const explicitBase64 = firstNonEmpty([
-    payload.data?.[0]?.b64_json,
-    payload.b64_json,
-  ]);
-  if (explicitBase64) return decodeBase64Image(explicitBase64);
+  // OpenAI-compatible relays commonly wrap the actual result in data[], while
+  // some image2 relays use data.data[] or output[]. Inspect those first, then
+  // fall back to top-level fields.
+  const records = [
+    ...collectResultRecords(root.data),
+    root,
+    ...collectResultRecords(root.output),
+  ];
 
-  const ambiguousImage = payload.image?.trim();
-  if (!ambiguousImage) return null;
+  for (const record of records) {
+    for (const field of ["url", "image_url", "data_url", "result_url"]) {
+      const source = parseUrlCandidate(record[field]);
+      if (source) return source;
+    }
 
-  if (DATA_URI_PATTERN.test(ambiguousImage)) {
-    return decodeBase64Image(ambiguousImage);
+    for (const field of ["b64_json", "base64"]) {
+      const source = parseBase64Candidate(record[field]);
+      if (source) return source;
+    }
+
+    for (const field of ["image", "result"]) {
+      const source = parseAmbiguousCandidate(record[field]);
+      if (source) return source;
+    }
   }
 
-  if (
-    /^https?:\/\//i.test(ambiguousImage) ||
-    /^\.{1,2}\//.test(ambiguousImage) ||
-    (ambiguousImage.startsWith("/") && !isValidRawBase64(ambiguousImage))
-  ) {
-    return { kind: "url", value: ambiguousImage };
-  }
-
-  return decodeBase64Image(ambiguousImage);
+  return null;
 }
 
 export async function readGeneratedImageResponse(
