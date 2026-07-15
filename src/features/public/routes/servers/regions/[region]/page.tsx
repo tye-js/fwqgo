@@ -1,13 +1,12 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { connection } from "next/server";
 import type { Metadata } from "next";
 
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
 import { ServerOfferCollectionPage } from "@/features/public/components/server-offer-collection-page";
 import { Card, CardContent } from "@/components/ui/card";
-import { normalizeDecodedSlug } from "@fwqgo/core/utils";
+import { normalizeServerCollectionSlug } from "@fwqgo/core/public-inventory-filters";
 import { getServerOfferCollection } from "@/server/offers/server-offers";
 
 type PageProps = {
@@ -15,19 +14,27 @@ type PageProps = {
 };
 
 function getSiteUrl() {
-  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
+    /\/+$/,
+    "",
+  );
 }
 
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { region } = await params;
-  const value = normalizeDecodedSlug(region);
+  const value = normalizeServerCollectionSlug(region);
   if (!value) return {};
 
-  const canonicalUrl = `${getSiteUrl()}/servers/regions/${encodeURIComponent(value)}`;
-  const title = `${value}服务器优惠套餐 - 服务器go`;
-  const description = `集中查看 ${value} VPS、云服务器和独立服务器套餐，比较价格、线路、优惠码和购买入口。`;
+  const data = await getServerOfferCollection({ kind: "region", value });
+  const label = data?.value ?? value;
+  const slug = data?.slug ?? value;
+  const canonicalUrl = `${getSiteUrl()}/servers/regions/${encodeURIComponent(slug)}`;
+  const title = `${label}服务器优惠套餐 - 服务器go`;
+  const description =
+    data?.description ??
+    `集中查看 ${label} VPS、云服务器和独立服务器套餐，比较价格、线路、优惠码和购买入口。`;
 
   return {
     title,
@@ -35,6 +42,9 @@ export async function generateMetadata({
     alternates: {
       canonical: canonicalUrl,
     },
+    robots: data?.indexable
+      ? { index: true, follow: true }
+      : { index: false, follow: true },
     openGraph: {
       title,
       description,
@@ -45,10 +55,8 @@ export async function generateMetadata({
 }
 
 async function RegionContent({ params }: PageProps) {
-  await connection();
-
   const { region } = await params;
-  const value = normalizeDecodedSlug(region);
+  const value = normalizeServerCollectionSlug(region);
   if (!value) {
     notFound();
   }
@@ -62,7 +70,9 @@ async function RegionContent({ params }: PageProps) {
   return (
     <ServerOfferCollectionPage
       kind="region"
-      value={value}
+      value={data.value}
+      slug={data.slug}
+      toolHref={data.toolHref}
       title={data.title}
       description={data.description}
       offers={data.offers}

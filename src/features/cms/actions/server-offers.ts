@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { isHttpHref, isInternalHref } from "@fwqgo/core/utils";
+import { SERVER_OFFER_BILLING_CYCLES } from "@fwqgo/core/server-offer-price";
 import {
   adminActionFailure,
   adminActionSuccess,
@@ -46,9 +47,61 @@ const nullableInternalOrHttpUrl = nullableString.refine(
   "链接必须是站内路径或 http/https URL",
 );
 
+const nullablePositiveInteger = z.preprocess((value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : value;
+}, z.number().int().positive().nullable());
+
+const nullableDate = z.preprocess((value) => {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date) return value;
+  if (typeof value !== "string" && typeof value !== "number") return value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed;
+}, z.date().nullable());
+
+const offerPriceSchema = z.object({
+  billingCycle: z.enum(SERVER_OFFER_BILLING_CYCLES),
+  amount: z
+    .string()
+    .trim()
+    .min(1, "请输入价格")
+    .refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0, {
+      message: "价格必须是大于或等于 0 的数字",
+    }),
+  originalAmount: nullablePrice.optional(),
+  currency: z.enum(["USD", "CNY"]),
+  purchaseUrl: nullablePurchaseUrl.optional(),
+  active: z.boolean(),
+  validUntil: nullableDate.optional(),
+});
+const offerPricesSchema = z
+  .array(offerPriceSchema)
+  .max(20, "每个套餐最多配置 20 个价格周期")
+  .superRefine((prices, context) => {
+    const seen = new Set<string>();
+    prices.forEach((price, index) => {
+      const key = `${price.billingCycle}:${price.currency}`;
+      if (seen.has(key)) {
+        context.addIssue({
+          code: "custom",
+          path: [index, "billingCycle"],
+          message: "同一币种和付款周期只能配置一条价格",
+        });
+      }
+      seen.add(key);
+    });
+  });
+
+const lockedOfferFields = ["title", "status", "price", "purchaseUrl"] as const;
+
 const updateOfferSchema = z.object({
   title: z.string().trim().min(1, "请输入套餐标题"),
+  providerId: nullablePositiveInteger,
   providerName: nullableString,
+  externalProductId: nullableString,
+  productGroup: nullableString,
   productType: nullableString,
   cpu: nullableString,
   memory: nullableString,
@@ -68,12 +121,29 @@ const updateOfferSchema = z.object({
   visible: z.coerce.boolean(),
   featured: z.coerce.boolean(),
   reviewStatus: z.enum(offerReviewStatuses),
+  lockedFields: z
+    .array(z.enum(lockedOfferFields))
+    .max(lockedOfferFields.length),
+  validUntil: nullableDate,
+  prices: offerPricesSchema,
 });
+
+function parseJsonField(value: FormDataEntryValue | null, label: string) {
+  if (typeof value !== "string" || !value.trim()) return [];
+  try {
+    return JSON.parse(value) as unknown;
+  } catch (error) {
+    throw new Error(
+      `${label}数据格式错误：${
+        error instanceof Error ? error.message : "不是有效 JSON"
+      }`,
+    );
+  }
+}
 
 function revalidateOfferPages() {
   revalidatePath("/servers");
   revalidatePath("/servers/manage");
-  revalidatePath("/servers");
   revalidatePath("/servers/hong-kong");
   revalidatePath("/servers/united-states");
   revalidatePath("/servers/cheap-vps");
@@ -240,7 +310,10 @@ export async function updateServerOfferAction(id: number, formData: FormData) {
 
     const input = updateOfferSchema.parse({
       title: formData.get("title"),
+      providerId: formData.get("providerId"),
       providerName: formData.get("providerName"),
+      externalProductId: formData.get("externalProductId"),
+      productGroup: formData.get("productGroup"),
       productType: formData.get("productType"),
       cpu: formData.get("cpu"),
       memory: formData.get("memory"),
@@ -260,6 +333,12 @@ export async function updateServerOfferAction(id: number, formData: FormData) {
       visible: formData.get("visible") === "true",
       featured: formData.get("featured") === "true",
       reviewStatus: formData.get("reviewStatus"),
+      lockedFields: parseJsonField(
+        formData.get("lockedFieldsJson"),
+        "锁定字段",
+      ),
+      validUntil: formData.get("validUntil"),
+      prices: parseJsonField(formData.get("pricesJson"), "多周期价格"),
     });
     const updated = await updateServerOffer(id, input);
 

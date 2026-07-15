@@ -1,6 +1,5 @@
 import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import * as cheerio from "cheerio";
-import { revalidatePath } from "next/cache";
 
 import RewriteArticle from "@/langchain/rewrite-article";
 import {
@@ -31,7 +30,7 @@ import {
   sourceMaterials,
   tags,
 } from "@fwqgo/db/schema";
-import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
+import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import { enqueueArticleCoverGenerationTask } from "@/server/images/cover-generation-task-runner";
 import { importServerOffersFromPost } from "@/server/offers/server-offers";
@@ -1347,17 +1346,11 @@ async function runSeoMetadataTask(
       },
     });
 
-    revalidateSiteContent([
-      cacheTags.post(post.id),
-      cacheTags.postSlug(post.slug),
-      cacheTags.postSlug(updateResult.slug),
-      cacheTags.category(post.categoryId),
-      ...(isEnglishPost ? [] : [cacheTags.tags]),
-    ]);
-    revalidatePath("/posts/edit");
-    revalidatePath("/posts/drafts");
-    revalidatePath(`/posts/edit/post/${encodeURIComponent(post.slug)}`);
-    revalidatePath(`/posts/edit/post/${encodeURIComponent(updateResult.slug)}`);
+    await notifyPublicWebCache("post.changed", {
+      postIds: [post.id],
+      postSlugs: [post.slug, updateResult.slug],
+      categoryIds: [post.categoryId],
+    });
 
     await updateTask(claimedTask.id, {
       status: "succeeded",
@@ -1945,7 +1938,14 @@ export async function runAiRewriteTask(taskId: number) {
           progress: 96,
           message: "正在从草稿内容提取套餐数据",
         });
-        await importServerOffersFromPost(post.id, { revalidate: false });
+        const offerExtraction = await importServerOffersFromPost(post.id, {
+          revalidate: false,
+        });
+        if (offerExtraction.inserted > 0 || offerExtraction.updated > 0) {
+          await notifyPublicWebCache("offer.changed", {
+            topicSlugs: ["hong-kong", "united-states", "cheap-vps"],
+          });
+        }
         await upsertTaskStep({
           taskId,
           attempt,
@@ -1953,7 +1953,8 @@ export async function runAiRewriteTask(taskId: number) {
           stepName: "提取服务器套餐",
           status: "success",
           progress: 100,
-          message: "套餐提取完成",
+          message: `套餐提取完成：新增 ${offerExtraction.inserted}，更新 ${offerExtraction.updated}，跳过 ${offerExtraction.skipped}`,
+          payload: offerExtraction,
         });
         await updateTask(taskId, {
           progress: 100,

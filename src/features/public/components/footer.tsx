@@ -353,7 +353,7 @@ function FooterView({
             <div className="grid gap-2 text-sm text-muted-foreground">
               <a
                 href={`mailto:${copy.contactEmail}`}
-                className="inline-flex min-h-10 w-fit items-center gap-2 rounded-md px-2 transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="inline-flex min-h-11 w-fit items-center gap-2 rounded-md px-2 transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <Mail className="size-4 text-primary" />
                 {copy.contactEmail}
@@ -361,7 +361,7 @@ function FooterView({
               <Link
                 href={copy.languageHref}
                 prefetch
-                className="inline-flex min-h-10 w-fit items-center gap-2 rounded-md px-2 transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="inline-flex min-h-11 w-fit items-center gap-2 rounded-md px-2 transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <Globe2 className="size-4 text-primary" />
                 {copy.languageLabel}

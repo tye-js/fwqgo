@@ -215,14 +215,14 @@ export function FeaturedOfferList({
                 <SafeOfferLink
                   href={offer.purchaseUrl}
                   sponsored
-                  className="inline-flex min-h-11 items-center gap-1.5 rounded-md bg-primary px-3.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-9 md:px-3"
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-md bg-primary px-3.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:px-3"
                 >
                   <ShoppingCart className="size-3.5" />
                   {copy.buy}
                 </SafeOfferLink>
                 <SafeOfferLink
                   href={offer.articleUrl}
-                  className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-9 md:px-3"
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:px-3"
                 >
                   <FileText className="size-3.5" />
                   {copy.article}

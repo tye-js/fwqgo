@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
+import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 import { db } from "@fwqgo/db";
 import { siteSeoConfigs } from "@fwqgo/db/schema";
 
@@ -70,6 +71,7 @@ export async function updateSiteSeoConfig(
       });
 
     revalidateSiteContent([cacheTags.siteSeo, cacheTags.homepage]);
+    await notifyPublicWebCache("seo.changed");
     revalidatePath("/seo");
     revalidatePath("/en");
 

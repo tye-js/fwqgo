@@ -5,6 +5,7 @@ import { postTags } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { getErrorMessage } from "@/lib/admin-action-result";
+import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 
 interface CreatePostTagsInput {
   postId: number;
@@ -38,6 +39,7 @@ export async function createPostTags({ postId, tags }: CreatePostTagsInput) {
       .returning({ postId: postTags.postId, tagId: postTags.tagId });
 
     revalidateSiteContent([cacheTags.post(postId), cacheTags.tags]);
+    await notifyPublicWebCache("taxonomy.changed", { tagIds });
 
     return { data: result };
   } catch (error) {

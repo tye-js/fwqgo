@@ -13,7 +13,9 @@ import {
   unique,
   foreignKey,
   bigint,
+  bigserial,
   numeric,
+  jsonb,
   check,
 } from "drizzle-orm/pg-core";
 
@@ -288,6 +290,9 @@ export const affServiceProviders = pgTable(
   {
     id: serial("id").primaryKey(),
     name: text("name").notNull().unique(),
+    slug: varchar("slug", { length: 160 }).unique(),
+    aliases: text("aliases"),
+    defaultPromoCode: text("defaultPromoCode"),
     affUrl: text("affUrl").notNull(),
     affParam: text("affParam").notNull(),
     affValue: text("affValue").notNull(),
@@ -299,6 +304,7 @@ export const affServiceProviders = pgTable(
     officialUrlIdx: index("aff_service_providers_officialUrl_idx").on(
       table.officialUrl,
     ),
+    slugIdx: index("aff_service_providers_slug_idx").on(table.slug),
   }),
 );
 
@@ -876,12 +882,113 @@ export const outboundLinks = pgTable(
   }),
 );
 
+export const serverRegions = pgTable(
+  "server_regions",
+  {
+    id: serial("id").primaryKey(),
+    slug: varchar("slug", { length: 120 }).notNull().unique(),
+    name: text("name").notNull(),
+    enName: text("enName"),
+    aliases: text("aliases"),
+    countryCode: varchar("countryCode", { length: 16 }),
+    active: boolean("active").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    nameIdx: index("server_regions_name_idx").on(table.name),
+    activeNameIdx: index("server_regions_active_name_idx").on(
+      table.active,
+      table.name,
+    ),
+  }),
+);
+
+export const serverNetworkLines = pgTable(
+  "server_network_lines",
+  {
+    id: serial("id").primaryKey(),
+    slug: varchar("slug", { length: 120 }).notNull().unique(),
+    name: text("name").notNull(),
+    enName: text("enName"),
+    aliases: text("aliases"),
+    active: boolean("active").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    nameIdx: index("server_network_lines_name_idx").on(table.name),
+    activeNameIdx: index("server_network_lines_active_name_idx").on(
+      table.active,
+      table.name,
+    ),
+  }),
+);
+
+export const providerMonitors = pgTable(
+  "provider_monitors",
+  {
+    id: serial("id").primaryKey(),
+    providerId: integer("providerId").notNull(),
+    name: text("name").notNull(),
+    adapter: varchar("adapter", { length: 40 }).default("json").notNull(),
+    endpointUrl: text("endpointUrl").notNull(),
+    config: jsonb("config")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    enabled: boolean("enabled").default(false).notNull(),
+    intervalMinutes: integer("intervalMinutes").default(30).notNull(),
+    timeoutSeconds: integer("timeoutSeconds").default(30).notNull(),
+    lastRunAt: timestamp("lastRunAt"),
+    nextRunAt: timestamp("nextRunAt"),
+    lastStatus: varchar("lastStatus", { length: 24 }).default("idle").notNull(),
+    lastError: text("lastError"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    providerIdx: index("provider_monitors_providerId_idx").on(table.providerId),
+    enabledNextRunIdx: index("provider_monitors_enabled_nextRunAt_idx").on(
+      table.enabled,
+      table.nextRunAt,
+    ),
+    providerNameUnique: unique("provider_monitors_providerId_name_unique").on(
+      table.providerId,
+      table.name,
+    ),
+    providerFk: foreignKey({
+      columns: [table.providerId],
+      foreignColumns: [affServiceProviders.id],
+      name: "provider_monitors_providerId_aff_service_providers_id_fk",
+    }).onDelete("cascade"),
+    intervalCheck: check(
+      "provider_monitors_intervalMinutes_check",
+      sql`${table.intervalMinutes} between 1 and 10080`,
+    ),
+    timeoutCheck: check(
+      "provider_monitors_timeoutSeconds_check",
+      sql`${table.timeoutSeconds} between 1 and 300`,
+    ),
+    adapterCheck: check(
+      "provider_monitors_adapter_check",
+      sql`${table.adapter} in ('json')`,
+    ),
+    lastStatusCheck: check(
+      "provider_monitors_lastStatus_check",
+      sql`${table.lastStatus} in ('idle', 'running', 'succeeded', 'failed')`,
+    ),
+  }),
+);
+
 export const serverOffers = pgTable(
   "server_offers",
   {
     id: serial("id").primaryKey(),
     title: text("title").notNull(),
     slug: varchar("slug", { length: 360 }).notNull().unique(),
+    externalProductId: text("externalProductId"),
+    productGroup: text("productGroup"),
     providerName: text("providerName"),
     providerId: integer("providerId"),
     productType: varchar("productType", { length: 80 }).default("vps"),
@@ -896,9 +1003,11 @@ export const serverOffers = pgTable(
     traffic: text("traffic"),
     trafficGb: integer("trafficGb"),
     region: text("region"),
+    regionId: integer("regionId"),
     countryCode: varchar("countryCode", { length: 16 }),
     city: text("city"),
     lineType: text("lineType"),
+    lineId: integer("lineId"),
     network: text("network"),
     ipv4: text("ipv4"),
     ipv6: text("ipv6"),
@@ -909,12 +1018,21 @@ export const serverOffers = pgTable(
     }),
     currency: varchar("currency", { length: 16 }).default("USD"),
     billingCycle: varchar("billingCycle", { length: 40 }),
+    monthlyPriceUsd: numeric("monthlyPriceUsd", { precision: 14, scale: 4 }),
     promoCode: text("promoCode"),
     purchaseUrl: text(),
     articleUrl: text(),
     reviewUrl: text(),
     sourcePostId: integer("sourcePostId"),
     status: varchar("status", { length: 24 }).default("in_stock").notNull(),
+    checkStatus: varchar("checkStatus", { length: 24 })
+      .default("unknown")
+      .notNull(),
+    statusChangedAt: timestamp("statusChangedAt"),
+    lockedFields: jsonb("lockedFields")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
     reviewStatus: varchar("reviewStatus", { length: 24 })
       .default("pending")
       .notNull(),
@@ -932,6 +1050,8 @@ export const serverOffers = pgTable(
   },
   (table) => ({
     providerIdx: index("server_offers_providerId_idx").on(table.providerId),
+    regionIdIdx: index("server_offers_regionId_idx").on(table.regionId),
+    lineIdIdx: index("server_offers_lineId_idx").on(table.lineId),
     sourcePostIdx: index("server_offers_sourcePostId_idx").on(
       table.sourcePostId,
     ),
@@ -946,6 +1066,9 @@ export const serverOffers = pgTable(
     regionIdx: index("server_offers_region_idx").on(table.region),
     lineTypeIdx: index("server_offers_lineType_idx").on(table.lineType),
     priceIdx: index("server_offers_priceAmount_idx").on(table.priceAmount),
+    monthlyPriceIdx: index("server_offers_monthlyPriceUsd_idx").on(
+      table.monthlyPriceUsd,
+    ),
     visibleStatusFeaturedCreatedAtIdx: index(
       "server_offers_visible_status_featured_createdAt_idx",
     ).on(table.visible, table.status, table.featured, table.createdAt),
@@ -962,16 +1085,267 @@ export const serverOffers = pgTable(
       table.lineType,
       table.priceAmount,
     ),
+    visibleStatusMonthlyPriceIdx: index(
+      "server_offers_visible_status_monthlyPriceUsd_id_idx",
+    ).on(table.visible, table.status, table.monthlyPriceUsd, table.id),
+    providerExternalProductUnique: uniqueIndex(
+      "server_offers_providerId_externalProductId_unique",
+    )
+      .on(table.providerId, table.externalProductId)
+      .where(
+        sql`${table.providerId} is not null and ${table.externalProductId} is not null`,
+      ),
+    statusCheck: check(
+      "server_offers_status_check",
+      sql`${table.status} in ('in_stock', 'out_of_stock', 'restocking', 'discontinued', 'preorder')`,
+    ),
+    checkStatusCheck: check(
+      "server_offers_checkStatus_check",
+      sql`${table.checkStatus} in ('ok', 'failed', 'unknown')`,
+    ),
+    lockedFieldsCheck: check(
+      "server_offers_lockedFields_check",
+      sql`jsonb_typeof(${table.lockedFields}) = 'array'`,
+    ),
     providerFk: foreignKey({
       columns: [table.providerId],
       foreignColumns: [affServiceProviders.id],
       name: "server_offers_providerId_aff_service_providers_id_fk",
+    }).onDelete("set null"),
+    regionFk: foreignKey({
+      columns: [table.regionId],
+      foreignColumns: [serverRegions.id],
+      name: "server_offers_regionId_server_regions_id_fk",
+    }).onDelete("set null"),
+    lineFk: foreignKey({
+      columns: [table.lineId],
+      foreignColumns: [serverNetworkLines.id],
+      name: "server_offers_lineId_server_network_lines_id_fk",
     }).onDelete("set null"),
     sourcePostFk: foreignKey({
       columns: [table.sourcePostId],
       foreignColumns: [posts.id],
       name: "server_offers_sourcePostId_posts_id_fk",
     }).onDelete("set null"),
+  }),
+);
+
+export const serverOfferPrices = pgTable(
+  "server_offer_prices",
+  {
+    id: serial("id").primaryKey(),
+    offerId: integer("offerId").notNull(),
+    billingCycle: varchar("billingCycle", { length: 40 }).notNull(),
+    termMonths: integer("termMonths").default(1).notNull(),
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    originalAmount: numeric("originalAmount", { precision: 12, scale: 2 }),
+    currency: varchar("currency", { length: 16 }).default("USD").notNull(),
+    monthlyPriceUsd: numeric("monthlyPriceUsd", {
+      precision: 14,
+      scale: 4,
+    }).notNull(),
+    purchaseUrl: text("purchaseUrl"),
+    active: boolean("active").default(true).notNull(),
+    validUntil: timestamp("validUntil"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    offerIdx: index("server_offer_prices_offerId_idx").on(table.offerId),
+    activeMonthlyIdx: index(
+      "server_offer_prices_active_monthlyPriceUsd_idx",
+    ).on(table.active, table.monthlyPriceUsd, table.offerId),
+    offerCycleCurrencyUnique: unique(
+      "server_offer_prices_offerId_billingCycle_currency_unique",
+    ).on(table.offerId, table.billingCycle, table.currency),
+    offerFk: foreignKey({
+      columns: [table.offerId],
+      foreignColumns: [serverOffers.id],
+      name: "server_offer_prices_offerId_server_offers_id_fk",
+    }).onDelete("cascade"),
+    amountCheck: check(
+      "server_offer_prices_amount_check",
+      sql`${table.amount} >= 0`,
+    ),
+    termMonthsCheck: check(
+      "server_offer_prices_termMonths_check",
+      sql`${table.termMonths} between 1 and 120`,
+    ),
+  }),
+);
+
+export const serverOfferTags = pgTable(
+  "server_offer_tags",
+  {
+    offerId: integer("offerId").notNull(),
+    slug: varchar("slug", { length: 160 }).notNull(),
+    label: text("label").notNull(),
+    kind: varchar("kind", { length: 40 }).default("feature").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.offerId, table.slug] }),
+    slugIdx: index("server_offer_tags_slug_idx").on(table.slug),
+    kindSlugIdx: index("server_offer_tags_kind_slug_idx").on(
+      table.kind,
+      table.slug,
+    ),
+    offerFk: foreignKey({
+      columns: [table.offerId],
+      foreignColumns: [serverOffers.id],
+      name: "server_offer_tags_offerId_server_offers_id_fk",
+    }).onDelete("cascade"),
+  }),
+);
+
+export const serverOfferChecks = pgTable(
+  "server_offer_checks",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    offerId: integer("offerId").notNull(),
+    monitorId: integer("monitorId"),
+    status: varchar("status", { length: 24 }).notNull(),
+    available: boolean("available"),
+    priceAmount: numeric("priceAmount", { precision: 12, scale: 2 }),
+    currency: varchar("currency", { length: 16 }),
+    responseTimeMs: integer("responseTimeMs"),
+    error: text("error"),
+    checkedAt: timestamp("checkedAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    offerCheckedAtIdx: index("server_offer_checks_offerId_checkedAt_idx").on(
+      table.offerId,
+      table.checkedAt,
+    ),
+    monitorCheckedAtIdx: index(
+      "server_offer_checks_monitorId_checkedAt_idx",
+    ).on(table.monitorId, table.checkedAt),
+    checkedAtIdx: index("server_offer_checks_checkedAt_idx").on(
+      table.checkedAt,
+    ),
+    offerFk: foreignKey({
+      columns: [table.offerId],
+      foreignColumns: [serverOffers.id],
+      name: "server_offer_checks_offerId_server_offers_id_fk",
+    }).onDelete("cascade"),
+    monitorFk: foreignKey({
+      columns: [table.monitorId],
+      foreignColumns: [providerMonitors.id],
+      name: "server_offer_checks_monitorId_provider_monitors_id_fk",
+    }).onDelete("set null"),
+    responseTimeCheck: check(
+      "server_offer_checks_responseTimeMs_check",
+      sql`${table.responseTimeMs} is null or ${table.responseTimeMs} >= 0`,
+    ),
+  }),
+);
+
+export const serverOfferSources = pgTable(
+  "server_offer_sources",
+  {
+    id: serial("id").primaryKey(),
+    offerId: integer("offerId").notNull(),
+    sourceType: varchar("sourceType", { length: 40 }).notNull(),
+    sourcePostId: integer("sourcePostId"),
+    sourceUrl: text("sourceUrl"),
+    externalId: text("externalId"),
+    priority: integer("priority").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    offerIdx: index("server_offer_sources_offerId_idx").on(table.offerId),
+    postIdx: index("server_offer_sources_sourcePostId_idx").on(
+      table.sourcePostId,
+    ),
+    externalIdx: index("server_offer_sources_externalId_idx").on(
+      table.externalId,
+    ),
+    offerTypeExternalUnique: unique(
+      "server_offer_sources_offerId_sourceType_externalId_unique",
+    ).on(table.offerId, table.sourceType, table.externalId),
+    articleOfferUnique: uniqueIndex(
+      "server_offer_sources_article_offerId_unique",
+    )
+      .on(table.offerId)
+      .where(sql`${table.sourceType} = 'article'`),
+    offerFk: foreignKey({
+      columns: [table.offerId],
+      foreignColumns: [serverOffers.id],
+      name: "server_offer_sources_offerId_server_offers_id_fk",
+    }).onDelete("cascade"),
+    postFk: foreignKey({
+      columns: [table.sourcePostId],
+      foreignColumns: [posts.id],
+      name: "server_offer_sources_sourcePostId_posts_id_fk",
+    }).onDelete("set null"),
+  }),
+);
+
+export const homepageSlots = pgTable(
+  "homepage_slots",
+  {
+    id: serial("id").primaryKey(),
+    language: varchar("language", { length: 8 }).default("zh").notNull(),
+    placement: varchar("placement", { length: 40 }).notNull(),
+    contentType: varchar("contentType", { length: 24 }).notNull(),
+    postId: integer("postId"),
+    offerId: integer("offerId"),
+    imageAssetId: integer("imageAssetId"),
+    title: text("title"),
+    description: varchar("description", { length: 800 }),
+    targetUrl: text("targetUrl"),
+    altText: text("altText"),
+    sortOrder: integer("sortOrder").default(0).notNull(),
+    startsAt: timestamp("startsAt"),
+    endsAt: timestamp("endsAt"),
+    enabled: boolean("enabled").default(true).notNull(),
+    trackingKey: varchar("trackingKey", { length: 160 }).unique(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    languagePlacementIdx: index(
+      "homepage_slots_language_placement_enabled_sortOrder_idx",
+    ).on(table.language, table.placement, table.enabled, table.sortOrder),
+    scheduleIdx: index("homepage_slots_startsAt_endsAt_idx").on(
+      table.startsAt,
+      table.endsAt,
+    ),
+    postIdx: index("homepage_slots_postId_idx").on(table.postId),
+    offerIdx: index("homepage_slots_offerId_idx").on(table.offerId),
+    imageIdx: index("homepage_slots_imageAssetId_idx").on(table.imageAssetId),
+    postFk: foreignKey({
+      columns: [table.postId],
+      foreignColumns: [posts.id],
+      name: "homepage_slots_postId_posts_id_fk",
+    }).onDelete("cascade"),
+    offerFk: foreignKey({
+      columns: [table.offerId],
+      foreignColumns: [serverOffers.id],
+      name: "homepage_slots_offerId_server_offers_id_fk",
+    }).onDelete("cascade"),
+    imageFk: foreignKey({
+      columns: [table.imageAssetId],
+      foreignColumns: [imageAssets.id],
+      name: "homepage_slots_imageAssetId_image_assets_id_fk",
+    }).onDelete("restrict"),
+    contentCheck: check(
+      "homepage_slots_content_check",
+      sql`(${table.contentType} = 'post' and ${table.postId} is not null) or (${table.contentType} = 'offer' and ${table.offerId} is not null) or (${table.contentType} = 'image_link' and ${table.imageAssetId} is not null)`,
+    ),
+    scheduleCheck: check(
+      "homepage_slots_schedule_check",
+      sql`${table.endsAt} is null or ${table.startsAt} is null or ${table.endsAt} > ${table.startsAt}`,
+    ),
+    languageCheck: check(
+      "homepage_slots_language_check",
+      sql`${table.language} in ('zh', 'en')`,
+    ),
+    placementCheck: check(
+      "homepage_slots_placement_check",
+      sql`${table.placement} in ('hero_primary', 'promo_grid', 'featured_offers', 'sidebar')`,
+    ),
   }),
 );
 
@@ -1146,13 +1520,103 @@ export const aiTaskStepsRelations = relations(aiTaskSteps, ({ one }) => ({
   }),
 }));
 
-export const serverOffersRelations = relations(serverOffers, ({ one }) => ({
-  provider: one(affServiceProviders, {
-    fields: [serverOffers.providerId],
-    references: [affServiceProviders.id],
+export const serverOffersRelations = relations(
+  serverOffers,
+  ({ one, many }) => ({
+    provider: one(affServiceProviders, {
+      fields: [serverOffers.providerId],
+      references: [affServiceProviders.id],
+    }),
+    sourcePost: one(posts, {
+      fields: [serverOffers.sourcePostId],
+      references: [posts.id],
+    }),
+    region: one(serverRegions, {
+      fields: [serverOffers.regionId],
+      references: [serverRegions.id],
+    }),
+    line: one(serverNetworkLines, {
+      fields: [serverOffers.lineId],
+      references: [serverNetworkLines.id],
+    }),
+    prices: many(serverOfferPrices),
+    tags: many(serverOfferTags),
+    checks: many(serverOfferChecks),
+    sources: many(serverOfferSources),
+    homepageSlots: many(homepageSlots),
   }),
-  sourcePost: one(posts, {
-    fields: [serverOffers.sourcePostId],
+);
+
+export const serverOfferPricesRelations = relations(
+  serverOfferPrices,
+  ({ one }) => ({
+    offer: one(serverOffers, {
+      fields: [serverOfferPrices.offerId],
+      references: [serverOffers.id],
+    }),
+  }),
+);
+
+export const serverOfferTagsRelations = relations(
+  serverOfferTags,
+  ({ one }) => ({
+    offer: one(serverOffers, {
+      fields: [serverOfferTags.offerId],
+      references: [serverOffers.id],
+    }),
+  }),
+);
+
+export const serverOfferChecksRelations = relations(
+  serverOfferChecks,
+  ({ one }) => ({
+    offer: one(serverOffers, {
+      fields: [serverOfferChecks.offerId],
+      references: [serverOffers.id],
+    }),
+    monitor: one(providerMonitors, {
+      fields: [serverOfferChecks.monitorId],
+      references: [providerMonitors.id],
+    }),
+  }),
+);
+
+export const serverOfferSourcesRelations = relations(
+  serverOfferSources,
+  ({ one }) => ({
+    offer: one(serverOffers, {
+      fields: [serverOfferSources.offerId],
+      references: [serverOffers.id],
+    }),
+    post: one(posts, {
+      fields: [serverOfferSources.sourcePostId],
+      references: [posts.id],
+    }),
+  }),
+);
+
+export const providerMonitorsRelations = relations(
+  providerMonitors,
+  ({ one, many }) => ({
+    provider: one(affServiceProviders, {
+      fields: [providerMonitors.providerId],
+      references: [affServiceProviders.id],
+    }),
+    checks: many(serverOfferChecks),
+  }),
+);
+
+export const homepageSlotsRelations = relations(homepageSlots, ({ one }) => ({
+  post: one(posts, {
+    fields: [homepageSlots.postId],
     references: [posts.id],
+  }),
+  offer: one(serverOffers, {
+    fields: [homepageSlots.offerId],
+    references: [serverOffers.id],
+  }),
+  imageAsset: one(imageAssets, {
+    fields: [homepageSlots.imageAssetId],
+    references: [imageAssets.id],
   }),
 }));

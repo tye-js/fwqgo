@@ -11,6 +11,7 @@ import {
   shortenMarkdownOutboundLinks,
 } from "@/server/links/outbound-short-link";
 import { type CreatePostParams } from "@/types/post.types";
+import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 
 export interface CreatePostInput {
   title: string;
@@ -148,6 +149,11 @@ export async function createPostRecord(
   if (result.data && shouldRevalidate) {
     try {
       revalidateSiteContent(result.revalidateTags);
+      await notifyPublicWebCache("post.changed", {
+        postIds: [result.data.id],
+        postSlugs: [result.data.slug],
+        categoryIds: [result.data.categoryId],
+      });
     } catch (error) {
       console.error("文章已创建，但缓存刷新失败:", error);
     }

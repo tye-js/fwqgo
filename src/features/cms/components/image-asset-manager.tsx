@@ -666,10 +666,13 @@ export function ImageAssetManager({
                       </p>
                       <button
                         type="button"
-                        className="block max-w-full truncate text-left text-xs text-muted-foreground underline-offset-4 hover:text-accent hover:underline"
+                        className="flex min-h-10 max-w-full items-center gap-1.5 rounded-md px-2 text-left text-xs text-muted-foreground underline-offset-4 transition-colors hover:bg-muted hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => void handleCopy(image.path)}
+                        aria-label={`复制图片 URL：${image.path}`}
+                        title="复制图片 URL"
                       >
-                        {image.path}
+                        <Copy className="size-3.5 shrink-0" aria-hidden="true" />
+                        <span className="truncate">{image.path}</span>
                       </button>
                       <div className="flex flex-wrap gap-1.5">
                         <Badge variant={isUsed ? "default" : "secondary"}>
@@ -916,10 +919,13 @@ export function ImageAssetManager({
                           </p>
                           <button
                             type="button"
-                            className="block max-w-[340px] truncate text-left text-xs text-muted-foreground hover:text-accent"
+                            className="flex min-h-10 max-w-[340px] items-center gap-1.5 rounded-md px-2 text-left text-xs text-muted-foreground underline-offset-4 transition-colors hover:bg-muted hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             onClick={() => void handleCopy(image.path)}
+                            aria-label={`复制图片 URL：${image.path}`}
+                            title="复制图片 URL"
                           >
-                            {image.path}
+                            <Copy className="size-3.5 shrink-0" aria-hidden="true" />
+                            <span className="truncate">{image.path}</span>
                           </button>
                           <div className="flex items-center gap-2">
                             <Input

@@ -73,7 +73,7 @@ function parsePositiveInteger(value, fallback) {
 }
 
 /**
- * @param {{ name: string; appDir: string; port: number; portEnvName: string; instancesEnvName: string; defaultInstances: number }} options
+ * @param {{ name: string; appDir: string; port: number; portEnvName: string; instancesEnvName: string; defaultInstances: number; role: "web" | "cms" }} options
  */
 function createApp({
   name,
@@ -82,6 +82,7 @@ function createApp({
   portEnvName,
   instancesEnvName,
   defaultInstances,
+  role,
 }) {
   const resolvedPort =
     process.env[portEnvName] ?? productionEnv[portEnvName] ?? String(port);
@@ -89,6 +90,37 @@ function createApp({
     process.env[instancesEnvName] ?? productionEnv[instancesEnvName],
     defaultInstances,
   );
+
+  const readDatabaseUrl =
+    process.env.READ_DATABASE_URL ??
+    productionEnv.READ_DATABASE_URL ??
+    productionEnv.DATABASE_URL ??
+    "";
+  const writeDatabaseUrl =
+    process.env.CMS_DATABASE_URL ??
+    productionEnv.CMS_DATABASE_URL ??
+    process.env.DATABASE_URL ??
+    productionEnv.DATABASE_URL ??
+    "";
+  const analyticsDatabaseUrl =
+    process.env.ANALYTICS_DATABASE_URL ??
+    productionEnv.ANALYTICS_DATABASE_URL ??
+    writeDatabaseUrl;
+  const roleDatabaseEnv =
+    role === "web"
+      ? {
+          DATABASE_URL: readDatabaseUrl,
+          READ_DATABASE_URL: readDatabaseUrl,
+          ANALYTICS_DATABASE_URL: analyticsDatabaseUrl,
+          CMS_DATABASE_URL: "",
+          CMS_USERNAME: "",
+          CMS_PASSWORD: "",
+        }
+      : {
+          DATABASE_URL: writeDatabaseUrl,
+          CMS_DATABASE_URL: writeDatabaseUrl,
+          ANALYTICS_DATABASE_URL: analyticsDatabaseUrl,
+        };
 
   return {
     name,
@@ -101,6 +133,7 @@ function createApp({
     max_memory_restart: "1G",
     env: {
       ...productionEnv,
+      ...roleDatabaseEnv,
       PORT: resolvedPort,
       NODE_ENV: "production",
       RELEASE_ID:
@@ -121,7 +154,8 @@ module.exports = {
       port: 3000,
       portEnvName: "WEB_PORT",
       instancesEnvName: "WEB_INSTANCES",
-      defaultInstances: 2,
+      defaultInstances: 1,
+      role: "web",
     }),
     createApp({
       name: "fwqgo-cms",
@@ -130,6 +164,7 @@ module.exports = {
       portEnvName: "CMS_PORT",
       instancesEnvName: "CMS_INSTANCES",
       defaultInstances: 1,
+      role: "cms",
     }),
   ],
 };

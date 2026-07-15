@@ -25,7 +25,7 @@ CMS 路由直接从根路径开始，例如 `/ai-rewrite/tasks`、`/posts/edit` 
 
 - 中文主站和 `/en` 英文路由树，文章、分类和标签使用独立语言字段。
 - 文章详情、分类聚合、标签聚合、搜索和首页推荐。
-- 服务器套餐库及地区、线路、商家、专题等筛选页。
+- `/servers` 库存工具使用 URL 筛选、服务端查询和 30 条游标分页；地区、线路、商家与专题页负责 SEO 承接。
 - Markdown 正文渲染，保留表格中的真实链接和推广链接。
 - 短链跳转、返利链接、相关文章与套餐内链。
 - canonical、hreflang、sitemap、robots 和站点/分类/标签 SEO 配置。
@@ -36,24 +36,13 @@ CMS 路由直接从根路径开始，例如 `/ai-rewrite/tasks`、`/posts/edit` 
 - AI 内容生产台、统一任务中心、任务步骤、失败原因、重试、取消和人工处理。
 - 网页抓取与正文清洗，按 Markdown 管线生成中文草稿和英文 SEO 草稿。
 - Markdown 文章编辑、草稿箱、文章列表、发布质检和中英文分类/标签。
-- 返利商家、链接命中诊断、短链跳转和首页推荐管理。
-- 服务器套餐提取、去重、审核、人工修正和状态管理。
+- 返利商家、链接命中诊断、短链跳转和首页文章/套餐/推广图片运营位。
+- 服务器套餐提取、去重、多周期价格、人工锁定字段、库存监控、检测历史和状态管理。
 - 图片上传、WebP 处理、图片资产、引用关系、AI 生图和批量封面生成。
 - 中文/英文主页 SEO、分类 SEO 和标签 SEO。
 - DeepSeek、OpenAI 及第三方 OpenAI 兼容改写接口；OpenAI Images、Image2 及兼容生图接口。
 
 ### AI 内容管线
-
-文章生产的主流程为：
-
-1. 抓取 HTML。
-2. 清洗为内部文章文档，移除样式、广告和无关模块。
-3. 压缩为 Markdown 输入，同时保留链接、表格和关键套餐信息。
-4. 改写中文正文。
-5. 单独生成中文标题、摘要、关键词和 slug。
-6. 成功后保存中文草稿。
-7. 使用改写后的中文 Markdown 生成英文正文。
-8. 单独生成英文 SEO 字段并保存为关联的英文草稿。
 
 正文改写与 SEO 生成使用独立步骤和风格配置。后台任务会记录输入、输出、进度和可读错误，避免单个失败任务阻塞整个队列。
 
@@ -86,6 +75,13 @@ CMS_DATABASE_URL=postgresql://cms_user:password@127.0.0.1:5432/fwqgo
 # 推荐：公开内容查询使用只读角色
 READ_DATABASE_URL=postgresql://read_user:password@127.0.0.1:5432/fwqgo
 
+# 浏览量埋点使用的独立写连接；生产环境建议使用只允许更新浏览量的最小权限角色
+ANALYTICS_DATABASE_URL=postgresql://analytics_user:password@127.0.0.1:5432/fwqgo
+
+# CMS 通知 Web 精准刷新缓存，两个进程必须使用同一个随机密钥
+WEB_REVALIDATION_SECRET=replace-with-at-least-16-random-characters
+WEB_REVALIDATION_URL=http://127.0.0.1:3000/api/internal/revalidate
+
 NEXT_PUBLIC_URL=http://localhost:3000
 NEXT_PUBLIC_CMS_URL=http://localhost:3100
 
@@ -106,6 +102,7 @@ ADMIN_BACKGROUND_JOB_RETENTION_DAYS=14
 
 - 写连接：`CMS_DATABASE_URL` → `DATABASE_URL` 加 CMS 凭据 → `DATABASE_URL`。
 - 读连接：`READ_DATABASE_URL` → `DATABASE_URL` 加只读凭据 → 写连接。
+- 埋点连接：`ANALYTICS_DATABASE_URL` → 写连接；生产环境应显式配置。
 
 AI 改写和生图的 Base URL、模型与 API Key 在 CMS 的“系统设置”中维护，不需要写入项目级 AI 环境变量。
 
@@ -248,7 +245,7 @@ SKIP_ENV_VALIDATION=1 npm run build
 
 1. 使用 Node.js 24 安装依赖，执行 typecheck、lint、部署脚本和迁移完整性校验。
 2. 构建 Web/CMS standalone 产物并验证应用边界。
-3. 上传 release，保留共享生产环境文件和 `/var/www/uploads`。
+3. 上传 release，保留共享生产环境文件和 `/var/www/uploads`，并安全合并缓存刷新与埋点连接配置。
 4. 可选执行数据库备份与 Drizzle 迁移。
 5. 切换 `current` 软链接并重启 `fwqgo-web`、`fwqgo-cms`。
 6. 通过 `/api/health` 验证 Web 只读角色和 CMS 写角色权限，再检查公开域名、CMS 登录跳转和 PM2 状态。
@@ -262,6 +259,8 @@ SKIP_ENV_VALIDATION=1 npm run build
 - `/var/www/fwqgo/shared/.env.production` 保存运行时环境变量。
 - `/var/www/uploads` 持久化用户图片，并由 Nginx 暴露为 `/uploads/`。
 - 建议安装 `pg_dump`，以便迁移前自动备份。
+- 建议为迁移角色启用 PostgreSQL `pg_trgm` 扩展；无法启用时会回退到普通文本搜索。
+- 未部署共享 Redis 前，`WEB_INSTANCES` 保持 `1`，避免多个 PM2 Web 进程各自持有不同缓存。
 
 GitHub Actions Secrets：
 
@@ -273,6 +272,7 @@ DATABASE_URL
 READ_DATABASE_URL
 CMS_BASIC_AUTH_USERNAME
 CMS_BASIC_AUTH_PASSWORD
+WEB_REVALIDATION_SECRET
 ```
 
 按数据库角色方案可额外配置：
@@ -283,6 +283,7 @@ CMS_USERNAME
 CMS_PASSWORD
 READ_USERNAME
 READ_PASSWORD
+ANALYTICS_DATABASE_URL
 ```
 
 GitHub Actions Variables：
@@ -294,9 +295,10 @@ KEEP_RELEASES=5
 REMOTE_UPLOAD_DIR=/var/www/uploads
 NEXT_PUBLIC_URL=https://fwqgo.com
 NEXT_PUBLIC_CMS_URL=https://cms.fwqgo.com
+WEB_REVALIDATION_URL=http://127.0.0.1:3000/api/internal/revalidate
 ```
 
-Actions Secrets 用于 CI 构建和连接校验，不会替代服务器上的共享 `.env.production`。两处配置应保持一致，但都不能提交到仓库。
+Actions 会把 `WEB_REVALIDATION_SECRET`、`WEB_REVALIDATION_URL` 和 `ANALYTICS_DATABASE_URL` 合并进服务器共享 `.env.production`，其他运行时配置仍由服务器文件维护。所有真实凭据都不能提交到仓库。
 
 ### 本地应急部署
 

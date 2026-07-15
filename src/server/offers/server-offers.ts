@@ -8,18 +8,41 @@ import {
   inArray,
   isNotNull,
   isNull,
+  ne,
   or,
   sql,
 } from "drizzle-orm";
 
 import { slugify } from "@fwqgo/core/utils";
+import {
+  calculateMonthlyPriceUsd,
+  getServerOfferTermMonths,
+  normalizeServerOfferBillingCycle,
+} from "@fwqgo/core/server-offer-price";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
 import { cacheTags, revalidateSiteContent, tagCache } from "@fwqgo/cache/tags";
 import { requireAdminSession } from "@fwqgo/auth/session";
+import { cacheLife, unstable_cache } from "next/cache";
 import { db, readDb } from "@fwqgo/db";
-import { affServiceProviders, posts, serverOffers } from "@fwqgo/db/schema";
+import {
+  affServiceProviders,
+  posts,
+  serverNetworkLines,
+  serverOfferChecks,
+  serverOfferPrices,
+  serverOfferSources,
+  serverOffers,
+  serverRegions,
+} from "@fwqgo/db/schema";
 import { ilikeContains } from "@/server/db/search";
 import { readOutboundShortTarget } from "@/server/links/outbound-short-link";
+import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
+
+const publicOfferTopicSlugs = [
+  "hong-kong",
+  "united-states",
+  "cheap-vps",
+] as const;
 
 export const offerStatuses = [
   "in_stock",
@@ -48,6 +71,8 @@ export const offerReviewStatuses = [
 ] as const;
 
 export type OfferReviewStatus = (typeof offerReviewStatuses)[number];
+
+export const MIN_INDEXABLE_SERVER_COLLECTION_OFFERS = 5;
 
 export type OfferTopicSlug = "hong-kong" | "united-states" | "cheap-vps";
 
@@ -640,6 +665,92 @@ function publicPurchasableOfferBaseWhere() {
   );
 }
 
+async function syncPrimaryOfferPrice(input: {
+  offerId: number;
+  priceAmount: string | null | undefined;
+  originalPriceAmount?: string | null;
+  currency: string | null | undefined;
+  billingCycle: string | null | undefined;
+  purchaseUrl: string | null | undefined;
+  validUntil?: Date | null;
+}) {
+  const monthlyPriceUsd = calculateMonthlyPriceUsd({
+    amount: input.priceAmount,
+    currency: input.currency,
+    billingCycle: input.billingCycle,
+  });
+  if (monthlyPriceUsd === null || input.priceAmount == null) return;
+
+  const billingCycle = normalizeServerOfferBillingCycle(input.billingCycle);
+  const normalizedCurrency = input.currency?.trim().toUpperCase();
+  let currency = "USD";
+  if (normalizedCurrency) currency = normalizedCurrency;
+  const values = {
+    offerId: input.offerId,
+    billingCycle,
+    termMonths: getServerOfferTermMonths(billingCycle),
+    amount: input.priceAmount,
+    originalAmount: input.originalPriceAmount ?? null,
+    currency,
+    monthlyPriceUsd: String(monthlyPriceUsd),
+    purchaseUrl: input.purchaseUrl ?? null,
+    active: true,
+    validUntil: input.validUntil ?? null,
+    updatedAt: new Date(),
+  };
+
+  await db
+    .insert(serverOfferPrices)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [
+        serverOfferPrices.offerId,
+        serverOfferPrices.billingCycle,
+        serverOfferPrices.currency,
+      ],
+      set: values,
+    });
+}
+
+async function syncArticleOfferSource(input: {
+  offerId: number;
+  sourcePostId: number | null | undefined;
+  articleUrl: string | null | undefined;
+}) {
+  if (!input.sourcePostId && !input.articleUrl) return;
+
+  const [existing] = await db
+    .select({ id: serverOfferSources.id })
+    .from(serverOfferSources)
+    .where(
+      and(
+        eq(serverOfferSources.offerId, input.offerId),
+        eq(serverOfferSources.sourceType, "article"),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    await db
+      .update(serverOfferSources)
+      .set({
+        sourcePostId: input.sourcePostId ?? null,
+        sourceUrl: input.articleUrl ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(serverOfferSources.id, existing.id));
+    return;
+  }
+
+  await db.insert(serverOfferSources).values({
+    offerId: input.offerId,
+    sourceType: "article",
+    sourcePostId: input.sourcePostId ?? null,
+    sourceUrl: input.articleUrl ?? null,
+    priority: 10,
+  });
+}
+
 type OfferSourcePost = {
   id: number;
   title: string;
@@ -688,6 +799,8 @@ async function findExistingServerOffer(candidate: ParsedServerOffer) {
   const selectColumns = {
     id: serverOffers.id,
     title: serverOffers.title,
+    purchaseUrl: serverOffers.purchaseUrl,
+    lockedFields: serverOffers.lockedFields,
   };
   const [existingBySlug] = await db
     .select(selectColumns)
@@ -771,61 +884,125 @@ async function importServerOffersFromPostRows(
 
       const provider = await resolveProvider(candidate.purchaseUrl);
       const existing = await findExistingServerOffer(candidate);
+      const monthlyPriceUsd = calculateMonthlyPriceUsd({
+        amount: candidate.priceAmount,
+        currency: candidate.currency,
+        billingCycle: candidate.billingCycle,
+      });
 
       if (existing) {
+        const lockedFields = new Set(existing.lockedFields ?? []);
+        const updateValues: Partial<typeof serverOffers.$inferInsert> = {
+          providerName: provider?.name ?? candidate.providerName,
+          providerId: provider?.id ?? candidate.providerId,
+          productType: candidate.productType,
+          cpu: candidate.cpu,
+          memory: candidate.memory,
+          memoryMb: candidate.memoryMb,
+          storage: candidate.storage,
+          storageGb: candidate.storageGb,
+          storageType: candidate.storageType,
+          bandwidth: candidate.bandwidth,
+          bandwidthMbps: candidate.bandwidthMbps,
+          traffic: candidate.traffic,
+          trafficGb: candidate.trafficGb,
+          region: candidate.region,
+          countryCode: candidate.countryCode,
+          city: candidate.city,
+          lineType: candidate.lineType,
+          network: candidate.network,
+          ipv4: candidate.ipv4,
+          ipv6: candidate.ipv6,
+          promoCode: candidate.promoCode,
+          articleUrl: candidate.articleUrl,
+          rawText: candidate.rawText,
+          duplicateKey: makeDuplicateKey(candidate, provider?.name),
+          updatedAt: new Date(),
+        };
+        if (!lockedFields.has("title")) {
+          updateValues.title = candidate.title || existing.title;
+        }
+        if (!lockedFields.has("price")) {
+          updateValues.priceAmount = candidate.priceAmount;
+          updateValues.originalPriceAmount = candidate.originalPriceAmount;
+          updateValues.currency = candidate.currency;
+          updateValues.billingCycle = candidate.billingCycle;
+          updateValues.monthlyPriceUsd =
+            monthlyPriceUsd === null ? null : String(monthlyPriceUsd);
+        }
+        if (!lockedFields.has("purchaseUrl")) {
+          updateValues.purchaseUrl = candidate.purchaseUrl;
+        }
+
         await db
           .update(serverOffers)
-          .set({
-            title: candidate.title || existing.title,
-            providerName: provider?.name ?? candidate.providerName,
-            providerId: provider?.id ?? candidate.providerId,
-            productType: candidate.productType,
-            cpu: candidate.cpu,
-            memory: candidate.memory,
-            memoryMb: candidate.memoryMb,
-            storage: candidate.storage,
-            storageGb: candidate.storageGb,
-            storageType: candidate.storageType,
-            bandwidth: candidate.bandwidth,
-            bandwidthMbps: candidate.bandwidthMbps,
-            traffic: candidate.traffic,
-            trafficGb: candidate.trafficGb,
-            region: candidate.region,
-            countryCode: candidate.countryCode,
-            city: candidate.city,
-            lineType: candidate.lineType,
-            network: candidate.network,
-            ipv4: candidate.ipv4,
-            ipv6: candidate.ipv6,
-            priceAmount: candidate.priceAmount,
-            originalPriceAmount: candidate.originalPriceAmount,
-            currency: candidate.currency,
-            billingCycle: candidate.billingCycle,
-            promoCode: candidate.promoCode,
-            purchaseUrl: candidate.purchaseUrl,
-            articleUrl: candidate.articleUrl,
-            rawText: candidate.rawText,
-            duplicateKey: makeDuplicateKey(candidate, provider?.name),
-            updatedAt: new Date(),
-          })
+          .set(updateValues)
           .where(eq(serverOffers.id, existing.id));
+        const syncTasks: Array<Promise<void>> = [
+          syncArticleOfferSource({
+            offerId: existing.id,
+            sourcePostId: candidate.sourcePostId,
+            articleUrl: candidate.articleUrl,
+          }),
+        ];
+        if (!lockedFields.has("price")) {
+          syncTasks.push(
+            syncPrimaryOfferPrice({
+              offerId: existing.id,
+              priceAmount: candidate.priceAmount,
+              originalPriceAmount: candidate.originalPriceAmount,
+              currency: candidate.currency,
+              billingCycle: candidate.billingCycle,
+              purchaseUrl: lockedFields.has("purchaseUrl")
+                ? existing.purchaseUrl
+                : candidate.purchaseUrl,
+            }),
+          );
+        }
+        await Promise.all(syncTasks);
         updated += 1;
         continue;
       }
 
-      await db.insert(serverOffers).values({
-        ...candidate,
-        providerName: provider?.name ?? null,
-        providerId: provider?.id ?? null,
-        reviewStatus: "pending",
-        duplicateKey: makeDuplicateKey(candidate, provider?.name),
-      });
+      const [created] = await db
+        .insert(serverOffers)
+        .values({
+          ...candidate,
+          providerName: provider?.name ?? null,
+          providerId: provider?.id ?? null,
+          monthlyPriceUsd:
+            monthlyPriceUsd === null ? null : String(monthlyPriceUsd),
+          reviewStatus: "pending",
+          visible: false,
+          duplicateKey: makeDuplicateKey(candidate, provider?.name),
+        })
+        .returning({ id: serverOffers.id });
+      if (created) {
+        await Promise.all([
+          syncPrimaryOfferPrice({
+            offerId: created.id,
+            priceAmount: candidate.priceAmount,
+            originalPriceAmount: candidate.originalPriceAmount,
+            currency: candidate.currency,
+            billingCycle: candidate.billingCycle,
+            purchaseUrl: candidate.purchaseUrl,
+          }),
+          syncArticleOfferSource({
+            offerId: created.id,
+            sourcePostId: candidate.sourcePostId,
+            articleUrl: candidate.articleUrl,
+          }),
+        ]);
+      }
       inserted += 1;
     }
   }
 
   if (shouldRevalidate && (inserted > 0 || updated > 0)) {
     revalidateSiteContent([cacheTags.serverOffers]);
+    await notifyPublicWebCache("offer.changed", {
+      topicSlugs: [...publicOfferTopicSlugs],
+    });
   }
 
   return {
@@ -899,17 +1076,23 @@ function topicWhere(topic: (typeof offerTopics)[number]) {
   if (topic.filters.maxMonthlyUsd) {
     return and(
       base,
-      eq(serverOffers.currency, "USD"),
-      or(
-        eq(serverOffers.billingCycle, "monthly"),
-        sql`${serverOffers.billingCycle} is null`,
-      ),
-      sql`${serverOffers.priceAmount} <= ${topic.filters.maxMonthlyUsd}`,
+      isNotNull(serverOffers.monthlyPriceUsd),
+      sql`${serverOffers.monthlyPriceUsd} <= ${topic.filters.maxMonthlyUsd}`,
     );
   }
 
   if (regionConditions.length > 0) {
-    return and(base, or(...regionConditions));
+    return and(
+      base,
+      or(
+        ...regionConditions,
+        sql`exists (
+          select 1 from "server_regions" topic_region
+          where topic_region."id" = ${serverOffers.regionId}
+            and topic_region."slug" = ${topic.slug}
+        )`,
+      ),
+    );
   }
 
   return base;
@@ -917,6 +1100,7 @@ function topicWhere(topic: (typeof offerTopics)[number]) {
 
 export async function getServerOfferTopic(slug: string) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.serverOffers, cacheTags.serverOfferTopic(slug));
 
   const topic = offerTopics.find((item) => item.slug === slug);
@@ -929,10 +1113,10 @@ export async function getServerOfferTopic(slug: string) {
       .where(topicWhere(topic))
       .orderBy(
         desc(serverOffers.featured),
-        asc(serverOffers.priceAmount),
+        asc(serverOffers.monthlyPriceUsd),
         desc(serverOffers.createdAt),
       )
-      .limit(80);
+      .limit(30);
 
     return { topic, offers };
   } catch (error) {
@@ -956,6 +1140,7 @@ function serverOfferPublicSelect() {
     region: serverOffers.region,
     lineType: serverOffers.lineType,
     priceAmount: serverOffers.priceAmount,
+    monthlyPriceUsd: serverOffers.monthlyPriceUsd,
     currency: serverOffers.currency,
     billingCycle: serverOffers.billingCycle,
     promoCode: serverOffers.promoCode,
@@ -975,43 +1160,106 @@ export async function getServerOfferCollection(input: {
   kind: "provider" | "region" | "line";
   value: string;
 }) {
-  "use cache";
-  tagCache(cacheTags.serverOffers);
-
   const value = input.value.trim();
   if (!value) return null;
 
-  const field =
-    input.kind === "provider"
-      ? serverOffers.providerName
-      : input.kind === "region"
-        ? serverOffers.region
-        : serverOffers.lineType;
+  return unstable_cache(
+    async () => loadServerOfferCollection(input.kind, value),
+    ["server-offer-collection", input.kind, value],
+    { revalidate: 900, tags: [cacheTags.serverOffers] },
+  )();
+}
+
+async function loadServerOfferCollection(
+  kind: "provider" | "region" | "line",
+  value: string,
+) {
+  const matchCondition =
+    kind === "provider"
+      ? or(
+          eq(affServiceProviders.slug, value),
+          eq(affServiceProviders.name, value),
+          eq(serverOffers.providerName, value),
+        )
+      : kind === "region"
+        ? or(
+            eq(serverRegions.slug, value),
+            eq(serverRegions.name, value),
+            eq(serverOffers.region, value),
+          )
+        : or(
+            eq(serverNetworkLines.slug, value),
+            eq(serverNetworkLines.name, value),
+            eq(serverOffers.lineType, value),
+          );
   const titlePrefix =
-    input.kind === "provider"
-      ? "商家"
-      : input.kind === "region"
-        ? "地区"
-        : "线路";
+    kind === "provider" ? "商家" : kind === "region" ? "地区" : "线路";
 
   try {
-    const offers = await readDb
-      .select(serverOfferPublicSelect())
+    const rows = await readDb
+      .select({
+        ...serverOfferPublicSelect(),
+        providerSlug: affServiceProviders.slug,
+        canonicalProviderName: affServiceProviders.name,
+        regionSlug: serverRegions.slug,
+        canonicalRegionName: serverRegions.name,
+        lineSlug: serverNetworkLines.slug,
+        canonicalLineName: serverNetworkLines.name,
+      })
       .from(serverOffers)
-      .where(and(publicPurchasableOfferBaseWhere(), eq(field, value)))
+      .leftJoin(
+        affServiceProviders,
+        eq(serverOffers.providerId, affServiceProviders.id),
+      )
+      .leftJoin(serverRegions, eq(serverOffers.regionId, serverRegions.id))
+      .leftJoin(
+        serverNetworkLines,
+        eq(serverOffers.lineId, serverNetworkLines.id),
+      )
+      .where(and(publicPurchasableOfferBaseWhere(), matchCondition))
       .orderBy(
         desc(serverOffers.featured),
-        asc(serverOffers.priceAmount),
+        asc(serverOffers.monthlyPriceUsd),
         desc(serverOffers.createdAt),
       )
-      .limit(120);
+      .limit(30);
+
+    const first = rows[0];
+    const label =
+      kind === "provider"
+        ? (first?.canonicalProviderName ?? first?.providerName ?? value)
+        : kind === "region"
+          ? (first?.canonicalRegionName ?? first?.region ?? value)
+          : (first?.canonicalLineName ?? first?.lineType ?? value);
+    const slug =
+      kind === "provider"
+        ? (first?.providerSlug ?? value)
+        : kind === "region"
+          ? (first?.regionSlug ?? value)
+          : (first?.lineSlug ?? value);
+    const offers = rows.map(
+      ({
+        providerSlug: _providerSlug,
+        canonicalProviderName: _canonicalProviderName,
+        regionSlug: _regionSlug,
+        canonicalRegionName: _canonicalRegionName,
+        lineSlug: _lineSlug,
+        canonicalLineName: _canonicalLineName,
+        ...offer
+      }) => offer,
+    );
+    const filterKey =
+      kind === "provider" ? "provider" : kind === "region" ? "region" : "line";
 
     return {
-      title: `${value}${titlePrefix === "商家" ? "" : titlePrefix}服务器套餐`,
-      description: `集中查看${value}相关服务器套餐，按价格、地区、线路、状态和购买入口筛选。`,
+      title: `${label}${titlePrefix === "商家" ? "" : titlePrefix}服务器套餐`,
+      description: `集中查看${label}相关服务器套餐，按价格、地区、线路、状态和购买入口筛选。`,
       offers,
-      kind: input.kind,
-      value,
+      kind,
+      value: label,
+      slug,
+      toolHref: `/servers?${filterKey}=${encodeURIComponent(slug)}&stock=all`,
+      indexable: offers.length >= MIN_INDEXABLE_SERVER_COLLECTION_OFFERS,
       updatedAt:
         offers
           .map((offer) => offer.updatedAt ?? offer.createdAt)
@@ -1023,8 +1271,11 @@ export async function getServerOfferCollection(input: {
       title: `${value}${titlePrefix === "商家" ? "" : titlePrefix}服务器套餐`,
       description: `集中查看${value}相关服务器套餐，按价格、地区、线路、状态和购买入口筛选。`,
       offers: [],
-      kind: input.kind,
+      kind,
       value,
+      slug: value,
+      toolHref: "/servers",
+      indexable: false,
       updatedAt: null,
     };
   }
@@ -1032,6 +1283,7 @@ export async function getServerOfferCollection(input: {
 
 export async function getServerOfferTopicCounts() {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.serverOffers);
 
   try {
@@ -1054,6 +1306,7 @@ export async function getServerOfferTopicCounts() {
 
 export async function getPublicServerOfferCount() {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 300, expire: 3_600 });
   tagCache(cacheTags.serverOffers);
 
   try {
@@ -1071,6 +1324,7 @@ export async function getPublicServerOfferCount() {
 
 export async function getLatestServerOffers(limit = 8) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 300, expire: 3_600 });
   tagCache(cacheTags.serverOffers);
 
   try {
@@ -1118,7 +1372,7 @@ export async function getPublicServerOffers(limit = 120) {
       .where(publicPurchasableOfferBaseWhere())
       .orderBy(
         desc(serverOffers.featured),
-        asc(serverOffers.priceAmount),
+        asc(serverOffers.monthlyPriceUsd),
         desc(serverOffers.createdAt),
       )
       .limit(limit);
@@ -1129,45 +1383,138 @@ export async function getPublicServerOffers(limit = 120) {
 }
 
 export async function getServerOfferCollectionIndex(limit = 80) {
-  type CollectionField =
-    | typeof serverOffers.providerName
-    | typeof serverOffers.region
-    | typeof serverOffers.lineType;
+  "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
+  tagCache(cacheTags.serverOffers, cacheTags.sitemap);
 
-  async function readCollection(
-    field: CollectionField,
+  type CollectionRow = {
+    value: string | null;
+    label: string | null;
+    count: number;
+    updatedAt: Date | null;
+  };
+
+  function mergeCollectionRows(
+    rows: CollectionRow[],
     kind: "provider" | "region" | "line",
   ) {
-    const rows = await readDb
-      .select({
-        value: field,
-        count: sql<number>`count(*)`,
-        updatedAt: sql<Date | null>`max(coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt}))`,
-      })
-      .from(serverOffers)
-      .where(and(publicPurchasableOfferBaseWhere(), isNotNull(field)))
-      .groupBy(field)
-      .orderBy(desc(sql`count(*)`), asc(field))
-      .limit(limit);
-
-    return rows
-      .map((row) => ({
-        kind,
-        value: row.value?.trim() ?? "",
-        count: Number(row.count ?? 0),
-        updatedAt: row.updatedAt,
-      }))
-      .filter((row) => row.value.length > 0);
+    const merged = new Map<
+      string,
+      {
+        kind: typeof kind;
+        value: string;
+        label: string;
+        count: number;
+        updatedAt: Date | null;
+      }
+    >();
+    for (const row of rows) {
+      const value = row.value?.trim();
+      if (!value) continue;
+      const current = merged.get(value);
+      const updatedAt = row.updatedAt;
+      if (current) {
+        current.count += Number(row.count ?? 0);
+        if (
+          updatedAt &&
+          (!current.updatedAt ||
+            updatedAt.getTime() > current.updatedAt.getTime())
+        ) {
+          current.updatedAt = updatedAt;
+        }
+      } else {
+        merged.set(value, {
+          kind,
+          value,
+          label: row.label?.trim() ? row.label.trim() : value,
+          count: Number(row.count ?? 0),
+          updatedAt,
+        });
+      }
+    }
+    return [...merged.values()]
+      .filter((row) => row.count >= MIN_INDEXABLE_SERVER_COLLECTION_OFFERS)
+      .sort((left, right) => right.count - left.count)
+      .slice(0, limit);
   }
 
   try {
-    const [providers, regions, lines] = await Promise.all([
-      readCollection(serverOffers.providerName, "provider"),
-      readCollection(serverOffers.region, "region"),
-      readCollection(serverOffers.lineType, "line"),
+    const [providerRows, regionRows, lineRows] = await Promise.all([
+      readDb
+        .select({
+          value: sql<string>`coalesce(${affServiceProviders.slug}, ${serverOffers.providerName})`,
+          label: sql<string>`coalesce(${affServiceProviders.name}, ${serverOffers.providerName})`,
+          count: sql<number>`count(*)::int`,
+          updatedAt: sql<Date | null>`max(coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt}))`,
+        })
+        .from(serverOffers)
+        .leftJoin(
+          affServiceProviders,
+          eq(serverOffers.providerId, affServiceProviders.id),
+        )
+        .where(
+          and(
+            publicPurchasableOfferBaseWhere(),
+            isNotNull(serverOffers.providerName),
+          ),
+        )
+        .groupBy(
+          affServiceProviders.slug,
+          affServiceProviders.name,
+          serverOffers.providerName,
+        )
+        .orderBy(desc(sql`count(*)`))
+        .limit(limit * 2),
+      readDb
+        .select({
+          value: sql<string>`coalesce(${serverRegions.slug}, ${serverOffers.region})`,
+          label: sql<string>`coalesce(${serverRegions.name}, ${serverOffers.region})`,
+          count: sql<number>`count(*)::int`,
+          updatedAt: sql<Date | null>`max(coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt}))`,
+        })
+        .from(serverOffers)
+        .leftJoin(serverRegions, eq(serverOffers.regionId, serverRegions.id))
+        .where(
+          and(
+            publicPurchasableOfferBaseWhere(),
+            isNotNull(serverOffers.region),
+          ),
+        )
+        .groupBy(serverRegions.slug, serverRegions.name, serverOffers.region)
+        .orderBy(desc(sql`count(*)`))
+        .limit(limit * 2),
+      readDb
+        .select({
+          value: sql<string>`coalesce(${serverNetworkLines.slug}, ${serverOffers.lineType})`,
+          label: sql<string>`coalesce(${serverNetworkLines.name}, ${serverOffers.lineType})`,
+          count: sql<number>`count(*)::int`,
+          updatedAt: sql<Date | null>`max(coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt}))`,
+        })
+        .from(serverOffers)
+        .leftJoin(
+          serverNetworkLines,
+          eq(serverOffers.lineId, serverNetworkLines.id),
+        )
+        .where(
+          and(
+            publicPurchasableOfferBaseWhere(),
+            isNotNull(serverOffers.lineType),
+          ),
+        )
+        .groupBy(
+          serverNetworkLines.slug,
+          serverNetworkLines.name,
+          serverOffers.lineType,
+        )
+        .orderBy(desc(sql`count(*)`))
+        .limit(limit * 2),
     ]);
 
-    return { providers, regions, lines };
+    return {
+      providers: mergeCollectionRows(providerRows, "provider"),
+      regions: mergeCollectionRows(regionRows, "region"),
+      lines: mergeCollectionRows(lineRows, "line"),
+    };
   } catch (error) {
     console.error("Failed to load server offer collection index:", error);
     return { providers: [], regions: [], lines: [] };
@@ -1203,7 +1550,7 @@ export async function searchServerOffers(input: {
       )
       .orderBy(
         desc(serverOffers.featured),
-        asc(serverOffers.priceAmount),
+        asc(serverOffers.monthlyPriceUsd),
         desc(serverOffers.createdAt),
       )
       .limit(input.limit ?? 20);
@@ -1249,7 +1596,7 @@ export async function getServerOffersByKeywords(input: {
       )
       .orderBy(
         desc(serverOffers.featured),
-        asc(serverOffers.priceAmount),
+        asc(serverOffers.monthlyPriceUsd),
         desc(serverOffers.createdAt),
       )
       .limit(input.limit ?? 6);
@@ -1361,7 +1708,10 @@ export async function getAdminServerOffers(
     .select({
       id: serverOffers.id,
       title: serverOffers.title,
+      providerId: serverOffers.providerId,
       providerName: serverOffers.providerName,
+      externalProductId: serverOffers.externalProductId,
+      productGroup: serverOffers.productGroup,
       productType: serverOffers.productType,
       cpu: serverOffers.cpu,
       memory: serverOffers.memory,
@@ -1371,6 +1721,7 @@ export async function getAdminServerOffers(
       region: serverOffers.region,
       lineType: serverOffers.lineType,
       priceAmount: serverOffers.priceAmount,
+      monthlyPriceUsd: serverOffers.monthlyPriceUsd,
       currency: serverOffers.currency,
       billingCycle: serverOffers.billingCycle,
       promoCode: serverOffers.promoCode,
@@ -1378,6 +1729,11 @@ export async function getAdminServerOffers(
       articleUrl: serverOffers.articleUrl,
       reviewUrl: serverOffers.reviewUrl,
       status: serverOffers.status,
+      checkStatus: serverOffers.checkStatus,
+      lastCheckedAt: serverOffers.lastCheckedAt,
+      statusChangedAt: serverOffers.statusChangedAt,
+      lockedFields: serverOffers.lockedFields,
+      validUntil: serverOffers.validUntil,
       featured: serverOffers.featured,
       visible: serverOffers.visible,
       sourcePostId: serverOffers.sourcePostId,
@@ -1398,7 +1754,60 @@ export async function getAdminServerOffers(
     .offset((page - 1) * filters.pageSize)
     .limit(filters.pageSize);
 
-  return { rows, total, page, pageSize: filters.pageSize };
+  const offerIds = rows.map((row) => row.id);
+  const [priceRows, checkRows] = offerIds.length
+    ? await Promise.all([
+        readDb
+          .select({
+            id: serverOfferPrices.id,
+            offerId: serverOfferPrices.offerId,
+            billingCycle: serverOfferPrices.billingCycle,
+            termMonths: serverOfferPrices.termMonths,
+            amount: serverOfferPrices.amount,
+            originalAmount: serverOfferPrices.originalAmount,
+            currency: serverOfferPrices.currency,
+            monthlyPriceUsd: serverOfferPrices.monthlyPriceUsd,
+            purchaseUrl: serverOfferPrices.purchaseUrl,
+            active: serverOfferPrices.active,
+            validUntil: serverOfferPrices.validUntil,
+          })
+          .from(serverOfferPrices)
+          .where(inArray(serverOfferPrices.offerId, offerIds))
+          .orderBy(
+            asc(serverOfferPrices.monthlyPriceUsd),
+            asc(serverOfferPrices.id),
+          ),
+        readDb
+          .select({
+            id: serverOfferChecks.id,
+            offerId: serverOfferChecks.offerId,
+            status: serverOfferChecks.status,
+            available: serverOfferChecks.available,
+            priceAmount: serverOfferChecks.priceAmount,
+            currency: serverOfferChecks.currency,
+            responseTimeMs: serverOfferChecks.responseTimeMs,
+            error: serverOfferChecks.error,
+            checkedAt: serverOfferChecks.checkedAt,
+          })
+          .from(serverOfferChecks)
+          .where(inArray(serverOfferChecks.offerId, offerIds))
+          .orderBy(
+            desc(serverOfferChecks.checkedAt),
+            desc(serverOfferChecks.id),
+          )
+          .limit(Math.max(offerIds.length * 5, 20)),
+      ])
+    : [[], []];
+
+  const enrichedRows = rows.map((row) => ({
+    ...row,
+    prices: priceRows.filter((price) => price.offerId === row.id),
+    recentChecks: checkRows
+      .filter((check) => check.offerId === row.id)
+      .slice(0, 5),
+  }));
+
+  return { rows: enrichedRows, total, page, pageSize: filters.pageSize };
 }
 
 export async function getAdminServerOfferQualitySummary() {
@@ -1433,7 +1842,10 @@ export async function getAdminServerOfferQualitySummary() {
 
 export type ServerOfferUpdateInput = {
   title: string;
+  providerId?: number | null;
   providerName?: string | null;
+  externalProductId?: string | null;
+  productGroup?: string | null;
   productType?: string | null;
   cpu?: string | null;
   memory?: string | null;
@@ -1441,6 +1853,7 @@ export type ServerOfferUpdateInput = {
   bandwidth?: string | null;
   traffic?: string | null;
   priceAmount?: string | null;
+  originalPriceAmount?: string | null;
   currency?: string | null;
   billingCycle?: string | null;
   region?: string | null;
@@ -1453,50 +1866,269 @@ export type ServerOfferUpdateInput = {
   visible: boolean;
   featured: boolean;
   reviewStatus?: string | null;
+  lockedFields?: string[];
+  validUntil?: Date | null;
+  prices?: ServerOfferPriceUpdateInput[];
 };
+
+export type ServerOfferPriceUpdateInput = {
+  billingCycle: string;
+  amount: string;
+  originalAmount?: string | null;
+  currency: string;
+  purchaseUrl?: string | null;
+  active: boolean;
+  validUntil?: Date | null;
+};
+
+function taxonomyMatches(
+  value: string,
+  item: { name: string; aliases: string | null },
+) {
+  const needle = value.trim().toLocaleLowerCase();
+  if (!needle) return false;
+  return [item.name, ...(item.aliases?.split(",") ?? [])].some(
+    (candidate) => candidate.trim().toLocaleLowerCase() === needle,
+  );
+}
+
+async function resolveServerOfferTaxonomy(input: {
+  region?: string | null;
+  lineType?: string | null;
+}) {
+  const [regions, lines] = await Promise.all([
+    readDb
+      .select({
+        id: serverRegions.id,
+        name: serverRegions.name,
+        aliases: serverRegions.aliases,
+      })
+      .from(serverRegions)
+      .where(eq(serverRegions.active, true)),
+    readDb
+      .select({
+        id: serverNetworkLines.id,
+        name: serverNetworkLines.name,
+        aliases: serverNetworkLines.aliases,
+      })
+      .from(serverNetworkLines)
+      .where(eq(serverNetworkLines.active, true)),
+  ]);
+
+  return {
+    regionId: input.region
+      ? (regions.find((item) => taxonomyMatches(input.region!, item))?.id ??
+        null)
+      : null,
+    lineId: input.lineType
+      ? (lines.find((item) => taxonomyMatches(input.lineType!, item))?.id ??
+        null)
+      : null,
+  };
+}
 
 export async function updateServerOffer(
   id: number,
   input: ServerOfferUpdateInput,
 ) {
+  const [existing] = await readDb
+    .select({ status: serverOffers.status })
+    .from(serverOffers)
+    .where(eq(serverOffers.id, id))
+    .limit(1);
+  if (!existing) return null;
+
+  const [provider, taxonomy] = await Promise.all([
+    input.providerId
+      ? readDb
+          .select({
+            id: affServiceProviders.id,
+            name: affServiceProviders.name,
+            defaultPromoCode: affServiceProviders.defaultPromoCode,
+          })
+          .from(affServiceProviders)
+          .where(eq(affServiceProviders.id, input.providerId))
+          .limit(1)
+          .then((rows) => rows[0] ?? null)
+      : Promise.resolve(null),
+    resolveServerOfferTaxonomy(input),
+  ]);
+  const providerId = provider?.id ?? input.providerId ?? null;
+  const providerName = provider?.name ?? input.providerName ?? null;
+  const normalizedExternalProductId = input.externalProductId?.trim();
+  let externalProductId: string | null = null;
+  if (normalizedExternalProductId) {
+    externalProductId = normalizedExternalProductId;
+  }
+  if (providerId && externalProductId) {
+    const [duplicate] = await readDb
+      .select({ id: serverOffers.id })
+      .from(serverOffers)
+      .where(
+        and(
+          eq(serverOffers.providerId, providerId),
+          eq(serverOffers.externalProductId, externalProductId),
+          ne(serverOffers.id, id),
+        ),
+      )
+      .limit(1);
+    if (duplicate) {
+      throw new Error(
+        `同一厂商已经存在产品 ID ${externalProductId}（套餐 #${duplicate.id}）`,
+      );
+    }
+  }
+
   const memoryMb = parseStandaloneMemoryMb(input.memory);
   const storageGb = parseStandaloneStorageGb(input.storage);
   const bandwidthMbps = parseStandaloneBandwidthMbps(input.bandwidth);
   const trafficGb = parseStandaloneTrafficGb(input.traffic);
   const productType = input.productType ?? "vps";
-
-  const [updated] = await db
-    .update(serverOffers)
-    .set({
-      ...input,
-      productType,
-      memoryMb,
-      storageGb,
-      bandwidthMbps,
-      trafficGb,
-      duplicateKey: makeDuplicateKey({
-        providerName: input.providerName,
+  const normalizedPrices = input.prices?.map((price) => {
+    const billingCycle = normalizeServerOfferBillingCycle(price.billingCycle);
+    const currency = price.currency.trim().toUpperCase() || "USD";
+    const monthlyPriceUsd = calculateMonthlyPriceUsd({
+      amount: price.amount,
+      currency,
+      billingCycle,
+    });
+    if (monthlyPriceUsd === null) {
+      throw new Error(`价格 ${price.amount} 无法折算为美元月价`);
+    }
+    return {
+      billingCycle,
+      termMonths: getServerOfferTermMonths(billingCycle),
+      amount: price.amount,
+      originalAmount: price.originalAmount ?? null,
+      currency,
+      monthlyPriceUsd,
+      purchaseUrl: price.purchaseUrl ?? input.purchaseUrl ?? null,
+      active: price.active,
+      validUntil: price.validUntil ?? input.validUntil ?? null,
+    };
+  });
+  const primaryPrice = normalizedPrices
+    ?.filter((price) => price.active)
+    .sort((left, right) => left.monthlyPriceUsd - right.monthlyPriceUsd)[0];
+  const priceAmount = normalizedPrices
+    ? (primaryPrice?.amount ?? null)
+    : input.priceAmount;
+  const originalPriceAmount = normalizedPrices
+    ? (primaryPrice?.originalAmount ?? null)
+    : input.originalPriceAmount;
+  const currency = normalizedPrices
+    ? (primaryPrice?.currency ?? "USD")
+    : input.currency;
+  const billingCycle = normalizedPrices
+    ? (primaryPrice?.billingCycle ?? "monthly")
+    : input.billingCycle;
+  const monthlyPriceUsd = normalizedPrices
+    ? (primaryPrice?.monthlyPriceUsd ?? null)
+    : calculateMonthlyPriceUsd({ amount: priceAmount, currency, billingCycle });
+  const now = new Date();
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(serverOffers)
+      .set({
+        title: input.title,
+        providerId,
+        providerName,
+        externalProductId,
+        productGroup: input.productGroup ?? null,
         productType,
+        cpu: input.cpu ?? null,
+        memory: input.memory ?? null,
         memoryMb,
+        storage: input.storage ?? null,
         storageGb,
+        bandwidth: input.bandwidth ?? null,
         bandwidthMbps,
+        traffic: input.traffic ?? null,
         trafficGb,
-        region: input.region,
-        lineType: input.lineType,
-        priceAmount: input.priceAmount,
-        currency: input.currency,
-        billingCycle: input.billingCycle,
-        purchaseUrl: input.purchaseUrl,
-      }),
-      reviewStatus: input.reviewStatus ?? "reviewed",
-      reviewedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(serverOffers.id, id))
-    .returning({ id: serverOffers.id });
+        priceAmount: priceAmount ?? null,
+        originalPriceAmount: originalPriceAmount ?? null,
+        currency: currency ?? "USD",
+        billingCycle: billingCycle ?? "monthly",
+        monthlyPriceUsd:
+          monthlyPriceUsd === null ? null : String(monthlyPriceUsd),
+        region: input.region ?? null,
+        regionId: taxonomy.regionId,
+        lineType: input.lineType ?? null,
+        lineId: taxonomy.lineId,
+        status: input.status,
+        statusChangedAt: existing.status === input.status ? undefined : now,
+        purchaseUrl: input.purchaseUrl ?? null,
+        promoCode: input.promoCode ?? provider?.defaultPromoCode ?? null,
+        articleUrl: input.articleUrl ?? null,
+        reviewUrl: input.reviewUrl ?? null,
+        visible: input.visible,
+        featured: input.featured,
+        lockedFields: [...new Set(input.lockedFields ?? [])],
+        validUntil: input.validUntil ?? null,
+        duplicateKey: makeDuplicateKey({
+          providerName,
+          productType,
+          memoryMb,
+          storageGb,
+          bandwidthMbps,
+          trafficGb,
+          region: input.region,
+          lineType: input.lineType,
+          priceAmount,
+          currency,
+          billingCycle,
+          purchaseUrl: input.purchaseUrl,
+        }),
+        reviewStatus: input.reviewStatus ?? "reviewed",
+        reviewedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(serverOffers.id, id))
+      .returning({ id: serverOffers.id });
+
+    if (row && normalizedPrices) {
+      await tx
+        .delete(serverOfferPrices)
+        .where(eq(serverOfferPrices.offerId, row.id));
+      if (normalizedPrices.length > 0) {
+        await tx.insert(serverOfferPrices).values(
+          normalizedPrices.map((price) => ({
+            offerId: row.id,
+            billingCycle: price.billingCycle,
+            termMonths: price.termMonths,
+            amount: price.amount,
+            originalAmount: price.originalAmount,
+            currency: price.currency,
+            monthlyPriceUsd: String(price.monthlyPriceUsd),
+            purchaseUrl: price.purchaseUrl,
+            active: price.active,
+            validUntil: price.validUntil,
+            createdAt: now,
+            updatedAt: now,
+          })),
+        );
+      }
+    }
+
+    return row ?? null;
+  });
 
   if (updated) {
+    if (!normalizedPrices) {
+      await syncPrimaryOfferPrice({
+        offerId: updated.id,
+        priceAmount,
+        originalPriceAmount,
+        currency,
+        billingCycle,
+        purchaseUrl: input.purchaseUrl,
+        validUntil: input.validUntil,
+      });
+    }
     revalidateSiteContent([cacheTags.serverOffers]);
+    await notifyPublicWebCache("offer.changed", {
+      topicSlugs: [...publicOfferTopicSlugs],
+    });
   }
 
   return updated ?? null;
@@ -1517,7 +2149,10 @@ export async function bulkUpdateServerOffers(input: {
     updatedAt: new Date(),
   };
 
-  if (input.status) values.status = input.status;
+  if (input.status) {
+    values.status = input.status;
+    values.statusChangedAt = values.updatedAt;
+  }
   if (typeof input.visible === "boolean") values.visible = input.visible;
   if (typeof input.featured === "boolean") values.featured = input.featured;
   if (input.reviewStatus) {
@@ -1533,6 +2168,9 @@ export async function bulkUpdateServerOffers(input: {
 
   if (rows.length > 0) {
     revalidateSiteContent([cacheTags.serverOffers]);
+    await notifyPublicWebCache("offer.changed", {
+      topicSlugs: [...publicOfferTopicSlugs],
+    });
   }
 
   return { updated: rows.length };
@@ -1599,7 +2237,7 @@ export async function getRelatedServerOffersForPost(input: {
         sql`case when ${serverOffers.sourcePostId} = ${input.postId} then 1 else 0 end`,
       ),
       desc(serverOffers.featured),
-      asc(serverOffers.priceAmount),
+      asc(serverOffers.monthlyPriceUsd),
     )
     .limit(input.limit ?? 6);
 }

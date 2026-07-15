@@ -10,6 +10,7 @@ import * as schema from "./schema";
 const globalForDb = globalThis as unknown as {
   writeConn: postgres.Sql | undefined;
   readConn: postgres.Sql | undefined;
+  analyticsConn: postgres.Sql | undefined;
 };
 
 function withCredentials(
@@ -66,6 +67,10 @@ function resolveReadDatabaseUrl() {
   });
 }
 
+function resolveAnalyticsDatabaseUrl() {
+  return env.ANALYTICS_DATABASE_URL ?? resolveWriteDatabaseUrl();
+}
+
 function isBuildProcess() {
   return (
     process.env.NEXT_PHASE === "phase-production-build" ||
@@ -93,12 +98,17 @@ const writeConn =
   globalForDb.writeConn ?? postgres(resolveWriteDatabaseUrl(), connectionOptions);
 const readConn =
   globalForDb.readConn ?? postgres(resolveReadDatabaseUrl(), connectionOptions);
+const analyticsConn =
+  globalForDb.analyticsConn ??
+  postgres(resolveAnalyticsDatabaseUrl(), { ...connectionOptions, max: 1 });
 
 if (env.NODE_ENV !== "production") {
   globalForDb.writeConn = writeConn;
   globalForDb.readConn = readConn;
+  globalForDb.analyticsConn = analyticsConn;
 }
 
 export const writeDb = drizzle(writeConn, { schema });
 export const readDb = drizzle(readConn, { schema });
+export const analyticsDb = drizzle(analyticsConn, { schema });
 export const db = writeDb;

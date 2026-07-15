@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Suspense } from "react";
 import { connection } from "next/server";
+import { Suspense } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -23,6 +23,11 @@ import ArticleCard from "@/features/public/components/article-card";
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
 import {
+  HomepagePrimaryPromotion,
+  HomepagePromotionGrid,
+  HomepageSidebarPromotions,
+} from "@/features/public/components/homepage-promotion-slots";
+import {
   FeaturedOfferList,
   type FeaturedOffer,
 } from "@/features/public/components/featured-offer-list";
@@ -36,9 +41,13 @@ import {
   offerTopics,
 } from "@/server/offers/server-offers";
 import { getSiteSeoConfig } from "@/features/shared/data/site-seo";
+import { getActiveHomepageSlots } from "@/server/homepage/homepage-slots";
 
 function getSiteUrl() {
-  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(/\/+$/, "");
+  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
+    /\/+$/,
+    "",
+  );
 }
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -154,7 +163,12 @@ function PromoCodeLink({ offer }: { offer: FeaturedOffer }) {
 
   if (isHttpHref(href)) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={className}
+      >
         {content}
       </a>
     );
@@ -208,7 +222,9 @@ function SectionHeading({
         {title}
       </h2>
       {description ? (
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {description}
+        </p>
       ) : null}
     </div>
   );
@@ -216,30 +232,67 @@ function SectionHeading({
 
 async function HomeContent() {
   await connection();
-
   const [
     { data: posts },
     { data: sidebarData },
     offerCounts,
     latestOffers,
     totalOfferCount,
+    homepageSlots,
   ] = await Promise.all([
     getHomepagePostsWithTags(),
     getHomepageSidebarData(),
     getServerOfferTopicCounts(),
     getLatestServerOffers(24),
     getPublicServerOfferCount(),
+    getActiveHomepageSlots("zh"),
   ]);
 
   const safePosts = posts ?? [];
   const latestArticles = safePosts.slice(0, 8);
   const promotedPosts = sidebarData?.promotedPosts ?? [];
   const popularPosts = sidebarData?.popularPosts ?? [];
-  const featuredOffers = latestOffers.slice(0, 6);
+  const heroPrimarySlot = homepageSlots.find(
+    (slot) => slot.placement === "hero_primary",
+  );
+  const promoGridSlots = homepageSlots.filter(
+    (slot) => slot.placement === "promo_grid",
+  );
+  const sidebarSlots = homepageSlots.filter(
+    (slot) => slot.placement === "sidebar",
+  );
+  const configuredFeaturedOffers: FeaturedOffer[] = homepageSlots
+    .filter(
+      (slot) =>
+        slot.placement === "featured_offers" &&
+        slot.contentType === "offer" &&
+        slot.offerId &&
+        slot.offerTitle,
+    )
+    .map((slot) => ({
+      id: slot.offerId!,
+      title: slot.offerTitle!,
+      providerName: slot.offerProviderName,
+      region: slot.offerRegion,
+      lineType: slot.offerLineType,
+      priceAmount: slot.offerPriceAmount,
+      currency: slot.offerCurrency,
+      billingCycle: slot.offerBillingCycle,
+      promoCode: slot.offerPromoCode,
+      purchaseUrl: slot.resolvedTargetUrl ?? slot.offerPurchaseUrl,
+      articleUrl: slot.offerArticleUrl,
+      status: slot.offerStatus ?? "in_stock",
+    }));
+  const featuredOffers =
+    configuredFeaturedOffers.length > 0
+      ? configuredFeaturedOffers.slice(0, 6)
+      : latestOffers.slice(0, 6);
   const promoOffers = latestOffers
     .filter((offer) => offer.promoCode?.trim())
     .slice(0, 4);
-  const topProviders = topValues(latestOffers.map((offer) => offer.providerName));
+  const topProviders = topValues(
+    latestOffers.map((offer) => offer.providerName),
+  );
   const topRegions = topValues(latestOffers.map((offer) => offer.region));
   const latestOfferUpdatedAt = latestOffers
     .map((offer) => offer.updatedAt ?? offer.createdAt)
@@ -298,78 +351,87 @@ async function HomeContent() {
               </div>
             </div>
 
-            <aside className="min-w-0 space-y-4 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
-              <div>
-                <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  <BadgePercent className="size-4 text-primary" />
-                  最新优惠码
-                </p>
-                <div className="mt-3 space-y-2">
-                  {promoOffers.length > 0 ? (
-                    promoOffers.map((offer) => (
-                      <PromoCodeLink key={offer.id} offer={offer} />
-                    ))
-                  ) : (
-                    <p className="rounded-md border border-dashed border-border/70 bg-muted/30 px-3 py-4 text-xs leading-5 text-muted-foreground">
-                      暂无带优惠码的套餐，可以先打开比价工具查看全部优惠。
-                    </p>
-                  )}
+            {heroPrimarySlot ? (
+              <HomepagePrimaryPromotion slot={heroPrimarySlot} />
+            ) : (
+              <aside className="min-w-0 space-y-4 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
+                <div>
+                  <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <BadgePercent className="size-4 text-primary" />
+                    最新优惠码
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {promoOffers.length > 0 ? (
+                      promoOffers.map((offer) => (
+                        <PromoCodeLink key={offer.id} offer={offer} />
+                      ))
+                    ) : (
+                      <p className="rounded-md border border-dashed border-border/70 bg-muted/30 px-3 py-4 text-xs leading-5 text-muted-foreground">
+                        暂无带优惠码的套餐，可以先打开比价工具查看全部优惠。
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  <Store className="size-4 text-primary" />
-                  热门商家
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {topProviders.length > 0 ? (
-                    topProviders.map((name) => (
-                      <Link
-                        key={name}
-                        href={`/servers/providers/${encodeURIComponent(name)}`}
-                        prefetch
-                        className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary md:min-h-8"
-                      >
-                        {name}
-                      </Link>
-                    ))
-                  ) : (
-                    <span className="text-xs text-muted-foreground">暂无数据</span>
-                  )}
+                <div>
+                  <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Store className="size-4 text-primary" />
+                    热门商家
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {topProviders.length > 0 ? (
+                      topProviders.map((name) => (
+                        <Link
+                          key={name}
+                          href={`/servers/providers/${encodeURIComponent(name)}`}
+                          prefetch
+                          className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary md:min-h-8"
+                        >
+                          {name}
+                        </Link>
+                      ))
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        暂无数据
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  <MapPin className="size-4 text-primary" />
-                  热门地区
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {topRegions.length > 0 ? (
-                    topRegions.map((name) => (
-                      <Link
-                        key={name}
-                        href={`/servers/regions/${encodeURIComponent(name)}`}
-                        prefetch
-                        className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary md:min-h-8"
-                      >
-                        {name}
-                      </Link>
-                    ))
-                  ) : (
-                    <span className="text-xs text-muted-foreground">暂无数据</span>
-                  )}
+                <div>
+                  <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <MapPin className="size-4 text-primary" />
+                    热门地区
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {topRegions.length > 0 ? (
+                      topRegions.map((name) => (
+                        <Link
+                          key={name}
+                          href={`/servers/regions/${encodeURIComponent(name)}`}
+                          prefetch
+                          className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary md:min-h-8"
+                        >
+                          {name}
+                        </Link>
+                      ))
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        暂无数据
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </aside>
+              </aside>
+            )}
           </div>
 
           <div className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {compareEntries.map((entry) => {
               const Icon = entry.icon;
               const count = entry.topicSlug
-                ? offerCounts.find((item) => item.slug === entry.topicSlug)?.count
+                ? offerCounts.find((item) => item.slug === entry.topicSlug)
+                    ?.count
                 : totalOfferCount;
 
               return (
@@ -403,6 +465,18 @@ async function HomeContent() {
           </div>
         </div>
       </section>
+
+      {promoGridSlots.length > 0 ? (
+        <section className="container mx-auto px-4 pt-8 md:pt-10">
+          <div className="mb-4">
+            <SectionHeading
+              title="特别推荐"
+              description="当前活动、精选文章和站内重点内容。"
+            />
+          </div>
+          <HomepagePromotionGrid slots={promoGridSlots} />
+        </section>
+      ) : null}
 
       {/* 精选套餐：少量展示，完整筛选在 /servers */}
       <section className="container mx-auto px-4 py-8 md:py-10">
@@ -438,7 +512,9 @@ async function HomeContent() {
           </div>
 
           {latestArticles.length > 0 ? (
-            latestArticles.map((post) => <ArticleCard key={post.id} post={post} />)
+            latestArticles.map((post) => (
+              <ArticleCard key={post.id} post={post} />
+            ))
           ) : (
             <div className="rounded-lg border border-dashed border-border bg-muted/30 p-8 text-center text-sm text-muted-foreground">
               暂无文章内容。
@@ -453,10 +529,14 @@ async function HomeContent() {
               <Badge variant="secondary">精选</Badge>
             </div>
             <div className="mt-3 space-y-2">
-              {promotedPosts.length > 0 ? (
+              {sidebarSlots.length > 0 ? (
+                <HomepageSidebarPromotions slots={sidebarSlots} />
+              ) : promotedPosts.length > 0 ? (
                 promotedPosts
                   .slice(0, 4)
-                  .map((post) => <SidebarArticleLink key={post.id} post={post} />)
+                  .map((post) => (
+                    <SidebarArticleLink key={post.id} post={post} />
+                  ))
               ) : (
                 <p className="rounded-md border border-dashed border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
                   当前还没有推荐文章。
@@ -466,14 +546,22 @@ async function HomeContent() {
           </div>
 
           <div className="rounded-lg border border-border/70 bg-background p-4 shadow-sm">
-            <p className="text-sm font-semibold text-foreground">高浏览量文章</p>
-            <p className="mt-1 text-xs text-muted-foreground">按累计浏览量排序</p>
+            <p className="text-sm font-semibold text-foreground">
+              高浏览量文章
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              按累计浏览量排序
+            </p>
             <div className="mt-3 space-y-2">
               {popularPosts.length > 0 ? (
                 popularPosts
                   .slice(0, 5)
                   .map((post, index) => (
-                    <SidebarArticleLink key={post.id} post={post} rank={index + 1} />
+                    <SidebarArticleLink
+                      key={post.id}
+                      post={post}
+                      rank={index + 1}
+                    />
                   ))
               ) : (
                 <p className="text-sm text-muted-foreground">暂无热门文章。</p>
@@ -486,7 +574,8 @@ async function HomeContent() {
             <div className="mt-3 grid gap-2">
               {offerTopics.map((topic) => {
                 const count =
-                  offerCounts.find((item) => item.slug === topic.slug)?.count ?? 0;
+                  offerCounts.find((item) => item.slug === topic.slug)?.count ??
+                  0;
 
                 return (
                   <Link

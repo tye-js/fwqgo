@@ -89,6 +89,19 @@ function redirectToPublic(request: NextRequest) {
   return withPrivateNoStore(NextResponse.redirect(target));
 }
 
+function blockDisabledSignup(request: NextRequest) {
+  if (
+    request.nextUrl.pathname === "/signup" &&
+    process.env.ENABLE_PUBLIC_SIGNUP !== "true"
+  ) {
+    return withPrivateNoStore(
+      NextResponse.redirect(new URL("/login", request.url)),
+    );
+  }
+
+  return null;
+}
+
 function isPublicContentPath(pathname: string) {
   return PUBLIC_CONTENT_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
@@ -116,6 +129,11 @@ export function proxy(request: NextRequest) {
 
   if (basicAuthResponse) {
     return basicAuthResponse;
+  }
+
+  const disabledSignupResponse = blockDisabledSignup(request);
+  if (disabledSignupResponse) {
+    return disabledSignupResponse;
   }
 
   if (isPublicContentPath(pathname)) {

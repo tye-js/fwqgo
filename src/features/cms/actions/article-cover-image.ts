@@ -7,6 +7,7 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
+import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 import { db } from "@fwqgo/db";
 import { imageCoverGenerationTasks, posts } from "@fwqgo/db/schema";
 import { generateArticleCoverImage } from "@/server/images/generated-cover";
@@ -633,6 +634,9 @@ export async function finalizeCoverGenerationBatchAction(batchId: string) {
 
     if (tags.length > 0) {
       revalidateSiteContent(tags);
+      await notifyPublicWebCache("image.changed", {
+        postIds: succeededPostIds,
+      });
     }
     revalidateCoverGenerationAdminPaths();
     finalizedCoverGenerationBatches.add(normalizedBatchId);

@@ -1,4 +1,5 @@
 import { readDb } from "@fwqgo/db";
+import { connection } from "next/server";
 import { categories, posts, serverOffers, tags } from "@fwqgo/db/schema";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import {
@@ -411,6 +412,7 @@ export async function sitemapTagsGET() {
 }
 
 export async function sitemapServersGET() {
+  await connection();
   const baseUrl = getBaseUrl();
   const [[latestOffer], collections] = await Promise.all([
     readDb

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
@@ -104,15 +103,6 @@ export function LoginForm({
             {isPending ? "登录中..." : "登录"}
           </Button>
         </form>
-        <div className="mt-4 text-center text-sm">
-          还没有账号？{" "}
-          <Link
-            href="/signup"
-            className="rounded-sm underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            注册
-          </Link>
-        </div>
       </CardContent>
     </Card>
   );

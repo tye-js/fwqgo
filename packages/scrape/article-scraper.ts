@@ -12,6 +12,7 @@ import {
   parsePublicHttpUrl,
   requirePublicHttpUrl,
 } from "@fwqgo/core/network-url";
+import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import RewriteArticle from "@/langchain/rewrite-article";
 import {
   mergeAffiliateReports,
@@ -76,6 +77,7 @@ const browserHeaders = {
   "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
 };
 const FETCH_TIMEOUT_MS = 15_000;
+const MAX_SCRAPED_HTML_BYTES = 8 * 1024 * 1024;
 const MAX_AI_INPUT_MARKDOWN_LENGTH = 14_000;
 
 const commonRemoveSelectors = [
@@ -275,7 +277,14 @@ async function fetchWithCheerio(url: string) {
     if (!response.ok) {
       throw new Error(`抓取失败：HTTP ${response.status}`);
     }
-    return cheerio.load(await response.text());
+    const html = await readResponseTextWithLimit(
+      response,
+      MAX_SCRAPED_HTML_BYTES,
+    );
+    if (html === null) {
+      throw new Error("抓取失败：网页内容超过 8 MB 限制");
+    }
+    return cheerio.load(html);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error("抓取页面超时，请稍后重试");
@@ -317,6 +326,9 @@ async function fetchWithPuppeteer(url: string, rule: SiteRule) {
     await page.waitForSelector(rule.contentSelector, { timeout: 30000 });
 
     const html = await page.content();
+    if (Buffer.byteLength(html) > MAX_SCRAPED_HTML_BYTES) {
+      throw new Error("抓取失败：动态网页内容超过 8 MB 限制");
+    }
     return { $: cheerio.load(html), browser };
   } catch (error) {
     await browser.close();

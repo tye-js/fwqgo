@@ -36,6 +36,7 @@ type Offer = {
   region: string | null;
   lineType: string | null;
   priceAmount: string | null;
+  monthlyPriceUsd?: string | null;
   currency: string | null;
   billingCycle: string | null;
   promoCode: string | null;
@@ -72,14 +73,14 @@ function cleanText(value: string | null | undefined) {
 
 function getStatusClassName(status: string) {
   if (status === "in_stock") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50";
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300";
   }
 
   if (status === "preorder" || status === "restocking") {
-    return "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50";
+    return "border-amber-500/30 bg-amber-500/10 text-amber-700 hover:bg-amber-500/10 dark:text-amber-300";
   }
 
-  return "border-zinc-200 bg-zinc-100 text-zinc-600 hover:bg-zinc-100";
+  return "border-border bg-muted text-muted-foreground hover:bg-muted";
 }
 
 function formatPrice(offer: Offer) {

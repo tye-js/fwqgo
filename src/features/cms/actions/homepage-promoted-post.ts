@@ -7,6 +7,7 @@ import { db } from "@fwqgo/db";
 import { homepagePromotedPosts, posts } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
+import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 
 type HomepageLanguage = "zh" | "en";
 
@@ -108,6 +109,7 @@ export async function addHomepagePromotedPost(input: {
 
     revalidateSiteContent([cacheTags.homepage, cacheTags.post(input.postId)]);
     revalidatePath("/collect/homepage-promoted");
+    await notifyPublicWebCache("homepage.changed");
 
     return { data: result };
   } catch (error) {
@@ -151,6 +153,7 @@ export async function updateHomepagePromotedPost(input: {
 
     revalidateSiteContent([cacheTags.homepage]);
     revalidatePath("/collect/homepage-promoted");
+    await notifyPublicWebCache("homepage.changed");
 
     return { data: result };
   } catch (error) {
@@ -186,6 +189,7 @@ export async function deleteHomepagePromotedPost(
 
     revalidateSiteContent([cacheTags.homepage]);
     revalidatePath("/collect/homepage-promoted");
+    await notifyPublicWebCache("homepage.changed");
 
     return { data: result };
   } catch (error) {
@@ -221,6 +225,7 @@ export async function deleteHomepagePromotedPosts(
 
     revalidateSiteContent([cacheTags.homepage]);
     revalidatePath("/collect/homepage-promoted");
+    await notifyPublicWebCache("homepage.changed");
 
     return { data: result.length };
   } catch (error) {

@@ -1,12 +1,12 @@
 "use server";
 
-import { writeDb } from "@fwqgo/db";
+import { analyticsDb } from "@fwqgo/db";
 import { posts } from "@fwqgo/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 
 export async function incrementPostViews({ slug }: { slug: string }) {
   try {
-    const updatedPosts = await writeDb
+    const updatedPosts = await analyticsDb
       .update(posts)
       .set({
         views: sql`${posts.views} + 1`,

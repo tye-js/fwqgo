@@ -1,10 +1,16 @@
 import { sanitizeFileName } from "@fwqgo/core/utils";
+import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import {
   buildImageGenerationEndpoint,
   formatImageGenerationHttpError,
   normalizeImageGenerationResultUrl,
 } from "@fwqgo/core/image-generation-endpoint";
 import { defaultEnglishCoverPromptTemplate } from "@fwqgo/core/image-generation-prompts";
+import {
+  extractGeneratedImageSource,
+  readGeneratedImageResponse,
+  type ImageGenerationResponse,
+} from "@fwqgo/core/image-generation-response";
 import {
   assertPublicHttpUrl,
   fetchPublicHttpUrl,
@@ -47,18 +53,8 @@ type CoverRequestPreview = {
   contentLength: number;
 };
 
-type ImageGenerationResponse = {
-  data?: Array<{
-    url?: string;
-    b64_json?: string;
-    revised_prompt?: string;
-  }>;
-  image?: string;
-  image_url?: string;
-  url?: string;
-  b64_json?: string;
-  output?: unknown;
-};
+const MAX_IMAGE_API_RESPONSE_BYTES = 24 * 1024 * 1024;
+const MAX_GENERATED_IMAGE_BYTES = 16 * 1024 * 1024;
 
 function fillPromptTemplate(
   template: string,
@@ -137,42 +133,6 @@ function buildRequestBody(input: {
     ...baseBody,
     quality: input.quality,
   };
-}
-
-function findImageUrl(payload: ImageGenerationResponse): string | null {
-  if (payload.data?.[0]?.url) return payload.data[0].url;
-  if (payload.image_url) return payload.image_url;
-  if (payload.url) return payload.url;
-  if (
-    typeof payload.image === "string" &&
-    /^https?:\/\//i.test(payload.image)
-  ) {
-    return payload.image;
-  }
-  return null;
-}
-
-function findBase64Image(payload: ImageGenerationResponse): string | null {
-  if (payload.data?.[0]?.b64_json) return payload.data[0].b64_json;
-  if (payload.b64_json) return payload.b64_json;
-  if (
-    typeof payload.image === "string" &&
-    !/^https?:\/\//i.test(payload.image)
-  ) {
-    return payload.image;
-  }
-  return null;
-}
-
-function inferMimeFromResponse(response: Response) {
-  const contentType = response.headers.get("content-type")?.split(";")[0];
-  if (contentType?.startsWith("image/")) return contentType;
-  return "image/png";
-}
-
-function normalizeBase64(value: string) {
-  const commaIndex = value.indexOf(",");
-  return commaIndex >= 0 ? value.slice(commaIndex + 1) : value;
 }
 
 function getErrorMessage(error: unknown) {
@@ -317,11 +277,14 @@ async function downloadImage(
     );
   }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
+  const downloaded = await readGeneratedImageResponse(
+    response,
+    MAX_GENERATED_IMAGE_BYTES,
+  );
   throwIfAborted(signal);
   return {
-    buffer,
-    mime: inferMimeFromResponse(response),
+    buffer: Buffer.from(downloaded.bytes),
+    mime: downloaded.mime,
   };
 }
 
@@ -382,8 +345,16 @@ export async function generateArticleCoverImage(
     );
   }
 
-  const text = await response.text();
+  const text = await readResponseTextWithLimit(
+    response,
+    MAX_IMAGE_API_RESPONSE_BYTES,
+  );
   throwIfAborted(input.signal);
+  if (text === null) {
+    throw new Error(
+      "生图接口响应过大，已停止读取；请检查接口是否返回了异常内容",
+    );
+  }
   if (!response.ok) {
     throw new Error(
       formatImageGenerationHttpError({
@@ -405,20 +376,20 @@ export async function generateArticleCoverImage(
     );
   }
 
-  const imageUrl = findImageUrl(payload);
-  const base64Image = findBase64Image(payload);
-  const image = imageUrl
-    ? await downloadImage(
-        normalizeImageGenerationResultUrl(imageUrl, endpoint),
-        config.timeoutSeconds,
-        input.signal,
-      )
-    : base64Image
-      ? {
-          buffer: Buffer.from(normalizeBase64(base64Image), "base64"),
-          mime: "image/png",
-        }
-      : null;
+  const imageSource = extractGeneratedImageSource(payload);
+  const image =
+    imageSource?.kind === "url"
+      ? await downloadImage(
+          normalizeImageGenerationResultUrl(imageSource.value, endpoint),
+          config.timeoutSeconds,
+          input.signal,
+        )
+      : imageSource?.kind === "bytes"
+        ? {
+            buffer: Buffer.from(imageSource.bytes),
+            mime: imageSource.mime,
+          }
+        : null;
 
   if (!image) {
     throw new Error(
