@@ -78,7 +78,8 @@ READ_DATABASE_URL=postgresql://read_user:password@127.0.0.1:5432/fwqgo
 # 浏览量埋点使用的独立写连接；生产环境建议使用只允许更新浏览量的最小权限角色
 ANALYTICS_DATABASE_URL=postgresql://analytics_user:password@127.0.0.1:5432/fwqgo
 
-# CMS 通知 Web 精准刷新缓存，两个进程必须使用同一个随机密钥
+# 可选：CMS 通知 Web 精准刷新缓存，两个进程必须使用同一个随机密钥
+# GitHub Actions 部署未配置时会自动生成并写入服务器共享运行环境
 WEB_REVALIDATION_SECRET=replace-with-at-least-16-random-characters
 WEB_REVALIDATION_URL=http://127.0.0.1:3000/api/internal/revalidate
 
@@ -272,7 +273,6 @@ DATABASE_URL
 READ_DATABASE_URL
 CMS_BASIC_AUTH_USERNAME
 CMS_BASIC_AUTH_PASSWORD
-WEB_REVALIDATION_SECRET
 ```
 
 按数据库角色方案可额外配置：
@@ -298,7 +298,7 @@ NEXT_PUBLIC_CMS_URL=https://cms.fwqgo.com
 WEB_REVALIDATION_URL=http://127.0.0.1:3000/api/internal/revalidate
 ```
 
-Actions 会把 `WEB_REVALIDATION_SECRET`、`WEB_REVALIDATION_URL` 和 `ANALYTICS_DATABASE_URL` 合并进服务器共享 `.env.production`，其他运行时配置仍由服务器文件维护。所有真实凭据都不能提交到仓库。
+`WEB_REVALIDATION_SECRET` 可作为 GitHub Secret 固定配置；未配置时，Actions 会为本次发布生成随机密钥并进行日志掩码。Actions 会把该密钥、`WEB_REVALIDATION_URL` 和 `ANALYTICS_DATABASE_URL` 合并进服务器共享 `.env.production`，保证 Web 与 CMS 使用同一值。其他运行时配置仍由服务器文件维护。所有真实凭据都不能提交到仓库。
 
 ### 本地应急部署
 

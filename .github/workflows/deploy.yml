@@ -37,7 +37,6 @@ jobs:
       READ_USERNAME: ${{ secrets.READ_USERNAME }}
       CMS_PASSWORD: ${{ secrets.CMS_PASSWORD }}
       READ_PASSWORD: ${{ secrets.READ_PASSWORD }}
-      WEB_REVALIDATION_SECRET: ${{ secrets.WEB_REVALIDATION_SECRET }}
       WEB_REVALIDATION_URL: ${{ vars.WEB_REVALIDATION_URL || 'http://127.0.0.1:3000/api/internal/revalidate' }}
       NEXT_PUBLIC_URL: ${{ vars.NEXT_PUBLIC_URL || 'https://fwqgo.com' }}
       NEXT_PUBLIC_CMS_URL: ${{ vars.NEXT_PUBLIC_CMS_URL || 'https://cms.fwqgo.com' }}
@@ -79,6 +78,23 @@ jobs:
       - name: Verify public cache boundaries
         run: npm run verify:cache
 
+      - name: Prepare cache revalidation secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret="${CONFIGURED_WEB_REVALIDATION_SECRET:-}"
+          if [[ -z "$secret" ]]; then
+            secret="$(openssl rand -hex 32)"
+            echo "::notice::WEB_REVALIDATION_SECRET was not configured; generated a deployment-scoped secret and will persist it to the server runtime environment."
+          elif (( ${#secret} < 16 )); then
+            echo "::error::WEB_REVALIDATION_SECRET must contain at least 16 characters"
+            exit 1
+          fi
+          echo "::add-mask::$secret"
+          printf 'WEB_REVALIDATION_SECRET=%s\n' "$secret" >> "$GITHUB_ENV"
+        env:
+          CONFIGURED_WEB_REVALIDATION_SECRET: ${{ secrets.WEB_REVALIDATION_SECRET }}
+
       - name: Validate required secrets
         shell: bash
         run: |
@@ -89,7 +105,6 @@ jobs:
             SSH_PRIVATE_KEY
             DATABASE_URL
             READ_DATABASE_URL
-            WEB_REVALIDATION_SECRET
             CMS_BASIC_AUTH_USERNAME
             CMS_BASIC_AUTH_PASSWORD
           )
