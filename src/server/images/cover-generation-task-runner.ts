@@ -9,6 +9,10 @@ import {
   TaskLeaseLostError,
   withTaskLeaseHeartbeat,
 } from "@fwqgo/core/task-lease";
+import {
+  ImageGenerationConnectionInterruptedError,
+  ImageGenerationRateLimitError,
+} from "@fwqgo/core/image-generation-endpoint";
 import { structuredLog } from "@fwqgo/core/structured-log";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import { syncImageReferencesForPost } from "@/server/images/assets";
@@ -36,6 +40,16 @@ type EnqueueCoverGenerationTaskInput = {
 let isCoverGenerationWorkerRunning = false;
 
 const COVER_TASK_TIMEOUT_MS = 6 * 60 * 1000;
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function formatWaitMinutes(ms: number) {
+  return Math.max(1, Math.ceil(ms / 60_000));
+}
 
 class CoverGenerationTimeoutError extends Error {
   constructor() {
@@ -390,6 +404,45 @@ async function renewCoverTaskLease(task: CoverTaskRow) {
   return rows.length > 0;
 }
 
+async function requeueRateLimitedCoverTask(
+  task: CoverTaskRow,
+  error: ImageGenerationRateLimitError,
+) {
+  const waitMinutes = formatWaitMinutes(error.retryAfterMs);
+  const [requeued] = await db
+    .update(imageCoverGenerationTasks)
+    .set({
+      status: "pending",
+      errorTitle: "生图接口限流，自动等待",
+      errorDetail: `接口返回 429，当前任务将在约 ${waitMinutes} 分钟后自动重试；${error.message}`,
+      startedAt: null,
+      finishedAt: null,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      heartbeatAt: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(imageCoverGenerationTasks.id, task.id),
+        eq(imageCoverGenerationTasks.status, "running"),
+        eq(imageCoverGenerationTasks.leaseOwner, task.leaseOwner ?? ""),
+      ),
+    )
+    .returning({ id: imageCoverGenerationTasks.id });
+
+  if (!requeued) throw new TaskLeaseLostError();
+}
+
+async function hasPendingCoverGenerationTasks() {
+  const [task] = await db
+    .select({ id: imageCoverGenerationTasks.id })
+    .from(imageCoverGenerationTasks)
+    .where(eq(imageCoverGenerationTasks.status, "pending"))
+    .limit(1);
+  return Boolean(task);
+}
+
 async function processCoverGenerationTaskWithTimeout(
   task: CoverTaskRow,
   leaseSignal: AbortSignal,
@@ -461,6 +514,17 @@ async function runCoverGenerationWorker() {
           .returning({ id: imageCoverGenerationTasks.id });
         if (completed.length === 0) throw new TaskLeaseLostError();
       } catch (error) {
+        if (error instanceof ImageGenerationRateLimitError) {
+          await requeueRateLimitedCoverTask(task, error);
+          structuredLog("warn", "cover.task_rate_limited", {
+            taskId: task.id,
+            postId: task.postId,
+            retryAfterMs: error.retryAfterMs,
+          });
+          await wait(error.retryAfterMs);
+          continue;
+        }
+
         const readableError = formatCoverGenerationError(error);
         structuredLog("error", "cover.task_failed", {
           taskId: task.id,
@@ -469,7 +533,7 @@ async function runCoverGenerationWorker() {
           error,
         });
 
-        await db
+        const failed = await db
           .update(imageCoverGenerationTasks)
           .set({
             status: "failed",
@@ -486,7 +550,21 @@ async function runCoverGenerationWorker() {
               eq(imageCoverGenerationTasks.id, task.id),
               eq(imageCoverGenerationTasks.leaseOwner, task.leaseOwner ?? ""),
             ),
-          );
+          )
+          .returning({ id: imageCoverGenerationTasks.id });
+        if (failed.length === 0) throw new TaskLeaseLostError();
+
+        if (
+          error instanceof ImageGenerationConnectionInterruptedError &&
+          (await hasPendingCoverGenerationTasks())
+        ) {
+          structuredLog("warn", "cover.queue_paused_after_disconnect", {
+            taskId: task.id,
+            postId: task.postId,
+            pauseAfterMs: error.pauseAfterMs,
+          });
+          await wait(error.pauseAfterMs);
+        }
       }
     }
   } finally {
