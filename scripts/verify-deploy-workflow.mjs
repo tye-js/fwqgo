@@ -4,6 +4,30 @@ import path from "node:path";
 
 const workflowPath = path.resolve(".github/workflows/deploy.yml");
 const workflow = fs.readFileSync(workflowPath, "utf8");
+
+if (
+  !workflow.includes("- name: Prepare cache revalidation secret") ||
+  !workflow.includes(
+    "CONFIGURED_WEB_REVALIDATION_SECRET: ${{ secrets.WEB_REVALIDATION_SECRET }}",
+  ) ||
+  !workflow.includes('secret="$(openssl rand -hex 32)"') ||
+  !workflow.includes('printf \'WEB_REVALIDATION_SECRET=%s\\n\' "$secret" >> "$GITHUB_ENV"')
+) {
+  throw new Error(
+    "Deploy workflow must generate and persist a masked cache revalidation secret when the GitHub secret is absent",
+  );
+}
+
+const requiredSecretsBlock = /required=\((?<body>[\s\S]*?)\n\s*\)/.exec(
+  workflow,
+);
+const requiredSecretsBody = requiredSecretsBlock?.groups?.body ?? "";
+if (requiredSecretsBody.includes("WEB_REVALIDATION_SECRET")) {
+  throw new Error(
+    "WEB_REVALIDATION_SECRET must not block deployment before its automatic fallback is prepared",
+  );
+}
+
 const heredocStart = "cat > \"$remote_script\" <<'REMOTE_SCRIPT'";
 const startIndex = workflow.indexOf(heredocStart);
 
