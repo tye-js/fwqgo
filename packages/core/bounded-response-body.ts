@@ -2,7 +2,21 @@ export async function readResponseBodyWithLimit(
   response: Response,
   maxBytes: number,
 ) {
-  const limit = Math.max(1, Math.trunc(maxBytes));
+  const configuredLimit = Math.trunc(maxBytes);
+  const limit = Number.isFinite(configuredLimit)
+    ? Math.max(1, configuredLimit)
+    : 1;
+  const declaredLength = Number(response.headers.get("content-length"));
+
+  if (Number.isFinite(declaredLength) && declaredLength > limit) {
+    if (response.body) {
+      await response.body
+        .cancel("Response body exceeds configured limit")
+        .catch(() => undefined);
+    }
+    return null;
+  }
+
   if (!response.body) return new Uint8Array();
 
   const reader = response.body.getReader();
