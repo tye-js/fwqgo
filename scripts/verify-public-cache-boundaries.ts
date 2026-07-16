@@ -10,7 +10,6 @@ const requirements = new Map<string, string[]>([
       "getPublishedPostCountByCategoryId",
       "getHomepagePostsWithTags",
       "getHomepageSidebarData",
-      "getPostBySlug",
       "getPostWithTagsBySlug",
       "getEnglishPostWithTagsBySlug",
       "getPostsWithTagsByCategoryId",
