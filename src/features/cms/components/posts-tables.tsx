@@ -194,6 +194,8 @@ export function PostList({
       if (stopped) return;
 
       if (!result.success) {
+        setExtractingPostId(null);
+        setActiveImportTask(null);
         notifyActionError(result, {
           fallbackSuggestion: "请刷新页面后重试。",
         });
@@ -245,6 +247,7 @@ export function PostList({
       if (stopped) return;
 
       if (!result.success) {
+        setActiveCoverBatch(null);
         notifyActionError(result, {
           fallbackSuggestion: "请刷新页面后重试，或到图片管理里查看封面任务。",
         });
@@ -457,6 +460,9 @@ export function PostList({
         description: describeAdminResult([
           `批次 ${result.batchId}`,
           `排队 ${result.pendingCount ?? 0} 篇`,
+          (result.skippedActiveCount ?? 0) > 0
+            ? `跳过 ${result.skippedActiveCount} 篇正在生成的文章`
+            : null,
         ]),
       });
       setSelectedIds([]);
@@ -702,7 +708,10 @@ export function PostList({
                   })
                 }
               >
-                <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[132px] sm:border-0 sm:bg-transparent sm:px-0">
+                <SelectTrigger
+                  className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[132px] sm:border-0 sm:bg-transparent sm:px-0"
+                  aria-label="发布状态筛选"
+                >
                   <SelectValue placeholder="全部状态" />
                 </SelectTrigger>
                 <SelectContent>
@@ -721,7 +730,10 @@ export function PostList({
                 })
               }
             >
-              <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[152px] sm:border-0 sm:bg-transparent sm:px-0">
+              <SelectTrigger
+                className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[152px] sm:border-0 sm:bg-transparent sm:px-0"
+                aria-label="文章排序"
+              >
                 <SelectValue placeholder="排序方式" />
               </SelectTrigger>
               <SelectContent>
@@ -875,6 +887,7 @@ export function PostList({
                         <Input
                           className="min-h-11"
                           autoFocus
+                          aria-label="文章标题"
                           value={editPostData?.title ?? ""}
                           onChange={(e) =>
                             handleInputChange("title", e.target.value)
@@ -882,6 +895,7 @@ export function PostList({
                         />
                         <Input
                           className="min-h-11"
+                          aria-label="文章 slug"
                           value={editPostData?.slug ?? ""}
                           onChange={(e) =>
                             handleInputChange("slug", e.target.value)
@@ -889,6 +903,7 @@ export function PostList({
                         />
                         <div className="flex items-center gap-2">
                           <Checkbox
+                            aria-label="发布文章"
                             checked={editPostData?.published ?? false}
                             onCheckedChange={(checked) =>
                               handleInputChange("published", Boolean(checked))
@@ -1061,6 +1076,7 @@ export function PostList({
                         <Input
                           className="min-h-11"
                           autoFocus
+                          aria-label={`修改标题：${post.title}`}
                           value={editPostData?.title ?? ""}
                           onChange={(e) =>
                             handleInputChange("title", e.target.value)
@@ -1079,6 +1095,7 @@ export function PostList({
                       {editPostId === post.id ? (
                         <Input
                           className="min-h-11"
+                          aria-label={`修改 slug：${post.title}`}
                           value={editPostData?.slug ?? ""}
                           onChange={(e) =>
                             handleInputChange("slug", e.target.value)
@@ -1097,6 +1114,7 @@ export function PostList({
                       {editPostId === post.id ? (
                         <Checkbox
                           className="h-5 w-5 rounded-full"
+                          aria-label={`发布文章：${post.title}`}
                           checked={editPostData?.published ?? false}
                           onCheckedChange={(checked) =>
                             handleInputChange("published", Boolean(checked))
@@ -1106,13 +1124,20 @@ export function PostList({
                         <CircleCheck
                           className="mx-auto text-primary"
                           size={20}
+                          aria-hidden="true"
                         />
                       ) : (
                         <CircleX
                           className="mx-auto text-muted-foreground"
                           size={20}
+                          aria-hidden="true"
                         />
                       )}
+                      {editPostId !== post.id ? (
+                        <span className="sr-only">
+                          {post.published ? "已发布" : "草稿"}
+                        </span>
+                      ) : null}
                     </TableCell>
                     <TableCell className="max-w-[200px] text-nowrap">
                       {editPostId === post.id ? (

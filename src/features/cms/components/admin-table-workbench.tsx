@@ -10,6 +10,7 @@ export function AdminTableWorkbench({
   searchValue,
   onSearchChange,
   searchPlaceholder,
+  searchMaxLength,
   filterSlot,
   selectionCount,
   actionSlot,
@@ -19,6 +20,7 @@ export function AdminTableWorkbench({
   searchValue: string;
   onSearchChange: (value: string) => void;
   searchPlaceholder: string;
+  searchMaxLength?: number;
   filterSlot?: ReactNode;
   selectionCount?: number;
   actionSlot?: ReactNode;
@@ -56,6 +58,7 @@ export function AdminTableWorkbench({
             value={searchValue}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={searchPlaceholder}
+            maxLength={searchMaxLength}
             className="min-h-11 rounded-md border-border/70 bg-background pl-9 pr-12 text-sm shadow-none"
             aria-label={searchPlaceholder}
           />

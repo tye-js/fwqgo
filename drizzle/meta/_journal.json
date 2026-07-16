@@ -267,6 +267,13 @@
       "when": 1784097346847,
       "tag": "0037_wise_bill_hollister",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1784128608551,
+      "tag": "0038_normal_skaar",
+      "breakpoints": true
     }
   ]
 }

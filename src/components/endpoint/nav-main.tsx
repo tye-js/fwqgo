@@ -2,7 +2,6 @@
 
 import { ChevronRight, type LucideIcon } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 
 import {
   Collapsible,
@@ -28,33 +27,11 @@ type NavItem = {
   items?: {
     title: string;
     url: string;
+    isActive?: boolean;
   }[];
 };
 
 export function NavMain({ items }: { items: NavItem[] }) {
-  const pathname = usePathname();
-  const normalizeUrl = (url: string) => {
-    const path = url.split("#")[0]?.split("?")[0] ?? url;
-    return path.length > 1 ? path.replace(/\/$/, "") : path;
-  };
-  const normalizedPathname =
-    pathname.length > 1 ? pathname.replace(/\/$/, "") : pathname;
-  const activeSubItemUrl = items
-    .flatMap((item) => item.items ?? [])
-    .map((item) => ({
-      ...item,
-      normalizedUrl: normalizeUrl(item.url),
-    }))
-    .filter((item) =>
-      item.normalizedUrl === "/"
-        ? normalizedPathname === "/"
-        : normalizedPathname === item.normalizedUrl ||
-          normalizedPathname.startsWith(`${item.normalizedUrl}/`),
-    )
-    .sort(
-      (left, right) => right.normalizedUrl.length - left.normalizedUrl.length,
-    )[0]?.url;
-
   return (
     <SidebarGroup className="p-1.5">
       <SidebarGroupLabel className="h-7 px-2 text-xs uppercase tracking-wide text-sidebar-foreground/60">
@@ -105,7 +82,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
                       <SidebarMenuSubItem key={subItem.title}>
                         <SidebarMenuSubButton
                           asChild
-                          isActive={subItem.url === activeSubItemUrl}
+                          isActive={subItem.isActive}
                           size="sm"
                           className="min-h-11"
                         >

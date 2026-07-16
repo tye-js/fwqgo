@@ -12,6 +12,10 @@ import { ArticleCoverBatchGenerator } from "@/features/cms/components/article-co
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Settings2 } from "lucide-react";
+import {
+  AdminSectionNav,
+  imageGenerationNavItems,
+} from "@/features/cms/components/admin-section-nav";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -65,6 +69,11 @@ export default async function ArticleCoverGenerationPage() {
         </Button>
       }
     >
+      <AdminSectionNav
+        label="AI 生图功能"
+        currentHref="/images/covers"
+        items={imageGenerationNavItems}
+      />
       <AdminSummaryStrip
         items={[
           {

@@ -521,12 +521,42 @@ export function enhanceArticleLinks(html: string) {
   return $.html();
 }
 
+function enhanceArticleTables(html: string) {
+  const $ = cheerio.load(html, null, false);
+
+  $("table").each((_, element) => {
+    const $table = $(element);
+    let maxColumns = 0;
+
+    $table.find("tr").each((__, row) => {
+      const columns = $(row)
+        .children("th, td")
+        .toArray()
+        .reduce((total, cell) => {
+          const colspan = Number.parseInt($(cell).attr("colspan") ?? "1", 10);
+          return total + (Number.isFinite(colspan) && colspan > 0 ? colspan : 1);
+        }, 0);
+      maxColumns = Math.max(maxColumns, columns);
+    });
+
+    if (maxColumns > 4) {
+      $table.wrap(
+        '<div class="article-table-scroll" role="region" aria-label="Data table" tabindex="0"></div>',
+      );
+    }
+  });
+
+  return $.html();
+}
+
 export function renderArticleContentHtml(content: string) {
   const html = looksLikeHtmlContent(content)
     ? content
     : markdownToArticleHtml(content);
 
-  return enhanceArticleLinks(normalizeArticleHtml(sanitizeArticleHtml(html)));
+  return enhanceArticleTables(
+    enhanceArticleLinks(normalizeArticleHtml(sanitizeArticleHtml(html))),
+  );
 }
 
 function normalizeArticleText(value: string) {

@@ -989,6 +989,9 @@ export const serverOffers = pgTable(
     slug: varchar("slug", { length: 360 }).notNull().unique(),
     externalProductId: text("externalProductId"),
     productGroup: text("productGroup"),
+    offerKind: varchar("offerKind", { length: 24 })
+      .default("regular")
+      .notNull(),
     providerName: text("providerName"),
     providerId: integer("providerId"),
     productType: varchar("productType", { length: 80 }).default("vps"),
@@ -1088,6 +1091,18 @@ export const serverOffers = pgTable(
     visibleStatusMonthlyPriceIdx: index(
       "server_offers_visible_status_monthlyPriceUsd_id_idx",
     ).on(table.visible, table.status, table.monthlyPriceUsd, table.id),
+    visibleKindStatusMonthlyPriceIdx: index(
+      "server_offers_visible_offerKind_status_monthlyPriceUsd_id_idx",
+    ).on(
+      table.visible,
+      table.offerKind,
+      table.status,
+      table.monthlyPriceUsd,
+      table.id,
+    ),
+    providerKindExternalProductIdx: index(
+      "server_offers_providerId_offerKind_externalProductId_idx",
+    ).on(table.providerId, table.offerKind, table.externalProductId),
     providerExternalProductUnique: uniqueIndex(
       "server_offers_providerId_externalProductId_unique",
     )
@@ -1098,6 +1113,10 @@ export const serverOffers = pgTable(
     statusCheck: check(
       "server_offers_status_check",
       sql`${table.status} in ('in_stock', 'out_of_stock', 'restocking', 'discontinued', 'preorder')`,
+    ),
+    offerKindCheck: check(
+      "server_offers_offerKind_check",
+      sql`${table.offerKind} in ('regular', 'promotion')`,
     ),
     checkStatusCheck: check(
       "server_offers_checkStatus_check",

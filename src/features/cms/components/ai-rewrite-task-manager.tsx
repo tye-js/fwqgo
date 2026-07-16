@@ -738,113 +738,156 @@ export function AiRewriteTaskManager({
 
   function handleSubmit(formData: FormData) {
     startSubmitTransition(async () => {
-      const result = await createAiRewriteTaskAction(formData);
-      if (result.error) {
+      try {
+        const result = await createAiRewriteTaskAction(formData);
+        if (result.error) {
+          notifyError({
+            title: "AI 改写任务创建失败",
+            description: describeAdminResult([
+              result.error,
+              "请检查素材来源、分类和改写配置后再提交",
+            ]),
+          });
+          return;
+        }
+
+        notifySuccess({
+          title: "AI 改写任务已加入队列",
+          description: describeAdminResult([
+            `提交 ${countSubmittedUrls(formData)} 个素材`,
+            `创建 ${result.count ?? 1} 个任务`,
+            "任务成功后才会保存为草稿",
+          ]),
+        });
+        router.refresh();
+      } catch (error) {
         notifyError({
           title: "AI 改写任务创建失败",
           description: describeAdminResult([
+            error instanceof Error ? error.message : "请求未完成",
+            "服务器连接可能中断，请确认任务中心没有生成重复任务后再提交",
+          ]),
+        });
+      }
+    });
+  }
+
+  async function handleRetry(taskId: number) {
+    setRetryingId(taskId);
+    try {
+      const result = await retryAiRewriteTaskAction(taskId);
+      if (result.error) {
+        notifyError({
+          title: "AI 改写任务重试失败",
+          description: describeAdminResult([
+            `任务 ID ${taskId}`,
             result.error,
-            "请检查素材来源、分类和改写配置后再提交",
+            "请确认任务仍存在且未在运行中",
           ]),
         });
         return;
       }
 
       notifySuccess({
-        title: "AI 改写任务已加入队列",
+        title: "AI 改写任务已重新加入队列",
         description: describeAdminResult([
-          `提交 ${countSubmittedUrls(formData)} 个素材`,
-          `创建 ${result.count ?? 1} 个任务`,
-          "任务成功后才会保存为草稿",
+          `任务 ID ${taskId}`,
+          "系统会重新抓取、清洗、改写，成功后再保存草稿",
         ]),
       });
       router.refresh();
-    });
-  }
-
-  async function handleRetry(taskId: number) {
-    setRetryingId(taskId);
-    const result = await retryAiRewriteTaskAction(taskId);
-    setRetryingId(null);
-
-    if (result.error) {
+    } catch (error) {
       notifyError({
         title: "AI 改写任务重试失败",
         description: describeAdminResult([
           `任务 ID ${taskId}`,
-          result.error,
-          "请确认任务仍存在且未在运行中",
+          error instanceof Error ? error.message : "请求未完成",
+          "请刷新任务状态后再重试",
         ]),
       });
-      return;
+    } finally {
+      setRetryingId(null);
     }
-
-    notifySuccess({
-      title: "AI 改写任务已重新加入队列",
-      description: describeAdminResult([
-        `任务 ID ${taskId}`,
-        "系统会重新抓取、清洗、改写，成功后再保存草稿",
-      ]),
-    });
-    router.refresh();
   }
 
   async function handleCancel(taskId: number) {
     setCancelingId(taskId);
-    const result = await cancelAiRewriteTaskAction(taskId);
-    setCancelingId(null);
+    try {
+      const result = await cancelAiRewriteTaskAction(taskId);
+      if (result.error) {
+        notifyError({
+          title: "AI 任务取消失败",
+          description: describeAdminResult([
+            `任务 ID ${taskId}`,
+            result.error,
+            "只有等待中的任务可以取消，运行中任务会等待本轮处理结束",
+          ]),
+        });
+        return;
+      }
 
-    if (result.error) {
+      notifySuccess({
+        title: "AI 任务已取消",
+        description: describeAdminResult([
+          `任务 ID ${taskId}`,
+          "需要继续时可点击恢复，任务会重新加入队列",
+        ]),
+      });
+      router.refresh();
+    } catch (error) {
       notifyError({
         title: "AI 任务取消失败",
         description: describeAdminResult([
           `任务 ID ${taskId}`,
-          result.error,
-          "只有等待中的任务可以取消，运行中任务会等待本轮处理结束",
+          error instanceof Error ? error.message : "请求未完成",
+          "请刷新任务状态后再操作",
         ]),
       });
-      return;
+    } finally {
+      setCancelingId(null);
     }
-
-    notifySuccess({
-      title: "AI 任务已取消",
-      description: describeAdminResult([
-        `任务 ID ${taskId}`,
-        "需要继续时可点击恢复，任务会重新加入队列",
-      ]),
-    });
-    router.refresh();
   }
 
   async function handleDelete(task: RewriteTask) {
     setDeletingId(task.id);
-    const result = await deleteAiRewriteTaskAction(task.id);
-    setDeletingId(null);
+    try {
+      const result = await deleteAiRewriteTaskAction(task.id);
+      if (result.error) {
+        notifyError({
+          title: "AI 任务删除失败",
+          description: describeAdminResult([
+            `任务 ID ${task.id}`,
+            result.error,
+            task.status === "running"
+              ? "处理中任务需要等待结束后再删除"
+              : "请刷新页面后确认任务状态",
+          ]),
+        });
+        return;
+      }
 
-    if (result.error) {
+      notifySuccess({
+        title: "AI 任务已删除",
+        description: describeAdminResult([
+          `任务 ID ${task.id}`,
+          task.postSlug
+            ? "已生成的草稿文章保留，可继续在草稿箱编辑"
+            : "未生成草稿，仅清理任务记录和步骤日志",
+        ]),
+      });
+      router.refresh();
+    } catch (error) {
       notifyError({
         title: "AI 任务删除失败",
         description: describeAdminResult([
           `任务 ID ${task.id}`,
-          result.error,
-          task.status === "running"
-            ? "处理中任务需要等待结束后再删除"
-            : "请刷新页面后确认任务状态",
+          error instanceof Error ? error.message : "请求未完成",
+          "请刷新页面确认任务仍存在后再操作",
         ]),
       });
-      return;
+    } finally {
+      setDeletingId(null);
     }
-
-    notifySuccess({
-      title: "AI 任务已删除",
-      description: describeAdminResult([
-        `任务 ID ${task.id}`,
-        task.postSlug
-          ? "已生成的草稿文章保留，可继续在草稿箱编辑"
-          : "未生成草稿，仅清理任务记录和步骤日志",
-      ]),
-    });
-    router.refresh();
   }
 
   return (
@@ -1023,6 +1066,7 @@ export function AiRewriteTaskManager({
             searchValue={activeFilters.query}
             onSearchChange={(value) => updateUrlQuery({ query: value || null })}
             searchPlaceholder="搜索来源、标题、分类或生成结果"
+            searchMaxLength={160}
             filterSlot={
               <>
                 <Select

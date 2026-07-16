@@ -64,6 +64,7 @@ type EditablePrice = {
 type ServerOfferTableFilters = {
   pageNo: number;
   query: string;
+  kind: string;
   status: string;
   reviewStatus: string;
   visibility: string;
@@ -78,6 +79,13 @@ const offerStatusLabels = {
 } as const;
 
 const statusOptions = Object.entries(offerStatusLabels);
+
+const offerKindLabels = {
+  regular: "常规款",
+  promotion: "活动款",
+} as const;
+
+const offerKindOptions = Object.entries(offerKindLabels);
 
 const offerReviewStatusLabels = {
   pending: "待审核",
@@ -388,6 +396,9 @@ function OfferEditForm({
 }) {
   const [visible, setVisible] = useState(offer.visible);
   const [featured, setFeatured] = useState(offer.featured);
+  const [offerKind, setOfferKind] = useState<"regular" | "promotion">(
+    offer.offerKind === "promotion" ? "promotion" : "regular",
+  );
   const [lockedFields, setLockedFields] = useState<string[]>(
     offer.lockedFields ?? [],
   );
@@ -480,7 +491,28 @@ function OfferEditForm({
           />
         </div>
       </div>
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-4">
+        <div className="space-y-2">
+          <Label>套餐属性</Label>
+          <Select
+            name="offerKind"
+            value={offerKind}
+            onValueChange={(value) =>
+              setOfferKind(value as "regular" | "promotion")
+            }
+          >
+            <SelectTrigger className="min-h-11">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {offerKindOptions.map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="space-y-2">
           <Label htmlFor={`offer-external-id-${offer.id}`}>厂商产品 ID</Label>
           <Input
@@ -652,62 +684,81 @@ function OfferEditForm({
         <PriceRowsEditor prices={prices} onChange={setPrices} />
       </div>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
-        <fieldset className="rounded-md border border-border/70 bg-background p-3">
-          <legend className="px-1 text-sm font-medium">自动监控锁定字段</legend>
-          <p className="mb-3 text-xs text-muted-foreground">
-            锁定后，厂商库存接口不会覆盖对应的人工内容。
-          </p>
-          <div className="flex flex-wrap gap-x-5 gap-y-3">
-            {([
-              ["title", "标题"],
-              ["status", "库存状态"],
-              ["price", "价格"],
-              ["purchaseUrl", "购买链接"],
-            ] as const).map(([field, label]) => (
-              <label key={field} className="flex min-h-11 items-center gap-2 text-sm">
-                <Checkbox
-                  checked={lockedFields.includes(field)}
-                  onCheckedChange={(checked) =>
-                    toggleLockedField(field, checked === true)
-                  }
-                />
-                {label}
-              </label>
-            ))}
+        {offerKind === "promotion" ? (
+          <>
+            <fieldset className="rounded-md border border-border/70 bg-background p-3">
+              <legend className="px-1 text-sm font-medium">自动监控锁定字段</legend>
+              <p className="mb-3 text-xs text-muted-foreground">
+                锁定后，厂商库存接口不会覆盖对应的人工内容。
+              </p>
+              <div className="flex flex-wrap gap-x-5 gap-y-3">
+                {([
+                  ["title", "标题"],
+                  ["status", "库存状态"],
+                  ["price", "价格"],
+                  ["purchaseUrl", "购买链接"],
+                ] as const).map(([field, label]) => (
+                  <label
+                    key={field}
+                    className="flex min-h-11 items-center gap-2 text-sm"
+                  >
+                    <Checkbox
+                      checked={lockedFields.includes(field)}
+                      onCheckedChange={(checked) =>
+                        toggleLockedField(field, checked === true)
+                      }
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <div className="rounded-md border border-border/70 bg-background p-3">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Activity className="size-4 text-muted-foreground" />
+                最近探测
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                当前状态：{offer.checkStatus} · 上次探测：
+                {offer.lastCheckedAt
+                  ? toDateTimeLocal(offer.lastCheckedAt).replace("T", " ")
+                  : "无"}
+              </p>
+              <div className="mt-3 space-y-2">
+                {offer.recentChecks.length > 0 ? (
+                  offer.recentChecks.map((check) => (
+                    <div
+                      key={check.id}
+                      className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2 text-xs first:border-t-0 first:pt-0"
+                    >
+                      <span>
+                        {toDateTimeLocal(check.checkedAt).replace("T", " ")} ·{" "}
+                        {check.status}
+                      </span>
+                      <span className="tabular-nums text-muted-foreground">
+                        {check.priceAmount
+                          ? `${check.currency === "CNY" ? "¥" : "$"}${check.priceAmount}`
+                          : "无价格"}
+                        {check.responseTimeMs === null
+                          ? ""
+                          : ` · ${check.responseTimeMs} ms`}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-muted-foreground">暂无探测记录。</p>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="rounded-md border border-border/70 bg-background p-3 lg:col-span-2">
+            <p className="text-sm font-medium">常规款由后台人工维护</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              当前套餐不会进入厂商库存探测，库存状态、价格和购买链接以本页保存内容为准。
+            </p>
           </div>
-        </fieldset>
-        <div className="rounded-md border border-border/70 bg-background p-3">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <Activity className="size-4 text-muted-foreground" />
-            最近探测
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            当前状态：{offer.checkStatus} · 上次探测：
-            {offer.lastCheckedAt ? toDateTimeLocal(offer.lastCheckedAt).replace("T", " ") : "无"}
-          </p>
-          <div className="mt-3 space-y-2">
-            {offer.recentChecks.length > 0 ? (
-              offer.recentChecks.map((check) => (
-                <div
-                  key={check.id}
-                  className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2 text-xs first:border-t-0 first:pt-0"
-                >
-                  <span>
-                    {toDateTimeLocal(check.checkedAt).replace("T", " ")} · {check.status}
-                  </span>
-                  <span className="tabular-nums text-muted-foreground">
-                    {check.priceAmount
-                      ? `${check.currency === "CNY" ? "¥" : "$"}${check.priceAmount}`
-                      : "无价格"}
-                    {check.responseTimeMs === null ? "" : ` · ${check.responseTimeMs} ms`}
-                  </span>
-                </div>
-              ))
-            ) : (
-              <p className="text-xs text-muted-foreground">暂无探测记录。</p>
-            )}
-          </div>
-        </div>
+        )}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex gap-5">
@@ -753,12 +804,17 @@ export function ServerOfferAdminTable({
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editId, setEditId] = useState<number | null>(null);
   const [bulkStatus, setBulkStatus] = useState("in_stock");
+  const [bulkKind, setBulkKind] = useState("regular");
   const [bulkReviewStatus, setBulkReviewStatus] = useState("reviewed");
   const [isPending, startTransition] = useTransition();
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const activeFilters = {
     pageNo: initialFilters.pageNo,
     query: initialFilters.query,
+    kind: normalizeFilterValue(initialFilters.kind, [
+      "all",
+      ...offerKindOptions.map(([value]) => value),
+    ]),
     status: normalizeFilterValue(
       initialFilters.status,
       statusOptions.map(([value]) => value),
@@ -789,6 +845,7 @@ export function ServerOfferAdminTable({
   }
 
   function runBulk(input: {
+    offerKind?: string;
     status?: string;
     visible?: boolean;
     featured?: boolean;
@@ -825,6 +882,24 @@ export function ServerOfferAdminTable({
         searchPlaceholder="搜索套餐、商家、地区、线路、配置或优惠码"
         filterSlot={
           <>
+            <Select
+              value={activeFilters.kind}
+              onValueChange={(value) =>
+                updateUrlQuery({ kind: value === "all" ? null : value })
+              }
+            >
+              <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[120px] sm:border-0 sm:bg-transparent sm:px-0">
+                <SelectValue placeholder="属性" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部属性</SelectItem>
+                {offerKindOptions.map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select
               value={activeFilters.status}
               onValueChange={(value) =>
@@ -887,6 +962,28 @@ export function ServerOfferAdminTable({
           已选择 {selectedIds.length} / {totalCount} 条
         </div>
         <div className="flex flex-wrap gap-2">
+          <Select value={bulkKind} onValueChange={setBulkKind}>
+            <SelectTrigger className="min-h-11 w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {offerKindOptions.map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isPending || !hasSelectedOffers}
+            title={hasSelectedOffers ? "批量修改套餐属性" : "请先选择套餐"}
+            onClick={() => runBulk({ offerKind: bulkKind })}
+          >
+            批量改属性
+          </Button>
           <Select value={bulkStatus} onValueChange={setBulkStatus}>
             <SelectTrigger className="min-h-11 w-32">
               <SelectValue />
@@ -1015,6 +1112,11 @@ export function ServerOfferAdminTable({
                         </p>
                       ) : null}
                       <div className="flex flex-wrap gap-2">
+                        <Badge variant="outline">
+                          {offerKindLabels[
+                            offer.offerKind as keyof typeof offerKindLabels
+                          ] ?? "常规款"}
+                        </Badge>
                         {offer.providerName ? (
                           <Badge variant="secondary">
                             {offer.providerName}
@@ -1062,11 +1164,13 @@ export function ServerOfferAdminTable({
                       ] ?? offer.status}
                     </Badge>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {offer.checkStatus === "ok"
-                        ? "探测正常"
-                        : offer.checkStatus === "failed"
-                          ? "探测失败"
-                          : "待探测"}
+                      {offer.offerKind === "promotion"
+                        ? offer.checkStatus === "ok"
+                          ? "探测正常"
+                          : offer.checkStatus === "failed"
+                            ? "探测失败"
+                            : "待探测"
+                        : "人工维护"}
                     </p>
                   </TableCell>
                   <TableCell>

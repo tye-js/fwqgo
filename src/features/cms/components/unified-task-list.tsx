@@ -150,6 +150,7 @@ export function UnifiedTaskList({ result }: { result: UnifiedTaskListResult }) {
               name="query"
               defaultValue={query}
               placeholder="搜索任务标题、文章、错误原因或来源"
+              maxLength={160}
               className="min-h-11 pl-9"
             />
           </div>

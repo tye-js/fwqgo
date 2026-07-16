@@ -33,11 +33,11 @@ export function ArticleDetailHeader({
       <p className="mt-3 line-clamp-2 max-w-3xl text-sm leading-6 text-muted-foreground md:text-base md:leading-7">
         {description}
       </p>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-1 border-t border-border/60 pt-2 text-sm text-muted-foreground">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+      <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-border/60 pt-2 text-sm text-muted-foreground">
+        <div className="flex min-w-0 flex-nowrap items-center gap-x-3 overflow-hidden">
           {meta}
         </div>
-        <div className="shrink-0">{actions}</div>
+        <div className="shrink-0 justify-self-end">{actions}</div>
       </div>
     </header>
   );
@@ -51,7 +51,7 @@ export function ArticleCover({
   alt: string;
 }) {
   return (
-    <div className="relative aspect-[16/9] max-h-[360px] overflow-hidden rounded-lg border border-border/70 bg-muted/30 md:aspect-[21/9]">
+    <div className="relative mx-auto aspect-video w-full overflow-hidden rounded-lg border border-border/70 bg-muted/30 md:max-w-[640px]">
       {isRenderableImageSrc(src) ? (
         <Image
           src={getOptimizedImageSrc(src)}
@@ -59,7 +59,7 @@ export function ArticleCover({
           width={1440}
           height={810}
           sizes="(max-width: 767px) calc(100vw - 2rem), (max-width: 1279px) 820px, 760px"
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain"
           quality={75}
           priority
         />
@@ -80,7 +80,7 @@ export function ArticleTocSidebar({
   label: string;
 }) {
   return (
-    <aside className="sticky top-20 hidden max-h-[calc(100dvh-96px)] self-start xl:block">
+    <aside className="sticky top-20 hidden max-h-[calc(100dvh-96px)] self-start 2xl:block">
       <div className="border-l border-border/80 pl-4">
         <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <BookOpenText className="size-4 text-primary" aria-hidden="true" />

@@ -48,21 +48,27 @@ export function ArticleShareActions({
         type="button"
         variant="ghost"
         size="sm"
-        className="min-h-11 px-2.5 text-muted-foreground hover:bg-muted hover:text-primary"
+        className="size-11 px-0 text-muted-foreground hover:bg-muted hover:text-primary sm:h-11 sm:w-auto sm:px-2.5"
+        aria-label={copy.copy}
         onClick={copyUrl}
       >
         <Copy className="size-4" aria-hidden="true" />
-        {copy.copy}
+        <span className="hidden sm:inline">{copy.copy}</span>
       </Button>
       <Button
         asChild
         variant="ghost"
         size="sm"
-        className="min-h-11 px-2.5 text-muted-foreground hover:bg-muted hover:text-primary"
+        className="size-11 px-0 text-muted-foreground hover:bg-muted hover:text-primary sm:h-11 sm:w-auto sm:px-2.5"
       >
-        <a href={xUrl} target="_blank" rel="noopener noreferrer">
+        <a
+          href={xUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={copy.shareX}
+        >
           <Share2 className="size-4" aria-hidden="true" />
-          {copy.shareX}
+          <span className="hidden sm:inline">{copy.shareX}</span>
         </a>
       </Button>
     </div>

@@ -1,0 +1,4 @@
+ALTER TABLE "server_offers" ADD COLUMN "offerKind" varchar(24) DEFAULT 'regular' NOT NULL;--> statement-breakpoint
+CREATE INDEX "server_offers_visible_offerKind_status_monthlyPriceUsd_id_idx" ON "server_offers" USING btree ("visible","offerKind","status","monthlyPriceUsd","id");--> statement-breakpoint
+CREATE INDEX "server_offers_providerId_offerKind_externalProductId_idx" ON "server_offers" USING btree ("providerId","offerKind","externalProductId");--> statement-breakpoint
+ALTER TABLE "server_offers" ADD CONSTRAINT "server_offers_offerKind_check" CHECK ("server_offers"."offerKind" in ('regular', 'promotion'));

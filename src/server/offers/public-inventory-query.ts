@@ -24,6 +24,7 @@ import {
   type PublicInventorySearchParams,
   type PublicInventorySort,
 } from "@fwqgo/core/public-inventory-filters";
+import type { ServerOfferKind } from "@fwqgo/core/server-offer-kind";
 import { readDb } from "@fwqgo/db";
 import {
   affServiceProviders,
@@ -93,11 +94,12 @@ function publicOfferWhere(filters: PublicInventoryFilters) {
   `;
   const conditions: Array<SQL | undefined> = [
     eq(serverOffers.visible, true),
+    eq(serverOffers.offerKind, filters.kind),
     sql`nullif(trim(${serverOffers.purchaseUrl}), '') is not null`,
     filters.stock === "all"
       ? undefined
       : eq(serverOffers.status, filters.stock),
-    filters.check === "all"
+    filters.kind !== "promotion" || filters.check === "all"
       ? undefined
       : eq(serverOffers.checkStatus, filters.check),
     filters.provider === "all"
@@ -213,51 +215,61 @@ function offerOrderBy(sort: PublicInventorySort) {
   ];
 }
 
-const publicOfferSelection = {
-  id: serverOffers.id,
-  title: serverOffers.title,
-  slug: serverOffers.slug,
-  externalProductId: serverOffers.externalProductId,
-  productGroup: serverOffers.productGroup,
-  providerName: serverOffers.providerName,
-  providerSlug: affServiceProviders.slug,
-  productType: serverOffers.productType,
-  cpu: serverOffers.cpu,
-  memory: serverOffers.memory,
-  storage: serverOffers.storage,
-  bandwidth: serverOffers.bandwidth,
-  traffic: serverOffers.traffic,
-  region: serverOffers.region,
-  regionSlug: serverRegions.slug,
-  lineType: serverOffers.lineType,
-  lineSlug: serverNetworkLines.slug,
-  priceAmount: serverOffers.priceAmount,
-  currency: serverOffers.currency,
-  billingCycle: serverOffers.billingCycle,
-  monthlyPriceUsd: serverOffers.monthlyPriceUsd,
-  promoCode: serverOffers.promoCode,
-  purchaseUrl: serverOffers.purchaseUrl,
-  articleUrl: serverOffers.articleUrl,
-  reviewUrl: serverOffers.reviewUrl,
-  status: serverOffers.status,
-  checkStatus: serverOffers.checkStatus,
-  isStale: sql<boolean>`
-    ${serverOffers.lastCheckedAt} is not null
-    and ${serverOffers.lastCheckedAt} < current_timestamp - interval '24 hours'
-  `,
-  lastCheckedAt: serverOffers.lastCheckedAt,
-  statusChangedAt: serverOffers.statusChangedAt,
-  validUntil: serverOffers.validUntil,
-  createdAt: serverOffers.createdAt,
-  updatedAt: serverOffers.updatedAt,
-};
+function publicOfferSelection(kind: ServerOfferKind) {
+  const includesMonitoring = kind === "promotion";
+  return {
+    id: serverOffers.id,
+    title: serverOffers.title,
+    slug: serverOffers.slug,
+    offerKind: serverOffers.offerKind,
+    externalProductId: serverOffers.externalProductId,
+    productGroup: serverOffers.productGroup,
+    providerName: serverOffers.providerName,
+    providerSlug: affServiceProviders.slug,
+    productType: serverOffers.productType,
+    cpu: serverOffers.cpu,
+    memory: serverOffers.memory,
+    storage: serverOffers.storage,
+    bandwidth: serverOffers.bandwidth,
+    traffic: serverOffers.traffic,
+    region: serverOffers.region,
+    regionSlug: serverRegions.slug,
+    lineType: serverOffers.lineType,
+    lineSlug: serverNetworkLines.slug,
+    priceAmount: serverOffers.priceAmount,
+    currency: serverOffers.currency,
+    billingCycle: serverOffers.billingCycle,
+    monthlyPriceUsd: serverOffers.monthlyPriceUsd,
+    promoCode: serverOffers.promoCode,
+    purchaseUrl: serverOffers.purchaseUrl,
+    articleUrl: serverOffers.articleUrl,
+    reviewUrl: serverOffers.reviewUrl,
+    status: serverOffers.status,
+    checkStatus: includesMonitoring
+      ? serverOffers.checkStatus
+      : sql<string>`'manual'`,
+    isStale: includesMonitoring
+      ? sql<boolean>`
+          ${serverOffers.lastCheckedAt} is not null
+          and ${serverOffers.lastCheckedAt} < current_timestamp - interval '24 hours'
+        `
+      : sql<boolean>`false`,
+    lastCheckedAt: includesMonitoring
+      ? serverOffers.lastCheckedAt
+      : sql<Date | null>`null`,
+    statusChangedAt: serverOffers.statusChangedAt,
+    validUntil: serverOffers.validUntil,
+    createdAt: serverOffers.createdAt,
+    updatedAt: serverOffers.updatedAt,
+  };
+}
 
 export async function getPublicInventoryPage(filters: PublicInventoryFilters) {
   const baseWhere = publicOfferWhere(filters);
   const rowsWhere = and(baseWhere, cursorWhere(filters));
   const [rows, [totalRow]] = await Promise.all([
     readDb
-      .select(publicOfferSelection)
+      .select(publicOfferSelection(filters.kind))
       .from(serverOffers)
       .leftJoin(
         affServiceProviders,
@@ -350,13 +362,10 @@ export async function getPublicInventoryPage(filters: PublicInventoryFilters) {
   };
 }
 
-export async function getPublicInventoryFacets() {
-  "use cache";
-  cacheLife({ stale: 60, revalidate: 300, expire: 3_600 });
-  tagCache(cacheTags.serverOffers);
-
+async function loadPublicInventoryFacets(kind: ServerOfferKind) {
   const baseWhere = and(
     eq(serverOffers.visible, true),
+    eq(serverOffers.offerKind, kind),
     sql`nullif(trim(${serverOffers.purchaseUrl}), '') is not null`,
   );
   const providerKey = sql<string>`coalesce(
@@ -494,6 +503,26 @@ export async function getPublicInventoryFacets() {
       32,
     ),
   };
+}
+
+async function getRegularPublicInventoryFacets() {
+  "use cache";
+  cacheLife({ stale: 60, revalidate: 300, expire: 3_600 });
+  tagCache(cacheTags.serverOffers);
+  return loadPublicInventoryFacets("regular");
+}
+
+async function getPromotionPublicInventoryFacets() {
+  "use cache";
+  cacheLife({ stale: 60, revalidate: 300, expire: 3_600 });
+  tagCache(cacheTags.serverOffers);
+  return loadPublicInventoryFacets("promotion");
+}
+
+export function getPublicInventoryFacets(kind: ServerOfferKind = "regular") {
+  return kind === "promotion"
+    ? getPromotionPublicInventoryFacets()
+    : getRegularPublicInventoryFacets();
 }
 
 export type PublicInventoryPage = Awaited<

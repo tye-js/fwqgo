@@ -20,6 +20,10 @@ import {
   normalizeServerOfferBillingCycle,
 } from "@fwqgo/core/server-offer-price";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
+import {
+  isServerOfferKind,
+  type ServerOfferKind,
+} from "@fwqgo/core/server-offer-kind";
 import { cacheTags, revalidateSiteContent, tagCache } from "@fwqgo/cache/tags";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheLife, unstable_cache } from "next/cache";
@@ -1610,6 +1614,7 @@ export type AdminServerOfferFilters = {
   page?: number;
   pageSize?: number;
   query?: string;
+  kind?: string;
   status?: string;
   reviewStatus?: string;
   visibility?: string;
@@ -1625,6 +1630,7 @@ function normalizeAdminServerOfferFilters(input: AdminServerOfferFilters = {}) {
   const status = offerStatuses.includes(input.status as OfferStatus)
     ? (input.status as OfferStatus)
     : "all";
+  const kind = isServerOfferKind(input.kind) ? input.kind : "all";
   const reviewStatus = offerReviewStatuses.includes(
     input.reviewStatus as OfferReviewStatus,
   )
@@ -1640,6 +1646,7 @@ function normalizeAdminServerOfferFilters(input: AdminServerOfferFilters = {}) {
     page,
     pageSize,
     query: input.query?.trim().slice(0, 160) ?? "",
+    kind,
     status,
     reviewStatus,
     visibility,
@@ -1668,6 +1675,10 @@ function getAdminServerOfferWhere(
     filters.status === "all"
       ? undefined
       : eq(serverOffers.status, filters.status);
+  const kindCondition =
+    filters.kind === "all"
+      ? undefined
+      : eq(serverOffers.offerKind, filters.kind);
   const reviewStatusCondition =
     filters.reviewStatus === "all"
       ? undefined
@@ -1683,6 +1694,7 @@ function getAdminServerOfferWhere(
 
   return and(
     queryCondition,
+    kindCondition,
     statusCondition,
     reviewStatusCondition,
     visibilityCondition,
@@ -1712,6 +1724,7 @@ export async function getAdminServerOffers(
       providerName: serverOffers.providerName,
       externalProductId: serverOffers.externalProductId,
       productGroup: serverOffers.productGroup,
+      offerKind: serverOffers.offerKind,
       productType: serverOffers.productType,
       cpu: serverOffers.cpu,
       memory: serverOffers.memory,
@@ -1827,6 +1840,8 @@ export async function getAdminServerOfferQualitySummary() {
       missingPurchaseUrl: sql<number>`count(*) filter (where btrim(coalesce(${serverOffers.purchaseUrl}, '')) = '')::int`,
       missingPrice: sql<number>`count(*) filter (where ${serverOffers.priceAmount} is null)::int`,
       missingRegion: sql<number>`count(*) filter (where btrim(coalesce(${serverOffers.region}, '')) = '')::int`,
+      regularCount: sql<number>`count(*) filter (where ${serverOffers.offerKind} = 'regular')::int`,
+      promotionCount: sql<number>`count(*) filter (where ${serverOffers.offerKind} = 'promotion')::int`,
     })
     .from(serverOffers);
 
@@ -1837,11 +1852,14 @@ export async function getAdminServerOfferQualitySummary() {
     missingPurchaseUrl: Number(row?.missingPurchaseUrl ?? 0),
     missingPrice: Number(row?.missingPrice ?? 0),
     missingRegion: Number(row?.missingRegion ?? 0),
+    regularCount: Number(row?.regularCount ?? 0),
+    promotionCount: Number(row?.promotionCount ?? 0),
   };
 }
 
 export type ServerOfferUpdateInput = {
   title: string;
+  offerKind: ServerOfferKind;
   providerId?: number | null;
   providerName?: string | null;
   externalProductId?: string | null;
@@ -2031,6 +2049,7 @@ export async function updateServerOffer(
       .update(serverOffers)
       .set({
         title: input.title,
+        offerKind: input.offerKind,
         providerId,
         providerName,
         externalProductId,
@@ -2056,6 +2075,9 @@ export async function updateServerOffer(
         lineType: input.lineType ?? null,
         lineId: taxonomy.lineId,
         status: input.status,
+        checkStatus:
+          input.offerKind === "regular" ? "unknown" : undefined,
+        lastCheckedAt: input.offerKind === "regular" ? null : undefined,
         statusChangedAt: existing.status === input.status ? undefined : now,
         purchaseUrl: input.purchaseUrl ?? null,
         promoCode: input.promoCode ?? provider?.defaultPromoCode ?? null,
@@ -2136,6 +2158,7 @@ export async function updateServerOffer(
 
 export async function bulkUpdateServerOffers(input: {
   ids: number[];
+  offerKind?: ServerOfferKind;
   status?: OfferStatus;
   visible?: boolean;
   featured?: boolean;
@@ -2152,6 +2175,13 @@ export async function bulkUpdateServerOffers(input: {
   if (input.status) {
     values.status = input.status;
     values.statusChangedAt = values.updatedAt;
+  }
+  if (input.offerKind) {
+    values.offerKind = input.offerKind;
+    if (input.offerKind === "regular") {
+      values.checkStatus = "unknown";
+      values.lastCheckedAt = null;
+    }
   }
   if (typeof input.visible === "boolean") values.visible = input.visible;
   if (typeof input.featured === "boolean") values.featured = input.featured;
@@ -2206,6 +2236,7 @@ export async function getRelatedServerOffersForPost(input: {
   return readDb
     .select({
       id: serverOffers.id,
+      sourcePostId: serverOffers.sourcePostId,
       title: serverOffers.title,
       providerName: serverOffers.providerName,
       productType: serverOffers.productType,

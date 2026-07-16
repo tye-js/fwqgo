@@ -1,5 +1,4 @@
 import {
-  getPostBySlug,
   getPostWithTagsBySlug,
   getLatestPostsForSidebar,
   getPostsByPostId,
@@ -14,12 +13,12 @@ import {
 } from "@fwqgo/core/utils";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { connection } from "next/server";
 import {
   ArrowRight,
   ArrowLeftToLine,
   ArrowRightToLine,
   Clock,
+  Languages,
   SquareLibrary,
   Tags,
 } from "lucide-react";
@@ -64,28 +63,27 @@ function toAbsoluteUrl(value: string | null | undefined) {
 export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
-  await connection();
-
   const params = await props.params;
   const decodedSlug = normalizeDecodedSlug(params.slug);
   if (!decodedSlug) return {};
 
   const canonicalUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`;
   const readableTitle = decodedSlug.replace(/[-_]+/g, " ");
-  const { data } = await getPostBySlug(decodedSlug);
-  const title = data?.title ?? readableTitle;
+  const { data } = await getPostWithTagsBySlug(decodedSlug);
+  const post = data?.post;
+  const title = post?.title ?? readableTitle;
   const description =
-    data?.description ??
+    post?.description ??
     `${readableTitle}相关的服务器优惠、VPS 活动、线路和购买建议。`;
-  const image = toAbsoluteUrl(data?.imgUrl);
-  const englishUrl = data?.enSlug
-    ? `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(data.enSlug)}`
+  const image = toAbsoluteUrl(post?.imgUrl);
+  const englishUrl = post?.enSlug
+    ? `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(post.enSlug)}`
     : undefined;
 
   return {
     title: `${title} - 服务器go`,
     description,
-    keywords: data?.keywords ?? readableTitle,
+    keywords: post?.keywords ?? readableTitle,
     alternates: {
       canonical: canonicalUrl,
       languages: {
@@ -103,7 +101,7 @@ export async function generateMetadata(props: {
       images: image ? [{ url: image, alt: title }] : undefined,
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title: `${title} - 服务器go`,
       description,
       images: image ? [image] : undefined,
@@ -116,8 +114,6 @@ async function PostPageContent({
 }: {
   paramsPromise: Promise<{ slug: string }>;
 }) {
-  await connection();
-
   const params = await paramsPromise;
   const decodedSlug = normalizeDecodedSlug(params.slug);
   if (!decodedSlug) {
@@ -125,7 +121,16 @@ async function PostPageContent({
   }
 
   const { data, error } = await getPostWithTagsBySlug(decodedSlug);
-  if (error) return <div>加载失败: {error}</div>;
+  if (error) {
+    return (
+      <div
+        role="alert"
+        className="mx-4 rounded-lg border border-destructive/30 bg-destructive/5 p-5 text-sm text-destructive sm:mx-6"
+      >
+        文章暂时加载失败，请稍后刷新页面。
+      </div>
+    );
+  }
   if (!data) notFound();
   const { post, recommendedPosts } = data;
 
@@ -144,6 +149,12 @@ async function PostPageContent({
       }),
     ]);
   const [prevPost, nextPost] = posts ?? [null, null];
+  const directOffers = relatedOffers.filter(
+    (offer) => offer.sourcePostId === post.id,
+  );
+  const inferredOffers = relatedOffers.filter(
+    (offer) => offer.sourcePostId !== post.id,
+  );
   const matchedTopics = offerTopics.filter((topic) => {
     const text = `${post.title} ${post.description ?? ""} ${post.tags
       .map((tag) => tag.tag.name)
@@ -189,69 +200,49 @@ async function PostPageContent({
       {
         "@type": "ListItem",
         position: 2,
-        name: "文章",
-        item: `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`,
-      },
-      {
-        "@type": "ListItem",
-        position: 3,
         name: post.title,
         item: articleUrl,
       },
     ],
   };
-  const offerJsonLd = relatedOffers.slice(0, 6).map((offer) => ({
-    "@context": "https://schema.org",
-    "@type": "Product",
-    name: offer.title,
-    brand: offer.providerName
-      ? {
-          "@type": "Brand",
-          name: offer.providerName,
-        }
-      : undefined,
-    category: "VPS and Server Hosting",
-    description: [offer.region, offer.lineType, offer.promoCode]
-      .filter(Boolean)
-      .join(" / "),
-    offers: {
-      "@type": "Offer",
-      url: toAbsoluteHttpUrl(offer.purchaseUrl, getSiteUrl()) ?? articleUrl,
-      price: offer.priceAmount ? String(offer.priceAmount) : undefined,
-      priceCurrency: offer.currency ?? undefined,
-      availability:
-        offer.status === "in_stock"
-          ? "https://schema.org/InStock"
-          : offer.status === "preorder"
-            ? "https://schema.org/PreOrder"
-            : "https://schema.org/OutOfStock",
-    },
-  }));
-  const faqJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: [
-      {
-        "@type": "Question",
-        name: "这篇文章里的服务器套餐信息来自哪里？",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "套餐信息来自文章正文和商家页面中的价格、配置、地区、线路、优惠码等公开信息，购买前建议再次核对商家页面。",
-        },
+  const offerJsonLd = relatedOffers.slice(0, 6).flatMap((offer) => {
+    const purchaseUrl = toAbsoluteHttpUrl(offer.purchaseUrl, getSiteUrl());
+    const price = Number(offer.priceAmount);
+    if (!purchaseUrl || !Number.isFinite(price) || price <= 0 || !offer.currency) {
+      return [];
+    }
+
+    return {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      name: offer.title,
+      brand: offer.providerName
+        ? {
+            "@type": "Brand",
+            name: offer.providerName,
+          }
+        : undefined,
+      category: "VPS and Server Hosting",
+      description: [offer.region, offer.lineType, offer.promoCode]
+        .filter(Boolean)
+        .join(" / "),
+      offers: {
+        "@type": "Offer",
+        url: purchaseUrl,
+        price: String(offer.priceAmount),
+        priceCurrency: offer.currency,
+        availability:
+          offer.status === "in_stock"
+            ? "https://schema.org/InStock"
+            : offer.status === "preorder"
+              ? "https://schema.org/PreOrder"
+              : "https://schema.org/OutOfStock",
       },
-      {
-        "@type": "Question",
-        name: "推广链接会影响价格吗？",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "推广链接通常不会提高购买价格，部分活动还会包含优惠码或折扣入口，最终价格以商家结算页面为准。",
-        },
-      },
-    ],
-  };
+    };
+  });
   return (
     <div className="px-4 pb-10 pt-2 sm:px-6 md:pt-4">
-      <div className="grid items-start gap-6 xl:grid-cols-[210px_minmax(0,800px)_280px] xl:justify-center">
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,800px)_280px] xl:justify-center 2xl:grid-cols-[180px_minmax(0,760px)_260px] 2xl:gap-5">
         <ArticleTocSidebar content={contentWithIds} label="本文目录" />
 
         <div className="mx-auto w-full min-w-0 max-w-[820px] space-y-10 xl:mx-0 xl:max-w-none">
@@ -262,7 +253,6 @@ async function PostPageContent({
                 __html: jsonLdScriptContent([
                   blogPostingJsonLd,
                   breadcrumbJsonLd,
-                  faqJsonLd,
                   ...offerJsonLd,
                 ]),
               }}
@@ -273,33 +263,21 @@ async function PostPageContent({
                 post.description ??
                 "这篇文章包含线路、机房、价格与使用场景的完整信息，适合继续深入阅读。"
               }
-              eyebrow={
-                post.enSlug ? (
-                  <Link
-                    href={`/en/fwq/posts/${encodeURIComponent(post.enSlug)}`}
-                    prefetch
-                    className="inline-flex min-h-11 items-center gap-1.5 rounded-sm text-sm font-medium text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-8"
-                  >
-                    Read in English
-                    <ArrowRight className="size-4" aria-hidden="true" />
-                  </Link>
-                ) : undefined
-              }
               meta={
                 <>
-                  <span className="inline-flex min-h-8 items-center gap-2 tabular-nums">
+                  <span className="inline-flex min-h-8 shrink-0 items-center gap-2 tabular-nums">
                     <Clock className="size-4" aria-hidden="true" />
                     {formatDate(post.createdAt)}
                   </span>
                   <PostViewCount slug={decodedSlug} initialViews={post.views} />
-                  {post.recommendedTagName ? (
+                  {post.enSlug ? (
                     <Link
-                      href={`/fwq/tags/${encodeURIComponent(post.recommendedTagSlug ?? post.recommendedTagName)}/page/1`}
+                      href={`/en/fwq/posts/${encodeURIComponent(post.enSlug)}`}
                       prefetch
-                      className="inline-flex min-h-11 items-center gap-1.5 rounded-sm transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-8"
+                      className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <Tags className="size-4" aria-hidden="true" />
-                      {post.recommendedTagName}
+                      <Languages className="size-4" aria-hidden="true" />
+                      English
                     </Link>
                   ) : null}
                 </>
@@ -313,12 +291,13 @@ async function PostPageContent({
               <ArticleCover src={post.imgUrl} alt={post.title} />
             </div>
 
-            {relatedOffers.length > 0 ? (
+            {directOffers.length > 0 ? (
               <div className="mt-5">
                 <RelatedServerOfferCards
-                  title="本文相关套餐"
-                  description="先核对价格、地区和线路，再进入商家页面确认库存与续费价格。"
-                  offers={relatedOffers}
+                  title="本文套餐速览"
+                  description="正文中提取的套餐，购买前请再次核对库存和续费价格。"
+                  offers={directOffers}
+                  compact
                 />
               </div>
             ) : null}
@@ -329,6 +308,14 @@ async function PostPageContent({
             />
 
             <div className="mt-10 space-y-8">
+              {inferredOffers.length > 0 ? (
+                <RelatedServerOfferCards
+                  title="同主题服务器套餐"
+                  description="根据本文标签、地区和线路匹配的其他可购买套餐。"
+                  offers={inferredOffers}
+                />
+              ) : null}
+
               <WebmasterStatement />
 
               {post.tags.length > 0 ? (
@@ -463,7 +450,7 @@ async function PostPageContent({
 
         <aside className="hidden xl:block">
           <div className="sticky top-20 space-y-4">
-            <LatestPostsSidebar posts={latestPosts ?? []} />
+            <LatestPostsSidebar posts={latestPosts ?? []} variant="compact" />
           </div>
         </aside>
       </div>

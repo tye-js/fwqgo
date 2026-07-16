@@ -196,6 +196,7 @@ export async function getPostBySlug(slug: string) {
         translationSourcePostId: posts.translationSourcePostId,
         title: posts.title,
         slug: posts.slug,
+        published: posts.published,
       })
       .from(posts)
       .where(eq(posts.slug, decodedSlug))

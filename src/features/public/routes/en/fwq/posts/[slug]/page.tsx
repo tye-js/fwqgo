@@ -2,8 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { connection } from "next/server";
-import { ArrowLeft, Clock, Tags } from "lucide-react";
+import { Clock, Languages, Tags } from "lucide-react";
 
 import {
   getEnglishPostWithTagsBySlug,
@@ -55,8 +54,6 @@ type PageProps = {
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
-  await connection();
-
   const { slug } = await params;
   const decodedSlug = normalizeDecodedSlug(slug);
   if (!decodedSlug) return {};
@@ -94,12 +91,16 @@ export async function generateMetadata({
       siteName: "fwqgo",
       images: image ? [{ url: image, alt: title }] : undefined,
     },
+    twitter: {
+      card: "summary_large_image",
+      title: `${title} - fwqgo`,
+      description,
+      images: image ? [image] : undefined,
+    },
   };
 }
 
 async function EnglishPostContent({ params }: PageProps) {
-  await connection();
-
   const { slug } = await params;
   const decodedSlug = normalizeDecodedSlug(slug);
   if (!decodedSlug) {
@@ -131,6 +132,12 @@ async function EnglishPostContent({ params }: PageProps) {
       limit: 6,
     }),
   ]);
+  const directOffers = relatedOffers.filter(
+    (offer) => offer.sourcePostId === relatedPostId,
+  );
+  const inferredOffers = relatedOffers.filter(
+    (offer) => offer.sourcePostId !== relatedPostId,
+  );
   const blogPostingJsonLd = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
@@ -166,70 +173,50 @@ async function EnglishPostContent({ params }: PageProps) {
       {
         "@type": "ListItem",
         position: 2,
-        name: "English articles",
-        item: articleUrl,
-      },
-      {
-        "@type": "ListItem",
-        position: 3,
         name: post.title,
         item: articleUrl,
       },
     ],
   };
-  const offerJsonLd = relatedOffers.slice(0, 6).map((offer) => ({
-    "@context": "https://schema.org",
-    "@type": "Product",
-    name: offer.title,
-    brand: offer.providerName
-      ? {
-          "@type": "Brand",
-          name: offer.providerName,
-        }
-      : undefined,
-    category: "VPS and Server Hosting",
-    description: [offer.region, offer.lineType, offer.promoCode]
-      .filter(Boolean)
-      .join(" / "),
-    offers: {
-      "@type": "Offer",
-      url: toAbsoluteHttpUrl(offer.purchaseUrl, getSiteUrl()) ?? articleUrl,
-      price: offer.priceAmount ? String(offer.priceAmount) : undefined,
-      priceCurrency: offer.currency ?? undefined,
-      availability:
-        offer.status === "in_stock"
-          ? "https://schema.org/InStock"
-          : offer.status === "preorder"
-            ? "https://schema.org/PreOrder"
-            : "https://schema.org/OutOfStock",
-    },
-  }));
-  const faqJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: [
-      {
-        "@type": "Question",
-        name: "Where does the server deal information come from?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "The deal information is extracted from public provider pages and related articles. Always verify final price, stock and renewal terms on the provider checkout page.",
-        },
+  const offerJsonLd = relatedOffers.slice(0, 6).flatMap((offer) => {
+    const purchaseUrl = toAbsoluteHttpUrl(offer.purchaseUrl, getSiteUrl());
+    const price = Number(offer.priceAmount);
+    if (!purchaseUrl || !Number.isFinite(price) || price <= 0 || !offer.currency) {
+      return [];
+    }
+
+    return {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      name: offer.title,
+      brand: offer.providerName
+        ? {
+            "@type": "Brand",
+            name: offer.providerName,
+          }
+        : undefined,
+      category: "VPS and Server Hosting",
+      description: [offer.region, offer.lineType, offer.promoCode]
+        .filter(Boolean)
+        .join(" / "),
+      offers: {
+        "@type": "Offer",
+        url: purchaseUrl,
+        price: String(offer.priceAmount),
+        priceCurrency: offer.currency,
+        availability:
+          offer.status === "in_stock"
+            ? "https://schema.org/InStock"
+            : offer.status === "preorder"
+              ? "https://schema.org/PreOrder"
+              : "https://schema.org/OutOfStock",
       },
-      {
-        "@type": "Question",
-        name: "Do affiliate links change the purchase price?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "Affiliate links usually do not increase the price. Some campaigns may include coupons or discounted landing pages, but the final price depends on the provider checkout page.",
-        },
-      },
-    ],
-  };
+    };
+  });
 
   return (
     <main className="flex-1">
-      <div className="container mx-auto grid items-start gap-6 px-4 py-4 sm:px-6 md:py-6 xl:grid-cols-[210px_minmax(0,800px)_280px] xl:justify-center">
+      <div className="container mx-auto grid items-start gap-6 px-4 py-4 sm:px-6 md:py-6 xl:grid-cols-[minmax(0,800px)_280px] xl:justify-center 2xl:grid-cols-[180px_minmax(0,760px)_260px] 2xl:gap-5">
         <ArticleTocSidebar content={contentWithIds} label="Contents" />
 
         <article className="mx-auto w-full min-w-0 max-w-[820px] xl:mx-0 xl:max-w-none">
@@ -239,7 +226,6 @@ async function EnglishPostContent({ params }: PageProps) {
               __html: jsonLdScriptContent([
                 blogPostingJsonLd,
                 breadcrumbJsonLd,
-                faqJsonLd,
                 ...offerJsonLd,
               ]),
             }}
@@ -250,23 +236,23 @@ async function EnglishPostContent({ params }: PageProps) {
               post.description ??
               "Server deal details, network information, pricing, and buying notes."
             }
-            eyebrow={
-              post.chineseSlug ? (
-                <Link
-                  href={`/fwq/posts/${encodeURIComponent(post.chineseSlug)}`}
-                  prefetch
-                  className="inline-flex min-h-11 items-center gap-1.5 rounded-sm text-sm font-medium text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-8"
-                >
-                  <ArrowLeft className="size-4" aria-hidden="true" />
-                  Read in Chinese
-                </Link>
-              ) : undefined
-            }
             meta={
-              <span className="inline-flex min-h-8 items-center gap-2 tabular-nums">
-                <Clock className="size-4" aria-hidden="true" />
-                {formatDate(post.createdAt, "en-US")}
-              </span>
+              <>
+                <span className="inline-flex min-h-8 shrink-0 items-center gap-2 tabular-nums">
+                  <Clock className="size-4" aria-hidden="true" />
+                  {formatDate(post.createdAt, "en-US")}
+                </span>
+                {post.chineseSlug ? (
+                  <Link
+                    href={`/fwq/posts/${encodeURIComponent(post.chineseSlug)}`}
+                    prefetch
+                    className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Languages className="size-4" aria-hidden="true" />
+                    中文
+                  </Link>
+                ) : null}
+              </>
             }
             actions={
               <ArticleShareActions
@@ -281,13 +267,14 @@ async function EnglishPostContent({ params }: PageProps) {
             <ArticleCover src={post.imgUrl} alt={post.title} />
           </div>
 
-          {relatedOffers.length > 0 ? (
+          {directOffers.length > 0 ? (
             <div className="mt-5">
               <RelatedServerOfferCards
-                title="Related server offers"
-                description="Compare price, region, and network first, then confirm stock and renewal terms on the provider page."
-                offers={relatedOffers}
+                title="Offers from this article"
+                description="Extracted from this article. Confirm stock and renewal terms before purchase."
+                offers={directOffers}
                 language="en"
+                compact
               />
             </div>
           ) : null}
@@ -296,6 +283,17 @@ async function EnglishPostContent({ params }: PageProps) {
             className={`${ARTICLE_PROSE_CLASS_NAME} mt-8`}
             dangerouslySetInnerHTML={{ __html: contentWithIds }}
           />
+
+          {inferredOffers.length > 0 ? (
+            <div className="mt-10">
+              <RelatedServerOfferCards
+                title="Related server offers"
+                description="Other purchasable offers matched by provider, region, and network."
+                offers={inferredOffers}
+                language="en"
+              />
+            </div>
+          ) : null}
 
           {post.tags.length > 0 ? (
             <section className="mt-10 border-t border-border/70 pt-5">
@@ -321,7 +319,11 @@ async function EnglishPostContent({ params }: PageProps) {
 
         <aside className="hidden xl:block">
           <div className="sticky top-20 space-y-4">
-            <LatestPostsSidebar posts={latestPosts ?? []} language="en" />
+            <LatestPostsSidebar
+              posts={latestPosts ?? []}
+              language="en"
+              variant="compact"
+            />
           </div>
         </aside>
       </div>

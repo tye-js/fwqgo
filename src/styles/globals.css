@@ -289,9 +289,18 @@
   }
 
   .article-prose :where(table) {
-    @apply my-6 w-full table-fixed rounded-md border border-border bg-background text-[11px] shadow-sm sm:text-[12px] md:text-[13px];
+    @apply my-6 w-full table-fixed rounded-md border border-border bg-background text-xs shadow-sm sm:text-[13px];
     border-collapse: separate;
     border-spacing: 0;
+  }
+
+  .article-prose :where(.article-table-scroll) {
+    @apply my-6 max-w-full overflow-x-auto rounded-md border border-border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+    scrollbar-width: thin;
+  }
+
+  .article-prose :where(.article-table-scroll table) {
+    @apply my-0 min-w-[720px] table-auto rounded-none border-0 shadow-none;
   }
 
   .article-prose :where(thead) {
@@ -299,12 +308,12 @@
   }
 
   .article-prose :where(th) {
-    @apply break-words border-b border-border px-1.5 py-2 text-left font-semibold leading-snug text-foreground sm:px-2 md:px-2.5;
+    @apply break-words border-b border-border px-2 py-2 text-left font-semibold leading-snug text-foreground sm:px-2.5;
     overflow-wrap: anywhere;
   }
 
   .article-prose :where(td) {
-    @apply break-words border-b border-border/70 px-1.5 py-1.5 align-top leading-snug text-foreground sm:px-2 md:px-2.5 md:py-2;
+    @apply break-words border-b border-border/70 px-2 py-2 align-top leading-snug text-foreground sm:px-2.5;
     overflow-wrap: anywhere;
   }
 

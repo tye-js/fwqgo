@@ -18,17 +18,22 @@ function formatArticleDate(value: Date | string, locale: string) {
 function ArticleCard({
   post,
   language = "zh",
+  excludedTagSlug,
 }: {
   post: PostWithTags;
   language?: "zh" | "en";
+  excludedTagSlug?: string;
 }) {
   const postPrefix = language === "en" ? "/en/fwq/posts" : "/fwq/posts";
   const tagPrefix = language === "en" ? "/en/fwq/tags" : "/fwq/tags";
   const href = `${postPrefix}/${encodeURIComponent(post.slug)}`;
   const locale = language === "en" ? "en-US" : "zh-CN";
   const titleId = `article-card-title-${post.id}`;
-  const primaryTag = post.tags[0]?.tag;
-  const secondaryTags = post.tags.slice(1, 4);
+  const visibleTags = excludedTagSlug
+    ? post.tags.filter((item) => item.tag.slug !== excludedTagSlug)
+    : post.tags;
+  const primaryTag = visibleTags[0]?.tag;
+  const secondaryTags = visibleTags.slice(1, 4);
   const copy = {
     imageLabel:
       language === "en" ? `Read article: ${post.title}` : `阅读文章：${post.title}`,

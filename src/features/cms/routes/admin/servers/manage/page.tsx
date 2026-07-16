@@ -22,6 +22,7 @@ import { getProviderOptionsForMonitoring } from "@/server/offers/provider-monito
 type ServerOfferManageSearchParams = {
   pageNo?: string;
   query?: string;
+  kind?: string;
   status?: string;
   reviewStatus?: string;
   visibility?: string;
@@ -47,6 +48,7 @@ async function loadServerOfferManageData(
         page: parsePageNo(filters.pageNo),
         pageSize: 20,
         query: filters.query,
+        kind: filters.kind,
         status: filters.status,
         reviewStatus: filters.reviewStatus,
         visibility: filters.visibility,
@@ -73,6 +75,8 @@ async function loadServerOfferManageData(
         missingPurchaseUrl: 0,
         missingPrice: 0,
         missingRegion: 0,
+        regularCount: 0,
+        promotionCount: 0,
       },
       providers: [] as Awaited<ReturnType<typeof getProviderOptionsForMonitoring>>,
       error: getErrorMessage(error),
@@ -133,7 +137,7 @@ async function ServerOfferManageContent({
     <AdminPageShell
       badge="服务器套餐"
       title="人工修正数据"
-      description="编辑自动提取出的 CPU、内存、硬盘、带宽、流量、价格、来源文章、购买链接和后续测评文章。隐藏的套餐不会出现在前台。"
+      description="常规款由后台手动维护，活动款才进入库存探测。这里统一校正配置、价格、状态、购买链接和前台展示。"
       actions={
         <Button asChild variant="outline" size="sm">
           <Link href="/posts/edit">
@@ -146,23 +150,19 @@ async function ServerOfferManageContent({
       <AdminSummaryStrip
         items={[
           {
+            label: "常规款",
+            value: String(quality.regularCount),
+            note: "手动维护，不参与探测",
+          },
+          {
+            label: "活动款",
+            value: String(quality.promotionCount),
+            note: "允许厂商接口探测",
+          },
+          {
             label: "专题命中",
             value: String(total),
             note: "香港、美国、便宜 VPS 的可见套餐合计",
-          },
-          {
-            label: "香港服务器",
-            value: String(
-              counts.find((item) => item.slug === "hong-kong")?.count ?? 0,
-            ),
-            note: "地区字段命中香港",
-          },
-          {
-            label: "便宜 VPS",
-            value: String(
-              counts.find((item) => item.slug === "cheap-vps")?.count ?? 0,
-            ),
-            note: "月付美元价格不高于 8",
           },
         ]}
       />
@@ -201,13 +201,14 @@ async function ServerOfferManageContent({
         description="对提取后的结构化套餐做人工审核、补字段、改状态和控制前台展示。"
       >
         <ServerOfferAdminTable
-          key={`${offerPage.page}:${searchParams.query ?? ""}:${searchParams.status ?? "all"}:${searchParams.reviewStatus ?? "all"}:${searchParams.visibility ?? "all"}`}
+          key={`${offerPage.page}:${searchParams.query ?? ""}:${searchParams.kind ?? "all"}:${searchParams.status ?? "all"}:${searchParams.reviewStatus ?? "all"}:${searchParams.visibility ?? "all"}`}
           offers={offerPage.rows}
           providers={providers}
           totalCount={offerPage.total}
           initialFilters={{
             pageNo: offerPage.page,
             query: searchParams.query?.trim() ?? "",
+            kind: searchParams.kind ?? "all",
             status: searchParams.status ?? "all",
             reviewStatus: searchParams.reviewStatus ?? "all",
             visibility: searchParams.visibility ?? "all",
