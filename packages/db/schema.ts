@@ -259,6 +259,7 @@ export const sessions = pgTable(
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   (table) => ({
+    expiresIdx: index("sessions_expires_idx").on(table.expires),
     userIdx: index("sessions_userId_idx").on(table.userId),
     userFk: foreignKey({
       columns: [table.userId],
