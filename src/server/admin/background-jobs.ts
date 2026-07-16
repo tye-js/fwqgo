@@ -33,15 +33,18 @@ type AdminBackgroundJobStatus =
 
 type AdminBackgroundJobRow = typeof adminBackgroundJobs.$inferSelect;
 
-type BackgroundJobContext = {
+export type BackgroundJobContext = {
   job: AdminBackgroundJobRow;
   payload: string | null;
 };
 
-type BackgroundJobInput = {
+export type BackgroundJobRunnerInput = {
   key: string;
   label: string;
   run: (context: BackgroundJobContext) => Promise<void>;
+};
+
+type BackgroundJobInput = BackgroundJobRunnerInput & {
   payload?: unknown;
   maxAttempts?: number;
   runAfter?: Date;
@@ -173,6 +176,28 @@ function startAdminBackgroundJobWorker() {
 function wakeAdminBackgroundJobWorker() {
   workerWakeVersion += 1;
   startAdminBackgroundJobWorker();
+}
+
+export function registerAdminBackgroundJobRunner(
+  input: BackgroundJobRunnerInput,
+) {
+  jobRunners.set(input.key, {
+    label: input.label,
+    run: input.run,
+  });
+}
+
+export function wakeAdminBackgroundJobWorkerForRegisteredKeys(
+  keys: Iterable<string>,
+) {
+  for (const key of keys) {
+    if (jobRunners.has(key)) {
+      wakeAdminBackgroundJobWorker();
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function scheduleAdminBackgroundJobWorker(runAt: Date) {
@@ -559,6 +584,44 @@ async function runAdminBackgroundJobWorker() {
     Array.from({ length: laneCount }, () => runBackgroundJobLane()),
   );
   await scheduleBlockedBackgroundJobRecovery();
+  await scheduleRegisteredRunningBackgroundJobRecovery();
+}
+
+async function scheduleRegisteredRunningBackgroundJobRecovery() {
+  const registeredKeys = [...jobRunners.keys()];
+  if (registeredKeys.length === 0) return;
+
+  const [runningJob] = await db
+    .select({
+      heartbeatAt: adminBackgroundJobs.heartbeatAt,
+      lockedAt: adminBackgroundJobs.lockedAt,
+    })
+    .from(adminBackgroundJobs)
+    .where(
+      and(
+        eq(adminBackgroundJobs.status, "running"),
+        inArray(adminBackgroundJobs.jobKey, registeredKeys),
+      ),
+    )
+    .orderBy(
+      asc(
+        sql`coalesce(${adminBackgroundJobs.heartbeatAt}, ${adminBackgroundJobs.lockedAt})`,
+      ),
+    )
+    .limit(1);
+
+  if (!runningJob) return;
+
+  const lastActivity = runningJob.heartbeatAt ?? runningJob.lockedAt;
+  const recoveryAt = new Date(
+    Math.max(
+      Date.now() + IDLE_LANE_RECHECK_MS,
+      (lastActivity?.getTime() ?? Date.now()) +
+        HEARTBEAT_TIMEOUT_MS +
+        IDLE_LANE_RECHECK_MS,
+    ),
+  );
+  scheduleAdminBackgroundJobWorker(recoveryAt);
 }
 
 async function scheduleBlockedBackgroundJobRecovery() {
@@ -703,10 +766,7 @@ async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {
 }
 
 export async function enqueueAdminBackgroundJob(input: BackgroundJobInput) {
-  jobRunners.set(input.key, {
-    label: input.label,
-    run: input.run,
-  });
+  registerAdminBackgroundJobRunner(input);
 
   try {
     return await enqueueAdminBackgroundJobInternal(input);
