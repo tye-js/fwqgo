@@ -5,9 +5,31 @@ import {
   DEFAULT_BACKGROUND_JOB_RETENTION_DAYS,
   getBackgroundJobRetentionCutoff,
   getBackgroundJobRetryDelayMs,
+  getBackgroundJobWakeDecision,
   normalizeBackgroundJobMaxAttempts,
   normalizeBackgroundJobRetentionDays,
 } from "@fwqgo/core/background-job-policy";
+
+void test("reschedules the next future job after the earlier wake fires", () => {
+  const now = new Date("2026-07-16T09:50:00.000Z").getTime();
+  const firstWake = new Date("2026-07-16T10:00:00.000Z").getTime();
+  const secondWake = new Date("2026-07-16T10:05:00.000Z").getTime();
+
+  assert.equal(getBackgroundJobWakeDecision(null, firstWake, now), "schedule");
+  assert.equal(
+    getBackgroundJobWakeDecision(firstWake, secondWake, now),
+    "keep-current",
+  );
+  assert.equal(
+    getBackgroundJobWakeDecision(null, secondWake, firstWake),
+    "schedule",
+  );
+  assert.equal(
+    getBackgroundJobWakeDecision(secondWake, firstWake, now),
+    "schedule",
+  );
+  assert.equal(getBackgroundJobWakeDecision(secondWake, now, now), "wake-now");
+});
 
 void test("normalizes background job attempts into the supported range", () => {
   assert.equal(normalizeBackgroundJobMaxAttempts(undefined), 3);
