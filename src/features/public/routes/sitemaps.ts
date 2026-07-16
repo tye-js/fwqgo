@@ -1,4 +1,5 @@
 import { readDb } from "@fwqgo/db";
+import { renderSitemapLastmod } from "@fwqgo/core/sitemap-lastmod";
 import { connection } from "next/server";
 import { categories, posts, serverOffers, tags } from "@fwqgo/db/schema";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
@@ -27,19 +28,6 @@ function escapeXml(value: string) {
     .replace(/'/g, "&apos;");
 }
 
-function formatLastmod(value: Date | string | number | null | undefined) {
-  const date =
-    value instanceof Date
-      ? value
-      : value === null || value === undefined
-        ? new Date()
-        : new Date(value);
-
-  return Number.isNaN(date.getTime())
-    ? new Date().toISOString()
-    : date.toISOString();
-}
-
 function xmlResponse(xml: string) {
   return new Response(xml, {
     headers: {
@@ -50,10 +38,11 @@ function xmlResponse(xml: string) {
 }
 
 function sitemapEntry(input: { loc: string; lastmod?: Date | null }) {
+  const lastmod = renderSitemapLastmod(input.lastmod);
+
   return `
   <sitemap>
-    <loc>${escapeXml(input.loc)}</loc>
-    <lastmod>${formatLastmod(input.lastmod)}</lastmod>
+    <loc>${escapeXml(input.loc)}</loc>${lastmod ? `\n    ${lastmod}` : ""}
   </sitemap>`;
 }
 
@@ -71,12 +60,12 @@ function urlEntry(input: {
           `<xhtml:link rel="alternate" hreflang="${escapeXml(alternate.hreflang)}" href="${escapeXml(alternate.href)}" />`,
       )
       .join("\n    ") ?? "";
+  const lastmod = renderSitemapLastmod(input.lastmod);
 
   return `
   <url>
     <loc>${escapeXml(input.loc)}</loc>
-    ${alternates ? `${alternates}\n    ` : ""}<lastmod>${formatLastmod(input.lastmod)}</lastmod>
-    <changefreq>${input.changefreq}</changefreq>
+    ${alternates ? `${alternates}\n    ` : ""}${lastmod ? `${lastmod}\n    ` : ""}<changefreq>${input.changefreq}</changefreq>
     <priority>${input.priority}</priority>
   </url>`;
 }
@@ -423,7 +412,7 @@ export async function sitemapServersGET() {
       .limit(1),
     getServerOfferCollectionIndex(120),
   ]);
-  const lastmod = latestOffer?.updatedAt ?? new Date();
+  const lastmod = latestOffer?.updatedAt ?? null;
   const collectionEntries = [
     ...collections.providers.map((item) => ({
       loc: `${baseUrl}/servers/providers/${encodeURIComponent(item.value)}`,
