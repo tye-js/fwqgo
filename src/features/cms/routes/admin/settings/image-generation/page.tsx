@@ -7,6 +7,10 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import { ImageGenerationConfigManager } from "@/features/cms/components/image-generation-config-manager";
 import { getImageGenerationConfigList } from "@/features/cms/actions/image-generation-config";
+import {
+  AdminSectionNav,
+  modelSettingsNavItems,
+} from "@/features/cms/components/admin-section-nav";
 
 export default async function ImageGenerationSettingsPage() {
   await connection();
@@ -30,6 +34,11 @@ export default async function ImageGenerationSettingsPage() {
       title="生图配置"
       description="配置文章封面图生成接口，支持 OpenAI 官方、image2 或第三方 OpenAI 兼容生图服务。"
     >
+      <AdminSectionNav
+        label="模型与接口"
+        currentHref="/settings/image-generation"
+        items={modelSettingsNavItems}
+      />
       <AdminSummaryStrip
         items={[
           {

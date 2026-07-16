@@ -12,6 +12,10 @@ import { db } from "@fwqgo/db";
 import { outboundLinks } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { parsePositiveInt } from "@fwqgo/core/utils";
+import {
+  AdminSectionNav,
+  linkManagementNavItems,
+} from "@/features/cms/components/admin-section-nav";
 
 const PAGE_SIZE = 20;
 
@@ -86,6 +90,11 @@ export default async function ShortLinksPage({
       title="短链跳转"
       description="查看文章外链自动生成的 /go/{slug} 跳转，检查目标链接是否正确。"
     >
+      <AdminSectionNav
+        label="链接管理"
+        currentHref="/collect/short-links"
+        items={linkManagementNavItems}
+      />
       <AdminSummaryStrip
         items={[
           {

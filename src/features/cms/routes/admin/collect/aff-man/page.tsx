@@ -12,6 +12,10 @@ import {
 import AffManTable from "@/features/cms/components/affman-tables";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { parsePositiveInt } from "@fwqgo/core/utils";
+import {
+  AdminSectionNav,
+  linkManagementNavItems,
+} from "@/features/cms/components/admin-section-nav";
 
 function parsePageNo(value: string | undefined) {
   return parsePositiveInt(value) ?? 1;
@@ -73,6 +77,11 @@ async function AffManList({
       title="返利商家管理"
       description="统一维护返利链接、参数和值，保证采集和出链替换逻辑一致。"
     >
+      <AdminSectionNav
+        label="链接管理"
+        currentHref="/collect/aff-man"
+        items={linkManagementNavItems}
+      />
       <AdminSummaryStrip
         items={[
           {

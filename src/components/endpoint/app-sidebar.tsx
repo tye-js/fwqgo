@@ -14,10 +14,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { usePathname } from "next/navigation";
-import {
-  cmsNavigation,
-  isCmsPathMatch,
-} from "@/features/cms/lib/navigation";
+import { cmsNavigation, isCmsPathMatch } from "@/features/cms/lib/navigation";
 
 const data = {
   user: {

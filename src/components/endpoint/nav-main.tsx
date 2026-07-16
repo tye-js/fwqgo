@@ -59,7 +59,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
 
           return (
             <Collapsible
-              key={item.title}
+              key={`${item.title}:${item.isActive ? "active" : "idle"}`}
               asChild
               defaultOpen={item.isActive}
               className="group/collapsible"

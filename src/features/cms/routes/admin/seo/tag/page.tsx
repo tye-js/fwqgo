@@ -6,6 +6,10 @@ import {
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { TagSeoTable } from "@/features/cms/components/tag-seo-table";
 import { parsePositiveInt } from "@fwqgo/core/utils";
+import {
+  AdminSectionNav,
+  seoManagementNavItems,
+} from "@/features/cms/components/admin-section-nav";
 
 function parsePageNo(value: string | undefined) {
   return parsePositiveInt(value) ?? 1;
@@ -52,6 +56,11 @@ export default async function Page(props: {
       title="标签 SEO 管理"
       description="批量维护标签聚合页的中英文 SEO 字段，价格、优惠、折扣类标签默认不参与运营。"
     >
+      <AdminSectionNav
+        label="SEO 管理"
+        currentHref="/seo/tag"
+        items={seoManagementNavItems}
+      />
       {loadError ? (
         <AdminSectionCard
           title="标签列表加载失败"
