@@ -2,6 +2,27 @@ export const DEFAULT_BACKGROUND_JOB_MAX_ATTEMPTS = 3;
 export const DEFAULT_BACKGROUND_JOB_RETENTION_DAYS = 14;
 export const MAX_BACKGROUND_JOB_RETRY_DELAY_MS = 15 * 60 * 1000;
 
+export type BackgroundJobWakeDecision =
+  | "wake-now"
+  | "keep-current"
+  | "schedule";
+
+export function getBackgroundJobWakeDecision(
+  currentWakeAtMs: number | null,
+  requestedRunAtMs: number,
+  nowMs: number,
+): BackgroundJobWakeDecision {
+  if (!Number.isFinite(requestedRunAtMs) || requestedRunAtMs <= nowMs) {
+    return "wake-now";
+  }
+
+  if (currentWakeAtMs !== null && currentWakeAtMs <= requestedRunAtMs) {
+    return "keep-current";
+  }
+
+  return "schedule";
+}
+
 export function normalizeBackgroundJobMaxAttempts(value: number | undefined) {
   if (!value || !Number.isFinite(value)) {
     return DEFAULT_BACKGROUND_JOB_MAX_ATTEMPTS;

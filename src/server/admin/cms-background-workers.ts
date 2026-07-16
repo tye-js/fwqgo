@@ -6,6 +6,7 @@ import {
   imageCoverGenerationTasks,
 } from "@fwqgo/db/schema";
 import { ensureAiRewriteWorker } from "@/server/ai/rewrite-task-runner";
+import { restoreAiSourceSiteBackgroundJobRunners } from "@/server/ai/source-site-background";
 import { ensureCoverGenerationWorker } from "@/server/images/cover-generation-task-runner";
 import { ensureProviderMonitorWorkers } from "@/server/offers/provider-monitor";
 
@@ -42,6 +43,7 @@ export async function ensureCmsBackgroundWorkersForRecoverableTasks() {
   await Promise.all([
     hasAiTasks ? ensureAiRewriteWorker() : Promise.resolve(),
     hasCoverTasks ? ensureCoverGenerationWorker() : Promise.resolve(),
+    restoreAiSourceSiteBackgroundJobRunners(),
     ensureProviderMonitorWorkers(),
   ]);
 }

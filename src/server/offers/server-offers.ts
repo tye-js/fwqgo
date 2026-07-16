@@ -15,6 +15,11 @@ import {
 
 import { slugify } from "@fwqgo/core/utils";
 import {
+  getLatestDateValue,
+  parseDateValue,
+  type DateValue,
+} from "@fwqgo/core/date-value";
+import {
   calculateMonthlyPriceUsd,
   getServerOfferTermMonths,
   normalizeServerOfferBillingCycle,
@@ -1268,10 +1273,9 @@ async function loadServerOfferCollection(
       slug,
       toolHref: `/servers?${filterKey}=${encodeURIComponent(slug)}&stock=all`,
       indexable: offers.length >= MIN_INDEXABLE_SERVER_COLLECTION_OFFERS,
-      updatedAt:
-        offers
-          .map((offer) => offer.updatedAt ?? offer.createdAt)
-          .sort((left, right) => right.getTime() - left.getTime())[0] ?? null,
+      updatedAt: getLatestDateValue(
+        offers.map((offer) => offer.updatedAt ?? offer.createdAt),
+      ),
     };
   } catch (error) {
     console.error("Failed to load server offer collection:", error);
@@ -1399,7 +1403,7 @@ export async function getServerOfferCollectionIndex(limit = 80) {
     value: string | null;
     label: string | null;
     count: number;
-    updatedAt: Date | null;
+    updatedAt: DateValue;
   };
 
   function mergeCollectionRows(
@@ -1420,7 +1424,7 @@ export async function getServerOfferCollectionIndex(limit = 80) {
       const value = row.value?.trim();
       if (!value) continue;
       const current = merged.get(value);
-      const updatedAt = row.updatedAt;
+      const updatedAt = parseDateValue(row.updatedAt);
       if (current) {
         current.count += Number(row.count ?? 0);
         if (

@@ -1,8 +1,11 @@
 import { assertPublicHttpUrl } from "@fwqgo/core/network-url";
+import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 
 import { getAiRewriteConfigForStatusCheck } from "@fwqgo/ai/rewrite-config";
 
 import { buildOpenAiChatCompletionsEndpoint } from "./openai-compatible";
+
+const MAX_STATUS_RESPONSE_BYTES = 256 * 1024;
 
 type ChatCompletionStatusResponse = {
   choices?: Array<{
@@ -92,7 +95,7 @@ function failed(input: {
   };
 }
 
-function classifyHttpError(input: {
+export function classifyHttpError(input: {
   status: number;
   statusText: string;
   payload: ChatCompletionStatusResponse | null;
@@ -109,7 +112,8 @@ function classifyHttpError(input: {
     return {
       errorTitle: "认证失败",
       error: `${prefix}；${error}`,
-      suggestion: "检查 API Key 是否正确、是否过期，以及该 Key 是否有模型权限。",
+      suggestion:
+        "检查 API Key 是否正确、是否过期，以及该 Key 是否有模型权限。",
     };
   }
 
@@ -117,7 +121,8 @@ function classifyHttpError(input: {
     return {
       errorTitle: "接口或模型不存在",
       error: `${prefix}；${error}`,
-      suggestion: "检查 Base URL 是否应包含 /v1，以及模型名称是否和服务商后台一致。",
+      suggestion:
+        "检查 Base URL 是否应包含 /v1，以及模型名称是否和服务商后台一致。",
     };
   }
 
@@ -144,7 +149,7 @@ function classifyHttpError(input: {
   };
 }
 
-function parseStatusResponse(text: string) {
+export function parseStatusResponse(text: string) {
   try {
     return JSON.parse(text || "{}") as ChatCompletionStatusResponse;
   } catch {
@@ -195,7 +200,8 @@ export async function checkAiRewriteConfigStatus(
       latencyMs: Date.now() - startedAt,
       errorTitle: "接口地址不可用",
       error: getErrorMessage(error),
-      suggestion: "Base URL 只能使用公网 http/https 地址，不能指向 localhost、内网或保留地址。",
+      suggestion:
+        "Base URL 只能使用公网 http/https 地址，不能指向 localhost、内网或保留地址。",
     });
   }
 
@@ -225,7 +231,26 @@ export async function checkAiRewriteConfigStatus(
       }),
     });
     const latencyMs = Date.now() - startedAt;
-    const bodyText = await response.text();
+    const bodyText = await readResponseTextWithLimit(
+      response,
+      MAX_STATUS_RESPONSE_BYTES,
+    );
+
+    if (bodyText === null) {
+      return failed({
+        configId,
+        configName: config.name,
+        provider: config.provider,
+        endpoint,
+        model: config.model,
+        latencyMs,
+        errorTitle: "响应内容过大",
+        error: "接口响应超过 256 KB 安全限制",
+        suggestion:
+          "检查 Base URL 是否指向兼容 OpenAI 的 JSON 接口，而不是网页或文件下载地址。",
+      });
+    }
+
     const payload = parseStatusResponse(bodyText);
 
     if (!response.ok) {
@@ -257,7 +282,8 @@ export async function checkAiRewriteConfigStatus(
         latencyMs,
         errorTitle: "返回格式异常",
         error: `接口返回成功状态，但响应不是 JSON：${bodyText.slice(0, 180) || "空"}`,
-        suggestion: "检查第三方接口是否完全兼容 OpenAI chat/completions 响应结构。",
+        suggestion:
+          "检查第三方接口是否完全兼容 OpenAI chat/completions 响应结构。",
       });
     }
 
@@ -273,7 +299,8 @@ export async function checkAiRewriteConfigStatus(
         latencyMs,
         errorTitle: "返回格式异常",
         error: "接口返回成功状态，但没有 choices[0].message.content",
-        suggestion: "检查第三方接口是否完全兼容 OpenAI chat/completions 响应结构。",
+        suggestion:
+          "检查第三方接口是否完全兼容 OpenAI chat/completions 响应结构。",
       });
     }
 

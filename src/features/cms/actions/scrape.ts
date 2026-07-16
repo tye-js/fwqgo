@@ -8,6 +8,7 @@ import {
   type ScrapedArticle,
 } from "@fwqgo/scrape/article-scraper";
 import { getAiRewriteContentLimit } from "@fwqgo/ai/article-rewriter";
+import { reserveBoundedMapCapacity } from "@fwqgo/core/bounded-map";
 import { isPublicHttpUrl } from "@fwqgo/core/network-url";
 import {
   getActiveAiRewriteConfig,
@@ -73,17 +74,6 @@ function withTimeout<T>(promise: Promise<T>, message: string) {
   });
 }
 
-function pruneScrapeJobs() {
-  if (scrapeJobs.size <= MAX_SCRAPE_JOBS) return;
-
-  const sortedJobs = [...scrapeJobs.values()].sort(
-    (left, right) => left.updatedAt - right.updatedAt,
-  );
-  for (const job of sortedJobs.slice(0, scrapeJobs.size - MAX_SCRAPE_JOBS)) {
-    scrapeJobs.delete(job.id);
-  }
-}
-
 function createScrapeFailure(
   message: string,
   suggestion = "请检查来源 URL 是否可访问，或改用 AI 任务中心后台生成文章。",
@@ -103,7 +93,9 @@ function createScrapeFailure(
 
 async function runScrapeJob(jobId: string) {
   const job = scrapeJobs.get(jobId);
-  if (!job) return;
+  if (!job) {
+    throw new Error("抓取任务状态已丢失，请重新提交任务");
+  }
 
   scrapeJobs.set(jobId, {
     ...job,
@@ -165,6 +157,18 @@ export async function scrapeArticleAction(
           ? rewriteStyleIdString
           : undefined,
     });
+    const hasCapacity = reserveBoundedMapCapacity(scrapeJobs, {
+      maxEntries: MAX_SCRAPE_JOBS,
+      isEvictable: (job) => job.status === "success" || job.status === "failed",
+      getEvictionPriority: (job) => job.updatedAt,
+    });
+    if (!hasCapacity) {
+      return createScrapeFailure(
+        "当前活跃抓取任务过多",
+        "请等待现有抓取任务完成后再重试。",
+      );
+    }
+
     const jobId = randomUUID();
     scrapeJobs.set(jobId, {
       id: jobId,
@@ -176,7 +180,6 @@ export async function scrapeArticleAction(
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
-    pruneScrapeJobs();
 
     await enqueueAdminBackgroundJob({
       key: `scrape-article:${jobId}`,

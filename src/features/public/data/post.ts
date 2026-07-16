@@ -256,97 +256,6 @@ export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
   };
 }
 
-export async function getPostByCategoryId(
-  id: number,
-  language: PublicLanguage = "zh",
-) {
-  "use cache";
-  tagCache(cacheTags.posts, cacheTags.tags, cacheTags.category(id));
-
-  try {
-    const postsData = await readDb
-      .select({
-        id: posts.id,
-        title: posts.title,
-        slug: posts.slug,
-        description: posts.description,
-        imgUrl: posts.imgUrl,
-        createdAt: posts.createdAt,
-      })
-      .from(posts)
-      .where(and(eq(posts.categoryId, id), publishedPostCondition(language)))
-      .orderBy(desc(posts.createdAt));
-
-    const postsWithTags = await attachTagsToPosts(postsData, language);
-
-    return { data: postsWithTags };
-  } catch (error) {
-    console.error("Failed to load public category posts:", error);
-    return { error: "通过分类id获取文章列表失败" };
-  }
-}
-
-export async function getPostBySlug(slug: string) {
-  "use cache";
-
-  try {
-    const decodedSlug = decodeSlug(slug);
-    tagCache(cacheTags.posts, cacheTags.postSlug(decodedSlug), cacheTags.tags);
-    const [post] = await readDb
-      .select({
-        title: posts.title,
-        content: posts.content,
-        id: posts.id,
-        enSlug: posts.enSlug,
-        enTitle: posts.enTitle,
-        enContent: posts.enContent,
-        enKeywords: posts.enKeywords,
-        enDescription: posts.enDescription,
-        enImgUrl: posts.enImgUrl,
-        enUpdatedAt: posts.enUpdatedAt,
-        description: posts.description,
-        imgUrl: posts.imgUrl,
-        recommendedTagName: posts.recommendedTagName,
-        recommendedTagId: posts.recommendedTagId,
-        keywords: posts.keywords,
-        categoryId: posts.categoryId,
-        views: posts.views,
-      })
-      .from(posts)
-      .where(and(eq(posts.slug, decodedSlug), publishedChinesePostCondition()))
-      .limit(1);
-
-    if (!post) {
-      return { data: null };
-    }
-
-    const [postTagsData, publishedEnglishSlug] = await Promise.all([
-      readDb
-        .select({
-          tag: {
-            id: tags.id,
-            name: tags.name,
-            slug: tags.slug,
-          },
-        })
-        .from(postTags)
-        .innerJoin(tags, eq(postTags.tagId, tags.id))
-        .where(eq(postTags.postId, post.id)),
-      getPublishedEnglishSlugForSourcePost(post.id),
-    ]);
-
-    return {
-      data: {
-        ...post,
-        enSlug: publishedEnglishSlug ?? getLegacyPublishedEnglishSlug(post),
-        tags: postTagsData,
-      },
-    };
-  } catch (error) {
-    return { error: "通过slug获取文章失败", message: error };
-  }
-}
-
 export async function getRecommendedPosts(
   tagId: number | null,
   currentPostId: number,
@@ -618,15 +527,20 @@ export async function getPostsByPostId(id: number) {
   tagCache(cacheTags.posts);
 
   try {
+    const navigationFields = {
+      id: posts.id,
+      title: posts.title,
+      slug: posts.slug,
+    };
     const [prevRows, nextRows] = await Promise.all([
       readDb
-        .select()
+        .select(navigationFields)
         .from(posts)
         .where(and(lt(posts.id, id), publishedChinesePostCondition()))
         .orderBy(desc(posts.id))
         .limit(1),
       readDb
-        .select()
+        .select(navigationFields)
         .from(posts)
         .where(and(gt(posts.id, id), publishedChinesePostCondition()))
         .orderBy(asc(posts.id))

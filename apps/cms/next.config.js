@@ -54,6 +54,9 @@ const config = {
   cacheComponents: true,
   experimental: {
     optimizePackageImports: ["@next/font"],
+    serverActions: {
+      bodySizeLimit: "3mb",
+    },
   },
   compiler: {
     removeConsole:

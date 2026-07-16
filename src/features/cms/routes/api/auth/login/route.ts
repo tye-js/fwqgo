@@ -1,11 +1,14 @@
 import { db } from "@fwqgo/db";
 import { compare } from "bcryptjs";
 import { z } from "zod";
-import { randomUUID } from "crypto";
-import { users, sessions } from "@fwqgo/db/schema";
+import { users } from "@fwqgo/db/schema";
 import { eq } from "drizzle-orm";
 import { getTrustedClientIp } from "@fwqgo/core/client-ip";
 import { BoundedAttemptTracker } from "@fwqgo/core/bounded-attempt-tracker";
+import {
+  readRequestTextWithLimit,
+  RequestBodyTooLargeError,
+} from "@fwqgo/core/bounded-request-body";
 import {
   attachRequestId,
   getRequestId,
@@ -16,14 +19,16 @@ import {
   getCmsSessionCookieName,
   getCmsSessionCookieOptions,
 } from "@fwqgo/auth/session-cookie";
+import { createCmsSession } from "@fwqgo/auth/session-store";
 
 import { adminApiFailure, adminApiSuccess } from "@/lib/admin-api-response";
 
 const loginSchema = z.object({
-  username: z.string().trim().min(3),
-  password: z.string().min(6),
+  username: z.string().trim().min(3).max(20),
+  password: z.string().min(6).max(100),
 });
 
+const MAX_AUTH_BODY_BYTES = 8 * 1024;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
 const MAX_FAILED_LOGIN_ATTEMPTS = 8;
@@ -68,14 +73,33 @@ export async function POST(request: Request) {
     attachRequestId(response, requestId);
 
   try {
-    const body = loginSchema.safeParse(await request.json().catch(() => null));
+    let payload: unknown;
+    try {
+      payload = JSON.parse(
+        await readRequestTextWithLimit(request, MAX_AUTH_BODY_BYTES),
+      );
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return respond(
+          adminApiFailure("登录请求内容过大", {
+            status: 413,
+            title: "登录失败",
+            suggestion: "请仅提交用户名和密码，单次请求不能超过 8 KB。",
+          }),
+        );
+      }
+      if (!(error instanceof SyntaxError)) throw error;
+      payload = null;
+    }
+
+    const body = loginSchema.safeParse(payload);
 
     if (!body.success) {
       return respond(
         adminApiFailure("请输入有效的用户名和密码", {
           status: 400,
           title: "登录失败",
-          suggestion: "请检查用户名不少于 3 个字符，密码不少于 6 个字符。",
+          suggestion: "请检查用户名为 3-20 个字符，密码为 6-100 个字符。",
         }),
       );
     }
@@ -119,17 +143,7 @@ export async function POST(request: Request) {
 
     clearFailedLoginAttempts(attemptKeys);
 
-    // 创建 session
-    const sessionId = randomUUID();
-    const [session] = await db
-      .insert(sessions)
-      .values({
-        id: sessionId,
-        userId: user.id,
-        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30天
-        sessionToken: randomUUID(), // 添加随机生成的 sessionToken
-      })
-      .returning();
+    const session = await createCmsSession(user.id);
 
     if (!session) {
       return respond(

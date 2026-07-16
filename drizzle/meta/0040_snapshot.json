@@ -1,6 +1,6 @@
 {
-  "id": "30ad48d5-08ee-40e3-8d92-b0c7d8775213",
-  "prevId": "ecd5262c-e736-4811-8da0-0a9da76ccea9",
+  "id": "f7feca98-b2de-4e80-ab90-12b9e0ba2870",
+  "prevId": "30ad48d5-08ee-40e3-8d92-b0c7d8775213",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3674,6 +3674,208 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.provider_monitor_runs": {
+      "name": "provider_monitor_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "monitorId": {
+          "name": "monitorId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(24)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'running'"
+        },
+        "httpStatus": {
+          "name": "httpStatus",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responseHash": {
+          "name": "responseHash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "received": {
+          "name": "received",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created": {
+          "name": "created",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "pending": {
+          "name": "pending",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated": {
+          "name": "updated",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "unchanged": {
+          "name": "unchanged",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "skipped": {
+          "name": "skipped",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "missing": {
+          "name": "missing",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "errorTitle": {
+          "name": "errorTitle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "errorDetail": {
+          "name": "errorDetail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "startedAt": {
+          "name": "startedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finishedAt": {
+          "name": "finishedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "provider_monitor_runs_monitorId_idx": {
+          "name": "provider_monitor_runs_monitorId_idx",
+          "columns": [
+            {
+              "expression": "monitorId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "provider_monitor_runs_status_startedAt_idx": {
+          "name": "provider_monitor_runs_status_startedAt_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "startedAt",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "provider_monitor_runs_monitorId_startedAt_idx": {
+          "name": "provider_monitor_runs_monitorId_startedAt_idx",
+          "columns": [
+            {
+              "expression": "monitorId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "startedAt",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "provider_monitor_runs_monitorId_provider_monitors_id_fk": {
+          "name": "provider_monitor_runs_monitorId_provider_monitors_id_fk",
+          "tableFrom": "provider_monitor_runs",
+          "tableTo": "provider_monitors",
+          "columnsFrom": [
+            "monitorId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "provider_monitor_runs_status_check": {
+          "name": "provider_monitor_runs_status_check",
+          "value": "\"provider_monitor_runs\".\"status\" in ('running', 'succeeded', 'failed')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.provider_monitors": {
       "name": "provider_monitors",
       "schema": "",
@@ -3703,6 +3905,13 @@
           "notNull": true,
           "default": "'json'"
         },
+        "purpose": {
+          "name": "purpose",
+          "type": "varchar(24)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'catalog'"
+        },
         "endpointUrl": {
           "name": "endpointUrl",
           "type": "text",
@@ -3722,6 +3931,20 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "autoPublish": {
+          "name": "autoPublish",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "missingThreshold": {
+          "name": "missingThreshold",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 3
         },
         "intervalMinutes": {
           "name": "intervalMinutes",
@@ -3759,6 +3982,30 @@
         "lastError": {
           "name": "lastError",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etag": {
+          "name": "etag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lastModified": {
+          "name": "lastModified",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responseHash": {
+          "name": "responseHash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lastSummary": {
+          "name": "lastSummary",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -3852,11 +4099,257 @@
         },
         "provider_monitors_adapter_check": {
           "name": "provider_monitors_adapter_check",
-          "value": "\"provider_monitors\".\"adapter\" in ('json')"
+          "value": "\"provider_monitors\".\"adapter\" in ('json', 'html', 'whmcs')"
+        },
+        "provider_monitors_purpose_check": {
+          "name": "provider_monitors_purpose_check",
+          "value": "\"provider_monitors\".\"purpose\" in ('catalog', 'promotion', 'stock')"
+        },
+        "provider_monitors_missingThreshold_check": {
+          "name": "provider_monitors_missingThreshold_check",
+          "value": "\"provider_monitors\".\"missingThreshold\" between 1 and 20"
         },
         "provider_monitors_lastStatus_check": {
           "name": "provider_monitors_lastStatus_check",
           "value": "\"provider_monitors\".\"lastStatus\" in ('idle', 'running', 'succeeded', 'failed')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.provider_offer_candidates": {
+      "name": "provider_offer_candidates",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "monitorId": {
+          "name": "monitorId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "providerId": {
+          "name": "providerId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "externalProductId": {
+          "name": "externalProductId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sourceUrl": {
+          "name": "sourceUrl",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sourceHash": {
+          "name": "sourceHash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "normalizedData": {
+          "name": "normalizedData",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "diff": {
+          "name": "diff",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(24)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "offerId": {
+          "name": "offerId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejectionReason": {
+          "name": "rejectionReason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reviewedBy": {
+          "name": "reviewedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reviewedAt": {
+          "name": "reviewedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "firstSeenAt": {
+          "name": "firstSeenAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "lastSeenAt": {
+          "name": "lastSeenAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "provider_offer_candidates_status_lastSeenAt_idx": {
+          "name": "provider_offer_candidates_status_lastSeenAt_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lastSeenAt",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "provider_offer_candidates_providerId_idx": {
+          "name": "provider_offer_candidates_providerId_idx",
+          "columns": [
+            {
+              "expression": "providerId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "provider_offer_candidates_offerId_idx": {
+          "name": "provider_offer_candidates_offerId_idx",
+          "columns": [
+            {
+              "expression": "offerId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "provider_offer_candidates_monitorId_provider_monitors_id_fk": {
+          "name": "provider_offer_candidates_monitorId_provider_monitors_id_fk",
+          "tableFrom": "provider_offer_candidates",
+          "tableTo": "provider_monitors",
+          "columnsFrom": [
+            "monitorId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "provider_offer_candidates_providerId_aff_service_providers_id_fk": {
+          "name": "provider_offer_candidates_providerId_aff_service_providers_id_fk",
+          "tableFrom": "provider_offer_candidates",
+          "tableTo": "aff_service_providers",
+          "columnsFrom": [
+            "providerId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "provider_offer_candidates_offerId_server_offers_id_fk": {
+          "name": "provider_offer_candidates_offerId_server_offers_id_fk",
+          "tableFrom": "provider_offer_candidates",
+          "tableTo": "server_offers",
+          "columnsFrom": [
+            "offerId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "provider_offer_candidates_reviewedBy_users_id_fk": {
+          "name": "provider_offer_candidates_reviewedBy_users_id_fk",
+          "tableFrom": "provider_offer_candidates",
+          "tableTo": "users",
+          "columnsFrom": [
+            "reviewedBy"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "provider_offer_candidates_monitorId_externalProductId_unique": {
+          "name": "provider_offer_candidates_monitorId_externalProductId_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "monitorId",
+            "externalProductId"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "provider_offer_candidates_status_check": {
+          "name": "provider_offer_candidates_status_check",
+          "value": "\"provider_offer_candidates\".\"status\" in ('pending', 'accepted', 'rejected', 'superseded')"
         }
       },
       "isRLSEnabled": false
@@ -4578,6 +5071,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "relationType": {
+          "name": "relationType",
+          "type": "varchar(24)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "priority": {
           "name": "priority",
           "type": "integer",
@@ -4645,18 +5144,30 @@
           "method": "btree",
           "with": {}
         },
-        "server_offer_sources_article_offerId_unique": {
-          "name": "server_offer_sources_article_offerId_unique",
+        "server_offer_sources_article_relation_unique": {
+          "name": "server_offer_sources_article_relation_unique",
           "columns": [
             {
               "expression": "offerId",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "sourcePostId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "relationType",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": true,
-          "where": "\"server_offer_sources\".\"sourceType\" = 'article'",
+          "where": "\"server_offer_sources\".\"sourceType\" = 'article' and \"server_offer_sources\".\"sourcePostId\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4703,7 +5214,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "server_offer_sources_relationType_check": {
+          "name": "server_offer_sources_relationType_check",
+          "value": "\"server_offer_sources\".\"relationType\" is null or \"server_offer_sources\".\"relationType\" in ('review', 'mention', 'deal')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.server_offer_tags": {
@@ -4862,6 +5378,31 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": false
+        },
+        "sourceMonitorId": {
+          "name": "sourceMonitorId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sourceHash": {
+          "name": "sourceHash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sourceLastSeenAt": {
+          "name": "sourceLastSeenAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "missingRuns": {
+          "name": "missingRuns",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "productType": {
           "name": "productType",
@@ -5156,6 +5697,21 @@
           "columns": [
             {
               "expression": "providerId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "server_offers_sourceMonitorId_idx": {
+          "name": "server_offers_sourceMonitorId_idx",
+          "columns": [
+            {
+              "expression": "sourceMonitorId",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -5581,6 +6137,19 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
+        "server_offers_sourceMonitorId_provider_monitors_id_fk": {
+          "name": "server_offers_sourceMonitorId_provider_monitors_id_fk",
+          "tableFrom": "server_offers",
+          "tableTo": "provider_monitors",
+          "columnsFrom": [
+            "sourceMonitorId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
         "server_offers_regionId_server_regions_id_fk": {
           "name": "server_offers_regionId_server_regions_id_fk",
           "tableFrom": "server_offers",
@@ -5648,6 +6217,10 @@
         "server_offers_lockedFields_check": {
           "name": "server_offers_lockedFields_check",
           "value": "jsonb_typeof(\"server_offers\".\"lockedFields\") = 'array'"
+        },
+        "server_offers_missingRuns_check": {
+          "name": "server_offers_missingRuns_check",
+          "value": "\"server_offers\".\"missingRuns\" >= 0"
         }
       },
       "isRLSEnabled": false
