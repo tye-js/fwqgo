@@ -7,6 +7,10 @@ import { randomUUID } from "crypto";
 import { BoundedAttemptTracker } from "@fwqgo/core/bounded-attempt-tracker";
 import { getTrustedClientIp } from "@fwqgo/core/client-ip";
 import {
+  readRequestTextWithLimit,
+  RequestBodyTooLargeError,
+} from "@fwqgo/core/bounded-request-body";
+import {
   attachRequestId,
   getRequestId,
   structuredLog,
@@ -15,6 +19,7 @@ import {
 import { adminApiFailure, adminApiSuccess } from "@/lib/admin-api-response";
 
 const SIGNUP_WINDOW_MS = 60 * 60 * 1000;
+const MAX_AUTH_BODY_BYTES = 8 * 1024;
 const MAX_SIGNUP_ATTEMPTS = 5;
 const globalForSignupRateLimit = globalThis as unknown as {
   signupAttemptTracker?: BoundedAttemptTracker;
@@ -44,7 +49,7 @@ const registerSchema = z
       .string()
       .min(6, "密码至少6个字符")
       .max(100, "密码最多100个字符"),
-    confirmPassword: z.string(),
+    confirmPassword: z.string().max(100, "确认密码最多100个字符"),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "两次输入的密码不一致",
@@ -85,9 +90,26 @@ export async function POST(request: Request) {
     }
     signupAttemptTracker.recordAttempt([attemptKey]);
 
-    const body = registerSchema.safeParse(
-      await request.json().catch(() => null),
-    );
+    let payload: unknown;
+    try {
+      payload = JSON.parse(
+        await readRequestTextWithLimit(request, MAX_AUTH_BODY_BYTES),
+      );
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return respond(
+          adminApiFailure("注册请求内容过大", {
+            status: 413,
+            title: "注册失败",
+            suggestion: "请仅提交注册表单字段，单次请求不能超过 8 KB。",
+          }),
+        );
+      }
+      if (!(error instanceof SyntaxError)) throw error;
+      payload = null;
+    }
+
+    const body = registerSchema.safeParse(payload);
 
     if (!body.success) {
       return respond(
