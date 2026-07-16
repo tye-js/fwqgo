@@ -20,6 +20,7 @@ import {
   posts,
   users,
 } from "@fwqgo/db/schema";
+import { withAsyncRollback } from "@fwqgo/core/async-rollback";
 import { sanitizeFileName } from "@fwqgo/core/utils";
 
 export const UPLOAD_PUBLIC_PREFIX = "/uploads/";
@@ -326,12 +327,37 @@ async function createResponsiveVariants(input: {
       .toBuffer(),
   ]);
 
-  await Promise.all([
+  const variantPaths = [thumbPath, largePath] as const;
+  const results = await Promise.allSettled([
     writeFile(uploadPathToFilePath(thumbPath), thumbBuffer),
     writeFile(uploadPathToFilePath(largePath), largeBuffer),
   ]);
+  const failed = results.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+
+  if (failed) {
+    await Promise.allSettled(
+      results.flatMap((result, index) =>
+        result.status === "fulfilled"
+          ? [removeCreatedUploadFile(variantPaths[index]!)]
+          : [],
+      ),
+    );
+    throw failed.reason;
+  }
 
   return { thumbPath, largePath };
+}
+
+async function removeCreatedUploadFile(publicPath: string) {
+  try {
+    await unlink(uploadPathToFilePath(publicPath));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
 }
 
 async function removeVariantFiles(asset: {
@@ -373,6 +399,80 @@ async function getDimensionsFromFile(filePath: string) {
   };
 }
 
+type OptimizedImageAssetInput = {
+  buffer: Buffer;
+  mime: string;
+  originalName: string;
+  uploadedBy: string | null;
+  altZh?: string | null;
+  altEn?: string | null;
+  imageType?: string | null;
+  sourceUrl?: string | null;
+  prompt?: string | null;
+};
+
+async function persistOptimizedImageAsset(input: OptimizedImageAssetInput) {
+  const hash = hashBuffer(input.buffer);
+  const [existing] = await db
+    .select()
+    .from(imageAssets)
+    .where(eq(imageAssets.hash, hash))
+    .limit(1);
+
+  if (existing) {
+    return existing;
+  }
+
+  const fileName = buildOutputName(input.originalName, input.mime);
+  const publicPath = await getAvailablePublicPath(fileName);
+  const filePath = uploadPathToFilePath(publicPath);
+  const dimensions = await getDimensions(input.buffer);
+
+  return withAsyncRollback(async (defer) => {
+    await mkdir(getUploadDir(), { recursive: true });
+    await writeFile(filePath, input.buffer);
+    defer(() => removeCreatedUploadFile(publicPath));
+
+    const variants = await createResponsiveVariants({
+      buffer: input.buffer,
+      mime: input.mime,
+      publicPath,
+    });
+    for (const variantPath of [variants.thumbPath, variants.largePath]) {
+      if (variantPath) {
+        defer(() => removeCreatedUploadFile(variantPath));
+      }
+    }
+
+    const [asset] = await db
+      .insert(imageAssets)
+      .values({
+        path: publicPath,
+        thumbPath: variants.thumbPath,
+        largePath: variants.largePath,
+        originalName: input.originalName,
+        mime: input.mime,
+        size: input.buffer.length,
+        width: dimensions.width,
+        height: dimensions.height,
+        hash,
+        imageType: input.imageType ?? "upload",
+        altZh: input.altZh ?? fallbackImageAlt(input.originalName),
+        altEn: input.altEn ?? fallbackImageAlt(input.originalName),
+        sourceUrl: input.sourceUrl ?? null,
+        prompt: input.prompt ?? null,
+        uploadedBy: input.uploadedBy,
+      })
+      .returning();
+
+    if (!asset) {
+      throw new Error("Image asset insert returned no row");
+    }
+
+    return asset;
+  });
+}
+
 export async function createImageAssetFromUpload(input: {
   file: File;
   uploadedBy: string | null;
@@ -392,53 +492,17 @@ export async function createImageAssetFromUpload(input: {
 
   const originalBuffer = Buffer.from(await input.file.arrayBuffer());
   const optimized = await optimizeUpload(originalBuffer, input.file.type);
-  const hash = hashBuffer(optimized.buffer);
-
-  const [existing] = await db
-    .select()
-    .from(imageAssets)
-    .where(eq(imageAssets.hash, hash))
-    .limit(1);
-
-  if (existing) {
-    return existing;
-  }
-
-  const fileName = buildOutputName(input.file.name, optimized.mime);
-  const publicPath = await getAvailablePublicPath(fileName);
-  const filePath = uploadPathToFilePath(publicPath);
-  const dimensions = await getDimensions(optimized.buffer);
-
-  await mkdir(getUploadDir(), { recursive: true });
-  await writeFile(filePath, optimized.buffer);
-  const variants = await createResponsiveVariants({
+  return persistOptimizedImageAsset({
     buffer: optimized.buffer,
     mime: optimized.mime,
-    publicPath,
+    originalName: input.file.name,
+    uploadedBy: input.uploadedBy,
+    altZh: input.altZh,
+    altEn: input.altEn,
+    imageType: input.imageType,
+    sourceUrl: input.sourceUrl,
+    prompt: input.prompt,
   });
-
-  const [asset] = await db
-    .insert(imageAssets)
-    .values({
-      path: publicPath,
-      thumbPath: variants.thumbPath,
-      largePath: variants.largePath,
-      originalName: input.file.name,
-      mime: optimized.mime,
-      size: optimized.buffer.length,
-      width: dimensions.width,
-      height: dimensions.height,
-      hash,
-      imageType: input.imageType ?? "upload",
-      altZh: input.altZh ?? fallbackImageAlt(input.file.name),
-      altEn: input.altEn ?? fallbackImageAlt(input.file.name),
-      sourceUrl: input.sourceUrl ?? null,
-      prompt: input.prompt ?? null,
-      uploadedBy: input.uploadedBy,
-    })
-    .returning();
-
-  return asset!;
 }
 
 export async function createImageAssetFromBuffer(input: {
@@ -461,53 +525,17 @@ export async function createImageAssetFromBuffer(input: {
   }
 
   const optimized = await optimizeUpload(input.buffer, input.mime);
-  const hash = hashBuffer(optimized.buffer);
-
-  const [existing] = await db
-    .select()
-    .from(imageAssets)
-    .where(eq(imageAssets.hash, hash))
-    .limit(1);
-
-  if (existing) {
-    return existing;
-  }
-
-  const fileName = buildOutputName(input.originalName, optimized.mime);
-  const publicPath = await getAvailablePublicPath(fileName);
-  const filePath = uploadPathToFilePath(publicPath);
-  const dimensions = await getDimensions(optimized.buffer);
-
-  await mkdir(getUploadDir(), { recursive: true });
-  await writeFile(filePath, optimized.buffer);
-  const variants = await createResponsiveVariants({
+  return persistOptimizedImageAsset({
     buffer: optimized.buffer,
     mime: optimized.mime,
-    publicPath,
+    originalName: input.originalName,
+    uploadedBy: input.uploadedBy,
+    altZh: input.altZh,
+    altEn: input.altEn,
+    imageType: input.imageType,
+    sourceUrl: input.sourceUrl,
+    prompt: input.prompt,
   });
-
-  const [asset] = await db
-    .insert(imageAssets)
-    .values({
-      path: publicPath,
-      thumbPath: variants.thumbPath,
-      largePath: variants.largePath,
-      originalName: input.originalName,
-      mime: optimized.mime,
-      size: optimized.buffer.length,
-      width: dimensions.width,
-      height: dimensions.height,
-      hash,
-      imageType: input.imageType ?? "upload",
-      altZh: input.altZh ?? fallbackImageAlt(input.originalName),
-      altEn: input.altEn ?? fallbackImageAlt(input.originalName),
-      sourceUrl: input.sourceUrl ?? null,
-      prompt: input.prompt ?? null,
-      uploadedBy: input.uploadedBy,
-    })
-    .returning();
-
-  return asset!;
 }
 
 export async function replaceImageAssetFile(input: { id: number; file: File }) {
