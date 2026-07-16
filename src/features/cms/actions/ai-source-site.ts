@@ -4,13 +4,12 @@ import { asc, desc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { pullSourceSiteToAiTasks } from "@fwqgo/ai/source-site-puller";
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { isPublicHttpUrl } from "@fwqgo/core/network-url";
 import { db } from "@fwqgo/db";
 import { aiRewriteConfigs, aiSourceSites, categories } from "@fwqgo/db/schema";
-import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
+import { enqueueAiSourceSiteBackgroundJob } from "@/server/ai/source-site-background";
 
 const sourceSiteSchema = z.object({
   name: z.string().trim().min(1, "请输入站点名称").max(120),
@@ -46,16 +45,6 @@ function revalidateAiTaskPages() {
   revalidatePath("/ai-rewrite/tasks");
   revalidatePath("/ai-tasks");
 }
-
-type SourceSiteRunInput = {
-  id: number;
-  name: string;
-  siteUrl: string;
-  feedUrl: string | null;
-  categoryId: number;
-  rewriteStyleId: number | null;
-  limit: number;
-};
 
 function parseSourceSiteFormData(formData: FormData) {
   const rewriteStyleId = formData.get("rewriteStyleId");
@@ -247,19 +236,9 @@ export async function runAiSourceSiteAction(id: number) {
       })
       .where(eq(aiSourceSites.id, id));
 
-    await enqueueAdminBackgroundJob({
-      key: `ai-source-site:${id}`,
-      label: `来源站抓取：${site.name}`,
-      run: () =>
-        runAiSourceSiteInBackground({
-          id: site.id,
-          name: site.name,
-          siteUrl: site.siteUrl,
-          feedUrl: site.feedUrl,
-          categoryId: site.categoryId,
-          rewriteStyleId: site.rewriteStyleId,
-          limit: site.limit,
-        }),
+    await enqueueAiSourceSiteBackgroundJob({
+      sourceSiteId: site.id,
+      siteName: site.name,
     });
     revalidateAiTaskPages();
 
@@ -290,50 +269,5 @@ export async function runAiSourceSiteAction(id: number) {
       .where(eq(aiSourceSites.id, id));
     revalidateAiTaskPages();
     return { error: getErrorMessage(error) };
-  }
-}
-
-async function runAiSourceSiteInBackground(site: SourceSiteRunInput) {
-  try {
-    const result = await pullSourceSiteToAiTasks({
-      siteUrl: site.siteUrl,
-      feedUrl: site.feedUrl,
-      categoryId: site.categoryId,
-      rewriteStyleId: site.rewriteStyleId,
-      limit: site.limit,
-    });
-
-    await db
-      .update(aiSourceSites)
-      .set({
-        lastRunAt: new Date(),
-        lastDiscoveredCount: result.discoveredCount,
-        lastCreatedCount: result.createdCount,
-        lastSkippedCount: result.skippedCount,
-        lastRunDetails: JSON.stringify({
-          runAt: new Date().toISOString(),
-          ...result,
-        }),
-        lastError: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(aiSourceSites.id, site.id));
-  } catch (error) {
-    console.error("后台来源站抓取失败:", error);
-    await db
-      .update(aiSourceSites)
-      .set({
-        lastRunAt: new Date(),
-        lastError: getErrorMessage(error),
-        lastRunDetails: JSON.stringify({
-          runAt: new Date().toISOString(),
-          error: getErrorMessage(error),
-        }),
-        updatedAt: new Date(),
-      })
-      .where(eq(aiSourceSites.id, site.id));
-    throw error;
-  } finally {
-    revalidateAiTaskPages();
   }
 }

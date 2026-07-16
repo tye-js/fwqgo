@@ -7,6 +7,7 @@ import {
   serverOfferImportTasks,
 } from "@fwqgo/db/schema";
 import { ensureAiRewriteWorker } from "@/server/ai/rewrite-task-runner";
+import { restoreAiSourceSiteBackgroundJobRunners } from "@/server/ai/source-site-background";
 import { ensureCoverGenerationWorker } from "@/server/images/cover-generation-task-runner";
 import { ensureServerOfferImportWorker } from "@/server/offers/import-task-runner";
 import { ensureProviderMonitorWorkers } from "@/server/offers/provider-monitor";
@@ -56,6 +57,7 @@ export async function ensureCmsBackgroundWorkersForRecoverableTasks() {
     hasAiTasks ? ensureAiRewriteWorker() : Promise.resolve(),
     hasCoverTasks ? ensureCoverGenerationWorker() : Promise.resolve(),
     hasOfferTasks ? ensureServerOfferImportWorker() : Promise.resolve(),
+    restoreAiSourceSiteBackgroundJobRunners(),
     ensureProviderMonitorWorkers(),
   ]);
 }
