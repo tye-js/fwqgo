@@ -4,6 +4,10 @@ import {
   AdminSectionCard,
 } from "@/features/cms/components/admin-page-shell";
 import { getLeafCategoriesAllData } from "@/features/shared/data/category";
+import {
+  AdminSectionNav,
+  seoManagementNavItems,
+} from "@/features/cms/components/admin-section-nav";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -25,6 +29,11 @@ export default async function Page() {
       title="分类 SEO 管理"
       description="批量维护叶子分类页的中英文 SEO 字段，让分类页 metadata 更符合搜索结果摘要规范。"
     >
+      <AdminSectionNav
+        label="SEO 管理"
+        currentHref="/seo/category"
+        items={seoManagementNavItems}
+      />
       {loadError ? (
         <AdminSectionCard
           title="分类列表加载失败"

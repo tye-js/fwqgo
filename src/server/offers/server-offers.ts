@@ -2075,8 +2075,7 @@ export async function updateServerOffer(
         lineType: input.lineType ?? null,
         lineId: taxonomy.lineId,
         status: input.status,
-        checkStatus:
-          input.offerKind === "regular" ? "unknown" : undefined,
+        checkStatus: input.offerKind === "regular" ? "unknown" : undefined,
         lastCheckedAt: input.offerKind === "regular" ? null : undefined,
         statusChangedAt: existing.status === input.status ? undefined : now,
         purchaseUrl: input.purchaseUrl ?? null,

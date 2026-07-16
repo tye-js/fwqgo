@@ -123,9 +123,9 @@ async function PostListWrapper({
 
   return (
     <AdminPageShell
-      badge="文章管理"
-      title="文章列表与快速维护"
-      description="在这里集中查看、编辑、删除和校对文章基础信息。列表区沿用统一的后台视觉风格，更适合高频运营操作。"
+      badge="内容"
+      title="文章库"
+      description="集中管理草稿与已发布文章，按语言、状态和关键词筛选后继续编辑、质检或发布。"
       actions={
         <Button asChild>
           <Link href="/ai-rewrite/tasks#single-task">内容生产</Link>
@@ -160,8 +160,8 @@ async function PostListWrapper({
         </AdminSectionCard>
       ) : null}
       <AdminSectionCard
-        title="全部文章"
-        description="支持快速编辑标题、slug、发布状态和封面链接。"
+        title={status === "draft" ? "草稿文章" : "文章列表"}
+        description="支持快速编辑标题、slug、发布状态和封面链接；草稿和已发布文章使用同一套筛选与分页。"
       >
         <div className="mb-4">
           <LanguageFilter value={language} filters={{ query, status, sort }} />

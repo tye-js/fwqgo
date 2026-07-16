@@ -208,7 +208,12 @@ async function PostPageContent({
   const offerJsonLd = relatedOffers.slice(0, 6).flatMap((offer) => {
     const purchaseUrl = toAbsoluteHttpUrl(offer.purchaseUrl, getSiteUrl());
     const price = Number(offer.priceAmount);
-    if (!purchaseUrl || !Number.isFinite(price) || price <= 0 || !offer.currency) {
+    if (
+      !purchaseUrl ||
+      !Number.isFinite(price) ||
+      price <= 0 ||
+      !offer.currency
+    ) {
       return [];
     }
 

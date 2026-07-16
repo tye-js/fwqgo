@@ -36,7 +36,9 @@ function ArticleCard({
   const secondaryTags = visibleTags.slice(1, 4);
   const copy = {
     imageLabel:
-      language === "en" ? `Read article: ${post.title}` : `阅读文章：${post.title}`,
+      language === "en"
+        ? `Read article: ${post.title}`
+        : `阅读文章：${post.title}`,
     fallbackDescription:
       language === "en"
         ? "Read the full review, deal details, and use cases."
@@ -72,7 +74,10 @@ function ArticleCard({
                 prefetch
                 className="relative z-10 inline-flex min-h-11 items-center gap-1.5 rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-8"
               >
-                <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
+                <span
+                  className="size-1.5 rounded-full bg-primary"
+                  aria-hidden="true"
+                />
                 {primaryTag.name}
               </Link>
             ) : null}

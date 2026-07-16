@@ -53,7 +53,10 @@ export function TagContextSidebar({
     <Card className="rounded-lg border-border/70 bg-background shadow-none">
       <CardContent className="p-4">
         <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <SlidersHorizontal className="size-4 text-primary" aria-hidden="true" />
+          <SlidersHorizontal
+            className="size-4 text-primary"
+            aria-hidden="true"
+          />
           {copy.title}
         </div>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">

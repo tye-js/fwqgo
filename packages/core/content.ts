@@ -534,7 +534,9 @@ function enhanceArticleTables(html: string) {
         .toArray()
         .reduce((total, cell) => {
           const colspan = Number.parseInt($(cell).attr("colspan") ?? "1", 10);
-          return total + (Number.isFinite(colspan) && colspan > 0 ? colspan : 1);
+          return (
+            total + (Number.isFinite(colspan) && colspan > 0 ? colspan : 1)
+          );
         }, 0);
       maxColumns = Math.max(maxColumns, columns);
     });

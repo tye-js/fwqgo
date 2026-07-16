@@ -5,6 +5,10 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import { SiteSeoConfigTable } from "@/features/cms/components/site-seo-config-table";
 import { getSiteSeoConfigs } from "@/features/shared/data/site-seo";
+import {
+  AdminSectionNav,
+  seoManagementNavItems,
+} from "@/features/cms/components/admin-section-nav";
 
 export default async function Page() {
   const siteResult = await getSiteSeoConfigs().catch((error: unknown) => {
@@ -24,6 +28,11 @@ export default async function Page() {
       title="主页 SEO 管理"
       description="独立维护中文首页和英文首页的站点名、标题、摘要与关键词。"
     >
+      <AdminSectionNav
+        label="SEO 管理"
+        currentHref="/seo"
+        items={seoManagementNavItems}
+      />
       <AdminSummaryStrip
         items={[
           {

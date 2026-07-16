@@ -7,6 +7,10 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import { AiRewriteConfigManager } from "@/features/cms/components/ai-rewrite-config-manager";
 import { getAiRewriteConfigList } from "@/features/cms/actions/ai-rewrite-config";
+import {
+  AdminSectionNav,
+  modelSettingsNavItems,
+} from "@/features/cms/components/admin-section-nav";
 
 export default async function AiRewriteConfigPage() {
   await connection();
@@ -30,6 +34,11 @@ export default async function AiRewriteConfigPage() {
       title="AI 改写配置"
       description="配置 DeepSeek、OpenAI 官方接口或第三方 OpenAI 兼容接口，并维护采集改写时使用的文章风格。"
     >
+      <AdminSectionNav
+        label="模型与接口"
+        currentHref="/collect/ai-rewrite"
+        items={modelSettingsNavItems}
+      />
       <AdminSummaryStrip
         items={[
           {
