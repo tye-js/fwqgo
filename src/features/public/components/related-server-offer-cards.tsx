@@ -23,11 +23,13 @@ export function RelatedServerOfferCards({
   description = "根据当前主题匹配的结构化套餐，适合继续比较价格、地区和线路。",
   offers,
   language = "zh",
+  compact = false,
 }: {
   title?: string;
   description?: string;
   offers: Offer[];
   language?: "zh" | "en";
+  compact?: boolean;
 }) {
   if (offers.length === 0) return null;
   const copy =
@@ -50,7 +52,13 @@ export function RelatedServerOfferCards({
         };
 
   return (
-    <section className="rounded-lg border border-border/70 bg-muted/20 p-4 md:p-5">
+    <section
+      className={
+        compact
+          ? "rounded-lg border border-border/70 bg-muted/20 p-3 md:p-4"
+          : "rounded-lg border border-border/70 bg-muted/20 p-4 md:p-5"
+      }
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -72,7 +80,7 @@ export function RelatedServerOfferCards({
       </div>
 
       <div className="mt-3 grid overflow-hidden rounded-md border border-border/70 bg-background md:grid-cols-2">
-        {offers.slice(0, 4).map((offer, index) => (
+        {offers.slice(0, compact ? 2 : 4).map((offer, index) => (
           <div
             key={offer.id}
             className={`min-w-0 px-3 py-3.5 md:px-4 ${

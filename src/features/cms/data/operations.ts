@@ -145,7 +145,7 @@ function normalizeUnifiedTaskListFilters(input: UnifiedTaskListFilters = {}) {
   return {
     type: normalizeUnifiedTaskType(input.type),
     status: normalizeUnifiedTaskStatus(input.status),
-    query: input.query?.trim() ?? "",
+    query: input.query?.trim().slice(0, 160) ?? "",
     pageNo,
     pageSize,
     offset: (pageNo - 1) * pageSize,

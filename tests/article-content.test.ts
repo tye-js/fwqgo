@@ -36,6 +36,18 @@ void test("preserves distinct purchase links inside Markdown tables", () => {
   assert.match(html, /buy\?b=2/);
 });
 
+void test("wraps wide article tables without changing cell links", () => {
+  const html = renderArticleContentHtml(`
+| 套餐 | CPU | 内存 | 地区 | 购买 |
+| --- | --- | --- | --- | --- |
+| A | 2 核 | 2 GB | 香港 | [购买](https://merchant.example/a) |
+`);
+
+  assert.match(html, /class="article-table-scroll"/);
+  assert.match(html, /href="https:\/\/merchant\.example\/a"/);
+  assert.match(html, />购买<\/a>/);
+});
+
 void test("removes dangerous HTML while keeping safe article content", () => {
   const html = renderArticleContentHtml(
     '<p onclick="alert(1)">正文 <a href="javascript:alert(1)">危险</a></p><script>alert(1)</script>',

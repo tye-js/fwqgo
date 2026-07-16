@@ -14,6 +14,7 @@ export default function PageCard({
   totalCount,
   pageNo,
   language = "zh",
+  variant = "card",
 }: {
   kind?: string;
   name: string;
@@ -21,7 +22,40 @@ export default function PageCard({
   totalCount?: number;
   pageNo?: number;
   language?: "zh" | "en";
+  variant?: "card" | "compact";
 }) {
+  if (variant === "compact") {
+    return (
+      <header className="border-b border-border/70 pb-5 pt-2 md:pb-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">{kind}</Badge>
+          {typeof pageNo === "number" ? (
+            <Badge variant="outline">
+              {language === "en" ? `Page ${pageNo}` : `第 ${pageNo} 页`}
+            </Badge>
+          ) : null}
+        </div>
+        <h1 className="font-editorial mt-3 max-w-4xl text-3xl font-semibold leading-tight text-foreground md:text-4xl">
+          {name}
+        </h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground md:text-base md:leading-7">
+          {description}
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
+          <span className="inline-flex items-center gap-2 tabular-nums">
+            <Files className="size-4" aria-hidden="true" />
+            {formatCount(totalCount ?? 0, language)}
+            {language === "en" ? " published articles" : " 篇已发布文章"}
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <Hash className="size-4" aria-hidden="true" />
+            {language === "en" ? "Topic collection" : "主题内容聚合"}
+          </span>
+        </div>
+      </header>
+    );
+  }
+
   return (
     <Card className="overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm">
       <CardContent className="p-5 md:p-6">

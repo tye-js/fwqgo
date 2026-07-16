@@ -290,6 +290,7 @@ export async function runProviderMonitor(
       .where(
         and(
           eq(serverOffers.providerId, monitor.providerId),
+          eq(serverOffers.offerKind, "promotion"),
           isNotNull(serverOffers.externalProductId),
         ),
       );
@@ -508,6 +509,7 @@ export async function runProviderMonitor(
             eq(serverOfferSources.sourceType, "monitor"),
             eq(serverOfferSources.sourceUrl, monitor.endpointUrl),
             eq(serverOffers.providerId, monitor.providerId),
+            eq(serverOffers.offerKind, "promotion"),
           ),
         )
         .limit(MAX_MONITOR_ITEMS);
@@ -629,6 +631,7 @@ export async function getProviderMonitorList() {
         select count(*)::int
         from "server_offers" mapped_offers
         where mapped_offers."providerId" = ${providerMonitors.providerId}
+          and mapped_offers."offerKind" = 'promotion'
           and mapped_offers."externalProductId" is not null
       )`,
     })
@@ -761,9 +764,12 @@ export async function getProviderMonitorCheckHistory(
       eq(serverOffers.providerId, affServiceProviders.id),
     )
     .where(
-      monitorId && Number.isInteger(monitorId)
-        ? eq(serverOfferChecks.monitorId, monitorId)
-        : undefined,
+      and(
+        eq(serverOffers.offerKind, "promotion"),
+        monitorId && Number.isInteger(monitorId)
+          ? eq(serverOfferChecks.monitorId, monitorId)
+          : undefined,
+      ),
     )
     .orderBy(desc(serverOfferChecks.checkedAt), desc(serverOfferChecks.id))
     .limit(Math.min(Math.max(limit, 1), 200));

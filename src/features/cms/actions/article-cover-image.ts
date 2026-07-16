@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
@@ -195,8 +195,6 @@ export async function generateArticleCoverImageAction(input: {
   try {
     const session = await requireAdminSession();
     const payload = coverSchema.parse(input);
-    const imageConfig = await requireActiveImageConfig(payload.configId);
-    const boundPayload = { ...payload, configId: imageConfig.id };
 
     if (payload.postId) {
       const [post] = await db
@@ -212,6 +210,35 @@ export async function generateArticleCoverImageAction(input: {
           errorTitle: "无法创建封面生成任务",
         };
       }
+
+      const [activeTask] = await db
+        .select()
+        .from(imageCoverGenerationTasks)
+        .where(
+          and(
+            eq(imageCoverGenerationTasks.postId, post.id),
+            inArray(imageCoverGenerationTasks.status, ["pending", "running"]),
+          ),
+        )
+        .orderBy(desc(imageCoverGenerationTasks.id))
+        .limit(1);
+
+      if (activeTask) {
+        await ensureCoverGenerationWorker();
+        return {
+          success: true,
+          queued: true,
+          reused: true,
+          batchId: activeTask.batchId,
+          results: [serializeCoverTask(activeTask)],
+          pendingCount: activeTask.status === "pending" ? 1 : 0,
+          runningCount: activeTask.status === "running" ? 1 : 0,
+          successCount: 0,
+          failedCount: 0,
+        };
+      }
+
+      const imageConfig = await requireActiveImageConfig(payload.configId);
 
       const batchId = randomUUID();
       const [task] = await db
@@ -252,6 +279,8 @@ export async function generateArticleCoverImageAction(input: {
       };
     }
 
+    const imageConfig = await requireActiveImageConfig(payload.configId);
+    const boundPayload = { ...payload, configId: imageConfig.id };
     const batchId = randomUUID();
     const task: EphemeralCoverTask = {
       taskId: -Date.now(),
@@ -295,7 +324,6 @@ export async function batchGenerateArticleCoverImagesAction(input: {
   try {
     const session = await requireAdminSession();
     const payload = batchCoverSchema.parse(input);
-    const imageConfig = await requireActiveImageConfig();
     const uniquePostIds = [...new Set(payload.postIds)];
     const postRows = await db
       .select({
@@ -317,11 +345,33 @@ export async function batchGenerateArticleCoverImagesAction(input: {
       };
     }
 
+    const activeTaskRows = await db
+      .select({ postId: imageCoverGenerationTasks.postId })
+      .from(imageCoverGenerationTasks)
+      .where(
+        and(
+          inArray(imageCoverGenerationTasks.postId, uniquePostIds),
+          inArray(imageCoverGenerationTasks.status, ["pending", "running"]),
+        ),
+      );
+    const activePostIds = new Set(activeTaskRows.map((task) => task.postId));
+    const queuedPostRows = postRows.filter((post) => !activePostIds.has(post.id));
+
+    if (queuedPostRows.length === 0) {
+      return {
+        success: false,
+        error: "所选文章已有封面任务正在排队或生成，请等待完成后再操作",
+        errorTitle: "没有创建重复封面任务",
+      };
+    }
+
+    const imageConfig = await requireActiveImageConfig();
+
     const batchId = randomUUID();
     const tasks = await db
       .insert(imageCoverGenerationTasks)
       .values(
-        postRows.map((post) => ({
+        queuedPostRows.map((post) => ({
           batchId,
           postId: post.id,
           title: post.title,
@@ -346,6 +396,8 @@ export async function batchGenerateArticleCoverImagesAction(input: {
       failedCount: 0,
       pendingCount: tasks.length,
       runningCount: 0,
+      skippedActiveCount: activePostIds.size,
+      skippedActivePostIds: [...activePostIds],
     };
   } catch (error) {
     const readableError = formatCoverGenerationError(error);

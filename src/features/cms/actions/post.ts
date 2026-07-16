@@ -374,6 +374,7 @@ export async function updatePost(input: {
   slug: string;
   imgUrl: string | null;
   published: boolean;
+  routeHandler?: boolean;
 }) {
   try {
     await requireAdminSession();
@@ -475,6 +476,7 @@ export async function updatePost(input: {
         if (blockedPost) {
           await runPostSaveMaintenance({
             postId: blockedPost.id,
+            routeHandler: input.routeHandler,
             revalidationTags: [
               cacheTags.post(blockedPost.id),
               cacheTags.postSlug(blockedPost.slug),
@@ -531,6 +533,7 @@ export async function updatePost(input: {
       : [];
     const warnings = await runPostSaveMaintenance({
       postId: post.id,
+      routeHandler: input.routeHandler,
       revalidationTags: [
         cacheTags.post(post.id),
         cacheTags.postSlug(post.slug),

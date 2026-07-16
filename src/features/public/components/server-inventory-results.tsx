@@ -66,6 +66,7 @@ function collectionHref(kind: "providers" | "regions" | "lines", value: string) 
 function buildPageHref(filters: PublicInventoryFilters, cursor: string) {
   const params = new URLSearchParams();
   if (filters.query) params.set("q", filters.query);
+  if (filters.kind === "promotion") params.set("kind", "promotion");
   if (filters.provider !== "all") params.set("provider", filters.provider);
   if (filters.group !== "all") params.set("group", filters.group);
   if (filters.stock !== "in_stock") params.set("stock", filters.stock);
@@ -87,10 +88,12 @@ function buildPageHref(filters: PublicInventoryFilters, cursor: string) {
 
 function StatusCell({
   status,
+  offerKind,
   checkStatus,
   isStale,
 }: {
   status: string;
+  offerKind: string;
   checkStatus: string;
   isStale: boolean;
 }) {
@@ -106,18 +109,22 @@ function StatusCell({
         {stockLabels[status] ?? status}
       </Badge>
       <p className="flex items-center gap-1 text-xs text-muted-foreground">
-        {checkStatus === "failed" ? (
+        {offerKind === "regular" ? (
+          <Clock3 className="size-3.5" />
+        ) : checkStatus === "failed" ? (
           <AlertTriangle className="size-3.5 text-amber-600" />
         ) : (
           <Clock3 className="size-3.5" />
         )}
-        {checkStatus === "ok"
-          ? isStale
-            ? "数据超过 24 小时"
-            : "探测正常"
-          : checkStatus === "failed"
-            ? "探测失败"
-            : "待探测"}
+        {offerKind === "regular"
+          ? "人工维护"
+          : checkStatus === "ok"
+            ? isStale
+              ? "数据超过 24 小时"
+              : "探测正常"
+            : checkStatus === "failed"
+              ? "探测失败"
+              : "待探测"}
       </p>
     </div>
   );
@@ -149,6 +156,7 @@ function OfferMobileCard({
         </div>
         <StatusCell
           status={offer.status}
+          offerKind={offer.offerKind}
           checkStatus={offer.checkStatus}
           isStale={offer.isStale}
         />
@@ -177,7 +185,9 @@ function OfferMobileCard({
 
       <div className="mt-3 flex items-end justify-between gap-3 border-t border-border/70 pt-3">
         <div className="min-w-0 text-xs text-muted-foreground">
-          上次探测：{formatCheckedAt(offer.lastCheckedAt)}
+          {offer.offerKind === "promotion"
+            ? `上次探测：${formatCheckedAt(offer.lastCheckedAt)}`
+            : `资料更新：${formatCheckedAt(offer.updatedAt ?? offer.createdAt)}`}
         </div>
         <ServerInventoryOfferActions
           prices={offer.prices}
@@ -210,7 +220,7 @@ export function ServerInventoryResults({
           没有匹配的库存套餐
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          可以减少筛选条件，或切换到“全部库存”查看缺货和预售产品。
+          可以减少筛选条件、切换套餐属性，或查看缺货和预售产品。
         </p>
       </div>
     );
@@ -241,7 +251,9 @@ export function ServerInventoryResults({
               <th className="w-[13%] px-3 py-3 font-medium">产品组</th>
               <th className="w-[9%] px-3 py-3 font-medium">状态</th>
               <th className="w-[14%] px-3 py-3 font-medium">价格 / 操作</th>
-              <th className="w-[11%] px-3 py-3 font-medium">上次探测</th>
+              <th className="w-[11%] px-3 py-3 font-medium">
+                {filters.kind === "promotion" ? "上次探测" : "资料更新"}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/70">
@@ -314,6 +326,7 @@ export function ServerInventoryResults({
                   <td className="px-3 py-3">
                     <StatusCell
                       status={offer.status}
+                      offerKind={offer.offerKind}
                       checkStatus={offer.checkStatus}
                       isStale={offer.isStale}
                     />
@@ -332,7 +345,11 @@ export function ServerInventoryResults({
                     />
                   </td>
                   <td className="px-3 py-3 text-xs leading-5 text-muted-foreground">
-                    {formatCheckedAt(offer.lastCheckedAt)}
+                    {formatCheckedAt(
+                      offer.offerKind === "promotion"
+                        ? offer.lastCheckedAt
+                        : (offer.updatedAt ?? offer.createdAt),
+                    )}
                     {offer.validUntil ? (
                       <span className="mt-1 block">
                         有效期至 {formatCheckedAt(offer.validUntil)}

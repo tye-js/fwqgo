@@ -8,6 +8,10 @@ import {
 import { CustomImageGenerator } from "@/features/cms/components/custom-image-generator";
 import { Button } from "@/components/ui/button";
 import { requireAdminSession } from "@fwqgo/auth/session";
+import {
+  AdminSectionNav,
+  imageGenerationNavItems,
+} from "@/features/cms/components/admin-section-nav";
 
 export default async function AiImageGenerationPage() {
   await requireAdminSession();
@@ -26,6 +30,11 @@ export default async function AiImageGenerationPage() {
         </Button>
       }
     >
+      <AdminSectionNav
+        label="AI 生图功能"
+        currentHref="/images/ai-generate"
+        items={imageGenerationNavItems}
+      />
       <AdminSummaryStrip
         items={[
           {

@@ -20,6 +20,7 @@ import type {
 } from "@/server/offers/public-inventory-query";
 
 type FilterKey =
+  | "kind"
   | "provider"
   | "group"
   | "stock"
@@ -36,6 +37,7 @@ function getFormDataText(formData: FormData, key: string) {
 }
 
 function isDefaultValue(key: FilterKey, value: string) {
+  if (key === "kind") return value === "regular";
   if (key === "stock") return value === "in_stock";
   if (key === "sort") return value === "price-asc";
   return value === "all";
@@ -95,7 +97,7 @@ export function ServerInventoryProviderNav({
       <div className="border-b border-border/70 p-3">
         <div className="mb-2 flex items-center gap-2 text-sm font-medium">
           <Store className="size-4 text-primary" />
-          厂商库存
+          {filters.kind === "promotion" ? "活动商家" : "常规套餐商家"}
         </div>
         <Input
           value={providerSearch}
@@ -226,6 +228,36 @@ export function ServerInventoryToolbar({
         </Button>
       </div>
 
+      <div
+        className="mb-3 grid grid-cols-2 rounded-md border border-border/70 bg-muted/30 p-1"
+        aria-label="套餐属性"
+      >
+        {([
+          ["regular", "常规款"],
+          ["promotion", "活动款"],
+        ] as const).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={filters.kind === value}
+            disabled={isPending}
+            onClick={() =>
+              navigate({
+                kind: value === "regular" ? null : value,
+                check: null,
+              })
+            }
+            className={`min-h-10 rounded-sm px-3 text-sm font-medium transition-colors disabled:opacity-50 ${
+              filters.kind === value
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <form
         onSubmit={submitSearch}
         className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]"
@@ -330,20 +362,22 @@ export function ServerInventoryToolbar({
               <SelectItem value="without">无优惠码</SelectItem>
             </SelectContent>
           </Select>
-          <Select
-            value={filters.check}
-            onValueChange={(value) => updateFilter("check", value)}
-          >
-            <SelectTrigger className="min-h-11 md:min-h-9">
-              <SelectValue placeholder="探测状态" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部探测状态</SelectItem>
-              <SelectItem value="ok">探测正常</SelectItem>
-              <SelectItem value="failed">探测失败</SelectItem>
-              <SelectItem value="unknown">尚未探测</SelectItem>
-            </SelectContent>
-          </Select>
+          {filters.kind === "promotion" ? (
+            <Select
+              value={filters.check}
+              onValueChange={(value) => updateFilter("check", value)}
+            >
+              <SelectTrigger className="min-h-11 md:min-h-9">
+                <SelectValue placeholder="探测状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部探测状态</SelectItem>
+                <SelectItem value="ok">探测正常</SelectItem>
+                <SelectItem value="failed">探测失败</SelectItem>
+                <SelectItem value="unknown">尚未探测</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : null}
         </div>
         <form
           onSubmit={submitPrice}

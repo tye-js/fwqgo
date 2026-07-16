@@ -138,7 +138,7 @@ function normalizeAiRewriteTaskListFilters(
     status,
     sourceType,
     language,
-    query: filters.query?.trim() ?? "",
+    query: filters.query?.trim().slice(0, 160) ?? "",
   };
 }
 

@@ -8,12 +8,14 @@ type ReleaseResponse = {
 
 export function CmsReleaseGuard({ releaseId }: { releaseId: string }) {
   const isReloading = useRef(false);
+  const isChecking = useRef(false);
 
   useEffect(() => {
     let disposed = false;
 
     const checkRelease = async () => {
-      if (disposed || isReloading.current) return;
+      if (disposed || isReloading.current || isChecking.current) return;
+      isChecking.current = true;
 
       try {
         const response = await fetch("/api/cms/runtime/release", {
@@ -36,6 +38,8 @@ export function CmsReleaseGuard({ releaseId }: { releaseId: string }) {
         }
       } catch {
         // A transient deploy/network gap should not interrupt the current page.
+      } finally {
+        isChecking.current = false;
       }
     };
 

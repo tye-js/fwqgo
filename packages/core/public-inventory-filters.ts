@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { SERVER_OFFER_KINDS } from "./server-offer-kind";
+
 export const publicInventorySorts = [
   "price-asc",
   "price-desc",
@@ -9,6 +11,7 @@ export type PublicInventorySort = (typeof publicInventorySorts)[number];
 
 const filterSchema = z.object({
   query: z.string().trim().max(80).default(""),
+  kind: z.enum(SERVER_OFFER_KINDS).default("regular"),
   provider: z.string().trim().max(160).default("all"),
   group: z.string().trim().max(200).default("all"),
   stock: z
@@ -133,6 +136,11 @@ export function parsePublicInventoryFilters(
       filterSchema.shape.query,
       firstParam(input.q),
       defaults.query,
+    ),
+    kind: parseFilterField(
+      filterSchema.shape.kind,
+      firstParam(input.kind),
+      defaults.kind,
     ),
     provider: parseFilterField(
       filterSchema.shape.provider,

@@ -7,6 +7,10 @@ import { requireAdminSession } from "@fwqgo/auth/session";
 import { isHttpHref, isInternalHref } from "@fwqgo/core/utils";
 import { SERVER_OFFER_BILLING_CYCLES } from "@fwqgo/core/server-offer-price";
 import {
+  SERVER_OFFER_KINDS,
+  type ServerOfferKind,
+} from "@fwqgo/core/server-offer-kind";
+import {
   adminActionFailure,
   adminActionSuccess,
   getErrorMessage,
@@ -98,6 +102,7 @@ const lockedOfferFields = ["title", "status", "price", "purchaseUrl"] as const;
 
 const updateOfferSchema = z.object({
   title: z.string().trim().min(1, "请输入套餐标题"),
+  offerKind: z.enum(SERVER_OFFER_KINDS),
   providerId: nullablePositiveInteger,
   providerName: nullableString,
   externalProductId: nullableString,
@@ -310,6 +315,7 @@ export async function updateServerOfferAction(id: number, formData: FormData) {
 
     const input = updateOfferSchema.parse({
       title: formData.get("title"),
+      offerKind: formData.get("offerKind"),
       providerId: formData.get("providerId"),
       providerName: formData.get("providerName"),
       externalProductId: formData.get("externalProductId"),
@@ -356,6 +362,7 @@ export async function updateServerOfferAction(id: number, formData: FormData) {
 
 export async function bulkUpdateServerOffersAction(input: {
   ids: number[];
+  offerKind?: string;
   status?: string;
   visible?: boolean;
   featured?: boolean;
@@ -373,8 +380,14 @@ export async function bulkUpdateServerOffersAction(input: {
       offerStatuses.includes(input.status as (typeof offerStatuses)[number])
         ? (input.status as (typeof offerStatuses)[number])
         : undefined;
+    const offerKind = SERVER_OFFER_KINDS.includes(
+      input.offerKind as ServerOfferKind,
+    )
+      ? (input.offerKind as ServerOfferKind)
+      : undefined;
     const result = await bulkUpdateServerOffers({
       ids,
+      offerKind,
       status,
       visible: input.visible,
       featured: input.featured,

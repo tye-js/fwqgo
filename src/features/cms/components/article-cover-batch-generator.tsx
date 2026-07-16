@@ -314,6 +314,13 @@ export function ArticleCoverBatchGenerator({
     async (currentBatchId: string, options: { notifyDone?: boolean } = {}) => {
       const result = await getCoverGenerationBatchStatusAction(currentBatchId);
       if (!result.success) {
+        setBatchId(null);
+        setBatchSummary((current) => ({
+          ...current,
+          pendingCount: 0,
+          runningCount: 0,
+          done: true,
+        }));
         notifyError({
           title: result.errorTitle ?? "读取封面生成状态失败",
           description: result.error ?? "请刷新页面后重试。",
@@ -356,6 +363,13 @@ export function ArticleCoverBatchGenerator({
       if (stopped) return;
 
       if (!result.success) {
+        setBatchId(null);
+        setBatchSummary((current) => ({
+          ...current,
+          pendingCount: 0,
+          runningCount: 0,
+          done: true,
+        }));
         notifyError({
           title: result.errorTitle ?? "读取封面生成状态失败",
           description: result.error ?? "请刷新页面后重试。",
@@ -423,6 +437,9 @@ export function ArticleCoverBatchGenerator({
         title: "已加入后台生成队列",
         description: describeAdminResult([
           `任务 ${result.results?.length ?? selectedIds.length} 篇`,
+          (result.skippedActiveCount ?? 0) > 0
+            ? `跳过 ${result.skippedActiveCount} 篇正在生成的文章`
+            : null,
           "可以停留本页查看进度",
         ]),
       });
@@ -450,7 +467,10 @@ export function ArticleCoverBatchGenerator({
               setCoverFilter(value as typeof coverFilter)
             }
           >
-            <SelectTrigger className="min-h-11 w-40 border-0 bg-transparent px-0 shadow-none focus:ring-0">
+            <SelectTrigger
+              className="min-h-11 w-40 border-0 bg-transparent px-0 shadow-none focus:ring-0"
+              aria-label="封面状态筛选"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -497,7 +517,9 @@ export function ArticleCoverBatchGenerator({
         <div className="rounded-lg border border-border/70 bg-muted/20 px-4 py-3 text-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="font-medium">后台批次正在运行</p>
+              <p className="font-medium">
+                {batchSummary.done ? "后台批次已完成" : "后台批次正在运行"}
+              </p>
               <p className="mt-1 break-all text-xs text-muted-foreground">
                 批次号：{batchId}
               </p>

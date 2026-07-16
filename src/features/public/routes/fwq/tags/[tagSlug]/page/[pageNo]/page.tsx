@@ -1,7 +1,11 @@
-import { getPostsWithTagsByTagSlug } from "@/features/public/data/tag";
+import {
+  getPostsWithTagsByTagSlug,
+  getTagBySlug,
+} from "@/features/public/data/tag";
 import { getLatestPostsForSidebar } from "@/features/public/data/post";
 import ArticleCard from "@/features/public/components/article-card";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
+import { TagContextSidebar } from "@/features/public/components/tag-context-sidebar";
 import PageCard from "@/features/public/components/page-card";
 import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
 import { PaginationComponent } from "@/features/shared/components/pagination";
@@ -12,10 +16,6 @@ import {
 } from "@fwqgo/core/utils";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Hash } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { connection } from "next/server";
 import { getServerOffersByKeywords } from "@/server/offers/server-offers";
 
 function getSiteUrl() {
@@ -39,9 +39,12 @@ export async function generateMetadata(props: {
 }): Promise<Metadata> {
   const params = await props.params;
   const decodedTagSlug = decodeSlug(params.tagSlug);
-  const pageNo = parsePositiveInt(params.pageNo) ?? 1;
+  const pageNo = parsePositiveInt(params.pageNo);
+  if (!pageNo) {
+    return { robots: { index: false, follow: true } };
+  }
   const readableName = decodedTagSlug.replace(/[-_]+/g, " ");
-  const { data: tag } = await getPostsWithTagsByTagSlug(decodedTagSlug, pageNo);
+  const { data: tag } = await getTagBySlug(decodedTagSlug);
   const title = tag?.name ?? readableName;
   const description =
     tag?.description ?? `${title}相关服务器、VPS、优惠和测评文章。`;
@@ -55,6 +58,10 @@ export async function generateMetadata(props: {
     title: `${title}-服务器`,
     description,
     keywords: tag?.keywords ?? `${title}的服务器,${title}的VPS`,
+    robots: {
+      index: Boolean(tag?.indexable),
+      follow: true,
+    },
     alternates: {
       canonical,
       languages: {
@@ -79,8 +86,6 @@ async function TagPageContent({
 }: {
   paramsPromise: Promise<{ tagSlug: string; pageNo: string }>;
 }) {
-  await connection();
-
   const params = await paramsPromise;
   const decodedTagSlug = decodeSlug(params.tagSlug);
   const pageNo = parsePositiveInt(params.pageNo);
@@ -93,6 +98,20 @@ async function TagPageContent({
     decodedTagSlug,
     pageNo,
   );
+  if (error) {
+    return (
+      <div
+        role="alert"
+        className="mx-4 rounded-lg border border-destructive/30 bg-destructive/5 p-5 text-sm text-destructive sm:mx-6"
+      >
+        标签内容暂时加载失败，请稍后刷新页面。
+      </div>
+    );
+  }
+  if (!postsWithTag?.posts) {
+    notFound();
+  }
+
   const [{ data: latestPosts }, relatedOffers] = await Promise.all([
     getLatestPostsForSidebar(),
     getServerOffersByKeywords({
@@ -103,12 +122,6 @@ async function TagPageContent({
       limit: 6,
     }),
   ]);
-  if (error || !postsWithTag?.posts)
-    return (
-      <div>
-        查询<span className="text-red-600">{params.tagSlug}</span>相关的文章失败
-      </div>
-    );
   const cardInfo = {
     kind: "标签页",
     name: postsWithTag.name,
@@ -145,7 +158,7 @@ async function TagPageContent({
   };
 
   return (
-    <div className="grid gap-8 xl:grid-cols-[minmax(0,0.82fr)_320px]">
+    <div className="grid gap-8 px-4 sm:px-6 xl:grid-cols-[minmax(0,1fr)_300px]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -153,7 +166,7 @@ async function TagPageContent({
         }}
       />
       <div className="space-y-5">
-        {postsWithTag && <PageCard {...cardInfo} />}
+        <PageCard {...cardInfo} variant="compact" />
         <RelatedServerOfferCards
           title={`${postsWithTag.name}相关套餐`}
           offers={relatedOffers}
@@ -161,7 +174,11 @@ async function TagPageContent({
         <div className="space-y-4">
           {posts.length > 0 ? (
             posts.map((post) => (
-              <ArticleCard key={post.post.id} post={post.post} />
+              <ArticleCard
+                key={post.post.id}
+                post={post.post}
+                excludedTagSlug={pageSlug}
+              />
             ))
           ) : (
             <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 p-8 text-center text-sm text-muted-foreground">
@@ -178,22 +195,12 @@ async function TagPageContent({
 
       <aside className="hidden xl:block">
         <div className="sticky top-24 space-y-4">
-          <Card className="rounded-lg border-border/70 bg-background shadow-none">
-            <CardContent className="space-y-4 p-5">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Hash className="size-4 text-accent" />
-                标签说明
-              </div>
-              <p className="text-sm leading-6 text-muted-foreground">
-                标签页更适合跨分类浏览同一主题下的内容，适合连续阅读评测、优惠和线路文章。
-              </p>
-              <Badge variant="secondary">
-                当前第 {postsWithTag.pageNo} / {Math.max(totalPage, 1)} 页
-              </Badge>
-            </CardContent>
-          </Card>
-
-          <LatestPostsSidebar posts={latestPosts ?? []} />
+          <TagContextSidebar
+            offers={relatedOffers}
+            pageNo={postsWithTag.pageNo}
+            totalPage={totalPage}
+          />
+          <LatestPostsSidebar posts={latestPosts ?? []} variant="compact" />
         </div>
       </aside>
     </div>

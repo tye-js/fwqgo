@@ -52,6 +52,7 @@ export async function generateMetadata({
   const params = await searchParams;
   const hasInventoryFilters = [
     "q",
+    "kind",
     "provider",
     "group",
     "stock",
@@ -83,7 +84,7 @@ async function loadInventoryData(
 ) {
   try {
     const [facets, page] = await Promise.all([
-      getPublicInventoryFacets(),
+      getPublicInventoryFacets(filters.kind),
       getPublicInventoryPage(filters),
     ]);
     return { ok: true as const, facets, page };
@@ -182,14 +183,14 @@ export default function ServersPage({
               </Badge>
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <Database className="size-3.5" />
-                结构化套餐、库存状态与来源文章集中查询
+                常规套餐与限时活动分开查询
               </span>
             </div>
             <h1 className="mt-3 max-w-4xl text-2xl font-semibold leading-tight text-foreground md:text-3xl">
               按厂商、库存、地区、线路和月价查找服务器
             </h1>
             <p className="mt-2 max-w-4xl text-sm leading-7 text-muted-foreground">
-              价格统一折算为美元月价用于排序，库存和探测时间用于判断数据新鲜度。下单前仍应在商家结算页核对价格、续费和退款政策。
+              常规款由后台人工维护，活动款单独进行库存探测。价格统一折算为美元月价用于排序，下单前仍应在商家结算页核对价格、续费和退款政策。
             </p>
           </div>
         </section>

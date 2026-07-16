@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { ImageUpload } from "@/features/cms/components/image-upload";
@@ -10,6 +11,8 @@ import { PostProductionContextPanel } from "@/features/cms/components/post-produ
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 
 import {
   ArrowLeft,
@@ -65,14 +68,19 @@ export default function EditPost({
     title: string;
     slug: string;
     language: string;
+    published: boolean;
   };
   productionContext: ProductionContext | null;
 }) {
+  const router = useRouter();
   const postLanguage = postMeta.language === "en" ? "en" : "zh";
   const publicPostHref =
     postLanguage === "en"
       ? `/en/fwq/posts/${postMeta.slug}`
       : `/fwq/posts/${postMeta.slug}`;
+  const [title, setTitle] = useState(postMeta.title);
+  const [slug, setSlug] = useState(postMeta.slug);
+  const [published, setPublished] = useState(postMeta.published);
   const [description, setDescription] = useState(post.post.description);
   const [content, setContent] = useState(post.post.content);
   const [imageUrl, setImageUrl] = useState(post.post.imgUrl ?? "");
@@ -136,8 +144,28 @@ export default function EditPost({
     const normalizedContent = content.trim();
     const normalizedDescription = (description ?? "").trim();
     const normalizedImageUrl = imageUrl.trim();
+    const normalizedTitle = title.trim();
+    const normalizedSlug = slug.trim();
     const parsedCategoryId = Number(categoryId);
 
+    if (!normalizedTitle) {
+      toast.error("请填写文章标题");
+      return;
+    }
+    if (normalizedTitle.length > 300) {
+      toast.error("文章标题不能超过 300 个字符");
+      return;
+    }
+    if (!normalizedSlug) {
+      toast.error("请填写文章 slug");
+      return;
+    }
+    if (normalizedSlug.length > 360 || /[\s/?#]/.test(normalizedSlug)) {
+      toast.error("文章 slug 格式不正确", {
+        description: "不能超过 360 个字符，也不能包含空格、斜杠、问号或井号。",
+      });
+      return;
+    }
     if (!normalizedContent || !normalizedDescription) {
       toast.error("请填写内容和简述");
       return;
@@ -166,6 +194,9 @@ export default function EditPost({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          title: normalizedTitle,
+          slug: normalizedSlug,
+          published,
           description: normalizedDescription,
           content: normalizedContent,
           imgUrl: normalizedImageUrl || null,
@@ -188,6 +219,8 @@ export default function EditPost({
         };
         data?: {
           saved?: boolean;
+          slug?: string;
+          published?: boolean;
           warnings?: string[];
         };
       } | null;
@@ -209,6 +242,14 @@ export default function EditPost({
         description:
           warnings.length > 0 ? `注意：${warnings.join("；")}` : undefined,
       });
+      const savedSlug = result?.data?.slug?.trim() ?? normalizedSlug;
+      if (savedSlug !== postMeta.slug) {
+        router.replace(
+          `/posts/edit/post/${encodeURIComponent(savedSlug)}`,
+        );
+      } else {
+        router.refresh();
+      }
     } catch (error) {
       console.error("更新文章失败:", error);
       toast.error(
@@ -259,7 +300,7 @@ export default function EditPost({
     <AdminPageShell
       badge="文章编辑"
       title="修改文章"
-      description="编辑文章正文、分类、标签和 SEO 信息。"
+      description="在一个页面维护标题、slug、发布状态、正文和 SEO 信息。"
       actions={
         <>
           <Button asChild variant="outline" size="sm">
@@ -289,7 +330,7 @@ export default function EditPost({
         className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]"
         onSubmit={handleSubmit}
       >
-        <AdminSectionCard title="正文编辑" description={postMeta.title}>
+        <AdminSectionCard title="正文编辑" description={title}>
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <label className="text-sm font-medium">文章内容</label>
@@ -353,10 +394,66 @@ export default function EditPost({
 
         <div className="space-y-5">
           <AdminSectionCard
-            title="发布设置"
-            description="分类、标签和摘要会影响前台展示与 SEO。"
+            title="文章与发布设置"
+            description="基础信息、分类、标签和摘要会影响前台展示与 SEO。"
           >
             <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="post-title">文章标题</Label>
+                <Input
+                  id="post-title"
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  maxLength={300}
+                  required
+                  className="min-h-11"
+                  placeholder="输入文章标题"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="post-slug">文章 slug</Label>
+                <Input
+                  id="post-slug"
+                  value={slug}
+                  onChange={(event) => setSlug(event.target.value)}
+                  maxLength={360}
+                  required
+                  spellCheck={false}
+                  className="min-h-11 font-mono"
+                  placeholder="article-url-slug"
+                />
+                <p className="break-all text-xs leading-5 text-muted-foreground">
+                  前台路径：
+                  {postLanguage === "en" ? "/en/fwq/posts/" : "/fwq/posts/"}
+                  {slug.trim() || "article-url-slug"}
+                </p>
+              </div>
+
+              <div className="flex min-h-12 items-center justify-between gap-4 rounded-md border border-border/70 bg-muted/15 px-3 py-2">
+                <div className="min-w-0">
+                  <Label htmlFor="post-published">发布状态</Label>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {published
+                      ? "保存时执行发布质检，通过后文章对外可见。"
+                      : "文章保持在草稿箱，可继续修改后再发布。"}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge variant={published ? "default" : "secondary"}>
+                    {published ? "已发布" : "草稿"}
+                  </Badge>
+                  <Switch
+                    id="post-published"
+                    checked={published}
+                    onCheckedChange={setPublished}
+                    aria-label="切换文章发布状态"
+                  />
+                </div>
+              </div>
+
+              <Separator />
+
               <div className="space-y-2">
                 <label className="text-sm font-medium">文章简述</label>
                 <Textarea
@@ -373,11 +470,11 @@ export default function EditPost({
                   <label className="text-sm font-medium">封面图片</label>
                   <ArticleCoverGenerator
                     postId={post.post.id}
-                    title={postMeta.title}
+                    title={title}
                     description={description ?? ""}
                     keywords={keywords}
                     content={content}
-                    fileSlug={postMeta.slug}
+                    fileSlug={slug}
                     language={postLanguage}
                     onGenerated={setImageUrl}
                   />
@@ -555,7 +652,7 @@ export default function EditPost({
           <div className="sticky bottom-4 rounded-md border border-border/70 bg-background/95 p-3 shadow-sm backdrop-blur">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs leading-5 text-muted-foreground">
-                保存后会更新文章正文、分类、推荐标签、关键词和标签关系。
+                一次保存会更新标题、slug、发布状态、正文、分类、推荐标签、关键词和标签关系。
               </p>
               <Button
                 type="submit"

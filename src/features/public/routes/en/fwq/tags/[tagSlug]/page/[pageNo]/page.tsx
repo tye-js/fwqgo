@@ -1,20 +1,20 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { connection } from "next/server";
-import { Hash } from "lucide-react";
 
-import { getPostsWithTagsByTagSlug } from "@/features/public/data/tag";
+import {
+  getPostsWithTagsByTagSlug,
+  getTagBySlug,
+} from "@/features/public/data/tag";
 import { getLatestPostsForSidebar } from "@/features/public/data/post";
 import ArticleCard from "@/features/public/components/article-card";
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
+import { TagContextSidebar } from "@/features/public/components/tag-context-sidebar";
 import PageCard from "@/features/public/components/page-card";
 import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
 import { PaginationComponent } from "@/features/shared/components/pagination";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { decodeSlug, parsePositiveInt } from "@fwqgo/core/utils";
 import { getServerOffersByKeywords } from "@/server/offers/server-offers";
@@ -40,12 +40,11 @@ export async function generateMetadata(props: {
 }): Promise<Metadata> {
   const params = await props.params;
   const decodedTagSlug = decodeSlug(params.tagSlug);
-  const pageNo = parsePositiveInt(params.pageNo) ?? 1;
-  const { data } = await getPostsWithTagsByTagSlug(
-    decodedTagSlug,
-    pageNo,
-    "en",
-  );
+  const pageNo = parsePositiveInt(params.pageNo);
+  if (!pageNo) {
+    return { robots: { index: false, follow: true } };
+  }
+  const { data } = await getTagBySlug(decodedTagSlug, "en");
   const title = data?.name ?? decodedTagSlug.replace(/[-_]+/g, " ");
   const canonicalSlug = data?.slug ?? decodedTagSlug;
   const zhSlug =
@@ -62,6 +61,10 @@ export async function generateMetadata(props: {
     title: `${title} - fwqgo`,
     description,
     keywords: data?.keywords ?? `${title} VPS,${title} server deals`,
+    robots: {
+      index: Boolean(data?.indexable),
+      follow: true,
+    },
     alternates: {
       canonical: canonicalUrl,
       languages: {
@@ -84,8 +87,6 @@ async function TagPageContent({
 }: {
   paramsPromise: Promise<{ tagSlug: string; pageNo: string }>;
 }) {
-  await connection();
-
   const params = await paramsPromise;
   const decodedTagSlug = decodeSlug(params.tagSlug);
   const pageNo = parsePositiveInt(params.pageNo);
@@ -97,8 +98,18 @@ async function TagPageContent({
       getLatestPostsForSidebar("en"),
     ]);
 
-  if (error || !postsWithTag?.posts) {
-    return <div>Failed to load tag articles.</div>;
+  if (error) {
+    return (
+      <div
+        role="alert"
+        className="rounded-lg border border-destructive/30 bg-destructive/5 p-5 text-sm text-destructive"
+      >
+        Tag content is temporarily unavailable. Please refresh this page later.
+      </div>
+    );
+  }
+  if (!postsWithTag?.posts) {
+    notFound();
   }
 
   const posts = postsWithTag.posts;
@@ -113,7 +124,7 @@ async function TagPageContent({
   }
 
   return (
-    <div className="grid gap-8 xl:grid-cols-[minmax(0,0.82fr)_320px]">
+    <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
       <div className="space-y-5">
         <PageCard
           kind="Tag"
@@ -125,6 +136,7 @@ async function TagPageContent({
           totalCount={postsWithTag.totalCount ?? 0}
           pageNo={postsWithTag.pageNo}
           language="en"
+          variant="compact"
         />
         <RelatedServerOfferCards
           title={`${postsWithTag.name} related offers`}
@@ -135,7 +147,12 @@ async function TagPageContent({
         <div className="space-y-4">
           {posts.length > 0 ? (
             posts.map((post) => (
-              <ArticleCard key={post.post.id} post={post.post} language="en" />
+              <ArticleCard
+                key={post.post.id}
+                post={post.post}
+                language="en"
+                excludedTagSlug={postsWithTag.slug}
+              />
             ))
           ) : (
             <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 p-8 text-center text-sm text-muted-foreground">
@@ -152,23 +169,17 @@ async function TagPageContent({
 
       <aside className="hidden xl:block">
         <div className="sticky top-24 space-y-4">
-          <Card className="rounded-lg border-border/70 bg-background shadow-none">
-            <CardContent className="space-y-4 p-5">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Hash className="size-4 text-accent" />
-                Tag notes
-              </div>
-              <p className="text-sm leading-6 text-muted-foreground">
-                Tag pages group related articles across categories for faster
-                comparison and reading.
-              </p>
-              <Badge variant="secondary">
-                Page {postsWithTag.pageNo} / {Math.max(totalPage, 1)}
-              </Badge>
-            </CardContent>
-          </Card>
-
-          <LatestPostsSidebar posts={latestPosts ?? []} language="en" />
+          <TagContextSidebar
+            offers={relatedOffers}
+            pageNo={postsWithTag.pageNo}
+            totalPage={totalPage}
+            language="en"
+          />
+          <LatestPostsSidebar
+            posts={latestPosts ?? []}
+            language="en"
+            variant="compact"
+          />
         </div>
       </aside>
     </div>

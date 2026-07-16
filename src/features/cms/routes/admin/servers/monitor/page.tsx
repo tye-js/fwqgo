@@ -40,7 +40,7 @@ async function ProviderMonitorContent() {
       <AdminPageShell
         badge="服务器套餐"
         title="库存监控"
-        description="配置厂商接口并查看库存检测历史。"
+        description="仅活动款套餐参与厂商库存探测。"
       >
         <AdminSectionCard
           title="库存监控暂时无法读取"
@@ -68,7 +68,7 @@ async function ProviderMonitorContent() {
     <AdminPageShell
       badge="服务器套餐"
       title="库存监控"
-      description="配置厂商 JSON 接口，定时同步套餐库存、价格和购买入口。自动更新会尊重套餐里已经锁定的人工字段。"
+      description="配置厂商 JSON 接口，只同步已标记为活动款的套餐库存、价格和购买入口。常规款始终由后台手动维护。"
     >
       <AdminSummaryStrip
         items={[
@@ -80,7 +80,7 @@ async function ProviderMonitorContent() {
           {
             label: "映射套餐",
             value: String(mappedOffers),
-            note: "已设置厂商产品 ID",
+            note: "已设置产品 ID 的活动款",
           },
           {
             label: "异常配置",

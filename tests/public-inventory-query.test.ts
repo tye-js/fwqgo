@@ -21,6 +21,15 @@ void test("inventory filters preserve valid fields when one field is invalid", (
   assert.equal(filters.maxPrice, 12.5);
 });
 
+void test("inventory defaults to regular offers and accepts promotion mode", () => {
+  assert.equal(parsePublicInventoryFilters({}).kind, "regular");
+  assert.equal(
+    parsePublicInventoryFilters({ kind: "promotion" }).kind,
+    "promotion",
+  );
+  assert.equal(parsePublicInventoryFilters({ kind: "invalid" }).kind, "regular");
+});
+
 void test("inventory filters normalize an inverted price range", () => {
   const filters = parsePublicInventoryFilters({
     minPrice: "30",

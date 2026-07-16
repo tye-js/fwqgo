@@ -98,6 +98,7 @@ export function ServerOfferImporter({ posts }: { posts: ImportPostOption[] }) {
       if (stopped) return;
 
       if (!result.success) {
+        setActiveTask(null);
         notifyActionError(result, {
           fallbackSuggestion: "请刷新页面后重试。",
         });

@@ -2,7 +2,11 @@ import { isUnauthorizedError, requireAdminSession } from "@fwqgo/auth/session";
 import { connection } from "next/server";
 import { z } from "zod";
 
-import { updatePostContent, updatePostTags } from "@/features/cms/actions/post";
+import {
+  updatePost,
+  updatePostContent,
+  updatePostTags,
+} from "@/features/cms/actions/post";
 import { adminApiFailure, adminApiSuccess } from "@/lib/admin-api-response";
 import { type TagMain } from "@/types";
 
@@ -15,6 +19,20 @@ const tagSchema = z.object({
 });
 
 const payloadSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, "文章标题不能为空")
+    .max(300, "文章标题不能超过 300 个字符"),
+  slug: z
+    .string()
+    .trim()
+    .min(1, "文章 slug 不能为空")
+    .max(360, "文章 slug 不能超过 360 个字符")
+    .refine((value) => !/[\s/?#]/.test(value), {
+      message: "文章 slug 不能包含空格、斜杠、问号或井号",
+    }),
+  published: z.boolean(),
   description: z.string().trim().min(1, "文章简述不能为空"),
   content: z.string().trim().min(1, "文章正文不能为空"),
   imgUrl: z.string().nullable().optional(),
@@ -130,11 +148,35 @@ export async function POST(
       });
     }
 
+    const postResult = await updatePost({
+      id: postId,
+      title: payload.title,
+      slug: payload.slug,
+      imgUrl: payload.imgUrl ?? null,
+      published: payload.published,
+      routeHandler: true,
+    });
+    const postError = formatActionError(postResult);
+    if (postError) {
+      return adminApiFailure(postError, {
+        status: postResult.error === "更新文章失败" ? 500 : 400,
+        title: payload.published
+          ? "文章内容已保存，但发布未完成"
+          : "文章内容已保存，但基础信息未完成",
+        suggestion: payload.published
+          ? "请根据具体提示处理 slug 或发布质检问题，然后再次保存。"
+          : "请检查标题和 slug，修正后再次保存。",
+      });
+    }
+
     return adminApiSuccess({
       saved: true,
+      slug: postResult.data?.slug ?? payload.slug,
+      published: postResult.data?.published ?? payload.published,
       warnings: [
         ...getActionWarnings(contentResult),
         ...getActionWarnings(tagsResult),
+        ...getActionWarnings(postResult),
       ],
     });
   } catch (error) {
@@ -145,6 +187,14 @@ export async function POST(
         status: 401,
         title: "登录已过期",
         suggestion: "请重新登录后台后再保存。",
+      });
+    }
+
+    if (error instanceof z.ZodError) {
+      return adminApiFailure(getErrorMessage(error), {
+        status: 400,
+        title: "文章信息校验失败",
+        suggestion: "请检查标题、slug、正文、摘要、分类和标签后再保存。",
       });
     }
 

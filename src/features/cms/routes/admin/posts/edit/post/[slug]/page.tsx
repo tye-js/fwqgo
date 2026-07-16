@@ -75,8 +75,9 @@ export default async function EditPostPage(props: {
         categories={categories}
         postMeta={{
           title: post.title,
-          slug,
+          slug: post.slug,
           language: post.language,
+          published: post.published,
         }}
         productionContext={productionContext}
       />
