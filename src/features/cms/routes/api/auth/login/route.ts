@@ -1,8 +1,7 @@
 import { db } from "@fwqgo/db";
 import { compare } from "bcryptjs";
 import { z } from "zod";
-import { randomUUID } from "crypto";
-import { users, sessions } from "@fwqgo/db/schema";
+import { users } from "@fwqgo/db/schema";
 import { eq } from "drizzle-orm";
 import { getTrustedClientIp } from "@fwqgo/core/client-ip";
 import { BoundedAttemptTracker } from "@fwqgo/core/bounded-attempt-tracker";
@@ -16,6 +15,7 @@ import {
   getCmsSessionCookieName,
   getCmsSessionCookieOptions,
 } from "@fwqgo/auth/session-cookie";
+import { createCmsSession } from "@fwqgo/auth/session-store";
 
 import { adminApiFailure, adminApiSuccess } from "@/lib/admin-api-response";
 
@@ -119,17 +119,7 @@ export async function POST(request: Request) {
 
     clearFailedLoginAttempts(attemptKeys);
 
-    // 创建 session
-    const sessionId = randomUUID();
-    const [session] = await db
-      .insert(sessions)
-      .values({
-        id: sessionId,
-        userId: user.id,
-        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30天
-        sessionToken: randomUUID(), // 添加随机生成的 sessionToken
-      })
-      .returning();
+    const session = await createCmsSession(user.id);
 
     if (!session) {
       return respond(
