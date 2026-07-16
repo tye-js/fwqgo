@@ -7,6 +7,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
+import { reserveBoundedMapCapacity } from "@fwqgo/core/bounded-map";
 import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 import { db } from "@fwqgo/db";
 import { imageCoverGenerationTasks, posts } from "@fwqgo/db/schema";
@@ -91,18 +92,6 @@ function serializeEphemeralCoverTask(task: EphemeralCoverTask) {
   };
 }
 
-function pruneEphemeralCoverBatches() {
-  if (ephemeralCoverBatches.size <= MAX_EPHEMERAL_COVER_BATCHES) return;
-
-  const keysToDelete = [...ephemeralCoverBatches.keys()].slice(
-    0,
-    ephemeralCoverBatches.size - MAX_EPHEMERAL_COVER_BATCHES,
-  );
-  for (const key of keysToDelete) {
-    ephemeralCoverBatches.delete(key);
-  }
-}
-
 async function runEphemeralCoverGenerationTask(
   batchId: string,
   payload: z.infer<typeof coverSchema>,
@@ -110,7 +99,9 @@ async function runEphemeralCoverGenerationTask(
 ) {
   const tasks = ephemeralCoverBatches.get(batchId);
   const task = tasks?.[0];
-  if (!tasks || !task) return;
+  if (!tasks || !task) {
+    throw new Error("临时封面任务状态已丢失，请重新提交任务");
+  }
 
   const runningTask: EphemeralCoverTask = {
     ...task,
@@ -281,6 +272,26 @@ export async function generateArticleCoverImageAction(input: {
 
     const imageConfig = await requireActiveImageConfig(payload.configId);
     const boundPayload = { ...payload, configId: imageConfig.id };
+    const hasCapacity = reserveBoundedMapCapacity(ephemeralCoverBatches, {
+      maxEntries: MAX_EPHEMERAL_COVER_BATCHES,
+      isEvictable: (tasks) =>
+        tasks.length > 0 &&
+        tasks.every((task) => terminalCoverTaskStatuses.includes(task.status)),
+      getEvictionPriority: (tasks) =>
+        Math.min(
+          ...tasks.map(
+            (task) => task.finishedAt?.getTime() ?? Number.POSITIVE_INFINITY,
+          ),
+        ),
+    });
+    if (!hasCapacity) {
+      return {
+        success: false,
+        error: "当前活跃封面生成任务过多，请等待现有任务完成后重试",
+        errorTitle: "无法创建封面生成任务",
+      };
+    }
+
     const batchId = randomUUID();
     const task: EphemeralCoverTask = {
       taskId: -Date.now(),
@@ -291,7 +302,6 @@ export async function generateArticleCoverImageAction(input: {
       finishedAt: null,
     };
     ephemeralCoverBatches.set(batchId, [task]);
-    pruneEphemeralCoverBatches();
     await enqueueAdminBackgroundJob({
       key: `article-cover-generation:${batchId}`,
       label: `Article cover generation: ${payload.title}`,
