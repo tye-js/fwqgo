@@ -22,6 +22,22 @@ void test("stops reading a response body after the byte limit", async () => {
   assert.equal(body, null);
 });
 
+void test("rejects an oversized declared response before reading", async () => {
+  const body = await readResponseBodyWithLimit(
+    new Response("ok", { headers: { "content-length": "5" } }),
+    4,
+  );
+  assert.equal(body, null);
+});
+
+void test("keeps a hard response boundary for an invalid limit", async () => {
+  const body = await readResponseBodyWithLimit(
+    new Response(new Uint8Array([1, 2])),
+    Number.NaN,
+  );
+  assert.equal(body, null);
+});
+
 void test("decodes bounded response text", async () => {
   const text = await readResponseTextWithLimit(new Response("中文内容"), 32);
   assert.equal(text, "中文内容");
