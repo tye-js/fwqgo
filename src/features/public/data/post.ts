@@ -618,15 +618,20 @@ export async function getPostsByPostId(id: number) {
   tagCache(cacheTags.posts);
 
   try {
+    const navigationFields = {
+      id: posts.id,
+      title: posts.title,
+      slug: posts.slug,
+    };
     const [prevRows, nextRows] = await Promise.all([
       readDb
-        .select()
+        .select(navigationFields)
         .from(posts)
         .where(and(lt(posts.id, id), publishedChinesePostCondition()))
         .orderBy(desc(posts.id))
         .limit(1),
       readDb
-        .select()
+        .select(navigationFields)
         .from(posts)
         .where(and(gt(posts.id, id), publishedChinesePostCondition()))
         .orderBy(asc(posts.id))
