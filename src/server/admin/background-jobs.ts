@@ -20,6 +20,7 @@ import { adminBackgroundJobs } from "@fwqgo/db/schema";
 import {
   getBackgroundJobRetentionCutoff,
   getBackgroundJobRetryDelayMs,
+  getBackgroundJobWakeDecision,
   normalizeBackgroundJobMaxAttempts,
   normalizeBackgroundJobRetentionDays,
 } from "@fwqgo/core/background-job-policy";
@@ -202,12 +203,18 @@ export function wakeAdminBackgroundJobWorkerForRegisteredKeys(
 
 function scheduleAdminBackgroundJobWorker(runAt: Date) {
   const runAtMs = runAt.getTime();
-  if (!Number.isFinite(runAtMs) || runAtMs <= Date.now()) {
+  const decision = getBackgroundJobWakeDecision(
+    workerWakeTimer ? workerWakeTimerAt : null,
+    runAtMs,
+    Date.now(),
+  );
+
+  if (decision === "wake-now") {
     wakeAdminBackgroundJobWorker();
     return;
   }
 
-  if (workerWakeTimer && workerWakeTimerAt <= runAtMs) return;
+  if (decision === "keep-current") return;
 
   if (workerWakeTimer) clearTimeout(workerWakeTimer);
   workerWakeTimerAt = runAtMs;
@@ -219,6 +226,36 @@ function scheduleAdminBackgroundJobWorker(runAt: Date) {
     },
     Math.max(0, runAtMs - Date.now()),
   );
+}
+
+function withoutRunningBackgroundJobForSameKey() {
+  return sql`not exists (
+    select 1 from "admin_background_jobs" as running_jobs
+    where running_jobs."jobKey" = ${adminBackgroundJobs.jobKey}
+      and running_jobs."status" = 'running'
+  )`;
+}
+
+async function scheduleNextQueuedBackgroundJob() {
+  const registeredKeys = [...jobRunners.keys()];
+  if (registeredKeys.length === 0) return;
+
+  const [nextJob] = await db
+    .select({ runAfter: adminBackgroundJobs.runAfter })
+    .from(adminBackgroundJobs)
+    .where(
+      and(
+        eq(adminBackgroundJobs.status, "queued"),
+        inArray(adminBackgroundJobs.jobKey, registeredKeys),
+        withoutRunningBackgroundJobForSameKey(),
+      ),
+    )
+    .orderBy(asc(adminBackgroundJobs.runAfter), asc(adminBackgroundJobs.id))
+    .limit(1);
+
+  if (nextJob) {
+    scheduleAdminBackgroundJobWorker(nextJob.runAfter);
+  }
 }
 
 export function getAdminBackgroundWorkerRuntimeSnapshot(): BackgroundWorkerRuntimeSnapshot {
@@ -401,11 +438,7 @@ async function claimNextBackgroundJob() {
           eq(adminBackgroundJobs.status, "queued"),
           lte(adminBackgroundJobs.runAfter, new Date()),
           inArray(adminBackgroundJobs.jobKey, registeredKeys),
-          sql`not exists (
-            select 1 from "admin_background_jobs" as running_jobs
-            where running_jobs."jobKey" = ${adminBackgroundJobs.jobKey}
-              and running_jobs."status" = 'running'
-          )`,
+          withoutRunningBackgroundJobForSameKey(),
         ),
       )
       .orderBy(asc(adminBackgroundJobs.runAfter), asc(adminBackgroundJobs.id))
@@ -583,6 +616,7 @@ async function runAdminBackgroundJobWorker() {
   await Promise.all(
     Array.from({ length: laneCount }, () => runBackgroundJobLane()),
   );
+  await scheduleNextQueuedBackgroundJob();
   await scheduleBlockedBackgroundJobRecovery();
   await scheduleRegisteredRunningBackgroundJobRecovery();
 }
