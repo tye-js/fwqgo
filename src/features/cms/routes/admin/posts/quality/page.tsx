@@ -36,7 +36,7 @@ async function PostQualityWrapper({
       <AdminPageShell
         badge="文章管理"
         title="发布质检"
-        description="发布前检查 SEO、封面、中英文关系、返利审核和套餐提取结果。"
+        description="发布前检查 SEO、封面、中英文关系、返利审核和套餐文章关系。"
       >
         <AdminSectionCard
           title="质检数据加载失败"
@@ -54,7 +54,7 @@ async function PostQualityWrapper({
     <AdminPageShell
       badge="文章管理"
       title="发布质检"
-      description="发布前集中检查 SEO、封面、中英文关系、返利审核和套餐提取结果；优先处理阻断项。"
+      description="发布前集中检查 SEO、封面、中英文关系、返利审核和套餐文章关系；套餐配置与价格由供应商官网采集。"
       actions={
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">

@@ -10,7 +10,7 @@ import {
   posts,
   categories,
   postTags,
-  serverOfferImportTasks,
+  providerMonitorRuns,
   serverOffers,
   tags,
 } from "@fwqgo/db/schema";
@@ -583,9 +583,9 @@ export async function getDashboardStats() {
       .from(imageCoverGenerationTasks)
       .groupBy(imageCoverGenerationTasks.status),
     db
-      .select({ status: serverOfferImportTasks.status, count: count() })
-      .from(serverOfferImportTasks)
-      .groupBy(serverOfferImportTasks.status),
+      .select({ status: providerMonitorRuns.status, count: count() })
+      .from(providerMonitorRuns)
+      .groupBy(providerMonitorRuns.status),
     db
       .select({ status: adminBackgroundJobs.status, count: count() })
       .from(adminBackgroundJobs)

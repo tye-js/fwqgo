@@ -45,7 +45,7 @@ export default async function OfferTaskDetailPage({ params }: PageProps) {
     <AdminPageShell
       badge="套餐提取任务"
       title={task.title}
-      description="查看文章套餐提取、写入统计、失败原因和可恢复操作。"
+      description="查看已归档的文章套餐提取记录；新套餐统一改由供应商官网采集。"
       actions={
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
@@ -136,7 +136,7 @@ export default async function OfferTaskDetailPage({ params }: PageProps) {
 
       <AdminSectionCard
         title="步骤日志"
-        description="套餐提取任务没有单独步骤表，这里按任务状态、消息和结果字段生成可读时间线。"
+        description="历史任务只读保留，按原任务状态、消息和结果字段生成时间线。"
       >
         <UnifiedTaskStepTimeline steps={task.steps} />
       </AdminSectionCard>

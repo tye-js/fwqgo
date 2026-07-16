@@ -932,18 +932,25 @@ export const providerMonitors = pgTable(
     providerId: integer("providerId").notNull(),
     name: text("name").notNull(),
     adapter: varchar("adapter", { length: 40 }).default("json").notNull(),
+    purpose: varchar("purpose", { length: 24 }).default("catalog").notNull(),
     endpointUrl: text("endpointUrl").notNull(),
     config: jsonb("config")
       .$type<Record<string, unknown>>()
       .default(sql`'{}'::jsonb`)
       .notNull(),
     enabled: boolean("enabled").default(false).notNull(),
+    autoPublish: boolean("autoPublish").default(false).notNull(),
+    missingThreshold: integer("missingThreshold").default(3).notNull(),
     intervalMinutes: integer("intervalMinutes").default(30).notNull(),
     timeoutSeconds: integer("timeoutSeconds").default(30).notNull(),
     lastRunAt: timestamp("lastRunAt"),
     nextRunAt: timestamp("nextRunAt"),
     lastStatus: varchar("lastStatus", { length: 24 }).default("idle").notNull(),
     lastError: text("lastError"),
+    etag: text("etag"),
+    lastModified: text("lastModified"),
+    responseHash: text("responseHash"),
+    lastSummary: jsonb("lastSummary").$type<Record<string, unknown>>(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
   },
@@ -972,11 +979,63 @@ export const providerMonitors = pgTable(
     ),
     adapterCheck: check(
       "provider_monitors_adapter_check",
-      sql`${table.adapter} in ('json')`,
+      sql`${table.adapter} in ('json', 'html', 'whmcs')`,
+    ),
+    purposeCheck: check(
+      "provider_monitors_purpose_check",
+      sql`${table.purpose} in ('catalog', 'promotion', 'stock')`,
+    ),
+    missingThresholdCheck: check(
+      "provider_monitors_missingThreshold_check",
+      sql`${table.missingThreshold} between 1 and 20`,
     ),
     lastStatusCheck: check(
       "provider_monitors_lastStatus_check",
       sql`${table.lastStatus} in ('idle', 'running', 'succeeded', 'failed')`,
+    ),
+  }),
+);
+
+export const providerMonitorRuns = pgTable(
+  "provider_monitor_runs",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    monitorId: integer("monitorId").notNull(),
+    status: varchar("status", { length: 24 }).default("running").notNull(),
+    httpStatus: integer("httpStatus"),
+    responseHash: text("responseHash"),
+    received: integer("received").default(0).notNull(),
+    created: integer("created").default(0).notNull(),
+    pending: integer("pending").default(0).notNull(),
+    updated: integer("updated").default(0).notNull(),
+    unchanged: integer("unchanged").default(0).notNull(),
+    skipped: integer("skipped").default(0).notNull(),
+    missing: integer("missing").default(0).notNull(),
+    errorTitle: text("errorTitle"),
+    errorDetail: text("errorDetail"),
+    startedAt: timestamp("startedAt").defaultNow().notNull(),
+    finishedAt: timestamp("finishedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    monitorIdx: index("provider_monitor_runs_monitorId_idx").on(
+      table.monitorId,
+    ),
+    statusStartedAtIdx: index("provider_monitor_runs_status_startedAt_idx").on(
+      table.status,
+      table.startedAt,
+    ),
+    monitorStartedAtIdx: index(
+      "provider_monitor_runs_monitorId_startedAt_idx",
+    ).on(table.monitorId, table.startedAt),
+    monitorFk: foreignKey({
+      columns: [table.monitorId],
+      foreignColumns: [providerMonitors.id],
+      name: "provider_monitor_runs_monitorId_provider_monitors_id_fk",
+    }).onDelete("cascade"),
+    statusCheck: check(
+      "provider_monitor_runs_status_check",
+      sql`${table.status} in ('running', 'succeeded', 'failed')`,
     ),
   }),
 );
@@ -994,6 +1053,10 @@ export const serverOffers = pgTable(
       .notNull(),
     providerName: text("providerName"),
     providerId: integer("providerId"),
+    sourceMonitorId: integer("sourceMonitorId"),
+    sourceHash: text("sourceHash"),
+    sourceLastSeenAt: timestamp("sourceLastSeenAt"),
+    missingRuns: integer("missingRuns").default(0).notNull(),
     productType: varchar("productType", { length: 80 }).default("vps"),
     cpu: text("cpu"),
     memory: text("memory"),
@@ -1053,6 +1116,9 @@ export const serverOffers = pgTable(
   },
   (table) => ({
     providerIdx: index("server_offers_providerId_idx").on(table.providerId),
+    sourceMonitorIdx: index("server_offers_sourceMonitorId_idx").on(
+      table.sourceMonitorId,
+    ),
     regionIdIdx: index("server_offers_regionId_idx").on(table.regionId),
     lineIdIdx: index("server_offers_lineId_idx").on(table.lineId),
     sourcePostIdx: index("server_offers_sourcePostId_idx").on(
@@ -1131,6 +1197,15 @@ export const serverOffers = pgTable(
       foreignColumns: [affServiceProviders.id],
       name: "server_offers_providerId_aff_service_providers_id_fk",
     }).onDelete("set null"),
+    sourceMonitorFk: foreignKey({
+      columns: [table.sourceMonitorId],
+      foreignColumns: [providerMonitors.id],
+      name: "server_offers_sourceMonitorId_provider_monitors_id_fk",
+    }).onDelete("set null"),
+    missingRunsCheck: check(
+      "server_offers_missingRuns_check",
+      sql`${table.missingRuns} >= 0`,
+    ),
     regionFk: foreignKey({
       columns: [table.regionId],
       foreignColumns: [serverRegions.id],
@@ -1268,6 +1343,7 @@ export const serverOfferSources = pgTable(
     sourcePostId: integer("sourcePostId"),
     sourceUrl: text("sourceUrl"),
     externalId: text("externalId"),
+    relationType: varchar("relationType", { length: 24 }),
     priority: integer("priority").default(0).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
@@ -1283,11 +1359,17 @@ export const serverOfferSources = pgTable(
     offerTypeExternalUnique: unique(
       "server_offer_sources_offerId_sourceType_externalId_unique",
     ).on(table.offerId, table.sourceType, table.externalId),
-    articleOfferUnique: uniqueIndex(
-      "server_offer_sources_article_offerId_unique",
+    articleRelationUnique: uniqueIndex(
+      "server_offer_sources_article_relation_unique",
     )
-      .on(table.offerId)
-      .where(sql`${table.sourceType} = 'article'`),
+      .on(table.offerId, table.sourcePostId, table.relationType)
+      .where(
+        sql`${table.sourceType} = 'article' and ${table.sourcePostId} is not null`,
+      ),
+    relationTypeCheck: check(
+      "server_offer_sources_relationType_check",
+      sql`${table.relationType} is null or ${table.relationType} in ('review', 'mention', 'deal')`,
+    ),
     offerFk: foreignKey({
       columns: [table.offerId],
       foreignColumns: [serverOffers.id],
@@ -1298,6 +1380,67 @@ export const serverOfferSources = pgTable(
       foreignColumns: [posts.id],
       name: "server_offer_sources_sourcePostId_posts_id_fk",
     }).onDelete("set null"),
+  }),
+);
+
+export const providerOfferCandidates = pgTable(
+  "provider_offer_candidates",
+  {
+    id: serial("id").primaryKey(),
+    monitorId: integer("monitorId").notNull(),
+    providerId: integer("providerId").notNull(),
+    externalProductId: text("externalProductId").notNull(),
+    sourceUrl: text("sourceUrl").notNull(),
+    sourceHash: text("sourceHash").notNull(),
+    normalizedData: jsonb("normalizedData")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    diff: jsonb("diff").$type<Record<string, unknown>>(),
+    status: varchar("status", { length: 24 }).default("pending").notNull(),
+    offerId: integer("offerId"),
+    rejectionReason: text("rejectionReason"),
+    reviewedBy: text("reviewedBy"),
+    reviewedAt: timestamp("reviewedAt"),
+    firstSeenAt: timestamp("firstSeenAt").defaultNow().notNull(),
+    lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    monitorExternalUnique: unique(
+      "provider_offer_candidates_monitorId_externalProductId_unique",
+    ).on(table.monitorId, table.externalProductId),
+    statusLastSeenIdx: index(
+      "provider_offer_candidates_status_lastSeenAt_idx",
+    ).on(table.status, table.lastSeenAt),
+    providerIdx: index("provider_offer_candidates_providerId_idx").on(
+      table.providerId,
+    ),
+    offerIdx: index("provider_offer_candidates_offerId_idx").on(table.offerId),
+    monitorFk: foreignKey({
+      columns: [table.monitorId],
+      foreignColumns: [providerMonitors.id],
+      name: "provider_offer_candidates_monitorId_provider_monitors_id_fk",
+    }).onDelete("cascade"),
+    providerFk: foreignKey({
+      columns: [table.providerId],
+      foreignColumns: [affServiceProviders.id],
+      name: "provider_offer_candidates_providerId_aff_service_providers_id_fk",
+    }).onDelete("cascade"),
+    offerFk: foreignKey({
+      columns: [table.offerId],
+      foreignColumns: [serverOffers.id],
+      name: "provider_offer_candidates_offerId_server_offers_id_fk",
+    }).onDelete("set null"),
+    reviewerFk: foreignKey({
+      columns: [table.reviewedBy],
+      foreignColumns: [users.id],
+      name: "provider_offer_candidates_reviewedBy_users_id_fk",
+    }).onDelete("set null"),
+    statusCheck: check(
+      "provider_offer_candidates_status_check",
+      sql`${table.status} in ('pending', 'accepted', 'rejected', 'superseded')`,
+    ),
   }),
 );
 
@@ -1438,6 +1581,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
   posts: many(posts),
   uploadedImages: many(imageAssets),
+  reviewedProviderOfferCandidates: many(providerOfferCandidates),
 }));
 
 export const accountsRelations = relations(accounts, ({ one }) => ({
@@ -1546,6 +1690,10 @@ export const serverOffersRelations = relations(
       fields: [serverOffers.providerId],
       references: [affServiceProviders.id],
     }),
+    sourceMonitor: one(providerMonitors, {
+      fields: [serverOffers.sourceMonitorId],
+      references: [providerMonitors.id],
+    }),
     sourcePost: one(posts, {
       fields: [serverOffers.sourcePostId],
       references: [posts.id],
@@ -1562,6 +1710,7 @@ export const serverOffersRelations = relations(
     tags: many(serverOfferTags),
     checks: many(serverOfferChecks),
     sources: many(serverOfferSources),
+    providerCandidates: many(providerOfferCandidates),
     homepageSlots: many(homepageSlots),
   }),
 );
@@ -1622,6 +1771,41 @@ export const providerMonitorsRelations = relations(
       references: [affServiceProviders.id],
     }),
     checks: many(serverOfferChecks),
+    runs: many(providerMonitorRuns),
+    candidates: many(providerOfferCandidates),
+    offers: many(serverOffers),
+  }),
+);
+
+export const providerMonitorRunsRelations = relations(
+  providerMonitorRuns,
+  ({ one }) => ({
+    monitor: one(providerMonitors, {
+      fields: [providerMonitorRuns.monitorId],
+      references: [providerMonitors.id],
+    }),
+  }),
+);
+
+export const providerOfferCandidatesRelations = relations(
+  providerOfferCandidates,
+  ({ one }) => ({
+    monitor: one(providerMonitors, {
+      fields: [providerOfferCandidates.monitorId],
+      references: [providerMonitors.id],
+    }),
+    provider: one(affServiceProviders, {
+      fields: [providerOfferCandidates.providerId],
+      references: [affServiceProviders.id],
+    }),
+    offer: one(serverOffers, {
+      fields: [providerOfferCandidates.offerId],
+      references: [serverOffers.id],
+    }),
+    reviewer: one(users, {
+      fields: [providerOfferCandidates.reviewedBy],
+      references: [users.id],
+    }),
   }),
 );
 

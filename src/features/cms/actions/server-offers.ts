@@ -17,14 +17,14 @@ import {
 } from "@/lib/admin-action-result";
 import {
   cancelServerOfferImportTask,
-  createServerOfferImportTask,
   getServerOfferImportTaskStatus,
-  retryServerOfferImportTask,
 } from "@/server/offers/import-task-runner";
 import {
   bulkUpdateServerOffers,
+  deleteServerOfferArticleRelation,
   offerReviewStatuses,
   offerStatuses,
+  upsertServerOfferArticleRelation,
   updateServerOffer,
 } from "@/server/offers/server-offers";
 
@@ -98,7 +98,16 @@ const offerPricesSchema = z
     });
   });
 
-const lockedOfferFields = ["title", "status", "price", "purchaseUrl"] as const;
+const lockedOfferFields = [
+  "title",
+  "offerKind",
+  "specs",
+  "location",
+  "status",
+  "price",
+  "purchaseUrl",
+  "promoCode",
+] as const;
 
 const updateOfferSchema = z.object({
   title: z.string().trim().min(1, "请输入套餐标题"),
@@ -155,95 +164,31 @@ function revalidateOfferPages() {
 }
 
 export async function importServerOffersFromPostAction(postId: number) {
-  try {
-    await requireAdminSession();
-    if (!Number.isInteger(postId) || postId <= 0) {
-      return adminActionFailure(new Error("文章 ID 无效"), {
-        title: "从单篇文章导入服务器套餐失败",
-        suggestion: "请刷新文章列表后重试。",
-      });
-    }
-
-    const task = await createServerOfferImportTask({
-      mode: "single",
-      postId,
-    });
-
-    return adminActionSuccess(task, "套餐提取任务已加入后台队列");
-  } catch (error) {
-    console.error("从单篇文章导入服务器套餐失败:", error);
-    return adminActionFailure(error, {
-      title: "从单篇文章导入服务器套餐失败",
-      suggestion:
-        "请确认文章存在，且正文或表格里同时包含服务器配置、价格和购买链接。",
-    });
-  }
+  await requireAdminSession();
+  void postId;
+  return adminActionFailure(new Error("文章套餐提取已停用"), {
+    title: "套餐数据源已迁移",
+    suggestion: "请到“套餐 → 供应商采集”配置供应商官网；文章只关联测评、提及或优惠关系。",
+  });
 }
 
 export async function importServerOffersFromSelectedPostsAction(
   postIds: number[],
 ) {
-  try {
-    await requireAdminSession();
-    const validIds = [
-      ...new Set(postIds.filter((id) => Number.isInteger(id) && id > 0)),
-    ].slice(0, 50);
-
-    if (validIds.length === 0) {
-      return adminActionFailure(new Error("请先选择要提取套餐的文章"), {
-        title: "批量提取套餐失败",
-        suggestion: "在文章列表勾选一篇或多篇文章后再提交。",
-      });
-    }
-
-    const tasks = [];
-    const errors: Array<{ postId: number; reason: string }> = [];
-
-    for (const postId of validIds) {
-      try {
-        tasks.push(
-          await createServerOfferImportTask({
-            mode: "single",
-            postId,
-          }),
-        );
-      } catch (error) {
-        errors.push({ postId, reason: getErrorMessage(error) });
-      }
-    }
-
-    return adminActionSuccess(
-      {
-        requested: validIds.length,
-        queued: tasks.length,
-        failed: errors.length,
-        taskIds: tasks.map((task) => task.taskId),
-        errors,
-      },
-      "选中文章套餐提取任务已加入后台队列",
-    );
-  } catch (error) {
-    console.error("批量从文章导入服务器套餐失败:", error);
-    return adminActionFailure(error, {
-      title: "批量提取套餐失败",
-      suggestion: "请稍后重试；如果持续失败，查看任务状态里的失败原因。",
-    });
-  }
+  await requireAdminSession();
+  void postIds;
+  return adminActionFailure(new Error("文章套餐提取已停用"), {
+    title: "套餐数据源已迁移",
+    suggestion: "请到“套餐 → 供应商采集”配置供应商官网。",
+  });
 }
 
 export async function importServerOffersFromPostsAction() {
-  try {
-    await requireAdminSession();
-    const task = await createServerOfferImportTask({ mode: "bulk" });
-
-    return adminActionSuccess(task, "历史文章套餐提取任务已加入后台队列");
-  } catch (error) {
-    console.error("导入服务器套餐失败:", error);
-    return adminActionFailure(error, {
-      title: "导入服务器套餐失败",
-      suggestion: "请稍后重试；如果持续失败，查看任务状态里的失败原因。",
-    });
-  }
+  await requireAdminSession();
+  return adminActionFailure(new Error("历史文章套餐提取已停用"), {
+    title: "套餐数据源已迁移",
+    suggestion: "请到“套餐 → 供应商采集”配置供应商官网。",
+  });
 }
 
 export async function getServerOfferImportTaskStatusAction(taskId: number) {
@@ -267,23 +212,12 @@ export async function getServerOfferImportTaskStatusAction(taskId: number) {
 }
 
 export async function retryServerOfferImportTaskAction(taskId: number) {
-  try {
-    await requireAdminSession();
-    if (!Number.isInteger(taskId) || taskId <= 0) {
-      return adminActionFailure(new Error("任务 ID 无效"), {
-        title: "恢复套餐提取任务失败",
-        suggestion: "请从任务中心重新打开任务详情。",
-      });
-    }
-
-    const task = await retryServerOfferImportTask(taskId);
-    return adminActionSuccess(task, "套餐提取任务已重新排队");
-  } catch (error) {
-    return adminActionFailure(error, {
-      title: "恢复套餐提取任务失败",
-      suggestion: "只有失败或已取消的套餐提取任务可以恢复。",
-    });
-  }
+  await requireAdminSession();
+  void taskId;
+  return adminActionFailure(new Error("历史套餐提取任务不能恢复"), {
+    title: "旧任务已归档",
+    suggestion: "请在供应商采集页面重新运行对应采集源。",
+  });
 }
 
 export async function cancelServerOfferImportTaskAction(taskId: number) {
@@ -302,6 +236,50 @@ export async function cancelServerOfferImportTaskAction(taskId: number) {
     return adminActionFailure(error, {
       title: "取消套餐提取任务失败",
       suggestion: "只能取消尚未开始执行的排队任务。",
+    });
+  }
+}
+
+export async function saveServerOfferArticleRelationAction(input: {
+  offerId: number;
+  postId: number;
+  relationType: "review" | "mention" | "deal";
+}) {
+  try {
+    await requireAdminSession();
+    if (!Number.isInteger(input.offerId) || input.offerId <= 0) {
+      throw new Error("套餐 ID 无效");
+    }
+    if (!Number.isInteger(input.postId) || input.postId <= 0) {
+      throw new Error("请选择文章");
+    }
+    if (!(["review", "mention", "deal"] as const).includes(input.relationType)) {
+      throw new Error("文章关系类型无效");
+    }
+    const result = await upsertServerOfferArticleRelation(input);
+    revalidatePath("/servers/manage");
+    return adminActionSuccess(result, "套餐文章关系已保存");
+  } catch (error) {
+    return adminActionFailure(error, {
+      title: "保存套餐文章关系失败",
+      suggestion: "请确认套餐和文章仍然存在后重试。",
+    });
+  }
+}
+
+export async function deleteServerOfferArticleRelationAction(sourceId: number) {
+  try {
+    await requireAdminSession();
+    if (!Number.isInteger(sourceId) || sourceId <= 0) {
+      throw new Error("文章关系 ID 无效");
+    }
+    const result = await deleteServerOfferArticleRelation(sourceId);
+    revalidatePath("/servers/manage");
+    return adminActionSuccess(result, "套餐文章关系已删除");
+  } catch (error) {
+    return adminActionFailure(error, {
+      title: "删除套餐文章关系失败",
+      suggestion: "请刷新套餐列表后重试。",
     });
   }
 }

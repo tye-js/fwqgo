@@ -14,6 +14,8 @@ import { toast } from "sonner";
 
 import {
   bulkUpdateServerOffersAction,
+  deleteServerOfferArticleRelationAction,
+  saveServerOfferArticleRelationAction,
   updateServerOfferAction,
 } from "@/features/cms/actions/server-offers";
 import {
@@ -42,7 +44,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { type getAdminServerOffers } from "@/server/offers/server-offers";
+import type {
+  getAdminServerOffers,
+  getServerOfferRelationPostOptions,
+} from "@/server/offers/server-offers";
 import { type getProviderOptionsForMonitoring } from "@/server/offers/provider-monitor";
 import { isInternalHref, isSafePublicHref } from "@fwqgo/core/utils";
 import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
@@ -50,6 +55,9 @@ import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
 type Offer = Awaited<ReturnType<typeof getAdminServerOffers>>["rows"][number];
 type Provider = Awaited<
   ReturnType<typeof getProviderOptionsForMonitoring>
+>[number];
+type RelationPost = Awaited<
+  ReturnType<typeof getServerOfferRelationPostOptions>
 >[number];
 type EditablePrice = {
   key: string;
@@ -96,6 +104,12 @@ const offerReviewStatusLabels = {
 } as const;
 
 const reviewStatusOptions = Object.entries(offerReviewStatusLabels);
+
+const articleRelationLabels = {
+  review: "测评",
+  mention: "提及",
+  deal: "优惠",
+} as const;
 
 function formatPrice(offer: Offer) {
   if (
@@ -388,12 +402,15 @@ function SafeAdminOfferLink({
 function OfferEditForm({
   offer,
   providers,
+  relationPosts,
   onDone,
 }: {
   offer: Offer;
   providers: Provider[];
+  relationPosts: RelationPost[];
   onDone: () => void;
 }) {
+  const router = useRouter();
   const [visible, setVisible] = useState(offer.visible);
   const [featured, setFeatured] = useState(offer.featured);
   const [offerKind, setOfferKind] = useState<"regular" | "promotion">(
@@ -405,6 +422,10 @@ function OfferEditForm({
   const [prices, setPrices] = useState<EditablePrice[]>(() =>
     initialEditablePrices(offer),
   );
+  const [relationPostId, setRelationPostId] = useState("");
+  const [relationType, setRelationType] = useState<
+    "review" | "mention" | "deal"
+  >("review");
   const [isPending, startTransition] = useTransition();
 
   function handleSubmit(formData: FormData) {
@@ -444,6 +465,36 @@ function OfferEditForm({
         ? [...new Set([...current, field])]
         : current.filter((item) => item !== field),
     );
+  }
+
+  function addArticleRelation() {
+    const postId = Number(relationPostId);
+    startTransition(async () => {
+      const result = await saveServerOfferArticleRelationAction({
+        offerId: offer.id,
+        postId,
+        relationType,
+      });
+      if (!result.success) {
+        toast.error(result.error, { description: result.message });
+        return;
+      }
+      toast.success(result.message ?? "文章关系已保存");
+      setRelationPostId("");
+      router.refresh();
+    });
+  }
+
+  function removeArticleRelation(sourceId: number) {
+    startTransition(async () => {
+      const result = await deleteServerOfferArticleRelationAction(sourceId);
+      if (!result.success) {
+        toast.error(result.error, { description: result.message });
+        return;
+      }
+      toast.success(result.message ?? "文章关系已删除");
+      router.refresh();
+    });
   }
 
   return (
@@ -664,7 +715,7 @@ function OfferEditForm({
           />
         </div>
         <div className="space-y-2">
-          <Label>来源文章</Label>
+          <Label>外部来源链接</Label>
           <Input
             name="articleUrl"
             defaultValue={offer.articleUrl ?? ""}
@@ -672,12 +723,97 @@ function OfferEditForm({
           />
         </div>
         <div className="space-y-2">
-          <Label>测评文章</Label>
+          <Label>外部测评链接</Label>
           <Input
             name="reviewUrl"
             defaultValue={offer.reviewUrl ?? ""}
             className="min-h-11"
           />
+        </div>
+      </div>
+      <div className="space-y-3 rounded-md border border-border/70 bg-background p-3">
+        <div>
+          <p className="text-sm font-medium">关联文章</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            一个套餐可以关联多篇测评、提及或优惠文章，文章不再作为套餐数据源。
+          </p>
+        </div>
+        {offer.articleRelations.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {offer.articleRelations.map((relation) => (
+              <div
+                key={relation.id}
+                className="flex min-h-11 max-w-full items-center gap-2 rounded-md border border-border/70 px-2"
+              >
+                <Badge variant="outline">
+                  {articleRelationLabels[
+                    (relation.relationType ?? "mention") as keyof typeof articleRelationLabels
+                  ] ?? relation.relationType}
+                </Badge>
+                <Link
+                  href={`/posts/edit/post/${encodeURIComponent(relation.postSlug)}`}
+                  className="max-w-72 truncate text-sm hover:text-primary hover:underline"
+                  title={relation.postTitle}
+                >
+                  {relation.postTitle}
+                </Link>
+                <span className="text-xs uppercase text-muted-foreground">
+                  {relation.postLanguage === "en" ? "EN" : "中文"}
+                </span>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  title="删除文章关系"
+                  aria-label={`删除文章关系 ${relation.postTitle}`}
+                  disabled={isPending}
+                  onClick={() => removeArticleRelation(relation.id)}
+                >
+                  <Trash2 className="size-4 text-destructive" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">暂未关联文章。</p>
+        )}
+        <div className="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_160px_auto]">
+          <Select value={relationPostId} onValueChange={setRelationPostId}>
+            <SelectTrigger className="min-h-11">
+              <SelectValue placeholder="选择文章" />
+            </SelectTrigger>
+            <SelectContent>
+              {relationPosts.map((post) => (
+                <SelectItem key={post.id} value={String(post.id)}>
+                  {post.language === "en" ? "[EN]" : "[中文]"} {post.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={relationType}
+            onValueChange={(value) =>
+              setRelationType(value as "review" | "mention" | "deal")
+            }
+          >
+            <SelectTrigger className="min-h-11">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="review">测评</SelectItem>
+              <SelectItem value="mention">提及</SelectItem>
+              <SelectItem value="deal">优惠</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isPending || !relationPostId}
+            onClick={addArticleRelation}
+          >
+            <Plus className="size-4" />
+            添加关系
+          </Button>
         </div>
       </div>
       <div className="rounded-md border border-border/70 bg-background p-3">
@@ -689,14 +825,18 @@ function OfferEditForm({
             <fieldset className="rounded-md border border-border/70 bg-background p-3">
               <legend className="px-1 text-sm font-medium">自动监控锁定字段</legend>
               <p className="mb-3 text-xs text-muted-foreground">
-                锁定后，厂商库存接口不会覆盖对应的人工内容。
+                锁定后，供应商官网采集不会覆盖对应的人工内容。
               </p>
               <div className="flex flex-wrap gap-x-5 gap-y-3">
                 {([
                   ["title", "标题"],
+                  ["offerKind", "套餐属性"],
+                  ["specs", "配置规格"],
+                  ["location", "地区与线路"],
                   ["status", "库存状态"],
                   ["price", "价格"],
                   ["purchaseUrl", "购买链接"],
+                  ["promoCode", "优惠码"],
                 ] as const).map(([field, label]) => (
                   <label
                     key={field}
@@ -791,11 +931,13 @@ function normalizeFilterValue(
 export function ServerOfferAdminTable({
   offers,
   providers,
+  relationPosts,
   totalCount,
   initialFilters,
 }: {
   offers: Offer[];
   providers: Provider[];
+  relationPosts: RelationPost[];
   totalCount: number;
   initialFilters: ServerOfferTableFilters;
 }) {
@@ -1234,6 +1376,7 @@ export function ServerOfferAdminTable({
                       <OfferEditForm
                         offer={offer}
                         providers={providers}
+                        relationPosts={relationPosts}
                         onDone={() => {
                           setEditId(null);
                           router.refresh();

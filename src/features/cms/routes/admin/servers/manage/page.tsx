@@ -11,12 +11,13 @@ import { ServerOfferAdminTable } from "@/features/cms/components/server-offer-ad
 import {
   getAdminServerOfferQualitySummary,
   getAdminServerOffers,
+  getServerOfferRelationPostOptions,
   getServerOfferTopicCounts,
 } from "@/server/offers/server-offers";
 import { parsePositiveInt } from "@fwqgo/core/utils";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { FileSearch } from "lucide-react";
+import { RadioTower } from "lucide-react";
 import { getProviderOptionsForMonitoring } from "@/server/offers/provider-monitor";
 
 type ServerOfferManageSearchParams = {
@@ -42,7 +43,7 @@ async function loadServerOfferManageData(
   filters: ServerOfferManageSearchParams,
 ) {
   try {
-    const [counts, offerPage, quality, providers] = await Promise.all([
+    const [counts, offerPage, quality, providers, relationPosts] = await Promise.all([
       getServerOfferTopicCounts(),
       getAdminServerOffers({
         page: parsePageNo(filters.pageNo),
@@ -55,9 +56,10 @@ async function loadServerOfferManageData(
       }),
       getAdminServerOfferQualitySummary(),
       getProviderOptionsForMonitoring(),
+      getServerOfferRelationPostOptions(),
     ]);
 
-    return { counts, offerPage, quality, providers, error: null };
+    return { counts, offerPage, quality, providers, relationPosts, error: null };
   } catch (error) {
     console.error("套餐管理页加载套餐数据失败:", error);
     return {
@@ -79,6 +81,7 @@ async function loadServerOfferManageData(
         promotionCount: 0,
       },
       providers: [] as Awaited<ReturnType<typeof getProviderOptionsForMonitoring>>,
+      relationPosts: [] as Awaited<ReturnType<typeof getServerOfferRelationPostOptions>>,
       error: getErrorMessage(error),
     };
   }
@@ -97,6 +100,7 @@ async function ServerOfferManageContent({
     offerPage,
     quality,
     providers,
+    relationPosts,
     error: loadError,
   } = await loadServerOfferManageData(searchParams);
   const total = counts.reduce((sum, item) => sum + item.count, 0);
@@ -136,13 +140,13 @@ async function ServerOfferManageContent({
   return (
     <AdminPageShell
       badge="服务器套餐"
-      title="人工修正数据"
-      description="常规款由后台手动维护，活动款才进入库存探测。这里统一校正配置、价格、状态、购买链接和前台展示。"
+      title="套餐管理"
+      description="供应商官网采集后在这里审核和校正配置、价格、状态、购买链接，并关联多篇测评、提及或优惠文章。"
       actions={
         <Button asChild variant="outline" size="sm">
-          <Link href="/posts/edit">
-            <FileSearch className="size-4" />
-            从文章提取
+          <Link href="/servers/monitor">
+            <RadioTower className="size-4" />
+            供应商采集
           </Link>
         </Button>
       }
@@ -152,12 +156,12 @@ async function ServerOfferManageContent({
           {
             label: "常规款",
             value: String(quality.regularCount),
-            note: "手动维护，不参与探测",
+            note: "供应商目录常规产品",
           },
           {
             label: "活动款",
             value: String(quality.promotionCount),
-            note: "允许厂商接口探测",
+            note: "供应商促销产品",
           },
           {
             label: "专题命中",
@@ -197,13 +201,14 @@ async function ServerOfferManageContent({
         </AdminSectionCard>
       </div>
       <AdminSectionCard
-        title="套餐校正"
-        description="对提取后的结构化套餐做人工审核、补字段、改状态和控制前台展示。"
+          title="套餐校正与文章关系"
+          description="对官网采集的结构化套餐做审核、补字段、改状态，并维护测评、提及和优惠文章的多对多关系。"
       >
         <ServerOfferAdminTable
           key={`${offerPage.page}:${searchParams.query ?? ""}:${searchParams.kind ?? "all"}:${searchParams.status ?? "all"}:${searchParams.reviewStatus ?? "all"}:${searchParams.visibility ?? "all"}`}
           offers={offerPage.rows}
           providers={providers}
+          relationPosts={relationPosts}
           totalCount={offerPage.total}
           initialFilters={{
             pageNo: offerPage.page,

@@ -5,7 +5,12 @@ import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { requirePublicHttpUrl } from "@fwqgo/core/network-url";
-import { parseProviderMonitorConfig } from "@fwqgo/core/provider-monitor-config";
+import {
+  parseProviderMonitorConfig,
+  PROVIDER_SOURCE_ADAPTERS,
+  PROVIDER_SOURCE_PURPOSES,
+  type ProviderSourceAdapter,
+} from "@fwqgo/core/provider-monitor-config";
 import {
   adminActionFailure,
   adminActionSuccess,
@@ -15,24 +20,34 @@ import {
   deleteProviderMonitor,
   enqueueProviderMonitorTask,
   getProviderMonitorList,
+  previewProviderMonitorSource,
+  retryProviderMonitorRun,
   updateProviderMonitor,
 } from "@/server/offers/provider-monitor";
+import {
+  acceptProviderOfferCandidate,
+  rejectProviderOfferCandidate,
+} from "@/server/offers/provider-offer-sync";
 
 const monitorInputSchema = z.object({
   id: z.number().int().positive().optional(),
   providerId: z.number().int().positive("请选择厂商"),
-  name: z.string().trim().min(1, "请输入监控名称").max(160),
-  endpointUrl: z.string().trim().url("请输入完整的库存接口 URL"),
+  name: z.string().trim().min(1, "请输入采集源名称").max(160),
+  adapter: z.enum(PROVIDER_SOURCE_ADAPTERS),
+  purpose: z.enum(PROVIDER_SOURCE_PURPOSES),
+  endpointUrl: z.string().trim().url("请输入完整的供应商网址"),
   configText: z.string().trim().max(30_000),
   enabled: z.boolean(),
+  autoPublish: z.boolean(),
+  missingThreshold: z.number().int().min(1).max(20),
   intervalMinutes: z.number().int().min(1).max(10_080),
   timeoutSeconds: z.number().int().min(1).max(300),
 });
 
 export type ProviderMonitorActionInput = z.input<typeof monitorInputSchema>;
 
-function parseConfigText(value: string) {
-  if (!value) return parseProviderMonitorConfig({});
+function parseConfigText(value: string, adapter: ProviderSourceAdapter) {
+  if (!value) return parseProviderMonitorConfig({}, adapter);
   let config: unknown;
   try {
     config = JSON.parse(value);
@@ -43,7 +58,7 @@ function parseConfigText(value: string) {
       }`,
     );
   }
-  return parseProviderMonitorConfig(config);
+  return parseProviderMonitorConfig(config, adapter);
 }
 
 export async function saveProviderMonitorAction(
@@ -54,15 +69,19 @@ export async function saveProviderMonitorAction(
     const input = monitorInputSchema.parse(rawInput);
     const endpointUrl = requirePublicHttpUrl(
       input.endpointUrl,
-      "库存监控地址",
+      "供应商采集地址",
     ).toString();
-    const config = parseConfigText(input.configText);
+    const config = parseConfigText(input.configText, input.adapter);
     const mutationInput = {
       providerId: input.providerId,
       name: input.name,
+      adapter: input.adapter,
+      purpose: input.purpose,
       endpointUrl,
       config,
       enabled: input.enabled,
+      autoPublish: input.autoPublish,
+      missingThreshold: input.missingThreshold,
       intervalMinutes: input.intervalMinutes,
       timeoutSeconds: input.timeoutSeconds,
     };
@@ -73,13 +92,13 @@ export async function saveProviderMonitorAction(
     revalidatePath("/servers/monitor");
     return adminActionSuccess(
       result,
-      input.id ? "库存监控配置已更新" : "库存监控配置已创建",
+      input.id ? "供应商采集源已更新" : "供应商采集源已创建",
     );
   } catch (error) {
     return adminActionFailure(error, {
-      title: "保存库存监控失败",
+      title: "保存供应商采集源失败",
       suggestion:
-        "请检查厂商、接口 URL、字段映射 JSON、执行间隔和超时时间。",
+        "请检查供应商、网址、适配器、字段映射 JSON、执行间隔和超时时间。",
     });
   }
 }
@@ -88,20 +107,20 @@ export async function runProviderMonitorNowAction(id: number) {
   try {
     await requireAdminSession();
     if (!Number.isInteger(id) || id <= 0) {
-      throw new Error("监控 ID 无效");
+      throw new Error("采集源 ID 无效");
     }
     const monitor = (await getProviderMonitorList()).find(
       (item) => item.id === id,
     );
-    if (!monitor) throw new Error("库存监控配置不存在");
-    if (!monitor.enabled) throw new Error("请先启用库存监控再立即检测");
+    if (!monitor) throw new Error("供应商采集源不存在");
+    if (!monitor.enabled) throw new Error("请先启用采集源再立即运行");
     await enqueueProviderMonitorTask(id, new Date());
     revalidatePath("/servers/monitor");
-    return adminActionSuccess({ id }, "库存检测任务已加入后台队列");
+    return adminActionSuccess({ id }, "供应商采集任务已加入后台队列");
   } catch (error) {
     return adminActionFailure(error, {
-      title: "启动库存检测失败",
-      suggestion: "请确认监控配置仍然存在且已启用，然后重新执行。",
+      title: "启动供应商采集失败",
+      suggestion: "请确认采集源仍然存在且已启用，然后重新执行。",
     });
   }
 }
@@ -110,15 +129,95 @@ export async function deleteProviderMonitorAction(id: number) {
   try {
     await requireAdminSession();
     if (!Number.isInteger(id) || id <= 0) {
-      throw new Error("监控 ID 无效");
+      throw new Error("采集源 ID 无效");
     }
     const result = await deleteProviderMonitor(id);
     revalidatePath("/servers/monitor");
-    return adminActionSuccess(result, "库存监控配置已删除");
+    return adminActionSuccess(result, "供应商采集源已删除");
   } catch (error) {
     return adminActionFailure(error, {
-      title: "删除库存监控失败",
-      suggestion: "正在运行的监控需要等待本次检测结束后再删除。",
+      title: "删除供应商采集源失败",
+      suggestion: "正在运行的采集需要等待本次执行结束后再删除。",
+    });
+  }
+}
+
+export async function previewProviderMonitorAction(
+  rawInput: ProviderMonitorActionInput,
+) {
+  try {
+    await requireAdminSession();
+    const input = monitorInputSchema.parse(rawInput);
+    const endpointUrl = requirePublicHttpUrl(
+      input.endpointUrl,
+      "供应商采集地址",
+    ).toString();
+    const config = parseConfigText(input.configText, input.adapter);
+    const preview = await previewProviderMonitorSource({
+      adapter: input.adapter,
+      endpointUrl,
+      config,
+      timeoutSeconds: input.timeoutSeconds,
+    });
+    return adminActionSuccess(preview, `预览完成，识别 ${preview.total} 个套餐`);
+  } catch (error) {
+    return adminActionFailure(error, {
+      title: "采集预览失败",
+      suggestion: "请检查网址可访问性、适配器和字段选择器，不会写入套餐数据。",
+    });
+  }
+}
+
+export async function reviewProviderOfferCandidateAction(input: {
+  candidateId: number;
+  decision: "accept" | "reject";
+  reason?: string;
+}) {
+  try {
+    const session = await requireAdminSession();
+    if (!Number.isInteger(input.candidateId) || input.candidateId <= 0) {
+      throw new Error("候选套餐 ID 无效");
+    }
+    const result =
+      input.decision === "accept"
+        ? await acceptProviderOfferCandidate({
+            candidateId: input.candidateId,
+            reviewerId: session.userId,
+          })
+        : await rejectProviderOfferCandidate({
+            candidateId: input.candidateId,
+            reviewerId: session.userId,
+            reason: input.reason,
+          });
+    revalidatePath("/servers/monitor");
+    revalidatePath("/servers/offers");
+    revalidatePath("/ai-tasks");
+    return adminActionSuccess(
+      result,
+      input.decision === "accept" ? "候选套餐已接受" : "候选套餐已拒绝",
+    );
+  } catch (error) {
+    return adminActionFailure(error, {
+      title: input.decision === "accept" ? "接受候选失败" : "拒绝候选失败",
+      suggestion: "请刷新页面确认候选状态后重试。",
+    });
+  }
+}
+
+export async function retryProviderMonitorRunAction(runId: number) {
+  try {
+    await requireAdminSession();
+    if (!Number.isInteger(runId) || runId <= 0) {
+      throw new Error("采集运行 ID 无效");
+    }
+    const result = await retryProviderMonitorRun(runId);
+    revalidatePath("/ai-tasks");
+    revalidatePath("/servers/monitor");
+    return adminActionSuccess(result, "供应商采集已重新加入后台队列");
+  } catch (error) {
+    return adminActionFailure(error, {
+      title: "重试供应商采集失败",
+      suggestion: "请确认采集源已启用，并刷新任务中心确认最新状态。",
     });
   }
 }

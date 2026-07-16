@@ -49,7 +49,7 @@ export const cmsNavigation: CmsNavigationItem[] = [
     icon: Server,
     items: [
       { title: "套餐管理", url: "/servers/manage" },
-      { title: "库存监控", url: "/servers/monitor" },
+      { title: "供应商采集", url: "/servers/monitor" },
     ],
   },
   {
@@ -128,7 +128,7 @@ export const cmsBreadcrumbSegmentTitles: Record<string, string> = {
   list: "图片资产",
   upload: "上传图片",
   covers: "封面生图",
-  offers: "套餐提取",
+  offers: "历史套餐提取",
   "ai-generate": "AI 生图",
   posts: "文章库",
   drafts: "草稿",
@@ -139,7 +139,7 @@ export const cmsBreadcrumbSegmentTitles: Record<string, string> = {
   category: "分类 SEO",
   tag: "标签 SEO",
   servers: "套餐",
-  monitor: "库存监控",
+  monitor: "供应商采集",
   manage: "套餐管理",
   settings: "模型与接口",
   "image-generation": "生图接口",

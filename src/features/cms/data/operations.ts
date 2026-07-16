@@ -7,6 +7,9 @@ import {
   imageAssets,
   imageCoverGenerationTasks,
   posts,
+  providerMonitorRuns,
+  providerMonitors,
+  affServiceProviders,
   serverOfferImportTasks,
 } from "@fwqgo/db/schema";
 import {
@@ -289,9 +292,9 @@ export async function getCmsTaskOperationsSummary() {
       .from(imageCoverGenerationTasks)
       .groupBy(imageCoverGenerationTasks.status),
     db
-      .select({ status: serverOfferImportTasks.status, count: count() })
-      .from(serverOfferImportTasks)
-      .groupBy(serverOfferImportTasks.status),
+      .select({ status: providerMonitorRuns.status, count: count() })
+      .from(providerMonitorRuns)
+      .groupBy(providerMonitorRuns.status),
     db
       .select({
         id: aiRewriteTasks.id,
@@ -327,21 +330,28 @@ export async function getCmsTaskOperationsSummary() {
       .limit(5),
     db
       .select({
-        id: serverOfferImportTasks.id,
-        postId: serverOfferImportTasks.postId,
-        mode: serverOfferImportTasks.mode,
-        status: serverOfferImportTasks.status,
-        message: serverOfferImportTasks.message,
-        errorTitle: serverOfferImportTasks.errorTitle,
-        errorDetail: serverOfferImportTasks.errorDetail,
-        createdAt: serverOfferImportTasks.createdAt,
-        updatedAt: serverOfferImportTasks.updatedAt,
+        id: providerMonitorRuns.id,
+        monitorName: providerMonitors.name,
+        providerName: affServiceProviders.name,
+        status: providerMonitorRuns.status,
+        errorTitle: providerMonitorRuns.errorTitle,
+        errorDetail: providerMonitorRuns.errorDetail,
+        createdAt: providerMonitorRuns.createdAt,
+        updatedAt: providerMonitorRuns.finishedAt,
       })
-      .from(serverOfferImportTasks)
-      .where(eq(serverOfferImportTasks.status, "failed"))
+      .from(providerMonitorRuns)
+      .innerJoin(
+        providerMonitors,
+        eq(providerMonitorRuns.monitorId, providerMonitors.id),
+      )
+      .innerJoin(
+        affServiceProviders,
+        eq(providerMonitors.providerId, affServiceProviders.id),
+      )
+      .where(eq(providerMonitorRuns.status, "failed"))
       .orderBy(
-        desc(serverOfferImportTasks.updatedAt),
-        desc(serverOfferImportTasks.createdAt),
+        desc(providerMonitorRuns.finishedAt),
+        desc(providerMonitorRuns.startedAt),
       )
       .limit(5),
     db
@@ -378,19 +388,27 @@ export async function getCmsTaskOperationsSummary() {
       .limit(40),
     db
       .select({
-        id: serverOfferImportTasks.id,
-        postId: serverOfferImportTasks.postId,
-        mode: serverOfferImportTasks.mode,
-        status: serverOfferImportTasks.status,
-        startedAt: serverOfferImportTasks.startedAt,
-        createdAt: serverOfferImportTasks.createdAt,
-        updatedAt: serverOfferImportTasks.updatedAt,
+        id: providerMonitorRuns.id,
+        monitorName: providerMonitors.name,
+        providerName: affServiceProviders.name,
+        status: providerMonitorRuns.status,
+        startedAt: providerMonitorRuns.startedAt,
+        createdAt: providerMonitorRuns.createdAt,
+        updatedAt: providerMonitorRuns.finishedAt,
       })
-      .from(serverOfferImportTasks)
-      .where(inArray(serverOfferImportTasks.status, ["pending", "running"]))
+      .from(providerMonitorRuns)
+      .innerJoin(
+        providerMonitors,
+        eq(providerMonitorRuns.monitorId, providerMonitors.id),
+      )
+      .innerJoin(
+        affServiceProviders,
+        eq(providerMonitors.providerId, affServiceProviders.id),
+      )
+      .where(eq(providerMonitorRuns.status, "running"))
       .orderBy(
-        desc(serverOfferImportTasks.updatedAt),
-        desc(serverOfferImportTasks.createdAt),
+        desc(providerMonitorRuns.startedAt),
+        desc(providerMonitorRuns.id),
       )
       .limit(40),
     getAdminBackgroundJobSnapshots(),
@@ -420,13 +438,10 @@ export async function getCmsTaskOperationsSummary() {
     ...offerFailures.map((task) => ({
       source: "offer" as const,
       id: task.id,
-      title:
-        task.mode === "single"
-          ? taskTitle(task.message, task.postId ? `文章 #${task.postId}` : null)
-          : "历史文章套餐提取",
+      title: `${task.providerName} · ${task.monitorName}`,
       status: task.status,
       message: failureMessage(task.errorTitle, task.errorDetail),
-      href: `/ai-tasks/offers/${task.id}`,
+      href: `/ai-tasks/providers/${task.id}`,
       createdAt: serializeDate(task.createdAt),
       updatedAt: serializeDate(task.updatedAt),
     })),
@@ -470,12 +485,9 @@ export async function getCmsTaskOperationsSummary() {
       activeTaskRowToStaleTask({
         source: "offer",
         id: task.id,
-        title:
-          task.mode === "single"
-            ? taskTitle(task.postId ? `文章 #${task.postId}` : null)
-            : "历史文章套餐提取",
+        title: `${task.providerName} · ${task.monitorName}`,
         status: task.status,
-        href: `/ai-tasks/offers/${task.id}`,
+        href: `/ai-tasks/providers/${task.id}`,
         updatedAt: task.updatedAt,
         startedAt: task.startedAt,
         createdAt: task.createdAt,
@@ -587,6 +599,23 @@ function offerTaskDescription(row: {
   );
 }
 
+function providerRunDescription(row: {
+  received: number;
+  created: number;
+  pending: number;
+  updated: number;
+  unchanged: number;
+  skipped: number;
+  missing: number;
+  errorTitle: string | null;
+  errorDetail: string | null;
+}) {
+  if (row.errorTitle || row.errorDetail) {
+    return failureMessage(row.errorTitle, row.errorDetail);
+  }
+  return `接收 ${row.received} 个，新增 ${row.created}，待审核 ${row.pending}，更新 ${row.updated}，未变化 ${row.unchanged}，跳过 ${row.skipped}，缺失 ${row.missing}`;
+}
+
 export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
   await requireAdminSession();
 
@@ -622,15 +651,13 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
       : undefined,
   );
   const offerWhere = andMaybe(
-    statusConditions(serverOfferImportTasks.status, filters.status),
+    statusConditions(providerMonitorRuns.status, filters.status),
     filters.query
       ? or(
-          ilikeContains(serverOfferImportTasks.mode, filters.query),
-          ilikeContains(serverOfferImportTasks.message, filters.query),
-          ilikeContains(serverOfferImportTasks.errorTitle, filters.query),
-          ilikeContains(serverOfferImportTasks.errorDetail, filters.query),
-          ilikeContains(posts.title, filters.query),
-          ilikeContains(posts.slug, filters.query),
+          ilikeContains(providerMonitors.name, filters.query),
+          ilikeContains(affServiceProviders.name, filters.query),
+          ilikeContains(providerMonitorRuns.errorTitle, filters.query),
+          ilikeContains(providerMonitorRuns.errorDetail, filters.query),
         )
       : undefined,
   );
@@ -708,31 +735,40 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
     shouldReadOffer
       ? db
           .select({
-            id: serverOfferImportTasks.id,
-            mode: serverOfferImportTasks.mode,
-            status: serverOfferImportTasks.status,
-            progress: serverOfferImportTasks.progress,
-            message: serverOfferImportTasks.message,
-            result: serverOfferImportTasks.result,
-            errorTitle: serverOfferImportTasks.errorTitle,
-            errorDetail: serverOfferImportTasks.errorDetail,
-            postId: posts.id,
-            postTitle: posts.title,
-            postSlug: posts.slug,
-            postLanguage: posts.language,
-            createdAt: serverOfferImportTasks.createdAt,
-            updatedAt: serverOfferImportTasks.updatedAt,
-            startedAt: serverOfferImportTasks.startedAt,
-            finishedAt: serverOfferImportTasks.finishedAt,
+            id: providerMonitorRuns.id,
+            monitorId: providerMonitorRuns.monitorId,
+            monitorName: providerMonitors.name,
+            providerName: affServiceProviders.name,
+            adapter: providerMonitors.adapter,
+            purpose: providerMonitors.purpose,
+            status: providerMonitorRuns.status,
+            received: providerMonitorRuns.received,
+            created: providerMonitorRuns.created,
+            pending: providerMonitorRuns.pending,
+            updated: providerMonitorRuns.updated,
+            unchanged: providerMonitorRuns.unchanged,
+            skipped: providerMonitorRuns.skipped,
+            missing: providerMonitorRuns.missing,
+            errorTitle: providerMonitorRuns.errorTitle,
+            errorDetail: providerMonitorRuns.errorDetail,
+            createdAt: providerMonitorRuns.createdAt,
+            updatedAt: providerMonitorRuns.finishedAt,
+            startedAt: providerMonitorRuns.startedAt,
+            finishedAt: providerMonitorRuns.finishedAt,
           })
-          .from(serverOfferImportTasks)
-          .leftJoin(posts, eq(serverOfferImportTasks.postId, posts.id))
+          .from(providerMonitorRuns)
+          .innerJoin(
+            providerMonitors,
+            eq(providerMonitorRuns.monitorId, providerMonitors.id),
+          )
+          .innerJoin(
+            affServiceProviders,
+            eq(providerMonitors.providerId, affServiceProviders.id),
+          )
           .where(offerWhere)
           .orderBy(
-            desc(
-              sql`coalesce(${serverOfferImportTasks.updatedAt}, ${serverOfferImportTasks.createdAt})`,
-            ),
-            desc(serverOfferImportTasks.id),
+            desc(providerMonitorRuns.startedAt),
+            desc(providerMonitorRuns.id),
           )
           .limit(readLimit)
       : [],
@@ -753,8 +789,15 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
     shouldReadOffer
       ? db
           .select({ value: count() })
-          .from(serverOfferImportTasks)
-          .leftJoin(posts, eq(serverOfferImportTasks.postId, posts.id))
+          .from(providerMonitorRuns)
+          .innerJoin(
+            providerMonitors,
+            eq(providerMonitorRuns.monitorId, providerMonitors.id),
+          )
+          .innerJoin(
+            affServiceProviders,
+            eq(providerMonitors.providerId, affServiceProviders.id),
+          )
           .where(offerWhere)
       : [],
   ]);
@@ -807,28 +850,23 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
       uid: `offer-${task.id}`,
       type: "offer" as const,
       id: task.id,
-      title:
-        task.mode === "bulk"
-          ? "历史文章套餐提取"
-          : task.postTitle
-            ? `提取套餐：${task.postTitle}`
-            : "单篇文章套餐提取",
+      title: `${task.providerName} · ${task.monitorName}`,
       status: task.status,
-      progress: serializeProgress(task.progress, task.status),
-      description: offerTaskDescription(task),
+      progress: serializeProgress(null, task.status),
+      description: providerRunDescription(task),
       error:
         task.errorTitle || task.errorDetail
           ? failureMessage(task.errorTitle, task.errorDetail)
           : null,
-      href: `/ai-tasks/offers/${task.id}`,
-      sourceLabel: task.mode,
-      post: postSummary(task),
+      href: `/ai-tasks/providers/${task.id}`,
+      sourceLabel: `${task.adapter} · ${task.purpose}`,
+      post: null,
       createdAt: serializeDate(task.createdAt),
       updatedAt: serializeDate(task.updatedAt),
       startedAt: serializeDate(task.startedAt),
       finishedAt: serializeDate(task.finishedAt),
-      canRetry: task.status === "failed" || task.status === "cancelled",
-      canCancel: task.status === "pending",
+      canRetry: task.status === "failed",
+      canCancel: false,
       canResolve: false,
     })),
   ].sort((left, right) => {
@@ -996,6 +1034,115 @@ export type CoverTaskDetail = NonNullable<
   Awaited<ReturnType<typeof getCoverTaskDetail>>
 >;
 
+export async function getProviderRunDetail(runId: number) {
+  await requireAdminSession();
+
+  const [run] = await db
+    .select({
+      id: providerMonitorRuns.id,
+      monitorId: providerMonitorRuns.monitorId,
+      monitorName: providerMonitors.name,
+      providerName: affServiceProviders.name,
+      adapter: providerMonitors.adapter,
+      purpose: providerMonitors.purpose,
+      endpointUrl: providerMonitors.endpointUrl,
+      autoPublish: providerMonitors.autoPublish,
+      missingThreshold: providerMonitors.missingThreshold,
+      status: providerMonitorRuns.status,
+      httpStatus: providerMonitorRuns.httpStatus,
+      responseHash: providerMonitorRuns.responseHash,
+      received: providerMonitorRuns.received,
+      created: providerMonitorRuns.created,
+      pending: providerMonitorRuns.pending,
+      updated: providerMonitorRuns.updated,
+      unchanged: providerMonitorRuns.unchanged,
+      skipped: providerMonitorRuns.skipped,
+      missing: providerMonitorRuns.missing,
+      errorTitle: providerMonitorRuns.errorTitle,
+      errorDetail: providerMonitorRuns.errorDetail,
+      createdAt: providerMonitorRuns.createdAt,
+      startedAt: providerMonitorRuns.startedAt,
+      finishedAt: providerMonitorRuns.finishedAt,
+    })
+    .from(providerMonitorRuns)
+    .innerJoin(
+      providerMonitors,
+      eq(providerMonitorRuns.monitorId, providerMonitors.id),
+    )
+    .innerJoin(
+      affServiceProviders,
+      eq(providerMonitors.providerId, affServiceProviders.id),
+    )
+    .where(eq(providerMonitorRuns.id, runId))
+    .limit(1);
+
+  if (!run) return null;
+  const terminalStepStatus = stepStatusForTask(run.status);
+  const steps: UnifiedTaskStep[] = [
+    {
+      key: "created",
+      name: "创建采集运行",
+      status: "success",
+      description: `${run.providerName} · ${run.monitorName}`,
+      time: serializeDate(run.createdAt),
+    },
+    {
+      key: "fetch",
+      name: "请求供应商网站",
+      status: terminalStepStatus,
+      description:
+        run.status === "failed"
+          ? failureMessage(run.errorTitle, run.errorDetail)
+          : run.httpStatus
+            ? `供应商响应 HTTP ${run.httpStatus}`
+            : "正在等待供应商响应",
+      time: serializeDate(run.finishedAt ?? run.startedAt),
+      payload: run.responseHash ? `responseHash=${run.responseHash}` : null,
+    },
+    {
+      key: "normalize",
+      name: "解析、校验与幂等同步",
+      status: terminalStepStatus,
+      description: providerRunDescription(run),
+      time: serializeDate(run.finishedAt),
+    },
+    {
+      key: "review",
+      name: "候选审核与缺失判定",
+      status:
+        run.status === "succeeded"
+          ? "success"
+          : run.status === "failed"
+            ? "failed"
+            : "pending",
+      description: `待审核 ${run.pending} 个；本次缺失 ${run.missing} 个，连续 ${run.missingThreshold} 次缺失后停售`,
+      time: serializeDate(run.finishedAt),
+    },
+  ];
+
+  return {
+    ...run,
+    title: `${run.providerName} · ${run.monitorName}`,
+    description: providerRunDescription(run),
+    error:
+      run.errorTitle || run.errorDetail
+        ? failureMessage(run.errorTitle, run.errorDetail)
+        : null,
+    progress: serializeProgress(null, run.status),
+    steps,
+    createdAt: serializeDate(run.createdAt),
+    updatedAt: serializeDate(run.finishedAt ?? run.startedAt),
+    startedAt: serializeDate(run.startedAt),
+    finishedAt: serializeDate(run.finishedAt),
+    canRetry: run.status === "failed",
+    canCancel: false,
+  };
+}
+
+export type ProviderRunDetail = NonNullable<
+  Awaited<ReturnType<typeof getProviderRunDetail>>
+>;
+
 export async function getOfferTaskDetail(taskId: number) {
   await requireAdminSession();
 
@@ -1101,8 +1248,8 @@ export async function getOfferTaskDetail(taskId: number) {
     updatedAt: serializeDate(task.updatedAt),
     startedAt: serializeDate(task.startedAt),
     finishedAt: serializeDate(task.finishedAt),
-    canRetry: task.status === "failed" || task.status === "cancelled",
-    canCancel: task.status === "pending",
+    canRetry: false,
+    canCancel: false,
   };
 }
 

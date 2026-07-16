@@ -22,7 +22,7 @@ import type { CmsTaskOperationsSummary } from "@/features/cms/data/operations";
 const sourceLabel: Record<string, string> = {
   ai: "AI改写",
   cover: "封面生图",
-  offer: "套餐提取",
+  offer: "供应商采集",
 };
 
 function statusLabel(status: string) {
@@ -337,7 +337,7 @@ export function CmsTaskOperationsOverview({
         />
         <QueueSummaryLink
           type="offer"
-          title="套餐提取"
+          title="供应商采集"
           summary={summary.queues.offer}
         />
       </div>

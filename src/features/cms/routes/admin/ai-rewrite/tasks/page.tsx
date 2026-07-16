@@ -229,7 +229,7 @@ export async function AiRewriteTasksPageContent({
   const enabledSourceCount = sourceSites.filter((site) => site.enabled).length;
   const pageTitle = isTaskCenter ? "AI任务中心" : "AI 生产台";
   const pageDescription = isTaskCenter
-    ? "统一处理 AI 改写、封面生图和套餐提取任务。"
+    ? "统一处理 AI 改写、封面生图和供应商采集任务。"
     : "";
 
   return (

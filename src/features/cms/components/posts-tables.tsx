@@ -7,7 +7,6 @@ import {
   Archive,
   CircleCheck,
   CircleX,
-  FileSearch,
   ImagePlus,
   Languages,
   SearchCheck,
@@ -31,11 +30,6 @@ import {
   bulkEnqueueEnglishVersionsForPostsAction,
   enqueueSeoUpdateForPostsAction,
 } from "@/features/cms/actions/ai-rewrite-task";
-import {
-  getServerOfferImportTaskStatusAction,
-  importServerOffersFromSelectedPostsAction,
-  importServerOffersFromPostAction,
-} from "@/features/cms/actions/server-offers";
 import {
   describeAdminResult,
   notifyActionError,
@@ -84,37 +78,12 @@ type PostListProp = Pick<
   "id" | "title" | "published" | "imgUrl" | "slug" | "language"
 >;
 type PostStatusFilter = "all" | "published" | "draft";
-type ImportStats = {
-  scannedPosts: number;
-  extracted: number;
-  inserted: number;
-  updated: number;
-  skipped: number;
-};
-
-function describeImportStats(data: ImportStats) {
-  return `扫描 ${data.scannedPosts} 篇，提取有效套餐 ${data.extracted} 条，新增 ${data.inserted} 条，更新 ${data.updated} 条，跳过 ${data.skipped} 条`;
-}
-
-type ImportTask = {
-  taskId: number;
-  postId: number | null;
-  status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
-  progress: number;
-  message: string | null;
-  result: ImportStats | null;
-  done: boolean;
-  errorTitle?: string;
-  errorDetail?: string;
-};
-
 type BulkAction =
   | "publish"
   | "draft"
   | "cover"
   | "english"
   | "seo"
-  | "offers"
   | "delete";
 
 type CoverBatch = {
@@ -156,10 +125,6 @@ export function PostList({
   const [editPostData, setEditPostData] = useState<PostListProp | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [bulkAction, setBulkAction] = useState<BulkAction | null>(null);
-  const [extractingPostId, setExtractingPostId] = useState<number | null>(null);
-  const [activeImportTask, setActiveImportTask] = useState<ImportTask | null>(
-    null,
-  );
   const [activeCoverBatch, setActiveCoverBatch] = useState<CoverBatch | null>(
     null,
   );
@@ -182,59 +147,6 @@ export function PostList({
 
     return () => window.clearTimeout(timeoutId);
   }, [initialQuery, query, updateUrlQuery]);
-
-  useEffect(() => {
-    if (!activeImportTask || activeImportTask.done) return;
-
-    let stopped = false;
-    const poll = async () => {
-      const result = await getServerOfferImportTaskStatusAction(
-        activeImportTask.taskId,
-      );
-      if (stopped) return;
-
-      if (!result.success) {
-        setExtractingPostId(null);
-        setActiveImportTask(null);
-        notifyActionError(result, {
-          fallbackSuggestion: "请刷新页面后重试。",
-        });
-        return;
-      }
-
-      setActiveImportTask(result.data);
-      if (!result.data.done) {
-        return;
-      }
-
-      setExtractingPostId(null);
-      if (result.data.status === "succeeded" && result.data.result) {
-        toast.success("套餐数据提取完成", {
-          description: describeImportStats(result.data.result),
-        });
-        router.refresh();
-        return;
-      }
-
-      notifyActionError(
-        {
-          errorTitle: result.data.errorTitle ?? "套餐提取失败",
-          message: result.data.errorDetail ?? "请查看服务器日志。",
-        },
-        { fallbackSuggestion: "修正文章内容或提取规则后可以重新提交任务。" },
-      );
-    };
-
-    void poll();
-    const timer = window.setInterval(() => {
-      void poll();
-    }, 3000);
-
-    return () => {
-      stopped = true;
-      window.clearInterval(timer);
-    };
-  }, [activeImportTask, router]);
 
   useEffect(() => {
     if (!activeCoverBatch || activeCoverBatch.done) return;
@@ -569,43 +481,6 @@ export function PostList({
     }
   }
 
-  async function handleBulkExtractOffers() {
-    if (selectedIds.length === 0) {
-      toast.error("请先选择文章");
-      return;
-    }
-
-    setBulkAction("offers");
-    try {
-      const result =
-        await importServerOffersFromSelectedPostsAction(selectedIds);
-
-      if (!result.success) {
-        notifyActionError(result);
-        return;
-      }
-
-      toast.success("批量套餐提取已加入后台队列", {
-        description: describeAdminResult([
-          `处理 ${result.data.requested} 篇`,
-          `排队 ${result.data.queued} 个任务`,
-          "只写入同时包含配置、价格和购买链接的有效套餐",
-          result.data.failed > 0 ? `失败 ${result.data.failed} 个` : null,
-        ]),
-      });
-      if (result.data.failed === 0) {
-        setSelectedIds([]);
-      }
-      router.refresh();
-    } catch (error) {
-      toast.error("批量提取套餐失败", {
-        description: error instanceof Error ? error.message : "请稍后重试。",
-      });
-    } finally {
-      setBulkAction(null);
-    }
-  }
-
   function handleInputChange(
     key: keyof PostListProp,
     value: string | boolean | null,
@@ -639,37 +514,6 @@ export function PostList({
       });
     } finally {
       setIsSaving(false);
-    }
-  }
-
-  async function handleExtractOffers(postId: number) {
-    setExtractingPostId(postId);
-
-    try {
-      const result = await importServerOffersFromPostAction(postId);
-      if (!result.success) {
-        setExtractingPostId(null);
-        notifyActionError(result);
-        return;
-      }
-
-      setActiveImportTask(result.data);
-      notifyInfo({
-        title: "套餐提取已加入后台队列",
-        description: describeAdminResult([
-          `任务 ID ${result.data.taskId}`,
-          "后台会识别文章表格或正文段落里的配置、价格和购买链接",
-        ]),
-      });
-    } catch (error) {
-      setExtractingPostId(null);
-      notifyActionError(
-        {
-          error: "套餐提取任务创建失败",
-          message: error instanceof Error ? error.message : "请稍后重试。",
-        },
-        { fallbackSuggestion: "请确认登录状态和文章是否存在。" },
-      );
     }
   }
 
@@ -792,15 +636,6 @@ export function PostList({
             >
               <SearchCheck className="size-4" />
               {bulkAction === "seo" ? "排队中..." : "更新 SEO"}
-            </Button>
-            <Button
-              variant="outline"
-              disabled={bulkDisabled}
-              onClick={handleBulkExtractOffers}
-              className="min-h-11 w-full sm:w-auto"
-            >
-              <FileSearch className="size-4" />
-              {bulkAction === "offers" ? "排队中..." : "提取套餐"}
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
@@ -970,18 +805,7 @@ export function PostList({
                     <>
                       <Button
                         variant="outline"
-                        className="min-h-11"
-                        disabled={extractingPostId === post.id}
-                        onClick={() => handleExtractOffers(post.id)}
-                      >
-                        <FileSearch className="size-4" />
-                        {extractingPostId === post.id
-                          ? "提取中..."
-                          : "提取套餐"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="min-h-11"
+                        className="col-span-2 min-h-11"
                         onClick={() => {
                           setEditPostId(post.id);
                           setEditPostData(post);
@@ -1185,18 +1009,6 @@ export function PostList({
                           </>
                         ) : (
                           <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="px-2"
-                              disabled={extractingPostId === post.id}
-                              onClick={() => handleExtractOffers(post.id)}
-                            >
-                              <FileSearch className="size-4" />
-                              {extractingPostId === post.id
-                                ? "提取中..."
-                                : "提取套餐"}
-                            </Button>
                             <Button
                               size="sm"
                               variant="outline"

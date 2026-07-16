@@ -33,7 +33,6 @@ import {
 import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import { enqueueArticleCoverGenerationTask } from "@/server/images/cover-generation-task-runner";
-import { importServerOffersFromPost } from "@/server/offers/server-offers";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import {
   scrapeArticleWithOptions,
@@ -267,20 +266,8 @@ function needsManualAffiliateReview(diagnostics: ScrapeDiagnostics) {
   return (report?.invalidLinks.length ?? 0) > 0;
 }
 
-function finishedStepText(input: {
-  manualRequired: boolean;
-  offerExtraction: "pending" | "success" | "failed";
-}) {
+function finishedStepText(input: { manualRequired: boolean }) {
   const reviewText = input.manualRequired ? "，存在无效链接，需人工审核" : "";
-
-  if (input.offerExtraction === "success") {
-    return `草稿已保存，套餐提取完成${reviewText}`;
-  }
-
-  if (input.offerExtraction === "failed") {
-    return `草稿已保存，套餐提取失败，可在套餐数据页重新导入${reviewText}`;
-  }
-
   return `已保存草稿${reviewText}`;
 }
 
@@ -1852,7 +1839,6 @@ export async function runAiRewriteTask(taskId: number) {
           progress: 100,
           currentStep: finishedStepText({
             manualRequired,
-            offerExtraction: "pending",
           }),
           postId: post.id,
           resultTitle: post.title,
@@ -1921,74 +1907,16 @@ export async function runAiRewriteTask(taskId: number) {
         message: "图片引用同步完成",
       });
 
-      let offerExtractionStatus: "pending" | "success" | "failed" = "pending";
-      try {
-        activeStep = {
-          key: "offer_extract",
-          name: "提取服务器套餐",
-          attempt,
-          progress: 96,
-        };
-        await upsertTaskStep({
-          taskId,
-          attempt,
-          stepKey: "offer_extract",
-          stepName: "提取服务器套餐",
-          status: "running",
-          progress: 96,
-          message: "正在从草稿内容提取套餐数据",
-        });
-        const offerExtraction = await importServerOffersFromPost(post.id, {
-          revalidate: false,
-        });
-        if (offerExtraction.inserted > 0 || offerExtraction.updated > 0) {
-          await notifyPublicWebCache("offer.changed", {
-            topicSlugs: ["hong-kong", "united-states", "cheap-vps"],
-          });
-        }
-        await upsertTaskStep({
-          taskId,
-          attempt,
-          stepKey: "offer_extract",
-          stepName: "提取服务器套餐",
-          status: "success",
-          progress: 100,
-          message: `套餐提取完成：新增 ${offerExtraction.inserted}，更新 ${offerExtraction.updated}，跳过 ${offerExtraction.skipped}`,
-          payload: offerExtraction,
-        });
-        await updateTask(taskId, {
-          progress: 100,
-          currentStep: finishedStepText({
-            manualRequired,
-            offerExtraction: "success",
-          }),
-        });
-        offerExtractionStatus = "success";
-      } catch (offerError) {
-        structuredLog("error", "ai.offer_extraction_failed", {
-          taskId,
-          postId: post.id,
-          error: offerError,
-        });
-        await upsertTaskStep({
-          taskId,
-          attempt,
-          stepKey: "offer_extract",
-          stepName: "提取服务器套餐",
-          status: "failed",
-          progress: 100,
-          message: "草稿已保存，但套餐提取失败",
-          error: getErrorMessage(offerError),
-        });
-        await updateTask(taskId, {
-          progress: 100,
-          currentStep: finishedStepText({
-            manualRequired,
-            offerExtraction: "failed",
-          }),
-        });
-        offerExtractionStatus = "failed";
-      }
+      await upsertTaskStep({
+        taskId,
+        attempt,
+        stepKey: "offer_source",
+        stepName: "套餐数据来源",
+        status: "success",
+        progress: 100,
+        message: "文章不再提取套餐；套餐由供应商官网采集并单独审核",
+        payload: { source: "provider_catalog", postId: post.id },
+      });
       try {
         const englishTaskId = await createEnglishSeoTask({
           parentTask: claimedTask,
@@ -2008,7 +1936,6 @@ export async function runAiRewriteTask(taskId: number) {
         await updateTask(taskId, {
           currentStep: `${finishedStepText({
             manualRequired,
-            offerExtraction: offerExtractionStatus,
           })}，英文 SEO 任务已创建`,
         });
         await enqueueAiRewriteTask(englishTaskId);

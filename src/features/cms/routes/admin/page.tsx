@@ -521,7 +521,7 @@ export default async function Page() {
 
         <AdminSectionCard
           title="生产链路"
-          description="AI、封面、套餐提取和后台 worker 的累计状态。"
+          description="AI、封面、供应商采集和后台 worker 的累计状态。"
         >
           <TaskHealthRow
             title="AI 改写"
@@ -536,7 +536,7 @@ export default async function Page() {
             icon={Images}
           />
           <TaskHealthRow
-            title="套餐提取"
+            title="供应商采集"
             summary={taskOverview.offer}
             href="/ai-tasks?type=offer"
             icon={PackageSearch}

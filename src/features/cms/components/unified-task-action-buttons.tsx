@@ -14,10 +14,7 @@ import {
   cancelCoverGenerationTaskAction,
   retryCoverGenerationTaskAction,
 } from "@/features/cms/actions/article-cover-image";
-import {
-  cancelServerOfferImportTaskAction,
-  retryServerOfferImportTaskAction,
-} from "@/features/cms/actions/server-offers";
+import { retryProviderMonitorRunAction } from "@/features/cms/actions/provider-monitors";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -59,7 +56,7 @@ async function retryTask(
     return retryCoverGenerationTaskAction(taskId);
   }
 
-  return retryServerOfferImportTaskAction(taskId);
+  return retryProviderMonitorRunAction(taskId);
 }
 
 async function cancelTask(type: UnifiedTaskActionType, taskId: number) {
@@ -74,7 +71,10 @@ async function cancelTask(type: UnifiedTaskActionType, taskId: number) {
     return cancelCoverGenerationTaskAction(taskId);
   }
 
-  return cancelServerOfferImportTaskAction(taskId);
+  return {
+    success: false,
+    error: "供应商采集运行开始后不能取消，请停用采集源阻止后续计划。",
+  } satisfies TaskActionResult;
 }
 
 export function UnifiedTaskActionButtons({
@@ -101,7 +101,7 @@ export function UnifiedTaskActionButtons({
       ? "AI 改写任务"
       : type === "cover"
         ? "封面生成任务"
-        : "套餐提取任务";
+        : "供应商采集任务";
 
   function notifyUnexpectedError(action: string, error: unknown) {
     notifyError({

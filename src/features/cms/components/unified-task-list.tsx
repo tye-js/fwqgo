@@ -32,7 +32,7 @@ const taskTypeFilters: Array<{ value: UnifiedTaskType; label: string }> = [
   { value: "all", label: "全部任务" },
   { value: "ai", label: "AI改写" },
   { value: "cover", label: "封面生图" },
-  { value: "offer", label: "套餐提取" },
+  { value: "offer", label: "供应商采集" },
 ];
 
 const statusFilters: Array<{
@@ -52,7 +52,7 @@ const statusFilters: Array<{
 const typeLabels: Record<Exclude<UnifiedTaskType, "all">, string> = {
   ai: "AI改写",
   cover: "封面生图",
-  offer: "套餐提取",
+  offer: "供应商采集",
 };
 
 const statusLabels: Record<string, string> = {

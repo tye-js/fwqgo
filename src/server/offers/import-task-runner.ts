@@ -10,7 +10,7 @@ import {
 } from "@fwqgo/core/task-lease";
 import { structuredLog } from "@fwqgo/core/structured-log";
 import { db } from "@fwqgo/db";
-import { posts, serverOfferImportTasks } from "@fwqgo/db/schema";
+import { serverOfferImportTasks } from "@fwqgo/db/schema";
 import { getErrorMessage } from "@/lib/admin-action-result";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import {
@@ -310,112 +310,15 @@ export async function createServerOfferImportTask(input: {
   mode: ServerOfferImportMode;
   postId?: number | null;
 }) {
-  const session = await requireAdminSession();
-
-  if (input.mode === "single") {
-    const postId = input.postId ?? 0;
-    if (!Number.isInteger(postId) || postId <= 0) {
-      throw new Error("请选择一篇有效文章后再提取套餐");
-    }
-
-    const [post] = await db
-      .select({ id: posts.id, title: posts.title })
-      .from(posts)
-      .where(eq(posts.id, postId))
-      .limit(1);
-
-    if (!post) {
-      throw new Error("文章不存在或已被删除");
-    }
-  }
-
-  const [task] = await db
-    .insert(serverOfferImportTasks)
-    .values({
-      mode: input.mode,
-      postId: input.mode === "single" ? input.postId : null,
-      status: "pending",
-      progress: 0,
-      message:
-        input.mode === "single"
-          ? "单篇文章套餐提取已排队"
-          : "历史文章套餐提取已排队",
-      createdBy: session.userId,
-    })
-    .returning();
-
-  if (!task) {
-    throw new Error("创建套餐提取任务失败");
-  }
-
-  await ensureServerOfferImportWorker();
-  return serializeServerOfferImportTask(task);
+  await requireAdminSession();
+  void input;
+  throw new Error("文章套餐提取已停用，请改用供应商官网采集");
 }
 
 export async function retryServerOfferImportTask(taskId: number) {
   await requireAdminSession();
-
-  const [task] = await db
-    .update(serverOfferImportTasks)
-    .set({
-      status: "pending",
-      progress: 0,
-      message: "等待重新提取套餐",
-      result: null,
-      errorTitle: null,
-      errorDetail: null,
-      startedAt: null,
-      finishedAt: null,
-      leaseOwner: null,
-      leaseExpiresAt: null,
-      heartbeatAt: null,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(serverOfferImportTasks.id, taskId),
-        eq(serverOfferImportTasks.status, "failed"),
-      ),
-    )
-    .returning();
-
-  if (!task) {
-    const [cancelledTask] = await db
-      .update(serverOfferImportTasks)
-      .set({
-        status: "pending",
-        progress: 0,
-        message: "等待恢复套餐提取",
-        result: null,
-        errorTitle: null,
-        errorDetail: null,
-        startedAt: null,
-        finishedAt: null,
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        heartbeatAt: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(serverOfferImportTasks.id, taskId),
-          eq(serverOfferImportTasks.status, "cancelled"),
-        ),
-      )
-      .returning();
-
-    if (!cancelledTask) {
-      throw new Error("任务不存在，或当前状态不能恢复");
-    }
-
-    await ensureServerOfferImportWorker();
-    revalidateOfferTaskPages(taskId);
-    return serializeServerOfferImportTask(cancelledTask);
-  }
-
-  await ensureServerOfferImportWorker();
-  revalidateOfferTaskPages(taskId);
-  return serializeServerOfferImportTask(task);
+  void taskId;
+  throw new Error("历史文章套餐提取任务已归档，不能恢复");
 }
 
 export async function cancelServerOfferImportTask(taskId: number) {

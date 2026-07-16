@@ -4,7 +4,6 @@ import {
   desc,
   eq,
   inArray,
-  isNotNull,
   isNull,
   lt,
   lte,
@@ -18,31 +17,36 @@ import { fetchPublicHttpUrl } from "@fwqgo/core/network-url";
 import {
   getProviderMonitorCheckRetentionCutoff,
   parseProviderMonitorConfig,
-  type JsonMonitorConfig,
+  type ProviderMonitorConfig,
+  type ProviderSourceAdapter,
+  type ProviderSourcePurpose,
 } from "@fwqgo/core/provider-monitor-config";
-import type { PROVIDER_AVAILABILITY_STATUSES } from "@fwqgo/core/provider-monitor-config";
-import {
-  calculateMonthlyPriceUsd,
-  getServerOfferTermMonths,
-  normalizeServerOfferBillingCycle,
-} from "@fwqgo/core/server-offer-price";
 import { db } from "@fwqgo/db";
 import {
   adminBackgroundJobs,
   affServiceProviders,
+  providerOfferCandidates,
+  providerMonitorRuns,
   providerMonitors,
   serverOfferChecks,
-  serverOfferPrices,
-  serverOfferSources,
   serverOffers,
 } from "@fwqgo/db/schema";
 import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
+import {
+  markMissingProviderOffers,
+  syncProviderOfferCandidate,
+  type ProviderSyncContext,
+} from "@/server/offers/provider-offer-sync";
+import {
+  hashProviderMonitorSyncConfig,
+  hashProviderOfferSyncState,
+  hashProviderSourceResponse,
+  parseProviderSourcePayload,
+  validateProviderOfferCandidate,
+} from "@/server/offers/provider-source-parser";
 
 const MAX_MONITOR_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_MONITOR_ITEMS = 5_000;
-const STALE_CHECK_THRESHOLD_MS = 24 * 60 * 60 * 1_000;
-
-type AvailabilityStatus = (typeof PROVIDER_AVAILABILITY_STATUSES)[number];
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error
@@ -75,110 +79,18 @@ async function safelyPruneProviderMonitorCheckHistory(
   }
 }
 
-function readPath(value: unknown, path: string) {
-  if (!path.trim()) return value;
-  return path.split(".").reduce<unknown>((current, segment) => {
-    if (Array.isArray(current) && /^\d+$/.test(segment)) {
-      return current[Number(segment)];
-    }
-    if (typeof current === "object" && current !== null) {
-      return (current as Record<string, unknown>)[segment];
-    }
-    return undefined;
-  }, value);
-}
-
-function toStringValue(value: unknown) {
-  if (typeof value === "string") return value.trim();
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return "";
-}
-
-function emptyStringToNull(value: string) {
-  return value ? value : null;
-}
-
-function firstNonEmptyString(
-  ...values: Array<string | null | undefined>
-): string | null {
-  return values.find((value) => Boolean(value)) ?? null;
-}
-
-function normalizeAvailabilityStatus(
-  value: unknown,
-  statusMap: JsonMonitorConfig["statusMap"],
-): AvailabilityStatus | null {
-  if (typeof value === "boolean") return value ? "in_stock" : "out_of_stock";
-  const raw = toStringValue(value);
-  if (!raw) return null;
-  const mapped = statusMap[raw] ?? statusMap[raw.toLowerCase()];
-  if (mapped) return mapped;
-  if (/^(true|yes|available|in[_ -]?stock|有货)$/i.test(raw)) {
-    return "in_stock";
-  }
-  if (
-    /^(false|no|unavailable|out[_ -]?of[_ -]?stock|sold[_ -]?out|缺货)$/i.test(
-      raw,
-    )
-  ) {
-    return "out_of_stock";
-  }
-  if (/restock|补货/i.test(raw)) return "restocking";
-  if (/preorder|预售/i.test(raw)) return "preorder";
-  if (/discontinued|停售/i.test(raw)) return "discontinued";
-  return null;
-}
-
-function normalizePriceRows(item: unknown, config: JsonMonitorConfig) {
-  const source = config.pricesPath ? readPath(item, config.pricesPath) : null;
-  const candidates =
-    Array.isArray(source) && source.length > 0 ? source : [item];
-
-  const normalized = candidates
-    .map((candidate) => {
-      const amount = toStringValue(readPath(candidate, config.priceField));
-      const currency =
-        toStringValue(
-          readPath(candidate, config.currencyField),
-        ).toUpperCase() || "USD";
-      const billingCycle = normalizeServerOfferBillingCycle(
-        toStringValue(readPath(candidate, config.billingCycleField)),
-      );
-      const monthlyPriceUsd = calculateMonthlyPriceUsd({
-        amount,
-        currency,
-        billingCycle,
-      });
-      if (!amount || monthlyPriceUsd === null) return null;
-
-      return {
-        amount,
-        currency,
-        billingCycle,
-        termMonths: getServerOfferTermMonths(billingCycle),
-        monthlyPriceUsd,
-        purchaseUrl: emptyStringToNull(
-          toStringValue(readPath(candidate, config.purchaseUrlField)),
-        ),
-      };
-    })
-    .filter((price): price is NonNullable<typeof price> => Boolean(price))
-    .sort((left, right) => left.monthlyPriceUsd - right.monthlyPriceUsd);
-  const unique = new Map<string, (typeof normalized)[number]>();
-  for (const price of normalized) {
-    const key = `${price.billingCycle}:${price.currency}`;
-    if (!unique.has(key)) unique.set(key, price);
-  }
-  return [...unique.values()];
-}
-
 export type ProviderMonitorRunSummary = {
   monitorId: number;
+  runId: number | null;
   providerName: string;
   received: number;
-  matched: number;
-  changed: number;
+  created: number;
+  pending: number;
+  updated: number;
+  unchanged: number;
   skipped: number;
+  missing: number;
+  configHash: string | null;
   checkedAt: string;
 };
 
@@ -191,12 +103,24 @@ export async function runProviderMonitor(
       providerId: providerMonitors.providerId,
       name: providerMonitors.name,
       adapter: providerMonitors.adapter,
+      purpose: providerMonitors.purpose,
       endpointUrl: providerMonitors.endpointUrl,
       config: providerMonitors.config,
       enabled: providerMonitors.enabled,
+      autoPublish: providerMonitors.autoPublish,
+      missingThreshold: providerMonitors.missingThreshold,
       intervalMinutes: providerMonitors.intervalMinutes,
       timeoutSeconds: providerMonitors.timeoutSeconds,
+      etag: providerMonitors.etag,
+      lastModified: providerMonitors.lastModified,
+      responseHash: providerMonitors.responseHash,
+      lastSummary: providerMonitors.lastSummary,
       providerName: affServiceProviders.name,
+      providerSlug: affServiceProviders.slug,
+      affUrl: affServiceProviders.affUrl,
+      affParam: affServiceProviders.affParam,
+      affValue: affServiceProviders.affValue,
+      defaultPromoCode: affServiceProviders.defaultPromoCode,
     })
     .from(providerMonitors)
     .innerJoin(
@@ -206,25 +130,85 @@ export async function runProviderMonitor(
     .where(eq(providerMonitors.id, monitorId))
     .limit(1);
 
-  if (!monitor) throw new Error("库存监控配置不存在");
+  if (!monitor) throw new Error("供应商采集源不存在");
   if (!monitor.enabled) {
     return {
       monitorId: monitor.id,
+      runId: null,
       providerName: monitor.providerName,
       received: 0,
-      matched: 0,
-      changed: 0,
+      created: 0,
+      pending: 0,
+      updated: 0,
+      unchanged: 0,
       skipped: 0,
+      missing: 0,
+      configHash: null,
       checkedAt: new Date().toISOString(),
     };
   }
-  if (monitor.adapter !== "json") {
-    throw new Error(`暂不支持监控适配器：${monitor.adapter}`);
-  }
 
-  const config = parseProviderMonitorConfig(monitor.config);
+  const adapter = monitor.adapter as ProviderSourceAdapter;
+  const config = parseProviderMonitorConfig(monitor.config, adapter);
+  const context: ProviderSyncContext = {
+    monitorId: monitor.id,
+    providerId: monitor.providerId,
+    providerName: monitor.providerName,
+    providerSlug: monitor.providerSlug,
+    purpose: monitor.purpose,
+    autoPublish: monitor.autoPublish,
+    missingThreshold: monitor.missingThreshold,
+    affUrl: monitor.affUrl,
+    affParam: monitor.affParam,
+    affValue: monitor.affValue,
+    defaultPromoCode: monitor.defaultPromoCode,
+  };
+  const configHash = hashProviderMonitorSyncConfig({
+    adapter,
+    config,
+    affiliate: {
+      affUrl: monitor.affUrl,
+      affParam: monitor.affParam,
+      affValue: monitor.affValue,
+    },
+    behavior: {
+      purpose: monitor.purpose,
+      autoPublish: monitor.autoPublish,
+      missingThreshold: monitor.missingThreshold,
+      defaultPromoCode: monitor.defaultPromoCode,
+    },
+  });
+  const previousConfigHash =
+    typeof monitor.lastSummary?.configHash === "string"
+      ? monitor.lastSummary.configHash
+      : null;
+  const configUnchanged = previousConfigHash === configHash;
   const startedAt = Date.now();
   const checkedAt = new Date();
+  const nextRunAt = new Date(
+    checkedAt.getTime() + monitor.intervalMinutes * 60_000,
+  );
+  let responseStatus: number | null = null;
+
+  await db
+    .update(providerMonitorRuns)
+    .set({
+      status: "failed",
+      errorTitle: "采集运行被中断",
+      errorDetail: "进程重启或 worker 心跳超时，后续运行已接管该采集源",
+      finishedAt: checkedAt,
+    })
+    .where(
+      and(
+        eq(providerMonitorRuns.monitorId, monitor.id),
+        eq(providerMonitorRuns.status, "running"),
+      ),
+    );
+  const [run] = await db
+    .insert(providerMonitorRuns)
+    .values({ monitorId: monitor.id, status: "running", startedAt: checkedAt })
+    .returning({ id: providerMonitorRuns.id });
+  if (!run) throw new Error("供应商采集运行记录创建失败");
 
   await db
     .update(providerMonitors)
@@ -237,232 +221,192 @@ export async function runProviderMonitor(
     .where(eq(providerMonitors.id, monitor.id));
 
   try {
+    const conditionalHeaders: Record<string, string> = {};
+    if (configUnchanged && monitor.etag) {
+      conditionalHeaders["If-None-Match"] = monitor.etag;
+    }
+    if (configUnchanged && monitor.lastModified) {
+      conditionalHeaders["If-Modified-Since"] = monitor.lastModified;
+    }
     const response = await fetchPublicHttpUrl(
       monitor.endpointUrl,
       {
-        headers: { Accept: "application/json", ...config.headers },
+        headers: {
+          Accept:
+            adapter === "json"
+              ? "application/json"
+              : "text/html,application/xhtml+xml",
+          ...conditionalHeaders,
+          ...config.headers,
+        },
         maxRedirects: 0,
         signal: AbortSignal.timeout(monitor.timeoutSeconds * 1_000),
       },
-      "库存监控地址",
+      "供应商采集地址",
     );
-    if (!response.ok) {
+    responseStatus = response.status;
+    if (response.status === 304 && !configUnchanged) {
+      throw new Error("供应商网站在采集配置变化后错误返回 304");
+    }
+    if (!response.ok && response.status !== 304) {
       throw new Error(
-        `库存接口返回 HTTP ${response.status} ${response.statusText}`,
+        `供应商网站返回 HTTP ${response.status} ${response.statusText}`,
       );
     }
-    const text = await readResponseTextWithLimit(
-      response,
-      MAX_MONITOR_RESPONSE_BYTES,
-    );
-    if (text === null) throw new Error("库存接口响应超过 8 MB 限制");
-
-    let payload: unknown;
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      throw new Error("库存接口返回内容不是有效 JSON");
-    }
-    const rawItems = readPath(payload, config.itemsPath);
-    if (!Array.isArray(rawItems)) {
-      throw new Error(`库存接口字段 ${config.itemsPath || "根节点"} 不是数组`);
-    }
-    if (rawItems.length > MAX_MONITOR_ITEMS) {
-      throw new Error(`库存接口一次返回超过 ${MAX_MONITOR_ITEMS} 条产品`);
-    }
-
-    const offers = await db
-      .select({
-        id: serverOffers.id,
-        title: serverOffers.title,
-        externalProductId: serverOffers.externalProductId,
-        status: serverOffers.status,
-        priceAmount: serverOffers.priceAmount,
-        currency: serverOffers.currency,
-        billingCycle: serverOffers.billingCycle,
-        monthlyPriceUsd: serverOffers.monthlyPriceUsd,
-        purchaseUrl: serverOffers.purchaseUrl,
-        checkStatus: serverOffers.checkStatus,
-        lastCheckedAt: serverOffers.lastCheckedAt,
-        lockedFields: serverOffers.lockedFields,
-      })
-      .from(serverOffers)
-      .where(
-        and(
-          eq(serverOffers.providerId, monitor.providerId),
-          eq(serverOffers.offerKind, "promotion"),
-          isNotNull(serverOffers.externalProductId),
-        ),
+    const text =
+      response.status === 304
+        ? ""
+        : await readResponseTextWithLimit(response, MAX_MONITOR_RESPONSE_BYTES);
+    if (text === null) throw new Error("供应商响应超过 8 MB 限制");
+    const responseHash = text ? hashProviderSourceResponse(text) : monitor.responseHash;
+    const notModified =
+      response.status === 304 ||
+      Boolean(
+        configUnchanged &&
+          responseHash &&
+          responseHash === monitor.responseHash,
       );
-    const offersByExternalId = new Map(
-      offers.map((offer) => [offer.externalProductId!, offer]),
-    );
 
-    let matched = 0;
-    let changed = 0;
-    let skipped = 0;
-    let publicStateChanged = false;
+    if (notModified) {
+      const refreshed = await db
+        .update(serverOffers)
+        .set({
+          sourceLastSeenAt: checkedAt,
+          missingRuns: 0,
+          lastCheckedAt: checkedAt,
+          checkStatus: "ok",
+        })
+        .where(eq(serverOffers.sourceMonitorId, monitor.id))
+        .returning({ id: serverOffers.id });
+      const summary: ProviderMonitorRunSummary = {
+        monitorId: monitor.id,
+        runId: run.id,
+        providerName: monitor.providerName,
+        received: 0,
+        created: 0,
+        pending: 0,
+        updated: 0,
+        unchanged: refreshed.length,
+        skipped: 0,
+        missing: 0,
+        configHash,
+        checkedAt: checkedAt.toISOString(),
+      };
+      await db
+        .update(providerMonitorRuns)
+        .set({
+          status: "succeeded",
+          httpStatus: response.status,
+          responseHash,
+          unchanged: refreshed.length,
+          finishedAt: new Date(),
+        })
+        .where(eq(providerMonitorRuns.id, run.id));
+      await db
+        .update(providerMonitors)
+        .set({
+          lastRunAt: checkedAt,
+          nextRunAt,
+          lastStatus: "succeeded",
+          lastError: null,
+          etag: response.headers.get("etag") ?? monitor.etag,
+          lastModified:
+            response.headers.get("last-modified") ?? monitor.lastModified,
+          responseHash,
+          lastSummary: summary,
+          updatedAt: checkedAt,
+        })
+        .where(eq(providerMonitors.id, monitor.id));
+      await enqueueProviderMonitorTask(monitor.id, nextRunAt);
+      return summary;
+    }
+
+    const candidates = parseProviderSourcePayload({
+      adapter,
+      body: text,
+      config,
+      sourceUrl: monitor.endpointUrl,
+    });
+    if (candidates.length > MAX_MONITOR_ITEMS) {
+      throw new Error(`供应商网站一次返回超过 ${MAX_MONITOR_ITEMS} 个套餐`);
+    }
+
+    const counters = {
+      created: 0,
+      pending: 0,
+      updated: 0,
+      unchanged: 0,
+      skipped: 0,
+    };
+    const seenExternalIds = new Set<string>();
     const checkRows: Array<typeof serverOfferChecks.$inferInsert> = [];
-
-    for (const item of rawItems) {
-      const externalId = toStringValue(readPath(item, config.externalIdField));
-      const offer = externalId ? offersByExternalId.get(externalId) : null;
-      if (!offer) {
-        skipped += 1;
+    for (const candidate of candidates) {
+      const externalId = candidate.externalProductId.trim();
+      if (externalId) {
+        if (seenExternalIds.has(externalId)) {
+          counters.skipped += 1;
+          continue;
+        }
+        seenExternalIds.add(externalId);
+      }
+      const quality = validateProviderOfferCandidate(
+        candidate,
+        config.requiredSpecCount,
+      );
+      if (!quality.valid) {
+        counters.skipped += 1;
         continue;
       }
-      matched += 1;
-      const lockedFields = new Set(offer.lockedFields ?? []);
-      const availability = normalizeAvailabilityStatus(
-        readPath(item, config.statusField),
-        config.statusMap,
-      );
-      const prices = normalizePriceRows(item, config);
-      const primaryPrice = prices[0];
-      const title = toStringValue(readPath(item, config.titleField));
-      const purchaseUrl = firstNonEmptyString(
-        toStringValue(readPath(item, config.purchaseUrlField)),
-        primaryPrice?.purchaseUrl,
-      );
-      const nextStatus =
-        availability && !lockedFields.has("status")
-          ? availability
-          : (offer.status as AvailabilityStatus);
-      const statusChanged = nextStatus !== offer.status;
-      const priceChanged = Boolean(
-        primaryPrice &&
-        !lockedFields.has("price") &&
-        (offer.priceAmount !== primaryPrice.amount ||
-          offer.currency !== primaryPrice.currency ||
-          offer.billingCycle !== primaryPrice.billingCycle ||
-          Number(offer.monthlyPriceUsd) !== primaryPrice.monthlyPriceUsd),
-      );
-      const titleChanged = Boolean(
-        title && !lockedFields.has("title") && title !== offer.title,
-      );
-      const purchaseUrlChanged = Boolean(
-        purchaseUrl &&
-        !lockedFields.has("purchaseUrl") &&
-        purchaseUrl !== offer.purchaseUrl,
-      );
-      const meaningfulChange =
-        statusChanged || priceChanged || titleChanged || purchaseUrlChanged;
-      const nextCheckStatus = availability ? "ok" : "unknown";
-      const checkStateChanged = offer.checkStatus !== nextCheckStatus;
-      const staleCheckRefreshed =
-        offer.lastCheckedAt === null ||
-        checkedAt.getTime() - offer.lastCheckedAt.getTime() >=
-          STALE_CHECK_THRESHOLD_MS;
-
-      const updateValues: Partial<typeof serverOffers.$inferInsert> = {
-        checkStatus: nextCheckStatus,
-        lastCheckedAt: checkedAt,
-      };
-      if (meaningfulChange) updateValues.updatedAt = checkedAt;
-      if (statusChanged) {
-        updateValues.status = nextStatus;
-        updateValues.statusChangedAt = checkedAt;
-      }
-      if (title && !lockedFields.has("title")) updateValues.title = title;
-      if (primaryPrice && !lockedFields.has("price")) {
-        updateValues.priceAmount = primaryPrice.amount;
-        updateValues.currency = primaryPrice.currency;
-        updateValues.billingCycle = primaryPrice.billingCycle;
-        updateValues.monthlyPriceUsd = String(primaryPrice.monthlyPriceUsd);
-      }
-      if (purchaseUrl && !lockedFields.has("purchaseUrl")) {
-        updateValues.purchaseUrl = purchaseUrl;
-      }
-
-      await db
-        .update(serverOffers)
-        .set(updateValues)
-        .where(eq(serverOffers.id, offer.id));
-
-      if (!lockedFields.has("price")) {
-        for (const price of prices) {
-          await db
-            .insert(serverOfferPrices)
-            .values({
-              offerId: offer.id,
-              billingCycle: price.billingCycle,
-              termMonths: price.termMonths,
-              amount: price.amount,
-              currency: price.currency,
-              monthlyPriceUsd: String(price.monthlyPriceUsd),
-              purchaseUrl: price.purchaseUrl ?? purchaseUrl,
-              active: true,
-              updatedAt: checkedAt,
-            })
-            .onConflictDoUpdate({
-              target: [
-                serverOfferPrices.offerId,
-                serverOfferPrices.billingCycle,
-                serverOfferPrices.currency,
-              ],
-              set: {
-                termMonths: price.termMonths,
-                amount: price.amount,
-                monthlyPriceUsd: String(price.monthlyPriceUsd),
-                purchaseUrl: price.purchaseUrl ?? purchaseUrl,
-                active: true,
-                updatedAt: checkedAt,
-              },
-            });
-        }
-      }
-
-      const [existingSource] = await db
-        .select({
-          id: serverOfferSources.id,
-          sourceUrl: serverOfferSources.sourceUrl,
-        })
-        .from(serverOfferSources)
-        .where(
-          and(
-            eq(serverOfferSources.offerId, offer.id),
-            eq(serverOfferSources.sourceType, "monitor"),
-            eq(serverOfferSources.externalId, externalId),
-          ),
-        )
-        .limit(1);
-      if (!existingSource) {
-        await db.insert(serverOfferSources).values({
-          offerId: offer.id,
-          sourceType: "monitor",
-          sourceUrl: monitor.endpointUrl,
-          externalId,
-          priority: 20,
-        });
-      } else if (existingSource.sourceUrl !== monitor.endpointUrl) {
-        await db
-          .update(serverOfferSources)
-          .set({ sourceUrl: monitor.endpointUrl, updatedAt: checkedAt })
-          .where(eq(serverOfferSources.id, existingSource.id));
-      }
-
-      checkRows.push({
-        offerId: offer.id,
-        monitorId: monitor.id,
-        status: availability ? "ok" : "unknown",
-        available: availability === null ? null : availability === "in_stock",
-        priceAmount: primaryPrice?.amount ?? null,
-        currency: primaryPrice?.currency ?? null,
-        responseTimeMs: Date.now() - startedAt,
-        checkedAt,
+      const result = await syncProviderOfferCandidate({
+        context,
+        candidate,
+        sourceHash: hashProviderOfferSyncState(candidate, context),
+        now: checkedAt,
       });
-      if (meaningfulChange) changed += 1;
-      if (meaningfulChange || checkStateChanged || staleCheckRefreshed) {
-        publicStateChanged = true;
+      counters[result.outcome] += 1;
+      if (result.offerId) {
+        const primaryPrice = candidate.prices[0];
+        checkRows.push({
+          offerId: result.offerId,
+          monitorId: monitor.id,
+          status: "ok",
+          available: candidate.status === "in_stock",
+          priceAmount: primaryPrice?.amount ?? null,
+          currency: primaryPrice?.currency ?? null,
+          responseTimeMs: Date.now() - startedAt,
+          checkedAt,
+        });
       }
     }
 
-    if (checkRows.length > 0)
-      await db.insert(serverOfferChecks).values(checkRows);
-    await safelyPruneProviderMonitorCheckHistory(checkedAt);
-    const nextRunAt = new Date(
-      checkedAt.getTime() + monitor.intervalMinutes * 60_000,
-    );
+    const missing = await markMissingProviderOffers({
+      context,
+      seenExternalIds,
+      now: checkedAt,
+    });
+    if (checkRows.length > 0) await db.insert(serverOfferChecks).values(checkRows);
+    const summary: ProviderMonitorRunSummary = {
+      monitorId: monitor.id,
+      runId: run.id,
+      providerName: monitor.providerName,
+      received: candidates.length,
+      ...counters,
+      missing,
+      configHash,
+      checkedAt: checkedAt.toISOString(),
+    };
+    await db
+      .update(providerMonitorRuns)
+      .set({
+        status: "succeeded",
+        httpStatus: response.status,
+        responseHash,
+        received: candidates.length,
+        ...counters,
+        missing,
+        finishedAt: new Date(),
+      })
+      .where(eq(providerMonitorRuns.id, run.id));
     await db
       .update(providerMonitors)
       .set({
@@ -470,52 +414,31 @@ export async function runProviderMonitor(
         nextRunAt,
         lastStatus: "succeeded",
         lastError: null,
+        etag: response.headers.get("etag"),
+        lastModified: response.headers.get("last-modified"),
+        responseHash,
+        lastSummary: summary,
         updatedAt: checkedAt,
       })
       .where(eq(providerMonitors.id, monitor.id));
-
-    if (publicStateChanged) {
+    await safelyPruneProviderMonitorCheckHistory(checkedAt);
+    if (counters.created > 0 || counters.updated > 0 || missing > 0) {
       await notifyPublicWebCache("offer.changed", {
         topicSlugs: ["hong-kong", "united-states", "cheap-vps"],
       });
     }
     await enqueueProviderMonitorTask(monitor.id, nextRunAt);
-
-    return {
-      monitorId: monitor.id,
-      providerName: monitor.providerName,
-      received: rawItems.length,
-      matched,
-      changed,
-      skipped,
-      checkedAt: checkedAt.toISOString(),
-    };
+    return summary;
   } catch (error) {
     const message = truncate(getErrorMessage(error));
-    const nextRunAt = new Date(
-      checkedAt.getTime() + monitor.intervalMinutes * 60_000,
-    );
     let failedOfferCount = 0;
     try {
-      const mappedSources = await db
-        .select({ offerId: serverOfferSources.offerId })
-        .from(serverOfferSources)
-        .innerJoin(
-          serverOffers,
-          eq(serverOfferSources.offerId, serverOffers.id),
-        )
-        .where(
-          and(
-            eq(serverOfferSources.sourceType, "monitor"),
-            eq(serverOfferSources.sourceUrl, monitor.endpointUrl),
-            eq(serverOffers.providerId, monitor.providerId),
-            eq(serverOffers.offerKind, "promotion"),
-          ),
-        )
+      const mappedOffers = await db
+        .select({ id: serverOffers.id })
+        .from(serverOffers)
+        .where(eq(serverOffers.sourceMonitorId, monitor.id))
         .limit(MAX_MONITOR_ITEMS);
-      const failedOfferIds = [
-        ...new Set(mappedSources.map((source) => source.offerId)),
-      ];
+      const failedOfferIds = mappedOffers.map((offer) => offer.id);
       failedOfferCount = failedOfferIds.length;
       if (failedOfferIds.length > 0) {
         await db
@@ -534,8 +457,18 @@ export async function runProviderMonitor(
         );
       }
     } catch (recordError) {
-      console.error("记录库存监控失败状态时发生错误:", recordError);
+      console.error("记录供应商采集失败状态时发生错误:", recordError);
     }
+    await db
+      .update(providerMonitorRuns)
+      .set({
+        status: "failed",
+        httpStatus: responseStatus,
+        errorTitle: "供应商采集失败",
+        errorDetail: message,
+        finishedAt: new Date(),
+      })
+      .where(eq(providerMonitorRuns.id, run.id));
     await db
       .update(providerMonitors)
       .set({
@@ -553,7 +486,7 @@ export async function runProviderMonitor(
           topicSlugs: ["hong-kong", "united-states", "cheap-vps"],
         });
       } catch (notifyError) {
-        console.error("库存监控失败状态缓存通知失败:", notifyError);
+        console.error("供应商采集失败状态缓存通知失败:", notifyError);
       }
     }
     throw new Error(message);
@@ -566,7 +499,7 @@ export async function enqueueProviderMonitorTask(
 ) {
   return enqueueAdminBackgroundJob({
     key: `provider-monitor:${monitorId}`,
-    label: `库存监控 #${monitorId}`,
+    label: `供应商采集 #${monitorId}`,
     payload: { monitorId },
     runAfter,
     maxAttempts: 3,
@@ -593,6 +526,27 @@ export async function enqueueProviderMonitorTask(
   });
 }
 
+export async function retryProviderMonitorRun(runId: number) {
+  const [run] = await db
+    .select({
+      monitorId: providerMonitorRuns.monitorId,
+      status: providerMonitorRuns.status,
+      enabled: providerMonitors.enabled,
+    })
+    .from(providerMonitorRuns)
+    .innerJoin(
+      providerMonitors,
+      eq(providerMonitorRuns.monitorId, providerMonitors.id),
+    )
+    .where(eq(providerMonitorRuns.id, runId))
+    .limit(1);
+  if (!run) throw new Error("供应商采集运行记录不存在");
+  if (run.status !== "failed") throw new Error("只有失败的采集运行可以重试");
+  if (!run.enabled) throw new Error("采集源已停用，请先在供应商采集页面启用");
+  await enqueueProviderMonitorTask(run.monitorId, new Date());
+  return { runId, monitorId: run.monitorId };
+}
+
 export async function ensureProviderMonitorWorkers() {
   const monitors = await db
     .select({
@@ -617,22 +571,30 @@ export async function getProviderMonitorList() {
       providerName: affServiceProviders.name,
       name: providerMonitors.name,
       adapter: providerMonitors.adapter,
+      purpose: providerMonitors.purpose,
       endpointUrl: providerMonitors.endpointUrl,
       config: providerMonitors.config,
       enabled: providerMonitors.enabled,
+      autoPublish: providerMonitors.autoPublish,
+      missingThreshold: providerMonitors.missingThreshold,
       intervalMinutes: providerMonitors.intervalMinutes,
       timeoutSeconds: providerMonitors.timeoutSeconds,
       lastRunAt: providerMonitors.lastRunAt,
       nextRunAt: providerMonitors.nextRunAt,
       lastStatus: providerMonitors.lastStatus,
       lastError: providerMonitors.lastError,
+      lastSummary: providerMonitors.lastSummary,
       updatedAt: providerMonitors.updatedAt,
       mappedOfferCount: sql<number>`(
         select count(*)::int
         from "server_offers" mapped_offers
-        where mapped_offers."providerId" = ${providerMonitors.providerId}
-          and mapped_offers."offerKind" = 'promotion'
-          and mapped_offers."externalProductId" is not null
+        where mapped_offers."sourceMonitorId" = ${providerMonitors.id}
+      )`,
+      pendingCandidateCount: sql<number>`(
+        select count(*)::int
+        from "provider_offer_candidates" candidates
+        where candidates."monitorId" = ${providerMonitors.id}
+          and candidates."status" = 'pending'
       )`,
     })
     .from(providerMonitors)
@@ -646,9 +608,13 @@ export async function getProviderMonitorList() {
 export type ProviderMonitorMutationInput = {
   providerId: number;
   name: string;
+  adapter: ProviderSourceAdapter;
+  purpose: ProviderSourcePurpose;
   endpointUrl: string;
-  config: JsonMonitorConfig;
+  config: ProviderMonitorConfig;
   enabled: boolean;
+  autoPublish: boolean;
+  missingThreshold: number;
   intervalMinutes: number;
   timeoutSeconds: number;
 };
@@ -661,14 +627,13 @@ export async function createProviderMonitor(
     .insert(providerMonitors)
     .values({
       ...input,
-      adapter: "json",
       nextRunAt: input.enabled ? now : null,
       createdAt: now,
       updatedAt: now,
     })
     .returning({ id: providerMonitors.id });
 
-  if (!created) throw new Error("库存监控配置创建失败");
+  if (!created) throw new Error("供应商采集源创建失败");
   if (input.enabled) await enqueueProviderMonitorTask(created.id, now);
   return created;
 }
@@ -682,14 +647,13 @@ export async function updateProviderMonitor(
     .update(providerMonitors)
     .set({
       ...input,
-      adapter: "json",
       nextRunAt: input.enabled ? now : null,
       updatedAt: now,
     })
     .where(eq(providerMonitors.id, id))
     .returning({ id: providerMonitors.id });
 
-  if (!updated) throw new Error("库存监控配置不存在");
+  if (!updated) throw new Error("供应商采集源不存在");
   if (input.enabled) {
     await enqueueProviderMonitorTask(id, now);
   } else {
@@ -704,7 +668,7 @@ async function cancelQueuedProviderMonitorJobs(monitorId: number) {
     .update(adminBackgroundJobs)
     .set({
       status: "cancelled",
-      lastError: "库存监控已停用",
+      lastError: "供应商采集源已停用",
       finishedAt: now,
       updatedAt: now,
     })
@@ -727,14 +691,14 @@ export async function deleteProviderMonitor(id: number) {
       ),
     )
     .limit(1);
-  if (running) throw new Error("监控正在执行，请等待本次检测结束后再删除");
+  if (running) throw new Error("采集正在执行，请等待本次运行结束后再删除");
 
   await cancelQueuedProviderMonitorJobs(id);
   const [deleted] = await db
     .delete(providerMonitors)
     .where(eq(providerMonitors.id, id))
     .returning({ id: providerMonitors.id });
-  if (!deleted) throw new Error("库存监控配置不存在");
+  if (!deleted) throw new Error("供应商采集源不存在");
   return deleted;
 }
 
@@ -780,6 +744,149 @@ export async function getProviderOptionsForMonitoring() {
     .select({ id: affServiceProviders.id, name: affServiceProviders.name })
     .from(affServiceProviders)
     .orderBy(asc(affServiceProviders.name));
+}
+
+export async function getProviderMonitorRunHistory(
+  monitorId?: number,
+  limit = 80,
+) {
+  return db
+    .select({
+      id: providerMonitorRuns.id,
+      monitorId: providerMonitorRuns.monitorId,
+      monitorName: providerMonitors.name,
+      providerName: affServiceProviders.name,
+      status: providerMonitorRuns.status,
+      httpStatus: providerMonitorRuns.httpStatus,
+      received: providerMonitorRuns.received,
+      created: providerMonitorRuns.created,
+      pending: providerMonitorRuns.pending,
+      updated: providerMonitorRuns.updated,
+      unchanged: providerMonitorRuns.unchanged,
+      skipped: providerMonitorRuns.skipped,
+      missing: providerMonitorRuns.missing,
+      errorTitle: providerMonitorRuns.errorTitle,
+      errorDetail: providerMonitorRuns.errorDetail,
+      startedAt: providerMonitorRuns.startedAt,
+      finishedAt: providerMonitorRuns.finishedAt,
+    })
+    .from(providerMonitorRuns)
+    .innerJoin(
+      providerMonitors,
+      eq(providerMonitorRuns.monitorId, providerMonitors.id),
+    )
+    .innerJoin(
+      affServiceProviders,
+      eq(providerMonitors.providerId, affServiceProviders.id),
+    )
+    .where(
+      monitorId && Number.isInteger(monitorId)
+        ? eq(providerMonitorRuns.monitorId, monitorId)
+        : undefined,
+    )
+    .orderBy(desc(providerMonitorRuns.startedAt), desc(providerMonitorRuns.id))
+    .limit(Math.min(Math.max(limit, 1), 200));
+}
+
+export async function getProviderOfferCandidateList(
+  status: "pending" | "accepted" | "rejected" | "superseded" | "all" =
+    "pending",
+  limit = 100,
+) {
+  return db
+    .select({
+      id: providerOfferCandidates.id,
+      monitorId: providerOfferCandidates.monitorId,
+      monitorName: providerMonitors.name,
+      providerName: affServiceProviders.name,
+      externalProductId: providerOfferCandidates.externalProductId,
+      sourceUrl: providerOfferCandidates.sourceUrl,
+      sourceHash: providerOfferCandidates.sourceHash,
+      normalizedData: providerOfferCandidates.normalizedData,
+      diff: providerOfferCandidates.diff,
+      status: providerOfferCandidates.status,
+      offerId: providerOfferCandidates.offerId,
+      rejectionReason: providerOfferCandidates.rejectionReason,
+      reviewedBy: providerOfferCandidates.reviewedBy,
+      reviewedAt: providerOfferCandidates.reviewedAt,
+      firstSeenAt: providerOfferCandidates.firstSeenAt,
+      lastSeenAt: providerOfferCandidates.lastSeenAt,
+    })
+    .from(providerOfferCandidates)
+    .innerJoin(
+      providerMonitors,
+      eq(providerOfferCandidates.monitorId, providerMonitors.id),
+    )
+    .innerJoin(
+      affServiceProviders,
+      eq(providerOfferCandidates.providerId, affServiceProviders.id),
+    )
+    .where(
+      status === "all" ? undefined : eq(providerOfferCandidates.status, status),
+    )
+    .orderBy(
+      desc(providerOfferCandidates.lastSeenAt),
+      desc(providerOfferCandidates.id),
+    )
+    .limit(Math.min(Math.max(limit, 1), 200));
+}
+
+export async function previewProviderMonitorSource(input: {
+  adapter: ProviderSourceAdapter;
+  endpointUrl: string;
+  config: ProviderMonitorConfig;
+  timeoutSeconds: number;
+}) {
+  const response = await fetchPublicHttpUrl(
+    input.endpointUrl,
+    {
+      headers: {
+        Accept:
+          input.adapter === "json"
+            ? "application/json"
+            : "text/html,application/xhtml+xml",
+        ...input.config.headers,
+      },
+      maxRedirects: 0,
+      signal: AbortSignal.timeout(input.timeoutSeconds * 1_000),
+    },
+    "供应商采集地址",
+  );
+  if (!response.ok) {
+    throw new Error(
+      `供应商网站返回 HTTP ${response.status} ${response.statusText}`,
+    );
+  }
+  const body = await readResponseTextWithLimit(
+    response,
+    MAX_MONITOR_RESPONSE_BYTES,
+  );
+  if (body === null) throw new Error("供应商响应超过 8 MB 限制");
+  const candidates = parseProviderSourcePayload({
+    adapter: input.adapter,
+    body,
+    config: input.config,
+    sourceUrl: input.endpointUrl,
+  });
+  if (candidates.length > MAX_MONITOR_ITEMS) {
+    throw new Error(`供应商网站一次返回超过 ${MAX_MONITOR_ITEMS} 个套餐`);
+  }
+  return {
+    httpStatus: response.status,
+    total: candidates.length,
+    items: candidates.slice(0, 20).map((candidate) => {
+      const normalized = Object.fromEntries(
+        Object.entries(candidate).filter(([key]) => key !== "raw"),
+      ) as Omit<typeof candidate, "raw">;
+      return {
+        candidate: normalized,
+        quality: validateProviderOfferCandidate(
+          candidate,
+          input.config.requiredSpecCount,
+        ),
+      };
+    }),
+  };
 }
 
 export async function getDueProviderMonitorIds(now = new Date()) {

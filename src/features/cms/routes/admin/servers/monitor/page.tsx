@@ -11,19 +11,23 @@ import { ProviderMonitorManager } from "@/features/cms/components/provider-monit
 import {
   getProviderMonitorCheckHistory,
   getProviderMonitorList,
+  getProviderMonitorRunHistory,
+  getProviderOfferCandidateList,
   getProviderOptionsForMonitoring,
 } from "@/server/offers/provider-monitor";
 
 async function loadProviderMonitorData() {
   try {
-    const [monitors, providers, checks] = await Promise.all([
+    const [monitors, providers, runs, candidates, checks] = await Promise.all([
       getProviderMonitorList(),
       getProviderOptionsForMonitoring(),
+      getProviderMonitorRunHistory(undefined, 80),
+      getProviderOfferCandidateList("pending", 100),
       getProviderMonitorCheckHistory(undefined, 80),
     ]);
-    return { ok: true as const, monitors, providers, checks };
+    return { ok: true as const, monitors, providers, runs, candidates, checks };
   } catch (error) {
-    console.error("库存监控页面加载失败:", error);
+    console.error("供应商采集页面加载失败:", error);
     return {
       ok: false as const,
       message: error instanceof Error ? error.message : "未知错误",
@@ -39,11 +43,11 @@ async function ProviderMonitorContent() {
     return (
       <AdminPageShell
         badge="服务器套餐"
-        title="库存监控"
-        description="仅活动款套餐参与厂商库存探测。"
+        title="供应商采集"
+        description="供应商官网是套餐配置、价格和购买链接的数据源。"
       >
         <AdminSectionCard
-          title="库存监控暂时无法读取"
+          title="供应商采集暂时无法读取"
           description="请先确认最新数据库迁移已经执行，再检查 CMS 数据库连接和后台日志。"
         >
           <p className="break-words text-sm text-destructive">
@@ -54,7 +58,7 @@ async function ProviderMonitorContent() {
     );
   }
 
-  const { monitors, providers, checks } = result;
+  const { monitors, providers, runs, candidates, checks } = result;
   const enabled = monitors.filter((monitor) => monitor.enabled).length;
   const failed = monitors.filter(
     (monitor) => monitor.lastStatus === "failed",
@@ -67,20 +71,20 @@ async function ProviderMonitorContent() {
   return (
     <AdminPageShell
       badge="服务器套餐"
-      title="库存监控"
-      description="配置厂商 JSON 接口，只同步已标记为活动款的套餐库存、价格和购买入口。常规款始终由后台手动维护。"
+      title="供应商采集"
+      description="直接从供应商 JSON、HTML 或 WHMCS 产品页采集具体配置、价格和购买链接；新套餐先审核，文章只作为后续测评或提及关系。"
     >
       <AdminSummaryStrip
         items={[
           {
-            label: "监控配置",
+            label: "采集源",
             value: String(monitors.length),
             note: `${enabled} 个已启用`,
           },
           {
-            label: "映射套餐",
+            label: "已采集套餐",
             value: String(mappedOffers),
-            note: "已设置产品 ID 的活动款",
+            note: `${candidates.length} 个候选待审核`,
           },
           {
             label: "异常配置",
@@ -90,12 +94,14 @@ async function ProviderMonitorContent() {
         ]}
       />
       <AdminSectionCard
-        title="监控配置与检测记录"
-        description="立即执行只会调整当前监控任务的计划时间，不会并发创建相同任务。"
+        title="采集源、审核与运行记录"
+        description="预览不会写入数据；立即采集会进入后台独立队列，同一采集源不会并发运行。"
       >
         <ProviderMonitorManager
           monitors={monitors}
           providers={providers}
+          runs={runs}
+          candidates={candidates}
           checks={checks}
         />
       </AdminSectionCard>
@@ -109,8 +115,8 @@ export default function ProviderMonitorPage() {
       fallback={
         <AdminLoading
           badge="服务器套餐"
-          title="库存监控"
-          description="正在加载监控配置和最近检测记录。"
+          title="供应商采集"
+          description="正在加载采集源、候选套餐和运行记录。"
         />
       }
     >

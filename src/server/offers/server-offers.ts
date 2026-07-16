@@ -31,6 +31,7 @@ import { db, readDb } from "@fwqgo/db";
 import {
   affServiceProviders,
   posts,
+  providerMonitors,
   serverNetworkLines,
   serverOfferChecks,
   serverOfferPrices,
@@ -730,6 +731,7 @@ async function syncArticleOfferSource(input: {
       and(
         eq(serverOfferSources.offerId, input.offerId),
         eq(serverOfferSources.sourceType, "article"),
+        eq(serverOfferSources.relationType, "mention"),
       ),
     )
     .limit(1);
@@ -740,6 +742,7 @@ async function syncArticleOfferSource(input: {
       .set({
         sourcePostId: input.sourcePostId ?? null,
         sourceUrl: input.articleUrl ?? null,
+        relationType: "mention",
         updatedAt: new Date(),
       })
       .where(eq(serverOfferSources.id, existing.id));
@@ -751,6 +754,7 @@ async function syncArticleOfferSource(input: {
     sourceType: "article",
     sourcePostId: input.sourcePostId ?? null,
     sourceUrl: input.articleUrl ?? null,
+    relationType: "mention",
     priority: 10,
   });
 }
@@ -1768,7 +1772,7 @@ export async function getAdminServerOffers(
     .limit(filters.pageSize);
 
   const offerIds = rows.map((row) => row.id);
-  const [priceRows, checkRows] = offerIds.length
+  const [priceRows, checkRows, relationRows] = offerIds.length
     ? await Promise.all([
         readDb
           .select({
@@ -1809,8 +1813,28 @@ export async function getAdminServerOffers(
             desc(serverOfferChecks.id),
           )
           .limit(Math.max(offerIds.length * 5, 20)),
+        readDb
+          .select({
+            id: serverOfferSources.id,
+            offerId: serverOfferSources.offerId,
+            postId: serverOfferSources.sourcePostId,
+            sourceUrl: serverOfferSources.sourceUrl,
+            relationType: serverOfferSources.relationType,
+            postTitle: posts.title,
+            postSlug: posts.slug,
+            postLanguage: posts.language,
+          })
+          .from(serverOfferSources)
+          .innerJoin(posts, eq(serverOfferSources.sourcePostId, posts.id))
+          .where(
+            and(
+              inArray(serverOfferSources.offerId, offerIds),
+              eq(serverOfferSources.sourceType, "article"),
+            ),
+          )
+          .orderBy(desc(serverOfferSources.id)),
       ])
-    : [[], []];
+    : [[], [], []];
 
   const enrichedRows = rows.map((row) => ({
     ...row,
@@ -1818,9 +1842,97 @@ export async function getAdminServerOffers(
     recentChecks: checkRows
       .filter((check) => check.offerId === row.id)
       .slice(0, 5),
+    articleRelations: relationRows.filter(
+      (relation) => relation.offerId === row.id,
+    ),
   }));
 
   return { rows: enrichedRows, total, page, pageSize: filters.pageSize };
+}
+
+export async function getServerOfferRelationPostOptions(limit = 300) {
+  await requireAdminSession();
+  return readDb
+    .select({
+      id: posts.id,
+      title: posts.title,
+      slug: posts.slug,
+      language: posts.language,
+      published: posts.published,
+    })
+    .from(posts)
+    .orderBy(desc(posts.updatedAt), desc(posts.id))
+    .limit(Math.min(Math.max(limit, 1), 500));
+}
+
+export async function upsertServerOfferArticleRelation(input: {
+  offerId: number;
+  postId: number;
+  relationType: "review" | "mention" | "deal";
+}) {
+  const [[offer], [post]] = await Promise.all([
+    readDb
+      .select({ id: serverOffers.id })
+      .from(serverOffers)
+      .where(eq(serverOffers.id, input.offerId))
+      .limit(1),
+    readDb
+      .select({ id: posts.id, slug: posts.slug, language: posts.language })
+      .from(posts)
+      .where(eq(posts.id, input.postId))
+      .limit(1),
+  ]);
+  if (!offer) throw new Error("服务器套餐不存在");
+  if (!post) throw new Error("关联文章不存在");
+  const [existing] = await readDb
+    .select({ id: serverOfferSources.id })
+    .from(serverOfferSources)
+    .where(
+      and(
+        eq(serverOfferSources.offerId, input.offerId),
+        eq(serverOfferSources.sourceType, "article"),
+        eq(serverOfferSources.sourcePostId, input.postId),
+        eq(serverOfferSources.relationType, input.relationType),
+      ),
+    )
+    .limit(1);
+  if (existing) return existing;
+  const prefix = post.language === "en" ? "/en" : "";
+  const [created] = await db
+    .insert(serverOfferSources)
+    .values({
+      offerId: input.offerId,
+      sourceType: "article",
+      sourcePostId: input.postId,
+      sourceUrl: `${prefix}/fwq/posts/${post.slug}`,
+      relationType: input.relationType,
+      priority: input.relationType === "review" ? 20 : 10,
+    })
+    .returning({ id: serverOfferSources.id });
+  if (!created) throw new Error("文章关系创建失败");
+  revalidateSiteContent([cacheTags.serverOffers]);
+  await notifyPublicWebCache("offer.changed", {
+    topicSlugs: [...publicOfferTopicSlugs],
+  });
+  return created;
+}
+
+export async function deleteServerOfferArticleRelation(sourceId: number) {
+  const [deleted] = await db
+    .delete(serverOfferSources)
+    .where(
+      and(
+        eq(serverOfferSources.id, sourceId),
+        eq(serverOfferSources.sourceType, "article"),
+      ),
+    )
+    .returning({ id: serverOfferSources.id });
+  if (!deleted) throw new Error("文章关系不存在");
+  revalidateSiteContent([cacheTags.serverOffers]);
+  await notifyPublicWebCache("offer.changed", {
+    topicSlugs: [...publicOfferTopicSlugs],
+  });
+  return deleted;
 }
 
 export async function getAdminServerOfferQualitySummary() {
@@ -1950,7 +2062,10 @@ export async function updateServerOffer(
   input: ServerOfferUpdateInput,
 ) {
   const [existing] = await readDb
-    .select({ status: serverOffers.status })
+    .select({
+      status: serverOffers.status,
+      sourceMonitorId: serverOffers.sourceMonitorId,
+    })
     .from(serverOffers)
     .where(eq(serverOffers.id, id))
     .limit(1);
@@ -2053,6 +2168,7 @@ export async function updateServerOffer(
         providerId,
         providerName,
         externalProductId,
+        sourceHash: existing.sourceMonitorId ? null : undefined,
         productGroup: input.productGroup ?? null,
         productType,
         cpu: input.cpu ?? null,
@@ -2135,6 +2251,17 @@ export async function updateServerOffer(
   });
 
   if (updated) {
+    if (existing.sourceMonitorId) {
+      await db
+        .update(providerMonitors)
+        .set({
+          etag: null,
+          lastModified: null,
+          responseHash: null,
+          updatedAt: now,
+        })
+        .where(eq(providerMonitors.id, existing.sourceMonitorId));
+    }
     if (!normalizedPrices) {
       await syncPrimaryOfferPrice({
         offerId: updated.id,
@@ -2214,10 +2341,18 @@ export async function getRelatedServerOffersForPost(input: {
   tagCache(cacheTags.serverOffers, cacheTags.post(input.postId));
 
   const tagText = input.tagNames.join(" ");
+  const hasDirectArticleRelation = sql<boolean>`exists (
+    select 1
+    from "server_offer_sources" article_relation
+    where article_relation."offerId" = ${serverOffers.id}
+      and article_relation."sourceType" = 'article'
+      and article_relation."sourcePostId" = ${input.postId}
+  )`;
   const conditions = [
     publicPurchasableOfferBaseWhere(),
     or(
       eq(serverOffers.sourcePostId, input.postId),
+      hasDirectArticleRelation,
       ...input.tagNames.flatMap((name) => [
         ilike(serverOffers.providerName, `%${name}%`),
         ilike(serverOffers.region, `%${name}%`),
@@ -2235,7 +2370,10 @@ export async function getRelatedServerOffersForPost(input: {
   return readDb
     .select({
       id: serverOffers.id,
-      sourcePostId: serverOffers.sourcePostId,
+      sourcePostId: sql<number | null>`case
+        when ${hasDirectArticleRelation} then ${input.postId}
+        else ${serverOffers.sourcePostId}
+      end`,
       title: serverOffers.title,
       providerName: serverOffers.providerName,
       productType: serverOffers.productType,
@@ -2264,7 +2402,7 @@ export async function getRelatedServerOffersForPost(input: {
     .where(and(...conditions))
     .orderBy(
       desc(
-        sql`case when ${serverOffers.sourcePostId} = ${input.postId} then 1 else 0 end`,
+        sql`case when ${serverOffers.sourcePostId} = ${input.postId} or ${hasDirectArticleRelation} then 1 else 0 end`,
       ),
       desc(serverOffers.featured),
       asc(serverOffers.monthlyPriceUsd),
