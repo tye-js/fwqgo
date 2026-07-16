@@ -174,40 +174,6 @@ export async function getPostsWithTagsByTagSlug(
   }
 }
 
-export async function getTagList({
-  page = 1,
-  pageSize = 20,
-}: {
-  page?: number;
-  pageSize?: number;
-}) {
-  const result = await readDb
-    .select()
-    .from(tags)
-    .offset((page - 1) * pageSize)
-    .limit(pageSize);
-
-  return { data: result };
-}
-
-export async function getTagCount() {
-  const [result] = await readDb.select({ count: count() }).from(tags);
-  return { data: result?.count ?? 0 };
-}
-
-export async function getTagSearchList() {
-  const result = await readDb
-    .select({
-      id: tags.id,
-      name: tags.name,
-      slug: tags.slug,
-    })
-    .from(tags)
-    .orderBy(desc(tags.id));
-
-  return { data: result };
-}
-
 export async function findBestTagMatch(keyword: string) {
   const normalizedKeyword = keyword.trim();
 
