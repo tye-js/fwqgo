@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { SERVER_OFFER_CURRENCIES } from "@fwqgo/core/server-offer-price";
+
 export const PROVIDER_AVAILABILITY_STATUSES = [
   "in_stock",
   "out_of_stock",
@@ -29,11 +31,16 @@ const statusMapSchema = z
   .record(z.string(), z.enum(PROVIDER_AVAILABILITY_STATUSES))
   .prefault({});
 
+const currencySchema = z.preprocess(
+  (value) => (typeof value === "string" ? value.trim().toUpperCase() : value),
+  z.enum(SERVER_OFFER_CURRENCIES),
+);
+
 const defaultsSchema = z
   .object({
     productType: z.string().trim().default("vps"),
     productGroup: z.string().trim().optional(),
-    currency: z.string().trim().default("USD"),
+    currency: currencySchema.default("USD"),
     billingCycle: z.string().trim().default("monthly"),
     status: z.enum(PROVIDER_AVAILABILITY_STATUSES).default("in_stock"),
     region: z.string().trim().optional(),

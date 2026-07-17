@@ -12,6 +12,7 @@ import { Activity, ExternalLink, Plus, Save, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import { SERVER_OFFER_CURRENCIES } from "@fwqgo/core/server-offer-price";
 import {
   bulkUpdateServerOffersAction,
   deleteServerOfferArticleRelationAction,
@@ -274,8 +275,11 @@ function PriceRowsEditor({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="USD">USD</SelectItem>
-                <SelectItem value="CNY">CNY</SelectItem>
+                {SERVER_OFFER_CURRENCIES.map((currency) => (
+                  <SelectItem key={currency} value={currency}>
+                    {currency}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -296,7 +300,9 @@ function PriceRowsEditor({
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor={`offer-price-url-${price.key}`}>专属购买链接</Label>
+              <Label htmlFor={`offer-price-url-${price.key}`}>
+                专属购买链接
+              </Label>
               <Input
                 id={`offer-price-url-${price.key}`}
                 value={price.purchaseUrl}
@@ -702,7 +708,11 @@ function OfferEditForm({
         </div>
         <div className="space-y-2">
           <Label>重复 Key</Label>
-          <Input value={offer.duplicateKey ?? ""} readOnly className="min-h-11" />
+          <Input
+            value={offer.duplicateKey ?? ""}
+            readOnly
+            className="min-h-11"
+          />
         </div>
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
@@ -747,7 +757,8 @@ function OfferEditForm({
               >
                 <Badge variant="outline">
                   {articleRelationLabels[
-                    (relation.relationType ?? "mention") as keyof typeof articleRelationLabels
+                    (relation.relationType ??
+                      "mention") as keyof typeof articleRelationLabels
                   ] ?? relation.relationType}
                 </Badge>
                 <Link
@@ -820,24 +831,28 @@ function OfferEditForm({
         <PriceRowsEditor prices={prices} onChange={setPrices} />
       </div>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
-        {offerKind === "promotion" ? (
+        {offer.sourceMonitorId ? (
           <>
             <fieldset className="rounded-md border border-border/70 bg-background p-3">
-              <legend className="px-1 text-sm font-medium">自动监控锁定字段</legend>
+              <legend className="px-1 text-sm font-medium">
+                供应商采集锁定字段
+              </legend>
               <p className="mb-3 text-xs text-muted-foreground">
                 锁定后，供应商官网采集不会覆盖对应的人工内容。
               </p>
               <div className="flex flex-wrap gap-x-5 gap-y-3">
-                {([
-                  ["title", "标题"],
-                  ["offerKind", "套餐属性"],
-                  ["specs", "配置规格"],
-                  ["location", "地区与线路"],
-                  ["status", "库存状态"],
-                  ["price", "价格"],
-                  ["purchaseUrl", "购买链接"],
-                  ["promoCode", "优惠码"],
-                ] as const).map(([field, label]) => (
+                {(
+                  [
+                    ["title", "标题"],
+                    ["offerKind", "套餐属性"],
+                    ["specs", "配置规格"],
+                    ["location", "地区与线路"],
+                    ["status", "库存状态"],
+                    ["price", "价格"],
+                    ["purchaseUrl", "购买链接"],
+                    ["promoCode", "优惠码"],
+                  ] as const
+                ).map(([field, label]) => (
                   <label
                     key={field}
                     className="flex min-h-11 items-center gap-2 text-sm"
@@ -886,16 +901,18 @@ function OfferEditForm({
                     </div>
                   ))
                 ) : (
-                  <p className="text-xs text-muted-foreground">暂无探测记录。</p>
+                  <p className="text-xs text-muted-foreground">
+                    暂无探测记录。
+                  </p>
                 )}
               </div>
             </div>
           </>
         ) : (
           <div className="rounded-md border border-border/70 bg-background p-3 lg:col-span-2">
-            <p className="text-sm font-medium">常规款由后台人工维护</p>
+            <p className="text-sm font-medium">当前套餐未关联供应商采集源</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              当前套餐不会进入厂商库存探测，库存状态、价格和购买链接以本页保存内容为准。
+              库存状态、价格和购买链接以本页保存内容为准；关联采集源后才会自动更新。
             </p>
           </div>
         )}

@@ -13,3 +13,7 @@ export function getMissingOfferTransition(input: {
     statusChanged: shouldDiscontinue && input.status !== "discontinued",
   };
 }
+
+export function canReviewProviderOfferCandidate(status: string) {
+  return status === "pending";
+}

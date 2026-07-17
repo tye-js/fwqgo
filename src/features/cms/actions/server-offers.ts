@@ -5,7 +5,10 @@ import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { isHttpHref, isInternalHref } from "@fwqgo/core/utils";
-import { SERVER_OFFER_BILLING_CYCLES } from "@fwqgo/core/server-offer-price";
+import {
+  SERVER_OFFER_BILLING_CYCLES,
+  SERVER_OFFER_CURRENCIES,
+} from "@fwqgo/core/server-offer-price";
 import {
   SERVER_OFFER_KINDS,
   type ServerOfferKind,
@@ -75,7 +78,7 @@ const offerPriceSchema = z.object({
       message: "价格必须是大于或等于 0 的数字",
     }),
   originalAmount: nullablePrice.optional(),
-  currency: z.enum(["USD", "CNY"]),
+  currency: z.enum(SERVER_OFFER_CURRENCIES),
   purchaseUrl: nullablePurchaseUrl.optional(),
   active: z.boolean(),
   validUntil: nullableDate.optional(),
@@ -168,7 +171,8 @@ export async function importServerOffersFromPostAction(postId: number) {
   void postId;
   return adminActionFailure(new Error("文章套餐提取已停用"), {
     title: "套餐数据源已迁移",
-    suggestion: "请到“套餐 → 供应商采集”配置供应商官网；文章只关联测评、提及或优惠关系。",
+    suggestion:
+      "请到“套餐 → 供应商采集”配置供应商官网；文章只关联测评、提及或优惠关系。",
   });
 }
 
@@ -253,7 +257,9 @@ export async function saveServerOfferArticleRelationAction(input: {
     if (!Number.isInteger(input.postId) || input.postId <= 0) {
       throw new Error("请选择文章");
     }
-    if (!(["review", "mention", "deal"] as const).includes(input.relationType)) {
+    if (
+      !(["review", "mention", "deal"] as const).includes(input.relationType)
+    ) {
       throw new Error("文章关系类型无效");
     }
     const result = await upsertServerOfferArticleRelation(input);

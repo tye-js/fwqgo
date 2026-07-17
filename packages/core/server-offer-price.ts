@@ -7,6 +7,18 @@ export const SERVER_OFFER_BILLING_CYCLES = [
   "triennial",
 ] as const;
 
+export const SERVER_OFFER_CURRENCIES = ["USD", "CNY"] as const;
+
+export type ServerOfferCurrency = (typeof SERVER_OFFER_CURRENCIES)[number];
+
+export function isSupportedServerOfferCurrency(
+  value: string | null | undefined,
+) {
+  return SERVER_OFFER_CURRENCIES.includes(
+    value?.trim().toUpperCase() as ServerOfferCurrency,
+  );
+}
+
 export type ServerOfferBillingCycle =
   (typeof SERVER_OFFER_BILLING_CYCLES)[number];
 
@@ -30,9 +42,7 @@ export function normalizeServerOfferBillingCycle(
     : "monthly";
 }
 
-export function getServerOfferTermMonths(
-  value: string | null | undefined,
-) {
+export function getServerOfferTermMonths(value: string | null | undefined) {
   return BILLING_CYCLE_MONTHS[normalizeServerOfferBillingCycle(value)];
 }
 
@@ -45,13 +55,13 @@ export function calculateMonthlyPriceUsd(input: {
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount < 0) return null;
 
+  const currency = input.currency?.trim().toUpperCase();
+  if (!isSupportedServerOfferCurrency(currency)) return null;
+
   const cnyPerUsd = input.cnyPerUsd ?? 7.2;
   if (!Number.isFinite(cnyPerUsd) || cnyPerUsd <= 0) return null;
 
-  const amountUsd =
-    input.currency?.trim().toUpperCase() === "CNY"
-      ? amount / cnyPerUsd
-      : amount;
+  const amountUsd = currency === "CNY" ? amount / cnyPerUsd : amount;
   const monthly = amountUsd / getServerOfferTermMonths(input.billingCycle);
 
   return Math.round(monthly * 10_000) / 10_000;

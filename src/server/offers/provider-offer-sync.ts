@@ -7,7 +7,10 @@ import {
   normalizeServerOfferBillingCycle,
 } from "@fwqgo/core/server-offer-price";
 import { slugify } from "@fwqgo/core/utils";
-import { getMissingOfferTransition } from "@fwqgo/core/provider-offer-sync";
+import {
+  canReviewProviderOfferCandidate,
+  getMissingOfferTransition,
+} from "@fwqgo/core/provider-offer-sync";
 import { db } from "@fwqgo/db";
 import {
   affServiceProviders,
@@ -46,6 +49,18 @@ type StoredPrice = {
   monthlyPriceUsd: number;
   purchaseUrl: string | null;
 };
+
+type ProviderOfferDatabase = Pick<typeof db, "select" | "insert" | "update">;
+
+async function safelyNotifyProviderOfferChanges() {
+  try {
+    await notifyPublicWebCache("offer.changed", {
+      topicSlugs: ["hong-kong", "united-states", "cheap-vps"],
+    });
+  } catch (error) {
+    console.error("供应商套餐缓存通知失败:", error);
+  }
+}
 
 function parseNumberWithUnit(value: string | null, unit: "mb" | "gbps") {
   if (!value) return null;
@@ -141,13 +156,16 @@ function diffValues(
   );
 }
 
-async function upsertSource(input: {
-  offerId: number;
-  context: ProviderSyncContext;
-  candidate: ProviderOfferCandidate;
-  now: Date;
-}) {
-  const [existing] = await db
+async function upsertSource(
+  input: {
+    offerId: number;
+    context: ProviderSyncContext;
+    candidate: ProviderOfferCandidate;
+    now: Date;
+  },
+  database: ProviderOfferDatabase = db,
+) {
+  const [existing] = await database
     .select({ id: serverOfferSources.id })
     .from(serverOfferSources)
     .where(
@@ -159,13 +177,13 @@ async function upsertSource(input: {
     )
     .limit(1);
   if (existing) {
-    await db
+    await database
       .update(serverOfferSources)
       .set({ sourceUrl: input.candidate.sourceUrl, updatedAt: input.now })
       .where(eq(serverOfferSources.id, existing.id));
     return;
   }
-  await db.insert(serverOfferSources).values({
+  await database.insert(serverOfferSources).values({
     offerId: input.offerId,
     sourceType: "provider",
     sourceUrl: input.candidate.sourceUrl,
@@ -178,13 +196,14 @@ async function replacePrices(
   offerId: number,
   prices: StoredPrice[],
   now: Date,
+  database: ProviderOfferDatabase = db,
 ) {
-  await db
+  await database
     .update(serverOfferPrices)
     .set({ active: false, updatedAt: now })
     .where(eq(serverOfferPrices.offerId, offerId));
   for (const price of prices) {
-    await db
+    await database
       .insert(serverOfferPrices)
       .values({
         offerId,
@@ -217,20 +236,23 @@ async function replacePrices(
   }
 }
 
-async function materializeOffer(input: {
-  context: ProviderSyncContext;
-  candidate: ProviderOfferCandidate;
-  sourceHash: string;
-  now: Date;
-  existingOfferId?: number;
-}) {
+async function materializeOffer(
+  input: {
+    context: ProviderSyncContext;
+    candidate: ProviderOfferCandidate;
+    sourceHash: string;
+    now: Date;
+    existingOfferId?: number;
+  },
+  database: ProviderOfferDatabase = db,
+) {
   const { candidate, context, sourceHash, now } = input;
   const prices = normalizedPrices(candidate, context);
   if (prices.length === 0) throw new Error("套餐价格无法折算为美元月价");
   const primaryPrice = prices[0]!;
   const purchaseUrl = applyProviderAffiliateUrl(candidate.purchaseUrl, context);
   const [existing] = input.existingOfferId
-    ? await db
+    ? await database
         .select()
         .from(serverOffers)
         .where(eq(serverOffers.id, input.existingOfferId))
@@ -319,19 +341,19 @@ async function materializeOffer(input: {
     promoCode:
       locked.has("promoCode") && existing
         ? existing.promoCode
-        : candidate.promoCode ?? context.defaultPromoCode,
+        : (candidate.promoCode ?? context.defaultPromoCode),
   } satisfies Partial<typeof serverOffers.$inferInsert>;
 
   const offerId = existing
     ? (
-        await db
+        await database
           .update(serverOffers)
           .set({ ...syncedValues, ...commonValues })
           .where(eq(serverOffers.id, existing.id))
           .returning({ id: serverOffers.id })
       )[0]?.id
     : (
-        await db
+        await database
           .insert(serverOffers)
           .values({
             ...syncedValues,
@@ -349,21 +371,26 @@ async function materializeOffer(input: {
           .returning({ id: serverOffers.id })
       )[0]?.id;
   if (!offerId) throw new Error("供应商套餐写入失败");
-  if (!locked.has("price")) await replacePrices(offerId, prices, now);
-  await upsertSource({ offerId, context, candidate, now });
+  if (!locked.has("price")) {
+    await replacePrices(offerId, prices, now, database);
+  }
+  await upsertSource({ offerId, context, candidate, now }, database);
   return offerId;
 }
 
-async function upsertCandidateRecord(input: {
-  context: ProviderSyncContext;
-  candidate: ProviderOfferCandidate;
-  sourceHash: string;
-  status: "pending" | "accepted" | "rejected" | "superseded";
-  offerId: number | null;
-  diff: Record<string, unknown> | null;
-  now: Date;
-}) {
-  const [existing] = await db
+async function upsertCandidateRecord(
+  input: {
+    context: ProviderSyncContext;
+    candidate: ProviderOfferCandidate;
+    sourceHash: string;
+    status: "pending" | "accepted" | "rejected" | "superseded";
+    offerId: number | null;
+    diff: Record<string, unknown> | null;
+    now: Date;
+  },
+  database: ProviderOfferDatabase = db,
+) {
+  const [existing] = await database
     .select()
     .from(providerOfferCandidates)
     .where(
@@ -380,7 +407,7 @@ async function upsertCandidateRecord(input: {
     existing?.status === "rejected" && existing.sourceHash === input.sourceHash;
   const nextStatus = sameRejected ? "rejected" : input.status;
   if (existing) {
-    await db
+    await database
       .update(providerOfferCandidates)
       .set({
         sourceUrl: input.candidate.sourceUrl,
@@ -398,7 +425,7 @@ async function upsertCandidateRecord(input: {
       .where(eq(providerOfferCandidates.id, existing.id));
     return { id: existing.id, status: nextStatus, sameRejected };
   }
-  const [created] = await db
+  const [created] = await database
     .insert(providerOfferCandidates)
     .values({
       monitorId: input.context.monitorId,
@@ -426,75 +453,92 @@ export async function syncProviderOfferCandidate(input: {
   sourceHash: string;
   now: Date;
 }) {
-  const [existingOffer] = await db
-    .select()
-    .from(serverOffers)
-    .where(
-      and(
-        eq(serverOffers.providerId, input.context.providerId),
-        eq(serverOffers.externalProductId, input.candidate.externalProductId),
-      ),
-    )
-    .limit(1);
+  return db.transaction(async (tx) => {
+    const [existingOffer] = await tx
+      .select()
+      .from(serverOffers)
+      .where(
+        and(
+          eq(serverOffers.providerId, input.context.providerId),
+          eq(serverOffers.externalProductId, input.candidate.externalProductId),
+        ),
+      )
+      .limit(1);
 
-  if (existingOffer) {
-    const diff = diffValues(existingOffer, input.candidate);
-    if (existingOffer.sourceHash === input.sourceHash) {
-      await db
-        .update(serverOffers)
-        .set({
-          sourceMonitorId: input.context.monitorId,
-          sourceLastSeenAt: input.now,
-          missingRuns: 0,
-          lastCheckedAt: input.now,
-          checkStatus: "ok",
-        })
-        .where(eq(serverOffers.id, existingOffer.id));
-      await upsertCandidateRecord({
+    if (existingOffer) {
+      const diff = diffValues(existingOffer, input.candidate);
+      if (existingOffer.sourceHash === input.sourceHash) {
+        await tx
+          .update(serverOffers)
+          .set({
+            sourceMonitorId: input.context.monitorId,
+            sourceLastSeenAt: input.now,
+            missingRuns: 0,
+            lastCheckedAt: input.now,
+            checkStatus: "ok",
+          })
+          .where(eq(serverOffers.id, existingOffer.id));
+        await upsertCandidateRecord(
+          {
+            ...input,
+            status: "accepted",
+            offerId: existingOffer.id,
+            diff,
+          },
+          tx,
+        );
+        return { outcome: "unchanged" as const, offerId: existingOffer.id };
+      }
+      const offerId = await materializeOffer(
+        {
+          ...input,
+          existingOfferId: existingOffer.id,
+        },
+        tx,
+      );
+      await upsertCandidateRecord(
+        {
+          ...input,
+          status: "accepted",
+          offerId,
+          diff,
+        },
+        tx,
+      );
+      return { outcome: "updated" as const, offerId };
+    }
+
+    if (!input.context.autoPublish) {
+      const candidateRecord = await upsertCandidateRecord(
+        {
+          ...input,
+          status: "pending",
+          offerId: null,
+          diff: null,
+        },
+        tx,
+      );
+      return {
+        outcome:
+          candidateRecord.status === "rejected"
+            ? ("unchanged" as const)
+            : ("pending" as const),
+        offerId: null,
+      };
+    }
+
+    const offerId = await materializeOffer(input, tx);
+    await upsertCandidateRecord(
+      {
         ...input,
         status: "accepted",
-        offerId: existingOffer.id,
-        diff,
-      });
-      return { outcome: "unchanged" as const, offerId: existingOffer.id };
-    }
-    const offerId = await materializeOffer({
-      ...input,
-      existingOfferId: existingOffer.id,
-    });
-    await upsertCandidateRecord({
-      ...input,
-      status: "accepted",
-      offerId,
-      diff,
-    });
-    return { outcome: "updated" as const, offerId };
-  }
-
-  if (!input.context.autoPublish) {
-    const candidateRecord = await upsertCandidateRecord({
-      ...input,
-      status: "pending",
-      offerId: null,
-      diff: null,
-    });
-    return {
-      outcome:
-        candidateRecord.status === "rejected"
-          ? ("unchanged" as const)
-          : ("pending" as const),
-      offerId: null,
-    };
-  }
-
-  const offerId = await materializeOffer(input);
-  await upsertCandidateRecord({
-    ...input,
-    status: "accepted",
-    offerId,
-    diff: null,
+        offerId,
+        diff: null,
+      },
+      tx,
+    );
+    return { outcome: "created" as const, offerId };
   });
-  return { outcome: "created" as const, offerId };
 }
 
 export async function markMissingProviderOffers(input: {
@@ -532,8 +576,7 @@ export async function markMissingProviderOffers(input: {
       .set({
         missingRuns: transition.missingRuns,
         status: transition.status,
-        statusChangedAt:
-          transition.statusChanged ? input.now : undefined,
+        statusChangedAt: transition.statusChanged ? input.now : undefined,
         updatedAt: transition.statusChanged ? input.now : undefined,
       })
       .where(eq(serverOffers.id, offer.id));
@@ -545,69 +588,86 @@ export async function acceptProviderOfferCandidate(input: {
   candidateId: number;
   reviewerId: string;
 }) {
-  const [row] = await db
-    .select({
-      candidate: providerOfferCandidates,
-    })
-    .from(providerOfferCandidates)
-    .where(eq(providerOfferCandidates.id, input.candidateId))
-    .limit(1);
-  if (!row) throw new Error("供应商套餐候选不存在");
-  const [contextRow] = await db
-    .select({
-      monitorId: providerMonitors.id,
-      providerId: providerMonitors.providerId,
-      purpose: providerMonitors.purpose,
-      autoPublish: providerMonitors.autoPublish,
-      missingThreshold: providerMonitors.missingThreshold,
-      providerName: affServiceProviders.name,
-      providerSlug: affServiceProviders.slug,
-      affUrl: affServiceProviders.affUrl,
-      affParam: affServiceProviders.affParam,
-      affValue: affServiceProviders.affValue,
-      defaultPromoCode: affServiceProviders.defaultPromoCode,
-    })
-    .from(providerMonitors)
-    .innerJoin(
-      affServiceProviders,
-      eq(providerMonitors.providerId, affServiceProviders.id),
-    )
-    .where(eq(providerMonitors.id, row.candidate.monitorId))
-    .limit(1);
-  if (!contextRow) throw new Error("供应商采集源不存在");
-  const candidate = row.candidate
-    .normalizedData as unknown as ProviderOfferCandidate;
-  const [existingOffer] = await db
-    .select({ id: serverOffers.id })
-    .from(serverOffers)
-    .where(
-      and(
-        eq(serverOffers.providerId, contextRow.providerId),
-        eq(serverOffers.externalProductId, candidate.externalProductId),
-      ),
-    )
-    .limit(1);
-  const offerId = await materializeOffer({
-    context: contextRow,
-    candidate,
-    sourceHash: row.candidate.sourceHash,
-    now: new Date(),
-    existingOfferId: row.candidate.offerId ?? existingOffer?.id ?? undefined,
+  const offerId = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ candidate: providerOfferCandidates })
+      .from(providerOfferCandidates)
+      .where(eq(providerOfferCandidates.id, input.candidateId))
+      .for("update")
+      .limit(1);
+    if (!row) throw new Error("供应商套餐候选不存在");
+    if (!canReviewProviderOfferCandidate(row.candidate.status)) {
+      throw new Error("候选套餐已处理，请刷新页面查看最新状态");
+    }
+
+    const [contextRow] = await tx
+      .select({
+        monitorId: providerMonitors.id,
+        providerId: providerMonitors.providerId,
+        purpose: providerMonitors.purpose,
+        autoPublish: providerMonitors.autoPublish,
+        missingThreshold: providerMonitors.missingThreshold,
+        providerName: affServiceProviders.name,
+        providerSlug: affServiceProviders.slug,
+        affUrl: affServiceProviders.affUrl,
+        affParam: affServiceProviders.affParam,
+        affValue: affServiceProviders.affValue,
+        defaultPromoCode: affServiceProviders.defaultPromoCode,
+      })
+      .from(providerMonitors)
+      .innerJoin(
+        affServiceProviders,
+        eq(providerMonitors.providerId, affServiceProviders.id),
+      )
+      .where(eq(providerMonitors.id, row.candidate.monitorId))
+      .limit(1);
+    if (!contextRow) throw new Error("供应商采集源不存在");
+
+    const candidate = row.candidate
+      .normalizedData as unknown as ProviderOfferCandidate;
+    const [existingOffer] = await tx
+      .select({ id: serverOffers.id })
+      .from(serverOffers)
+      .where(
+        and(
+          eq(serverOffers.providerId, contextRow.providerId),
+          eq(serverOffers.externalProductId, candidate.externalProductId),
+        ),
+      )
+      .limit(1);
+    const now = new Date();
+    const acceptedOfferId = await materializeOffer(
+      {
+        context: contextRow,
+        candidate,
+        sourceHash: row.candidate.sourceHash,
+        now,
+        existingOfferId:
+          row.candidate.offerId ?? existingOffer?.id ?? undefined,
+      },
+      tx,
+    );
+    const [updated] = await tx
+      .update(providerOfferCandidates)
+      .set({
+        status: "accepted",
+        offerId: acceptedOfferId,
+        reviewedBy: input.reviewerId,
+        reviewedAt: now,
+        rejectionReason: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(providerOfferCandidates.id, input.candidateId),
+          eq(providerOfferCandidates.status, "pending"),
+        ),
+      )
+      .returning({ id: providerOfferCandidates.id });
+    if (!updated) throw new Error("候选套餐状态已变化，请刷新页面后重试");
+    return acceptedOfferId;
   });
-  await db
-    .update(providerOfferCandidates)
-    .set({
-      status: "accepted",
-      offerId,
-      reviewedBy: input.reviewerId,
-      reviewedAt: new Date(),
-      rejectionReason: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(providerOfferCandidates.id, input.candidateId));
-  await notifyPublicWebCache("offer.changed", {
-    topicSlugs: ["hong-kong", "united-states", "cheap-vps"],
-  });
+  await safelyNotifyProviderOfferChanges();
   return { offerId };
 }
 
@@ -622,13 +682,18 @@ export async function rejectProviderOfferCandidate(input: {
       status: "rejected",
       reviewedBy: input.reviewerId,
       reviewedAt: new Date(),
-      rejectionReason: input.reason?.trim()
-        ? input.reason.trim()
-        : "人工拒绝",
+      rejectionReason: input.reason?.trim() ? input.reason.trim() : "人工拒绝",
       updatedAt: new Date(),
     })
-    .where(eq(providerOfferCandidates.id, input.candidateId))
+    .where(
+      and(
+        eq(providerOfferCandidates.id, input.candidateId),
+        eq(providerOfferCandidates.status, "pending"),
+      ),
+    )
     .returning({ id: providerOfferCandidates.id });
-  if (!updated) throw new Error("供应商套餐候选不存在");
+  if (!updated) {
+    throw new Error("候选套餐不存在或已处理，请刷新页面查看最新状态");
+  }
   return updated;
 }

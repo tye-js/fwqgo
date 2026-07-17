@@ -1730,6 +1730,7 @@ export async function getAdminServerOffers(
       title: serverOffers.title,
       providerId: serverOffers.providerId,
       providerName: serverOffers.providerName,
+      sourceMonitorId: serverOffers.sourceMonitorId,
       externalProductId: serverOffers.externalProductId,
       productGroup: serverOffers.productGroup,
       offerKind: serverOffers.offerKind,
@@ -2195,8 +2196,14 @@ export async function updateServerOffer(
         lineType: input.lineType ?? null,
         lineId: taxonomy.lineId,
         status: input.status,
-        checkStatus: input.offerKind === "regular" ? "unknown" : undefined,
-        lastCheckedAt: input.offerKind === "regular" ? null : undefined,
+        checkStatus:
+          input.offerKind === "regular" && !existing.sourceMonitorId
+            ? "unknown"
+            : undefined,
+        lastCheckedAt:
+          input.offerKind === "regular" && !existing.sourceMonitorId
+            ? null
+            : undefined,
         statusChangedAt: existing.status === input.status ? undefined : now,
         purchaseUrl: input.purchaseUrl ?? null,
         promoCode: input.promoCode ?? provider?.defaultPromoCode ?? null,
@@ -2298,7 +2305,13 @@ export async function bulkUpdateServerOffers(input: {
     return { updated: 0 };
   }
 
-  const values: Partial<typeof serverOffers.$inferInsert> = {
+  const values: Omit<
+    Partial<typeof serverOffers.$inferInsert>,
+    "checkStatus" | "lastCheckedAt"
+  > & {
+    checkStatus?: string | ReturnType<typeof sql>;
+    lastCheckedAt?: Date | null | ReturnType<typeof sql>;
+  } = {
     updatedAt: new Date(),
   };
 
@@ -2309,8 +2322,14 @@ export async function bulkUpdateServerOffers(input: {
   if (input.offerKind) {
     values.offerKind = input.offerKind;
     if (input.offerKind === "regular") {
-      values.checkStatus = "unknown";
-      values.lastCheckedAt = null;
+      values.checkStatus = sql`case
+        when ${serverOffers.sourceMonitorId} is null then 'unknown'
+        else ${serverOffers.checkStatus}
+      end`;
+      values.lastCheckedAt = sql`case
+        when ${serverOffers.sourceMonitorId} is null then null
+        else ${serverOffers.lastCheckedAt}
+      end`;
     }
   }
   if (typeof input.visible === "boolean") values.visible = input.visible;

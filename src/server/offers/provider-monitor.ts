@@ -42,6 +42,7 @@ import {
   hashProviderOfferSyncState,
   hashProviderSourceResponse,
   parseProviderSourcePayload,
+  prepareProviderOfferCandidates,
   validateProviderOfferCandidate,
 } from "@/server/offers/provider-source-parser";
 
@@ -60,22 +61,28 @@ function truncate(value: string, length = 5_000) {
   return value.length > length ? `${value.slice(0, length)}...` : value;
 }
 
-async function pruneProviderMonitorCheckHistory(
-  referenceTime: Date,
-) {
+async function pruneProviderMonitorCheckHistory(referenceTime: Date) {
   const cutoff = getProviderMonitorCheckRetentionCutoff(referenceTime);
   await db
     .delete(serverOfferChecks)
     .where(lt(serverOfferChecks.checkedAt, cutoff));
 }
 
-async function safelyPruneProviderMonitorCheckHistory(
-  referenceTime: Date,
-) {
+async function safelyPruneProviderMonitorCheckHistory(referenceTime: Date) {
   try {
     await pruneProviderMonitorCheckHistory(referenceTime);
   } catch (error) {
     console.error("清理过期库存探测记录失败:", error);
+  }
+}
+
+async function safelyNotifyProviderOfferChanges() {
+  try {
+    await notifyPublicWebCache("offer.changed", {
+      topicSlugs: ["hong-kong", "united-states", "cheap-vps"],
+    });
+  } catch (error) {
+    console.error("供应商套餐缓存通知失败:", error);
   }
 }
 
@@ -258,13 +265,15 @@ export async function runProviderMonitor(
         ? ""
         : await readResponseTextWithLimit(response, MAX_MONITOR_RESPONSE_BYTES);
     if (text === null) throw new Error("供应商响应超过 8 MB 限制");
-    const responseHash = text ? hashProviderSourceResponse(text) : monitor.responseHash;
+    const responseHash = text
+      ? hashProviderSourceResponse(text)
+      : monitor.responseHash;
     const notModified =
       response.status === 304 ||
       Boolean(
         configUnchanged &&
-          responseHash &&
-          responseHash === monitor.responseHash,
+        responseHash &&
+        responseHash === monitor.responseHash,
       );
 
     if (notModified) {
@@ -338,25 +347,13 @@ export async function runProviderMonitor(
       unchanged: 0,
       skipped: 0,
     };
-    const seenExternalIds = new Set<string>();
+    const preparedCandidates = prepareProviderOfferCandidates(
+      candidates,
+      config.requiredSpecCount,
+    );
+    counters.skipped = preparedCandidates.skipped;
     const checkRows: Array<typeof serverOfferChecks.$inferInsert> = [];
-    for (const candidate of candidates) {
-      const externalId = candidate.externalProductId.trim();
-      if (externalId) {
-        if (seenExternalIds.has(externalId)) {
-          counters.skipped += 1;
-          continue;
-        }
-        seenExternalIds.add(externalId);
-      }
-      const quality = validateProviderOfferCandidate(
-        candidate,
-        config.requiredSpecCount,
-      );
-      if (!quality.valid) {
-        counters.skipped += 1;
-        continue;
-      }
+    for (const candidate of preparedCandidates.syncableCandidates) {
       const result = await syncProviderOfferCandidate({
         context,
         candidate,
@@ -381,10 +378,11 @@ export async function runProviderMonitor(
 
     const missing = await markMissingProviderOffers({
       context,
-      seenExternalIds,
+      seenExternalIds: preparedCandidates.seenExternalIds,
       now: checkedAt,
     });
-    if (checkRows.length > 0) await db.insert(serverOfferChecks).values(checkRows);
+    if (checkRows.length > 0)
+      await db.insert(serverOfferChecks).values(checkRows);
     const summary: ProviderMonitorRunSummary = {
       monitorId: monitor.id,
       runId: run.id,
@@ -423,9 +421,7 @@ export async function runProviderMonitor(
       .where(eq(providerMonitors.id, monitor.id));
     await safelyPruneProviderMonitorCheckHistory(checkedAt);
     if (counters.created > 0 || counters.updated > 0 || missing > 0) {
-      await notifyPublicWebCache("offer.changed", {
-        topicSlugs: ["hong-kong", "united-states", "cheap-vps"],
-      });
+      await safelyNotifyProviderOfferChanges();
     }
     await enqueueProviderMonitorTask(monitor.id, nextRunAt);
     return summary;
@@ -481,13 +477,7 @@ export async function runProviderMonitor(
       .where(eq(providerMonitors.id, monitor.id));
     await safelyPruneProviderMonitorCheckHistory(checkedAt);
     if (failedOfferCount > 0) {
-      try {
-        await notifyPublicWebCache("offer.changed", {
-          topicSlugs: ["hong-kong", "united-states", "cheap-vps"],
-        });
-      } catch (notifyError) {
-        console.error("供应商采集失败状态缓存通知失败:", notifyError);
-      }
+      await safelyNotifyProviderOfferChanges();
     }
     throw new Error(message);
   }
@@ -728,12 +718,9 @@ export async function getProviderMonitorCheckHistory(
       eq(serverOffers.providerId, affServiceProviders.id),
     )
     .where(
-      and(
-        eq(serverOffers.offerKind, "promotion"),
-        monitorId && Number.isInteger(monitorId)
-          ? eq(serverOfferChecks.monitorId, monitorId)
-          : undefined,
-      ),
+      monitorId && Number.isInteger(monitorId)
+        ? eq(serverOfferChecks.monitorId, monitorId)
+        : undefined,
     )
     .orderBy(desc(serverOfferChecks.checkedAt), desc(serverOfferChecks.id))
     .limit(Math.min(Math.max(limit, 1), 200));
@@ -789,8 +776,12 @@ export async function getProviderMonitorRunHistory(
 }
 
 export async function getProviderOfferCandidateList(
-  status: "pending" | "accepted" | "rejected" | "superseded" | "all" =
-    "pending",
+  status:
+    | "pending"
+    | "accepted"
+    | "rejected"
+    | "superseded"
+    | "all" = "pending",
   limit = 100,
 ) {
   return db

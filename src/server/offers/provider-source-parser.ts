@@ -11,6 +11,7 @@ import type {
   ProviderMonitorConfig,
   ProviderSourceAdapter,
 } from "@fwqgo/core/provider-monitor-config";
+import { isSupportedServerOfferCurrency } from "@fwqgo/core/server-offer-price";
 
 type AvailabilityStatus = (typeof PROVIDER_AVAILABILITY_STATUSES)[number];
 
@@ -80,7 +81,8 @@ function nullableText(value: unknown) {
 function normalizeAmount(value: unknown) {
   const text = toText(value).replaceAll(",", "");
   const match = /-?\d+(?:\.\d+)?/.exec(text);
-  return match?.[0] ?? "";
+  const amount = match?.[0] ?? "";
+  return amount && Number(amount) >= 0 ? amount : "";
 }
 
 function inferCurrency(value: unknown, fallback: string) {
@@ -105,7 +107,13 @@ function normalizeStatus(
   if (typeof value === "boolean") return value ? "in_stock" : "out_of_stock";
   const raw = toText(value);
   if (!raw) return fallback;
-  const mapped = statusMap[raw] ?? statusMap[raw.toLowerCase()];
+  const normalizedRaw = raw.toLocaleLowerCase();
+  const mapped =
+    statusMap[raw] ??
+    statusMap[normalizedRaw] ??
+    Object.entries(statusMap).find(
+      ([key]) => key.trim().toLocaleLowerCase() === normalizedRaw,
+    )?.[1];
   if (mapped) return mapped;
   if (/^(true|yes|available|in[_ -]?stock|有货)$/i.test(raw)) return "in_stock";
   if (
@@ -281,7 +289,11 @@ function htmlFieldValue(
   field: HtmlFieldConfig | undefined,
 ) {
   if (!field) return "";
-  const target = field.selector ? item.find(field.selector).first() : item;
+  const target = field.selector
+    ? item.is(field.selector)
+      ? item
+      : item.find(field.selector).first()
+    : item;
   const raw = field.attribute
     ? (target.attr(field.attribute) ?? "")
     : target.text();
@@ -403,6 +415,16 @@ export function validateProviderOfferCandidate(
   if (!candidate.title) reasons.push("缺少套餐标题");
   if (!candidate.purchaseUrl) reasons.push("缺少购买链接");
   if (candidate.prices.length === 0) reasons.push("缺少有效价格");
+  const unsupportedCurrencies = [
+    ...new Set(
+      candidate.prices
+        .map((price) => price.currency.trim().toUpperCase())
+        .filter((currency) => !isSupportedServerOfferCurrency(currency)),
+    ),
+  ];
+  if (unsupportedCurrencies.length > 0) {
+    reasons.push(`不支持币种 ${unsupportedCurrencies.join("、")}`);
+  }
   if (specCount < requiredSpecCount) {
     reasons.push(`配置字段不足，需要至少 ${requiredSpecCount} 项`);
   }
@@ -430,7 +452,13 @@ export function hashProviderOfferCandidate(candidate: ProviderOfferCandidate) {
 
 export function hashProviderOfferSyncState(
   candidate: ProviderOfferCandidate,
-  provider: { affUrl: string; affParam: string; affValue: string },
+  provider: {
+    affUrl: string;
+    affParam: string;
+    affValue: string;
+    purpose: string;
+    defaultPromoCode: string | null;
+  },
 ) {
   return createHash("sha256")
     .update(
@@ -442,10 +470,47 @@ export function hashProviderOfferSyncState(
             affParam: provider.affParam,
             affValue: provider.affValue,
           },
+          behavior: {
+            purpose: provider.purpose,
+            defaultPromoCode: provider.defaultPromoCode,
+          },
         }),
       ),
     )
     .digest("hex");
+}
+
+export function prepareProviderOfferCandidates(
+  candidates: ProviderOfferCandidate[],
+  requiredSpecCount = 2,
+) {
+  const seenExternalIds = new Set<string>();
+  const syncableExternalIds = new Set<string>();
+  const syncableCandidates: ProviderOfferCandidate[] = [];
+  let skipped = 0;
+
+  for (const candidate of candidates) {
+    const externalId = candidate.externalProductId.trim();
+    if (externalId) seenExternalIds.add(externalId);
+
+    const quality = validateProviderOfferCandidate(
+      candidate,
+      requiredSpecCount,
+    );
+    if (!quality.valid) {
+      skipped += 1;
+      continue;
+    }
+
+    if (syncableExternalIds.has(externalId)) {
+      skipped += 1;
+      continue;
+    }
+    syncableExternalIds.add(externalId);
+    syncableCandidates.push(candidate);
+  }
+
+  return { seenExternalIds, syncableCandidates, skipped };
 }
 
 export function hashProviderMonitorSyncConfig(input: {
