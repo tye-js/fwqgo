@@ -2,7 +2,7 @@ import { sanitizeFileName } from "@fwqgo/core/utils";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import {
   buildImageGenerationEndpoint,
-  formatImageGenerationHttpError,
+  createImageGenerationHttpError,
   getImageGenerationRetryDelayMs,
   ImageGenerationConnectionInterruptedError,
   ImageGenerationRateLimitError,
@@ -73,10 +73,7 @@ function fillPromptTemplate(
 
 function buildLanguagePromptRules(
   englishPromptTemplate: string,
-  input: Pick<
-    GenerateCoverInput,
-    "language" | "description" | "keywords"
-  >,
+  input: Pick<GenerateCoverInput, "language" | "description" | "keywords">,
 ) {
   if (input.language === "en") {
     return [
@@ -412,7 +409,7 @@ export async function generateArticleCoverImage(
     );
   }
   if (!response.ok) {
-    const httpError = formatImageGenerationHttpError({
+    const httpError = createImageGenerationHttpError({
       status: response.status,
       statusText: response.statusText,
       responseText: text,
@@ -424,16 +421,16 @@ export async function generateArticleCoverImage(
         responseText: text,
       });
       throw new ImageGenerationRateLimitError(
-        `${httpError}；预计等待 ${Math.max(1, Math.ceil(retryAfterMs / 60_000))} 分钟后重试`,
+        `${httpError.message}；预计等待 ${Math.max(1, Math.ceil(retryAfterMs / 60_000))} 分钟后重试`,
         retryAfterMs,
       );
     }
     if (isUncertainImageGenerationHttpStatus(response.status)) {
       throw new ImageGenerationConnectionInterruptedError(
-        `${httpError}；上游任务可能仍在生成，本地暂时无法取得图片。请先到服务商任务页确认，避免立即重复生成`,
+        `${httpError.message}；上游任务可能仍在生成，本地暂时无法取得图片。请先到服务商任务页确认，避免立即重复生成`,
       );
     }
-    throw new Error(httpError);
+    throw httpError;
   }
 
   let payload: ImageGenerationResponse;

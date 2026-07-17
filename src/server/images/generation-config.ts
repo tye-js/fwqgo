@@ -168,6 +168,17 @@ export async function getActiveImageGenerationConfig(configId?: number) {
   return fallback ?? null;
 }
 
+export async function getEnabledImageGenerationConfigs() {
+  return db
+    .select()
+    .from(imageGenerationConfigs)
+    .where(eq(imageGenerationConfigs.enabled, true))
+    .orderBy(
+      desc(imageGenerationConfigs.isDefault),
+      desc(imageGenerationConfigs.id),
+    );
+}
+
 export async function createImageGenerationConfig(
   input: ImageGenerationConfigInput,
 ) {

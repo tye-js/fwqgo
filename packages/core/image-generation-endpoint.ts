@@ -27,6 +27,18 @@ export class ImageGenerationConnectionInterruptedError extends Error {
   }
 }
 
+export class ImageGenerationHttpError extends Error {
+  readonly status: number;
+  readonly providerCode: string;
+
+  constructor(message: string, status: number, providerCode = "") {
+    super(message);
+    this.name = "ImageGenerationHttpError";
+    this.status = status;
+    this.providerCode = providerCode;
+  }
+}
+
 function clampRetryDelay(value: number) {
   return Math.min(
     MAX_IMAGE_RATE_LIMIT_RETRY_MS,
@@ -169,4 +181,30 @@ export function formatImageGenerationHttpError(input: {
   }
 
   return `生图接口请求失败：HTTP ${input.status} ${statusText}；返回内容：${input.responseText.slice(0, 240) || "空"}`;
+}
+
+export function createImageGenerationHttpError(input: {
+  status: number;
+  statusText: string;
+  responseText: string;
+  baseUrl: string;
+}) {
+  const providerError = parseProviderError(input.responseText);
+  return new ImageGenerationHttpError(
+    formatImageGenerationHttpError(input),
+    input.status,
+    providerError.code,
+  );
+}
+
+export function canFailoverImageGenerationError(error: unknown) {
+  if (
+    error instanceof ImageGenerationHttpError ||
+    error instanceof ImageGenerationRateLimitError
+  ) {
+    return true;
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  return /^(?:生图配置缺少 API Key|生图接口地址校验失败)/.test(message);
 }

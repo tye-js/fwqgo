@@ -104,6 +104,9 @@ async function ServerOfferManageContent({
     error: loadError,
   } = await loadServerOfferManageData(searchParams);
   const total = counts.reduce((sum, item) => sum + item.count, 0);
+  const publicOrigin = (
+    process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com"
+  ).replace(/\/+$/, "");
   const qualityIssues = [
     {
       label: "待审核",
@@ -209,6 +212,7 @@ async function ServerOfferManageContent({
           offers={offerPage.rows}
           providers={providers}
           relationPosts={relationPosts}
+          publicOrigin={publicOrigin}
           totalCount={offerPage.total}
           initialFilters={{
             pageNo: offerPage.page,

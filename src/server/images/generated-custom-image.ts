@@ -2,7 +2,8 @@ import { sanitizeFileName } from "@fwqgo/core/utils";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import {
   buildImageGenerationEndpoint,
-  formatImageGenerationHttpError,
+  canFailoverImageGenerationError,
+  createImageGenerationHttpError,
   getImageGenerationRetryDelayMs,
   ImageGenerationConnectionInterruptedError,
   ImageGenerationRateLimitError,
@@ -24,8 +25,10 @@ import {
 } from "@/server/images/assets";
 import {
   getActiveImageGenerationConfig,
+  getEnabledImageGenerationConfigs,
   type ImageGenerationProvider,
 } from "@/server/images/generation-config";
+import { structuredLog } from "@fwqgo/core/structured-log";
 
 type GenerateCustomImageInput = {
   prompt: string;
@@ -33,6 +36,8 @@ type GenerateCustomImageInput = {
   altZh?: string | null;
   uploadedBy: string | null;
   configId?: number;
+  allowFailover?: boolean;
+  attemptedConfigIds?: number[];
 };
 
 const MAX_IMAGE_API_RESPONSE_BYTES = 24 * 1024 * 1024;
@@ -108,6 +113,19 @@ function buildOriginalName(
   return `${baseSlug}.png`;
 }
 
+async function getCustomImageFallbackConfig(
+  currentConfigId: number,
+  attemptedConfigIds: number[],
+) {
+  const attempted = new Set([...attemptedConfigIds, currentConfigId]);
+  const configs = await getEnabledImageGenerationConfigs();
+  return (
+    configs.find(
+      (config) => config.apiKey?.trim() && !attempted.has(config.id),
+    ) ?? null
+  );
+}
+
 async function downloadImage(url: string, timeoutSeconds: number) {
   let response: Response;
   try {
@@ -162,6 +180,9 @@ export async function generateCustomImage(
   if (!config.apiKey?.trim()) {
     throw new Error("生图配置缺少 API Key");
   }
+
+  const allowFailover = input.allowFailover ?? input.configId === undefined;
+  const attemptedConfigIds = input.attemptedConfigIds ?? [];
 
   const endpoint = buildImageGenerationEndpoint(config.baseUrl);
   let response: Response;
@@ -222,28 +243,52 @@ export async function generateCustomImage(
     );
   }
   if (!response.ok) {
-    const httpError = formatImageGenerationHttpError({
+    const httpError = createImageGenerationHttpError({
       status: response.status,
       statusText: response.statusText,
       responseText: text,
       baseUrl: config.baseUrl,
     });
+    let definiteError: Error;
     if (response.status === 429) {
       const retryAfterMs = getImageGenerationRetryDelayMs({
         retryAfter: response.headers.get("retry-after"),
         responseText: text,
       });
-      throw new ImageGenerationRateLimitError(
-        `${httpError}；预计等待 ${Math.max(1, Math.ceil(retryAfterMs / 60_000))} 分钟后重试`,
+      definiteError = new ImageGenerationRateLimitError(
+        `${httpError.message}；预计等待 ${Math.max(1, Math.ceil(retryAfterMs / 60_000))} 分钟后重试`,
         retryAfterMs,
       );
-    }
-    if (isUncertainImageGenerationHttpStatus(response.status)) {
+    } else if (isUncertainImageGenerationHttpStatus(response.status)) {
       throw new ImageGenerationConnectionInterruptedError(
-        `${httpError}；上游任务可能仍在生成，本地暂时无法取得图片。请先到服务商任务页确认，避免立即重复生成`,
+        `${httpError.message}；上游任务可能仍在生成，本地暂时无法取得图片。请先到服务商任务页确认，避免立即重复生成`,
       );
+    } else {
+      definiteError = httpError;
     }
-    throw new Error(httpError);
+
+    if (allowFailover && canFailoverImageGenerationError(definiteError)) {
+      const fallback = await getCustomImageFallbackConfig(
+        config.id,
+        attemptedConfigIds,
+      );
+      if (fallback) {
+        structuredLog("warn", "custom_image.config_failover", {
+          failedConfigId: config.id,
+          failedConfigName: config.name,
+          nextConfigId: fallback.id,
+          error: definiteError,
+        });
+        return generateCustomImage({
+          ...input,
+          configId: fallback.id,
+          allowFailover: true,
+          attemptedConfigIds: [...attemptedConfigIds, config.id],
+        });
+      }
+    }
+
+    throw definiteError;
   }
 
   let payload: ImageGenerationResponse;

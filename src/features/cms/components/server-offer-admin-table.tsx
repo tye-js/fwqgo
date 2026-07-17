@@ -376,12 +376,14 @@ function specsText(offer: {
 
 function SafeAdminOfferLink({
   href,
+  publicOrigin,
   children,
   iconOnly = false,
   rel = "noopener noreferrer",
   ariaLabel,
 }: {
   href: string | null | undefined;
+  publicOrigin: string;
   children: ReactNode;
   iconOnly?: boolean;
   rel?: string;
@@ -389,18 +391,15 @@ function SafeAdminOfferLink({
 }) {
   const safeHref = cleanText(href);
   if (!isSafePublicHref(safeHref)) return null;
+  const resolvedHref = isInternalHref(safeHref)
+    ? `${publicOrigin}${safeHref}`
+    : safeHref;
 
   return (
     <Button asChild size={iconOnly ? "icon" : "sm"} variant="outline">
-      {isInternalHref(safeHref) ? (
-        <Link href={safeHref} aria-label={ariaLabel}>
-          {children}
-        </Link>
-      ) : (
-        <a href={safeHref} target="_blank" rel={rel} aria-label={ariaLabel}>
-          {children}
-        </a>
-      )}
+      <a href={resolvedHref} target="_blank" rel={rel} aria-label={ariaLabel}>
+        {children}
+      </a>
     </Button>
   );
 }
@@ -949,12 +948,14 @@ export function ServerOfferAdminTable({
   offers,
   providers,
   relationPosts,
+  publicOrigin,
   totalCount,
   initialFilters,
 }: {
   offers: Offer[];
   providers: Provider[];
   relationPosts: RelationPost[];
+  publicOrigin: string;
   totalCount: number;
   initialFilters: ServerOfferTableFilters;
 }) {
@@ -994,12 +995,27 @@ export function ServerOfferAdminTable({
   const currentPage = Math.min(Math.max(activeFilters.pageNo, 1), totalPage);
   const pagedOffers = offers;
   const hasSelectedOffers = selectedIds.length > 0;
+  const selectedOnPageCount = pagedOffers.reduce(
+    (count, offer) => count + (selectedSet.has(offer.id) ? 1 : 0),
+    0,
+  );
+  const allPageOffersSelected =
+    pagedOffers.length > 0 && selectedOnPageCount === pagedOffers.length;
 
   function toggleSelected(id: number) {
     setSelectedIds((current) =>
       current.includes(id)
         ? current.filter((item) => item !== id)
         : [...current, id],
+    );
+  }
+
+  function togglePageSelected(checked: boolean) {
+    const pageIds = new Set(pagedOffers.map((offer) => offer.id));
+    setSelectedIds((current) =>
+      checked
+        ? [...new Set([...current, ...pageIds])]
+        : current.filter((id) => !pageIds.has(id)),
     );
   }
 
@@ -1118,97 +1134,114 @@ export function ServerOfferAdminTable({
       />
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/70 bg-background p-3">
         <div className="text-sm text-muted-foreground">
-          已选择 {selectedIds.length} / {totalCount} 条
+          已选择 {selectedIds.length} 条 · 当前页 {pagedOffers.length} 条 · 共{" "}
+          {totalCount} 条
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Select value={bulkKind} onValueChange={setBulkKind}>
-            <SelectTrigger className="min-h-11 w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {offerKindOptions.map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={isPending || !hasSelectedOffers}
-            title={hasSelectedOffers ? "批量修改套餐属性" : "请先选择套餐"}
-            onClick={() => runBulk({ offerKind: bulkKind })}
-          >
-            批量改属性
-          </Button>
-          <Select value={bulkStatus} onValueChange={setBulkStatus}>
-            <SelectTrigger className="min-h-11 w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {statusOptions.map(([key, label]) => (
-                <SelectItem key={key} value={key}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={isPending || !hasSelectedOffers}
-            title={hasSelectedOffers ? "批量修改所选套餐状态" : "请先选择套餐"}
-            onClick={() => runBulk({ status: bulkStatus })}
-          >
-            批量改状态
-          </Button>
-          <Select value={bulkReviewStatus} onValueChange={setBulkReviewStatus}>
-            <SelectTrigger className="min-h-11 w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {reviewStatusOptions.map(([key, label]) => (
-                <SelectItem key={key} value={key}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={isPending || !hasSelectedOffers}
-            title={
-              hasSelectedOffers ? "批量修改所选套餐审核状态" : "请先选择套餐"
-            }
-            onClick={() => runBulk({ reviewStatus: bulkReviewStatus })}
-          >
-            批量审核
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={isPending || !hasSelectedOffers}
-            title={hasSelectedOffers ? "批量隐藏所选套餐" : "请先选择套餐"}
-            onClick={() => runBulk({ visible: false })}
-          >
-            批量隐藏
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={isPending || !hasSelectedOffers}
-            title={hasSelectedOffers ? "批量显示所选套餐" : "请先选择套餐"}
-            onClick={() => runBulk({ visible: true })}
-          >
-            批量显示
-          </Button>
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+          <div className="flex w-full gap-2 sm:w-auto">
+            <Select value={bulkKind} onValueChange={setBulkKind}>
+              <SelectTrigger className="min-h-11 min-w-0 flex-1 sm:w-32 sm:flex-none">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {offerKindOptions.map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="flex-1 sm:flex-none"
+              disabled={isPending || !hasSelectedOffers}
+              title={hasSelectedOffers ? "批量修改套餐属性" : "请先选择套餐"}
+              onClick={() => runBulk({ offerKind: bulkKind })}
+            >
+              批量改属性
+            </Button>
+          </div>
+          <div className="flex w-full gap-2 sm:w-auto">
+            <Select value={bulkStatus} onValueChange={setBulkStatus}>
+              <SelectTrigger className="min-h-11 min-w-0 flex-1 sm:w-32 sm:flex-none">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {statusOptions.map(([key, label]) => (
+                  <SelectItem key={key} value={key}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="flex-1 sm:flex-none"
+              disabled={isPending || !hasSelectedOffers}
+              title={
+                hasSelectedOffers ? "批量修改所选套餐状态" : "请先选择套餐"
+              }
+              onClick={() => runBulk({ status: bulkStatus })}
+            >
+              批量改状态
+            </Button>
+          </div>
+          <div className="flex w-full gap-2 sm:w-auto">
+            <Select
+              value={bulkReviewStatus}
+              onValueChange={setBulkReviewStatus}
+            >
+              <SelectTrigger className="min-h-11 min-w-0 flex-1 sm:w-32 sm:flex-none">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {reviewStatusOptions.map(([key, label]) => (
+                  <SelectItem key={key} value={key}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="flex-1 sm:flex-none"
+              disabled={isPending || !hasSelectedOffers}
+              title={
+                hasSelectedOffers ? "批量修改所选套餐审核状态" : "请先选择套餐"
+              }
+              onClick={() => runBulk({ reviewStatus: bulkReviewStatus })}
+            >
+              批量审核
+            </Button>
+          </div>
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isPending || !hasSelectedOffers}
+              title={hasSelectedOffers ? "批量隐藏所选套餐" : "请先选择套餐"}
+              onClick={() => runBulk({ visible: false })}
+            >
+              批量隐藏
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isPending || !hasSelectedOffers}
+              title={hasSelectedOffers ? "批量显示所选套餐" : "请先选择套餐"}
+              onClick={() => runBulk({ visible: true })}
+            >
+              批量显示
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -1216,7 +1249,22 @@ export function ServerOfferAdminTable({
         <Table className="min-w-[1120px]">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10" />
+              <TableHead className="w-12 p-0">
+                <Checkbox
+                  checked={
+                    allPageOffersSelected
+                      ? true
+                      : selectedOnPageCount > 0
+                        ? "indeterminate"
+                        : false
+                  }
+                  onCheckedChange={(checked) =>
+                    togglePageSelected(checked === true)
+                  }
+                  aria-label="选择当前页全部套餐"
+                  className="relative flex size-11 items-center justify-center rounded-md border-0 shadow-none before:absolute before:left-1/2 before:top-1/2 before:size-4 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-sm before:border before:border-primary data-[state=checked]:bg-transparent data-[state=indeterminate]:bg-transparent data-[state=checked]:before:bg-primary data-[state=indeterminate]:before:bg-primary [&_svg]:relative [&_svg]:z-10"
+                />
+              </TableHead>
               <TableHead>套餐</TableHead>
               <TableHead>价格</TableHead>
               <TableHead>配置</TableHead>
@@ -1241,11 +1289,12 @@ export function ServerOfferAdminTable({
             {pagedOffers.map((offer) => (
               <Fragment key={offer.id}>
                 <TableRow>
-                  <TableCell>
+                  <TableCell className="w-12 p-0">
                     <Checkbox
                       checked={selectedSet.has(offer.id)}
                       onCheckedChange={() => toggleSelected(offer.id)}
                       aria-label={`选择 ${offer.title}`}
+                      className="relative flex size-11 items-center justify-center rounded-md border-0 shadow-none before:absolute before:left-1/2 before:top-1/2 before:size-4 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-sm before:border before:border-primary data-[state=checked]:bg-transparent data-[state=checked]:before:bg-primary [&_svg]:relative [&_svg]:z-10"
                     />
                   </TableCell>
                   <TableCell className="min-w-[260px]">
@@ -1323,7 +1372,7 @@ export function ServerOfferAdminTable({
                       ] ?? offer.status}
                     </Badge>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {offer.offerKind === "promotion"
+                      {offer.sourceMonitorId
                         ? offer.checkStatus === "ok"
                           ? "探测正常"
                           : offer.checkStatus === "failed"
@@ -1358,16 +1407,23 @@ export function ServerOfferAdminTable({
                     <div className="flex gap-2">
                       <SafeAdminOfferLink
                         href={offer.purchaseUrl}
+                        publicOrigin={publicOrigin}
                         iconOnly
                         rel="nofollow sponsored noopener noreferrer"
                         ariaLabel="打开购买入口"
                       >
                         <ExternalLink className="size-4" />
                       </SafeAdminOfferLink>
-                      <SafeAdminOfferLink href={offer.articleUrl}>
+                      <SafeAdminOfferLink
+                        href={offer.articleUrl}
+                        publicOrigin={publicOrigin}
+                      >
                         来源
                       </SafeAdminOfferLink>
-                      <SafeAdminOfferLink href={offer.reviewUrl}>
+                      <SafeAdminOfferLink
+                        href={offer.reviewUrl}
+                        publicOrigin={publicOrigin}
+                      >
                         测评
                       </SafeAdminOfferLink>
                     </div>

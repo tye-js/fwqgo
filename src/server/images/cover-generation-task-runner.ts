@@ -10,6 +10,7 @@ import {
   withTaskLeaseHeartbeat,
 } from "@fwqgo/core/task-lease";
 import {
+  canFailoverImageGenerationError,
   ImageGenerationConnectionInterruptedError,
   ImageGenerationRateLimitError,
 } from "@fwqgo/core/image-generation-endpoint";
@@ -17,7 +18,10 @@ import { structuredLog } from "@fwqgo/core/structured-log";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import { generateArticleCoverImage } from "@/server/images/generated-cover";
-import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
+import {
+  getActiveImageGenerationConfig,
+  getEnabledImageGenerationConfigs,
+} from "@/server/images/generation-config";
 
 export type CoverTaskStatus =
   | "pending"
@@ -27,6 +31,9 @@ export type CoverTaskStatus =
   | "cancelled";
 
 type CoverTaskRow = typeof imageCoverGenerationTasks.$inferSelect;
+type ImageGenerationConfig = Awaited<
+  ReturnType<typeof getEnabledImageGenerationConfigs>
+>[number];
 
 type EnqueueCoverGenerationTaskInput = {
   postId: number;
@@ -206,24 +213,12 @@ export async function enqueueArticleCoverGenerationTask(
   return { task, reused: Boolean(existingTask) };
 }
 
-async function bindCoverTaskConfig(task: CoverTaskRow) {
+async function persistCoverTaskConfig(
+  task: CoverTaskRow,
+  config: ImageGenerationConfig,
+) {
   if (!task.leaseOwner) {
     throw new Error("封面生成任务缺少租约所有者");
-  }
-  const config = task.configId
-    ? await getActiveImageGenerationConfig(task.configId)
-    : task.configName || task.provider || task.model
-      ? null
-      : await getActiveImageGenerationConfig();
-
-  if (!config) {
-    throw new Error(
-      task.configId
-        ? `任务绑定的生图配置 #${task.configId} 已停用或不存在，请重试任务以切换到当前默认配置`
-        : task.configName || task.provider || task.model
-          ? "任务绑定的生图配置已被删除，请重试任务以切换到当前默认配置"
-          : "当前没有已启用的默认生图配置",
-    );
   }
 
   const [boundTask] = await db
@@ -248,6 +243,26 @@ async function bindCoverTaskConfig(task: CoverTaskRow) {
   }
 
   return boundTask;
+}
+
+async function bindCoverTaskConfig(task: CoverTaskRow) {
+  const config = task.configId
+    ? await getActiveImageGenerationConfig(task.configId)
+    : task.configName || task.provider || task.model
+      ? null
+      : await getActiveImageGenerationConfig();
+
+  if (!config) {
+    throw new Error(
+      task.configId
+        ? `任务绑定的生图配置 #${task.configId} 已停用或不存在，请重试任务以切换到当前默认配置`
+        : task.configName || task.provider || task.model
+          ? "任务绑定的生图配置已被删除，请重试任务以切换到当前默认配置"
+          : "当前没有已启用的默认生图配置",
+    );
+  }
+
+  return persistCoverTaskConfig(task, config);
 }
 
 async function resetStaleRunningCoverTasks() {
@@ -344,21 +359,65 @@ async function processCoverGenerationTask(
     throw new Error("文章不存在或已被删除");
   }
 
-  signal.throwIfAborted();
-  const generated = await generateArticleCoverImage({
-    title: post.title,
-    description: post.description,
-    keywords: post.keywords,
-    content: post.content,
-    fileSlug: post.slug,
-    language: post.language === "en" ? "en" : "zh",
-    configId: boundTask.configId ?? undefined,
-    uploadedBy: boundTask.createdBy,
-    signal,
-  });
+  const enabledConfigs = (await getEnabledImageGenerationConfigs()).filter(
+    (config) => config.apiKey?.trim(),
+  );
+  const currentConfig = enabledConfigs.find(
+    (config) => config.id === boundTask.configId,
+  );
+  const candidates = currentConfig
+    ? [
+        currentConfig,
+        ...enabledConfigs.filter((config) => config.id !== currentConfig.id),
+      ]
+    : enabledConfigs;
+
+  let activeTask = boundTask;
+  let generated: Awaited<ReturnType<typeof generateArticleCoverImage>> | null =
+    null;
+
+  for (const [index, config] of candidates.entries()) {
+    signal.throwIfAborted();
+    if (activeTask.configId !== config.id) {
+      activeTask = await persistCoverTaskConfig(activeTask, config);
+    }
+
+    try {
+      generated = await generateArticleCoverImage({
+        title: post.title,
+        description: post.description,
+        keywords: post.keywords,
+        content: post.content,
+        fileSlug: post.slug,
+        language: post.language === "en" ? "en" : "zh",
+        configId: config.id,
+        uploadedBy: activeTask.createdBy,
+        signal,
+      });
+      break;
+    } catch (error) {
+      const hasFallback = index < candidates.length - 1;
+      if (!hasFallback || !canFailoverImageGenerationError(error)) {
+        throw error;
+      }
+
+      structuredLog("warn", "cover.task_config_failover", {
+        taskId: task.id,
+        postId: task.postId,
+        failedConfigId: config.id,
+        failedConfigName: config.name,
+        nextConfigId: candidates[index + 1]?.id,
+        error,
+      });
+    }
+  }
+
+  if (!generated) {
+    throw new Error("所有已启用的生图配置均未返回可用图片");
+  }
 
   signal.throwIfAborted();
-  if (!(await renewCoverTaskLease(boundTask))) {
+  if (!(await renewCoverTaskLease(activeTask))) {
     throw new TaskLeaseLostError();
   }
   const [updatedPost] = await db
