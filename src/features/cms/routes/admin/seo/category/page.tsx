@@ -27,7 +27,6 @@ export default async function Page() {
     <AdminPageShell
       badge="SEO / 分类"
       title="分类 SEO 管理"
-      description="批量维护叶子分类页的中英文 SEO 字段，让分类页 metadata 更符合搜索结果摘要规范。"
     >
       <AdminSectionNav
         label="SEO 管理"

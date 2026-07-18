@@ -13,7 +13,6 @@ import { AdminLoading } from "@/features/cms/components/admin-loading";
 import {
   AdminPageShell,
   AdminSectionCard,
-  AdminSummaryStrip,
 } from "@/features/cms/components/admin-page-shell";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { PostList } from "@/features/cms/components/posts-tables";
@@ -122,35 +121,7 @@ async function PostListWrapper({
   const totalPage = Math.ceil((postCount ?? 0) / 15);
 
   return (
-    <AdminPageShell
-      badge="内容"
-      title="文章库"
-      description="集中管理草稿与已发布文章，按语言、状态和关键词筛选后继续编辑、质检或发布。"
-      actions={
-        <Button asChild>
-          <Link href="/ai-rewrite/tasks#single-task">内容生产</Link>
-        </Button>
-      }
-    >
-      <AdminSummaryStrip
-        items={[
-          {
-            label: "全部文章",
-            value: String(postCount ?? 0),
-            note: "文章总量",
-          },
-          {
-            label: "当前页",
-            value: String(pageNo),
-            note: `共 ${Math.max(totalPage, 1)} 页`,
-          },
-          {
-            label: "本页数量",
-            value: String(visiblePosts.length),
-            note: "当前页可操作文章",
-          },
-        ]}
-      />
+    <AdminPageShell title="文章库" showHeading={false}>
       {loadError ? (
         <AdminSectionCard
           title="文章列表加载失败"
@@ -159,10 +130,7 @@ async function PostListWrapper({
           <p className="break-words text-sm text-destructive">{loadError}</p>
         </AdminSectionCard>
       ) : null}
-      <AdminSectionCard
-        title={status === "draft" ? "草稿文章" : "文章列表"}
-        description="支持快速编辑标题、slug、发布状态和封面链接；草稿和已发布文章使用同一套筛选与分页。"
-      >
+      <AdminSectionCard>
         <div className="mb-4">
           <LanguageFilter value={language} filters={{ query, status, sort }} />
         </div>

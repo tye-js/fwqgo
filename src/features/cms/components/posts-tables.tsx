@@ -534,8 +534,6 @@ export function PostList({
   return (
     <div className="space-y-4">
       <AdminTableWorkbench
-        title="文章工作台"
-        description="支持搜索、筛选、批量发布/转草稿、生成封面、生成英文、更新 SEO、提取套餐和删除文章。"
         searchValue={query}
         onSearchChange={setQuery}
         searchPlaceholder="搜索文章标题或 slug"

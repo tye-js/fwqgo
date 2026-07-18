@@ -13,12 +13,14 @@ export function AdminPageShell({
   title,
   description,
   actions,
+  showHeading = true,
   children,
 }: {
   badge?: string;
   title: string;
-  description: string;
+  description?: string;
   actions?: ReactNode;
+  showHeading?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -26,30 +28,36 @@ export function AdminPageShell({
       className="flex min-w-0 flex-1 flex-col gap-3 px-3 py-3 md:gap-4 md:px-5 md:py-4"
       aria-label={title}
     >
-      <div className="flex flex-col gap-2 border-b border-border/70 pb-3 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-semibold tracking-tight text-foreground md:text-xl">
-              {title}
-            </h1>
-            {badge ? (
-              <span className="inline-flex h-6 items-center rounded-sm border border-border bg-muted/50 px-2 text-xs font-medium text-muted-foreground">
-                {badge}
-              </span>
-            ) : null}
-          </div>
-          {description ? (
-            <p className="max-w-4xl text-xs leading-5 text-muted-foreground md:text-sm">
-              {description}
-            </p>
+      {showHeading || actions ? (
+        <div
+          className={`flex flex-col gap-2 border-b border-border/70 pb-3 md:flex-row md:items-start ${showHeading ? "md:justify-between" : "md:justify-end"}`}
+        >
+          {showHeading ? (
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-semibold tracking-tight text-foreground md:text-xl">
+                  {title}
+                </h1>
+                {badge ? (
+                  <span className="inline-flex h-6 items-center rounded-sm border border-border bg-muted/50 px-2 text-xs font-medium text-muted-foreground">
+                    {badge}
+                  </span>
+                ) : null}
+              </div>
+              {description ? (
+                <p className="max-w-4xl text-xs leading-5 text-muted-foreground md:text-sm">
+                  {description}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {actions ? (
+            <div className="flex w-full shrink-0 flex-wrap items-center gap-2 md:w-auto md:justify-end [&>*]:w-full sm:[&>*]:w-auto [&_a]:min-h-11 [&_button]:min-h-11">
+              {actions}
+            </div>
           ) : null}
         </div>
-        {actions ? (
-          <div className="flex w-full shrink-0 flex-wrap items-center gap-2 md:w-auto md:justify-end [&>*]:w-full sm:[&>*]:w-auto [&_a]:min-h-11 [&_button]:min-h-11">
-            {actions}
-          </div>
-        ) : null}
-      </div>
+      ) : null}
       {children}
     </div>
   );

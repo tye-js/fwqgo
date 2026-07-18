@@ -6,7 +6,6 @@ import { categories, posts } from "@fwqgo/db/schema";
 import {
   AdminPageShell,
   AdminSectionCard,
-  AdminSummaryStrip,
 } from "@/features/cms/components/admin-page-shell";
 import { ArticleCoverBatchGenerator } from "@/features/cms/components/article-cover-batch-generator";
 import { Button } from "@/components/ui/button";
@@ -52,14 +51,11 @@ export default async function ArticleCoverGenerationPage() {
   await requireAdminSession();
 
   const { data: postRows, error: loadError } = await loadCoverGenerationPosts();
-  const missingCoverCount = postRows.filter((post) => !post.imgUrl).length;
-  const draftCount = postRows.filter((post) => !post.published).length;
 
   return (
     <AdminPageShell
       badge="AI生图"
       title="文章封面生成"
-      description="批量选择文章生成封面图，并自动写入文章封面字段。"
       actions={
         <Button asChild variant="outline" size="sm">
           <Link href="/settings/image-generation">
@@ -73,25 +69,6 @@ export default async function ArticleCoverGenerationPage() {
         label="AI 生图功能"
         currentHref="/images/covers"
         items={imageGenerationNavItems}
-      />
-      <AdminSummaryStrip
-        items={[
-          {
-            label: "文章样本",
-            value: postRows.length.toLocaleString("zh-CN"),
-            note: "最近更新的文章",
-          },
-          {
-            label: "无封面",
-            value: missingCoverCount.toLocaleString("zh-CN"),
-            note: "默认优先选择这些文章",
-          },
-          {
-            label: "草稿",
-            value: draftCount.toLocaleString("zh-CN"),
-            note: "生成后可继续人工编辑",
-          },
-        ]}
       />
       {loadError ? (
         <AdminSectionCard

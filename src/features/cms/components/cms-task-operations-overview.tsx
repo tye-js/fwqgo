@@ -1,10 +1,6 @@
 import Link from "next/link";
 import {
-  Activity,
-  AlertCircle,
   ChevronDown,
-  CircleCheck,
-  Clock3,
   ServerCog,
 } from "lucide-react";
 
@@ -18,12 +14,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { CmsTaskOperationsSummary } from "@/features/cms/data/operations";
-
-const sourceLabel: Record<string, string> = {
-  ai: "AI改写",
-  cover: "封面生图",
-  offer: "供应商采集",
-};
 
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
@@ -281,49 +271,8 @@ export function CmsTaskOperationsOverview({
 }: {
   summary: CmsTaskOperationsSummary;
 }) {
-  const totalActive =
-    summary.queues.ai.active +
-    summary.queues.cover.active +
-    summary.queues.offer.active;
-  const totalFailed =
-    summary.queues.ai.failed +
-    summary.queues.cover.failed +
-    summary.queues.offer.failed;
-  const staleCount = summary.staleTasks.length;
-  const hasAttentionItems = totalFailed > 0 || staleCount > 0;
-  const latestFailure = summary.recentFailures[0];
-
   return (
     <section aria-label="任务队列概览" className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          {hasAttentionItems ? (
-            <AlertCircle className="size-5 shrink-0 text-destructive" />
-          ) : totalActive > 0 ? (
-            <Activity className="size-5 shrink-0 text-primary" />
-          ) : (
-            <CircleCheck className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-          )}
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">
-              {hasAttentionItems
-                ? `${totalFailed + staleCount} 项需要关注`
-                : totalActive > 0
-                  ? `${totalActive} 个任务正在处理`
-                  : "任务队列正常"}
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {summary.backgroundWorker.isLoopRunning
-                ? `Worker 正在轮询，并发 ${summary.backgroundWorker.concurrency}`
-                : "Worker 当前空闲，新任务入队后会自动启动"}
-            </p>
-          </div>
-        </div>
-        <Badge variant={hasAttentionItems ? "destructive" : "outline"}>
-          {hasAttentionItems ? "需要处理" : "运行正常"}
-        </Badge>
-      </div>
-
       <div className="grid divide-y divide-border/70 overflow-hidden rounded-md border border-border/70 bg-background sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         <QueueSummaryLink
           type="ai"
@@ -341,49 +290,6 @@ export function CmsTaskOperationsOverview({
           summary={summary.queues.offer}
         />
       </div>
-
-      {hasAttentionItems ? (
-        <div className="grid divide-y divide-destructive/20 overflow-hidden rounded-md border border-destructive/30 bg-destructive/5 md:grid-cols-[180px_180px_minmax(0,1fr)] md:divide-x md:divide-y-0">
-          <Link
-            href="/ai-tasks?status=failed"
-            className="flex min-h-11 items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          >
-            <span className="text-destructive">失败任务</span>
-            <strong className="tabular-nums text-destructive">
-              {totalFailed}
-            </strong>
-          </Link>
-          <Link
-            href="/ai-tasks?status=active"
-            className="flex min-h-11 items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          >
-            <span className="flex items-center gap-2 text-destructive">
-              <Clock3 className="size-4" />
-              疑似卡住
-            </span>
-            <strong className="tabular-nums text-destructive">
-              {staleCount}
-            </strong>
-          </Link>
-          {latestFailure ? (
-            <Link
-              href={latestFailure.href}
-              className="min-w-0 px-3 py-2 hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-            >
-              <p className="text-xs text-destructive">
-                最近失败 · {sourceLabel[latestFailure.source]} #
-                {latestFailure.id}
-              </p>
-              <p
-                className="mt-0.5 truncate text-xs text-muted-foreground"
-                title={latestFailure.message}
-              >
-                {latestFailure.message}
-              </p>
-            </Link>
-          ) : null}
-        </div>
-      ) : null}
 
       <SystemDiagnostics summary={summary} />
     </section>

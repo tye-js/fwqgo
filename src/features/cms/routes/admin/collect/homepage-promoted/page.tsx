@@ -7,7 +7,6 @@ import { AdminLoading } from "@/features/cms/components/admin-loading";
 import {
   AdminPageShell,
   AdminSectionCard,
-  AdminSummaryStrip,
 } from "@/features/cms/components/admin-page-shell";
 import { HomepageSlotManager } from "@/features/cms/components/homepage-slot-manager";
 import {
@@ -74,16 +73,11 @@ async function HomepageSlotContent({
 
   const { slots, options } = result;
   const referenceTime = getHomepageSlotReferenceTime();
-  const activeCount = slots.filter((slot) => slot.enabled).length;
-  const imageCount = slots.filter(
-    (slot) => slot.contentType === "image_link",
-  ).length;
 
   return (
     <AdminPageShell
       badge="首页运营"
       title="首页推广位"
-      description="统一管理首页推广文章、精选套餐和推广图片，支持中文/英文、固定位置、排序和定时上下线。"
       actions={
         <div className="flex rounded-md border border-border/70 bg-background p-1">
           {(["zh", "en"] as const).map((item) => (
@@ -101,27 +95,6 @@ async function HomepageSlotContent({
         </div>
       }
     >
-      <AdminSummaryStrip
-        items={[
-          {
-            label: "推广位",
-            value: String(slots.length),
-            note: `${activeCount} 个已启用`,
-          },
-          {
-            label: "推广图片",
-            value: String(imageCount),
-            note: "使用图片资产并跳转",
-          },
-          {
-            label: "可选内容",
-            value: String(
-              options.postOptions.length + options.offerOptions.length,
-            ),
-            note: "已发布文章和可见套餐",
-          },
-        ]}
-      />
       <AdminSectionCard
         title="推广位配置"
         description="无新推广位时，前台继续读取原首页推荐文章；新配置生效后按位置接管对应区域。"

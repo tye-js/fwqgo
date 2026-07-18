@@ -3,7 +3,6 @@ import { connection } from "next/server";
 import {
   AdminPageShell,
   AdminSectionCard,
-  AdminSummaryStrip,
 } from "@/features/cms/components/admin-page-shell";
 import { ImageGenerationConfigManager } from "@/features/cms/components/image-generation-config-manager";
 import { getImageGenerationConfigList } from "@/features/cms/actions/image-generation-config";
@@ -25,38 +24,16 @@ export default async function ImageGenerationSettingsPage() {
       };
     });
   const { configs } = result;
-  const enabledCount = configs.filter((config) => config.enabled).length;
-  const defaultConfig = configs.find((config) => config.isDefault);
 
   return (
     <AdminPageShell
       badge="设置"
       title="生图配置"
-      description="配置文章封面图生成接口，支持 OpenAI 官方、image2 或第三方 OpenAI 兼容生图服务。"
     >
       <AdminSectionNav
         label="模型与接口"
         currentHref="/settings/image-generation"
         items={modelSettingsNavItems}
-      />
-      <AdminSummaryStrip
-        items={[
-          {
-            label: "配置数量",
-            value: String(configs.length),
-            note: "可用生图服务配置",
-          },
-          {
-            label: "已启用",
-            value: String(enabledCount),
-            note: "文章页可调用",
-          },
-          {
-            label: "默认配置",
-            value: defaultConfig?.name ?? "未设置",
-            note: defaultConfig?.model ?? "生成封面时会回退到任一启用配置",
-          },
-        ]}
       />
       {result.error ? (
         <AdminSectionCard

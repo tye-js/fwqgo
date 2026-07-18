@@ -54,7 +54,6 @@ export default async function Page(props: {
     <AdminPageShell
       badge="SEO / 标签"
       title="标签 SEO 管理"
-      description="批量维护标签聚合页的中英文 SEO 字段，价格、优惠、折扣类标签默认不参与运营。"
     >
       <AdminSectionNav
         label="SEO 管理"

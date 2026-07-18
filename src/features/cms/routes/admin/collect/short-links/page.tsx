@@ -3,7 +3,6 @@ import { count, desc, or } from "drizzle-orm";
 import {
   AdminPageShell,
   AdminSectionCard,
-  AdminSummaryStrip,
 } from "@/features/cms/components/admin-page-shell";
 import { ShortLinkTable } from "@/features/cms/components/short-link-table";
 import { PaginationComponent } from "@/features/shared/components/pagination";
@@ -88,31 +87,11 @@ export default async function ShortLinksPage({
     <AdminPageShell
       badge="推广运营"
       title="短链跳转"
-      description="查看文章外链自动生成的 /go/{slug} 跳转，检查目标链接是否正确。"
     >
       <AdminSectionNav
         label="链接管理"
         currentHref="/collect/short-links"
         items={linkManagementNavItems}
-      />
-      <AdminSummaryStrip
-        items={[
-          {
-            label: query ? "匹配短链" : "短链总数",
-            value: String(totalCount),
-            note: query ? `搜索：${query}` : "数据库中的全部短链",
-          },
-          {
-            label: "跳转路径",
-            value: "/go/{slug}",
-            note: "前台负责 302 跳转",
-          },
-          {
-            label: "生成方式",
-            value: "自动",
-            note: "文章保存时转换外部链接",
-          },
-        ]}
       />
       {loadError ? (
         <AdminSectionCard

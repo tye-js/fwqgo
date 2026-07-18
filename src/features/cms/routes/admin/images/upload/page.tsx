@@ -12,7 +12,6 @@ export default async function ImageUploadPage() {
     <AdminPageShell
       badge="媒体上传"
       title="上传图片"
-      description="上传图片并自动写入图片资产库，非 GIF 图片会转换为 WebP。"
       actions={
         <Button asChild variant="outline" size="sm">
           <Link href="/images/list">

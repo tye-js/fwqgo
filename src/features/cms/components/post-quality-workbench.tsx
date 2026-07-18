@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ExternalLink, FileWarning, Languages } from "lucide-react";
+import { ExternalLink, FileWarning } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -138,7 +138,9 @@ export function PostQualityWorkbench({
             <TableRow>
               <TableHead className="w-[300px]">文章</TableHead>
               <TableHead className="w-[210px]">质检问题</TableHead>
-              <TableHead className="w-[190px]">中英文关系</TableHead>
+              <TableHead className="w-16 text-center">
+                <span className="sr-only">中英文关系</span>
+              </TableHead>
               <TableHead className="w-[260px]">封面</TableHead>
               <TableHead className="w-[220px]">返利/套餐</TableHead>
               <TableHead className="w-[120px]">更新时间</TableHead>
@@ -192,29 +194,33 @@ export function PostQualityWorkbench({
                     )}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="w-16 text-center">
                   {post.relatedPost ? (
-                    <Link
-                      href={`/posts/edit/post/${encodeURIComponent(post.relatedPost.slug)}`}
-                      className="group flex min-h-11 items-start gap-2 rounded-md border border-border/70 px-3 py-2 text-sm hover:bg-muted/40"
-                    >
-                      <Languages className="mt-0.5 size-4 shrink-0 text-primary" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block font-medium">
-                          对应{languageLabel(post.relatedPost.language)}
-                        </span>
-                        <span className="line-clamp-2 text-xs text-muted-foreground">
-                          {post.relatedPost.title}
-                        </span>
-                      </span>
-                      <ExternalLink className="mt-0.5 size-4 shrink-0 opacity-60 group-hover:opacity-100" />
-                    </Link>
+                    <Button asChild size="icon" variant="ghost">
+                      <Link
+                        href={`/posts/edit/post/${encodeURIComponent(post.relatedPost.slug)}`}
+                        aria-label={`打开对应${languageLabel(post.relatedPost.language)}文章：${post.relatedPost.title}`}
+                        title={`打开对应${languageLabel(post.relatedPost.language)}文章：${post.relatedPost.title}`}
+                      >
+                        <ExternalLink aria-hidden="true" />
+                      </Link>
+                    </Button>
                   ) : (
-                    <p className="text-xs leading-5 text-muted-foreground">
-                      {post.language === "en"
-                        ? "没有绑定中文来源"
-                        : "没有对应英文文章"}
-                    </p>
+                    <span
+                      className="text-muted-foreground"
+                      title={
+                        post.language === "en"
+                          ? "没有绑定中文来源"
+                          : "没有对应英文文章"
+                      }
+                    >
+                      <span aria-hidden="true">-</span>
+                      <span className="sr-only">
+                        {post.language === "en"
+                          ? "没有绑定中文来源"
+                          : "没有对应英文文章"}
+                      </span>
+                    </span>
                   )}
                 </TableCell>
                 <TableCell>

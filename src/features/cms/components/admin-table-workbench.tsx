@@ -51,7 +51,15 @@ export function AdminTableWorkbench({
         </div>
       ) : null}
 
-      <div className="grid min-w-0 gap-2 xl:grid-cols-[minmax(0,1fr)_auto_auto] xl:items-center">
+      <div
+        className={`grid min-w-0 gap-2 xl:items-center ${
+          actionSlot
+            ? "xl:grid-cols-[minmax(20rem,1fr)_auto]"
+            : filterSlot
+              ? "xl:grid-cols-[minmax(20rem,1fr)_minmax(18rem,auto)]"
+              : ""
+        }`}
+      >
         <div className="relative" role="search">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -74,8 +82,10 @@ export function AdminTableWorkbench({
           ) : null}
         </div>
         {filterSlot ? (
-          <div className="flex min-w-0 flex-col gap-2 rounded-md border border-border/70 bg-background px-3 py-2 text-sm text-muted-foreground md:flex-row md:flex-wrap md:items-center">
-            <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+          <div
+            className={`flex min-w-0 flex-col gap-2 rounded-md border border-border/70 bg-background px-3 py-2 text-sm text-muted-foreground md:flex-row md:items-center ${actionSlot ? "xl:col-span-2 xl:row-start-2" : ""}`}
+          >
+            <span className="flex shrink-0 items-center gap-2 text-xs font-medium text-muted-foreground">
               <Filter className="size-4" />
               筛选
             </span>
@@ -83,7 +93,7 @@ export function AdminTableWorkbench({
           </div>
         ) : null}
         {actionSlot ? (
-          <div className="flex min-w-0 flex-wrap justify-start gap-2 xl:justify-end [&>*]:w-full sm:[&>*]:w-auto">
+          <div className="flex min-w-0 flex-wrap justify-start gap-2 xl:col-start-2 xl:row-start-1 xl:justify-end [&>*]:w-full sm:[&>*]:w-auto">
             {actionSlot}
           </div>
         ) : null}

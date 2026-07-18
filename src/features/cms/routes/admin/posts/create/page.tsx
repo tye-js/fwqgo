@@ -12,7 +12,6 @@ export default async function CreatePostPage() {
     <AdminPageShell
       badge="内容创作"
       title="新建文章"
-      description="把采集、编辑、封面和元信息整合到一个创作工作台里，更适合连续写作与发布。"
     >
       {error ? (
         <AdminSectionCard>

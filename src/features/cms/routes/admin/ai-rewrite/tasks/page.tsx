@@ -3,10 +3,7 @@ import { AiSourceSiteManager } from "@/features/cms/components/ai-source-site-ma
 import { CmsTaskOperationsOverview } from "@/features/cms/components/cms-task-operations-overview";
 import { UnifiedTaskList } from "@/features/cms/components/unified-task-list";
 import { getAiSourceSiteList } from "@/features/cms/actions/ai-source-site";
-import {
-  getAiRewriteTaskList,
-  getAiRewriteTaskStatusSummary,
-} from "@/features/cms/actions/ai-rewrite-task";
+import { getAiRewriteTaskList } from "@/features/cms/actions/ai-rewrite-task";
 import {
   getCmsTaskOperationsSummary,
   getUnifiedTaskList,
@@ -17,21 +14,15 @@ import {
   AdminPageShell,
   AdminSectionCard,
 } from "@/features/cms/components/admin-page-shell";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import {
-  AlertCircle,
-  CircleDashed,
-  FileCheck2,
   FileText,
   ListTodo,
   Plus,
   RefreshCw,
-  UserRoundCheck,
-  type LucideIcon,
 } from "lucide-react";
-import { cn, parsePositiveInt } from "@fwqgo/core/utils";
+import { parsePositiveInt } from "@fwqgo/core/utils";
 
 type AiRewriteTasksPageVariant = "production" | "task-center";
 type AiRewriteTaskSearchParams = {
@@ -76,63 +67,6 @@ function parsePageNo(value: string | undefined) {
   return parsePositiveInt(value) ?? 1;
 }
 
-function ProductionStatusStrip({
-  items,
-}: {
-  items: Array<{
-    label: string;
-    value: number;
-    note: string;
-    href: string;
-    icon: LucideIcon;
-    tone?: "neutral" | "warning" | "critical";
-  }>;
-}) {
-  return (
-    <section
-      aria-label="生产状态"
-      className="grid gap-px overflow-hidden rounded-md border border-border/70 bg-border/70 sm:grid-cols-2 xl:grid-cols-4"
-    >
-      {items.map((item) => {
-        const Icon = item.icon;
-
-        return (
-          <Link
-            key={item.label}
-            href={item.href}
-            className="group flex min-h-[88px] items-start gap-3 bg-card px-3 py-3 transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          >
-            <span
-              className={cn(
-                "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground",
-                item.tone === "warning" &&
-                  "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-                item.tone === "critical" &&
-                  "bg-destructive/10 text-destructive",
-              )}
-            >
-              <Icon className="size-4" aria-hidden="true" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="flex items-center justify-between gap-3">
-                <span className="text-xs font-medium text-muted-foreground group-hover:text-foreground">
-                  {item.label}
-                </span>
-                <strong className="text-xl font-semibold tabular-nums text-foreground">
-                  {item.value.toLocaleString("zh-CN")}
-                </strong>
-              </span>
-              <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                {item.note}
-              </span>
-            </span>
-          </Link>
-        );
-      })}
-    </section>
-  );
-}
-
 export async function AiRewriteTasksPageContent({
   variant = "production",
   searchParamsPromise,
@@ -144,7 +78,6 @@ export async function AiRewriteTasksPageContent({
   const isTaskCenter = variant === "task-center";
   const [
     tasksResult,
-    taskStatusSummaryResult,
     sourceSitesResult,
     categoriesResult,
     rewriteStylesResult,
@@ -156,10 +89,6 @@ export async function AiRewriteTasksPageContent({
       isTaskCenter
         ? Promise.resolve([])
         : getAiRewriteTaskList({ pageSize: 50 }),
-    ),
-    loadPageData(
-      "AI 任务状态统计",
-      isTaskCenter ? Promise.resolve(null) : getAiRewriteTaskStatusSummary(),
     ),
     loadPageData(
       "来源站列表",
@@ -196,7 +125,6 @@ export async function AiRewriteTasksPageContent({
   ]);
   const dataErrors = [
     tasksResult.error,
-    taskStatusSummaryResult.error,
     sourceSitesResult.error,
     categoriesResult.error,
     rewriteStylesResult.error,
@@ -204,29 +132,11 @@ export async function AiRewriteTasksPageContent({
     unifiedTaskListResult.error,
   ].filter((error): error is PageDataError => Boolean(error));
   const tasks = tasksResult.data ?? [];
-  const taskStatusSummary = taskStatusSummaryResult.data;
   const sourceSites = sourceSitesResult.data ?? [];
   const categories = categoriesResult.data?.data ?? [];
   const rewriteStyles = rewriteStylesResult.data ?? [];
   const operationsSummary = operationsSummaryResult.data;
   const unifiedTaskList = unifiedTaskListResult.data;
-  const runningCount =
-    taskStatusSummary?.active ??
-    tasks.filter((task) => ["pending", "running"].includes(task.status)).length;
-  const failedCount =
-    taskStatusSummary?.failed ??
-    tasks.filter((task) => task.status === "failed").length;
-  const manualRequiredCount =
-    taskStatusSummary?.manualRequired ??
-    tasks.filter((task) => task.status === "manual_required").length;
-  const draftCount =
-    taskStatusSummary?.generatedDrafts ??
-    tasks.filter(
-      (task) =>
-        Boolean(task.postSlug) &&
-        ["succeeded", "manual_required"].includes(task.status),
-    ).length;
-  const enabledSourceCount = sourceSites.filter((site) => site.enabled).length;
   const pageTitle = isTaskCenter ? "AI任务中心" : "AI 生产台";
   const pageDescription = isTaskCenter
     ? "统一处理 AI 改写、封面生图和供应商采集任务。"
@@ -234,9 +144,10 @@ export async function AiRewriteTasksPageContent({
 
   return (
     <AdminPageShell
-      badge="AI 内容"
+      badge={isTaskCenter ? "AI 内容" : undefined}
       title={pageTitle}
       description={pageDescription}
+      showHeading={isTaskCenter}
       actions={
         <div className="flex flex-wrap gap-2">
           {isTaskCenter ? (
@@ -271,42 +182,6 @@ export async function AiRewriteTasksPageContent({
         </div>
       }
     >
-      {!isTaskCenter ? (
-        <ProductionStatusStrip
-          items={[
-            {
-              label: "处理中",
-              value: runningCount,
-              note: "等待与运行中的任务",
-              href: "/ai-tasks?type=ai&status=active",
-              icon: CircleDashed,
-            },
-            {
-              label: "失败",
-              value: failedCount,
-              note: "可进入任务中心重试",
-              href: "/ai-tasks?type=ai&status=failed",
-              icon: AlertCircle,
-              tone: failedCount > 0 ? "critical" : "neutral",
-            },
-            {
-              label: "待人工",
-              value: manualRequiredCount,
-              note: "需要人工确认的任务",
-              href: "/ai-tasks?type=ai&status=manual_required",
-              icon: UserRoundCheck,
-              tone: manualRequiredCount > 0 ? "warning" : "neutral",
-            },
-            {
-              label: "已生成草稿",
-              value: draftCount,
-              note: "成功或待人工任务",
-              href: "/posts/drafts",
-              icon: FileCheck2,
-            },
-          ]}
-        />
-      ) : null}
       {dataErrors.length > 0 ? (
         <AdminSectionCard
           title="部分数据加载失败"
@@ -335,25 +210,14 @@ export async function AiRewriteTasksPageContent({
             <CmsTaskOperationsOverview summary={operationsSummary} />
           ) : null}
           {unifiedTaskList ? (
-            <section aria-labelledby="task-list-title" className="space-y-3">
-              <div className="space-y-1">
-                <h2 id="task-list-title" className="text-sm font-semibold">
-                  任务列表
-                </h2>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  筛选任务并处理失败、取消和人工确认；点击任务名称查看完整步骤和日志。
-                </p>
-              </div>
+            <section className="space-y-3">
               <UnifiedTaskList result={unifiedTaskList} />
             </section>
           ) : null}
         </>
       ) : (
         <>
-          <section id="single-task" className="scroll-mt-24 space-y-2.5">
-            <div className="border-b border-border/60 pb-2">
-              <h2 className="text-sm font-semibold">新建任务</h2>
-            </div>
+          <section id="single-task" className="scroll-mt-24">
             <AiRewriteTaskManager
               tasks={tasks}
               categories={categories}
@@ -362,13 +226,7 @@ export async function AiRewriteTasksPageContent({
             />
           </section>
 
-          <section id="source-sites" className="scroll-mt-24 space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-2">
-              <h2 className="text-sm font-semibold">来源站批量抓取</h2>
-              <Badge variant="outline">
-                {enabledSourceCount}/{sourceSites.length} 启用
-              </Badge>
-            </div>
+          <section id="source-sites" className="scroll-mt-24">
             <AiSourceSiteManager
               sites={sourceSites}
               categories={categories}

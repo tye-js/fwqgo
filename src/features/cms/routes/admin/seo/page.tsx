@@ -1,7 +1,6 @@
 import {
   AdminPageShell,
   AdminSectionCard,
-  AdminSummaryStrip,
 } from "@/features/cms/components/admin-page-shell";
 import { SiteSeoConfigTable } from "@/features/cms/components/site-seo-config-table";
 import { getSiteSeoConfigs } from "@/features/shared/data/site-seo";
@@ -20,37 +19,16 @@ export default async function Page() {
   });
   const siteError = "error" in siteResult ? siteResult.error : null;
   const configs = siteResult.data ?? [];
-  const configuredLanguages = new Set(configs.map((config) => config.language));
 
   return (
     <AdminPageShell
       badge="SEO / 主页"
       title="主页 SEO 管理"
-      description="独立维护中文首页和英文首页的站点名、标题、摘要与关键词。"
     >
       <AdminSectionNav
         label="SEO 管理"
         currentHref="/seo"
         items={seoManagementNavItems}
-      />
-      <AdminSummaryStrip
-        items={[
-          {
-            label: "语言版本",
-            value: String(configs.length),
-            note: "中文与英文首页独立配置",
-          },
-          {
-            label: "中文主页",
-            value: configuredLanguages.has("zh") ? "已配置" : "待配置",
-            note: "默认根路径 /",
-          },
-          {
-            label: "英文主页",
-            value: configuredLanguages.has("en") ? "已配置" : "待配置",
-            note: "英文路径 /en",
-          },
-        ]}
       />
       {siteError ? (
         <AdminSectionCard
