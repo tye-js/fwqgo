@@ -35,11 +35,44 @@ export function normalizeServerOfferBillingCycle(
   value: string | null | undefined,
 ): ServerOfferBillingCycle {
   const normalized = value?.trim().toLowerCase();
-  return SERVER_OFFER_BILLING_CYCLES.includes(
-    normalized as ServerOfferBillingCycle,
-  )
-    ? (normalized as ServerOfferBillingCycle)
-    : "monthly";
+  const compact = normalized?.replace(/[\s_-]+/g, "") ?? "";
+  const aliases: Record<string, ServerOfferBillingCycle> = {
+    month: "monthly",
+    mo: "monthly",
+    "1month": "monthly",
+    月: "monthly",
+    月付: "monthly",
+    quarter: "quarterly",
+    "3month": "quarterly",
+    "3months": "quarterly",
+    季付: "quarterly",
+    semiannual: "semiannual",
+    halfyear: "semiannual",
+    "6month": "semiannual",
+    "6months": "semiannual",
+    半年付: "semiannual",
+    annual: "yearly",
+    annually: "yearly",
+    year: "yearly",
+    yr: "yearly",
+    "12month": "yearly",
+    "12months": "yearly",
+    年付: "yearly",
+    biennial: "biennial",
+    "2year": "biennial",
+    "24month": "biennial",
+    两年付: "biennial",
+    triennial: "triennial",
+    "3year": "triennial",
+    "36month": "triennial",
+    三年付: "triennial",
+  };
+  return aliases[compact] ??
+    (SERVER_OFFER_BILLING_CYCLES.includes(
+      normalized as ServerOfferBillingCycle,
+    )
+      ? (normalized as ServerOfferBillingCycle)
+      : "monthly");
 }
 
 export function getServerOfferTermMonths(value: string | null | undefined) {

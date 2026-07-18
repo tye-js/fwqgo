@@ -1,7 +1,16 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, Eye, Pencil, Play, Plus, Trash2, X } from "lucide-react";
+import {
+  Check,
+  Eye,
+  Pencil,
+  Play,
+  Plus,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -70,6 +79,7 @@ type RunRow = Awaited<ReturnType<typeof getProviderMonitorRunHistory>>[number];
 type CandidateRow = Awaited<
   ReturnType<typeof getProviderOfferCandidateList>
 >[number];
+type MonitorAdapter = "json" | "html" | "whmcs";
 
 const defaultJsonConfig = {
   itemsPath: "data",
@@ -102,6 +112,14 @@ const defaultHtmlConfig = {
   statusMap: {},
   headers: {},
 };
+
+function getDefaultConfigText(adapter: MonitorAdapter) {
+  return JSON.stringify(
+    adapter === "json" ? defaultJsonConfig : defaultHtmlConfig,
+    null,
+    2,
+  );
+}
 
 const adapterLabels: Record<string, string> = {
   json: "JSON 接口",
@@ -162,6 +180,27 @@ function getCandidateData(row: CandidateRow) {
   };
 }
 
+function getProviderDomain(officialUrl: string) {
+  try {
+    return new URL(officialUrl).hostname.replace(/^www\./i, "");
+  } catch {
+    return officialUrl;
+  }
+}
+
+function matchesProvider(provider: Provider, query: string) {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return true;
+
+  return [
+    provider.name,
+    provider.slug,
+    provider.aliases,
+    provider.officialUrl,
+    getProviderDomain(provider.officialUrl),
+  ].some((value) => value?.toLocaleLowerCase().includes(normalizedQuery));
+}
+
 function MonitorFormDialog({
   monitor,
   providers,
@@ -175,31 +214,49 @@ function MonitorFormDialog({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [pendingAction, setPendingAction] = useState<
+    "preview" | "save" | null
+  >(null);
   const [enabled, setEnabled] = useState(monitor?.enabled ?? false);
   const [autoPublish, setAutoPublish] = useState(
     monitor?.autoPublish ?? false,
   );
-  const [adapter, setAdapter] = useState(monitor?.adapter ?? "json");
-  const [configText, setConfigText] = useState(
-    JSON.stringify(
-      monitor?.config ??
-        (monitor?.adapter === "html" || monitor?.adapter === "whmcs"
-          ? defaultHtmlConfig
-          : defaultJsonConfig),
-      null,
-      2,
-    ),
+  const [adapter, setAdapter] = useState<MonitorAdapter>(
+    (monitor?.adapter as MonitorAdapter | undefined) ?? "json",
   );
+  const [providerId, setProviderId] = useState(
+    String(monitor?.providerId ?? ""),
+  );
+  const [providerQuery, setProviderQuery] = useState("");
+  const [configText, setConfigText] = useState(
+    monitor?.config
+      ? JSON.stringify(monitor.config, null, 2)
+      : getDefaultConfigText("json"),
+  );
+  const [configDrafts, setConfigDrafts] = useState<
+    Partial<Record<MonitorAdapter, string>>
+  >({});
   const [preview, setPreview] = useState<Awaited<
     ReturnType<typeof previewProviderMonitorAction>
   > | null>(null);
+  const matchingProviders = providers.filter((provider) =>
+    matchesProvider(provider, providerQuery),
+  );
+  const selectedProvider = providers.find(
+    (provider) => String(provider.id) === providerId,
+  );
+  const visibleProviders =
+    selectedProvider &&
+    !matchingProviders.some((provider) => provider.id === selectedProvider.id)
+      ? [selectedProvider, ...matchingProviders]
+      : matchingProviders;
 
   function actionInput(formData: FormData) {
     return {
       id: monitor?.id,
       providerId: Number(formData.get("providerId")),
       name: getFormDataText(formData, "name"),
-      adapter: adapter as "json" | "html" | "whmcs",
+      adapter,
       purpose: getFormDataText(formData, "purpose") as
         | "catalog"
         | "promotion"
@@ -215,33 +272,43 @@ function MonitorFormDialog({
   }
 
   function submit(formData: FormData) {
+    setPendingAction("save");
     startTransition(async () => {
-      const result = await saveProviderMonitorAction(actionInput(formData));
-      if (!result.success) {
-        showFailure(result);
-        return;
+      try {
+        const result = await saveProviderMonitorAction(actionInput(formData));
+        if (!result.success) {
+          showFailure(result);
+          return;
+        }
+        toast.success(result.message ?? "供应商采集源已保存", {
+          description: enabled
+            ? "配置已启用，后台会按执行间隔采集供应商套餐。"
+            : "配置已保存为停用状态。",
+        });
+        onOpenChange(false);
+        router.refresh();
+      } finally {
+        setPendingAction(null);
       }
-      toast.success(result.message ?? "供应商采集源已保存", {
-        description: enabled
-          ? "配置已启用，后台会按执行间隔采集供应商套餐。"
-          : "配置已保存为停用状态。",
-      });
-      onOpenChange(false);
-      router.refresh();
     });
   }
 
   function runPreview(formData: FormData) {
+    setPendingAction("preview");
     startTransition(async () => {
-      const result = await previewProviderMonitorAction(actionInput(formData));
-      setPreview(result);
-      if (!result.success) {
-        showFailure(result);
-        return;
+      try {
+        const result = await previewProviderMonitorAction(actionInput(formData));
+        setPreview(result);
+        if (!result.success) {
+          showFailure(result);
+          return;
+        }
+        toast.success(result.message ?? "采集预览完成", {
+          description: "预览不会写入候选或套餐数据。",
+        });
+      } finally {
+        setPendingAction(null);
       }
-      toast.success(result.message ?? "采集预览完成", {
-        description: "预览不会写入候选或套餐数据。",
-      });
     });
   }
 
@@ -258,21 +325,44 @@ function MonitorFormDialog({
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="monitor-provider">厂商</Label>
+              <div className="relative">
+                <Search
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                />
+                <Input
+                  type="search"
+                  value={providerQuery}
+                  onChange={(event) => setProviderQuery(event.target.value)}
+                  placeholder="搜索名称、域名或别名"
+                  aria-label="搜索供应商"
+                  className="min-h-11 pl-9"
+                />
+              </div>
               <Select
                 name="providerId"
-                defaultValue={String(monitor?.providerId ?? providers[0]?.id ?? "")}
+                value={providerId}
+                onValueChange={(value) => {
+                  setProviderId(value);
+                  setProviderQuery("");
+                }}
               >
                 <SelectTrigger id="monitor-provider" className="min-h-11">
                   <SelectValue placeholder="选择厂商" />
                 </SelectTrigger>
                 <SelectContent>
-                  {providers.map((provider) => (
+                  {visibleProviders.map((provider) => (
                     <SelectItem key={provider.id} value={String(provider.id)}>
-                      {provider.name}
+                      {provider.name} · {getProviderDomain(provider.officialUrl)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                {providerQuery.trim()
+                  ? `匹配 ${matchingProviders.length} / ${providers.length} 个供应商`
+                  : `共 ${providers.length} 个供应商`}
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="monitor-name">采集源名称</Label>
@@ -304,13 +394,15 @@ function MonitorFormDialog({
               <Select
                 value={adapter}
                 onValueChange={(value) => {
-                  setAdapter(value);
+                  const nextAdapter = value as MonitorAdapter;
+                  setConfigDrafts((current) => ({
+                    ...current,
+                    [adapter]: configText,
+                  }));
+                  setAdapter(nextAdapter);
                   setConfigText(
-                    JSON.stringify(
-                      value === "json" ? defaultJsonConfig : defaultHtmlConfig,
-                      null,
-                      2,
-                    ),
+                    configDrafts[nextAdapter] ??
+                      getDefaultConfigText(nextAdapter),
                   );
                   setPreview(null);
                 }}
@@ -457,13 +549,18 @@ function MonitorFormDialog({
               type="submit"
               variant="outline"
               formAction={runPreview}
-              disabled={isPending || providers.length === 0}
+              disabled={isPending || providers.length === 0 || !providerId}
             >
               <Eye className="size-4" />
-              {isPending ? "检测中..." : "预览采集"}
+              {isPending && pendingAction === "preview"
+                ? "检测中..."
+                : "预览采集"}
             </Button>
-            <Button type="submit" disabled={isPending || providers.length === 0}>
-              {isPending ? "保存中..." : "保存配置"}
+            <Button
+              type="submit"
+              disabled={isPending || providers.length === 0 || !providerId}
+            >
+              {isPending && pendingAction === "save" ? "保存中..." : "保存配置"}
             </Button>
           </DialogFooter>
         </form>
@@ -487,12 +584,14 @@ export function ProviderMonitorManager({
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState<Monitor | null>(null);
+  const [editorVersion, setEditorVersion] = useState(0);
   const [deleting, setDeleting] = useState<Monitor | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   function openEditor(monitor: Monitor | null) {
     setEditing(monitor);
+    setEditorVersion((current) => current + 1);
     setDialogOpen(true);
   }
 
@@ -893,7 +992,7 @@ export function ProviderMonitorManager({
 
       {dialogOpen ? (
         <MonitorFormDialog
-          key={editing?.id ?? "new"}
+          key={`${editing?.id ?? "new"}-${editorVersion}`}
           monitor={editing}
           providers={providers}
           open={dialogOpen}

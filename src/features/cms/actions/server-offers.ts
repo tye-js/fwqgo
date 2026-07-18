@@ -55,7 +55,14 @@ const nullableInternalOrHttpUrl = nullableString.refine(
 );
 
 const nullablePositiveInteger = z.preprocess((value) => {
-  if (value === null || value === undefined || value === "") return null;
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    value === "none"
+  ) {
+    return null;
+  }
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : value;
 }, z.number().int().positive().nullable());

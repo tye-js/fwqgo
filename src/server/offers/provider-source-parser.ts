@@ -538,7 +538,15 @@ export function applyProviderAffiliateUrl(
   provider: { affUrl: string; affParam: string; affValue: string },
 ) {
   if (provider.affParam === "href") return provider.affUrl;
-  const url = new URL(rawUrl);
-  url.searchParams.set(provider.affParam, provider.affValue);
+  const affParam = provider.affParam.trim();
+  if (!affParam) throw new Error("返利参数不能为空");
+  if (!provider.affValue.trim()) throw new Error("返利值不能为空");
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new Error("供应商购买链接不是有效的 http/https URL");
+  }
+  url.searchParams.set(affParam, provider.affValue.trim());
   return url.toString();
 }

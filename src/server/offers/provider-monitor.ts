@@ -197,6 +197,38 @@ export async function runProviderMonitor(
   );
   let responseStatus: number | null = null;
 
+  const [claimedMonitor] = await db
+    .update(providerMonitors)
+    .set({
+      lastStatus: "running",
+      lastError: null,
+      lastRunAt: checkedAt,
+      updatedAt: checkedAt,
+    })
+    .where(
+      and(
+        eq(providerMonitors.id, monitor.id),
+        eq(providerMonitors.enabled, true),
+      ),
+    )
+    .returning({ id: providerMonitors.id });
+  if (!claimedMonitor) {
+    return {
+      monitorId: monitor.id,
+      runId: null,
+      providerName: monitor.providerName,
+      received: 0,
+      created: 0,
+      pending: 0,
+      updated: 0,
+      unchanged: 0,
+      skipped: 0,
+      missing: 0,
+      configHash: null,
+      checkedAt: checkedAt.toISOString(),
+    };
+  }
+
   await db
     .update(providerMonitorRuns)
     .set({
@@ -216,16 +248,6 @@ export async function runProviderMonitor(
     .values({ monitorId: monitor.id, status: "running", startedAt: checkedAt })
     .returning({ id: providerMonitorRuns.id });
   if (!run) throw new Error("供应商采集运行记录创建失败");
-
-  await db
-    .update(providerMonitors)
-    .set({
-      lastStatus: "running",
-      lastError: null,
-      lastRunAt: checkedAt,
-      updatedAt: checkedAt,
-    })
-    .where(eq(providerMonitors.id, monitor.id));
 
   try {
     const conditionalHeaders: Record<string, string> = {};
@@ -287,6 +309,21 @@ export async function runProviderMonitor(
         })
         .where(eq(serverOffers.sourceMonitorId, monitor.id))
         .returning({ id: serverOffers.id });
+      if (refreshed.length === 0) {
+        await db
+          .update(providerMonitors)
+          .set({
+            etag: null,
+            lastModified: null,
+            responseHash: null,
+            lastSummary: null,
+            updatedAt: checkedAt,
+          })
+          .where(eq(providerMonitors.id, monitor.id));
+        throw new Error(
+          "供应商返回未变化，但本地没有套餐；已清除缓存，下次采集将重新读取完整数据",
+        );
+      }
       const summary: ProviderMonitorRunSummary = {
         monitorId: monitor.id,
         runId: run.id,
@@ -325,8 +362,13 @@ export async function runProviderMonitor(
           lastSummary: summary,
           updatedAt: checkedAt,
         })
-        .where(eq(providerMonitors.id, monitor.id));
-      await enqueueProviderMonitorTask(monitor.id, nextRunAt);
+        .where(
+          and(
+            eq(providerMonitors.id, monitor.id),
+            eq(providerMonitors.enabled, true),
+          ),
+        );
+      await enqueueEnabledProviderMonitorTask(monitor.id, nextRunAt);
       return summary;
     }
 
@@ -338,6 +380,18 @@ export async function runProviderMonitor(
     });
     if (candidates.length > MAX_MONITOR_ITEMS) {
       throw new Error(`供应商网站一次返回超过 ${MAX_MONITOR_ITEMS} 个套餐`);
+    }
+    if (candidates.length === 0) {
+      const [existingOffer] = await db
+        .select({ id: serverOffers.id })
+        .from(serverOffers)
+        .where(eq(serverOffers.sourceMonitorId, monitor.id))
+        .limit(1);
+      if (existingOffer) {
+        throw new Error(
+          "供应商响应未识别到任何套餐；为避免误停售，已保留现有套餐并暂停本次缺失统计",
+        );
+      }
     }
 
     const counters = {
@@ -418,12 +472,17 @@ export async function runProviderMonitor(
         lastSummary: summary,
         updatedAt: checkedAt,
       })
-      .where(eq(providerMonitors.id, monitor.id));
+      .where(
+        and(
+          eq(providerMonitors.id, monitor.id),
+          eq(providerMonitors.enabled, true),
+        ),
+      );
     await safelyPruneProviderMonitorCheckHistory(checkedAt);
     if (counters.created > 0 || counters.updated > 0 || missing > 0) {
       await safelyNotifyProviderOfferChanges();
     }
-    await enqueueProviderMonitorTask(monitor.id, nextRunAt);
+    await enqueueEnabledProviderMonitorTask(monitor.id, nextRunAt);
     return summary;
   } catch (error) {
     const message = truncate(getErrorMessage(error));
@@ -474,7 +533,12 @@ export async function runProviderMonitor(
         lastError: message,
         updatedAt: checkedAt,
       })
-      .where(eq(providerMonitors.id, monitor.id));
+      .where(
+        and(
+          eq(providerMonitors.id, monitor.id),
+          eq(providerMonitors.enabled, true),
+        ),
+      );
     await safelyPruneProviderMonitorCheckHistory(checkedAt);
     if (failedOfferCount > 0) {
       await safelyNotifyProviderOfferChanges();
@@ -497,16 +561,22 @@ export async function enqueueProviderMonitorTask(
       try {
         await runProviderMonitor(monitorId);
       } catch (error) {
+        const [monitor] = await db
+          .select({ enabled: providerMonitors.enabled })
+          .from(providerMonitors)
+          .where(eq(providerMonitors.id, monitorId))
+          .limit(1);
+        if (!monitor?.enabled) return;
         if (job.attempts >= job.maxAttempts) {
-          const [monitor] = await db
+          const [current] = await db
             .select({ nextRunAt: providerMonitors.nextRunAt })
             .from(providerMonitors)
             .where(eq(providerMonitors.id, monitorId))
             .limit(1);
-          if (monitor) {
-            await enqueueProviderMonitorTask(
+          if (current?.nextRunAt) {
+            await enqueueEnabledProviderMonitorTask(
               monitorId,
-              monitor.nextRunAt ?? new Date(Date.now() + 30 * 60_000),
+              current.nextRunAt,
             );
           }
         }
@@ -514,6 +584,24 @@ export async function enqueueProviderMonitorTask(
       }
     },
   });
+}
+
+async function enqueueEnabledProviderMonitorTask(
+  monitorId: number,
+  runAfter: Date,
+) {
+  const [monitor] = await db
+    .select({ id: providerMonitors.id })
+    .from(providerMonitors)
+    .where(
+      and(
+        eq(providerMonitors.id, monitorId),
+        eq(providerMonitors.enabled, true),
+      ),
+    )
+    .limit(1);
+  if (!monitor) return null;
+  return enqueueProviderMonitorTask(monitorId, runAfter);
 }
 
 export async function retryProviderMonitorRun(runId: number) {
@@ -638,6 +726,8 @@ export async function updateProviderMonitor(
     .set({
       ...input,
       nextRunAt: input.enabled ? now : null,
+      lastStatus: input.enabled ? undefined : "idle",
+      lastError: input.enabled ? undefined : null,
       updatedAt: now,
     })
     .where(eq(providerMonitors.id, id))
@@ -671,17 +761,31 @@ async function cancelQueuedProviderMonitorJobs(monitorId: number) {
 }
 
 export async function deleteProviderMonitor(id: number) {
-  const [running] = await db
-    .select({ id: adminBackgroundJobs.id })
-    .from(adminBackgroundJobs)
-    .where(
-      and(
-        eq(adminBackgroundJobs.jobKey, `provider-monitor:${id}`),
-        eq(adminBackgroundJobs.status, "running"),
-      ),
-    )
-    .limit(1);
-  if (running) throw new Error("采集正在执行，请等待本次运行结束后再删除");
+  const [[runningJob], [runningRun]] = await Promise.all([
+    db
+      .select({ id: adminBackgroundJobs.id })
+      .from(adminBackgroundJobs)
+      .where(
+        and(
+          eq(adminBackgroundJobs.jobKey, `provider-monitor:${id}`),
+          eq(adminBackgroundJobs.status, "running"),
+        ),
+      )
+      .limit(1),
+    db
+      .select({ id: providerMonitorRuns.id })
+      .from(providerMonitorRuns)
+      .where(
+        and(
+          eq(providerMonitorRuns.monitorId, id),
+          eq(providerMonitorRuns.status, "running"),
+        ),
+      )
+      .limit(1),
+  ]);
+  if (runningJob || runningRun) {
+    throw new Error("采集正在执行，请等待本次执行结束后再删除");
+  }
 
   await cancelQueuedProviderMonitorJobs(id);
   const [deleted] = await db
@@ -728,7 +832,13 @@ export async function getProviderMonitorCheckHistory(
 
 export async function getProviderOptionsForMonitoring() {
   return db
-    .select({ id: affServiceProviders.id, name: affServiceProviders.name })
+    .select({
+      id: affServiceProviders.id,
+      name: affServiceProviders.name,
+      slug: affServiceProviders.slug,
+      aliases: affServiceProviders.aliases,
+      officialUrl: affServiceProviders.officialUrl,
+    })
     .from(affServiceProviders)
     .orderBy(asc(affServiceProviders.name));
 }
