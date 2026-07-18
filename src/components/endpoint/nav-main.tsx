@@ -17,6 +17,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 
 type NavItem = {
@@ -32,6 +33,12 @@ type NavItem = {
 };
 
 export function NavMain({ items }: { items: NavItem[] }) {
+  const { isMobile, setOpenMobile } = useSidebar();
+
+  function closeMobileNavigation() {
+    if (isMobile) setOpenMobile(false);
+  }
+
   return (
     <SidebarGroup className="p-1.5">
       <SidebarGroupLabel className="h-7 px-2 text-xs uppercase tracking-wide text-sidebar-foreground/60">
@@ -86,7 +93,10 @@ export function NavMain({ items }: { items: NavItem[] }) {
                           size="sm"
                           className="min-h-11"
                         >
-                          <Link href={subItem.url}>
+                          <Link
+                            href={subItem.url}
+                            onClick={closeMobileNavigation}
+                          >
                             <span>{subItem.title}</span>
                           </Link>
                         </SidebarMenuSubButton>
