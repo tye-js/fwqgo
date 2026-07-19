@@ -53,6 +53,8 @@ function parseEnvFile(filePath) {
 }
 
 const productionEnv = parseEnvFile(path.join(__dirname, ".env.production"));
+const bunInterpreter = process.env.BUN_BIN ?? productionEnv.BUN_BIN ?? "";
+const useBun = Boolean(bunInterpreter);
 const webAppDir =
   process.env.WEB_APP_DIR ?? process.env.APP_DIR ?? path.join(__dirname, "web");
 const cmsAppDir =
@@ -86,10 +88,14 @@ function createApp({
 }) {
   const resolvedPort =
     process.env[portEnvName] ?? productionEnv[portEnvName] ?? String(port);
-  const instances = parsePositiveInteger(
+  const requestedInstances = parsePositiveInteger(
     process.env[instancesEnvName] ?? productionEnv[instancesEnvName],
     defaultInstances,
   );
+  // PM2 cluster mode is implemented through Node's cluster primary process.
+  // Bun releases therefore use one forked process so the configured interpreter
+  // is the actual runtime and both apps keep their single listening port.
+  const instances = useBun ? 1 : requestedInstances;
 
   const readDatabaseUrl =
     process.env.READ_DATABASE_URL ??
@@ -126,8 +132,9 @@ function createApp({
     name,
     cwd: appDir,
     script: path.join(appDir, "server.js"),
+    interpreter: bunInterpreter || "node",
     instances,
-    exec_mode: "cluster",
+    exec_mode: useBun ? "fork" : "cluster",
     autorestart: true,
     watch: false,
     max_memory_restart: "1G",
@@ -138,6 +145,7 @@ function createApp({
       NODE_ENV: "production",
       RELEASE_ID:
         process.env.RELEASE_ID ?? productionEnv.RELEASE_ID ?? "unknown",
+      BUN_BIN: bunInterpreter,
       UPLOAD_DIR:
         process.env.UPLOAD_DIR ??
         productionEnv.UPLOAD_DIR ??

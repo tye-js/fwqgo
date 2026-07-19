@@ -16,7 +16,11 @@ import PageCard from "@/features/public/components/page-card";
 import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Separator } from "@/components/ui/separator";
-import { decodeSlug, parsePositiveInt } from "@fwqgo/core/utils";
+import {
+  decodeSlug,
+  jsonLdScriptContent,
+  parsePositiveInt,
+} from "@fwqgo/core/utils";
 import { getServerOffersByKeywords } from "@/server/offers/server-offers";
 
 function getSiteUrl() {
@@ -122,17 +126,42 @@ async function TagPageContent({
   if ((postsWithTag.totalCount ?? 0) > 0 && postsWithTag.pageNo > totalPage) {
     notFound();
   }
+  const pageDescription =
+    postsWithTag.description ??
+    `${postsWithTag.name} server deals, VPS reviews, and buying guides.`;
+  const pageUrl = `${getSiteUrl()}/en/fwq/tags/${encodeURIComponent(postsWithTag.slug)}/page/${postsWithTag.pageNo}`;
+  const collectionJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    name: postsWithTag.name,
+    description: pageDescription,
+    url: pageUrl,
+    inLanguage: "en",
+    mainEntity: {
+      "@type": "ItemList",
+      numberOfItems: posts.length,
+      itemListElement: posts.map((item, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        url: `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(item.post.slug)}`,
+        name: item.post.title,
+      })),
+    },
+  };
 
   return (
     <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLdScriptContent(collectionJsonLd),
+        }}
+      />
       <div className="space-y-5">
         <PageCard
           kind="Tag"
           name={postsWithTag.name}
-          description={
-            postsWithTag.description ??
-            `${postsWithTag.name} server deals, VPS reviews, and buying guides.`
-          }
+          description={pageDescription}
           totalCount={postsWithTag.totalCount ?? 0}
           pageNo={postsWithTag.pageNo}
           language="en"

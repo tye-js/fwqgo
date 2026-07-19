@@ -35,7 +35,6 @@ const requirements = new Map<string, string[]>([
       "getPublicServerOfferCount",
       "getLatestServerOffers",
       "getPublicServerOffers",
-      "searchServerOffers",
       "getServerOffersByKeywords",
     ],
   ],

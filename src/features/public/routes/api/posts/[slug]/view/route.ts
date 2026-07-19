@@ -57,8 +57,11 @@ export async function POST(
     const params = await context.params;
     let slug: string;
     try {
-      slug = decodeSlug(params.slug);
+      slug = decodeSlug(params.slug).trim();
     } catch {
+      return NextResponse.json({ counted: false }, { status: 400 });
+    }
+    if (!slug || slug.length > 360) {
       return NextResponse.json({ counted: false }, { status: 400 });
     }
     const viewedPostCookie = `viewed_post_${createHash("sha256")
@@ -88,6 +91,7 @@ export async function POST(
         maxAge: VIEW_COOKIE_TTL,
         path: "/",
         sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
       });
     }
 

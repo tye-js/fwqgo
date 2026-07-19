@@ -459,7 +459,7 @@ export async function updatePost(input: {
             title: normalizedTitle,
             slug: normalizedSlug,
             imgUrl: normalizedImgUrl,
-            published: currentPost.published,
+            published: false,
             affiliateReviewStatus: "manual_required",
             affiliateReviewDetails:
               serializeAffiliateReviewDetails(publishAudit),
@@ -693,6 +693,10 @@ export async function bulkUpdatePostsPublishedAction(input: {
 }) {
   try {
     await requireAdminSession();
+
+    if (!Array.isArray(input.ids) || typeof input.published !== "boolean") {
+      return { error: "批量发布参数无效" };
+    }
 
     const validIds = normalizePostIds(input.ids);
     if (validIds.length === 0) {

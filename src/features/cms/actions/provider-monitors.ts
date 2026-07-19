@@ -44,6 +44,12 @@ const monitorInputSchema = z.object({
   timeoutSeconds: z.number().int().min(1).max(300),
 });
 
+const candidateReviewSchema = z.object({
+  candidateId: z.number().int().positive("候选套餐 ID 无效"),
+  decision: z.enum(["accept", "reject"]),
+  reason: z.string().trim().max(500, "拒绝原因不能超过 500 个字符").optional(),
+});
+
 export type ProviderMonitorActionInput = z.input<typeof monitorInputSchema>;
 
 function parseConfigText(value: string, adapter: ProviderSourceAdapter) {
@@ -159,7 +165,10 @@ export async function previewProviderMonitorAction(
       config,
       timeoutSeconds: input.timeoutSeconds,
     });
-    return adminActionSuccess(preview, `预览完成，识别 ${preview.total} 个套餐`);
+    return adminActionSuccess(
+      preview,
+      `预览完成，识别 ${preview.total} 个套餐`,
+    );
   } catch (error) {
     return adminActionFailure(error, {
       title: "采集预览失败",
@@ -175,26 +184,24 @@ export async function reviewProviderOfferCandidateAction(input: {
 }) {
   try {
     const session = await requireAdminSession();
-    if (!Number.isInteger(input.candidateId) || input.candidateId <= 0) {
-      throw new Error("候选套餐 ID 无效");
-    }
+    const parsed = candidateReviewSchema.parse(input);
     const result =
-      input.decision === "accept"
+      parsed.decision === "accept"
         ? await acceptProviderOfferCandidate({
-            candidateId: input.candidateId,
+            candidateId: parsed.candidateId,
             reviewerId: session.userId,
           })
         : await rejectProviderOfferCandidate({
-            candidateId: input.candidateId,
+            candidateId: parsed.candidateId,
             reviewerId: session.userId,
-            reason: input.reason,
+            reason: parsed.reason,
           });
     revalidatePath("/servers/monitor");
-    revalidatePath("/servers/offers");
+    revalidatePath("/servers/manage");
     revalidatePath("/ai-tasks");
     return adminActionSuccess(
       result,
-      input.decision === "accept" ? "候选套餐已接受" : "候选套餐已拒绝",
+      parsed.decision === "accept" ? "候选套餐已接受" : "候选套餐已拒绝",
     );
   } catch (error) {
     return adminActionFailure(error, {

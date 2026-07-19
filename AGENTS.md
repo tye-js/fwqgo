@@ -34,34 +34,34 @@ Core stack:
 
 ## Commands
 
-Use npm scripts unless the user explicitly asks for another package manager.
+Use Bun 1.3.14 for dependency installation, project scripts, and the production standalone runtime. Keep Node.js 24 for PM2, explicit `node` scripts, and rollback compatibility with legacy Node releases.
 
 ```bash
-npm run dev
-npm run dev:web
-npm run dev:cms
-npm run dev:webpack
-npm run build
-npm run start
-npm run preview
-npm run lint
-npm run lint:fix
-npm run typecheck
-npm run check
-npm run db:generate
-npm run db:migrate
-npm run db:migrate:prod
-npm run db:push
-npm run db:studio
-npm run db:seed
+bun run dev
+bun run dev:web
+bun run dev:cms
+bun run dev:webpack
+bun run build
+bun run start
+bun run preview
+bun run lint
+bun run lint:fix
+bun run typecheck
+bun run check
+bun run db:generate
+bun run db:migrate
+bun run db:migrate:prod
+bun run db:push
+bun run db:studio
+bun run db:seed
 ```
 
 Recommended verification after code changes:
 
 ```bash
-npm run lint
-npm run typecheck
-SKIP_ENV_VALIDATION=1 npm run build
+bun run lint
+bun run typecheck
+SKIP_ENV_VALIDATION=1 bun run build
 ```
 
 Only use `SKIP_ENV_VALIDATION=1` for local build verification when required environment variables are not present in the shell. Real production builds should have complete production environment variables.
@@ -99,9 +99,14 @@ Deployment model:
 3. Run production migrations with `scripts/migrate-prod.mjs`.
 4. Run or restart with PM2 using `ecosystem.config.cjs`.
 
-For database changes, create migrations with `npm run db:generate` and apply them with `npm run db:migrate`. Coordinate migration execution with deployment.
+For database changes, create migrations with `bun run db:generate` and apply them with `bun run db:migrate`. Coordinate migration execution with deployment.
 
 GitHub Actions includes the production migration step. Keep `scripts/migrate-prod.mjs` and the `drizzle` folder in release payloads. `scripts/deploy-local-build.sh` is retained only for an explicitly requested local Docker deployment.
+
+Production releases include Bun 1.3.14 at `bin/bun`. PM2 starts releases with that binary in
+`fork` mode and one instance per app; do not switch Bun releases to PM2 `cluster` mode because
+PM2's cluster primary is Node-based. Releases without `bin/bun` remain compatible with the
+Node `cluster` fallback for rollback.
 
 ## Coding Rules
 

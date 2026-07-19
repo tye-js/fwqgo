@@ -22,8 +22,14 @@ import {
 } from "@fwqgo/db/schema";
 import { withAsyncRollback } from "@fwqgo/core/async-rollback";
 import { sanitizeFileName } from "@fwqgo/core/utils";
+import {
+  getUploadDir,
+  normalizeUploadPath,
+  toUploadPath,
+  uploadPathToFilePath,
+  UPLOAD_PUBLIC_PREFIX,
+} from "./upload-paths";
 
-export const UPLOAD_PUBLIC_PREFIX = "/uploads/";
 const MAX_UPLOAD_SIZE = 8 * 1024 * 1024;
 const ALLOWED_UPLOAD_TYPES = new Set([
   "image/jpeg",
@@ -56,75 +62,6 @@ async function loadSharp() {
     console.warn("Sharp is unavailable.", error);
     return null;
   }
-}
-
-export function getUploadDir() {
-  return process.env.UPLOAD_DIR ?? path.join("/var/www", "uploads");
-}
-
-function stripUploadUrlNoise(value: string) {
-  let normalized = value.trim();
-
-  try {
-    const parsed = new URL(normalized, "https://fwqgo.local");
-    normalized = parsed.pathname;
-  } catch {
-    normalized = normalized.split("#")[0]?.split("?")[0] ?? normalized;
-  }
-
-  return normalized.replace(/[),.;，。]+$/g, "");
-}
-
-export function toUploadPath(value: string | null | undefined) {
-  if (!value) return null;
-
-  const decodedCandidates = new Set<string>([value]);
-  try {
-    decodedCandidates.add(decodeURIComponent(value));
-  } catch {
-    // Keep the raw candidate when decoding fails.
-  }
-
-  for (const candidate of decodedCandidates) {
-    const cleaned = stripUploadUrlNoise(candidate);
-    const uploadIndex = cleaned.indexOf(UPLOAD_PUBLIC_PREFIX);
-    if (uploadIndex === -1) continue;
-
-    try {
-      return normalizeUploadPath(cleaned.slice(uploadIndex));
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
-}
-
-export function normalizeUploadPath(value: string) {
-  const cleaned = stripUploadUrlNoise(value);
-
-  if (!cleaned.startsWith(UPLOAD_PUBLIC_PREFIX)) {
-    throw new Error("Invalid upload path");
-  }
-
-  let decoded = cleaned;
-  try {
-    decoded = decodeURIComponent(cleaned);
-  } catch {
-    decoded = cleaned;
-  }
-
-  const decodedFileName = path.basename(decoded);
-  if (!decodedFileName || decodedFileName === "." || decodedFileName === "..") {
-    throw new Error("Invalid upload path");
-  }
-
-  return `${UPLOAD_PUBLIC_PREFIX}${path.basename(cleaned)}`;
-}
-
-export function uploadPathToFilePath(publicPath: string) {
-  const normalized = normalizeUploadPath(publicPath);
-  return path.join(getUploadDir(), path.basename(normalized));
 }
 
 function hashBuffer(buffer: Buffer) {
@@ -174,7 +111,9 @@ async function getAvailablePublicPath(fileName: string) {
   let candidate = fileName;
   let counter = 1;
 
-  while (existsSync(path.join(uploadDir, candidate))) {
+  while (
+    existsSync(path.join(/* turbopackIgnore: true */ uploadDir, candidate))
+  ) {
     candidate = `${parsed.name}-${counter}${parsed.ext}`;
     counter += 1;
   }
@@ -608,17 +547,25 @@ export async function updateImageAssetMetadata(input: {
     return trimmed && trimmed.length > 0 ? trimmed : null;
   };
 
+  const values: Partial<typeof imageAssets.$inferInsert> = {
+    updatedAt: new Date(),
+  };
+  if (input.imageType !== undefined) {
+    values.imageType = normalizeText(input.imageType) ?? "upload";
+  }
+  if (input.status !== undefined) {
+    values.status = normalizeText(input.status) ?? "active";
+  }
+  if (input.altZh !== undefined) values.altZh = normalizeText(input.altZh);
+  if (input.altEn !== undefined) values.altEn = normalizeText(input.altEn);
+  if (input.sourceUrl !== undefined) {
+    values.sourceUrl = normalizeText(input.sourceUrl);
+  }
+  if (input.prompt !== undefined) values.prompt = normalizeText(input.prompt);
+
   const [asset] = await db
     .update(imageAssets)
-    .set({
-      imageType: normalizeText(input.imageType) ?? "upload",
-      status: normalizeText(input.status) ?? "active",
-      altZh: normalizeText(input.altZh),
-      altEn: normalizeText(input.altEn),
-      sourceUrl: normalizeText(input.sourceUrl),
-      prompt: normalizeText(input.prompt),
-      updatedAt: new Date(),
-    })
+    .set(values)
     .where(eq(imageAssets.id, input.id))
     .returning();
 
@@ -1108,7 +1055,10 @@ export async function importExistingUploads() {
       continue;
     }
 
-    const filePath = path.join(uploadDir, entry.name);
+    const filePath = path.join(
+      /* turbopackIgnore: true */ uploadDir,
+      entry.name,
+    );
     const [fileStat, buffer, dimensions] = await Promise.all([
       stat(filePath),
       readFile(filePath),

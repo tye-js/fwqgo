@@ -25,6 +25,19 @@ export async function GET(request: Request) {
       );
     }
 
+    if (query.length > 160) {
+      return NextResponse.json(
+        {
+          ...adminActionFailure("标签关键词不能超过 160 个字符", {
+            title: "标签搜索失败",
+            suggestion: "请缩短关键词后重新搜索。",
+          }),
+          found: false,
+        },
+        { status: 400 },
+      );
+    }
+
     const { data: tag } = await findBestTagMatch(query);
 
     if (!tag) {

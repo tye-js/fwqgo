@@ -14,6 +14,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { isInternalHref, isSafePublicHref } from "@fwqgo/core/utils";
+import {
+  formatServerOfferAmount,
+  resolveMonthlyPriceUsd,
+} from "@fwqgo/core/server-offer-price";
 
 type OfferPrice = {
   id: number;
@@ -36,9 +40,9 @@ const cycleLabels: Record<string, string> = {
 };
 
 function formatMoney(amount: string, currency: string) {
-  const value = Number(amount);
-  if (!Number.isFinite(value)) return amount;
-  return `${currency === "CNY" ? "¥" : "$"}${value.toFixed(2)}`;
+  return (
+    formatServerOfferAmount({ amount, currency }) ?? `${amount} ${currency}`
+  );
 }
 
 function SafeLinkButton({
@@ -126,7 +130,16 @@ export function ServerInventoryOfferActions({
   const [selectedId, setSelectedId] = useState(String(options[0]?.id ?? -1));
   const selected =
     options.find((option) => String(option.id) === selectedId) ?? options[0];
+  const selectedValue = selected ? String(selected.id) : "";
   const selectedPurchaseUrl = selected?.purchaseUrl ?? purchaseUrl;
+  const selectedMonthlyPrice = selected
+    ? resolveMonthlyPriceUsd({
+        monthlyPriceUsd: selected.monthlyPriceUsd,
+        amount: selected.amount,
+        currency: selected.currency,
+        billingCycle: selected.billingCycle,
+      })
+    : null;
 
   async function copyPromoCode() {
     if (!promoCode) return;
@@ -145,7 +158,7 @@ export function ServerInventoryOfferActions({
       {selected ? (
         <div className="space-y-1">
           {options.length > 1 ? (
-            <Select value={selectedId} onValueChange={setSelectedId}>
+            <Select value={selectedValue} onValueChange={setSelectedId}>
               <SelectTrigger className="h-9 min-w-[150px] text-xs">
                 <SelectValue />
               </SelectTrigger>
@@ -164,9 +177,13 @@ export function ServerInventoryOfferActions({
               {formatMoney(selected.amount, selected.currency)}
             </p>
           )}
-          <p className="text-xs tabular-nums text-muted-foreground">
-            约 ${Number(selected.monthlyPriceUsd).toFixed(2)} / 月
-          </p>
+          {selectedMonthlyPrice !== null ? (
+            <p className="text-xs tabular-nums text-muted-foreground">
+              约 ${selectedMonthlyPrice.toFixed(2)} / 月
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">月价待确认</p>
+          )}
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">价格待确认</p>
@@ -184,11 +201,7 @@ export function ServerInventoryOfferActions({
       ) : null}
 
       <div className="flex flex-wrap gap-1.5">
-        <SafeLinkButton
-          href={selectedPurchaseUrl}
-          variant="default"
-          sponsored
-        >
+        <SafeLinkButton href={selectedPurchaseUrl} variant="default" sponsored>
           购买
           <ExternalLink className="size-3.5" />
         </SafeLinkButton>

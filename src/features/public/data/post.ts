@@ -124,9 +124,6 @@ export async function searchPublishedPosts(input: {
   language?: PublicLanguage;
   limit?: number;
 }) {
-  "use cache";
-  tagCache(cacheTags.posts, cacheTags.tags);
-
   const query = input.query.trim();
   const language = input.language ?? "zh";
   if (!query) return { data: [] };

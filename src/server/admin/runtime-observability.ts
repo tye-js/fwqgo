@@ -19,6 +19,9 @@ function enabledEnvFlag(value: string | undefined) {
 }
 
 export function getAdminRuntimeSnapshot() {
+  const bunVersion = (
+    process.versions as NodeJS.ProcessVersions & { bun?: string }
+  ).bun;
   const cwd = process.cwd();
   const realCwd = safeRealPath(cwd);
   const inferredReleaseId = inferReleaseId(realCwd);
@@ -39,6 +42,8 @@ export function getAdminRuntimeSnapshot() {
     realCwd,
     hostname: hostname(),
     pid: process.pid,
+    runtimeEngine: bunVersion ? "Bun" : "Node.js",
+    runtimeVersion: bunVersion ?? process.version,
     nodeVersion: process.version,
     nodeEnv: process.env.NODE_ENV ?? "unknown",
     uptimeSeconds: Math.floor(process.uptime()),

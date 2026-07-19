@@ -1,8 +1,5 @@
 import Link from "next/link";
-import {
-  ChevronDown,
-  ServerCog,
-} from "lucide-react";
+import { ChevronDown, ServerCog } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -162,7 +159,10 @@ function SystemDiagnostics({ summary }: { summary: CmsTaskOperationsSummary }) {
             label="已运行"
             value={formatUptime(summary.runtime.uptimeSeconds)}
           />
-          <RuntimeValue label="Node" value={summary.runtime.nodeVersion} />
+          <RuntimeValue
+            label="运行时"
+            value={`${summary.runtime.runtimeEngine} ${summary.runtime.runtimeVersion}`}
+          />
           <RuntimeValue
             label="Basic Auth"
             value={summary.runtime.cmsBasicAuthEnabled}

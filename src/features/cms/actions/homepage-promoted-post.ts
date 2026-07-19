@@ -17,7 +17,9 @@ function getErrorMessage(error: unknown) {
 }
 
 function normalizeHomepageLanguage(language?: string): HomepageLanguage {
-  return language === "en" ? "en" : "zh";
+  if (language === undefined || language === "zh") return "zh";
+  if (language === "en") return "en";
+  throw new Error("首页推荐语言无效");
 }
 
 export async function getHomepagePromotedPostList(

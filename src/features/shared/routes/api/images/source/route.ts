@@ -3,7 +3,7 @@ import { open } from "node:fs/promises";
 import {
   normalizeUploadPath,
   uploadPathToFilePath,
-} from "@/server/images/assets";
+} from "@/server/images/upload-paths";
 import {
   createWeakFileEtag,
   matchesHttpCacheValidators,
@@ -212,7 +212,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const fileHandle = await open(filePath, "r");
+    const fileHandle = await open(/* turbopackIgnore: true */ filePath, "r");
     try {
       const fileStat = await fileHandle.stat();
       if (!fileStat.isFile()) {

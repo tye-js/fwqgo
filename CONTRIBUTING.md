@@ -6,7 +6,7 @@
 
 1. Fork 本仓库
 2. 克隆您的 fork: `git clone https://github.com/your-username/fwqgo.git`
-3. 安装依赖: `npm install`
+3. 安装 Bun 1.3.14，并执行: `bun install --frozen-lockfile`
 4. 创建分支: `git checkout -b feature/your-feature-name`
 5. 进行更改并测试
 6. 提交更改: `git commit -m 'feat: add some feature'`
@@ -45,13 +45,14 @@ chore: 更新依赖版本
 
 ```bash
 # 代码格式检查
-npm run lint
+bun run lint
 
 # 类型检查
-npm run typecheck
+bun run typecheck
 
-# 格式化代码
-npm run format:write
+# 核心测试与部署契约检查
+bun run test
+bun run verify:deploy
 ```
 
 ## 🐛 报告问题

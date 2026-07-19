@@ -5,6 +5,7 @@ import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { readDb } from "@fwqgo/db";
 import { attachTagsToPosts } from "@fwqgo/db/post-tags";
 import { postTags, posts, tags } from "@fwqgo/db/schema";
+import { resolveEnglishTagIdentity } from "@fwqgo/core/taxonomy";
 
 type PublicLanguage = "zh" | "en";
 
@@ -31,21 +32,14 @@ function localizeTag<
   },
 >(tag: T, language: PublicLanguage) {
   if (language === "en") {
-    const enName = nonEmptyTrim(tag.enName);
-    const enSlug = nonEmptyTrim(tag.enSlug);
-    if (!enName || !enSlug) {
-      if (/\p{Script=Han}/u.test(tag.name) || !/^[a-z0-9-]+$/i.test(tag.slug)) {
-        return null;
-      }
-
-      return tag;
-    }
+    const identity = resolveEnglishTagIdentity(tag);
+    if (!identity) return null;
 
     return {
       ...tag,
       zhSlug: tag.slug,
-      name: enName,
-      slug: enSlug,
+      name: identity.name,
+      slug: identity.slug,
       description: nonEmptyTrim(tag.enDescription) ?? tag.description,
       keywords: nonEmptyTrim(tag.enKeywords) ?? tag.keywords,
     };

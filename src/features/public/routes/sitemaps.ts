@@ -1,8 +1,10 @@
 import { readDb } from "@fwqgo/db";
 import { renderSitemapLastmod } from "@fwqgo/core/sitemap-lastmod";
+import { getLatestDateValue } from "@fwqgo/core/date-value";
+import { resolveEnglishTagIdentity } from "@fwqgo/core/taxonomy";
 import { connection } from "next/server";
 import { categories, posts, serverOffers, tags } from "@fwqgo/db/schema";
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   getServerOfferCollectionIndex,
   offerTopics,
@@ -79,41 +81,82 @@ ${entries.join("")}
 
 export async function sitemapIndexGET() {
   const baseUrl = getBaseUrl();
-  const [latestPost] = await readDb
-    .select({ updatedAt: posts.updatedAt })
-    .from(posts)
-    .where(eq(posts.published, true))
-    .orderBy(desc(posts.updatedAt))
-    .limit(1);
-  const [latestOffer] = await readDb
-    .select({ updatedAt: serverOffers.updatedAt })
-    .from(serverOffers)
-    .where(eq(serverOffers.visible, true))
-    .orderBy(desc(serverOffers.updatedAt))
-    .limit(1);
+  const [[latestPost], [latestOffer], [latestCategory], [latestTag]] =
+    await Promise.all([
+      readDb
+        .select({ updatedAt: posts.updatedAt, createdAt: posts.createdAt })
+        .from(posts)
+        .where(eq(posts.published, true))
+        .orderBy(desc(sql`coalesce(${posts.updatedAt}, ${posts.createdAt})`))
+        .limit(1),
+      readDb
+        .select({
+          updatedAt: serverOffers.updatedAt,
+          createdAt: serverOffers.createdAt,
+        })
+        .from(serverOffers)
+        .where(eq(serverOffers.visible, true))
+        .orderBy(
+          desc(
+            sql`coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt})`,
+          ),
+        )
+        .limit(1),
+      readDb
+        .select({
+          updatedAt: categories.updatedAt,
+          createdAt: categories.createdAt,
+        })
+        .from(categories)
+        .orderBy(
+          desc(sql`coalesce(${categories.updatedAt}, ${categories.createdAt})`),
+        )
+        .limit(1),
+      readDb
+        .select({ updatedAt: tags.updatedAt, createdAt: tags.createdAt })
+        .from(tags)
+        .orderBy(desc(sql`coalesce(${tags.updatedAt}, ${tags.createdAt})`))
+        .limit(1),
+    ]);
+  const latestPostDate = getLatestDateValue([
+    latestPost?.updatedAt,
+    latestPost?.createdAt,
+  ]);
+  const latestOfferDate = getLatestDateValue([
+    latestOffer?.updatedAt,
+    latestOffer?.createdAt,
+  ]);
+  const latestCategoryDate = getLatestDateValue([
+    latestCategory?.updatedAt,
+    latestCategory?.createdAt,
+  ]);
+  const latestTagDate = getLatestDateValue([
+    latestTag?.updatedAt,
+    latestTag?.createdAt,
+  ]);
 
   return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${[
   sitemapEntry({
     loc: `${baseUrl}/sitemap-posts.xml`,
-    lastmod: latestPost?.updatedAt,
+    lastmod: latestPostDate,
   }),
   sitemapEntry({
     loc: `${baseUrl}/sitemap-en.xml`,
-    lastmod: latestPost?.updatedAt,
+    lastmod: latestPostDate,
   }),
   sitemapEntry({
     loc: `${baseUrl}/sitemap-categories.xml`,
-    lastmod: latestPost?.updatedAt,
+    lastmod: latestCategoryDate,
   }),
   sitemapEntry({
     loc: `${baseUrl}/sitemap-tags.xml`,
-    lastmod: latestPost?.updatedAt,
+    lastmod: latestTagDate,
   }),
   sitemapEntry({
     loc: `${baseUrl}/sitemap-servers.xml`,
-    lastmod: latestOffer?.updatedAt ?? latestPost?.updatedAt,
+    lastmod: latestOfferDate ?? latestPostDate,
   }),
 ].join("")}
 </sitemapindex>`);
@@ -356,17 +399,23 @@ export async function sitemapCategoriesGET() {
 export async function sitemapTagsGET() {
   const baseUrl = getBaseUrl();
   const rows = await readDb
-    .select({ slug: tags.slug, enSlug: tags.enSlug, updatedAt: tags.updatedAt })
+    .select({
+      name: tags.name,
+      slug: tags.slug,
+      enName: tags.enName,
+      enSlug: tags.enSlug,
+      updatedAt: tags.updatedAt,
+    })
     .from(tags)
     .where(eq(tags.indexable, true))
     .orderBy(desc(tags.updatedAt));
 
   return urlset(
     rows.flatMap((tag) => {
-      const enSlug = tag.enSlug?.trim();
+      const englishIdentity = resolveEnglishTagIdentity(tag);
       const zhUrl = `${baseUrl}/fwq/tags/${encodeURIComponent(tag.slug)}/page/1`;
-      const enUrl = enSlug
-        ? `${baseUrl}/en/fwq/tags/${encodeURIComponent(enSlug)}/page/1`
+      const enUrl = englishIdentity
+        ? `${baseUrl}/en/fwq/tags/${encodeURIComponent(englishIdentity.slug)}/page/1`
         : null;
       const alternates = enUrl
         ? [
@@ -405,14 +454,24 @@ export async function sitemapServersGET() {
   const baseUrl = getBaseUrl();
   const [[latestOffer], collections] = await Promise.all([
     readDb
-      .select({ updatedAt: serverOffers.updatedAt })
+      .select({
+        updatedAt: serverOffers.updatedAt,
+        createdAt: serverOffers.createdAt,
+      })
       .from(serverOffers)
       .where(eq(serverOffers.visible, true))
-      .orderBy(desc(serverOffers.updatedAt))
+      .orderBy(
+        desc(
+          sql`coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt})`,
+        ),
+      )
       .limit(1),
     getServerOfferCollectionIndex(120),
   ]);
-  const lastmod = latestOffer?.updatedAt ?? null;
+  const lastmod = getLatestDateValue([
+    latestOffer?.updatedAt,
+    latestOffer?.createdAt,
+  ]);
   const collectionEntries = [
     ...collections.providers.map((item) => ({
       loc: `${baseUrl}/servers/providers/${encodeURIComponent(item.value)}`,

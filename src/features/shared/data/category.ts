@@ -47,7 +47,11 @@ export async function getCategories() {
     const categoriesWithChildren = await readDb.query.categories.findMany({
       where: isNull(categories.parentId),
       orderBy: asc(categories.id),
-      with: { children: true },
+      with: {
+        children: {
+          orderBy: asc(categories.id),
+        },
+      },
     });
 
     return { data: categoriesWithChildren };

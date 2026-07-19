@@ -199,8 +199,15 @@ export async function deleteAiSourceSiteAction(id: number) {
 }
 
 export async function runAiSourceSiteAction(id: number) {
+  let canRecordFailure = false;
+
   try {
     await requireAdminSession();
+    canRecordFailure = true;
+
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      return { error: "来源站 ID 不正确" };
+    }
 
     const [site] = await db
       .select()
@@ -255,18 +262,24 @@ export async function runAiSourceSiteAction(id: number) {
     };
   } catch (error) {
     console.error("执行来源站抓取失败:", error);
-    await db
-      .update(aiSourceSites)
-      .set({
-        lastRunAt: new Date(),
-        lastError: getErrorMessage(error),
-        lastRunDetails: JSON.stringify({
-          runAt: new Date().toISOString(),
-          error: getErrorMessage(error),
-        }),
-        updatedAt: new Date(),
-      })
-      .where(eq(aiSourceSites.id, id));
+    if (canRecordFailure && Number.isSafeInteger(id) && id > 0) {
+      try {
+        await db
+          .update(aiSourceSites)
+          .set({
+            lastRunAt: new Date(),
+            lastError: getErrorMessage(error),
+            lastRunDetails: JSON.stringify({
+              runAt: new Date().toISOString(),
+              error: getErrorMessage(error),
+            }),
+            updatedAt: new Date(),
+          })
+          .where(eq(aiSourceSites.id, id));
+      } catch (recordError) {
+        console.error("记录来源站抓取失败状态失败:", recordError);
+      }
+    }
     revalidateAiTaskPages();
     return { error: getErrorMessage(error) };
   }

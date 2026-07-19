@@ -11,6 +11,16 @@ export const SERVER_OFFER_CURRENCIES = ["USD", "CNY"] as const;
 
 export type ServerOfferCurrency = (typeof SERVER_OFFER_CURRENCIES)[number];
 
+export function parseServerOfferAmount(
+  value: string | number | null | undefined,
+) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && !value.trim()) return null;
+
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount >= 0 ? amount : null;
+}
+
 export function isSupportedServerOfferCurrency(
   value: string | null | undefined,
 ) {
@@ -67,12 +77,12 @@ export function normalizeServerOfferBillingCycle(
     "36month": "triennial",
     三年付: "triennial",
   };
-  return aliases[compact] ??
-    (SERVER_OFFER_BILLING_CYCLES.includes(
-      normalized as ServerOfferBillingCycle,
-    )
+  return (
+    aliases[compact] ??
+    (SERVER_OFFER_BILLING_CYCLES.includes(normalized as ServerOfferBillingCycle)
       ? (normalized as ServerOfferBillingCycle)
-      : "monthly");
+      : "monthly")
+  );
 }
 
 export function getServerOfferTermMonths(value: string | null | undefined) {
@@ -85,8 +95,8 @@ export function calculateMonthlyPriceUsd(input: {
   billingCycle: string | null | undefined;
   cnyPerUsd?: number;
 }) {
-  const amount = Number(input.amount);
-  if (!Number.isFinite(amount) || amount < 0) return null;
+  const amount = parseServerOfferAmount(input.amount);
+  if (amount === null) return null;
 
   const currency = input.currency?.trim().toUpperCase();
   if (!isSupportedServerOfferCurrency(currency)) return null;
@@ -98,4 +108,29 @@ export function calculateMonthlyPriceUsd(input: {
   const monthly = amountUsd / getServerOfferTermMonths(input.billingCycle);
 
   return Math.round(monthly * 10_000) / 10_000;
+}
+
+export function resolveMonthlyPriceUsd(input: {
+  monthlyPriceUsd?: string | number | null;
+  amount: string | number | null | undefined;
+  currency: string | null | undefined;
+  billingCycle: string | null | undefined;
+}) {
+  const storedMonthlyPrice = parseServerOfferAmount(input.monthlyPriceUsd);
+  if (storedMonthlyPrice !== null) return storedMonthlyPrice;
+
+  return calculateMonthlyPriceUsd(input);
+}
+
+export function formatServerOfferAmount(input: {
+  amount: string | number | null | undefined;
+  currency: string | null | undefined;
+}) {
+  const amount = parseServerOfferAmount(input.amount);
+  const currency = input.currency?.trim().toUpperCase();
+  if (amount === null || !isSupportedServerOfferCurrency(currency)) {
+    return null;
+  }
+
+  return `${currency === "CNY" ? "¥" : "$"}${amount.toFixed(2)}`;
 }

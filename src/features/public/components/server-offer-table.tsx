@@ -22,6 +22,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { isInternalHref, isSafePublicHref } from "@fwqgo/core/utils";
+import {
+  formatServerOfferAmount,
+  resolveMonthlyPriceUsd,
+} from "@fwqgo/core/server-offer-price";
 
 type Offer = {
   id: number;
@@ -50,20 +54,138 @@ type Offer = {
   createdAt?: Date | string | null;
 };
 
-const offerStatusLabels: Record<string, string> = {
-  in_stock: "有货",
-  out_of_stock: "没货",
-  restocking: "补货",
-  discontinued: "停售",
-  preorder: "预售",
-};
+type OfferLanguage = "zh" | "en";
 
-const billingCycleLabels: Record<string, string> = {
-  monthly: "月付",
-  quarterly: "季付",
-  semiannual: "半年",
-  yearly: "年付",
-};
+const tableCopy = {
+  zh: {
+    status: {
+      in_stock: "有货",
+      out_of_stock: "没货",
+      restocking: "补货",
+      discontinued: "停售",
+      preorder: "预售",
+    },
+    billingCycle: {
+      monthly: "月付",
+      quarterly: "季付",
+      semiannual: "半年",
+      yearly: "年付",
+    },
+    missingPrice: "待补充",
+    invalidPrice: "待确认",
+    unknownCycle: "周期待确认",
+    notChecked: "未核验",
+    buy: "购买",
+    source: "来源",
+    review: "测评",
+    promoCode: "优惠码",
+    price: "价格",
+    regionLine: "地区 / 线路",
+    regionMissing: "地区待补充",
+    lineMissing: "线路待补充",
+    dataStatus: "数据状态",
+    lastChecked: "最近核验",
+    validUntil: "有效期至",
+    specs: "配置",
+    specsMissing: "配置待补充",
+    emptyTitle: "暂无结构化套餐",
+    emptyDescription: "供应商官网采集或人工补充后，套餐会显示在这里。",
+    filterTitle: "筛选套餐",
+    showing: (shown: number, total: number) => `显示 ${shown} / ${total}`,
+    searchPlaceholder: "搜索套餐、地区、线路、优惠码",
+    provider: "商家",
+    allProviders: "全部商家",
+    statusFilter: "状态",
+    allStatuses: "全部状态",
+    region: "地区",
+    allRegions: "全部地区",
+    line: "线路",
+    allLines: "全部线路",
+    sort: "排序",
+    priceAsc: "价格从低到高",
+    priceDesc: "价格从高到低",
+    latest: "最新优先",
+    promotion: "优惠码",
+    allPromotions: "全部优惠",
+    withPromotion: "有优惠码",
+    withoutPromotion: "无优惠码",
+    currentShowing: (shown: number, total: number) =>
+      `当前显示 ${shown} / ${total} 个套餐`,
+    noMatchTitle: "没有匹配的套餐",
+    noMatchDescription: "试试减少筛选条件，或改用地区、线路、商家关键词搜索。",
+    package: "套餐",
+    regionLineHeader: "地区/线路",
+    entry: "入口",
+    sortLabel: (value: string) => value,
+  },
+  en: {
+    status: {
+      in_stock: "In stock",
+      out_of_stock: "Out of stock",
+      restocking: "Restocking",
+      discontinued: "Discontinued",
+      preorder: "Pre-order",
+    },
+    billingCycle: {
+      monthly: "Monthly",
+      quarterly: "Quarterly",
+      semiannual: "Semiannual",
+      yearly: "Yearly",
+    },
+    missingPrice: "Not provided",
+    invalidPrice: "Needs review",
+    unknownCycle: "Billing cycle unavailable",
+    notChecked: "Not checked",
+    buy: "Buy",
+    source: "Source",
+    review: "Review",
+    promoCode: "Promo code",
+    price: "Price",
+    regionLine: "Region / route",
+    regionMissing: "Region unavailable",
+    lineMissing: "Route unavailable",
+    dataStatus: "Data status",
+    lastChecked: "Last checked",
+    validUntil: "Valid until",
+    specs: "Specifications",
+    specsMissing: "Specifications unavailable",
+    emptyTitle: "No structured offers",
+    emptyDescription:
+      "Offers will appear here after supplier collection or manual entry.",
+    filterTitle: "Filter offers",
+    showing: (shown: number, total: number) => `Showing ${shown} / ${total}`,
+    searchPlaceholder: "Search offers, regions, routes, or promo codes",
+    provider: "Provider",
+    allProviders: "All providers",
+    statusFilter: "Status",
+    allStatuses: "All statuses",
+    region: "Region",
+    allRegions: "All regions",
+    line: "Route",
+    allLines: "All routes",
+    sort: "Sort",
+    priceAsc: "Lowest price",
+    priceDesc: "Highest price",
+    latest: "Newest first",
+    promotion: "Promo code",
+    allPromotions: "All promotions",
+    withPromotion: "With promo code",
+    withoutPromotion: "Without promo code",
+    currentShowing: (shown: number, total: number) =>
+      `Showing ${shown} / ${total} offers`,
+    noMatchTitle: "No matching offers",
+    noMatchDescription:
+      "Try fewer filters, or search by provider, region, or route.",
+    package: "Offer",
+    regionLineHeader: "Region / route",
+    entry: "Actions",
+    sortLabel: (value: string) => value,
+  },
+} as const;
+
+function getTableCopy(language: OfferLanguage) {
+  return tableCopy[language];
+}
 
 function cleanText(value: string | null | undefined) {
   const trimmed = value?.trim();
@@ -83,33 +205,44 @@ function getStatusClassName(status: string) {
   return "border-border bg-muted text-muted-foreground hover:bg-muted";
 }
 
-function formatPrice(offer: Offer) {
+function formatPrice(offer: Offer, language: OfferLanguage) {
+  const copy = getTableCopy(language);
   const priceAmount = cleanText(offer.priceAmount);
-  if (!priceAmount) return "待补充";
+  if (!priceAmount) return copy.missingPrice;
   const amount = Number(priceAmount);
-  if (!Number.isFinite(amount) || amount < 0) return "待确认";
+  if (!Number.isFinite(amount) || amount < 0) return copy.invalidPrice;
 
-  const currency = offer.currency === "CNY" ? "¥" : "$";
+  const formattedAmount = formatServerOfferAmount({
+    amount,
+    currency: offer.currency,
+  });
+  if (!formattedAmount) return copy.invalidPrice;
   const cycle = offer.billingCycle
-    ? (billingCycleLabels[offer.billingCycle] ?? offer.billingCycle)
-    : "周期待确认";
-  return `${currency}${amount.toFixed(2)} / ${cycle}`;
+    ? (copy.billingCycle[offer.billingCycle as keyof typeof copy.billingCycle] ??
+      offer.billingCycle)
+    : copy.unknownCycle;
+  return `${formattedAmount} / ${cycle}`;
 }
 
-function formatShortDate(value: Date | string | null | undefined) {
-  if (!value) return "未核验";
+function formatShortDate(
+  value: Date | string | null | undefined,
+  language: OfferLanguage,
+) {
+  const copy = getTableCopy(language);
+  if (!value) return copy.notChecked;
   const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "未核验";
-  return date.toLocaleDateString("zh-CN", {
+  if (Number.isNaN(date.getTime())) return copy.notChecked;
+  return date.toLocaleDateString(language === "en" ? "en-US" : "zh-CN", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   });
 }
 
-function getOfferFreshnessLabel(offer: Offer) {
+function getOfferFreshnessLabel(offer: Offer, language: OfferLanguage) {
   return formatShortDate(
     offer.lastCheckedAt ?? offer.updatedAt ?? offer.createdAt ?? null,
+    language,
   );
 }
 
@@ -127,22 +260,26 @@ function specsText(offer: Offer) {
 }
 
 function priceSortValue(offer: Offer) {
-  const priceAmount = cleanText(offer.priceAmount);
-  if (!priceAmount) return Infinity;
-  const amount = Number(priceAmount);
-  if (!Number.isFinite(amount) || amount < 0) return Infinity;
+  return resolveMonthlyPriceUsd({
+    monthlyPriceUsd: offer.monthlyPriceUsd,
+    amount: offer.priceAmount,
+    currency: offer.currency,
+    billingCycle: offer.billingCycle,
+  });
+}
 
-  const usdAmount = offer.currency === "CNY" ? amount / 7.2 : amount;
-  const divisorMap: Record<string, number> = {
-    monthly: 1,
-    quarterly: 3,
-    semiannual: 6,
-    yearly: 12,
-  };
-  const divisor = offer.billingCycle
-    ? (divisorMap[offer.billingCycle] ?? 1)
-    : 1;
-  return usdAmount / divisor;
+function compareOfferPrice(
+  left: Offer,
+  right: Offer,
+  direction: "asc" | "desc",
+) {
+  const leftPrice = priceSortValue(left);
+  const rightPrice = priceSortValue(right);
+
+  if (leftPrice === null && rightPrice === null) return 0;
+  if (leftPrice === null) return 1;
+  if (rightPrice === null) return -1;
+  return direction === "desc" ? rightPrice - leftPrice : leftPrice - rightPrice;
 }
 
 function getUniqueValues(values: Array<string | null>) {
@@ -183,7 +320,14 @@ function SafeActionButton({
   );
 }
 
-function OfferActions({ offer }: { offer: Offer }) {
+function OfferActions({
+  offer,
+  language,
+}: {
+  offer: Offer;
+  language: OfferLanguage;
+}) {
+  const copy = getTableCopy(language);
   const hasAnyAction =
     isSafePublicHref(offer.purchaseUrl) ||
     isSafePublicHref(offer.articleUrl) ||
@@ -194,19 +338,19 @@ function OfferActions({ offer }: { offer: Offer }) {
       <SafeActionButton
         href={cleanText(offer.purchaseUrl)}
         icon={<ShoppingCart className="size-4" />}
-        label="购买"
+        label={copy.buy}
         rel="nofollow sponsored noopener noreferrer"
         variant="default"
       />
       <SafeActionButton
         href={cleanText(offer.articleUrl)}
         icon={<FileText className="size-4" />}
-        label="来源"
+        label={copy.source}
       />
       <SafeActionButton
         href={cleanText(offer.reviewUrl)}
         icon={<FlaskConical className="size-4" />}
-        label="测评"
+        label={copy.review}
       />
       {!hasAnyAction ? (
         <ArrowUpRight className="mt-2 size-4 text-muted-foreground" />
@@ -222,7 +366,14 @@ function collectionHref(
   return `/servers/${kind}/${encodeURIComponent(value)}`;
 }
 
-function OfferMobileCard({ offer }: { offer: Offer }) {
+function OfferMobileCard({
+  offer,
+  language,
+}: {
+  offer: Offer;
+  language: OfferLanguage;
+}) {
+  const copy = getTableCopy(language);
   const providerName = cleanText(offer.providerName);
   const productType = cleanText(offer.productType);
   const promoCode = cleanText(offer.promoCode);
@@ -237,7 +388,7 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
             {offer.title}
           </h2>
           <Badge variant="outline" className={getStatusClassName(offer.status)}>
-            {offerStatusLabels[offer.status] ?? offer.status}
+            {copy.status[offer.status as keyof typeof copy.status] ?? offer.status}
           </Badge>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -255,7 +406,7 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
           {productType ? <Badge variant="outline">{productType}</Badge> : null}
           {promoCode ? (
             <Badge className="bg-primary/10 font-mono text-primary hover:bg-primary/10">
-              优惠码 {promoCode}
+              {copy.promoCode} {promoCode}
             </Badge>
           ) : null}
         </div>
@@ -263,13 +414,13 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
 
       <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
         <div className="rounded-md bg-muted/30 p-3">
-          <p className="text-xs text-muted-foreground">价格</p>
+          <p className="text-xs text-muted-foreground">{copy.price}</p>
           <p className="mt-1 font-semibold text-foreground">
-            {formatPrice(offer)}
+            {formatPrice(offer, language)}
           </p>
         </div>
         <div className="rounded-md bg-muted/30 p-3">
-          <p className="text-xs text-muted-foreground">地区 / 线路</p>
+          <p className="text-xs text-muted-foreground">{copy.regionLine}</p>
           <p className="mt-1 font-medium text-foreground">
             {region ? (
               <Link
@@ -280,7 +431,7 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
                 {region}
               </Link>
             ) : (
-              "地区待补充"
+              copy.regionMissing
             )}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -293,36 +444,43 @@ function OfferMobileCard({ offer }: { offer: Offer }) {
                 {lineType}
               </Link>
             ) : (
-              "线路待补充"
+              copy.lineMissing
             )}
           </p>
         </div>
         <div className="rounded-md bg-muted/30 p-3 sm:col-span-2">
-          <p className="text-xs text-muted-foreground">数据状态</p>
+          <p className="text-xs text-muted-foreground">{copy.dataStatus}</p>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            最近核验：{getOfferFreshnessLabel(offer)}
+            {copy.lastChecked}: {getOfferFreshnessLabel(offer, language)}
             {offer.validUntil
-              ? ` · 有效期至：${formatShortDate(offer.validUntil)}`
+              ? ` · ${copy.validUntil}: ${formatShortDate(offer.validUntil, language)}`
               : ""}
           </p>
         </div>
       </div>
 
       <div className="rounded-md bg-muted/20 p-3">
-        <p className="text-xs text-muted-foreground">配置</p>
+        <p className="text-xs text-muted-foreground">{copy.specs}</p>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          {specsText(offer) || "配置待补充"}
+          {specsText(offer) || copy.specsMissing}
         </p>
       </div>
 
       <div className="border-t border-border/70 pt-3">
-        <OfferActions offer={offer} />
+        <OfferActions offer={offer} language={language} />
       </div>
     </article>
   );
 }
 
-export function ServerOfferTable({ offers }: { offers: Offer[] }) {
+export function ServerOfferTable({
+  offers,
+  language = "zh",
+}: {
+  offers: Offer[];
+  language?: OfferLanguage;
+}) {
+  const copy = getTableCopy(language);
   const [query, setQuery] = useState("");
   const [provider, setProvider] = useState("all");
   const [status, setStatus] = useState("all");
@@ -342,6 +500,12 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
     () => getUniqueValues(offers.map((offer) => offer.lineType)),
     [offers],
   );
+  const activeProvider =
+    provider === "all" || providers.includes(provider) ? provider : "all";
+  const activeRegion =
+    region === "all" || regions.includes(region) ? region : "all";
+  const activeLineType =
+    lineType === "all" || lineTypes.includes(lineType) ? lineType : "all";
   const filteredOffers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
@@ -362,35 +526,42 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
 
         return (
           (!normalizedQuery || haystack.includes(normalizedQuery)) &&
-          (provider === "all" || offer.providerName === provider) &&
+          (activeProvider === "all" || offer.providerName === activeProvider) &&
           (status === "all" || offer.status === status) &&
-          (region === "all" || offer.region === region) &&
-          (lineType === "all" || offer.lineType === lineType) &&
+          (activeRegion === "all" || offer.region === activeRegion) &&
+          (activeLineType === "all" || offer.lineType === activeLineType) &&
           (promoFilter === "all" ||
-            (promoFilter === "with" && Boolean(offer.promoCode)) ||
-            (promoFilter === "without" && !offer.promoCode))
+            (promoFilter === "with" && Boolean(cleanText(offer.promoCode))) ||
+            (promoFilter === "without" && !cleanText(offer.promoCode)))
         );
       })
       .sort((left, right) => {
         if (sortKey === "price-desc") {
-          return priceSortValue(right) - priceSortValue(left);
+          return compareOfferPrice(left, right, "desc");
         }
 
         if (sortKey === "new-desc") {
           return right.id - left.id;
         }
 
-        return priceSortValue(left) - priceSortValue(right);
+        return compareOfferPrice(left, right, "asc");
       });
-  }, [lineType, offers, promoFilter, provider, query, region, sortKey, status]);
+  }, [
+    activeLineType,
+    activeProvider,
+    activeRegion,
+    offers,
+    promoFilter,
+    query,
+    sortKey,
+    status,
+  ]);
 
   if (offers.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-muted/20 px-6 py-12 text-center">
-        <p className="text-sm font-medium text-foreground">暂无结构化套餐</p>
-        <p className="mt-2 text-sm text-muted-foreground">
-          可以先在后台从历史文章提取套餐，或手工补充数据。
-        </p>
+        <p className="text-sm font-medium text-foreground">{copy.emptyTitle}</p>
+        <p className="mt-2 text-sm text-muted-foreground">{copy.emptyDescription}</p>
       </div>
     );
   }
@@ -401,25 +572,25 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-medium text-foreground">
             <Filter className="size-4 text-primary" />
-            筛选套餐
+            {copy.filterTitle}
           </div>
           <span className="text-xs text-muted-foreground">
-            显示 {filteredOffers.length} / {offers.length}
+            {copy.showing(filteredOffers.length, offers.length)}
           </span>
         </div>
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_145px_145px_145px_145px_145px_145px]">
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索套餐、地区、线路、优惠码"
+            placeholder={copy.searchPlaceholder}
             className="min-h-11 md:col-span-2 xl:col-span-1"
           />
-          <Select value={provider} onValueChange={setProvider}>
+          <Select value={activeProvider} onValueChange={setProvider}>
             <SelectTrigger className="min-h-11">
-              <SelectValue placeholder="商家" />
+              <SelectValue placeholder={copy.provider} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部商家</SelectItem>
+              <SelectItem value="all">{copy.allProviders}</SelectItem>
               {providers.map((item) => (
                 <SelectItem key={item} value={item}>
                   {item}
@@ -429,23 +600,23 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
           </Select>
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger className="min-h-11">
-              <SelectValue placeholder="状态" />
+              <SelectValue placeholder={copy.statusFilter} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部状态</SelectItem>
-              {Object.entries(offerStatusLabels).map(([key, label]) => (
+              <SelectItem value="all">{copy.allStatuses}</SelectItem>
+              {Object.entries(copy.status).map(([key, label]) => (
                 <SelectItem key={key} value={key}>
                   {label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Select value={region} onValueChange={setRegion}>
+          <Select value={activeRegion} onValueChange={setRegion}>
             <SelectTrigger className="min-h-11">
-              <SelectValue placeholder="地区" />
+              <SelectValue placeholder={copy.region} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部地区</SelectItem>
+              <SelectItem value="all">{copy.allRegions}</SelectItem>
               {regions.map((item) => (
                 <SelectItem key={item} value={item}>
                   {item}
@@ -453,12 +624,12 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
               ))}
             </SelectContent>
           </Select>
-          <Select value={lineType} onValueChange={setLineType}>
+          <Select value={activeLineType} onValueChange={setLineType}>
             <SelectTrigger className="min-h-11">
-              <SelectValue placeholder="线路" />
+              <SelectValue placeholder={copy.line} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部线路</SelectItem>
+              <SelectItem value="all">{copy.allLines}</SelectItem>
               {lineTypes.map((item) => (
                 <SelectItem key={item} value={item}>
                   {item}
@@ -468,49 +639,47 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
           </Select>
           <Select value={sortKey} onValueChange={setSortKey}>
             <SelectTrigger className="min-h-11">
-              <SelectValue placeholder="排序" />
+              <SelectValue placeholder={copy.sort} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="price-asc">价格从低到高</SelectItem>
-              <SelectItem value="price-desc">价格从高到低</SelectItem>
-              <SelectItem value="new-desc">最新优先</SelectItem>
+              <SelectItem value="price-asc">{copy.priceAsc}</SelectItem>
+              <SelectItem value="price-desc">{copy.priceDesc}</SelectItem>
+              <SelectItem value="new-desc">{copy.latest}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={promoFilter} onValueChange={setPromoFilter}>
             <SelectTrigger className="min-h-11">
-              <SelectValue placeholder="优惠码" />
+              <SelectValue placeholder={copy.promotion} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部优惠</SelectItem>
-              <SelectItem value="with">有优惠码</SelectItem>
-              <SelectItem value="without">无优惠码</SelectItem>
+              <SelectItem value="all">{copy.allPromotions}</SelectItem>
+              <SelectItem value="with">{copy.withPromotion}</SelectItem>
+              <SelectItem value="without">{copy.withoutPromotion}</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
         <span>
-          当前显示 {filteredOffers.length} / {offers.length} 个套餐
+          {copy.currentShowing(filteredOffers.length, offers.length)}
         </span>
         <span className="rounded-full bg-muted/40 px-3 py-1 text-xs">
           {sortKey === "price-asc"
-            ? "价格从低到高"
+            ? copy.priceAsc
             : sortKey === "price-desc"
-              ? "价格从高到低"
-              : "最新优先"}
+              ? copy.priceDesc
+              : copy.latest}
         </span>
       </div>
       {filteredOffers.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center">
-          <p className="text-sm font-medium text-foreground">没有匹配的套餐</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            试试减少筛选条件，或改用地区、线路、商家关键词搜索。
-          </p>
+          <p className="text-sm font-medium text-foreground">{copy.noMatchTitle}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{copy.noMatchDescription}</p>
         </div>
       ) : null}
       <div className="grid gap-3 md:hidden">
         {filteredOffers.map((offer) => (
-          <OfferMobileCard key={offer.id} offer={offer} />
+          <OfferMobileCard key={offer.id} offer={offer} language={language} />
         ))}
       </div>
 
@@ -518,12 +687,12 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
         <table className="w-full min-w-[920px] table-fixed text-[13px]">
           <thead className="border-b border-border/70 bg-muted/30 text-left text-xs uppercase text-muted-foreground">
             <tr>
-              <th className="w-[25%] px-3 py-3 font-medium">套餐</th>
-              <th className="w-[15%] px-3 py-3 font-medium">价格</th>
-              <th className="w-[14%] px-3 py-3 font-medium">地区/线路</th>
-              <th className="w-[24%] px-3 py-3 font-medium">配置</th>
-              <th className="w-[9%] px-3 py-3 font-medium">状态</th>
-              <th className="w-[13%] px-3 py-3 text-right font-medium">入口</th>
+              <th className="w-[25%] px-3 py-3 font-medium">{copy.package}</th>
+              <th className="w-[15%] px-3 py-3 font-medium">{copy.price}</th>
+              <th className="w-[14%] px-3 py-3 font-medium">{copy.regionLineHeader}</th>
+              <th className="w-[24%] px-3 py-3 font-medium">{copy.specs}</th>
+              <th className="w-[9%] px-3 py-3 font-medium">{copy.statusFilter}</th>
+              <th className="w-[13%] px-3 py-3 text-right font-medium">{copy.entry}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/70">
@@ -557,7 +726,7 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                 </td>
                 <td className="px-3 py-3">
                   <p className="font-semibold tabular-nums leading-5 text-foreground">
-                    {formatPrice(offer)}
+                    {formatPrice(offer, language)}
                   </p>
                   {offer.promoCode ? (
                     <p className="mt-2 text-xs">
@@ -567,7 +736,7 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                     </p>
                   ) : null}
                   <p className="mt-2 text-xs text-muted-foreground">
-                    核验：{getOfferFreshnessLabel(offer)}
+                    {copy.lastChecked}: {getOfferFreshnessLabel(offer, language)}
                   </p>
                 </td>
                 <td className="px-3 py-3">
@@ -581,7 +750,7 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                         {offer.region}
                       </Link>
                     ) : (
-                      "地区待补充"
+                      copy.regionMissing
                     )}
                   </p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -594,13 +763,13 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                         {offer.lineType}
                       </Link>
                     ) : (
-                      "线路待补充"
+                      copy.lineMissing
                     )}
                   </p>
                 </td>
                 <td className="px-3 py-3">
                   <p className="line-clamp-3 leading-5 text-muted-foreground">
-                    {specsText(offer) || "配置待补充"}
+                    {specsText(offer) || copy.specsMissing}
                   </p>
                 </td>
                 <td className="px-3 py-3">
@@ -608,11 +777,12 @@ export function ServerOfferTable({ offers }: { offers: Offer[] }) {
                     variant="outline"
                     className={getStatusClassName(offer.status)}
                   >
-                    {offerStatusLabels[offer.status] ?? offer.status}
+                    {copy.status[offer.status as keyof typeof copy.status] ??
+                      offer.status}
                   </Badge>
                 </td>
                 <td className="px-3 py-3">
-                  <OfferActions offer={offer} />
+                  <OfferActions offer={offer} language={language} />
                 </td>
               </tr>
             ))}

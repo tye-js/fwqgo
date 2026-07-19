@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import nextEnv from "@next/env";
 
 const appDir = dirname(fileURLToPath(import.meta.url));
-const projectRoot = resolve(appDir, "../..");
+const projectRoot = resolve(/* turbopackIgnore: true */ appDir, "../..");
 const { loadEnvConfig } = nextEnv;
 
 loadEnvConfig(
@@ -52,6 +52,8 @@ const config = {
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
   cacheComponents: true,
+  // Keep an explicit Turbopack config while the legacy Webpack dev fallback remains available.
+  turbopack: {},
   experimental: {
     optimizePackageImports: ["@next/font"],
     serverActions: {

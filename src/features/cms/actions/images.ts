@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { desc, or } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
+import { z } from "zod";
 
 import {
   auditAndRepairImageAssets,
@@ -29,6 +30,22 @@ function revalidateImageWorkbenches() {
   revalidatePath("/images/covers");
 }
 
+const imageMetadataSchema = z.object({
+  id: z.number().int().positive(),
+  imageType: z.enum([
+    "upload",
+    "ai_cover",
+    "ai_generated",
+    "provider",
+    "post_cover",
+  ]),
+  status: z.enum(["active", "archived", "missing"]),
+  altZh: z.string().trim().max(500).nullable().optional(),
+  altEn: z.string().trim().max(500).nullable().optional(),
+  sourceUrl: z.string().trim().max(2_000).nullable().optional(),
+  prompt: z.string().trim().max(30_000).nullable().optional(),
+});
+
 export async function getImageAssetPickerOptions(query = "") {
   await requireAdminSession();
   const normalizedQuery = query.trim().slice(0, 160);
@@ -46,7 +63,7 @@ export async function getImageAssetPickerOptions(query = "") {
       originalName: imageAssets.originalName,
     })
     .from(imageAssets)
-    .where(searchCondition)
+    .where(and(eq(imageAssets.status, "active"), searchCondition))
     .orderBy(desc(imageAssets.createdAt))
     .limit(80);
 
@@ -107,7 +124,7 @@ export async function replaceImageAssetFileAction(formData: FormData) {
   const id = Number(formData.get("id"));
   const file = formData.get("file");
 
-  if (!Number.isFinite(id) || !(file instanceof File)) {
+  if (!Number.isSafeInteger(id) || id <= 0 || !(file instanceof File)) {
     return { error: "参数无效" };
   }
 
@@ -150,15 +167,22 @@ export async function renameImageAssetFileAction(input: {
 
 export async function updateImageAssetMetadataAction(input: {
   id: number;
-  imageType?: string | null;
-  status?: string | null;
+  imageType: string;
+  status: string;
   altZh?: string | null;
   altEn?: string | null;
   sourceUrl?: string | null;
   prompt?: string | null;
 }) {
   await requireAdminSession();
-  const result = await updateImageAssetMetadata(input);
+  const parsed = imageMetadataSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message ?? "图片元数据参数无效",
+    };
+  }
+
+  const result = await updateImageAssetMetadata(parsed.data);
   revalidateImageWorkbenches();
   await notifyPublicWebCache("image.changed");
   return result;

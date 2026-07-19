@@ -2,7 +2,6 @@ import { db } from "@fwqgo/db";
 import { hash } from "bcryptjs";
 import { z } from "zod";
 import { users } from "@fwqgo/db/schema";
-import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { BoundedAttemptTracker } from "@fwqgo/core/bounded-attempt-tracker";
 import { getTrustedClientIp } from "@fwqgo/core/client-ip";
@@ -123,33 +122,28 @@ export async function POST(request: Request) {
 
     const { username, password } = body.data;
 
-    // 检查用户名是否已存在
-    const [existingUser] = await db
-      .select()
-      .from(users)
-      .where(eq(users.username, username))
-      .limit(1);
+    const hashedPassword = await hash(password, 12);
 
-    if (existingUser) {
+    const [createdUser] = await db
+      .insert(users)
+      .values({
+        id: randomUUID(),
+        username,
+        password: hashedPassword,
+        updatedAt: new Date(),
+      })
+      .onConflictDoNothing({ target: users.username })
+      .returning({ id: users.id });
+
+    if (!createdUser) {
       return respond(
         adminApiFailure("用户名已存在", {
-          status: 400,
+          status: 409,
           title: "注册失败",
           suggestion: "请换一个用户名后重试。",
         }),
       );
     }
-
-    // 密码加密
-    const hashedPassword = await hash(password, 12);
-
-    // 创建新用户
-    await db.insert(users).values({
-      id: randomUUID(),
-      username,
-      password: hashedPassword,
-      updatedAt: new Date(),
-    });
 
     structuredLog("info", "cms.auth.signup_succeeded", { requestId });
     return respond(adminApiSuccess({ created: true }));

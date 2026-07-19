@@ -585,9 +585,9 @@ SEO：
 建议验证命令：
 
 ```bash
-npm run typecheck
-./node_modules/.bin/eslint .
-SKIP_ENV_VALIDATION=1 npm run build
+bun run typecheck
+bun run lint
+SKIP_ENV_VALIDATION=1 bun run build
 ```
 
 ## B. CMS 后台设计信息（保留）
@@ -934,7 +934,7 @@ type AdminActionResult<T> =
 - 不新增 deploy-time side effect 到 `postinstall`。
 - 复杂 HTML、URL、Markdown 处理优先使用结构化 parser/helper，不用脆弱字符串替换。
 - 改动共享组件时要检查前后台共同影响。
-- 改动后台页面后至少跑 `npm run typecheck` 和 `npm run lint`；涉及跨应用路由、构建产物或共享组件时跑 `SKIP_ENV_VALIDATION=1 npm run build`。
+- 改动后台页面后至少跑 `bun run typecheck` 和 `bun run lint`；涉及跨应用路由、构建产物或共享组件时跑 `SKIP_ENV_VALIDATION=1 bun run build`。
 
 设计验收清单：
 

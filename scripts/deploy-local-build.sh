@@ -6,7 +6,7 @@ DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-$ROOT_DIR/.deploy.env}"
 
 usage() {
   cat <<'EOF'
-Usage: npm run deploy:local -- [--artifact-only] [--skip-checks]
+Usage: bun run deploy:local -- [--artifact-only] [--skip-checks]
 
 Builds the Next.js standalone release locally inside Docker Linux, uploads the
 standalone artifact, and quickly switches the PM2 release on the server.
@@ -109,7 +109,7 @@ ARTIFACT="$ROOT_DIR/.deploy/fwqgo-$RELEASE_ID.tar.gz"
 REMOTE_ARTIFACT="/tmp/fwqgo-$RELEASE_ID.tar.gz"
 
 require_cmd docker
-require_cmd npm
+require_cmd bun
 require_cmd rsync
 require_cmd tar
 
@@ -137,10 +137,10 @@ REMOTE="$DEPLOY_USER@$DEPLOY_HOST"
 
 if [[ "$SKIP_CHECKS" != "1" && "$RUN_CHECKS" == "1" ]]; then
   log "Running typecheck"
-  (cd "$ROOT_DIR" && npm run typecheck)
+  (cd "$ROOT_DIR" && bun run typecheck)
 
   log "Running lint"
-  (cd "$ROOT_DIR" && npm run lint)
+  (cd "$ROOT_DIR" && bun run lint)
 fi
 
 log "Preparing Docker build context $RELEASE_ID"
@@ -176,17 +176,17 @@ docker run --rm \
   -e HOME=/tmp \
   -e NEXT_TELEMETRY_DISABLED=1 \
   -e PUPPETEER_SKIP_DOWNLOAD=true \
-  -e npm_config_cache=/tmp/npm-cache \
+  -e BUN_INSTALL_CACHE_DIR=/tmp/bun-cache \
   -v "$STAGE_DIR:/workspace" \
   -w /workspace \
   "$DOCKER_IMAGE" \
-  bash -lc 'npm ci --include=optional && npm run build && mkdir -p .next-web/standalone/.next-web .next-cms/standalone/.next-cms && rm -rf .next-web/standalone/.next-web/static .next-web/standalone/public .next-cms/standalone/.next-cms/static .next-cms/standalone/public && cp -R .next-web/static .next-web/standalone/.next-web/static && cp -R .next-cms/static .next-cms/standalone/.next-cms/static && cp -R public .next-web/standalone/public && cp -R public .next-cms/standalone/public'
+  bash -lc 'export npm_config_prefix=/tmp/npm-global PATH="/tmp/npm-global/bin:$PATH"; npm install --global bun@1.3.14 && bun install --frozen-lockfile && bun run build && mkdir -p .deploy-runtime && cp "$(command -v bun)" .deploy-runtime/bun && mkdir -p .next-web/standalone/.next-web .next-cms/standalone/.next-cms && rm -rf .next-web/standalone/.next-web/static .next-web/standalone/public .next-cms/standalone/.next-cms/static .next-cms/standalone/public && cp -R .next-web/static .next-web/standalone/.next-web/static && cp -R .next-cms/static .next-cms/standalone/.next-cms/static && cp -R public .next-web/standalone/public && cp -R public .next-cms/standalone/public'
 
 [[ -f "$STAGE_DIR/.next-web/standalone/apps/web/server.js" ]] || fail "Docker build did not produce web standalone server.js"
 [[ -f "$STAGE_DIR/.next-cms/standalone/apps/cms/server.js" ]] || fail "Docker build did not produce cms standalone server.js"
 
 log "Packaging standalone release $RELEASE_ID"
-mkdir -p "$PAYLOAD_DIR/apps/web" "$PAYLOAD_DIR/apps/cms" "$PAYLOAD_DIR/scripts"
+mkdir -p "$PAYLOAD_DIR/apps/web" "$PAYLOAD_DIR/apps/cms" "$PAYLOAD_DIR/scripts" "$PAYLOAD_DIR/bin"
 rsync -a "$STAGE_DIR/.next-web/standalone/" "$PAYLOAD_DIR/"
 rsync -a "$STAGE_DIR/.next-cms/standalone/" "$PAYLOAD_DIR/"
 rm -rf "$PAYLOAD_DIR/apps/web/.next" "$PAYLOAD_DIR/apps/cms/.next"
@@ -194,6 +194,8 @@ ln -sfn "../../.next-web" "$PAYLOAD_DIR/apps/web/.next"
 ln -sfn "../../.next-cms" "$PAYLOAD_DIR/apps/cms/.next"
 cp -R "$ROOT_DIR/drizzle" "$PAYLOAD_DIR/drizzle"
 cp "$ROOT_DIR/scripts/migrate-prod.mjs" "$PAYLOAD_DIR/scripts/migrate-prod.mjs"
+cp "$STAGE_DIR/.deploy-runtime/bun" "$PAYLOAD_DIR/bin/bun"
+chmod 755 "$PAYLOAD_DIR/bin/bun"
 mkdir -p "$PAYLOAD_DIR/node_modules"
 cp -R "$STAGE_DIR/node_modules/drizzle-orm" "$STAGE_DIR/node_modules/postgres" "$PAYLOAD_DIR/node_modules/" 2>/dev/null || true
 cp "$STAGE_DIR/ecosystem.config.cjs" "$PAYLOAD_DIR/ecosystem.config.cjs"
@@ -275,12 +277,48 @@ start_release() {
   target_release_id="${resolved_release##*/}"
 
   if [[ -f "$target_release/apps/web/server.js" && -f "$target_release/apps/cms/server.js" ]]; then
-    RELEASE_ID="$target_release_id" WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
+    if [[ -x "$target_release/bin/bun" ]]; then
+      BUN_BIN="$target_release/bin/bun" RELEASE_ID="$target_release_id" WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
+    else
+      RELEASE_ID="$target_release_id" WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
+    fi
     return
   fi
 
   echo "Invalid standalone release: $target_release" >&2
   return 1
+}
+
+verify_bun_processes() {
+  local expected_bun="$1"
+  PM2_RUNTIME_JSON="$(pm2 jlist)" EXPECTED_BUN_BIN="$expected_bun" node - <<'NODE'
+const fs = require("node:fs");
+
+const expectedBun = fs.realpathSync(process.env.EXPECTED_BUN_BIN);
+const processes = JSON.parse(process.env.PM2_RUNTIME_JSON || "[]");
+
+for (const name of ["fwqgo-web", "fwqgo-cms"]) {
+  const matches = processes.filter((process) => process.name === name);
+  if (matches.length !== 1) {
+    throw new Error(`${name} expected one Bun process, found ${matches.length}`);
+  }
+
+  const environment = matches[0].pm2_env || {};
+  const interpreter = environment.exec_interpreter;
+  const actualInterpreter = interpreter ? fs.realpathSync(interpreter) : "";
+
+  if (actualInterpreter !== expectedBun) {
+    throw new Error(
+      `${name} interpreter is ${interpreter || "missing"}; expected ${expectedBun}`,
+    );
+  }
+  if (environment.exec_mode !== "fork_mode") {
+    throw new Error(
+      `${name} exec mode is ${environment.exec_mode || "missing"}; expected fork_mode`,
+    );
+  }
+}
+NODE
 }
 
 rollback_previous() {
@@ -312,6 +350,11 @@ mkdir -p "$release_dir"
 tar -xzf "$remote_artifact" -C "$release_dir"
 ln -sfn "$shared_dir/.env.production" "$release_dir/.env.production"
 
+[[ -x "$release_dir/bin/bun" ]] || {
+  echo "Artifact is missing executable Bun runtime: $release_dir/bin/bun" >&2
+  exit 1
+}
+
 [[ -f "$release_dir/apps/web/server.js" && -f "$release_dir/apps/cms/server.js" ]] || {
   echo "Artifact is missing web or cms standalone server.js" >&2
   exit 1
@@ -336,7 +379,7 @@ if [[ "$run_migrations" == "1" || "$run_migrations" == "true" ]]; then
     echo "pg_dump is not installed; skipping database backup before migrations." >&2
   fi
   echo "Running production database migrations on server..."
-  node "$release_dir/scripts/migrate-prod.mjs"
+  "$release_dir/bin/bun" "$release_dir/scripts/migrate-prod.mjs"
 fi
 
 ln -sfn "$release_dir" "$current_link"
@@ -352,6 +395,7 @@ if pm2 describe fwqgo-cms >/dev/null 2>&1; then
 fi
 
 start_release "$current_link"
+verify_bun_processes "$current_link/bin/bun"
 pm2 save
 
 read_env_value() {

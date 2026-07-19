@@ -9,10 +9,7 @@ import {
   SERVER_OFFER_BILLING_CYCLES,
   SERVER_OFFER_CURRENCIES,
 } from "@fwqgo/core/server-offer-price";
-import {
-  SERVER_OFFER_KINDS,
-  type ServerOfferKind,
-} from "@fwqgo/core/server-offer-kind";
+import { SERVER_OFFER_KINDS } from "@fwqgo/core/server-offer-kind";
 import {
   adminActionFailure,
   adminActionSuccess,
@@ -37,9 +34,20 @@ const nullableString = z.preprocess(
 );
 
 const nullablePrice = nullableString.refine(
-  (value) => value === null || Number.isFinite(Number(value)),
-  "价格必须是数字",
+  (value) =>
+    value === null || (Number.isFinite(Number(value)) && Number(value) >= 0),
+  "价格必须是大于或等于 0 的数字",
 );
+
+const nullableCurrency = z.preprocess((value) => {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return value.trim().toUpperCase();
+}, z.enum(SERVER_OFFER_CURRENCIES).nullable());
+
+const nullableBillingCycle = z.preprocess((value) => {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return value.trim().toLowerCase();
+}, z.enum(SERVER_OFFER_BILLING_CYCLES).nullable());
 
 const nullablePurchaseUrl = nullableString.refine(
   (value) =>
@@ -133,8 +141,8 @@ const updateOfferSchema = z.object({
   bandwidth: nullableString,
   traffic: nullableString,
   priceAmount: nullablePrice,
-  currency: nullableString,
-  billingCycle: nullableString,
+  currency: nullableCurrency,
+  billingCycle: nullableBillingCycle,
   region: nullableString,
   lineType: nullableString,
   status: z.enum(offerStatuses),
@@ -151,6 +159,25 @@ const updateOfferSchema = z.object({
   validUntil: nullableDate,
   prices: offerPricesSchema,
 });
+
+const bulkUpdateOfferSchema = z
+  .object({
+    ids: z.array(z.number().int().positive()).min(1).max(500),
+    offerKind: z.enum(SERVER_OFFER_KINDS).optional(),
+    status: z.enum(offerStatuses).optional(),
+    visible: z.boolean().optional(),
+    featured: z.boolean().optional(),
+    reviewStatus: z.enum(offerReviewStatuses).optional(),
+  })
+  .refine(
+    (value) =>
+      value.offerKind !== undefined ||
+      value.status !== undefined ||
+      value.visible !== undefined ||
+      value.featured !== undefined ||
+      value.reviewStatus !== undefined,
+    { message: "请选择至少一个要更新的字段" },
+  );
 
 function parseJsonField(value: FormDataEntryValue | null, label: string) {
   if (typeof value !== "string" || !value.trim()) return [];
@@ -361,34 +388,15 @@ export async function bulkUpdateServerOffersAction(input: {
 }) {
   try {
     await requireAdminSession();
-    const ids = input.ids.filter((id) => Number.isInteger(id) && id > 0);
-    if (ids.length === 0) {
-      return { error: "请先选择要更新的套餐" };
-    }
-
-    const status =
-      input.status &&
-      offerStatuses.includes(input.status as (typeof offerStatuses)[number])
-        ? (input.status as (typeof offerStatuses)[number])
-        : undefined;
-    const offerKind = SERVER_OFFER_KINDS.includes(
-      input.offerKind as ServerOfferKind,
-    )
-      ? (input.offerKind as ServerOfferKind)
-      : undefined;
+    const parsed = bulkUpdateOfferSchema.parse(input);
+    const ids = [...new Set(parsed.ids)];
     const result = await bulkUpdateServerOffers({
       ids,
-      offerKind,
-      status,
-      visible: input.visible,
-      featured: input.featured,
-      reviewStatus:
-        input.reviewStatus &&
-        offerReviewStatuses.includes(
-          input.reviewStatus as (typeof offerReviewStatuses)[number],
-        )
-          ? input.reviewStatus
-          : undefined,
+      offerKind: parsed.offerKind,
+      status: parsed.status,
+      visible: parsed.visible,
+      featured: parsed.featured,
+      reviewStatus: parsed.reviewStatus,
     });
 
     revalidateOfferPages();

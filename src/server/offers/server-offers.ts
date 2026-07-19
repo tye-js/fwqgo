@@ -1537,9 +1537,6 @@ export async function searchServerOffers(input: {
   query: string;
   limit?: number;
 }) {
-  "use cache";
-  tagCache(cacheTags.serverOffers);
-
   const query = input.query.trim();
   if (!query) return [];
 
@@ -1595,12 +1592,11 @@ export async function getServerOffersByKeywords(input: {
           publicPurchasableOfferBaseWhere(),
           or(
             ...keywords.flatMap((keyword) => {
-              const pattern = `%${keyword}%`;
               return [
-                ilike(serverOffers.title, pattern),
-                ilike(serverOffers.providerName, pattern),
-                ilike(serverOffers.region, pattern),
-                ilike(serverOffers.lineType, pattern),
+                ilikeContains(serverOffers.title, keyword),
+                ilikeContains(serverOffers.providerName, keyword),
+                ilikeContains(serverOffers.region, keyword),
+                ilikeContains(serverOffers.lineType, keyword),
               ];
             }),
           ),
@@ -1889,6 +1885,8 @@ export async function upsertServerOfferArticleRelation(input: {
   ]);
   if (!offer) throw new Error("服务器套餐不存在");
   if (!post) throw new Error("关联文章不存在");
+  const prefix = post.language === "en" ? "/en" : "";
+  const sourceUrl = `${prefix}/fwq/posts/${encodeURIComponent(post.slug)}`;
   const [existing] = await readDb
     .select({ id: serverOfferSources.id })
     .from(serverOfferSources)
@@ -1901,25 +1899,53 @@ export async function upsertServerOfferArticleRelation(input: {
       ),
     )
     .limit(1);
-  if (existing) return existing;
-  const prefix = post.language === "en" ? "/en" : "";
+  if (existing) {
+    const [updated] = await db
+      .update(serverOfferSources)
+      .set({ sourceUrl, updatedAt: new Date() })
+      .where(eq(serverOfferSources.id, existing.id))
+      .returning({ id: serverOfferSources.id });
+    if (!updated) throw new Error("文章关系更新失败");
+    revalidateSiteContent([cacheTags.serverOffers]);
+    await notifyPublicWebCache("offer.changed", {
+      topicSlugs: [...publicOfferTopicSlugs],
+    });
+    return updated;
+  }
   const [created] = await db
     .insert(serverOfferSources)
     .values({
       offerId: input.offerId,
       sourceType: "article",
       sourcePostId: input.postId,
-      sourceUrl: `${prefix}/fwq/posts/${post.slug}`,
+      sourceUrl,
       relationType: input.relationType,
       priority: input.relationType === "review" ? 20 : 10,
     })
+    .onConflictDoNothing()
     .returning({ id: serverOfferSources.id });
-  if (!created) throw new Error("文章关系创建失败");
+  const relation =
+    created ??
+    (
+      await db
+        .select({ id: serverOfferSources.id })
+        .from(serverOfferSources)
+        .where(
+          and(
+            eq(serverOfferSources.offerId, input.offerId),
+            eq(serverOfferSources.sourceType, "article"),
+            eq(serverOfferSources.sourcePostId, input.postId),
+            eq(serverOfferSources.relationType, input.relationType),
+          ),
+        )
+        .limit(1)
+    )[0];
+  if (!relation) throw new Error("文章关系创建失败");
   revalidateSiteContent([cacheTags.serverOffers]);
   await notifyPublicWebCache("offer.changed", {
     topicSlugs: [...publicOfferTopicSlugs],
   });
-  return created;
+  return relation;
 }
 
 export async function deleteServerOfferArticleRelation(sourceId: number) {

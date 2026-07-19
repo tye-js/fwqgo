@@ -6,6 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { ServerOfferTable } from "@/features/public/components/server-offer-table";
 import { offerTopics } from "@/server/offers/server-offers";
 import { jsonLdScriptContent, toAbsoluteHttpUrl } from "@fwqgo/core/utils";
+import {
+  formatServerOfferAmount,
+  isSupportedServerOfferCurrency,
+  parseServerOfferAmount,
+  resolveMonthlyPriceUsd,
+} from "@fwqgo/core/server-offer-price";
 
 type CollectionKind = "provider" | "region" | "line";
 
@@ -98,22 +104,20 @@ function formatDate(value: Date | string | null | undefined) {
 function formatMinPrice(offers: Offer[]) {
   const prices = offers
     .map((offer) => {
-      if (!offer.priceAmount) return null;
-      const value = Number(offer.priceAmount);
-      if (!Number.isFinite(value)) return null;
+      const formattedAmount = formatServerOfferAmount({
+        amount: offer.priceAmount,
+        currency: offer.currency,
+      });
+      const monthlySortValue = resolveMonthlyPriceUsd({
+        monthlyPriceUsd: offer.monthlyPriceUsd,
+        amount: offer.priceAmount,
+        currency: offer.currency,
+        billingCycle: offer.billingCycle,
+      });
+      if (!formattedAmount || monthlySortValue === null) return null;
       return {
-        value,
-        currency: offer.currency === "CNY" ? "¥" : "$",
-        monthlySortValue: Number.isFinite(Number(offer.monthlyPriceUsd))
-          ? Number(offer.monthlyPriceUsd)
-          : (offer.currency === "CNY" ? value / 7.2 : value) /
-            (offer.billingCycle === "yearly"
-              ? 12
-              : offer.billingCycle === "semiannual"
-                ? 6
-                : offer.billingCycle === "quarterly"
-                  ? 3
-                  : 1),
+        formattedAmount,
+        monthlySortValue,
       };
     })
     .filter((price): price is NonNullable<typeof price> => Boolean(price))
@@ -121,7 +125,7 @@ function formatMinPrice(offers: Offer[]) {
 
   const minPrice = prices[0];
   if (!minPrice) return "待补充";
-  return `${minPrice.currency}${minPrice.value.toFixed(2)} 起`;
+  return `${minPrice.formattedAmount} 起`;
 }
 
 function uniqueValues(values: Array<string | null>) {
@@ -153,35 +157,46 @@ function buildJsonLd(input: {
     description: input.description,
     url: input.canonicalUrl,
     numberOfItems: input.offers.length,
-    itemListElement: input.offers.slice(0, 50).map((offer, index) => ({
-      "@type": "ListItem",
-      position: index + 1,
-      url: toAbsoluteHttpUrl(offer.articleUrl, baseUrl) ?? input.canonicalUrl,
-      item: {
-        "@type": "Product",
-        name: offer.title,
-        brand: offer.providerName
+    itemListElement: input.offers.slice(0, 50).map((offer, index) => {
+      const purchaseUrl = toAbsoluteHttpUrl(offer.purchaseUrl, baseUrl);
+      const price = parseServerOfferAmount(offer.priceAmount);
+      const currency = offer.currency?.trim().toUpperCase();
+      const structuredOffer =
+        purchaseUrl &&
+        price !== null &&
+        isSupportedServerOfferCurrency(currency)
           ? {
-              "@type": "Brand",
-              name: offer.providerName,
+              "@type": "Offer",
+              url: purchaseUrl,
+              price: String(price),
+              priceCurrency: currency,
+              availability:
+                offer.status === "in_stock"
+                  ? "https://schema.org/InStock"
+                  : offer.status === "preorder"
+                    ? "https://schema.org/PreOrder"
+                    : "https://schema.org/OutOfStock",
             }
-          : undefined,
-        category: "VPS and Server Hosting",
-        offers: {
-          "@type": "Offer",
-          url:
-            toAbsoluteHttpUrl(offer.purchaseUrl, baseUrl) ?? input.canonicalUrl,
-          price: offer.priceAmount ? String(offer.priceAmount) : undefined,
-          priceCurrency: offer.currency ?? undefined,
-          availability:
-            offer.status === "in_stock"
-              ? "https://schema.org/InStock"
-              : offer.status === "preorder"
-                ? "https://schema.org/PreOrder"
-                : "https://schema.org/OutOfStock",
+          : undefined;
+
+      return {
+        "@type": "ListItem",
+        position: index + 1,
+        url: toAbsoluteHttpUrl(offer.articleUrl, baseUrl) ?? input.canonicalUrl,
+        item: {
+          "@type": "Product",
+          name: offer.title,
+          brand: offer.providerName
+            ? {
+                "@type": "Brand",
+                name: offer.providerName,
+              }
+            : undefined,
+          category: "VPS and Server Hosting",
+          offers: structuredOffer,
         },
-      },
-    })),
+      };
+    }),
   };
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",

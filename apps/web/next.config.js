@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import nextEnv from "@next/env";
 
 const appDir = dirname(fileURLToPath(import.meta.url));
-const projectRoot = resolve(appDir, "../..");
+const projectRoot = resolve(/* turbopackIgnore: true */ appDir, "../..");
 const { loadEnvConfig } = nextEnv;
 
 loadEnvConfig(

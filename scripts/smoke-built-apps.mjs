@@ -3,6 +3,7 @@ import { createServer } from "node:net";
 import path from "node:path";
 
 const root = process.cwd();
+const runtime = process.env.SMOKE_RUNTIME_BIN?.trim() ?? process.execPath;
 /** @type {import("node:child_process").ChildProcess[]} */
 const processes = [];
 /** @type {string[]} */
@@ -10,7 +11,7 @@ const output = [];
 
 /** @param {string} name @param {string} cwd @param {string} entry @param {number} port */
 function startServer(name, cwd, entry, port) {
-  const child = spawn(process.execPath, [entry], {
+  const child = spawn(runtime, [entry], {
     cwd,
     env: { ...process.env, HOSTNAME: "127.0.0.1", PORT: String(port) },
     stdio: ["ignore", "pipe", "pipe"],

@@ -20,7 +20,11 @@ import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { decodeSlug, parsePositiveInt } from "@fwqgo/core/utils";
+import {
+  decodeSlug,
+  jsonLdScriptContent,
+  parsePositiveInt,
+} from "@fwqgo/core/utils";
 import { getServerOffersByKeywords } from "@/server/offers/server-offers";
 
 function getSiteUrl() {
@@ -121,17 +125,42 @@ async function CategoryPageContent({
 
   if (postsError) return <div>Failed to load articles.</div>;
   if (!posts) notFound();
+  const pageDescription =
+    category.description ??
+    `${category.name} server deals, VPS reviews, and buying guides.`;
+  const pageUrl = `${getSiteUrl()}/en/fwq/${encodeURIComponent(category.slug)}/page/${pageNo}`;
+  const collectionJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    name: category.name,
+    description: pageDescription,
+    url: pageUrl,
+    inLanguage: "en",
+    mainEntity: {
+      "@type": "ItemList",
+      numberOfItems: posts.length,
+      itemListElement: posts.map((post, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        url: `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(post.slug)}`,
+        name: post.title,
+      })),
+    },
+  };
 
   return (
     <div className="grid gap-8 xl:grid-cols-[minmax(0,0.82fr)_320px]">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLdScriptContent(collectionJsonLd),
+        }}
+      />
       <div className="space-y-5">
         <PageCard
           kind="Category"
           name={category.name}
-          description={
-            category.description ??
-            `${category.name} server deals, VPS reviews, and buying guides.`
-          }
+          description={pageDescription}
           totalCount={totalCount ?? 0}
           pageNo={pageNo}
           language="en"

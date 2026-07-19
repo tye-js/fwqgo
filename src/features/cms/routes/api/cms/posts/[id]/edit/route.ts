@@ -1,4 +1,8 @@
 import { isUnauthorizedError, requireAdminSession } from "@fwqgo/auth/session";
+import {
+  readRequestTextWithLimit,
+  RequestBodyTooLargeError,
+} from "@fwqgo/core/bounded-request-body";
 import { connection } from "next/server";
 import { z } from "zod";
 
@@ -9,6 +13,8 @@ import {
 } from "@/features/cms/actions/post";
 import { adminApiFailure, adminApiSuccess } from "@/lib/admin-api-response";
 import { type TagMain } from "@/types";
+
+const MAX_POST_EDIT_BODY_BYTES = 3 * 1024 * 1024;
 
 const tagSchema = z.object({
   tag: z.object({
@@ -37,10 +43,13 @@ const payloadSchema = z.object({
   content: z.string().trim().min(1, "文章正文不能为空"),
   imgUrl: z.string().nullable().optional(),
   categoryId: z.number().int().positive("文章分类不正确"),
-  recommendTagName: z.string(),
-  keywords: z.string(),
-  oldTags: z.array(tagSchema),
-  newTags: z.array(tagSchema).min(1, "请添加标签"),
+  recommendTagName: z.string().max(160, "推荐标签不能超过 160 个字符"),
+  keywords: z.string().max(800, "关键词不能超过 800 个字符"),
+  oldTags: z.array(tagSchema).max(100, "原标签数量不能超过 100 个"),
+  newTags: z
+    .array(tagSchema)
+    .min(1, "请添加标签")
+    .max(100, "文章标签不能超过 100 个"),
 });
 
 function getErrorMessage(error: unknown) {
@@ -109,7 +118,30 @@ export async function POST(
       });
     }
 
-    const payload = payloadSchema.parse(await request.json());
+    let rawPayload: unknown;
+    try {
+      rawPayload = JSON.parse(
+        await readRequestTextWithLimit(request, MAX_POST_EDIT_BODY_BYTES),
+      );
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return adminApiFailure("文章保存请求超过 3 MB", {
+          status: 413,
+          title: "文章保存失败",
+          suggestion: "请压缩正文或减少内嵌数据后再保存。",
+        });
+      }
+      if (error instanceof SyntaxError) {
+        return adminApiFailure("文章保存请求不是有效 JSON", {
+          status: 400,
+          title: "文章保存失败",
+          suggestion: "请刷新编辑页后重新提交。",
+        });
+      }
+      throw error;
+    }
+
+    const payload = payloadSchema.parse(rawPayload);
     const contentResult = await updatePostContent({
       id: postId,
       description: payload.description,

@@ -209,7 +209,7 @@ async function SearchContent({ searchParams }: SearchPageProps) {
 
             <section className="space-y-4">
               <h3 className="text-xl font-semibold">{copy.offers}</h3>
-              <ServerOfferTable offers={offers} />
+              <ServerOfferTable offers={offers} language={language} />
             </section>
 
             <section className="space-y-4">

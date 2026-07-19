@@ -19,7 +19,8 @@ export function SafePostImage({
   sizes: string;
   priority?: boolean;
 }) {
-  const [failed, setFailed] = useState(false);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const failed = failedSrc === src;
 
   if (!isRenderableImageSrc(src) || failed) {
     return (
@@ -42,7 +43,7 @@ export function SafePostImage({
       fetchPriority={priority ? "high" : "auto"}
       quality={75}
       className="object-cover transition-transform duration-300 group-hover:scale-[1.025]"
-      onError={() => setFailed(true)}
+      onError={() => setFailedSrc(src)}
     />
   );
 }

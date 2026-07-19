@@ -52,31 +52,35 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "24"
-          cache: npm
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
 
       - name: Install dependencies
-        run: npm ci --include=optional
+        run: bun install --frozen-lockfile
 
       - name: Typecheck
-        run: npm run typecheck
+        run: bun run typecheck
 
       - name: Lint
-        run: npm run lint
+        run: bun run lint
 
       - name: Unit tests
-        run: npm test
+        run: bun run test
 
       - name: Verify deployment workflow
-        run: npm run verify:deploy
+        run: bun run verify:deploy
 
       - name: Verify migration manifest
-        run: npm run verify:migrations
+        run: bun run verify:migrations
 
       - name: Verify security boundaries
-        run: npm run verify:security
+        run: bun run verify:security
 
       - name: Verify public cache boundaries
-        run: npm run verify:cache
+        run: bun run verify:cache
 
       - name: Prepare cache revalidation secret
         shell: bash
@@ -121,7 +125,7 @@ jobs:
 
       - name: Build standalone
         run: |
-          npm run build
+          bun run build
           mkdir -p .next-web/standalone/.next-web .next-cms/standalone/.next-cms
           rm -rf .next-web/standalone/.next-web/static .next-web/standalone/public
           rm -rf .next-cms/standalone/.next-cms/static .next-cms/standalone/public
@@ -131,13 +135,13 @@ jobs:
           cp -R public .next-cms/standalone/public
 
       - name: Smoke test built applications
-        run: npm run smoke:built
+        run: SMOKE_RUNTIME_BIN="$(command -v bun)" bun run smoke:built
 
       - name: Package release
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p ".deploy/payload-$RELEASE_ID/apps/web" ".deploy/payload-$RELEASE_ID/apps/cms" ".deploy/payload-$RELEASE_ID/scripts"
+          mkdir -p ".deploy/payload-$RELEASE_ID/apps/web" ".deploy/payload-$RELEASE_ID/apps/cms" ".deploy/payload-$RELEASE_ID/scripts" ".deploy/payload-$RELEASE_ID/bin"
           rsync -a .next-web/standalone/ ".deploy/payload-$RELEASE_ID/"
           rsync -a .next-cms/standalone/ ".deploy/payload-$RELEASE_ID/"
           rm -rf ".deploy/payload-$RELEASE_ID/apps/web/.next" ".deploy/payload-$RELEASE_ID/apps/cms/.next"
@@ -147,6 +151,8 @@ jobs:
           cp scripts/migrate-prod.mjs ".deploy/payload-$RELEASE_ID/scripts/migrate-prod.mjs"
           cp scripts/migration-manifest.mjs ".deploy/payload-$RELEASE_ID/scripts/migration-manifest.mjs"
           cp scripts/merge-runtime-env.mjs ".deploy/payload-$RELEASE_ID/scripts/merge-runtime-env.mjs"
+          cp "$(command -v bun)" ".deploy/payload-$RELEASE_ID/bin/bun"
+          chmod 755 ".deploy/payload-$RELEASE_ID/bin/bun"
           mkdir -p ".deploy/payload-$RELEASE_ID/node_modules"
           cp -R node_modules/drizzle-orm node_modules/postgres ".deploy/payload-$RELEASE_ID/node_modules/"
           cp ecosystem.config.cjs ".deploy/payload-$RELEASE_ID/ecosystem.config.cjs"
@@ -238,7 +244,11 @@ jobs:
             fi
 
             if [[ -f "$target_release/apps/web/server.js" && -f "$target_release/apps/cms/server.js" ]]; then
-              RELEASE_ID="$target_release_id" WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
+              if [[ -x "$target_release/bin/bun" ]]; then
+                BUN_BIN="$target_release/bin/bun" RELEASE_ID="$target_release_id" WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
+              else
+                RELEASE_ID="$target_release_id" WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
+              fi
               return
             fi
 
@@ -249,6 +259,40 @@ jobs:
 
             echo "Invalid standalone release: $target_release" >&2
             return 1
+          }
+
+          verify_bun_processes() {
+            local expected_bun="$1"
+            PM2_RUNTIME_JSON="$(pm2 jlist)" EXPECTED_BUN_BIN="$expected_bun" node - <<'NODE'
+          const fs = require("node:fs");
+
+          const expectedBun = fs.realpathSync(process.env.EXPECTED_BUN_BIN);
+          const processes = JSON.parse(process.env.PM2_RUNTIME_JSON || "[]");
+
+          for (const name of ["fwqgo-web", "fwqgo-cms"]) {
+            const matches = processes.filter((process) => process.name === name);
+            if (matches.length !== 1) {
+              throw new Error(`${name} expected one Bun process, found ${matches.length}`);
+            }
+
+            const environment = matches[0].pm2_env || {};
+            const interpreter = environment.exec_interpreter;
+            const actualInterpreter = interpreter
+              ? fs.realpathSync(interpreter)
+              : "";
+
+            if (actualInterpreter !== expectedBun) {
+              throw new Error(
+                `${name} interpreter is ${interpreter || "missing"}; expected ${expectedBun}`,
+              );
+            }
+            if (environment.exec_mode !== "fork_mode") {
+              throw new Error(
+                `${name} exec mode is ${environment.exec_mode || "missing"}; expected fork_mode`,
+              );
+            }
+          }
+          NODE
           }
 
           rollback_previous() {
@@ -293,8 +337,13 @@ jobs:
           tar -xzf "$remote_artifact" -C "$release_dir"
           ln -sfn "$shared_dir/.env.production" "$release_dir/.env.production"
 
+          [[ -x "$release_dir/bin/bun" ]] || {
+            echo "Artifact is missing executable Bun runtime: $release_dir/bin/bun" >&2
+            exit 1
+          }
+
           deployment_stage="configure runtime environment"
-          node "$release_dir/scripts/merge-runtime-env.mjs" \
+          "$release_dir/bin/bun" "$release_dir/scripts/merge-runtime-env.mjs" \
             "$shared_dir/.env.production" \
             "$runtime_env_override"
           rm -f "$runtime_env_override"
@@ -325,7 +374,7 @@ jobs:
             fi
             deployment_stage="database migration"
             echo "Running production database migrations on server..."
-            node "$release_dir/scripts/migrate-prod.mjs"
+            "$release_dir/bin/bun" "$release_dir/scripts/migrate-prod.mjs"
           fi
 
           deployment_stage="switch release"
@@ -345,6 +394,7 @@ jobs:
           fi
 
           start_release "$current_link"
+          verify_bun_processes "$current_link/bin/bun"
           pm2 save
 
           read_env_value() {
