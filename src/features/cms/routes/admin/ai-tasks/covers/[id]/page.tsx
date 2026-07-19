@@ -88,6 +88,7 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
             status={task.status}
             canRetry={task.canRetry}
             canCancel={task.canCancel}
+            afterDeleteHref="/ai-tasks"
             size="default"
           />
           {task.post ? (

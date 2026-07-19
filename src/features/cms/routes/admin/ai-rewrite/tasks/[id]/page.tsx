@@ -727,6 +727,7 @@ export async function AiRewriteTaskDetailPageContent({
             canRetry={task.status === "failed" || task.status === "cancelled"}
             canCancel={task.status === "pending"}
             canResolve={task.status === "manual_required"}
+            afterDeleteHref={basePath}
             size="default"
           />
           {task.postSlug ? (

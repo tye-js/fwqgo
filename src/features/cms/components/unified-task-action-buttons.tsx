@@ -12,6 +12,7 @@ import {
 } from "@/features/cms/actions/ai-rewrite-task";
 import {
   cancelCoverGenerationTaskAction,
+  deleteCoverGenerationTaskAction,
   retryCoverGenerationTaskAction,
 } from "@/features/cms/actions/article-cover-image";
 import { retryProviderMonitorRunAction } from "@/features/cms/actions/provider-monitors";
@@ -84,6 +85,7 @@ export function UnifiedTaskActionButtons({
   canRetry,
   canCancel,
   canResolve = false,
+  afterDeleteHref,
   size = "sm",
 }: {
   type: UnifiedTaskActionType;
@@ -92,6 +94,7 @@ export function UnifiedTaskActionButtons({
   canRetry: boolean;
   canCancel: boolean;
   canResolve?: boolean;
+  afterDeleteHref?: string;
   size?: "default" | "sm";
 }) {
   const router = useRouter();
@@ -203,33 +206,39 @@ export function UnifiedTaskActionButtons({
   }
 
   function handleDelete() {
-    if (type !== "ai" || status === "running") return;
+    if ((type !== "ai" && type !== "cover") || status === "running") return;
 
     startTransition(async () => {
       try {
-        const result = await deleteAiRewriteTaskAction(taskId);
-        if (result.error) {
-          notifyError({
-            title: "AI 改写任务删除失败",
-            description: describeAdminResult([
-              `任务 ID ${taskId}`,
-              result.error,
-              "处理中任务需要等待结束后再删除",
-            ]),
+        const result =
+          type === "cover"
+            ? await deleteCoverGenerationTaskAction(taskId)
+            : await deleteAiRewriteTaskAction(taskId);
+        if ("error" in result && result.error) {
+          notifyActionError(result, {
+            title: `${taskLabel}删除失败`,
+            fallbackSuggestion: "处理中任务需要等待结束后再删除。",
           });
           return;
         }
 
         notifySuccess({
-          title: "AI 改写任务已删除",
+          title: `${taskLabel}已删除`,
           description: describeAdminResult([
             `任务 ID ${taskId}`,
-            result.data?.postId
-              ? "已生成的草稿文章保留，可继续在草稿箱编辑"
-              : "仅清理任务记录和步骤日志",
+            ("message" in result ? result.message : undefined) ??
+              (type === "cover"
+                ? "图片资产和文章封面保持不变"
+                : ("data" in result && result.data?.postId)
+                  ? "已生成的草稿文章保留，可继续在草稿箱编辑"
+                  : "仅清理任务记录和步骤日志"),
           ]),
         });
-        router.refresh();
+        if (afterDeleteHref) {
+          router.push(afterDeleteHref);
+        } else {
+          router.refresh();
+        }
       } catch (error) {
         notifyUnexpectedError("删除", error);
       }
@@ -274,7 +283,7 @@ export function UnifiedTaskActionButtons({
           {isPending ? "更新中" : "标记完成"}
         </Button>
       ) : null}
-      {type === "ai" && status !== "running" ? (
+      {(type === "ai" || type === "cover") && status !== "running" ? (
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
@@ -282,7 +291,7 @@ export function UnifiedTaskActionButtons({
               size={size}
               variant="outline"
               disabled={isPending}
-              aria-label={`删除 AI 改写任务 ${taskId}`}
+              aria-label={`删除${taskLabel} ${taskId}`}
             >
               <Trash2 className="size-4" />
               {isPending ? "处理中" : "删除"}
@@ -291,10 +300,12 @@ export function UnifiedTaskActionButtons({
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                删除 AI 改写任务 #{taskId}？
+                删除{taskLabel} #{taskId}？
               </AlertDialogTitle>
               <AlertDialogDescription>
-                只会删除任务记录和步骤日志，已生成的草稿文章会保留。任务删除后无法恢复。
+                {type === "cover"
+                  ? "只会删除任务记录，已生成的图片资产和文章封面会保留。任务删除后无法恢复。"
+                  : "只会删除任务记录和步骤日志，已生成的草稿文章会保留。任务删除后无法恢复。"}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

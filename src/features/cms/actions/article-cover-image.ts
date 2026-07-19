@@ -569,6 +569,77 @@ export async function cancelCoverGenerationTaskAction(taskId: number) {
   }
 }
 
+export async function deleteCoverGenerationTaskAction(taskId: number) {
+  try {
+    await requireAdminSession();
+
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return adminActionFailure(new Error("任务 ID 无效"), {
+        title: "删除封面生成任务失败",
+        suggestion: "请从任务中心重新打开任务后再删除。",
+      });
+    }
+
+    const [existingTask] = await db
+      .select({
+        id: imageCoverGenerationTasks.id,
+        postId: imageCoverGenerationTasks.postId,
+        assetId: imageCoverGenerationTasks.assetId,
+        status: imageCoverGenerationTasks.status,
+      })
+      .from(imageCoverGenerationTasks)
+      .where(eq(imageCoverGenerationTasks.id, taskId))
+      .limit(1);
+
+    if (!existingTask) {
+      return adminActionFailure(new Error("任务不存在或已被删除"), {
+        title: "删除封面生成任务失败",
+        suggestion: "请刷新任务中心确认最新状态。",
+      });
+    }
+
+    if (existingTask.status === "running") {
+      return adminActionFailure(new Error("任务正在生成封面，不能删除"), {
+        title: "删除封面生成任务失败",
+        suggestion: "请等待任务结束后再删除。",
+      });
+    }
+
+    const [deletedTask] = await db
+      .delete(imageCoverGenerationTasks)
+      .where(
+        and(
+          eq(imageCoverGenerationTasks.id, taskId),
+          eq(imageCoverGenerationTasks.status, existingTask.status),
+        ),
+      )
+      .returning({ id: imageCoverGenerationTasks.id });
+
+    if (!deletedTask) {
+      return adminActionFailure(new Error("任务状态已变化，未执行删除"), {
+        title: "删除封面生成任务失败",
+        suggestion: "请刷新任务中心确认最新状态后再操作。",
+      });
+    }
+
+    revalidateCoverGenerationTaskPaths(taskId);
+    return adminActionSuccess(
+      {
+        id: existingTask.id,
+        postId: existingTask.postId,
+        assetId: existingTask.assetId,
+      },
+      "封面生成任务已删除，图片资产和文章封面保持不变",
+    );
+  } catch (error) {
+    const readableError = formatCoverGenerationError(error);
+    return adminActionFailure(new Error(readableError.detail), {
+      title: "删除封面生成任务失败",
+      suggestion: "请刷新任务中心后重试。",
+    });
+  }
+}
+
 export async function getCoverGenerationBatchStatusAction(batchId: string) {
   try {
     await requireAdminSession();
