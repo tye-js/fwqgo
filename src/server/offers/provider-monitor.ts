@@ -43,11 +43,14 @@ import {
   hashProviderSourceResponse,
   parseProviderSourcePayload,
   prepareProviderOfferCandidates,
+  type ProviderOfferCandidate,
   validateProviderOfferCandidate,
 } from "@/server/offers/provider-source-parser";
+import { enrichWhmcsProductPrices } from "@/server/offers/whmcs-product-page";
 
 const MAX_MONITOR_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_MONITOR_ITEMS = 5_000;
+const MAX_WHMCS_PRODUCT_DETAILS = 200;
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error
@@ -251,10 +254,10 @@ export async function runProviderMonitor(
 
   try {
     const conditionalHeaders: Record<string, string> = {};
-    if (configUnchanged && monitor.etag) {
+    if (adapter !== "whmcs" && configUnchanged && monitor.etag) {
       conditionalHeaders["If-None-Match"] = monitor.etag;
     }
-    if (configUnchanged && monitor.lastModified) {
+    if (adapter !== "whmcs" && configUnchanged && monitor.lastModified) {
       conditionalHeaders["If-Modified-Since"] = monitor.lastModified;
     }
     const response = await fetchPublicHttpUrl(
@@ -291,12 +294,13 @@ export async function runProviderMonitor(
       ? hashProviderSourceResponse(text)
       : monitor.responseHash;
     const notModified =
-      response.status === 304 ||
-      Boolean(
-        configUnchanged &&
-        responseHash &&
-        responseHash === monitor.responseHash,
-      );
+      adapter !== "whmcs" &&
+      (response.status === 304 ||
+        Boolean(
+          configUnchanged &&
+          responseHash &&
+          responseHash === monitor.responseHash,
+        ));
 
     if (notModified) {
       const refreshed = await db
@@ -372,7 +376,7 @@ export async function runProviderMonitor(
       return summary;
     }
 
-    const candidates = parseProviderSourcePayload({
+    let candidates = parseProviderSourcePayload({
       adapter,
       body: text,
       config,
@@ -380,6 +384,38 @@ export async function runProviderMonitor(
     });
     if (candidates.length > MAX_MONITOR_ITEMS) {
       throw new Error(`供应商网站一次返回超过 ${MAX_MONITOR_ITEMS} 个套餐`);
+    }
+    if (adapter === "whmcs") {
+      if (candidates.length > MAX_WHMCS_PRODUCT_DETAILS) {
+        throw new Error(
+          `WHMCS 采集源一次最多读取 ${MAX_WHMCS_PRODUCT_DETAILS} 个产品配置页`,
+        );
+      }
+      const previousRows = await db
+        .select({
+          externalProductId: providerOfferCandidates.externalProductId,
+          normalizedData: providerOfferCandidates.normalizedData,
+        })
+        .from(providerOfferCandidates)
+        .where(eq(providerOfferCandidates.monitorId, monitor.id));
+      const previousCandidates = new Map(
+        previousRows.map((row) => [
+          row.externalProductId,
+          row.normalizedData as ProviderOfferCandidate,
+        ]),
+      );
+      const enrichment = await enrichWhmcsProductPrices({
+        candidates,
+        previousCandidates,
+        headers: config.headers,
+        timeoutMs: monitor.timeoutSeconds * 1_000,
+      });
+      candidates = enrichment.candidates;
+      for (const issue of enrichment.issues) {
+        console.warn(
+          `WHMCS 套餐 ${issue.externalProductId} 详情价格${issue.kind === "failed" ? "读取失败" : "不可用"}，已保留列表或历史价格：${issue.message}`,
+        );
+      }
     }
     if (candidates.length === 0) {
       const [existingOffer] = await db
@@ -963,19 +999,31 @@ export async function previewProviderMonitorSource(input: {
     MAX_MONITOR_RESPONSE_BYTES,
   );
   if (body === null) throw new Error("供应商响应超过 8 MB 限制");
-  const candidates = parseProviderSourcePayload({
+  const parsedCandidates = parseProviderSourcePayload({
     adapter: input.adapter,
     body,
     config: input.config,
     sourceUrl: input.endpointUrl,
   });
-  if (candidates.length > MAX_MONITOR_ITEMS) {
+  if (parsedCandidates.length > MAX_MONITOR_ITEMS) {
     throw new Error(`供应商网站一次返回超过 ${MAX_MONITOR_ITEMS} 个套餐`);
+  }
+  let candidates = parsedCandidates.slice(0, 20);
+  let detailIssues = 0;
+  if (input.adapter === "whmcs") {
+    const enrichment = await enrichWhmcsProductPrices({
+      candidates,
+      headers: input.config.headers,
+      timeoutMs: input.timeoutSeconds * 1_000,
+    });
+    candidates = enrichment.candidates;
+    detailIssues = enrichment.issues.length;
   }
   return {
     httpStatus: response.status,
-    total: candidates.length,
-    items: candidates.slice(0, 20).map((candidate) => {
+    total: parsedCandidates.length,
+    detailIssues,
+    items: candidates.map((candidate) => {
       const normalized = Object.fromEntries(
         Object.entries(candidate).filter(([key]) => key !== "raw"),
       ) as Omit<typeof candidate, "raw">;

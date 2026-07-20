@@ -24,6 +24,7 @@
     "links:convert": "tsx scripts/convert-post-links-to-short-slugs.ts",
     "posts:backfill-md-en": "tsx scripts/backfill-post-markdown-and-english.ts",
     "posts:backfill-en-taxonomy": "tsx scripts/backfill-english-taxonomy.ts",
+    "offers:backfill-whmcs-prices": "tsx scripts/backfill-whmcs-offer-prices.ts",
     "source:pull": "tsx scripts/pull-source-site-to-ai-drafts.ts",
     "dev": "bun run dev:web",
     "dev:web": "next dev apps/web --turbopack -p 3000",

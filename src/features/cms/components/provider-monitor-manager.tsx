@@ -145,6 +145,15 @@ const monitorStatusLabels: Record<string, string> = {
   failed: "失败",
 };
 
+const billingCycleLabels: Record<string, string> = {
+  monthly: "月付",
+  quarterly: "季付",
+  semiannual: "半年付",
+  yearly: "年付",
+  biennial: "两年付",
+  triennial: "三年付",
+};
+
 const tableCheckboxClassName =
   "relative flex size-11 items-center justify-center rounded-md border-0 shadow-none before:absolute before:left-1/2 before:top-1/2 before:size-4 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-sm before:border before:border-primary data-[state=checked]:bg-transparent data-[state=indeterminate]:bg-transparent data-[state=checked]:before:bg-primary data-[state=indeterminate]:before:bg-primary [&_svg]:relative [&_svg]:z-10";
 
@@ -564,10 +573,16 @@ function MonitorFormDialog({
                       <span className="font-mono text-muted-foreground">
                         {item.candidate.externalProductId || "无产品 ID"}
                       </span>
-                      <span className="text-muted-foreground">
-                        {item.candidate.prices[0]?.currency}{" "}
-                        {item.candidate.prices[0]?.amount}
-                      </span>
+                      {item.candidate.prices.map((price, priceIndex) => (
+                        <span
+                          key={`${price.billingCycle}-${price.currency}-${priceIndex}`}
+                          className="text-muted-foreground"
+                        >
+                          {billingCycleLabels[price.billingCycle] ??
+                            price.billingCycle}
+                          ：{price.currency} {price.amount}
+                        </span>
+                      ))}
                       {!item.quality.valid ? (
                         <span className="text-destructive">
                           {item.quality.reasons.join("；")}
@@ -1039,7 +1054,7 @@ export function ProviderMonitorManager({
               ) : null}
               {visibleCandidates.map((candidate) => {
                 const data = getCandidateData(candidate);
-                const price = data.prices?.[0];
+                const prices = data.prices ?? [];
                 const candidatePending = isPending(
                   getProviderCandidateMutationKey(candidate.id),
                 );
@@ -1076,8 +1091,20 @@ export function ProviderMonitorManager({
                       </p>
                     </TableCell>
                     <TableCell className="whitespace-nowrap tabular-nums">
-                      {price?.amount
-                        ? `${price.currency ?? "USD"} ${price.amount} / ${price.billingCycle ?? "monthly"}`
+                      {prices.length > 0
+                        ? prices.map((price, priceIndex) => (
+                            <p
+                              key={`${price.billingCycle}-${price.currency}-${priceIndex}`}
+                              className={priceIndex > 0 ? "mt-1" : undefined}
+                            >
+                              {billingCycleLabels[
+                                price.billingCycle ?? "monthly"
+                              ] ??
+                                price.billingCycle ??
+                                "月付"}
+                              ：{price.currency ?? "USD"} {price.amount ?? "-"}
+                            </p>
+                          ))
                         : "-"}
                     </TableCell>
                     <TableCell className="max-w-72">

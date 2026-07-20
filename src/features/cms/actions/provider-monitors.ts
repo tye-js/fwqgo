@@ -177,7 +177,9 @@ export async function previewProviderMonitorAction(
     });
     return adminActionSuccess(
       preview,
-      `预览完成，识别 ${preview.total} 个套餐`,
+      preview.detailIssues > 0
+        ? `预览完成，识别 ${preview.total} 个套餐；${preview.detailIssues} 个产品详情页暂时无法读取完整周期`
+        : `预览完成，识别 ${preview.total} 个套餐`,
     );
   } catch (error) {
     return adminActionFailure(error, {

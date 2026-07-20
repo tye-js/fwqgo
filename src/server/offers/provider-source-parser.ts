@@ -11,7 +11,10 @@ import type {
   ProviderMonitorConfig,
   ProviderSourceAdapter,
 } from "@fwqgo/core/provider-monitor-config";
-import { isSupportedServerOfferCurrency } from "@fwqgo/core/server-offer-price";
+import {
+  isSupportedServerOfferCurrency,
+  normalizeServerOfferBillingCycle,
+} from "@fwqgo/core/server-offer-price";
 
 type AvailabilityStatus = (typeof PROVIDER_AVAILABILITY_STATUSES)[number];
 
@@ -378,6 +381,64 @@ function parseHtmlCandidates(
       raw: { text: toText(item.text()).slice(0, 2_000) },
     };
   });
+}
+
+export function parseWhmcsBillingCyclePrices(input: {
+  body: string;
+  purchaseUrl: string;
+  fallbackCurrency?: string;
+  optionSelector?: string;
+}) {
+  const $ = load(input.body);
+  const selector =
+    input.optionSelector?.trim() ?? 'select[name="billingcycle"] option';
+  const unique = new Map<string, ProviderOfferPriceCandidate>();
+  const supportedWhmcsCycles = new Set([
+    "monthly",
+    "quarterly",
+    "semiannual",
+    "semiannually",
+    "yearly",
+    "annual",
+    "annually",
+    "biennial",
+    "biennially",
+    "triennial",
+    "triennially",
+  ]);
+
+  $(selector).each((_, element) => {
+    const option = $(element);
+    if (option.is(":disabled")) return;
+
+    const rawPrice = toText(option.text());
+    const amount = normalizeAmount(rawPrice);
+    if (!amount) return;
+
+    const currency = inferCurrency(rawPrice, input.fallbackCurrency ?? "USD");
+    const valueCycle = toText(option.attr("value"));
+    const rawCycle = valueCycle
+      ? valueCycle
+      : (option.attr("data-cycle") ?? rawPrice);
+    if (!supportedWhmcsCycles.has(rawCycle.trim().toLowerCase())) return;
+    const billingCycle = normalizeServerOfferBillingCycle(rawCycle);
+    const key = `${billingCycle}:${currency}`;
+    if (unique.has(key)) return;
+    const resolvedPurchaseUrl = resolveUrl(
+      input.purchaseUrl,
+      input.purchaseUrl,
+    );
+
+    unique.set(key, {
+      amount,
+      originalAmount: null,
+      currency,
+      billingCycle,
+      purchaseUrl: resolvedPurchaseUrl ? resolvedPurchaseUrl : null,
+    });
+  });
+
+  return [...unique.values()];
 }
 
 export function parseProviderSourcePayload(input: {
