@@ -1,16 +1,11 @@
 "use client";
 
 import { CheckCircle2 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useTransition } from "react";
 
 import { resolveManualRequiredAiRewriteTaskAction } from "@/features/cms/actions/ai-rewrite-task";
+import { useAdminMutation } from "@/features/cms/hooks/use-admin-mutation";
 import { Button } from "@/components/ui/button";
-import {
-  describeAdminResult,
-  notifyError,
-  notifySuccess,
-} from "@/lib/admin-toast";
+import { describeAdminResult } from "@/lib/admin-toast";
 
 export function AiRewriteTaskResolveButton({
   taskId,
@@ -19,33 +14,27 @@ export function AiRewriteTaskResolveButton({
   taskId: number;
   size?: "default" | "sm";
 }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const { mutate, isPending } = useAdminMutation();
+  const mutationKey = `ai-rewrite-task:${taskId}`;
+  const pending = isPending(mutationKey);
 
   const handleResolve = () => {
-    startTransition(async () => {
-      const result = await resolveManualRequiredAiRewriteTaskAction(taskId);
-
-      if (result.error) {
-        notifyError({
-          title: "任务状态更新失败",
-          description: describeAdminResult([
-            `任务 ID ${taskId}`,
-            result.error,
-            "请确认已完成草稿审核和返利链接处理",
-          ]),
-        });
-        return;
-      }
-
-      notifySuccess({
+    void mutate({
+      key: mutationKey,
+      action: () => resolveManualRequiredAiRewriteTaskAction(taskId),
+      pendingMessage: {
+        title: "正在更新任务状态...",
+        description: `任务 ID ${taskId}`,
+      },
+      successMessage: {
         title: "任务已标记为完成",
         description: describeAdminResult([
           `任务 ID ${taskId}`,
           "该任务将不再出现在需人工处理统计中",
         ]),
-      });
-      router.refresh();
+      },
+      errorTitle: "任务状态更新失败",
+      errorSuggestion: "请确认已完成草稿审核和返利链接处理。",
     });
   };
 
@@ -54,11 +43,11 @@ export function AiRewriteTaskResolveButton({
       type="button"
       size={size}
       variant="outline"
-      disabled={isPending}
+      disabled={pending}
       onClick={handleResolve}
     >
       <CheckCircle2 className="size-4" />
-      {isPending ? "更新中" : "标记完成"}
+      {pending ? "更新中" : "标记完成"}
     </Button>
   );
 }

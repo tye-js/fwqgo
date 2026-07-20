@@ -78,7 +78,7 @@ const footerCopy = {
     highlights: [
       { title: "套餐比价", href: "/servers" },
       { title: "优惠码", href: "/search?q=优惠码" },
-      { title: "最新文章", href: "/fwq/vps/page/1" },
+      { title: "最新文章", href: "/fwq/page/1" },
     ],
     topics: [
       {
@@ -140,7 +140,7 @@ const footerCopy = {
     highlights: [
       { title: "Offer Compare", href: "/servers" },
       { title: "Coupons", href: "/search?lang=en&q=coupon" },
-      { title: "Latest Articles", href: "/en/fwq/vps/page/1" },
+      { title: "Latest Articles", href: "/en/fwq/page/1" },
     ],
     topics: [
       {

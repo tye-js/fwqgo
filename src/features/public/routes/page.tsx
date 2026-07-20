@@ -504,7 +504,7 @@ async function HomeContent() {
               description="新发布的服务器优惠、测评和选购指南。"
             />
             <Button asChild variant="outline" size="sm" className="rounded-md">
-              <Link href="/fwq/vps/page/1" prefetch>
+              <Link href="/fwq/page/1" prefetch>
                 全部文章
                 <ArrowRight className="size-4" />
               </Link>

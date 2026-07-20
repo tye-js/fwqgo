@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import {
   Check,
   CheckCheck,
   Eye,
+  LoaderCircle,
   Pencil,
   Play,
   Plus,
@@ -23,6 +24,7 @@ import {
   runProviderMonitorNowAction,
   saveProviderMonitorAction,
 } from "@/features/cms/actions/provider-monitors";
+import { useAdminMutation } from "@/features/cms/hooks/use-admin-mutation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -146,6 +148,16 @@ const monitorStatusLabels: Record<string, string> = {
 const tableCheckboxClassName =
   "relative flex size-11 items-center justify-center rounded-md border-0 shadow-none before:absolute before:left-1/2 before:top-1/2 before:size-4 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-sm before:border before:border-primary data-[state=checked]:bg-transparent data-[state=indeterminate]:bg-transparent data-[state=checked]:before:bg-primary data-[state=indeterminate]:before:bg-primary [&_svg]:relative [&_svg]:z-10";
 
+const providerCandidateBatchMutationKey = "provider-candidates:batch-review";
+
+function getProviderMonitorMutationKey(monitorId: number) {
+  return `provider-monitor:${monitorId}`;
+}
+
+function getProviderCandidateMutationKey(candidateId: number) {
+  return `provider-candidate:${candidateId}`;
+}
+
 function formatDate(value: Date | null) {
   if (!value) return "-";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -182,7 +194,11 @@ function getCandidateData(row: CandidateRow) {
     storage?: string | null;
     region?: string | null;
     purchaseUrl?: string;
-    prices?: Array<{ amount?: string; currency?: string; billingCycle?: string }>;
+    prices?: Array<{
+      amount?: string;
+      currency?: string;
+      billingCycle?: string;
+    }>;
   };
 }
 
@@ -220,13 +236,11 @@ function MonitorFormDialog({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [pendingAction, setPendingAction] = useState<
-    "preview" | "save" | null
-  >(null);
-  const [enabled, setEnabled] = useState(monitor?.enabled ?? false);
-  const [autoPublish, setAutoPublish] = useState(
-    monitor?.autoPublish ?? false,
+  const [pendingAction, setPendingAction] = useState<"preview" | "save" | null>(
+    null,
   );
+  const [enabled, setEnabled] = useState(monitor?.enabled ?? false);
+  const [autoPublish, setAutoPublish] = useState(monitor?.autoPublish ?? false);
   const [adapter, setAdapter] = useState<MonitorAdapter>(
     (monitor?.adapter as MonitorAdapter | undefined) ?? "json",
   );
@@ -303,7 +317,9 @@ function MonitorFormDialog({
     setPendingAction("preview");
     startTransition(async () => {
       try {
-        const result = await previewProviderMonitorAction(actionInput(formData));
+        const result = await previewProviderMonitorAction(
+          actionInput(formData),
+        );
         setPreview(result);
         if (!result.success) {
           showFailure(result);
@@ -322,9 +338,12 @@ function MonitorFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>{monitor ? "编辑供应商采集源" : "新增供应商采集源"}</DialogTitle>
+          <DialogTitle>
+            {monitor ? "编辑供应商采集源" : "新增供应商采集源"}
+          </DialogTitle>
           <DialogDescription>
-            从供应商 JSON、HTML 或 WHMCS 产品页采集具体配置、价格和独立购买链接。
+            从供应商 JSON、HTML 或 WHMCS
+            产品页采集具体配置、价格和独立购买链接。
           </DialogDescription>
         </DialogHeader>
         <form action={submit} className="space-y-4">
@@ -359,7 +378,8 @@ function MonitorFormDialog({
                 <SelectContent>
                   {visibleProviders.map((provider) => (
                     <SelectItem key={provider.id} value={String(provider.id)}>
-                      {provider.name} · {getProviderDomain(provider.officialUrl)}
+                      {provider.name} ·{" "}
+                      {getProviderDomain(provider.officialUrl)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -425,7 +445,10 @@ function MonitorFormDialog({
             </div>
             <div className="space-y-2">
               <Label htmlFor="monitor-purpose">采集目的</Label>
-              <Select name="purpose" defaultValue={monitor?.purpose ?? "catalog"}>
+              <Select
+                name="purpose"
+                defaultValue={monitor?.purpose ?? "catalog"}
+              >
                 <SelectTrigger id="monitor-purpose" className="min-h-11">
                   <SelectValue />
                 </SelectTrigger>
@@ -491,7 +514,8 @@ function MonitorFormDialog({
               spellCheck={false}
             />
             <p className="text-xs leading-5 text-muted-foreground">
-              JSON 使用字段路径；HTML/WHMCS 使用 itemSelector 和 CSS 选择器。每个套餐必须有稳定产品 ID、价格、配置和独立购买链接。
+              JSON 使用字段路径；HTML/WHMCS 使用 itemSelector 和 CSS
+              选择器。每个套餐必须有稳定产品 ID、价格、配置和独立购买链接。
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -506,7 +530,9 @@ function MonitorFormDialog({
             </label>
             <label className="flex min-h-16 items-center justify-between gap-4 rounded-md border border-border/70 px-3">
               <span>
-                <span className="block text-sm font-medium">新套餐自动发布</span>
+                <span className="block text-sm font-medium">
+                  新套餐自动发布
+                </span>
                 <span className="block text-xs text-muted-foreground">
                   关闭时先进入待审核列表。
                 </span>
@@ -519,20 +545,33 @@ function MonitorFormDialog({
               {preview.success ? (
                 <div className="space-y-2">
                   <p className="font-medium text-foreground">
-                    HTTP {preview.data.httpStatus} · 识别 {preview.data.total} 个套餐 · 展示前 {preview.data.items.length} 个
+                    HTTP {preview.data.httpStatus} · 识别 {preview.data.total}{" "}
+                    个套餐 · 展示前 {preview.data.items.length} 个
                   </p>
                   {preview.data.items.map((item, index) => (
-                    <div key={`${item.candidate.externalProductId}-${index}`} className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-2">
-                      <Badge variant={item.quality.valid ? "outline" : "destructive"}>
+                    <div
+                      key={`${item.candidate.externalProductId}-${index}`}
+                      className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-2"
+                    >
+                      <Badge
+                        variant={item.quality.valid ? "outline" : "destructive"}
+                      >
                         {item.quality.valid ? "有效" : "需调整映射"}
                       </Badge>
-                      <span className="font-medium">{item.candidate.title || "未识别标题"}</span>
-                      <span className="font-mono text-muted-foreground">{item.candidate.externalProductId || "无产品 ID"}</span>
+                      <span className="font-medium">
+                        {item.candidate.title || "未识别标题"}
+                      </span>
+                      <span className="font-mono text-muted-foreground">
+                        {item.candidate.externalProductId || "无产品 ID"}
+                      </span>
                       <span className="text-muted-foreground">
-                        {item.candidate.prices[0]?.currency} {item.candidate.prices[0]?.amount}
+                        {item.candidate.prices[0]?.currency}{" "}
+                        {item.candidate.prices[0]?.amount}
                       </span>
                       {!item.quality.valid ? (
-                        <span className="text-destructive">{item.quality.reasons.join("；")}</span>
+                        <span className="text-destructive">
+                          {item.quality.reasons.join("；")}
+                        </span>
                       ) : null}
                     </div>
                   ))}
@@ -588,28 +627,59 @@ export function ProviderMonitorManager({
   candidates: CandidateRow[];
   checks: CheckRow[];
 }) {
-  const router = useRouter();
   const [editing, setEditing] = useState<Monitor | null>(null);
   const [editorVersion, setEditorVersion] = useState(0);
   const [deleting, setDeleting] = useState<Monitor | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedCandidateIds, setSelectedCandidateIds] = useState<number[]>([]);
-  const [batchDecision, setBatchDecision] = useState<"accept" | "reject" | null>(null);
-  const [isPending, startTransition] = useTransition();
-  const visibleCandidateIdSet = new Set(candidates.map((candidate) => candidate.id));
-  const visibleSelectedCandidateIds = selectedCandidateIds.filter((candidateId) =>
-    visibleCandidateIdSet.has(candidateId),
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<number[]>(
+    [],
+  );
+  const [batchDecision, setBatchDecision] = useState<
+    "accept" | "reject" | null
+  >(null);
+  const [visibleMonitors, removeOptimisticMonitor] = useOptimistic(
+    monitors,
+    (current, monitorId: number) =>
+      current.filter((monitor) => monitor.id !== monitorId),
+  );
+  const [visibleCandidates, removeOptimisticCandidates] = useOptimistic(
+    candidates,
+    (current, candidateIds: number[]) => {
+      const removedIds = new Set(candidateIds);
+      return current.filter((candidate) => !removedIds.has(candidate.id));
+    },
+  );
+  const { mutate, isPending } = useAdminMutation();
+  const visibleCandidateIdSet = new Set(
+    visibleCandidates.map((candidate) => candidate.id),
+  );
+  const visibleSelectedCandidateIds = selectedCandidateIds.filter(
+    (candidateId) => visibleCandidateIdSet.has(candidateId),
   );
   const selectedCandidateIdSet = new Set(visibleSelectedCandidateIds);
   const allCandidatesSelected =
-    candidates.length > 0 && candidates.every((candidate) => selectedCandidateIdSet.has(candidate.id));
+    visibleCandidates.length > 0 &&
+    visibleCandidates.every((candidate) =>
+      selectedCandidateIdSet.has(candidate.id),
+    );
+  const optimisticallyReviewedCandidateCount = Math.max(
+    0,
+    candidates.length - visibleCandidates.length,
+  );
   const totalPendingCandidates = Math.max(
-    candidates.length,
-    monitors.reduce(
-      (total, monitor) => total + monitor.pendingCandidateCount,
+    visibleCandidates.length,
+    Math.max(
       0,
+      monitors.reduce(
+        (total, monitor) => total + monitor.pendingCandidateCount,
+        0,
+      ) - optimisticallyReviewedCandidateCount,
     ),
   );
+  const batchReviewPending = isPending(providerCandidateBatchMutationKey);
+  const deletingPending = deleting
+    ? isPending(getProviderMonitorMutationKey(deleting.id))
+    : false;
 
   function openEditor(monitor: Monitor | null) {
     setEditing(monitor);
@@ -618,29 +688,37 @@ export function ProviderMonitorManager({
   }
 
   function runNow(monitor: Monitor) {
-    startTransition(async () => {
-      const result = await runProviderMonitorNowAction(monitor.id);
-      if (!result.success) {
-        showFailure(result);
-        return;
-      }
-      toast.success(result.message ?? "检测任务已排队", {
+    void mutate({
+      key: getProviderMonitorMutationKey(monitor.id),
+      action: () => runProviderMonitorNowAction(monitor.id),
+      pendingMessage: {
+        title: "正在加入采集队列...",
         description: `${monitor.providerName} · ${monitor.name}`,
-      });
-      router.refresh();
+      },
+      successMessage: (result) => ({
+        title: result.message ?? "检测任务已排队",
+        description: `${monitor.providerName} · ${monitor.name}`,
+      }),
+      errorTitle: "启动供应商采集失败",
+      errorSuggestion: "请确认采集源仍然存在且已启用，然后重新执行。",
     });
   }
 
   function remove(monitor: Monitor) {
-    startTransition(async () => {
-      const result = await deleteProviderMonitorAction(monitor.id);
-      if (!result.success) {
-        showFailure(result);
-        return;
-      }
-      toast.success(result.message ?? "监控配置已删除");
-      setDeleting(null);
-      router.refresh();
+    void mutate({
+      key: getProviderMonitorMutationKey(monitor.id),
+      action: () => deleteProviderMonitorAction(monitor.id),
+      pendingMessage: {
+        title: "正在删除采集源...",
+        description: `${monitor.providerName} · ${monitor.name}`,
+      },
+      successMessage: (result) => result.message ?? "供应商采集源已删除",
+      errorTitle: "删除供应商采集源失败",
+      errorSuggestion: "正在运行的采集需要等待本次执行结束后再删除。",
+      optimistic: {
+        apply: () => removeOptimisticMonitor(monitor.id),
+      },
+      onSuccess: () => setDeleting(null),
     });
   }
 
@@ -648,59 +726,80 @@ export function ProviderMonitorManager({
     candidate: CandidateRow,
     decision: "accept" | "reject",
   ) {
-    startTransition(async () => {
-      const result = await reviewProviderOfferCandidateAction({
-        candidateId: candidate.id,
-        decision,
-      });
-      if (!result.success) {
-        showFailure(result);
-        return;
-      }
-      toast.success(result.message ?? "候选状态已更新", {
+    void mutate({
+      key: getProviderCandidateMutationKey(candidate.id),
+      action: () =>
+        reviewProviderOfferCandidateAction({
+          candidateId: candidate.id,
+          decision,
+        }),
+      pendingMessage: {
+        title:
+          decision === "accept" ? "正在接受候选套餐..." : "正在拒绝候选套餐...",
         description: `${candidate.providerName} · ${candidate.externalProductId}`,
-      });
-      setSelectedCandidateIds((current) =>
-        current.filter((candidateId) => candidateId !== candidate.id),
-      );
-      router.refresh();
+      },
+      successMessage: (result) => ({
+        title: result.message ?? "候选状态已更新",
+        description: `${candidate.providerName} · ${candidate.externalProductId}`,
+      }),
+      errorTitle: decision === "accept" ? "接受候选失败" : "拒绝候选失败",
+      errorSuggestion: "请刷新页面确认候选状态后重试。",
+      optimistic: {
+        apply: () => removeOptimisticCandidates([candidate.id]),
+      },
+      onSuccess: () =>
+        setSelectedCandidateIds((current) =>
+          current.filter((candidateId) => candidateId !== candidate.id),
+        ),
     });
   }
 
   function toggleCandidate(candidateId: number, checked: boolean) {
     setSelectedCandidateIds((current) => {
-      if (checked) return current.includes(candidateId) ? current : [...current, candidateId];
+      if (checked)
+        return current.includes(candidateId)
+          ? current
+          : [...current, candidateId];
       return current.filter((id) => id !== candidateId);
     });
   }
 
   function toggleAllCandidates(checked: boolean) {
-    setSelectedCandidateIds(checked ? candidates.map((candidate) => candidate.id) : []);
+    setSelectedCandidateIds(
+      checked ? visibleCandidates.map((candidate) => candidate.id) : [],
+    );
   }
 
   function reviewSelectedCandidates() {
     if (!batchDecision || visibleSelectedCandidateIds.length === 0) return;
     const decision = batchDecision;
     const candidateIds = visibleSelectedCandidateIds;
-    startTransition(async () => {
-      const result = await reviewProviderOfferCandidatesAction({
-        candidateIds,
-        decision,
-        reason: decision === "reject" ? "批量拒绝" : undefined,
-      });
-      if (!result.success) {
-        showFailure(result);
-        return;
-      }
-      toast.success(result.message ?? "批量审核完成", {
-        description:
-          result.data.failed > 0
-            ? `${result.data.failed} 个候选未处理，可能已被其他管理员审核。`
-            : "选中的候选套餐已完成审核。",
-      });
-      setSelectedCandidateIds([]);
-      setBatchDecision(null);
-      router.refresh();
+    void mutate({
+      key: providerCandidateBatchMutationKey,
+      action: () =>
+        reviewProviderOfferCandidatesAction({
+          candidateIds,
+          decision,
+          reason: decision === "reject" ? "批量拒绝" : undefined,
+        }),
+      pendingMessage:
+        decision === "accept"
+          ? `正在批量接受 ${candidateIds.length} 个候选套餐...`
+          : `正在批量拒绝 ${candidateIds.length} 个候选套餐...`,
+      successMessage: (result) => ({
+        title: result.message ?? "批量审核完成",
+        description: "选中的候选套餐已完成审核，列表已同步最新状态。",
+      }),
+      errorTitle:
+        decision === "accept" ? "批量接受候选失败" : "批量拒绝候选失败",
+      errorSuggestion: "请刷新页面确认候选状态后重试。",
+      optimistic: {
+        apply: () => removeOptimisticCandidates(candidateIds),
+      },
+      onSuccess: () => {
+        setSelectedCandidateIds([]);
+        setBatchDecision(null);
+      },
     });
   }
 
@@ -726,94 +825,129 @@ export function ProviderMonitorManager({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {monitors.length === 0 ? (
+            {visibleMonitors.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell
+                  colSpan={6}
+                  className="py-10 text-center text-sm text-muted-foreground"
+                >
                   还没有供应商采集源。
                 </TableCell>
               </TableRow>
             ) : null}
-            {monitors.map((monitor) => (
-              <TableRow key={monitor.id} className="align-top">
-                <TableCell className="min-w-48">
-                  <p className="font-medium text-foreground">{monitor.providerName}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{monitor.name}</p>
-                  <Badge variant={monitor.enabled ? "secondary" : "outline"} className="mt-2">
-                    {monitor.enabled ? `每 ${monitor.intervalMinutes} 分钟` : "已停用"}
-                  </Badge>
-                  <Badge variant="outline" className="ml-2 mt-2">
-                    {purposeLabels[monitor.purpose] ?? monitor.purpose}
-                  </Badge>
-                </TableCell>
-                <TableCell className="max-w-80">
-                  <p className="truncate font-mono text-xs" title={monitor.endpointUrl}>
-                    {monitor.endpointUrl}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    超时 {monitor.timeoutSeconds} 秒 · {adapterLabels[monitor.adapter] ?? monitor.adapter}
-                  </p>
-                </TableCell>
-                <TableCell className="tabular-nums">
-                  <p>{monitor.mappedOfferCount} 个套餐</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {monitor.pendingCandidateCount} 个待审核
-                  </p>
-                </TableCell>
-                <TableCell className="min-w-56">
-                  <Badge
-                    variant={monitor.lastStatus === "failed" ? "destructive" : "outline"}
-                  >
-                    {monitorStatusLabels[monitor.lastStatus] ?? monitor.lastStatus}
-                  </Badge>
-                  {monitor.lastError ? (
-                    <p className="mt-2 line-clamp-3 text-xs leading-5 text-destructive" title={monitor.lastError}>
-                      {monitor.lastError}
+            {visibleMonitors.map((monitor) => {
+              const monitorPending = isPending(
+                getProviderMonitorMutationKey(monitor.id),
+              );
+              return (
+                <TableRow key={monitor.id} className="align-top">
+                  <TableCell className="min-w-48">
+                    <p className="font-medium text-foreground">
+                      {monitor.providerName}
                     </p>
-                  ) : null}
-                </TableCell>
-                <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                  <p>上次：{formatDate(monitor.lastRunAt)}</p>
-                  <p className="mt-1">下次：{formatDate(monitor.nextRunAt)}</p>
-                </TableCell>
-                <TableCell>
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      title="立即采集"
-                      aria-label={`立即采集 ${monitor.name}`}
-                      disabled={isPending || !monitor.enabled}
-                      onClick={() => runNow(monitor)}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {monitor.name}
+                    </p>
+                    <Badge
+                      variant={monitor.enabled ? "secondary" : "outline"}
+                      className="mt-2"
                     >
-                      <Play className="size-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      title="编辑采集源"
-                      aria-label={`编辑 ${monitor.name}`}
-                      disabled={isPending}
-                      onClick={() => openEditor(monitor)}
+                      {monitor.enabled
+                        ? `每 ${monitor.intervalMinutes} 分钟`
+                        : "已停用"}
+                    </Badge>
+                    <Badge variant="outline" className="ml-2 mt-2">
+                      {purposeLabels[monitor.purpose] ?? monitor.purpose}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-80">
+                    <p
+                      className="truncate font-mono text-xs"
+                      title={monitor.endpointUrl}
                     >
-                      <Pencil className="size-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      title="删除采集源"
-                      aria-label={`删除 ${monitor.name}`}
-                      disabled={isPending}
-                      onClick={() => setDeleting(monitor)}
+                      {monitor.endpointUrl}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      超时 {monitor.timeoutSeconds} 秒 ·{" "}
+                      {adapterLabels[monitor.adapter] ?? monitor.adapter}
+                    </p>
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    <p>{monitor.mappedOfferCount} 个套餐</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {monitor.pendingCandidateCount} 个待审核
+                    </p>
+                  </TableCell>
+                  <TableCell className="min-w-56">
+                    <Badge
+                      variant={
+                        monitor.lastStatus === "failed"
+                          ? "destructive"
+                          : "outline"
+                      }
                     >
-                      <Trash2 className="size-4 text-destructive" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+                      {monitorStatusLabels[monitor.lastStatus] ??
+                        monitor.lastStatus}
+                    </Badge>
+                    {monitor.lastError ? (
+                      <p
+                        className="mt-2 line-clamp-3 text-xs leading-5 text-destructive"
+                        title={monitor.lastError}
+                      >
+                        {monitor.lastError}
+                      </p>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                    <p>上次：{formatDate(monitor.lastRunAt)}</p>
+                    <p className="mt-1">
+                      下次：{formatDate(monitor.nextRunAt)}
+                    </p>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        title="立即采集"
+                        aria-label={`立即采集 ${monitor.name}`}
+                        disabled={monitorPending || !monitor.enabled}
+                        onClick={() => runNow(monitor)}
+                      >
+                        {monitorPending ? (
+                          <LoaderCircle className="size-4 animate-spin" />
+                        ) : (
+                          <Play className="size-4" />
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        title="编辑采集源"
+                        aria-label={`编辑 ${monitor.name}`}
+                        disabled={monitorPending}
+                        onClick={() => openEditor(monitor)}
+                      >
+                        <Pencil className="size-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        title="删除采集源"
+                        aria-label={`删除 ${monitor.name}`}
+                        disabled={monitorPending}
+                        onClick={() => setDeleting(monitor)}
+                      >
+                        <Trash2 className="size-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
@@ -821,7 +955,9 @@ export function ProviderMonitorManager({
       <div>
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold text-foreground">待审核套餐</h3>
+            <h3 className="text-sm font-semibold text-foreground">
+              待审核套餐
+            </h3>
             <p className="mt-1 text-xs text-muted-foreground">
               新识别套餐默认不会发布；确认配置、价格和购买链接后再接受。
             </p>
@@ -833,7 +969,7 @@ export function ProviderMonitorManager({
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={isPending}
+                  disabled={batchReviewPending}
                   onClick={() => setBatchDecision("reject")}
                 >
                   <X className="size-4 text-destructive" />
@@ -842,7 +978,7 @@ export function ProviderMonitorManager({
                 <Button
                   type="button"
                   size="sm"
-                  disabled={isPending}
+                  disabled={batchReviewPending}
                   onClick={() => setBatchDecision("accept")}
                 >
                   <CheckCheck className="size-4" />
@@ -850,9 +986,11 @@ export function ProviderMonitorManager({
                 </Button>
               </>
             ) : null}
-            <Badge variant={candidates.length > 0 ? "secondary" : "outline"}>
-              {candidates.length < totalPendingCandidates
-                ? `显示 ${candidates.length} / 共 ${totalPendingCandidates} 个待处理`
+            <Badge
+              variant={visibleCandidates.length > 0 ? "secondary" : "outline"}
+            >
+              {visibleCandidates.length < totalPendingCandidates
+                ? `显示 ${visibleCandidates.length} / 共 ${totalPendingCandidates} 个待处理`
                 : `${totalPendingCandidates} 个待处理`}
             </Badge>
           </div>
@@ -871,8 +1009,12 @@ export function ProviderMonitorManager({
                           ? "indeterminate"
                           : false
                     }
-                    disabled={isPending || candidates.length === 0}
-                    onCheckedChange={(checked) => toggleAllCandidates(checked === true)}
+                    disabled={
+                      batchReviewPending || visibleCandidates.length === 0
+                    }
+                    onCheckedChange={(checked) =>
+                      toggleAllCandidates(checked === true)
+                    }
                     aria-label="全选待审核套餐"
                   />
                 </TableHead>
@@ -885,23 +1027,29 @@ export function ProviderMonitorManager({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {candidates.length === 0 ? (
+              {visibleCandidates.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                  <TableCell
+                    colSpan={7}
+                    className="py-8 text-center text-sm text-muted-foreground"
+                  >
                     当前没有待审核套餐。
                   </TableCell>
                 </TableRow>
               ) : null}
-              {candidates.map((candidate) => {
+              {visibleCandidates.map((candidate) => {
                 const data = getCandidateData(candidate);
                 const price = data.prices?.[0];
+                const candidatePending = isPending(
+                  getProviderCandidateMutationKey(candidate.id),
+                );
                 return (
                   <TableRow key={candidate.id} className="align-top">
                     <TableCell className="w-12 p-0 align-top">
                       <Checkbox
                         className={tableCheckboxClassName}
                         checked={selectedCandidateIdSet.has(candidate.id)}
-                        disabled={isPending}
+                        disabled={candidatePending || batchReviewPending}
                         onCheckedChange={(checked) =>
                           toggleCandidate(candidate.id, checked === true)
                         }
@@ -913,10 +1061,14 @@ export function ProviderMonitorManager({
                       <p className="mt-1 font-mono text-xs text-muted-foreground">
                         {candidate.externalProductId}
                       </p>
-                      <p className="mt-1 text-xs text-muted-foreground">{candidate.monitorName}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {candidate.monitorName}
+                      </p>
                     </TableCell>
                     <TableCell className="min-w-64">
-                      <p className="font-medium">{data.title ?? "未命名套餐"}</p>
+                      <p className="font-medium">
+                        {data.title ?? "未命名套餐"}
+                      </p>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
                         {[data.cpu, data.memory, data.storage, data.region]
                           .filter(Boolean)
@@ -954,7 +1106,7 @@ export function ProviderMonitorManager({
                           variant="outline"
                           title="拒绝候选"
                           aria-label={`拒绝 ${data.title ?? candidate.externalProductId}`}
-                          disabled={isPending}
+                          disabled={candidatePending || batchReviewPending}
                           onClick={() => reviewCandidate(candidate, "reject")}
                         >
                           <X className="size-4 text-destructive" />
@@ -964,7 +1116,7 @@ export function ProviderMonitorManager({
                           size="icon"
                           title="接受并创建套餐"
                           aria-label={`接受 ${data.title ?? candidate.externalProductId}`}
-                          disabled={isPending}
+                          disabled={candidatePending || batchReviewPending}
                           onClick={() => reviewCandidate(candidate, "accept")}
                         >
                           <Check className="size-4" />
@@ -981,7 +1133,7 @@ export function ProviderMonitorManager({
         <AlertDialog
           open={batchDecision !== null}
           onOpenChange={(open) => {
-            if (!open && !isPending) setBatchDecision(null);
+            if (!open && !batchReviewPending) setBatchDecision(null);
           }}
         >
           <AlertDialogContent>
@@ -993,14 +1145,23 @@ export function ProviderMonitorManager({
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {batchDecision === "accept"
-                  ? `将处理选中的 ${visibleSelectedCandidateIds.length} 个套餐，并创建或更新前台套餐。`
-                  : `将拒绝选中的 ${visibleSelectedCandidateIds.length} 个套餐，后续不会自动发布。`}
+                  ? `将处理选中的 ${selectedCandidateIds.length} 个套餐，并创建或更新前台套餐。`
+                  : `将拒绝选中的 ${selectedCandidateIds.length} 个套餐，后续不会自动发布。`}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={isPending}>取消</AlertDialogCancel>
-              <AlertDialogAction disabled={isPending} onClick={reviewSelectedCandidates}>
-                {batchDecision === "accept" ? "确认接受" : "确认拒绝"}
+              <AlertDialogCancel disabled={batchReviewPending}>
+                取消
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={batchReviewPending}
+                onClick={reviewSelectedCandidates}
+              >
+                {batchReviewPending
+                  ? "处理中..."
+                  : batchDecision === "accept"
+                    ? "确认接受"
+                    : "确认拒绝"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -1009,7 +1170,9 @@ export function ProviderMonitorManager({
 
       <div>
         <div className="mb-3">
-          <h3 className="text-sm font-semibold text-foreground">采集运行历史</h3>
+          <h3 className="text-sm font-semibold text-foreground">
+            采集运行历史
+          </h3>
           <p className="mt-1 text-xs text-muted-foreground">
             每次抓取独立记录响应状态、入库结果、跳过原因数量和失败详情。
           </p>
@@ -1031,32 +1194,63 @@ export function ProviderMonitorManager({
             <TableBody>
               {runs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
+                  <TableCell
+                    colSpan={8}
+                    className="py-8 text-center text-sm text-muted-foreground"
+                  >
                     暂无采集运行记录。
                   </TableCell>
                 </TableRow>
               ) : null}
               {runs.map((run) => (
                 <TableRow key={run.id} className="align-top">
-                  <TableCell className="whitespace-nowrap text-xs">{formatDate(run.startedAt)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-xs">
+                    {formatDate(run.startedAt)}
+                  </TableCell>
                   <TableCell>
                     <p className="text-sm font-medium">{run.providerName}</p>
-                    <p className="text-xs text-muted-foreground">{run.monitorName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {run.monitorName}
+                    </p>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={run.status === "failed" ? "destructive" : run.status === "running" ? "secondary" : "outline"}>
-                      {run.status === "succeeded" ? "成功" : run.status === "running" ? "运行中" : "失败"}
+                    <Badge
+                      variant={
+                        run.status === "failed"
+                          ? "destructive"
+                          : run.status === "running"
+                            ? "secondary"
+                            : "outline"
+                      }
+                    >
+                      {run.status === "succeeded"
+                        ? "成功"
+                        : run.status === "running"
+                          ? "运行中"
+                          : "失败"}
                     </Badge>
-                    <p className="mt-1 text-xs text-muted-foreground">HTTP {run.httpStatus ?? "-"}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      HTTP {run.httpStatus ?? "-"}
+                    </p>
                   </TableCell>
                   <TableCell className="tabular-nums">{run.received}</TableCell>
-                  <TableCell className="tabular-nums">{run.created} / {run.pending}</TableCell>
-                  <TableCell className="tabular-nums">{run.updated} / {run.unchanged}</TableCell>
-                  <TableCell className="tabular-nums">{run.skipped} / {run.missing}</TableCell>
+                  <TableCell className="tabular-nums">
+                    {run.created} / {run.pending}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {run.updated} / {run.unchanged}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {run.skipped} / {run.missing}
+                  </TableCell>
                   <TableCell className="max-w-72">
                     {run.errorDetail ? (
-                      <p className="line-clamp-3 text-xs leading-5 text-destructive" title={run.errorDetail}>
-                        {run.errorTitle ? `${run.errorTitle}：` : ""}{run.errorDetail}
+                      <p
+                        className="line-clamp-3 text-xs leading-5 text-destructive"
+                        title={run.errorDetail}
+                      >
+                        {run.errorTitle ? `${run.errorTitle}：` : ""}
+                        {run.errorDetail}
                       </p>
                     ) : (
                       <span className="text-xs text-muted-foreground">-</span>
@@ -1071,7 +1265,9 @@ export function ProviderMonitorManager({
 
       <div>
         <div className="mb-3">
-          <h3 className="text-sm font-semibold text-foreground">套餐级检查记录</h3>
+          <h3 className="text-sm font-semibold text-foreground">
+            套餐级检查记录
+          </h3>
           <p className="mt-1 text-xs text-muted-foreground">
             保留已入库套餐的库存、价格与响应耗时，用于定位单个产品异常。
           </p>
@@ -1091,7 +1287,10 @@ export function ProviderMonitorManager({
             <TableBody>
               {checks.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                  <TableCell
+                    colSpan={6}
+                    className="py-8 text-center text-sm text-muted-foreground"
+                  >
                     暂无检测记录。
                   </TableCell>
                 </TableRow>
@@ -1102,11 +1301,19 @@ export function ProviderMonitorManager({
                     {formatDate(check.checkedAt)}
                   </TableCell>
                   <TableCell className="max-w-80">
-                    <p className="truncate text-sm font-medium">{check.offerTitle}</p>
-                    <p className="text-xs text-muted-foreground">{check.providerName ?? "未知厂商"}</p>
+                    <p className="truncate text-sm font-medium">
+                      {check.offerTitle}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {check.providerName ?? "未知厂商"}
+                    </p>
                   </TableCell>
                   <TableCell>
-                    {check.available === null ? "未知" : check.available ? "有货" : "无货"}
+                    {check.available === null
+                      ? "未知"
+                      : check.available
+                        ? "有货"
+                        : "无货"}
                   </TableCell>
                   <TableCell className="tabular-nums">
                     {check.priceAmount
@@ -1114,14 +1321,23 @@ export function ProviderMonitorManager({
                       : "-"}
                   </TableCell>
                   <TableCell className="tabular-nums">
-                    {check.responseTimeMs === null ? "-" : `${check.responseTimeMs} ms`}
+                    {check.responseTimeMs === null
+                      ? "-"
+                      : `${check.responseTimeMs} ms`}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={check.status === "ok" ? "outline" : "destructive"}>
+                    <Badge
+                      variant={
+                        check.status === "ok" ? "outline" : "destructive"
+                      }
+                    >
                       {check.status === "ok" ? "正常" : check.status}
                     </Badge>
                     {check.error ? (
-                      <p className="mt-1 max-w-72 truncate text-xs text-destructive" title={check.error}>
+                      <p
+                        className="mt-1 max-w-72 truncate text-xs text-destructive"
+                        title={check.error}
+                      >
                         {check.error}
                       </p>
                     ) : null}
@@ -1145,7 +1361,7 @@ export function ProviderMonitorManager({
       <AlertDialog
         open={Boolean(deleting)}
         onOpenChange={(open) => {
-          if (!open && !isPending) setDeleting(null);
+          if (!open && !deletingPending) setDeleting(null);
         }}
       >
         <AlertDialogContent>
@@ -1158,15 +1374,17 @@ export function ProviderMonitorManager({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isPending}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={deletingPending}>
+              取消
+            </AlertDialogCancel>
             <AlertDialogAction
-              disabled={isPending || !deleting}
+              disabled={deletingPending || !deleting}
               onClick={(event) => {
                 event.preventDefault();
                 if (deleting) remove(deleting);
               }}
             >
-              {isPending ? "删除中..." : "确认删除"}
+              {deletingPending ? "删除中..." : "确认删除"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -522,7 +522,7 @@ async function EnglishHomeContent() {
               description="Recently published English server deals, reviews, and buying notes."
             />
             <Button asChild variant="outline" size="sm" className="rounded-md">
-              <Link href="/en/fwq/vps/page/1" prefetch>
+              <Link href="/en/fwq/page/1" prefetch>
                 All articles
                 <ArrowRight className="size-4" />
               </Link>

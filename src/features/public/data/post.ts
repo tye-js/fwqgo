@@ -519,6 +519,49 @@ export async function getPostsWithTagsByCategoryId(
   }
 }
 
+export async function getPublishedPostCount(
+  language: PublicLanguage = "zh",
+) {
+  "use cache";
+  tagCache(cacheTags.posts);
+
+  const [result] = await readDb
+    .select({ count: count() })
+    .from(posts)
+    .where(publishedPostCondition(language));
+
+  return { data: result?.count ?? 0 };
+}
+
+export async function getPublishedPostsPage(
+  pageNo: number,
+  language: PublicLanguage = "zh",
+) {
+  "use cache";
+  tagCache(cacheTags.posts, cacheTags.tags);
+
+  try {
+    const postsData = await readDb
+      .select({
+        id: posts.id,
+        title: posts.title,
+        description: posts.description,
+        imgUrl: posts.imgUrl,
+        createdAt: posts.createdAt,
+        slug: posts.slug,
+      })
+      .from(posts)
+      .where(publishedPostCondition(language))
+      .orderBy(desc(posts.createdAt), desc(posts.id))
+      .offset((pageNo - 1) * 10)
+      .limit(10);
+
+    return { data: await attachTagsToPosts(postsData, language) };
+  } catch (error) {
+    return { error: "获取全部文章列表失败", message: error };
+  }
+}
+
 export async function getPostsByPostId(id: number) {
   "use cache";
   tagCache(cacheTags.posts);
