@@ -61,10 +61,10 @@
 - [ ] 返回顺序与 null 语义不变
 - [ ] 文章详情调用方无需修改
 - [ ] 不包含数据库迁移
-- [ ] `npm run lint` 通过
-- [ ] `npm run typecheck` 通过
+- [ ] `bun run lint` 通过
+- [ ] `bun run typecheck` 通过
 - [ ] `npm test` 通过
-- [ ] `SKIP_ENV_VALIDATION=1 npm run build` 通过
+- [ ] `SKIP_ENV_VALIDATION=1 bun run build` 通过
 
 ## 6. 风险与回退
 

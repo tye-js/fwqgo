@@ -13,9 +13,12 @@
 /prisma/db.sqlite
 /prisma/db.sqlite-journal
 db.sqlite
+/user.json
+/session.json
 
 # next.js
 /.next/
+/apps/*/.next/
 /.next-web/
 /.next-cms/
 /out/

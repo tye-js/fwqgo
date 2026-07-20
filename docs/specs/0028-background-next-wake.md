@@ -69,10 +69,10 @@
 - [ ] claim 与多进程并发安全语义不变
 - [ ] 不新增轮询、schema 或迁移
 - [ ] 调度回归测试通过
-- [ ] `npm run lint` 通过
-- [ ] `npm run typecheck` 通过
+- [ ] `bun run lint` 通过
+- [ ] `bun run typecheck` 通过
 - [ ] `npm test` 通过
-- [ ] `SKIP_ENV_VALIDATION=1 npm run build` 通过
+- [ ] `SKIP_ENV_VALIDATION=1 bun run build` 通过
 
 ## 8. 非目标
 

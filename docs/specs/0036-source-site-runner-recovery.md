@@ -70,10 +70,10 @@ worker。
 - [ ] Server Action 不再保存来源站配置闭包。
 - [ ] 启动恢复只注册数据库中既有任务，不创建新任务。
 - [ ] 固定 worker、库存监控和其他动态任务行为不变。
-- [ ] `npm run lint` 通过。
-- [ ] `npm run typecheck` 通过。
+- [ ] `bun run lint` 通过。
+- [ ] `bun run typecheck` 通过。
 - [ ] `npm test` 通过。
-- [ ] `SKIP_ENV_VALIDATION=1 npm run build` 通过。
+- [ ] `SKIP_ENV_VALIDATION=1 bun run build` 通过。
 
 ## 非目标
 

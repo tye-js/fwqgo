@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import {
   calculateMonthlyPriceUsd,
@@ -584,89 +584,109 @@ export async function markMissingProviderOffers(input: {
   return missing;
 }
 
+async function acceptProviderOfferCandidateInTransaction(
+  input: {
+    candidateId: number;
+    reviewerId: string;
+    skipUnavailable?: boolean;
+  },
+  database: ProviderOfferDatabase,
+) {
+  const [row] = await database
+    .select({ candidate: providerOfferCandidates })
+    .from(providerOfferCandidates)
+    .where(eq(providerOfferCandidates.id, input.candidateId))
+    .for("update")
+    .limit(1);
+  if (!row) {
+    if (input.skipUnavailable) return null;
+    throw new Error("供应商套餐候选不存在");
+  }
+  if (!canReviewProviderOfferCandidate(row.candidate.status)) {
+    if (input.skipUnavailable) return null;
+    throw new Error("候选套餐已处理，请刷新页面查看最新状态");
+  }
+
+  const [contextRow] = await database
+    .select({
+      monitorId: providerMonitors.id,
+      providerId: providerMonitors.providerId,
+      purpose: providerMonitors.purpose,
+      autoPublish: providerMonitors.autoPublish,
+      missingThreshold: providerMonitors.missingThreshold,
+      providerName: affServiceProviders.name,
+      providerSlug: affServiceProviders.slug,
+      affUrl: affServiceProviders.affUrl,
+      affParam: affServiceProviders.affParam,
+      affValue: affServiceProviders.affValue,
+      defaultPromoCode: affServiceProviders.defaultPromoCode,
+    })
+    .from(providerMonitors)
+    .innerJoin(
+      affServiceProviders,
+      eq(providerMonitors.providerId, affServiceProviders.id),
+    )
+    .where(eq(providerMonitors.id, row.candidate.monitorId))
+    .limit(1);
+  if (!contextRow) throw new Error("供应商采集源不存在");
+
+  const candidate = row.candidate
+    .normalizedData as unknown as ProviderOfferCandidate;
+  const [existingOffer] = await database
+    .select({ id: serverOffers.id })
+    .from(serverOffers)
+    .where(
+      and(
+        eq(serverOffers.providerId, contextRow.providerId),
+        eq(serverOffers.externalProductId, candidate.externalProductId),
+      ),
+    )
+    .limit(1);
+  const now = new Date();
+  const acceptedOfferId = await materializeOffer(
+    {
+      context: contextRow,
+      candidate,
+      sourceHash: row.candidate.sourceHash,
+      now,
+      existingOfferId:
+        row.candidate.offerId ?? existingOffer?.id ?? undefined,
+    },
+    database,
+  );
+  const [updated] = await database
+    .update(providerOfferCandidates)
+    .set({
+      status: "accepted",
+      offerId: acceptedOfferId,
+      reviewedBy: input.reviewerId,
+      reviewedAt: now,
+      rejectionReason: null,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(providerOfferCandidates.id, input.candidateId),
+        eq(providerOfferCandidates.status, "pending"),
+      ),
+    )
+    .returning({ id: providerOfferCandidates.id });
+  if (!updated) {
+    throw new Error("候选套餐状态已变化，请刷新页面后重试");
+  }
+  return acceptedOfferId;
+}
+
 export async function acceptProviderOfferCandidate(input: {
   candidateId: number;
   reviewerId: string;
 }) {
-  const offerId = await db.transaction(async (tx) => {
-    const [row] = await tx
-      .select({ candidate: providerOfferCandidates })
-      .from(providerOfferCandidates)
-      .where(eq(providerOfferCandidates.id, input.candidateId))
-      .for("update")
-      .limit(1);
-    if (!row) throw new Error("供应商套餐候选不存在");
-    if (!canReviewProviderOfferCandidate(row.candidate.status)) {
-      throw new Error("候选套餐已处理，请刷新页面查看最新状态");
-    }
-
-    const [contextRow] = await tx
-      .select({
-        monitorId: providerMonitors.id,
-        providerId: providerMonitors.providerId,
-        purpose: providerMonitors.purpose,
-        autoPublish: providerMonitors.autoPublish,
-        missingThreshold: providerMonitors.missingThreshold,
-        providerName: affServiceProviders.name,
-        providerSlug: affServiceProviders.slug,
-        affUrl: affServiceProviders.affUrl,
-        affParam: affServiceProviders.affParam,
-        affValue: affServiceProviders.affValue,
-        defaultPromoCode: affServiceProviders.defaultPromoCode,
-      })
-      .from(providerMonitors)
-      .innerJoin(
-        affServiceProviders,
-        eq(providerMonitors.providerId, affServiceProviders.id),
-      )
-      .where(eq(providerMonitors.id, row.candidate.monitorId))
-      .limit(1);
-    if (!contextRow) throw new Error("供应商采集源不存在");
-
-    const candidate = row.candidate
-      .normalizedData as unknown as ProviderOfferCandidate;
-    const [existingOffer] = await tx
-      .select({ id: serverOffers.id })
-      .from(serverOffers)
-      .where(
-        and(
-          eq(serverOffers.providerId, contextRow.providerId),
-          eq(serverOffers.externalProductId, candidate.externalProductId),
-        ),
-      )
-      .limit(1);
-    const now = new Date();
-    const acceptedOfferId = await materializeOffer(
-      {
-        context: contextRow,
-        candidate,
-        sourceHash: row.candidate.sourceHash,
-        now,
-        existingOfferId:
-          row.candidate.offerId ?? existingOffer?.id ?? undefined,
-      },
+  const offerId = await db.transaction((tx) =>
+    acceptProviderOfferCandidateInTransaction(
+      { candidateId: input.candidateId, reviewerId: input.reviewerId },
       tx,
-    );
-    const [updated] = await tx
-      .update(providerOfferCandidates)
-      .set({
-        status: "accepted",
-        offerId: acceptedOfferId,
-        reviewedBy: input.reviewerId,
-        reviewedAt: now,
-        rejectionReason: null,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(providerOfferCandidates.id, input.candidateId),
-          eq(providerOfferCandidates.status, "pending"),
-        ),
-      )
-      .returning({ id: providerOfferCandidates.id });
-    if (!updated) throw new Error("候选套餐状态已变化，请刷新页面后重试");
-    return acceptedOfferId;
-  });
+    ),
+  );
   await safelyNotifyProviderOfferChanges();
   return { offerId };
 }
@@ -696,4 +716,85 @@ export async function rejectProviderOfferCandidate(input: {
     throw new Error("候选套餐不存在或已处理，请刷新页面查看最新状态");
   }
   return updated;
+}
+
+export async function reviewProviderOfferCandidates(input: {
+  candidateIds: number[];
+  decision: "accept" | "reject";
+  reviewerId: string;
+  reason?: string;
+}) {
+  const candidateIds = [...new Set(input.candidateIds)].sort(
+    (left, right) => left - right,
+  );
+  if (candidateIds.length === 0) throw new Error("请选择需要审核的候选套餐");
+  if (candidateIds.length > 100) throw new Error("一次最多审核 100 个候选套餐");
+  if (candidateIds.some((candidateId) => !Number.isInteger(candidateId) || candidateId <= 0)) {
+    throw new Error("候选套餐 ID 无效");
+  }
+
+  const processedIds =
+    input.decision === "accept"
+      ? await db.transaction(async (tx) => {
+          const acceptedIds: number[] = [];
+          for (const candidateId of candidateIds) {
+            const offerId = await acceptProviderOfferCandidateInTransaction(
+              {
+                candidateId,
+                reviewerId: input.reviewerId,
+                skipUnavailable: true,
+              },
+              tx,
+            );
+            if (offerId !== null) acceptedIds.push(candidateId);
+          }
+          return acceptedIds;
+        })
+      : await db.transaction(async (tx) => {
+          const now = new Date();
+          const updated = await tx
+            .update(providerOfferCandidates)
+            .set({
+              status: "rejected",
+              reviewedBy: input.reviewerId,
+              reviewedAt: now,
+              rejectionReason: input.reason?.trim()
+                ? input.reason.trim()
+                : "批量拒绝",
+              updatedAt: now,
+            })
+            .where(
+              and(
+                inArray(providerOfferCandidates.id, candidateIds),
+                eq(providerOfferCandidates.status, "pending"),
+              ),
+            )
+            .returning({ id: providerOfferCandidates.id });
+          return updated.map((row) => row.id);
+        });
+
+  const processedIdSet = new Set(processedIds);
+  const results = candidateIds.map((candidateId) =>
+    processedIdSet.has(candidateId)
+      ? ({ candidateId, status: "processed" as const })
+      : ({
+          candidateId,
+          status: "failed" as const,
+          error: "候选套餐不存在或已被其他管理员处理",
+        }),
+  );
+  const processed = processedIds.length;
+  if (processed === 0) {
+    throw new Error("没有候选套餐可以处理，可能已被其他管理员审核");
+  }
+  if (input.decision === "accept") {
+    await safelyNotifyProviderOfferChanges();
+  }
+
+  return {
+    requested: candidateIds.length,
+    processed,
+    failed: results.length - processed,
+    results,
+  };
 }

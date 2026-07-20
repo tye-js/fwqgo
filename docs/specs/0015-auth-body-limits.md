@@ -76,11 +76,11 @@ helper 不依赖 Next.js、数据库或认证模块。
 - [ ] 登录长度与注册规则一致
 - [ ] 注册关闭行为不变
 - [ ] 新 helper 有单元测试
-- [ ] `npm run verify:security` 通过
-- [ ] `npm run lint` 通过
-- [ ] `npm run typecheck` 通过
+- [ ] `bun run verify:security` 通过
+- [ ] `bun run lint` 通过
+- [ ] `bun run typecheck` 通过
 - [ ] `npm test` 通过
-- [ ] `SKIP_ENV_VALIDATION=1 npm run build` 通过
+- [ ] `SKIP_ENV_VALIDATION=1 bun run build` 通过
 
 ## 7. 风险与回退
 

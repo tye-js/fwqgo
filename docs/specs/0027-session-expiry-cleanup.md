@@ -63,11 +63,11 @@ CMS 每次成功登录都会创建一条有效期 30 天的 `sessions` 记录。
 - [ ] `sessions_expires_idx` 同时存在于 schema 和迁移
 - [ ] 登录 Route Handler 不再直接插入 `sessions`
 - [ ] 会话生命周期回归测试通过
-- [ ] `npm run lint` 通过
-- [ ] `npm run typecheck` 通过
+- [ ] `bun run lint` 通过
+- [ ] `bun run typecheck` 通过
 - [ ] `npm test` 通过
-- [ ] `npm run verify:migrations` 通过
-- [ ] `SKIP_ENV_VALIDATION=1 npm run build` 通过
+- [ ] `bun run verify:migrations` 通过
+- [ ] `SKIP_ENV_VALIDATION=1 bun run build` 通过
 
 ## 8. 非目标
 

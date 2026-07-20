@@ -188,7 +188,6 @@ bun run db:generate       # schema 变更后生成迁移
 bun run db:migrate        # 本地执行版本化迁移
 bun run db:migrate:prod   # 使用生产迁移脚本
 bun run db:studio         # 打开 Drizzle Studio
-bun run db:seed           # 写入开发种子数据
 ```
 
 不要在生产环境直接使用 `db:push`。对已有数据库执行迁移前，必须同时检查实际表结构和 Drizzle 迁移记录；如果表或字段已经存在但缺少迁移基线，应先修复基线。

@@ -52,7 +52,6 @@ const config = {
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
   cacheComponents: true,
-  // Keep an explicit Turbopack config while the legacy Webpack dev fallback remains available.
   turbopack: {},
   experimental: {
     optimizePackageImports: ["@next/font"],
@@ -66,26 +65,6 @@ const config = {
         ? { exclude: ["error", "warn"] }
         : false,
   },
-  /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
-  webpack(config, { dev }) {
-    if (dev) {
-      config.watchOptions = {
-        ...(config.watchOptions ?? {}),
-        ignored: [
-          "**/.deploy/**",
-          "**/.git/**",
-          "**/.next/**",
-          "**/.next-cms/**",
-          "**/.next-web/**",
-          "**/node_modules/**",
-          "**/output/**",
-        ],
-      };
-    }
-
-    return config;
-  },
-  /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 };
 
 export default config;

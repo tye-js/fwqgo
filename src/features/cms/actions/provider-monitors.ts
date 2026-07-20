@@ -27,6 +27,7 @@ import {
 import {
   acceptProviderOfferCandidate,
   rejectProviderOfferCandidate,
+  reviewProviderOfferCandidates,
 } from "@/server/offers/provider-offer-sync";
 
 const monitorInputSchema = z.object({
@@ -46,6 +47,15 @@ const monitorInputSchema = z.object({
 
 const candidateReviewSchema = z.object({
   candidateId: z.number().int().positive("候选套餐 ID 无效"),
+  decision: z.enum(["accept", "reject"]),
+  reason: z.string().trim().max(500, "拒绝原因不能超过 500 个字符").optional(),
+});
+
+const candidateBatchReviewSchema = z.object({
+  candidateIds: z
+    .array(z.number().int().positive())
+    .min(1, "请至少选择一个候选套餐")
+    .max(100, "一次最多审核 100 个候选套餐"),
   decision: z.enum(["accept", "reject"]),
   reason: z.string().trim().max(500, "拒绝原因不能超过 500 个字符").optional(),
 });
@@ -206,6 +216,36 @@ export async function reviewProviderOfferCandidateAction(input: {
   } catch (error) {
     return adminActionFailure(error, {
       title: input.decision === "accept" ? "接受候选失败" : "拒绝候选失败",
+      suggestion: "请刷新页面确认候选状态后重试。",
+    });
+  }
+}
+
+export async function reviewProviderOfferCandidatesAction(input: {
+  candidateIds: number[];
+  decision: "accept" | "reject";
+  reason?: string;
+}) {
+  try {
+    const session = await requireAdminSession();
+    const parsed = candidateBatchReviewSchema.parse(input);
+    const result = await reviewProviderOfferCandidates({
+      ...parsed,
+      reviewerId: session.userId,
+    });
+    revalidatePath("/servers/monitor");
+    revalidatePath("/servers/manage");
+    revalidatePath("/ai-tasks");
+    return adminActionSuccess(
+      result,
+      parsed.decision === "accept"
+        ? `已批量接受 ${result.processed} 个候选套餐`
+        : `已批量拒绝 ${result.processed} 个候选套餐`,
+    );
+  } catch (error) {
+    return adminActionFailure(error, {
+      title:
+        input.decision === "accept" ? "批量接受候选失败" : "批量拒绝候选失败",
       suggestion: "请刷新页面确认候选状态后重试。",
     });
   }

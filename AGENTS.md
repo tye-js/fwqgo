@@ -40,7 +40,6 @@ Use Bun 1.3.14 for dependency installation, project scripts, and the production 
 bun run dev
 bun run dev:web
 bun run dev:cms
-bun run dev:webpack
 bun run build
 bun run start
 bun run preview
@@ -53,7 +52,6 @@ bun run db:migrate
 bun run db:migrate:prod
 bun run db:push
 bun run db:studio
-bun run db:seed
 ```
 
 Recommended verification after code changes:

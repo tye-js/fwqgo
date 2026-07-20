@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import {
   Check,
+  CheckCheck,
   Eye,
   Pencil,
   Play,
@@ -18,11 +19,13 @@ import {
   deleteProviderMonitorAction,
   previewProviderMonitorAction,
   reviewProviderOfferCandidateAction,
+  reviewProviderOfferCandidatesAction,
   runProviderMonitorNowAction,
   saveProviderMonitorAction,
 } from "@/features/cms/actions/provider-monitors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -139,6 +142,9 @@ const monitorStatusLabels: Record<string, string> = {
   succeeded: "成功",
   failed: "失败",
 };
+
+const tableCheckboxClassName =
+  "relative flex size-11 items-center justify-center rounded-md border-0 shadow-none before:absolute before:left-1/2 before:top-1/2 before:size-4 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-sm before:border before:border-primary data-[state=checked]:bg-transparent data-[state=indeterminate]:bg-transparent data-[state=checked]:before:bg-primary data-[state=indeterminate]:before:bg-primary [&_svg]:relative [&_svg]:z-10";
 
 function formatDate(value: Date | null) {
   if (!value) return "-";
@@ -587,7 +593,23 @@ export function ProviderMonitorManager({
   const [editorVersion, setEditorVersion] = useState(0);
   const [deleting, setDeleting] = useState<Monitor | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<number[]>([]);
+  const [batchDecision, setBatchDecision] = useState<"accept" | "reject" | null>(null);
   const [isPending, startTransition] = useTransition();
+  const visibleCandidateIdSet = new Set(candidates.map((candidate) => candidate.id));
+  const visibleSelectedCandidateIds = selectedCandidateIds.filter((candidateId) =>
+    visibleCandidateIdSet.has(candidateId),
+  );
+  const selectedCandidateIdSet = new Set(visibleSelectedCandidateIds);
+  const allCandidatesSelected =
+    candidates.length > 0 && candidates.every((candidate) => selectedCandidateIdSet.has(candidate.id));
+  const totalPendingCandidates = Math.max(
+    candidates.length,
+    monitors.reduce(
+      (total, monitor) => total + monitor.pendingCandidateCount,
+      0,
+    ),
+  );
 
   function openEditor(monitor: Monitor | null) {
     setEditing(monitor);
@@ -638,6 +660,46 @@ export function ProviderMonitorManager({
       toast.success(result.message ?? "候选状态已更新", {
         description: `${candidate.providerName} · ${candidate.externalProductId}`,
       });
+      setSelectedCandidateIds((current) =>
+        current.filter((candidateId) => candidateId !== candidate.id),
+      );
+      router.refresh();
+    });
+  }
+
+  function toggleCandidate(candidateId: number, checked: boolean) {
+    setSelectedCandidateIds((current) => {
+      if (checked) return current.includes(candidateId) ? current : [...current, candidateId];
+      return current.filter((id) => id !== candidateId);
+    });
+  }
+
+  function toggleAllCandidates(checked: boolean) {
+    setSelectedCandidateIds(checked ? candidates.map((candidate) => candidate.id) : []);
+  }
+
+  function reviewSelectedCandidates() {
+    if (!batchDecision || visibleSelectedCandidateIds.length === 0) return;
+    const decision = batchDecision;
+    const candidateIds = visibleSelectedCandidateIds;
+    startTransition(async () => {
+      const result = await reviewProviderOfferCandidatesAction({
+        candidateIds,
+        decision,
+        reason: decision === "reject" ? "批量拒绝" : undefined,
+      });
+      if (!result.success) {
+        showFailure(result);
+        return;
+      }
+      toast.success(result.message ?? "批量审核完成", {
+        description:
+          result.data.failed > 0
+            ? `${result.data.failed} 个候选未处理，可能已被其他管理员审核。`
+            : "选中的候选套餐已完成审核。",
+      });
+      setSelectedCandidateIds([]);
+      setBatchDecision(null);
       router.refresh();
     });
   }
@@ -757,21 +819,63 @@ export function ProviderMonitorManager({
       </div>
 
       <div>
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-foreground">待审核套餐</h3>
             <p className="mt-1 text-xs text-muted-foreground">
               新识别套餐默认不会发布；确认配置、价格和购买链接后再接受。
             </p>
           </div>
-          <Badge variant={candidates.length > 0 ? "secondary" : "outline"}>
-            {candidates.length} 个待处理
-          </Badge>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {visibleSelectedCandidateIds.length > 0 ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={isPending}
+                  onClick={() => setBatchDecision("reject")}
+                >
+                  <X className="size-4 text-destructive" />
+                  批量拒绝（{visibleSelectedCandidateIds.length}）
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isPending}
+                  onClick={() => setBatchDecision("accept")}
+                >
+                  <CheckCheck className="size-4" />
+                  批量接受（{visibleSelectedCandidateIds.length}）
+                </Button>
+              </>
+            ) : null}
+            <Badge variant={candidates.length > 0 ? "secondary" : "outline"}>
+              {candidates.length < totalPendingCandidates
+                ? `显示 ${candidates.length} / 共 ${totalPendingCandidates} 个待处理`
+                : `${totalPendingCandidates} 个待处理`}
+            </Badge>
+          </div>
         </div>
         <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
           <Table className="min-w-[980px]">
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12 p-0">
+                  <Checkbox
+                    className={tableCheckboxClassName}
+                    checked={
+                      allCandidatesSelected
+                        ? true
+                        : visibleSelectedCandidateIds.length > 0
+                          ? "indeterminate"
+                          : false
+                    }
+                    disabled={isPending || candidates.length === 0}
+                    onCheckedChange={(checked) => toggleAllCandidates(checked === true)}
+                    aria-label="全选待审核套餐"
+                  />
+                </TableHead>
                 <TableHead>供应商 / 产品 ID</TableHead>
                 <TableHead>套餐配置</TableHead>
                 <TableHead>价格</TableHead>
@@ -783,7 +887,7 @@ export function ProviderMonitorManager({
             <TableBody>
               {candidates.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
                     当前没有待审核套餐。
                   </TableCell>
                 </TableRow>
@@ -793,6 +897,17 @@ export function ProviderMonitorManager({
                 const price = data.prices?.[0];
                 return (
                   <TableRow key={candidate.id} className="align-top">
+                    <TableCell className="w-12 p-0 align-top">
+                      <Checkbox
+                        className={tableCheckboxClassName}
+                        checked={selectedCandidateIdSet.has(candidate.id)}
+                        disabled={isPending}
+                        onCheckedChange={(checked) =>
+                          toggleCandidate(candidate.id, checked === true)
+                        }
+                        aria-label={`选择 ${data.title ?? candidate.externalProductId}`}
+                      />
+                    </TableCell>
                     <TableCell className="min-w-48">
                       <p className="font-medium">{candidate.providerName}</p>
                       <p className="mt-1 font-mono text-xs text-muted-foreground">
@@ -862,6 +977,34 @@ export function ProviderMonitorManager({
             </TableBody>
           </Table>
         </div>
+
+        <AlertDialog
+          open={batchDecision !== null}
+          onOpenChange={(open) => {
+            if (!open && !isPending) setBatchDecision(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {batchDecision === "accept"
+                  ? "批量接受候选套餐？"
+                  : "批量拒绝候选套餐？"}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {batchDecision === "accept"
+                  ? `将处理选中的 ${visibleSelectedCandidateIds.length} 个套餐，并创建或更新前台套餐。`
+                  : `将拒绝选中的 ${visibleSelectedCandidateIds.length} 个套餐，后续不会自动发布。`}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isPending}>取消</AlertDialogCancel>
+              <AlertDialogAction disabled={isPending} onClick={reviewSelectedCandidates}>
+                {batchDecision === "accept" ? "确认接受" : "确认拒绝"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       <div>

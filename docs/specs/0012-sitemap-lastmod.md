@@ -55,10 +55,10 @@
 - [ ] 服务器 sitemap 删除 `new Date()` fallback
 - [ ] XML 其他字段和缓存头不变
 - [ ] 新增纯函数单元测试
-- [ ] `npm run lint` 通过
-- [ ] `npm run typecheck` 通过
+- [ ] `bun run lint` 通过
+- [ ] `bun run typecheck` 通过
 - [ ] `npm test` 通过
-- [ ] `SKIP_ENV_VALIDATION=1 npm run build` 通过
+- [ ] `SKIP_ENV_VALIDATION=1 bun run build` 通过
 
 ## 7. 风险与回退
 

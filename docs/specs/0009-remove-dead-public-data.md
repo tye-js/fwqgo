@@ -81,11 +81,11 @@
 - [ ] `findBestTagMatch` 保持可用
 - [ ] 缓存验证器只包含真实可达函数
 - [ ] 公开 Web/CMS 路由边界数量不变
-- [ ] `npm run lint` 通过
-- [ ] `npm run typecheck` 通过
+- [ ] `bun run lint` 通过
+- [ ] `bun run typecheck` 通过
 - [ ] `npm test` 通过
-- [ ] `npm run verify:cache` 通过
-- [ ] `SKIP_ENV_VALIDATION=1 npm run build` 通过
+- [ ] `bun run verify:cache` 通过
+- [ ] `SKIP_ENV_VALIDATION=1 bun run build` 通过
 
 ## 7. 风险与回退
 
