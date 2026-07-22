@@ -1,4 +1,3 @@
-import * as cheerio from "cheerio";
 import {
   and,
   asc,
@@ -7,13 +6,11 @@ import {
   ilike,
   inArray,
   isNotNull,
-  isNull,
   ne,
   or,
   sql,
 } from "drizzle-orm";
 
-import { slugify } from "@fwqgo/core/utils";
 import {
   getLatestDateValue,
   parseDateValue,
@@ -23,8 +20,11 @@ import {
   calculateMonthlyPriceUsd,
   getServerOfferTermMonths,
   normalizeServerOfferBillingCycle,
+  parseServerOfferBandwidthMbps,
+  parseServerOfferMemoryMb,
+  parseServerOfferStorageGb,
+  parseServerOfferTrafficGb,
 } from "@fwqgo/core/server-offer-price";
-import { renderArticleContentHtml } from "@fwqgo/core/content";
 import {
   isServerOfferKind,
   type ServerOfferKind,
@@ -45,7 +45,6 @@ import {
   serverRegions,
 } from "@fwqgo/db/schema";
 import { ilikeContains } from "@/server/db/search";
-import { readOutboundShortTarget } from "@/server/links/outbound-short-link";
 import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 
 const publicOfferTopicSlugs = [
@@ -184,489 +183,6 @@ export const offerTopics: Array<{
   },
 ];
 
-const pricePatterns = [
-  /(?:\$|USD|US\$)\s*([0-9]+(?:\.[0-9]+)?)/i,
-  /([0-9]+(?:\.[0-9]+)?)\s*(?:USD|US\$|美元|刀)(?:\b|\/|每)?/i,
-  /(?:￥|¥|CNY|RMB)\s*([0-9]+(?:\.[0-9]+)?)/i,
-  /([0-9]+(?:\.[0-9]+)?)\s*(?:元|CNY|RMB)(?:\b|\/|每)?/i,
-];
-const memoryPatterns = [
-  /(?:内存|RAM)\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*(GB|G|MB|M)\b/i,
-  /([0-9]+(?:\.[0-9]+)?)\s*(GB|G|MB|M)\s*(?:内存|RAM)\b/i,
-  /[0-9]+\s*(?:核|核心|Core|Cores|vCPU|CPU|C)(?=\b|[0-9\s/,+-])\s*[/,+-]?\s*([0-9]+(?:\.[0-9]+)?)\s*(GB|G|MB|M)\b/i,
-];
-const storagePatterns = [
-  /(?:硬盘|存储|Disk|Storage|SSD|NVMe|HDD)\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*(GB|G|TB|T)\b/i,
-  /([0-9]+(?:\.[0-9]+)?)\s*(GB|G|TB|T)\s*(?:SSD|NVMe|HDD|硬盘|存储|Disk|Storage)\b/i,
-];
-const bandwidthPatterns = [
-  /(?:带宽|端口|Bandwidth|Port)\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*(Gbps|G口|Mbps|M口|G|M)\b/i,
-  /([0-9]+(?:\.[0-9]+)?)\s*(Gbps|G口|Mbps|M口)\s*(?:带宽|端口|Bandwidth|Port)?/i,
-];
-const trafficPatterns = [
-  /(?:流量|Traffic|Transfer)\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*(TB|T|GB|G)\b/i,
-  /([0-9]+(?:\.[0-9]+)?)\s*(TB|T|GB|G)\s*(?:流量|Traffic|Transfer)\b/i,
-];
-const cpuPattern =
-  /(?:CPU|vCPU)\s*[:：]?\s*([0-9]+)|([0-9]+)\s*(?:核|核心|Core|Cores|vCPU|CPU|C)(?=\b|[0-9\s/,+-])/i;
-const ipv4Pattern = /([0-9]+)\s*(?:个)?\s*(?:IPv4|独立IP|IP)/i;
-const promoPattern =
-  /(?:优惠码|折扣码|优惠代码|Promo Code|Coupon)\s*[:：]?\s*([A-Za-z0-9_-]+)/i;
-const purchaseHrefPattern = /^(https?:\/\/|\/go\/)/i;
-
-function normalizeSpace(value: string) {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-function toNumber(value: string | undefined) {
-  if (!value) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function toMb(value: string | undefined, unit: string | undefined) {
-  const number = toNumber(value);
-  if (number === null || !unit) return null;
-  return /g/i.test(unit) ? Math.round(number * 1024) : Math.round(number);
-}
-
-function toGb(value: string | undefined, unit: string | undefined) {
-  const number = toNumber(value);
-  if (number === null || !unit) return null;
-  return /t/i.test(unit) ? Math.round(number * 1024) : Math.round(number);
-}
-
-function toMbps(value: string | undefined, unit: string | undefined) {
-  const number = toNumber(value);
-  if (number === null || !unit) return null;
-  return /g/i.test(unit) ? Math.round(number * 1000) : Math.round(number);
-}
-
-function findFirstMatch(text: string, patterns: RegExp[]) {
-  for (const pattern of patterns) {
-    const match = pattern.exec(text);
-    if (match?.[1] && match[2]) {
-      return {
-        raw: match[0],
-        value: match[1],
-        unit: match[2],
-      };
-    }
-  }
-
-  return null;
-}
-
-function extractPrice(text: string) {
-  for (const pattern of pricePatterns) {
-    const match = pattern.exec(text);
-    if (!match?.[1]) {
-      continue;
-    }
-
-    return {
-      amount: match[1],
-      currency: /￥|¥|CNY|RMB|元/i.test(match[0]) ? "CNY" : "USD",
-    };
-  }
-
-  return null;
-}
-
-function isPurchaseHref(value: string | null | undefined) {
-  return Boolean(value?.trim() && purchaseHrefPattern.test(value.trim()));
-}
-
-function hasConcreteServerConfiguration(input: {
-  cpu: string | null;
-  memory: string | null;
-  storage: string | null;
-  bandwidth: string | null;
-  traffic: string | null;
-}) {
-  return (
-    [
-      input.cpu,
-      input.memory,
-      input.storage,
-      input.bandwidth,
-      input.traffic,
-    ].filter((value) => Boolean(value?.trim())).length >= 2
-  );
-}
-
-function cleanSpecRaw(value: string | undefined) {
-  const normalized = normalizeSpace(value ?? "");
-  return normalized ? normalized : null;
-}
-
-function extractCpu(text: string) {
-  const match = cpuPattern.exec(text);
-  return cleanSpecRaw(match?.[0]);
-}
-
-function extractMemory(text: string) {
-  const match = findFirstMatch(text, memoryPatterns);
-  if (!match) return null;
-
-  return {
-    ...match,
-    raw: `${match.value}${match.unit}`,
-  };
-}
-
-function extractStorage(text: string) {
-  return findFirstMatch(text, storagePatterns);
-}
-
-function extractBandwidth(text: string) {
-  return findFirstMatch(text, bandwidthPatterns);
-}
-
-function extractTraffic(text: string) {
-  return findFirstMatch(text, trafficPatterns);
-}
-
-function purchaseKeywordText(value: string) {
-  return /购买|订购|下单|入口|链接|buy|order|purchase|cart/i.test(value);
-}
-
-function parseStandaloneMemoryMb(value: string | null | undefined) {
-  const match = value?.match(/([0-9]+(?:\.[0-9]+)?)\s*(GB|G|MB|M)\b/i);
-  return toMb(match?.[1], match?.[2]);
-}
-
-function parseStandaloneStorageGb(value: string | null | undefined) {
-  const match = value?.match(/([0-9]+(?:\.[0-9]+)?)\s*(TB|T|GB|G)\b/i);
-  return toGb(match?.[1], match?.[2]);
-}
-
-function parseStandaloneBandwidthMbps(value: string | null | undefined) {
-  const match = value?.match(
-    /([0-9]+(?:\.[0-9]+)?)\s*(Gbps|G口|Mbps|M口|G|M)\b/i,
-  );
-  return toMbps(match?.[1], match?.[2]);
-}
-
-function parseStandaloneTrafficGb(value: string | null | undefined) {
-  const match = value?.match(/([0-9]+(?:\.[0-9]+)?)\s*(TB|T|GB|G)\b/i);
-  return toGb(match?.[1], match?.[2]);
-}
-
-function detectBillingCycle(text: string) {
-  if (/年付|每年|\/年|\/yr|year/i.test(text)) return "yearly";
-  if (/季付|季度|\/quarter/i.test(text)) return "quarterly";
-  if (/半年|半年度/i.test(text)) return "semiannual";
-  if (/月付|每月|\/月|\/mo|month/i.test(text)) return "monthly";
-  return null;
-}
-
-function detectCurrency(text: string) {
-  if (/￥|¥|CNY|RMB|元/i.test(text)) return "CNY";
-  return "USD";
-}
-
-function detectRegion(text: string) {
-  const regions = [
-    "香港",
-    "美国",
-    "洛杉矶",
-    "圣何塞",
-    "日本",
-    "东京",
-    "新加坡",
-    "韩国",
-    "德国",
-    "英国",
-    "荷兰",
-  ];
-  const found = regions.find((region) => text.includes(region));
-  if (found) return found;
-  if (/\bHK\b|Hong Kong/i.test(text)) return "香港";
-  if (/\bUS\b|\bUSA\b|United States|Los Angeles|San Jose/i.test(text)) {
-    return "美国";
-  }
-  return null;
-}
-
-function detectLineType(text: string) {
-  const lines = [
-    "CN2 GIA",
-    "CN2",
-    "CMI",
-    "BGP",
-    "AS9929",
-    "软银",
-    "电信",
-    "联通",
-    "移动",
-    "高防",
-  ];
-  return lines.find((line) => new RegExp(line, "i").test(text)) ?? null;
-}
-
-function extractTitle(text: string, fallback: string) {
-  const cleaned = normalizeSpace(text).replace(/\s+/g, " ");
-  if (!cleaned) return fallback;
-  return cleaned.length > 72 ? `${cleaned.slice(0, 72)}...` : cleaned;
-}
-
-function makeOfferSlug(input: {
-  sourcePostId: number;
-  title: string;
-  purchaseUrl?: string | null;
-}) {
-  const base = slugify(input.title).slice(0, 80) || "server-offer";
-  const suffix = input.purchaseUrl
-    ? Math.abs(hashString(input.purchaseUrl)).toString(36)
-    : input.sourcePostId.toString(36);
-  return `${base}-${input.sourcePostId}-${suffix}`.slice(0, 320);
-}
-
-function hashString(value: string) {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash << 5) - hash + value.charCodeAt(index);
-    hash |= 0;
-  }
-  return hash;
-}
-
-function parseOfferText(input: {
-  text: string;
-  sourcePostId: number;
-  sourcePostTitle: string;
-  sourcePostSlug: string;
-  sourcePostLanguage: string;
-  purchaseUrl?: string | null;
-}) {
-  const text = normalizeSpace(input.text);
-  const price = extractPrice(text);
-  if (!price) return null;
-
-  const memoryMatch = extractMemory(text);
-  const storageMatch = extractStorage(text);
-  const bandwidthMatch = extractBandwidth(text);
-  const trafficMatch = extractTraffic(text);
-  const cpu = extractCpu(text);
-  const ipv4Match = ipv4Pattern.exec(text);
-  const promoMatch = promoPattern.exec(text);
-  const title = extractTitle(text, input.sourcePostTitle);
-  const purchaseUrl = isPurchaseHref(input.purchaseUrl)
-    ? input.purchaseUrl!.trim()
-    : null;
-  if (!purchaseUrl) return null;
-
-  const articlePrefix = input.sourcePostLanguage === "en" ? "/en" : "";
-
-  const offer = {
-    title,
-    slug: makeOfferSlug({
-      sourcePostId: input.sourcePostId,
-      title,
-      purchaseUrl,
-    }),
-    providerName: null,
-    providerId: null,
-    productType: /独立服务器|dedicated/i.test(text) ? "dedicated" : "vps",
-    cpu,
-    memory: memoryMatch?.raw ?? null,
-    memoryMb: toMb(memoryMatch?.value, memoryMatch?.unit),
-    storage: storageMatch?.raw ?? null,
-    storageGb: toGb(storageMatch?.value, storageMatch?.unit),
-    storageType: /nvme/i.test(text) ? "NVMe" : /ssd/i.test(text) ? "SSD" : null,
-    bandwidth: bandwidthMatch?.raw ?? null,
-    bandwidthMbps: toMbps(bandwidthMatch?.value, bandwidthMatch?.unit),
-    traffic: trafficMatch?.raw ?? null,
-    trafficGb: toGb(trafficMatch?.value, trafficMatch?.unit),
-    region: detectRegion(text),
-    countryCode: null,
-    city: null,
-    lineType: detectLineType(text),
-    network: null,
-    ipv4: ipv4Match?.[0] ?? null,
-    ipv6: /IPv6/i.test(text) ? "IPv6" : null,
-    priceAmount: price.amount,
-    originalPriceAmount: null,
-    currency: price.currency ?? detectCurrency(text),
-    billingCycle: detectBillingCycle(text),
-    promoCode: promoMatch?.[1] ?? null,
-    purchaseUrl,
-    articleUrl: `${articlePrefix}/fwq/posts/${input.sourcePostSlug}`,
-    reviewUrl: null,
-    sourcePostId: input.sourcePostId,
-    status: "in_stock" satisfies OfferStatus,
-    featured: false,
-    visible: true,
-    sortOrder: 0,
-    rawText: text.slice(0, 4000),
-  };
-
-  if (!hasConcreteServerConfiguration(offer)) {
-    return null;
-  }
-
-  return offer;
-}
-
-function candidateTextsFromPost(post: {
-  id: number;
-  title: string;
-  slug: string;
-  content: string;
-}) {
-  const $ = cheerio.load(renderArticleContentHtml(post.content));
-  const candidates: Array<{ text: string; purchaseUrl?: string | null }> = [];
-
-  $("table").each((_, table) => {
-    const rows = $(table).find("tr").toArray();
-    const headerCells = $(rows[0])
-      .find("th,td")
-      .toArray()
-      .map((cell) => normalizeSpace($(cell).text()));
-    const firstRowIsHeader =
-      $(rows[0]).find("th").length > 0 ||
-      headerCells.some((cell) =>
-        /套餐|配置|CPU|内存|硬盘|存储|带宽|流量|线路|地区|价格|购买|优惠/i.test(
-          cell,
-        ),
-      );
-
-    rows.forEach((row, rowIndex) => {
-      if (rowIndex === 0 && firstRowIsHeader) return;
-
-      const rowLinks: Array<{
-        href: string;
-        header: string;
-        text: string;
-      }> = [];
-      const cells = $(row)
-        .find("th,td")
-        .toArray()
-        .map((cell, cellIndex) => {
-          const text = normalizeSpace($(cell).text());
-          const header = headerCells[cellIndex] ?? "";
-          $(cell)
-            .find("a[href]")
-            .toArray()
-            .forEach((link) => {
-              const href = $(link).attr("href");
-              if (isPurchaseHref(href)) {
-                rowLinks.push({
-                  href: href!.trim(),
-                  header,
-                  text: normalizeSpace($(link).text()),
-                });
-              }
-            });
-          if (!text) return "";
-          return header ? `${header}: ${text}` : text;
-        });
-      const rowText = cells.filter(Boolean).join(" | ");
-      const href =
-        rowLinks.find((link) =>
-          purchaseKeywordText(`${link.header} ${link.text}`),
-        )?.href ??
-        rowLinks[0]?.href ??
-        null;
-      if (rowText) {
-        candidates.push({ text: rowText, purchaseUrl: href ?? null });
-      }
-    });
-  });
-
-  $("p,li,div").each((_, element) => {
-    if ($(element).parents("table").length > 0) return;
-    if ($(element).find("table").length > 0) return;
-
-    const text = normalizeSpace($(element).text());
-    if (text.length < 12 || text.length > 800) return;
-    if (!extractPrice(text)) return;
-    const links = $(element)
-      .find("a[href]")
-      .toArray()
-      .map((link) => ({
-        href: $(link).attr("href"),
-        text: normalizeSpace($(link).text()),
-      }))
-      .filter((link): link is { href: string; text: string } =>
-        isPurchaseHref(link.href),
-      );
-    const href =
-      links.find((link) => purchaseKeywordText(link.text))?.href ??
-      links[0]?.href ??
-      null;
-    candidates.push({ text, purchaseUrl: href ?? null });
-  });
-
-  return candidates;
-}
-
-async function resolvePurchaseTargetUrl(
-  purchaseUrl: string | null | undefined,
-) {
-  if (!purchaseUrl) return null;
-
-  const trimmed = purchaseUrl.trim();
-  if (/^\/go\//i.test(trimmed)) {
-    return readOutboundShortTarget(trimmed.replace(/^\/go\//i, ""));
-  }
-
-  try {
-    const url = new URL(trimmed);
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? url.toString()
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-async function resolveProvider(purchaseUrl: string | null | undefined) {
-  const targetUrl = await resolvePurchaseTargetUrl(purchaseUrl);
-  if (!targetUrl) return null;
-
-  let host = "";
-  try {
-    host = new URL(targetUrl).hostname.replace(/^www\./i, "").toLowerCase();
-  } catch {
-    return null;
-  }
-
-  const providers = await db.select().from(affServiceProviders);
-  return (
-    providers.find((provider) => {
-      const providerHosts = [
-        providerHostFromUrl(provider.officialUrl),
-        providerHostFromUrl(provider.affUrl),
-      ].filter((value): value is string => Boolean(value));
-
-      return providerHosts.some(
-        (providerHost) =>
-          host === providerHost || host.endsWith(`.${providerHost}`),
-      );
-    }) ?? null
-  );
-}
-
-function providerHostFromUrl(value: string | null | undefined) {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-
-  try {
-    return new URL(trimmed).hostname.replace(/^www\./i, "").toLowerCase();
-  } catch {
-    return (
-      trimmed
-        .replace(/^https?:\/\//i, "")
-        .split("/")[0]
-        ?.replace(/:\d+$/, "")
-        .replace(/^www\./i, "")
-        .toLowerCase() ?? null
-    );
-  }
-}
-
 function publicPurchasableOfferBaseWhere() {
   return and(
     eq(serverOffers.visible, true),
@@ -722,58 +238,6 @@ async function syncPrimaryOfferPrice(input: {
     });
 }
 
-async function syncArticleOfferSource(input: {
-  offerId: number;
-  sourcePostId: number | null | undefined;
-  articleUrl: string | null | undefined;
-}) {
-  if (!input.sourcePostId && !input.articleUrl) return;
-
-  const [existing] = await db
-    .select({ id: serverOfferSources.id })
-    .from(serverOfferSources)
-    .where(
-      and(
-        eq(serverOfferSources.offerId, input.offerId),
-        eq(serverOfferSources.sourceType, "article"),
-        eq(serverOfferSources.relationType, "mention"),
-      ),
-    )
-    .limit(1);
-
-  if (existing) {
-    await db
-      .update(serverOfferSources)
-      .set({
-        sourcePostId: input.sourcePostId ?? null,
-        sourceUrl: input.articleUrl ?? null,
-        relationType: "mention",
-        updatedAt: new Date(),
-      })
-      .where(eq(serverOfferSources.id, existing.id));
-    return;
-  }
-
-  await db.insert(serverOfferSources).values({
-    offerId: input.offerId,
-    sourceType: "article",
-    sourcePostId: input.sourcePostId ?? null,
-    sourceUrl: input.articleUrl ?? null,
-    relationType: "mention",
-    priority: 10,
-  });
-}
-
-type OfferSourcePost = {
-  id: number;
-  title: string;
-  slug: string;
-  language: string;
-  content: string;
-};
-
-type ParsedServerOffer = NonNullable<ReturnType<typeof parseOfferText>>;
-
 type ServerOfferDuplicateKeyInput = {
   providerName?: string | null;
   productType?: string | null;
@@ -788,56 +252,6 @@ type ServerOfferDuplicateKeyInput = {
   billingCycle?: string | null;
   purchaseUrl?: string | null;
 };
-
-function nullableEq<T>(column: T, value: string | number | null | undefined) {
-  return value === null || typeof value === "undefined"
-    ? isNull(column as Parameters<typeof isNull>[0])
-    : eq(column as Parameters<typeof eq>[0], value);
-}
-
-function serverOfferConfigWhere(candidate: ParsedServerOffer) {
-  return and(
-    eq(serverOffers.sourcePostId, candidate.sourcePostId),
-    eq(serverOffers.productType, candidate.productType),
-    nullableEq(serverOffers.memoryMb, candidate.memoryMb),
-    nullableEq(serverOffers.storageGb, candidate.storageGb),
-    nullableEq(serverOffers.bandwidthMbps, candidate.bandwidthMbps),
-    nullableEq(serverOffers.trafficGb, candidate.trafficGb),
-    nullableEq(serverOffers.region, candidate.region),
-    nullableEq(serverOffers.lineType, candidate.lineType),
-  );
-}
-
-async function findExistingServerOffer(candidate: ParsedServerOffer) {
-  const selectColumns = {
-    id: serverOffers.id,
-    title: serverOffers.title,
-    purchaseUrl: serverOffers.purchaseUrl,
-    lockedFields: serverOffers.lockedFields,
-  };
-  const [existingBySlug] = await db
-    .select(selectColumns)
-    .from(serverOffers)
-    .where(eq(serverOffers.slug, candidate.slug))
-    .limit(1);
-
-  if (existingBySlug) {
-    return existingBySlug;
-  }
-
-  const purchaseUrl = candidate.purchaseUrl?.trim();
-  const purchaseUrlCondition = purchaseUrl
-    ? eq(serverOffers.purchaseUrl, purchaseUrl)
-    : or(isNull(serverOffers.purchaseUrl), eq(serverOffers.purchaseUrl, ""));
-
-  const [existingByIdentity] = await db
-    .select(selectColumns)
-    .from(serverOffers)
-    .where(and(serverOfferConfigWhere(candidate), purchaseUrlCondition))
-    .limit(1);
-
-  return existingByIdentity ?? null;
-}
 
 function makeDuplicateKey(
   candidate: ServerOfferDuplicateKeyInput,
@@ -859,224 +273,6 @@ function makeDuplicateKey(
   ]
     .map((item) => String(item).trim().toLowerCase())
     .join("|");
-}
-
-async function importServerOffersFromPostRows(
-  sourcePosts: OfferSourcePost[],
-  options: { revalidate?: boolean } = {},
-) {
-  const shouldRevalidate = options.revalidate ?? true;
-  let extracted = 0;
-  let inserted = 0;
-  let updated = 0;
-  let skipped = 0;
-
-  for (const post of sourcePosts) {
-    const candidates = candidateTextsFromPost(post)
-      .map((candidate) =>
-        parseOfferText({
-          text: candidate.text,
-          sourcePostId: post.id,
-          sourcePostTitle: post.title,
-          sourcePostSlug: post.slug,
-          sourcePostLanguage: post.language,
-          purchaseUrl: candidate.purchaseUrl,
-        }),
-      )
-      .filter((offer): offer is NonNullable<typeof offer> => offer !== null);
-    extracted += candidates.length;
-
-    const seenInPost = new Set<string>();
-    for (const candidate of candidates) {
-      const key = `${candidate.sourcePostId}:${candidate.purchaseUrl ?? ""}:${candidate.title}`;
-      if (seenInPost.has(key)) {
-        skipped += 1;
-        continue;
-      }
-      seenInPost.add(key);
-
-      const provider = await resolveProvider(candidate.purchaseUrl);
-      const existing = await findExistingServerOffer(candidate);
-      const monthlyPriceUsd = calculateMonthlyPriceUsd({
-        amount: candidate.priceAmount,
-        currency: candidate.currency,
-        billingCycle: candidate.billingCycle,
-      });
-
-      if (existing) {
-        const lockedFields = new Set(existing.lockedFields ?? []);
-        const updateValues: Partial<typeof serverOffers.$inferInsert> = {
-          providerName: provider?.name ?? candidate.providerName,
-          providerId: provider?.id ?? candidate.providerId,
-          productType: candidate.productType,
-          cpu: candidate.cpu,
-          memory: candidate.memory,
-          memoryMb: candidate.memoryMb,
-          storage: candidate.storage,
-          storageGb: candidate.storageGb,
-          storageType: candidate.storageType,
-          bandwidth: candidate.bandwidth,
-          bandwidthMbps: candidate.bandwidthMbps,
-          traffic: candidate.traffic,
-          trafficGb: candidate.trafficGb,
-          region: candidate.region,
-          countryCode: candidate.countryCode,
-          city: candidate.city,
-          lineType: candidate.lineType,
-          network: candidate.network,
-          ipv4: candidate.ipv4,
-          ipv6: candidate.ipv6,
-          promoCode: candidate.promoCode,
-          articleUrl: candidate.articleUrl,
-          rawText: candidate.rawText,
-          duplicateKey: makeDuplicateKey(candidate, provider?.name),
-          updatedAt: new Date(),
-        };
-        if (!lockedFields.has("title")) {
-          updateValues.title = candidate.title || existing.title;
-        }
-        if (!lockedFields.has("price")) {
-          updateValues.priceAmount = candidate.priceAmount;
-          updateValues.originalPriceAmount = candidate.originalPriceAmount;
-          updateValues.currency = candidate.currency;
-          updateValues.billingCycle = candidate.billingCycle;
-          updateValues.monthlyPriceUsd =
-            monthlyPriceUsd === null ? null : String(monthlyPriceUsd);
-        }
-        if (!lockedFields.has("purchaseUrl")) {
-          updateValues.purchaseUrl = candidate.purchaseUrl;
-        }
-
-        await db
-          .update(serverOffers)
-          .set(updateValues)
-          .where(eq(serverOffers.id, existing.id));
-        const syncTasks: Array<Promise<void>> = [
-          syncArticleOfferSource({
-            offerId: existing.id,
-            sourcePostId: candidate.sourcePostId,
-            articleUrl: candidate.articleUrl,
-          }),
-        ];
-        if (!lockedFields.has("price")) {
-          syncTasks.push(
-            syncPrimaryOfferPrice({
-              offerId: existing.id,
-              priceAmount: candidate.priceAmount,
-              originalPriceAmount: candidate.originalPriceAmount,
-              currency: candidate.currency,
-              billingCycle: candidate.billingCycle,
-              purchaseUrl: lockedFields.has("purchaseUrl")
-                ? existing.purchaseUrl
-                : candidate.purchaseUrl,
-            }),
-          );
-        }
-        await Promise.all(syncTasks);
-        updated += 1;
-        continue;
-      }
-
-      const [created] = await db
-        .insert(serverOffers)
-        .values({
-          ...candidate,
-          providerName: provider?.name ?? null,
-          providerId: provider?.id ?? null,
-          monthlyPriceUsd:
-            monthlyPriceUsd === null ? null : String(monthlyPriceUsd),
-          reviewStatus: "pending",
-          visible: false,
-          duplicateKey: makeDuplicateKey(candidate, provider?.name),
-        })
-        .returning({ id: serverOffers.id });
-      if (created) {
-        await Promise.all([
-          syncPrimaryOfferPrice({
-            offerId: created.id,
-            priceAmount: candidate.priceAmount,
-            originalPriceAmount: candidate.originalPriceAmount,
-            currency: candidate.currency,
-            billingCycle: candidate.billingCycle,
-            purchaseUrl: candidate.purchaseUrl,
-          }),
-          syncArticleOfferSource({
-            offerId: created.id,
-            sourcePostId: candidate.sourcePostId,
-            articleUrl: candidate.articleUrl,
-          }),
-        ]);
-      }
-      inserted += 1;
-    }
-  }
-
-  if (shouldRevalidate && (inserted > 0 || updated > 0)) {
-    revalidateSiteContent([cacheTags.serverOffers]);
-    await notifyPublicWebCache("offer.changed", {
-      topicSlugs: [...publicOfferTopicSlugs],
-    });
-  }
-
-  return {
-    scannedPosts: sourcePosts.length,
-    extracted,
-    inserted,
-    updated,
-    skipped,
-  };
-}
-
-export async function importServerOffersFromPost(
-  postId: number,
-  options: { revalidate?: boolean } = {},
-) {
-  const sourcePosts = await db
-    .select({
-      id: posts.id,
-      title: posts.title,
-      slug: posts.slug,
-      language: posts.language,
-      content: posts.content,
-    })
-    .from(posts)
-    .where(eq(posts.id, postId))
-    .limit(1);
-
-  return importServerOffersFromPostRows(sourcePosts, options);
-}
-
-export async function getServerOfferImportPostOptions(limit = 120) {
-  return db
-    .select({
-      id: posts.id,
-      title: posts.title,
-      slug: posts.slug,
-      language: posts.language,
-      published: posts.published,
-      createdAt: posts.createdAt,
-    })
-    .from(posts)
-    .orderBy(desc(posts.createdAt))
-    .limit(limit);
-}
-
-export async function importServerOffersFromPosts(
-  options: { revalidate?: boolean } = {},
-) {
-  const sourcePosts = await db
-    .select({
-      id: posts.id,
-      title: posts.title,
-      slug: posts.slug,
-      language: posts.language,
-      content: posts.content,
-    })
-    .from(posts)
-    .where(eq(posts.published, true))
-    .orderBy(desc(posts.createdAt));
-
-  return importServerOffersFromPostRows(sourcePosts, options);
 }
 
 function topicWhere(topic: (typeof offerTopics)[number]) {
@@ -2026,7 +1222,7 @@ export type ServerOfferUpdateInput = {
   reviewUrl?: string | null;
   visible: boolean;
   featured: boolean;
-  reviewStatus?: string | null;
+  reviewStatus?: OfferReviewStatus | null;
   lockedFields?: string[];
   validUntil?: Date | null;
   prices?: ServerOfferPriceUpdateInput[];
@@ -2095,15 +1291,37 @@ export async function updateServerOffer(
   const [existing] = await readDb
     .select({
       status: serverOffers.status,
+      providerId: serverOffers.providerId,
+      externalProductId: serverOffers.externalProductId,
       sourceMonitorId: serverOffers.sourceMonitorId,
+      mergedIntoOfferId: serverOffers.mergedIntoOfferId,
     })
     .from(serverOffers)
     .where(eq(serverOffers.id, id))
     .limit(1);
   if (!existing) return null;
 
+  let requestedExternalProductId = input.externalProductId?.trim() ?? null;
+  if (requestedExternalProductId === "") requestedExternalProductId = null;
+  let normalizedExistingExternalProductId =
+    existing.externalProductId?.trim() ?? null;
+  if (normalizedExistingExternalProductId === "") {
+    normalizedExistingExternalProductId = null;
+  }
+  if (
+    existing.sourceMonitorId &&
+    (input.providerId !== existing.providerId ||
+      requestedExternalProductId !== normalizedExistingExternalProductId)
+  ) {
+    throw new Error("采集套餐的厂商和产品 ID 由采集源管理，不能直接修改");
+  }
+
+  const requestedProviderId = existing.sourceMonitorId
+    ? existing.providerId
+    : input.providerId;
+
   const [provider, taxonomy] = await Promise.all([
-    input.providerId
+    requestedProviderId
       ? readDb
           .select({
             id: affServiceProviders.id,
@@ -2111,19 +1329,17 @@ export async function updateServerOffer(
             defaultPromoCode: affServiceProviders.defaultPromoCode,
           })
           .from(affServiceProviders)
-          .where(eq(affServiceProviders.id, input.providerId))
+          .where(eq(affServiceProviders.id, requestedProviderId))
           .limit(1)
           .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
     resolveServerOfferTaxonomy(input),
   ]);
-  const providerId = provider?.id ?? input.providerId ?? null;
+  const providerId = provider?.id ?? requestedProviderId ?? null;
   const providerName = provider?.name ?? input.providerName ?? null;
-  const normalizedExternalProductId = input.externalProductId?.trim();
-  let externalProductId: string | null = null;
-  if (normalizedExternalProductId) {
-    externalProductId = normalizedExternalProductId;
-  }
+  const externalProductId = existing.sourceMonitorId
+    ? normalizedExistingExternalProductId
+    : requestedExternalProductId;
   if (providerId && externalProductId) {
     const [duplicate] = await readDb
       .select({ id: serverOffers.id })
@@ -2143,10 +1359,10 @@ export async function updateServerOffer(
     }
   }
 
-  const memoryMb = parseStandaloneMemoryMb(input.memory);
-  const storageGb = parseStandaloneStorageGb(input.storage);
-  const bandwidthMbps = parseStandaloneBandwidthMbps(input.bandwidth);
-  const trafficGb = parseStandaloneTrafficGb(input.traffic);
+  const memoryMb = parseServerOfferMemoryMb(input.memory);
+  const storageGb = parseServerOfferStorageGb(input.storage);
+  const bandwidthMbps = parseServerOfferBandwidthMbps(input.bandwidth);
+  const trafficGb = parseServerOfferTrafficGb(input.traffic);
   const productType = input.productType ?? "vps";
   const normalizedPrices = input.prices?.map((price) => {
     const billingCycle = normalizeServerOfferBillingCycle(price.billingCycle);
@@ -2190,6 +1406,10 @@ export async function updateServerOffer(
     ? (primaryPrice?.monthlyPriceUsd ?? null)
     : calculateMonthlyPriceUsd({ amount: priceAmount, currency, billingCycle });
   const now = new Date();
+  const reviewStatus = input.reviewStatus ?? "reviewed";
+  if (reviewStatus === "merged" && !existing.mergedIntoOfferId) {
+    throw new Error("套餐没有合并目标，不能标记为已合并");
+  }
   const updated = await db.transaction(async (tx) => {
     const [row] = await tx
       .update(serverOffers)
@@ -2253,8 +1473,10 @@ export async function updateServerOffer(
           billingCycle,
           purchaseUrl: input.purchaseUrl,
         }),
-        reviewStatus: input.reviewStatus ?? "reviewed",
-        reviewedAt: now,
+        reviewStatus,
+        mergedIntoOfferId:
+          reviewStatus === "merged" ? existing.mergedIntoOfferId : null,
+        reviewedAt: reviewStatus === "pending" ? null : now,
         updatedAt: now,
       })
       .where(eq(serverOffers.id, id))
@@ -2325,7 +1547,7 @@ export async function bulkUpdateServerOffers(input: {
   status?: OfferStatus;
   visible?: boolean;
   featured?: boolean;
-  reviewStatus?: string;
+  reviewStatus?: Exclude<OfferReviewStatus, "merged">;
 }) {
   if (input.ids.length === 0) {
     return { updated: 0 };
@@ -2362,7 +1584,8 @@ export async function bulkUpdateServerOffers(input: {
   if (typeof input.featured === "boolean") values.featured = input.featured;
   if (input.reviewStatus) {
     values.reviewStatus = input.reviewStatus;
-    values.reviewedAt = new Date();
+    values.mergedIntoOfferId = null;
+    values.reviewedAt = input.reviewStatus === "pending" ? null : new Date();
   }
 
   const rows = await db

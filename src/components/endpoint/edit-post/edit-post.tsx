@@ -38,7 +38,7 @@ import { type PostEditFormData } from "@/types/post.types";
 import { toast } from "sonner";
 import { notifyActionError } from "@/lib/admin-toast";
 import { rewriteDraftAffiliateLinksAction } from "@/features/cms/actions/affiliate-rewrite";
-import { type AffiliateRewriteReport } from "@fwqgo/scrape/affiliate-link-rewriter";
+import { type AffiliateRewriteReport } from "@/server/links/affiliate-link-rewriter";
 import { type NewTag } from "@/types";
 import { Separator } from "@/components/ui/separator";
 import {

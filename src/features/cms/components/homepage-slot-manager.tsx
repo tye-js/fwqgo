@@ -55,6 +55,10 @@ import type {
   HomepageSlotLanguage,
   HomepageSlotPlacement,
 } from "@/server/homepage/homepage-slots";
+import {
+  formatDateTimeLocalValue,
+  serializeDateTimeLocalValue,
+} from "@/features/cms/lib/datetime-local";
 
 type Slot = Awaited<ReturnType<typeof getAdminHomepageSlots>>[number];
 type SlotOptions = Awaited<ReturnType<typeof getHomepageSlotOptions>>;
@@ -71,12 +75,6 @@ const contentTypeLabels: Record<string, string> = {
   offer: "套餐",
   image_link: "推广图片",
 };
-
-function toDateTimeLocal(value: Date | null) {
-  if (!value) return "";
-  const offset = value.getTimezoneOffset() * 60_000;
-  return new Date(value.getTime() - offset).toISOString().slice(0, 16);
-}
 
 function displayContent(slot: Slot) {
   if (slot.contentType === "post")
@@ -153,8 +151,8 @@ function SlotEditor({
         targetUrl: formData.get("targetUrl"),
         altText: formData.get("altText"),
         sortOrder: Number(formData.get("sortOrder")),
-        startsAt: formData.get("startsAt"),
-        endsAt: formData.get("endsAt"),
+        startsAt: serializeDateTimeLocalValue(formData.get("startsAt")),
+        endsAt: serializeDateTimeLocalValue(formData.get("endsAt")),
         enabled,
       });
       if (!result.success) {
@@ -349,7 +347,7 @@ function SlotEditor({
                 id="slot-start"
                 name="startsAt"
                 type="datetime-local"
-                defaultValue={toDateTimeLocal(slot?.startsAt ?? null)}
+                defaultValue={formatDateTimeLocalValue(slot?.startsAt ?? null)}
                 className="min-h-11"
               />
             </div>
@@ -359,7 +357,7 @@ function SlotEditor({
                 id="slot-end"
                 name="endsAt"
                 type="datetime-local"
-                defaultValue={toDateTimeLocal(slot?.endsAt ?? null)}
+                defaultValue={formatDateTimeLocalValue(slot?.endsAt ?? null)}
                 className="min-h-11"
               />
             </div>
@@ -489,12 +487,17 @@ export function HomepageSlotManager({
                   <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                     <p>
                       上线：
-                      {toDateTimeLocal(slot.startsAt).replace("T", " ") ||
-                        "立即"}
+                      {formatDateTimeLocalValue(slot.startsAt).replace(
+                        "T",
+                        " ",
+                      ) || "立即"}
                     </p>
                     <p className="mt-1">
                       下线：
-                      {toDateTimeLocal(slot.endsAt).replace("T", " ") || "长期"}
+                      {formatDateTimeLocalValue(slot.endsAt).replace(
+                        "T",
+                        " ",
+                      ) || "长期"}
                     </p>
                   </TableCell>
                   <TableCell>

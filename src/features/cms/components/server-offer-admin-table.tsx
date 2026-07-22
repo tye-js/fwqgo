@@ -1,18 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import {
-  Fragment,
-  type ReactNode,
-  useMemo,
-  useState,
-  useTransition,
-} from "react";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import { Activity, ExternalLink, Plus, Save, Trash2 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { SERVER_OFFER_CURRENCIES } from "@fwqgo/core/server-offer-price";
+import {
+  formatServerOfferAmount,
+  parseServerOfferAmount,
+  SERVER_OFFER_CURRENCIES,
+} from "@fwqgo/core/server-offer-price";
 import {
   bulkUpdateServerOffersAction,
   deleteServerOfferArticleRelationAction,
@@ -52,6 +49,11 @@ import type {
 import { type getProviderOptionsForMonitoring } from "@/server/offers/provider-monitor";
 import { isInternalHref, isSafePublicHref } from "@fwqgo/core/utils";
 import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
+import { useAdminMutation } from "@/features/cms/hooks/use-admin-mutation";
+import {
+  formatDateTimeLocalValue,
+  serializeDateTimeLocalValue,
+} from "@/features/cms/lib/datetime-local";
 
 type Offer = Awaited<ReturnType<typeof getAdminServerOffers>>["rows"][number];
 type Provider = Awaited<
@@ -105,6 +107,9 @@ const offerReviewStatusLabels = {
 } as const;
 
 const reviewStatusOptions = Object.entries(offerReviewStatusLabels);
+const bulkReviewStatusOptions = reviewStatusOptions.filter(
+  ([status]) => status !== "merged",
+);
 
 const articleRelationLabels = {
   review: "测评",
@@ -112,21 +117,18 @@ const articleRelationLabels = {
   deal: "优惠",
 } as const;
 
+const serverOfferBulkMutationKey = "server-offers:bulk-update";
+
+function getServerOfferMutationKey(offerId: number, operation: string) {
+  return `server-offer:${offerId}:${operation}`;
+}
+
 function formatPrice(offer: Offer) {
-  if (
-    offer.priceAmount === null ||
-    offer.priceAmount === undefined ||
-    offer.priceAmount === ""
-  ) {
-    return "待补充";
-  }
-
-  const amount = Number(offer.priceAmount);
-  if (!Number.isFinite(amount)) {
-    return "待确认";
-  }
-
-  return `${offer.currency === "CNY" ? "¥" : "$"}${amount.toFixed(2)}`;
+  return formatObservedPrice(
+    offer.priceAmount,
+    offer.currency,
+    "待补充",
+  );
 }
 
 function cleanText(value: string | null | undefined) {
@@ -135,10 +137,30 @@ function cleanText(value: string | null | undefined) {
   return trimmed;
 }
 
-function toDateTimeLocal(value: Date | null | undefined) {
-  if (!value) return "";
-  const offset = value.getTimezoneOffset() * 60_000;
-  return new Date(value.getTime() - offset).toISOString().slice(0, 16);
+function formatObservedPrice(
+  amount: string | number | null | undefined,
+  currency: string | null | undefined,
+  emptyLabel: string,
+) {
+  if (amount === null || amount === undefined || String(amount).trim() === "") {
+    return emptyLabel;
+  }
+  return formatServerOfferAmount({ amount, currency }) ?? "待确认";
+}
+
+function MonthlyPriceUsd({
+  value,
+}: {
+  value: string | number | null | undefined;
+}) {
+  const amount = parseServerOfferAmount(value);
+  if (amount === null) return null;
+
+  return (
+    <p className="mt-1 text-xs tabular-nums text-muted-foreground">
+      约 ${amount.toFixed(2)} / 月
+    </p>
+  );
 }
 
 function initialEditablePrices(offer: Offer): EditablePrice[] {
@@ -151,7 +173,7 @@ function initialEditablePrices(offer: Offer): EditablePrice[] {
       currency: price.currency,
       purchaseUrl: price.purchaseUrl ?? "",
       active: price.active,
-      validUntil: toDateTimeLocal(price.validUntil),
+      validUntil: formatDateTimeLocalValue(price.validUntil),
     }));
   }
   if (offer.priceAmount) {
@@ -164,7 +186,7 @@ function initialEditablePrices(offer: Offer): EditablePrice[] {
         currency: offer.currency ?? "USD",
         purchaseUrl: offer.purchaseUrl ?? "",
         active: true,
-        validUntil: toDateTimeLocal(offer.validUntil),
+        validUntil: formatDateTimeLocalValue(offer.validUntil),
       },
     ];
   }
@@ -415,7 +437,17 @@ function OfferEditForm({
   relationPosts: RelationPost[];
   onDone: () => void;
 }) {
-  const router = useRouter();
+  const { mutate, isPending } = useAdminMutation();
+  const saveMutationKey = getServerOfferMutationKey(offer.id, "save");
+  const relationAddMutationKey = getServerOfferMutationKey(
+    offer.id,
+    "relation:add",
+  );
+  const savePending = isPending(saveMutationKey);
+  const relationAddPending = isPending(relationAddMutationKey);
+  const editableReviewStatusOptions = offer.mergedIntoOfferId
+    ? reviewStatusOptions
+    : bulkReviewStatusOptions;
   const [visible, setVisible] = useState(offer.visible);
   const [featured, setFeatured] = useState(offer.featured);
   const [offerKind, setOfferKind] = useState<"regular" | "promotion">(
@@ -431,8 +463,6 @@ function OfferEditForm({
   const [relationType, setRelationType] = useState<
     "review" | "mention" | "deal"
   >("review");
-  const [isPending, startTransition] = useTransition();
-
   function handleSubmit(formData: FormData) {
     formData.set("visible", visible ? "true" : "false");
     formData.set("featured", featured ? "true" : "false");
@@ -441,26 +471,29 @@ function OfferEditForm({
     }
     formData.set("lockedFieldsJson", JSON.stringify(lockedFields));
     formData.set(
+      "validUntil",
+      serializeDateTimeLocalValue(formData.get("validUntil")) ?? "",
+    );
+    formData.set(
       "pricesJson",
       JSON.stringify(
         prices.map(({ key: _key, ...price }) => ({
           ...price,
           originalAmount: price.originalAmount || null,
           purchaseUrl: price.purchaseUrl || null,
-          validUntil: price.validUntil || null,
+          validUntil: serializeDateTimeLocalValue(price.validUntil),
         })),
       ),
     );
 
-    startTransition(async () => {
-      const result = await updateServerOfferAction(offer.id, formData);
-      if (result.error) {
-        toast.error(result.error);
-        return;
-      }
-
-      toast.success("套餐已更新");
-      onDone();
+    void mutate({
+      key: saveMutationKey,
+      action: () => updateServerOfferAction(offer.id, formData),
+      pendingMessage: "正在保存套餐...",
+      successMessage: "套餐已更新",
+      errorTitle: "保存套餐失败",
+      errorSuggestion: "请检查套餐字段和价格配置后重试。",
+      onSuccess: onDone,
     });
   }
 
@@ -474,31 +507,30 @@ function OfferEditForm({
 
   function addArticleRelation() {
     const postId = Number(relationPostId);
-    startTransition(async () => {
-      const result = await saveServerOfferArticleRelationAction({
-        offerId: offer.id,
-        postId,
-        relationType,
-      });
-      if (!result.success) {
-        toast.error(result.error, { description: result.message });
-        return;
-      }
-      toast.success(result.message ?? "文章关系已保存");
-      setRelationPostId("");
-      router.refresh();
+    void mutate({
+      key: relationAddMutationKey,
+      action: () =>
+        saveServerOfferArticleRelationAction({
+          offerId: offer.id,
+          postId,
+          relationType,
+        }),
+      pendingMessage: "正在添加文章关系...",
+      successMessage: (result) => result.message ?? "文章关系已保存",
+      errorTitle: "添加文章关系失败",
+      errorSuggestion: "请确认文章仍然存在且尚未建立相同关系。",
+      onSuccess: () => setRelationPostId(""),
     });
   }
 
   function removeArticleRelation(sourceId: number) {
-    startTransition(async () => {
-      const result = await deleteServerOfferArticleRelationAction(sourceId);
-      if (!result.success) {
-        toast.error(result.error, { description: result.message });
-        return;
-      }
-      toast.success(result.message ?? "文章关系已删除");
-      router.refresh();
+    void mutate({
+      key: getServerOfferMutationKey(offer.id, `relation:${sourceId}:delete`),
+      action: () => deleteServerOfferArticleRelationAction(sourceId),
+      pendingMessage: "正在删除文章关系...",
+      successMessage: (result) => result.message ?? "文章关系已删除",
+      errorTitle: "删除文章关系失败",
+      errorSuggestion: "请刷新套餐数据后重试。",
     });
   }
 
@@ -507,6 +539,13 @@ function OfferEditForm({
       action={handleSubmit}
       className="grid gap-4 rounded-lg border border-border/70 bg-muted/20 p-4"
     >
+      {offer.sourceMonitorId && offer.providerId ? (
+        <input
+          type="hidden"
+          name="providerId"
+          value={String(offer.providerId)}
+        />
+      ) : null}
       <div className="grid gap-4 lg:grid-cols-[minmax(260px,1fr)_220px_220px]">
         <div className="space-y-2">
           <Label htmlFor={`offer-title-${offer.id}`}>标题</Label>
@@ -521,8 +560,9 @@ function OfferEditForm({
         <div className="space-y-2">
           <Label>关联厂商</Label>
           <Select
-            name="providerId"
+            name={offer.sourceMonitorId ? undefined : "providerId"}
             defaultValue={offer.providerId ? String(offer.providerId) : "none"}
+            disabled={Boolean(offer.sourceMonitorId)}
           >
             <SelectTrigger className="min-h-11">
               <SelectValue placeholder="未关联" />
@@ -577,6 +617,7 @@ function OfferEditForm({
             defaultValue={offer.externalProductId ?? ""}
             placeholder="用于库存接口匹配"
             className="min-h-11 font-mono"
+            readOnly={Boolean(offer.sourceMonitorId)}
           />
         </div>
         <div className="space-y-2">
@@ -677,7 +718,7 @@ function OfferEditForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {reviewStatusOptions.map(([key, label]) => (
+              {editableReviewStatusOptions.map(([key, label]) => (
                 <SelectItem key={key} value={key}>
                   {label}
                 </SelectItem>
@@ -701,7 +742,7 @@ function OfferEditForm({
             id={`offer-valid-until-${offer.id}`}
             name="validUntil"
             type="datetime-local"
-            defaultValue={toDateTimeLocal(offer.validUntil)}
+            defaultValue={formatDateTimeLocalValue(offer.validUntil)}
             className="min-h-11"
           />
         </div>
@@ -776,7 +817,12 @@ function OfferEditForm({
                   variant="ghost"
                   title="删除文章关系"
                   aria-label={`删除文章关系 ${relation.postTitle}`}
-                  disabled={isPending}
+                  disabled={isPending(
+                    getServerOfferMutationKey(
+                      offer.id,
+                      `relation:${relation.id}:delete`,
+                    ),
+                  )}
                   onClick={() => removeArticleRelation(relation.id)}
                 >
                   <Trash2 className="size-4 text-destructive" />
@@ -818,7 +864,7 @@ function OfferEditForm({
           <Button
             type="button"
             variant="outline"
-            disabled={isPending || !relationPostId}
+            disabled={relationAddPending || !relationPostId}
             onClick={addArticleRelation}
           >
             <Plus className="size-4" />
@@ -875,7 +921,10 @@ function OfferEditForm({
               <p className="mt-1 text-xs text-muted-foreground">
                 当前状态：{offer.checkStatus} · 上次探测：
                 {offer.lastCheckedAt
-                  ? toDateTimeLocal(offer.lastCheckedAt).replace("T", " ")
+                  ? formatDateTimeLocalValue(offer.lastCheckedAt).replace(
+                      "T",
+                      " ",
+                    )
                   : "无"}
               </p>
               <div className="mt-3 space-y-2">
@@ -886,13 +935,18 @@ function OfferEditForm({
                       className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2 text-xs first:border-t-0 first:pt-0"
                     >
                       <span>
-                        {toDateTimeLocal(check.checkedAt).replace("T", " ")} ·{" "}
+                        {formatDateTimeLocalValue(check.checkedAt).replace(
+                          "T",
+                          " ",
+                        )} ·{" "}
                         {check.status}
                       </span>
                       <span className="tabular-nums text-muted-foreground">
-                        {check.priceAmount
-                          ? `${check.currency === "CNY" ? "¥" : "$"}${check.priceAmount}`
-                          : "无价格"}
+                        {formatObservedPrice(
+                          check.priceAmount,
+                          check.currency,
+                          "无价格",
+                        )}
                         {check.responseTimeMs === null
                           ? ""
                           : ` · ${check.responseTimeMs} ms`}
@@ -927,9 +981,9 @@ function OfferEditForm({
             推荐
           </label>
         </div>
-        <Button type="submit" disabled={isPending}>
+        <Button type="submit" disabled={savePending}>
           <Save className="size-4" />
-          {isPending ? "保存中..." : "保存套餐"}
+          {savePending ? "保存中..." : "保存套餐"}
         </Button>
       </div>
     </form>
@@ -959,14 +1013,14 @@ export function ServerOfferAdminTable({
   totalCount: number;
   initialFilters: ServerOfferTableFilters;
 }) {
-  const router = useRouter();
+  const { mutate, isPending } = useAdminMutation();
   const updateUrlQuery = useUrlQueryUpdater();
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editId, setEditId] = useState<number | null>(null);
   const [bulkStatus, setBulkStatus] = useState("in_stock");
   const [bulkKind, setBulkKind] = useState("regular");
   const [bulkReviewStatus, setBulkReviewStatus] = useState("reviewed");
-  const [isPending, startTransition] = useTransition();
+  const bulkPending = isPending(serverOfferBulkMutationKey);
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const activeFilters = {
     pageNo: initialFilters.pageNo,
@@ -1031,19 +1085,16 @@ export function ServerOfferAdminTable({
       return;
     }
 
-    startTransition(async () => {
-      const result = await bulkUpdateServerOffersAction({
-        ids: selectedIds,
-        ...input,
-      });
-      if (result.error) {
-        toast.error(result.error);
-        return;
-      }
-
-      toast.success(`已更新 ${result.data?.updated ?? 0} 条套餐`);
-      setSelectedIds([]);
-      router.refresh();
+    const ids = selectedIds;
+    void mutate({
+      key: serverOfferBulkMutationKey,
+      action: () => bulkUpdateServerOffersAction({ ids, ...input }),
+      pendingMessage: `正在批量更新 ${ids.length} 条套餐...`,
+      successMessage: (result) =>
+        `已更新 ${result.data?.updated ?? 0} 条套餐`,
+      errorTitle: "批量更新套餐失败",
+      errorSuggestion: "请刷新列表确认套餐状态后重试。",
+      onSuccess: () => setSelectedIds([]),
     });
   }
 
@@ -1156,7 +1207,7 @@ export function ServerOfferAdminTable({
               variant="outline"
               size="sm"
               className="flex-1 sm:flex-none"
-              disabled={isPending || !hasSelectedOffers}
+              disabled={bulkPending || !hasSelectedOffers}
               title={hasSelectedOffers ? "批量修改套餐属性" : "请先选择套餐"}
               onClick={() => runBulk({ offerKind: bulkKind })}
             >
@@ -1181,7 +1232,7 @@ export function ServerOfferAdminTable({
               variant="outline"
               size="sm"
               className="flex-1 sm:flex-none"
-              disabled={isPending || !hasSelectedOffers}
+              disabled={bulkPending || !hasSelectedOffers}
               title={
                 hasSelectedOffers ? "批量修改所选套餐状态" : "请先选择套餐"
               }
@@ -1199,7 +1250,7 @@ export function ServerOfferAdminTable({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {reviewStatusOptions.map(([key, label]) => (
+                {bulkReviewStatusOptions.map(([key, label]) => (
                   <SelectItem key={key} value={key}>
                     {label}
                   </SelectItem>
@@ -1211,7 +1262,7 @@ export function ServerOfferAdminTable({
               variant="outline"
               size="sm"
               className="flex-1 sm:flex-none"
-              disabled={isPending || !hasSelectedOffers}
+              disabled={bulkPending || !hasSelectedOffers}
               title={
                 hasSelectedOffers ? "批量修改所选套餐审核状态" : "请先选择套餐"
               }
@@ -1225,7 +1276,7 @@ export function ServerOfferAdminTable({
               type="button"
               variant="outline"
               size="sm"
-              disabled={isPending || !hasSelectedOffers}
+              disabled={bulkPending || !hasSelectedOffers}
               title={hasSelectedOffers ? "批量隐藏所选套餐" : "请先选择套餐"}
               onClick={() => runBulk({ visible: false })}
             >
@@ -1235,7 +1286,7 @@ export function ServerOfferAdminTable({
               type="button"
               variant="outline"
               size="sm"
-              disabled={isPending || !hasSelectedOffers}
+              disabled={bulkPending || !hasSelectedOffers}
               title={hasSelectedOffers ? "批量显示所选套餐" : "请先选择套餐"}
               onClick={() => runBulk({ visible: true })}
             >
@@ -1261,6 +1312,7 @@ export function ServerOfferAdminTable({
                   onCheckedChange={(checked) =>
                     togglePageSelected(checked === true)
                   }
+                  disabled={bulkPending}
                   aria-label="选择当前页全部套餐"
                   className="relative flex size-11 items-center justify-center rounded-md border-0 shadow-none before:absolute before:left-1/2 before:top-1/2 before:size-4 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-sm before:border before:border-primary data-[state=checked]:bg-transparent data-[state=indeterminate]:bg-transparent data-[state=checked]:before:bg-primary data-[state=indeterminate]:before:bg-primary [&_svg]:relative [&_svg]:z-10"
                 />
@@ -1293,6 +1345,7 @@ export function ServerOfferAdminTable({
                     <Checkbox
                       checked={selectedSet.has(offer.id)}
                       onCheckedChange={() => toggleSelected(offer.id)}
+                      disabled={bulkPending}
                       aria-label={`选择 ${offer.title}`}
                       className="relative flex size-11 items-center justify-center rounded-md border-0 shadow-none before:absolute before:left-1/2 before:top-1/2 before:size-4 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-sm before:border before:border-primary data-[state=checked]:bg-transparent data-[state=checked]:before:bg-primary [&_svg]:relative [&_svg]:z-10"
                     />
@@ -1344,11 +1397,7 @@ export function ServerOfferAdminTable({
                         {offer.promoCode}
                       </p>
                     ) : null}
-                    {offer.monthlyPriceUsd ? (
-                      <p className="mt-1 text-xs tabular-nums text-muted-foreground">
-                        约 ${Number(offer.monthlyPriceUsd).toFixed(2)} / 月
-                      </p>
-                    ) : null}
+                    <MonthlyPriceUsd value={offer.monthlyPriceUsd} />
                   </TableCell>
                   <TableCell className="min-w-[240px]">
                     <p className="line-clamp-3 text-sm text-muted-foreground">
@@ -1450,10 +1499,7 @@ export function ServerOfferAdminTable({
                         offer={offer}
                         providers={providers}
                         relationPosts={relationPosts}
-                        onDone={() => {
-                          setEditId(null);
-                          router.refresh();
-                        }}
+                        onDone={() => setEditId(null)}
                       />
                     </TableCell>
                   </TableRow>

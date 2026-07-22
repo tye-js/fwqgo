@@ -125,16 +125,31 @@ function HeaderFallback({ language }: { language: PublicLanguage }) {
             <BrandLogo compact />
           </Link>
           <div className="hidden h-10 w-80 rounded-md border border-border/70 bg-muted/30 lg:block" />
-          <Button
-            asChild
-            variant="outline"
-            className="hidden shrink-0 lg:inline-flex"
+          <React.Suspense
+            fallback={
+              <Button
+                asChild
+                variant="outline"
+                className="hidden shrink-0 lg:inline-flex"
+              >
+                <Link href={language === "en" ? "/" : "/en"} prefetch>
+                  <Globe2 className="size-4" />
+                  {copy.languageLabel}
+                </Link>
+              </Button>
+            }
           >
-            <Link href={language === "en" ? "/" : "/en"} prefetch>
-              <Globe2 className="size-4" />
-              {copy.languageLabel}
-            </Link>
-          </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="hidden shrink-0 lg:inline-flex"
+            >
+              <LanguageSwitchLink currentLanguage={language} prefetch>
+                <Globe2 className="size-4" />
+                {copy.languageLabel}
+              </LanguageSwitchLink>
+            </Button>
+          </React.Suspense>
           <Button
             type="button"
             variant="outline"

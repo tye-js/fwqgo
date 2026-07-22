@@ -2,8 +2,8 @@ import { readDb } from "@fwqgo/db";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { cacheLife } from "next/cache";
 import { decodeSlug } from "@fwqgo/core/utils";
-import { attachTagsToPosts } from "@fwqgo/db/post-tags";
-import { posts, tags, postTags, homepagePromotedPosts } from "@fwqgo/db/schema";
+import { attachTagsToPosts } from "@/features/public/data/post-tags";
+import { homepageSlots, posts, tags, postTags } from "@fwqgo/db/schema";
 import {
   eq,
   desc,
@@ -13,8 +13,8 @@ import {
   and,
   not,
   count,
-  sql,
-  isNotNull,
+  isNull,
+  lte,
   or,
 } from "drizzle-orm";
 import { ilikeContains } from "@/server/db/search";
@@ -65,13 +65,6 @@ async function getPublishedEnglishSlugForSourcePost(postId: number) {
     .limit(1);
 
   return englishPost?.slug ?? null;
-}
-
-function getLegacyPublishedEnglishSlug(post: {
-  enSlug: string | null;
-  enContent?: string | null;
-}) {
-  return post.enSlug && post.enContent ? post.enSlug : null;
 }
 
 export async function getPublishedPostCountByCategoryId(
@@ -194,17 +187,22 @@ export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
           views: posts.views,
           createdAt: posts.createdAt,
         })
-        .from(homepagePromotedPosts)
-        .innerJoin(posts, eq(homepagePromotedPosts.postId, posts.id))
+        .from(homepageSlots)
+        .innerJoin(posts, eq(homepageSlots.postId, posts.id))
         .where(
           and(
-            eq(homepagePromotedPosts.language, language),
+            eq(homepageSlots.language, language),
+            eq(homepageSlots.placement, "sidebar"),
+            eq(homepageSlots.contentType, "post"),
+            eq(homepageSlots.enabled, true),
+            or(isNull(homepageSlots.startsAt), lte(homepageSlots.startsAt, new Date())),
+            or(isNull(homepageSlots.endsAt), gt(homepageSlots.endsAt, new Date())),
             publishedPostCondition(language),
           ),
         )
         .orderBy(
-          asc(homepagePromotedPosts.sortOrder),
-          desc(homepagePromotedPosts.createdAt),
+          asc(homepageSlots.sortOrder),
+          desc(homepageSlots.createdAt),
         )
         .limit(6);
     } catch (error) {
@@ -300,9 +298,6 @@ export async function getPostWithTagsBySlug(slug: string) {
         description: posts.description,
         keywords: posts.keywords,
         imgUrl: posts.imgUrl,
-        enSlug: posts.enSlug,
-        enTitle: posts.enTitle,
-        enContent: posts.enContent,
         content: posts.content,
         createdAt: posts.createdAt,
         updatedAt: posts.updatedAt,
@@ -353,7 +348,7 @@ export async function getPostWithTagsBySlug(slug: string) {
       data: {
         post: {
           ...post,
-          enSlug: publishedEnglishSlug ?? getLegacyPublishedEnglishSlug(post),
+          enSlug: publishedEnglishSlug,
           recommendedTagSlug,
           tags: postTagsData,
         },
@@ -400,38 +395,7 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
       )
       .limit(1);
 
-    const [legacyPostRow] = englishPostRow
-      ? []
-      : await readDb
-          .select({
-            id: posts.id,
-            title: posts.enTitle,
-            slug: posts.slug,
-            enSlug: posts.enSlug,
-            description: posts.enDescription,
-            keywords: posts.enKeywords,
-            imgUrl: posts.enImgUrl,
-            fallbackImgUrl: posts.imgUrl,
-            content: posts.enContent,
-            createdAt: posts.createdAt,
-            updatedAt: posts.enUpdatedAt,
-            views: posts.views,
-            recommendedTagId: posts.recommendedTagId,
-            recommendedTagName: posts.recommendedTagName,
-            language: posts.language,
-            translationSourcePostId: sql<number | null>`null`,
-          })
-          .from(posts)
-          .where(
-            and(
-              eq(posts.enSlug, decodedSlug),
-              eq(posts.language, "zh"),
-              eq(posts.published, true),
-              isNotNull(posts.enContent),
-            ),
-          )
-          .limit(1);
-    const postRow = englishPostRow ?? legacyPostRow;
+    const postRow = englishPostRow;
 
     if (!postRow?.title || !postRow.content || !postRow.enSlug) {
       return { data: { post: null } };
@@ -450,9 +414,7 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
           )
           .limit(1)
       : [];
-    const chineseSlug = englishPostRow
-      ? (sourcePostRow?.slug ?? null)
-      : postRow.slug;
+    const chineseSlug = sourcePostRow?.slug ?? null;
 
     const postTagsData = await readDb
       .select({

@@ -685,22 +685,20 @@ export async function renameImageAssetFile(input: {
         .update(posts)
         .set({
           imgUrl: sql`replace(replace(${posts.imgUrl}, ${absoluteAssetPath}, ${absoluteNextPath}), ${asset.path}, ${nextPath})`,
-          enImgUrl: sql`replace(replace(${posts.enImgUrl}, ${absoluteAssetPath}, ${absoluteNextPath}), ${asset.path}, ${nextPath})`,
           updatedAt: new Date(),
         })
         .where(
-          sql`${posts.imgUrl} like ${`%${asset.path}%`} or ${posts.imgUrl} like ${`%${absoluteAssetPath}%`} or ${posts.enImgUrl} like ${`%${asset.path}%`} or ${posts.enImgUrl} like ${`%${absoluteAssetPath}%`}`,
+          sql`${posts.imgUrl} like ${`%${asset.path}%`} or ${posts.imgUrl} like ${`%${absoluteAssetPath}%`}`,
         );
 
       await tx
         .update(posts)
         .set({
           content: sql`replace(replace(${posts.content}, ${absoluteAssetPath}, ${absoluteNextPath}), ${asset.path}, ${nextPath})`,
-          enContent: sql`replace(replace(${posts.enContent}, ${absoluteAssetPath}, ${absoluteNextPath}), ${asset.path}, ${nextPath})`,
           updatedAt: new Date(),
         })
         .where(
-          sql`${posts.content} like ${`%${asset.path}%`} or ${posts.content} like ${`%${absoluteAssetPath}%`} or ${posts.enContent} like ${`%${asset.path}%`} or ${posts.enContent} like ${`%${absoluteAssetPath}%`}`,
+          sql`${posts.content} like ${`%${asset.path}%`} or ${posts.content} like ${`%${absoluteAssetPath}%`}`,
         );
 
       await tx
@@ -1182,8 +1180,6 @@ function buildPostImageReferences(
     title: string;
     imgUrl: string | null;
     content: string;
-    enImgUrl?: string | null;
-    enContent?: string | null;
   },
   assets: ImageAssetLookup[],
 ) {
@@ -1201,17 +1197,6 @@ function buildPostImageReferences(
     });
   }
 
-  const englishCoverAsset = findAsset(post.enImgUrl);
-  if (englishCoverAsset) {
-    references.push({
-      imageId: englishCoverAsset.id,
-      sourceType: "post",
-      sourceId: String(post.id),
-      sourceLabel: post.title,
-      field: "enCover",
-    });
-  }
-
   for (const uploadPath of extractUploadPathsFromHtml(post.content)) {
     const asset = findAsset(uploadPath);
     if (asset) {
@@ -1222,21 +1207,6 @@ function buildPostImageReferences(
         sourceLabel: post.title,
         field: "content",
       });
-    }
-  }
-
-  if (post.enContent) {
-    for (const uploadPath of extractUploadPathsFromHtml(post.enContent)) {
-      const asset = findAsset(uploadPath);
-      if (asset) {
-        references.push({
-          imageId: asset.id,
-          sourceType: "post",
-          sourceId: String(post.id),
-          sourceLabel: post.title,
-          field: "enContent",
-        });
-      }
     }
   }
 
@@ -1273,8 +1243,6 @@ export async function syncImageReferencesForPost(postId: number) {
         title: posts.title,
         imgUrl: posts.imgUrl,
         content: posts.content,
-        enImgUrl: posts.enImgUrl,
-        enContent: posts.enContent,
       })
       .from(posts)
       .where(eq(posts.id, postId))
@@ -1338,8 +1306,6 @@ export async function rebuildImageReferences() {
         title: posts.title,
         imgUrl: posts.imgUrl,
         content: posts.content,
-        enImgUrl: posts.enImgUrl,
-        enContent: posts.enContent,
       })
       .from(posts),
     db

@@ -34,8 +34,8 @@ import { type getAiRewriteTaskList } from "@/features/cms/actions/ai-rewrite-tas
 import { AdminTableWorkbench } from "@/features/cms/components/admin-table-workbench";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
-import { type ScrapeDiagnostics } from "@fwqgo/scrape/article-scraper";
-import { type AffiliateRewriteReport } from "@fwqgo/scrape/affiliate-link-rewriter";
+import { type ScrapeDiagnostics } from "@/server/scrape/article-scraper";
+import { type AffiliateRewriteReport } from "@/server/links/affiliate-link-rewriter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";

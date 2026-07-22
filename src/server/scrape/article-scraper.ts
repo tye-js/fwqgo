@@ -19,7 +19,7 @@ import {
   repairMarkdownAffiliateLinks,
   rewriteAffiliateLinks,
   type AffiliateRewriteReport,
-} from "@fwqgo/scrape/affiliate-link-rewriter";
+} from "@/server/links/affiliate-link-rewriter";
 
 export interface ScrapeDiagnostics {
   sourceHost: string;

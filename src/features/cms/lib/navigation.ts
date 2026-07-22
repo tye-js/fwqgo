@@ -128,7 +128,6 @@ export const cmsBreadcrumbSegmentTitles: Record<string, string> = {
   list: "图片资产",
   upload: "上传图片",
   covers: "封面生图",
-  offers: "历史套餐提取",
   "ai-generate": "AI 生图",
   posts: "文章库",
   drafts: "草稿",
@@ -157,5 +156,4 @@ export const cmsBreadcrumbPathHrefs: Record<string, string> = {
   "/collect": "/collect/homepage-promoted",
   "/settings": "/collect/ai-rewrite",
   "/ai-tasks/covers": "/ai-tasks?type=cover",
-  "/ai-tasks/offers": "/ai-tasks?type=offer",
 };

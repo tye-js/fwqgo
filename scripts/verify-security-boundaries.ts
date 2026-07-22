@@ -70,12 +70,53 @@ function hasUseServerDirective(sourceFile: ts.SourceFile) {
   );
 }
 
+function definedAdminActionNames(sourceFile: ts.SourceFile) {
+  const names = new Set<string>();
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (
+        !ts.isIdentifier(declaration.name) ||
+        !declaration.initializer ||
+        !ts.isCallExpression(declaration.initializer) ||
+        !ts.isIdentifier(declaration.initializer.expression) ||
+        declaration.initializer.expression.text !== "defineAdminAction"
+      ) {
+        continue;
+      }
+      names.add(declaration.name.text);
+    }
+  }
+  return names;
+}
+
+function callsDefinedAdminAction(
+  node: ts.Node,
+  actionNames: ReadonlySet<string>,
+) {
+  let found = false;
+  function visit(child: ts.Node) {
+    if (
+      ts.isCallExpression(child) &&
+      ts.isIdentifier(child.expression) &&
+      actionNames.has(child.expression.text)
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(child, visit);
+  }
+  visit(node);
+  return found;
+}
+
 function verifyCmsActions(errors: string[]) {
   let checkedFunctions = 0;
 
   for (const filePath of listTypeScriptFiles(actionDirectory)) {
     const sourceFile = readSourceFile(filePath);
     const functions = exportedAsyncFunctions(sourceFile);
+    const protectedActionNames = definedAdminActionNames(sourceFile);
     if (functions.length === 0) continue;
 
     if (!hasUseServerDirective(sourceFile)) {
@@ -91,9 +132,15 @@ function verifyCmsActions(errors: string[]) {
       if (actionGuardExceptions.has(exceptionKey)) continue;
 
       const body = fn.body?.getText(sourceFile) ?? "";
-      if (!body.includes("requireAdminSession(")) {
+      if (
+        !body.includes("requireAdminSession(") &&
+        !callsDefinedAdminAction(fn, protectedActionNames)
+      ) {
         errors.push(
-          `${path.relative(root, filePath)}:${functionName} is missing requireAdminSession()`,
+          path.relative(root, filePath) +
+            ":" +
+            functionName +
+            " is missing requireAdminSession() or defineAdminAction() delegation",
         );
       }
     }

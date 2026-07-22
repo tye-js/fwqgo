@@ -43,6 +43,12 @@ export type BackgroundJobRunnerInput = {
   key: string;
   label: string;
   run: (context: BackgroundJobContext) => Promise<void>;
+  onTerminal?: (
+    context: BackgroundJobContext & {
+      status: "succeeded" | "failed";
+      error?: unknown;
+    },
+  ) => Promise<void>;
 };
 
 type BackgroundJobInput = BackgroundJobRunnerInput & {
@@ -93,7 +99,10 @@ const TERMINAL_JOB_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const BACKGROUND_JOB_COORDINATION_LOCK_ID = 1_463_257_901;
 const WORKER_ID = `${hostname()}:${process.pid}:${randomUUID()}`;
 
-const jobRunners = new Map<string, Pick<BackgroundJobInput, "label" | "run">>();
+const jobRunners = new Map<
+  string,
+  Pick<BackgroundJobInput, "label" | "run" | "onTerminal">
+>();
 
 let workerLoopPromise: Promise<void> | null = null;
 let workerWakeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -185,6 +194,7 @@ export function registerAdminBackgroundJobRunner(
   jobRunners.set(input.key, {
     label: input.label,
     run: input.run,
+    onTerminal: input.onTerminal,
   });
 }
 
@@ -543,11 +553,20 @@ async function failOrRetryBackgroundJob(
   if (shouldRetry) {
     scheduleAdminBackgroundJobWorker(retryAt);
   }
+
+  return shouldRetry;
 }
 
 async function runClaimedBackgroundJob(job: AdminBackgroundJobRow) {
   const runner = jobRunners.get(job.jobKey);
   if (!runner) return;
+  const context = { job, payload: job.payload };
+  let terminalContext:
+    | (BackgroundJobContext & {
+        status: "succeeded" | "failed";
+        error?: unknown;
+      })
+    | null = null;
 
   const interval = setInterval(() => {
     void heartbeat(job.id).catch((error) => {
@@ -561,8 +580,9 @@ async function runClaimedBackgroundJob(job: AdminBackgroundJobRow) {
   }, HEARTBEAT_INTERVAL_MS);
 
   try {
-    await runner.run({ job, payload: job.payload });
+    await runner.run(context);
     await completeBackgroundJob(job.id);
+    terminalContext = { ...context, status: "succeeded" };
   } catch (error) {
     structuredLog("error", "background.job_failed", {
       jobId: job.id,
@@ -571,9 +591,25 @@ async function runClaimedBackgroundJob(job: AdminBackgroundJobRow) {
       label: runner.label,
       error,
     });
-    await failOrRetryBackgroundJob(job, error);
+    const shouldRetry = await failOrRetryBackgroundJob(job, error);
+    if (!shouldRetry) {
+      terminalContext = { ...context, status: "failed", error };
+    }
   } finally {
     clearInterval(interval);
+  }
+
+  if (terminalContext && runner.onTerminal) {
+    try {
+      await runner.onTerminal(terminalContext);
+    } catch (error) {
+      structuredLog("error", "background.terminal_handler_failed", {
+        jobId: job.id,
+        jobKey: job.jobKey,
+        workerId: WORKER_ID,
+        error,
+      });
+    }
   }
 }
 

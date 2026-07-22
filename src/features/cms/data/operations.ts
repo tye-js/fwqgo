@@ -10,7 +10,6 @@ import {
   providerMonitorRuns,
   providerMonitors,
   affServiceProviders,
-  serverOfferImportTasks,
 } from "@fwqgo/db/schema";
 import {
   getAdminBackgroundJobSnapshots,
@@ -180,12 +179,6 @@ function serializeProgress(value: number | null | undefined, status: string) {
   if (status === "failed" || status === "cancelled") return 100;
   if (status === "running") return 50;
   return 0;
-}
-
-function terminalStatus(status: string) {
-  return (
-    status === "succeeded" || status === "failed" || status === "cancelled"
-  );
 }
 
 function stepStatusForTask(status: string): UnifiedTaskStep["status"] {
@@ -517,30 +510,6 @@ export type CmsTaskOperationsSummary = Awaited<
   ReturnType<typeof getCmsTaskOperationsSummary>
 >;
 
-function parseOfferImportResult(value: string | null) {
-  if (!value) return null;
-
-  try {
-    const parsed = JSON.parse(value) as {
-      scannedPosts?: number;
-      extracted?: number;
-      inserted?: number;
-      updated?: number;
-      skipped?: number;
-    };
-
-    return {
-      scannedPosts: Number(parsed.scannedPosts) || 0,
-      extracted: Number(parsed.extracted) || 0,
-      inserted: Number(parsed.inserted) || 0,
-      updated: Number(parsed.updated) || 0,
-      skipped: Number(parsed.skipped) || 0,
-    };
-  } catch {
-    return null;
-  }
-}
-
 function postSummary(row: {
   postId: number | null;
   postTitle: string | null;
@@ -575,28 +544,6 @@ function coverTaskDescription(row: {
   return row.postTitle
     ? `为文章「${row.postTitle}」生成封面`
     : `封面批次 ${row.batchId}`;
-}
-
-function offerTaskDescription(row: {
-  mode: string;
-  message: string | null;
-  result: string | null;
-  errorTitle: string | null;
-  errorDetail: string | null;
-}) {
-  if (row.errorTitle || row.errorDetail) {
-    return failureMessage(row.errorTitle, row.errorDetail);
-  }
-
-  const result = parseOfferImportResult(row.result);
-  if (result) {
-    return `扫描 ${result.scannedPosts} 篇，提取 ${result.extracted} 条，新增 ${result.inserted} 条，更新 ${result.updated} 条`;
-  }
-
-  return (
-    row.message ??
-    (row.mode === "bulk" ? "历史文章套餐提取" : "单篇文章套餐提取")
-  );
 }
 
 function providerRunDescription(row: {
@@ -1141,118 +1088,4 @@ export async function getProviderRunDetail(runId: number) {
 
 export type ProviderRunDetail = NonNullable<
   Awaited<ReturnType<typeof getProviderRunDetail>>
->;
-
-export async function getOfferTaskDetail(taskId: number) {
-  await requireAdminSession();
-
-  const [task] = await db
-    .select({
-      id: serverOfferImportTasks.id,
-      mode: serverOfferImportTasks.mode,
-      postId: serverOfferImportTasks.postId,
-      status: serverOfferImportTasks.status,
-      progress: serverOfferImportTasks.progress,
-      message: serverOfferImportTasks.message,
-      result: serverOfferImportTasks.result,
-      errorTitle: serverOfferImportTasks.errorTitle,
-      errorDetail: serverOfferImportTasks.errorDetail,
-      postTitle: posts.title,
-      postSlug: posts.slug,
-      postLanguage: posts.language,
-      createdAt: serverOfferImportTasks.createdAt,
-      updatedAt: serverOfferImportTasks.updatedAt,
-      startedAt: serverOfferImportTasks.startedAt,
-      finishedAt: serverOfferImportTasks.finishedAt,
-    })
-    .from(serverOfferImportTasks)
-    .leftJoin(posts, eq(serverOfferImportTasks.postId, posts.id))
-    .where(eq(serverOfferImportTasks.id, taskId))
-    .limit(1);
-
-  if (!task) return null;
-
-  const result = parseOfferImportResult(task.result);
-  const steps: UnifiedTaskStep[] = [
-    {
-      key: "created",
-      name: "创建任务",
-      status: "success",
-      description: task.mode === "bulk" ? "历史文章批量提取" : "单篇文章提取",
-      time: serializeDate(task.createdAt),
-    },
-    {
-      key: "queued",
-      name: "进入队列",
-      status:
-        task.status === "pending"
-          ? "running"
-          : task.status === "cancelled"
-            ? "cancelled"
-            : "success",
-      description:
-        task.status === "pending"
-          ? "等待套餐提取 worker 领取"
-          : (task.message ?? "已离开排队状态"),
-      time: serializeDate(task.updatedAt ?? task.createdAt),
-    },
-    {
-      key: "extract",
-      name: "识别配置、价格和购买链接",
-      status: stepStatusForTask(task.status),
-      description:
-        task.status === "failed"
-          ? failureMessage(task.errorTitle, task.errorDetail)
-          : (task.message ?? "等待识别文章表格或正文段落里的有效套餐"),
-      time: serializeDate(task.finishedAt ?? task.updatedAt),
-    },
-    {
-      key: "write-offers",
-      name: "写入套餐库",
-      status: result
-        ? "success"
-        : terminalStatus(task.status)
-          ? "failed"
-          : "pending",
-      description: result
-        ? `提取有效套餐 ${result.extracted} 条，新增 ${result.inserted} 条，更新 ${result.updated} 条，跳过 ${result.skipped} 条`
-        : "解析成功后写入服务器套餐库",
-      time: serializeDate(task.finishedAt),
-      payload: task.result,
-    },
-  ];
-
-  return {
-    ...task,
-    progress: serializeProgress(task.progress, task.status),
-    title:
-      task.mode === "bulk"
-        ? "历史文章套餐提取"
-        : task.postTitle
-          ? `提取套餐：${task.postTitle}`
-          : "单篇文章套餐提取",
-    description: offerTaskDescription(task),
-    error:
-      task.errorTitle || task.errorDetail
-        ? failureMessage(task.errorTitle, task.errorDetail)
-        : null,
-    result,
-    post: postSummary({
-      postId: task.postId,
-      postTitle: task.postTitle,
-      postSlug: task.postSlug,
-      postLanguage: task.postLanguage,
-    }),
-    steps,
-    createdAt: serializeDate(task.createdAt),
-    updatedAt: serializeDate(task.updatedAt),
-    startedAt: serializeDate(task.startedAt),
-    finishedAt: serializeDate(task.finishedAt),
-    canRetry: false,
-    canCancel: false,
-  };
-}
-
-export type OfferTaskDetail = NonNullable<
-  Awaited<ReturnType<typeof getOfferTaskDetail>>
 >;

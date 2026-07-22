@@ -9,6 +9,7 @@ import { ensureAiRewriteWorker } from "@/server/ai/rewrite-task-runner";
 import { restoreAiSourceSiteBackgroundJobRunners } from "@/server/ai/source-site-background";
 import { ensureCoverGenerationWorker } from "@/server/images/cover-generation-task-runner";
 import { ensureProviderMonitorWorkers } from "@/server/offers/provider-monitor";
+import { enqueueOperationalRetention } from "@/server/admin/operational-retention";
 
 const recoverableTaskStatuses = ["pending", "running"] as const;
 
@@ -45,5 +46,6 @@ export async function ensureCmsBackgroundWorkersForRecoverableTasks() {
     hasCoverTasks ? ensureCoverGenerationWorker() : Promise.resolve(),
     restoreAiSourceSiteBackgroundJobRunners(),
     ensureProviderMonitorWorkers(),
+    enqueueOperationalRetention(),
   ]);
 }

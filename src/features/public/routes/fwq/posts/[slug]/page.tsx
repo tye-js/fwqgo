@@ -42,6 +42,10 @@ import {
 } from "@/server/offers/server-offers";
 import { addIdsToHeadings } from "@fwqgo/core/toc";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
+import {
+  isSupportedServerOfferCurrency,
+  parseServerOfferAmount,
+} from "@fwqgo/core/server-offer-price";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
@@ -207,12 +211,13 @@ async function PostPageContent({
   };
   const offerJsonLd = relatedOffers.slice(0, 6).flatMap((offer) => {
     const purchaseUrl = toAbsoluteHttpUrl(offer.purchaseUrl, getSiteUrl());
-    const price = Number(offer.priceAmount);
+    const price = parseServerOfferAmount(offer.priceAmount);
+    const currency = offer.currency?.trim().toUpperCase();
     if (
       !purchaseUrl ||
-      !Number.isFinite(price) ||
+      price === null ||
       price <= 0 ||
-      !offer.currency
+      !isSupportedServerOfferCurrency(currency)
     ) {
       return [];
     }
@@ -234,8 +239,8 @@ async function PostPageContent({
       offers: {
         "@type": "Offer",
         url: purchaseUrl,
-        price: String(offer.priceAmount),
-        priceCurrency: offer.currency,
+        price: String(price),
+        priceCurrency: currency,
         availability:
           offer.status === "in_stock"
             ? "https://schema.org/InStock"

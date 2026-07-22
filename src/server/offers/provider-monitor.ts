@@ -47,6 +47,12 @@ import {
   validateProviderOfferCandidate,
 } from "@/server/offers/provider-source-parser";
 import { enrichWhmcsProductPrices } from "@/server/offers/whmcs-product-page";
+import {
+  maskProviderMonitorSecrets,
+  mergeMaskedProviderMonitorSecrets,
+  prepareProviderMonitorSecrets,
+  resolveProviderMonitorSecrets,
+} from "@/server/offers/provider-monitor-secrets";
 
 const MAX_MONITOR_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_MONITOR_ITEMS = 5_000;
@@ -159,7 +165,15 @@ export async function runProviderMonitor(
   }
 
   const adapter = monitor.adapter as ProviderSourceAdapter;
-  const config = parseProviderMonitorConfig(monitor.config, adapter);
+  const parsedConfig = parseProviderMonitorConfig(monitor.config, adapter);
+  const resolvedSecrets = resolveProviderMonitorSecrets(parsedConfig);
+  const config = resolvedSecrets.config;
+  if (resolvedSecrets.needsMigration) {
+    await db
+      .update(providerMonitors)
+      .set({ config: resolvedSecrets.storageConfig, updatedAt: new Date() })
+      .where(eq(providerMonitors.id, monitor.id));
+  }
   const context: ProviderSyncContext = {
     monitorId: monitor.id,
     providerId: monitor.providerId,
@@ -459,7 +473,7 @@ export async function runProviderMonitor(
           status: "ok",
           available: candidate.status === "in_stock",
           priceAmount: primaryPrice?.amount ?? null,
-          currency: primaryPrice?.currency ?? null,
+          currency: primaryPrice?.currency.trim().toUpperCase() ?? null,
           responseTimeMs: Date.now() - startedAt,
           checkedAt,
         });
@@ -678,7 +692,7 @@ export async function ensureProviderMonitorWorkers() {
 }
 
 export async function getProviderMonitorList() {
-  return db
+  const rows = await db
     .select({
       id: providerMonitors.id,
       providerId: providerMonitors.providerId,
@@ -717,6 +731,16 @@ export async function getProviderMonitorList() {
       eq(providerMonitors.providerId, affServiceProviders.id),
     )
     .orderBy(desc(providerMonitors.enabled), asc(affServiceProviders.name));
+
+  return rows.map((row) => ({
+    ...row,
+    config: maskProviderMonitorSecrets(
+      parseProviderMonitorConfig(
+        row.config,
+        row.adapter as ProviderSourceAdapter,
+      ),
+    ),
+  }));
 }
 
 export type ProviderMonitorMutationInput = {
@@ -741,6 +765,7 @@ export async function createProviderMonitor(
     .insert(providerMonitors)
     .values({
       ...input,
+      config: prepareProviderMonitorSecrets(input.config),
       nextRunAt: input.enabled ? now : null,
       createdAt: now,
       updatedAt: now,
@@ -756,11 +781,31 @@ export async function updateProviderMonitor(
   id: number,
   input: ProviderMonitorMutationInput,
 ) {
+  const { providerId, ...mutableInput } = input;
+  const [existing] = await db
+    .select({
+      providerId: providerMonitors.providerId,
+      adapter: providerMonitors.adapter,
+      config: providerMonitors.config,
+    })
+    .from(providerMonitors)
+    .where(eq(providerMonitors.id, id))
+    .limit(1);
+  if (!existing) throw new Error("供应商采集源不存在");
+  if (existing.providerId !== providerId) {
+    throw new Error("已有采集源不能更换厂商，请新建采集源");
+  }
+  const existingConfig = parseProviderMonitorConfig(
+    existing.config,
+    existing.adapter as ProviderSourceAdapter,
+  );
+
   const now = new Date();
   const [updated] = await db
     .update(providerMonitors)
     .set({
-      ...input,
+      ...mutableInput,
+      config: prepareProviderMonitorSecrets(input.config, existingConfig),
       nextRunAt: input.enabled ? now : null,
       lastStatus: input.enabled ? undefined : "idle",
       lastError: input.enabled ? undefined : null,
@@ -969,11 +1014,33 @@ export async function getProviderOfferCandidateList(
 }
 
 export async function previewProviderMonitorSource(input: {
+  monitorId?: number;
   adapter: ProviderSourceAdapter;
   endpointUrl: string;
   config: ProviderMonitorConfig;
   timeoutSeconds: number;
 }) {
+  const [existing] = input.monitorId
+    ? await db
+        .select({
+          adapter: providerMonitors.adapter,
+          config: providerMonitors.config,
+        })
+        .from(providerMonitors)
+        .where(eq(providerMonitors.id, input.monitorId))
+        .limit(1)
+    : [];
+  const existingConfig = existing
+    ? parseProviderMonitorConfig(
+        existing.config,
+        existing.adapter as ProviderSourceAdapter,
+      )
+    : null;
+  const mergedConfig = mergeMaskedProviderMonitorSecrets(
+    input.config,
+    existingConfig,
+  );
+  const config = resolveProviderMonitorSecrets(mergedConfig).config;
   const response = await fetchPublicHttpUrl(
     input.endpointUrl,
     {
@@ -982,7 +1049,7 @@ export async function previewProviderMonitorSource(input: {
           input.adapter === "json"
             ? "application/json"
             : "text/html,application/xhtml+xml",
-        ...input.config.headers,
+        ...config.headers,
       },
       maxRedirects: 0,
       signal: AbortSignal.timeout(input.timeoutSeconds * 1_000),
@@ -1002,7 +1069,7 @@ export async function previewProviderMonitorSource(input: {
   const parsedCandidates = parseProviderSourcePayload({
     adapter: input.adapter,
     body,
-    config: input.config,
+    config,
     sourceUrl: input.endpointUrl,
   });
   if (parsedCandidates.length > MAX_MONITOR_ITEMS) {
@@ -1013,7 +1080,7 @@ export async function previewProviderMonitorSource(input: {
   if (input.adapter === "whmcs") {
     const enrichment = await enrichWhmcsProductPrices({
       candidates,
-      headers: input.config.headers,
+      headers: config.headers,
       timeoutMs: input.timeoutSeconds * 1_000,
     });
     candidates = enrichment.candidates;
@@ -1031,7 +1098,7 @@ export async function previewProviderMonitorSource(input: {
         candidate: normalized,
         quality: validateProviderOfferCandidate(
           candidate,
-          input.config.requiredSpecCount,
+          config.requiredSpecCount,
         ),
       };
     }),

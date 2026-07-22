@@ -50,6 +50,7 @@ import {
   notifyError,
   notifySuccess,
 } from "@/lib/admin-toast";
+import { unwrapAdminActionResult } from "@/lib/admin-action-result";
 
 type Config = {
   id: number;
@@ -118,9 +119,8 @@ function ConfigForm({
 
     try {
       if (config) {
-        const result = await updateImageGenerationConfigAction(
-          config.id,
-          formData,
+        const result = unwrapAdminActionResult(
+          await updateImageGenerationConfigAction(config.id, formData),
         );
         notifySuccess({
           title: "生图配置已更新",
@@ -135,7 +135,9 @@ function ConfigForm({
           ]),
         });
       } else {
-        const result = await createImageGenerationConfigAction(formData);
+        const result = unwrapAdminActionResult(
+          await createImageGenerationConfigAction(formData),
+        );
         notifySuccess({
           title: "生图配置已添加",
           description: describeAdminResult([
@@ -329,7 +331,9 @@ export function ImageGenerationConfigManager({
     const config = configs.find((item) => item.id === id);
 
     try {
-      const result = await deleteImageGenerationConfigAction(id);
+      const result = unwrapAdminActionResult(
+        await deleteImageGenerationConfigAction(id),
+      );
       notifySuccess({
         title: "生图配置已删除",
         description: describeAdminResult([

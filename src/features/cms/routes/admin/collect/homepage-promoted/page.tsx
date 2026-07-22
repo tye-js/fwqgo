@@ -97,7 +97,7 @@ async function HomepageSlotContent({
     >
       <AdminSectionCard
         title="推广位配置"
-        description="无新推广位时，前台继续读取原首页推荐文章；新配置生效后按位置接管对应区域。"
+        description="前台只读取当前语言、位置和时间范围内有效的推广位；未配置时对应位置保持为空。"
       >
         <HomepageSlotManager
           slots={slots}

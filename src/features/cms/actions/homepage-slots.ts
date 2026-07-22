@@ -3,12 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { requireAdminSession } from "@fwqgo/auth/session";
 import { isHttpHref, isInternalHref } from "@fwqgo/core/utils";
-import {
-  adminActionFailure,
-  adminActionSuccess,
-} from "@/lib/admin-action-result";
+import { defineAdminAction } from "@/features/cms/lib/define-admin-action";
 import {
   deleteHomepageSlot,
   homepageSlotContentTypes,
@@ -94,10 +90,12 @@ const homepageSlotInputSchema = z
 
 export type HomepageSlotActionInput = z.input<typeof homepageSlotInputSchema>;
 
-export async function saveHomepageSlotAction(rawInput: HomepageSlotActionInput) {
-  try {
-    await requireAdminSession();
-    const input = homepageSlotInputSchema.parse(rawInput);
+const saveHomepageSlotMutation = defineAdminAction({
+  action: "homepage_slot.save",
+  entityType: "homepage_slot",
+  parse: (input: HomepageSlotActionInput) =>
+    homepageSlotInputSchema.parse(input),
+  execute: async (input) => {
     const result = await saveHomepageSlot(input.id, {
       language: input.language,
       placement: input.placement,
@@ -116,30 +114,34 @@ export async function saveHomepageSlotAction(rawInput: HomepageSlotActionInput) 
     });
     revalidatePath("/collect/homepage-promoted");
     await notifyPublicWebCache("homepage.changed");
-    return adminActionSuccess(
-      result,
-      input.id ? "首页推广位已更新" : "首页推广位已创建",
-    );
-  } catch (error) {
-    return adminActionFailure(error, {
-      title: "保存首页推广位失败",
-      suggestion: "请检查内容类型、目标内容、链接和定时上下线时间。",
-    });
-  }
-}
+    return result;
+  },
+  successMessage: "首页推广位已保存",
+  errorTitle: "保存首页推广位失败",
+  errorSuggestion: "请检查内容类型、目标内容、链接和定时上下线时间。",
+  entityId: (input, result) => result?.id ?? input.id,
+});
 
-export async function deleteHomepageSlotAction(id: number) {
-  try {
-    await requireAdminSession();
-    if (!Number.isInteger(id) || id <= 0) throw new Error("推广位 ID 无效");
+const deleteHomepageSlotMutation = defineAdminAction({
+  action: "homepage_slot.delete",
+  entityType: "homepage_slot",
+  parse: (id: number) => z.number().int().positive("推广位 ID 无效").parse(id),
+  execute: async (id) => {
     const result = await deleteHomepageSlot(id);
     revalidatePath("/collect/homepage-promoted");
     await notifyPublicWebCache("homepage.changed");
-    return adminActionSuccess(result, "首页推广位已删除");
-  } catch (error) {
-    return adminActionFailure(error, {
-      title: "删除首页推广位失败",
-      suggestion: "请刷新页面确认推广位仍然存在，然后重试。",
-    });
-  }
+    return result;
+  },
+  successMessage: "首页推广位已删除",
+  errorTitle: "删除首页推广位失败",
+  errorSuggestion: "请刷新页面确认推广位仍然存在，然后重试。",
+  entityId: (id) => id,
+});
+
+export async function saveHomepageSlotAction(rawInput: HomepageSlotActionInput) {
+  return saveHomepageSlotMutation(rawInput);
+}
+
+export async function deleteHomepageSlotAction(id: number) {
+  return deleteHomepageSlotMutation(id);
 }

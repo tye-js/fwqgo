@@ -49,6 +49,7 @@ import {
   notifyError,
   notifySuccess,
 } from "@/lib/admin-toast";
+import { unwrapAdminActionResult } from "@/lib/admin-action-result";
 import {
   defaultBaseRewritePrompt,
   defaultEnglishMetadataStylePrompt,
@@ -170,7 +171,9 @@ function ConfigForm({
 
     try {
       if (config) {
-        await updateAiRewriteConfigAction(config.id, formData);
+        unwrapAdminActionResult(
+          await updateAiRewriteConfigAction(config.id, formData),
+        );
         notifySuccess({
           title: "AI 改写配置已更新",
           description: describeAdminResult([
@@ -181,7 +184,7 @@ function ConfigForm({
           ]),
         });
       } else {
-        await createAiRewriteConfigAction(formData);
+        unwrapAdminActionResult(await createAiRewriteConfigAction(formData));
         notifySuccess({
           title: "AI 改写配置已添加",
           description: describeAdminResult([
@@ -460,7 +463,7 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
   async function handleDelete(id: number) {
     const config = configs.find((item) => item.id === id);
     try {
-      await deleteAiRewriteConfigAction(id);
+      unwrapAdminActionResult(await deleteAiRewriteConfigAction(id));
       notifySuccess({
         title: "AI 改写配置已删除",
         description: describeAdminResult([

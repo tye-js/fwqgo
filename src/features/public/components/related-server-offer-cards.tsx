@@ -3,6 +3,7 @@ import type { ComponentProps } from "react";
 import { ArrowRight, ExternalLink, ShoppingCart } from "lucide-react";
 
 import { type ServerOfferTable } from "@/features/public/components/server-offer-table";
+import { formatServerOfferAmount } from "@fwqgo/core/server-offer-price";
 import { isHttpHref, isInternalHref } from "@fwqgo/core/utils";
 
 type Offer = ComponentProps<typeof ServerOfferTable>["offers"][number];
@@ -11,11 +12,14 @@ function formatOfferPrice(offer: Offer, language: "zh" | "en") {
   if (!offer.priceAmount) {
     return language === "en" ? "Price pending" : "价格待补充";
   }
-  const amount = Number(offer.priceAmount);
-  if (!Number.isFinite(amount)) {
+  const formattedAmount = formatServerOfferAmount({
+    amount: offer.priceAmount,
+    currency: offer.currency,
+  });
+  if (!formattedAmount) {
     return language === "en" ? "Price to confirm" : "价格待确认";
   }
-  return `${offer.currency === "CNY" ? "¥" : "$"}${amount.toFixed(2)}`;
+  return formattedAmount;
 }
 
 export function RelatedServerOfferCards({

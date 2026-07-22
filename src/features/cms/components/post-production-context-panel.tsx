@@ -23,7 +23,7 @@ import {
   notifyError,
   notifySuccess,
 } from "@/lib/admin-toast";
-import { type AffiliateRewriteReport } from "@fwqgo/scrape/affiliate-link-rewriter";
+import { type AffiliateRewriteReport } from "@/server/links/affiliate-link-rewriter";
 import { type getPostProductionContext } from "@/features/cms/data/post";
 
 type ProductionContext = NonNullable<

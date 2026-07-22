@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   scrapeArticleWithOptions,
   type ScrapedArticle,
-} from "@fwqgo/scrape/article-scraper";
+} from "@/server/scrape/article-scraper";
 import { getAiRewriteContentLimit } from "@fwqgo/ai/article-rewriter";
 import { reserveBoundedMapCapacity } from "@fwqgo/core/bounded-map";
 import { isPublicHttpUrl } from "@fwqgo/core/network-url";

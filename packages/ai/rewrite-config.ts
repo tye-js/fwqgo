@@ -9,6 +9,12 @@ import {
   defaultMetadataPrompt,
   defaultMetadataStylePrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
+import {
+  decryptSecret,
+  encryptSecret,
+  hasSecretEncryptionKey,
+  maskStoredSecret,
+} from "@fwqgo/core/secret-envelope";
 
 export const aiProviderOptions = ["openai", "deepseek", "compatible"] as const;
 export type AiProvider = (typeof aiProviderOptions)[number];
@@ -43,9 +49,27 @@ export function normalizeBaseUrl(baseUrl: string) {
 }
 
 export function maskApiKey(apiKey: string | null) {
-  if (!apiKey) return null;
-  if (apiKey.length <= 8) return "********";
-  return `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`;
+  return maskStoredSecret(apiKey);
+}
+
+async function resolveStoredApiKey<
+  T extends { id: number; apiKey: string | null },
+>(config: T): Promise<T> {
+  if (!config.apiKey) return config;
+  const decrypted = decryptSecret(config.apiKey);
+  if (decrypted.needsMigration && hasSecretEncryptionKey()) {
+    const encrypted = encryptSecret(decrypted.value);
+    await db
+      .update(aiRewriteConfigs)
+      .set({ apiKey: encrypted, updatedAt: new Date() })
+      .where(
+        and(
+          eq(aiRewriteConfigs.id, config.id),
+          eq(aiRewriteConfigs.apiKey, config.apiKey),
+        ),
+      );
+  }
+  return { ...config, apiKey: decrypted.value };
 }
 
 export async function getAiRewriteConfigs() {
@@ -101,7 +125,7 @@ export async function getActiveAiRewriteConfig(styleId?: number) {
     .where(where)
     .limit(1);
 
-  if (preferred) return preferred;
+  if (preferred) return resolveStoredApiKey(preferred);
 
   if (styleId) return null;
 
@@ -112,7 +136,7 @@ export async function getActiveAiRewriteConfig(styleId?: number) {
     .orderBy(desc(aiRewriteConfigs.id))
     .limit(1);
 
-  return fallback ?? null;
+  return fallback ? resolveStoredApiKey(fallback) : null;
 }
 
 export async function getAiRewriteConfigForStatusCheck(id: number) {
@@ -124,7 +148,7 @@ export async function getAiRewriteConfigForStatusCheck(id: number) {
 
   return config
     ? {
-        ...config,
+        ...(await resolveStoredApiKey(config)),
         provider: config.provider as AiProvider,
         basePrompt: config.basePrompt ?? defaultBaseRewritePrompt,
         metadataPrompt: config.metadataPrompt ?? defaultMetadataPrompt,
@@ -195,7 +219,7 @@ export async function createAiRewriteConfig(input: AiRewriteConfigInput) {
       .values({
         ...input,
         baseUrl: normalizeBaseUrl(input.baseUrl),
-        apiKey: input.apiKey?.trim() ? input.apiKey.trim() : null,
+        apiKey: input.apiKey?.trim() ? encryptSecret(input.apiKey) : null,
         basePrompt: input.basePrompt,
         metadataPrompt: input.metadataPrompt,
         metadataStylePrompt: input.metadataStylePrompt,
@@ -237,7 +261,19 @@ export async function updateAiRewriteConfig(
   };
 
   if (typeof input.apiKey === "string" && input.apiKey.trim()) {
-    values.apiKey = input.apiKey.trim();
+    values.apiKey = encryptSecret(input.apiKey);
+  } else if (hasSecretEncryptionKey()) {
+    const [existing] = await db
+      .select({ apiKey: aiRewriteConfigs.apiKey })
+      .from(aiRewriteConfigs)
+      .where(eq(aiRewriteConfigs.id, id))
+      .limit(1);
+    if (existing?.apiKey) {
+      const decrypted = decryptSecret(existing.apiKey);
+      if (decrypted.needsMigration) {
+        values.apiKey = encryptSecret(decrypted.value);
+      }
+    }
   }
 
   return db.transaction(async (tx) => {

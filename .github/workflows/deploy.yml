@@ -42,6 +42,9 @@ jobs:
       NEXT_PUBLIC_CMS_URL: ${{ vars.NEXT_PUBLIC_CMS_URL || 'https://cms.fwqgo.com' }}
       CMS_BASIC_AUTH_USERNAME: ${{ secrets.CMS_BASIC_AUTH_USERNAME }}
       CMS_BASIC_AUTH_PASSWORD: ${{ secrets.CMS_BASIC_AUTH_PASSWORD }}
+      SECRET_ENCRYPTION_KEYS: ${{ secrets.SECRET_ENCRYPTION_KEYS }}
+      SECRET_ENCRYPTION_KEY: ${{ secrets.SECRET_ENCRYPTION_KEY }}
+      SECRET_ENCRYPTION_ACTIVE_KEY_ID: ${{ secrets.SECRET_ENCRYPTION_ACTIVE_KEY_ID || vars.SECRET_ENCRYPTION_ACTIVE_KEY_ID }}
       GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
 
     steps:
@@ -69,6 +72,9 @@ jobs:
 
       - name: Unit tests
         run: bun run test
+
+      - name: Verify architecture boundaries
+        run: bun run verify:architecture
 
       - name: Verify deployment workflow
         run: bun run verify:deploy
@@ -177,10 +183,13 @@ jobs:
           set -euo pipefail
           runtime_env=".deploy/runtime-$RELEASE_ID.env"
           umask 077
-          printf 'ANALYTICS_DATABASE_URL=%s\nWEB_REVALIDATION_SECRET=%s\nWEB_REVALIDATION_URL=%s\n' \
+          printf 'ANALYTICS_DATABASE_URL=%s\nWEB_REVALIDATION_SECRET=%s\nWEB_REVALIDATION_URL=%s\nSECRET_ENCRYPTION_KEYS=%s\nSECRET_ENCRYPTION_KEY=%s\nSECRET_ENCRYPTION_ACTIVE_KEY_ID=%s\n' \
             "$ANALYTICS_DATABASE_URL" \
             "$WEB_REVALIDATION_SECRET" \
-            "$WEB_REVALIDATION_URL" > "$runtime_env"
+            "$WEB_REVALIDATION_URL" \
+            "$SECRET_ENCRYPTION_KEYS" \
+            "$SECRET_ENCRYPTION_KEY" \
+            "$SECRET_ENCRYPTION_ACTIVE_KEY_ID" > "$runtime_env"
           scp -P "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key ".deploy/fwqgo-$RELEASE_ID.tar.gz" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/fwqgo-$RELEASE_ID.tar.gz"
           scp -P "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key "$runtime_env" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/fwqgo-$RELEASE_ID.runtime.env"
         env:

@@ -5,6 +5,12 @@ import {
   imageCoverGenerationTasks,
   imageGenerationConfigs,
 } from "@fwqgo/db/schema";
+import {
+  decryptSecret,
+  encryptSecret,
+  hasSecretEncryptionKey,
+  maskStoredSecret,
+} from "@fwqgo/core/secret-envelope";
 
 export const imageGenerationProviderOptions = [
   "openai",
@@ -39,9 +45,27 @@ function normalizeBaseUrl(baseUrl: string) {
 }
 
 function maskApiKey(apiKey: string | null) {
-  if (!apiKey) return null;
-  if (apiKey.length <= 8) return "********";
-  return `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`;
+  return maskStoredSecret(apiKey);
+}
+
+async function resolveStoredApiKey<
+  T extends { id: number; apiKey: string | null },
+>(config: T): Promise<T> {
+  if (!config.apiKey) return config;
+  const decrypted = decryptSecret(config.apiKey);
+  if (decrypted.needsMigration && hasSecretEncryptionKey()) {
+    const encrypted = encryptSecret(decrypted.value);
+    await db
+      .update(imageGenerationConfigs)
+      .set({ apiKey: encrypted, updatedAt: new Date() })
+      .where(
+        and(
+          eq(imageGenerationConfigs.id, config.id),
+          eq(imageGenerationConfigs.apiKey, config.apiKey),
+        ),
+      );
+  }
+  return { ...config, apiKey: decrypted.value };
 }
 
 async function lockDefaultSelection(tx: ConfigTransaction) {
@@ -155,7 +179,7 @@ export async function getActiveImageGenerationConfig(configId?: number) {
     .where(where)
     .limit(1);
 
-  if (preferred) return preferred;
+  if (preferred) return resolveStoredApiKey(preferred);
   if (configId) return null;
 
   const [fallback] = await db
@@ -165,11 +189,11 @@ export async function getActiveImageGenerationConfig(configId?: number) {
     .orderBy(desc(imageGenerationConfigs.id))
     .limit(1);
 
-  return fallback ?? null;
+  return fallback ? resolveStoredApiKey(fallback) : null;
 }
 
 export async function getEnabledImageGenerationConfigs() {
-  return db
+  const rows = await db
     .select()
     .from(imageGenerationConfigs)
     .where(eq(imageGenerationConfigs.enabled, true))
@@ -177,6 +201,7 @@ export async function getEnabledImageGenerationConfigs() {
       desc(imageGenerationConfigs.isDefault),
       desc(imageGenerationConfigs.id),
     );
+  return Promise.all(rows.map(resolveStoredApiKey));
 }
 
 export async function createImageGenerationConfig(
@@ -198,7 +223,7 @@ export async function createImageGenerationConfig(
       .values({
         ...input,
         baseUrl: normalizeBaseUrl(input.baseUrl),
-        apiKey: input.apiKey?.trim() ? input.apiKey.trim() : null,
+        apiKey: input.apiKey?.trim() ? encryptSecret(input.apiKey) : null,
       })
       .returning({ id: imageGenerationConfigs.id });
 
@@ -244,7 +269,19 @@ export async function updateImageGenerationConfig(
   };
 
   if (typeof input.apiKey === "string" && input.apiKey.trim()) {
-    values.apiKey = input.apiKey.trim();
+    values.apiKey = encryptSecret(input.apiKey);
+  } else if (hasSecretEncryptionKey()) {
+    const [existing] = await db
+      .select({ apiKey: imageGenerationConfigs.apiKey })
+      .from(imageGenerationConfigs)
+      .where(eq(imageGenerationConfigs.id, id))
+      .limit(1);
+    if (existing?.apiKey) {
+      const decrypted = decryptSecret(existing.apiKey);
+      if (decrypted.needsMigration) {
+        values.apiKey = encryptSecret(decrypted.value);
+      }
+    }
   }
 
   return db.transaction(async (tx) => {

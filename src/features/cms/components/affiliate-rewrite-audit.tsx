@@ -7,7 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { type AffiliateRewriteReport } from "@fwqgo/scrape/affiliate-link-rewriter";
+import { type AffiliateRewriteReport } from "@/server/links/affiliate-link-rewriter";
 
 function shortHref(value: string) {
   if (value.length <= 120) {

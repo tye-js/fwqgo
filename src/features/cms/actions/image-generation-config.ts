@@ -12,6 +12,7 @@ import {
   imageGenerationProviderOptions,
   updateImageGenerationConfig,
 } from "@/server/images/generation-config";
+import { defineAdminAction } from "@/features/cms/lib/define-admin-action";
 
 const removedCoverPlaceholderPattern = /\{(?:title|content)\}/i;
 const promptTemplateSchema = z
@@ -56,33 +57,74 @@ function revalidateImageGenerationPages() {
   revalidatePath("/ai-tasks");
 }
 
+function parseConfigFormData(formData: FormData) {
+  return configSchema.parse(Object.fromEntries(formData));
+}
+
+const createImageGenerationConfigMutation = defineAdminAction({
+  action: "image_generation_config.create",
+  entityType: "image_generation_config",
+  parse: parseConfigFormData,
+  execute: async (input) => {
+    const result = await createImageGenerationConfig(input);
+    revalidateImageGenerationPages();
+    return result;
+  },
+  successMessage: "生图配置已添加",
+  errorTitle: "生图配置添加失败",
+  errorSuggestion: "请检查 Base URL、模型、API Key、尺寸和超时时间。",
+  entityId: (_input, result) => result?.id,
+});
+
+const updateImageGenerationConfigMutation = defineAdminAction({
+  action: "image_generation_config.update",
+  entityType: "image_generation_config",
+  parse: (input: { id: number; formData: FormData }) => ({
+    id: z.number().int().positive("配置 ID 无效").parse(input.id),
+    config: parseConfigFormData(input.formData),
+  }),
+  execute: async ({ id, config }) => {
+    const result = await updateImageGenerationConfig(id, config);
+    revalidateImageGenerationPages();
+    return result;
+  },
+  successMessage: "生图配置已更新",
+  errorTitle: "生图配置更新失败",
+  errorSuggestion: "请检查 Base URL、模型、API Key、尺寸和超时时间。",
+  entityId: ({ id }) => id,
+});
+
+const deleteImageGenerationConfigMutation = defineAdminAction({
+  action: "image_generation_config.delete",
+  entityType: "image_generation_config",
+  parse: (id: number) => z.number().int().positive("配置 ID 无效").parse(id),
+  execute: async (id) => {
+    const result = await deleteImageGenerationConfig(id);
+    revalidateImageGenerationPages();
+    return result;
+  },
+  successMessage: "生图配置已删除",
+  errorTitle: "生图配置删除失败",
+  errorSuggestion: "请刷新配置列表后重试。",
+  entityId: (id) => id,
+});
+
 export async function getImageGenerationConfigList() {
   await requireAdminSession();
   return getImageGenerationConfigs();
 }
 
 export async function createImageGenerationConfigAction(formData: FormData) {
-  await requireAdminSession();
-  const input = configSchema.parse(Object.fromEntries(formData));
-  const result = await createImageGenerationConfig(input);
-  revalidateImageGenerationPages();
-  return result;
+  return createImageGenerationConfigMutation(formData);
 }
 
 export async function updateImageGenerationConfigAction(
   id: number,
   formData: FormData,
 ) {
-  await requireAdminSession();
-  const input = configSchema.parse(Object.fromEntries(formData));
-  const result = await updateImageGenerationConfig(id, input);
-  revalidateImageGenerationPages();
-  return result;
+  return updateImageGenerationConfigMutation({ id, formData });
 }
 
 export async function deleteImageGenerationConfigAction(id: number) {
-  await requireAdminSession();
-  const result = await deleteImageGenerationConfig(id);
-  revalidateImageGenerationPages();
-  return result;
+  return deleteImageGenerationConfigMutation(id);
 }

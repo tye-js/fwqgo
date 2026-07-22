@@ -19,6 +19,10 @@ export const env = createEnv({
     READ_PASSWORD: z.string().min(1).optional(),
     WEB_REVALIDATION_SECRET: z.string().min(16).optional(),
     WEB_REVALIDATION_URL: z.string().url().optional(),
+    SECRET_ENCRYPTION_KEYS: z.string().min(1).optional(),
+    SECRET_ENCRYPTION_KEY: z.string().min(1).optional(),
+    SECRET_ENCRYPTION_ACTIVE_KEY_ID: z.string().min(1).optional(),
+    ENABLE_CMS_BACKGROUND_WORKERS: z.enum(["true", "false"]).optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -48,6 +52,11 @@ export const env = createEnv({
     READ_PASSWORD: process.env.READ_PASSWORD,
     WEB_REVALIDATION_SECRET: process.env.WEB_REVALIDATION_SECRET,
     WEB_REVALIDATION_URL: process.env.WEB_REVALIDATION_URL,
+    SECRET_ENCRYPTION_KEYS: process.env.SECRET_ENCRYPTION_KEYS,
+    SECRET_ENCRYPTION_KEY: process.env.SECRET_ENCRYPTION_KEY,
+    SECRET_ENCRYPTION_ACTIVE_KEY_ID:
+      process.env.SECRET_ENCRYPTION_ACTIVE_KEY_ID,
+    ENABLE_CMS_BACKGROUND_WORKERS: process.env.ENABLE_CMS_BACKGROUND_WORKERS,
     NODE_ENV: process.env.NODE_ENV,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },

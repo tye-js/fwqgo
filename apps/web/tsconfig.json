@@ -9,7 +9,6 @@
       "@fwqgo/auth/*": ["../../packages/auth/*"],
       "@fwqgo/cache/*": ["../../packages/cache/*"],
       "@fwqgo/ai/*": ["../../packages/ai/*"],
-      "@fwqgo/scrape/*": ["../../packages/scrape/*"],
       "@/*": ["../../src/*"]
     },
     "plugins": [

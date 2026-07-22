@@ -19,7 +19,7 @@ import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
-import { enqueueAiRewriteTask } from "@fwqgo/ai/rewrite-task-runner";
+import { enqueueAiRewriteTask } from "@/server/ai/rewrite-task-runner";
 import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
 import { db } from "@fwqgo/db";
 import {

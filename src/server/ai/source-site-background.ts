@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, like } from "drizzle-orm";
 
-import { pullSourceSiteToAiTasks } from "@fwqgo/ai/source-site-puller";
+import { pullSourceSiteToAiTasks } from "@/server/ai/source-site-puller";
 import {
   AI_SOURCE_SITE_JOB_KEY_PREFIX,
   getAiSourceSiteJobKey,

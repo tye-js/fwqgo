@@ -4,8 +4,8 @@ import * as cheerio from "cheerio";
 
 import { normalizeArticleHtml } from "@fwqgo/core/content";
 import { requireAdminSession } from "@fwqgo/auth/session";
-import { type AffiliateRewriteReport } from "@fwqgo/scrape/affiliate-link-rewriter";
-import { rewriteAffiliateLinks } from "@fwqgo/scrape/affiliate-link-rewriter";
+import { type AffiliateRewriteReport } from "@/server/links/affiliate-link-rewriter";
+import { rewriteAffiliateLinks } from "@/server/links/affiliate-link-rewriter";
 
 const siteBaseUrl = "https://fwqgo.com";
 

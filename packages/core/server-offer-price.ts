@@ -7,9 +7,35 @@ export const SERVER_OFFER_BILLING_CYCLES = [
   "triennial",
 ] as const;
 
-export const SERVER_OFFER_CURRENCIES = ["USD", "CNY"] as const;
+export const SERVER_OFFER_CURRENCIES = [
+  "USD",
+  "CNY",
+  "EUR",
+  "GBP",
+  "HKD",
+  "JPY",
+  "CAD",
+  "AUD",
+] as const;
 
 export type ServerOfferCurrency = (typeof SERVER_OFFER_CURRENCIES)[number];
+
+export type ServerOfferExchangeRates = Partial<
+  Record<ServerOfferCurrency, number>
+>;
+
+export const FALLBACK_SERVER_OFFER_EXCHANGE_RATES: Readonly<
+  Record<ServerOfferCurrency, number>
+> = {
+  USD: 1,
+  CNY: 7.2,
+  EUR: 0.92,
+  GBP: 0.79,
+  HKD: 7.8,
+  JPY: 150,
+  CAD: 1.36,
+  AUD: 1.52,
+};
 
 export function parseServerOfferAmount(
   value: string | number | null | undefined,
@@ -19,6 +45,47 @@ export function parseServerOfferAmount(
 
   const amount = Number(value);
   return Number.isFinite(amount) && amount >= 0 ? amount : null;
+}
+
+function parseSpecNumber(value: string | undefined) {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+export function parseServerOfferMemoryMb(
+  value: string | null | undefined,
+) {
+  const match = value?.match(/([0-9]+(?:\.[0-9]+)?)\s*(GB|G|MB|M)\b/i);
+  const amount = parseSpecNumber(match?.[1]);
+  if (amount === null || !match?.[2]) return null;
+  return Math.round(/g/i.test(match[2]) ? amount * 1024 : amount);
+}
+
+export function parseServerOfferStorageGb(
+  value: string | null | undefined,
+) {
+  const match = value?.match(/([0-9]+(?:\.[0-9]+)?)\s*(TB|T|GB|G)\b/i);
+  const amount = parseSpecNumber(match?.[1]);
+  if (amount === null || !match?.[2]) return null;
+  return Math.round(/t/i.test(match[2]) ? amount * 1024 : amount);
+}
+
+export function parseServerOfferBandwidthMbps(
+  value: string | null | undefined,
+) {
+  const match = value?.match(
+    /([0-9]+(?:\.[0-9]+)?)\s*(Gbps|G口|Mbps|M口|G|M)\b/i,
+  );
+  const amount = parseSpecNumber(match?.[1]);
+  if (amount === null || !match?.[2]) return null;
+  return Math.round(/g/i.test(match[2]) ? amount * 1000 : amount);
+}
+
+export function parseServerOfferTrafficGb(
+  value: string | null | undefined,
+) {
+  return parseServerOfferStorageGb(value);
 }
 
 export function isSupportedServerOfferCurrency(
@@ -97,6 +164,7 @@ export function calculateMonthlyPriceUsd(input: {
   currency: string | null | undefined;
   billingCycle: string | null | undefined;
   cnyPerUsd?: number;
+  exchangeRates?: ServerOfferExchangeRates;
 }) {
   const amount = parseServerOfferAmount(input.amount);
   if (amount === null) return null;
@@ -104,10 +172,13 @@ export function calculateMonthlyPriceUsd(input: {
   const currency = input.currency?.trim().toUpperCase();
   if (!isSupportedServerOfferCurrency(currency)) return null;
 
-  const cnyPerUsd = input.cnyPerUsd ?? 7.2;
-  if (!Number.isFinite(cnyPerUsd) || cnyPerUsd <= 0) return null;
+  const rate =
+    (currency === "CNY" ? input.cnyPerUsd : undefined) ??
+    input.exchangeRates?.[currency as ServerOfferCurrency] ??
+    FALLBACK_SERVER_OFFER_EXCHANGE_RATES[currency as ServerOfferCurrency];
+  if (!Number.isFinite(rate) || rate <= 0) return null;
 
-  const amountUsd = currency === "CNY" ? amount / cnyPerUsd : amount;
+  const amountUsd = amount / rate;
   const monthly = amountUsd / getServerOfferTermMonths(input.billingCycle);
 
   return Math.round(monthly * 10_000) / 10_000;
@@ -135,5 +206,15 @@ export function formatServerOfferAmount(input: {
     return null;
   }
 
-  return `${currency === "CNY" ? "¥" : "$"}${amount.toFixed(2)}`;
+  const symbols: Partial<Record<ServerOfferCurrency, string>> = {
+    USD: "$",
+    CNY: "¥",
+    EUR: "€",
+    GBP: "£",
+    HKD: "HK$",
+    JPY: "¥",
+    CAD: "C$",
+    AUD: "A$",
+  };
+  return `${symbols[currency as ServerOfferCurrency] ?? `${currency} `}${amount.toFixed(2)}`;
 }

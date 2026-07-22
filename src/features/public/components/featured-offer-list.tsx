@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ArrowUpRight, FileText, ShoppingCart } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { formatServerOfferAmount } from "@fwqgo/core/server-offer-price";
 import { cn, isHttpHref, isInternalHref } from "@fwqgo/core/utils";
 
 type PublicLanguage = "zh" | "en";
@@ -102,15 +103,17 @@ function formatOfferPrice(offer: FeaturedOffer, language: PublicLanguage) {
   const raw = offer.priceAmount?.trim();
   if (!raw) return copy.pricePending;
 
-  const amount = Number(raw);
-  if (!Number.isFinite(amount) || amount < 0) return copy.priceInvalid;
+  const formattedAmount = formatServerOfferAmount({
+    amount: raw,
+    currency: offer.currency,
+  });
+  if (!formattedAmount) return copy.priceInvalid;
 
-  const currency = offer.currency === "CNY" ? "¥" : "$";
   const cycle = offer.billingCycle
     ? (copy.cycles[offer.billingCycle] ?? offer.billingCycle)
     : copy.cyclePending;
 
-  return `${currency}${amount.toFixed(2)} / ${cycle}`;
+  return `${formattedAmount} / ${cycle}`;
 }
 
 function SafeOfferLink({

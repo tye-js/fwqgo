@@ -13,6 +13,7 @@ import {
   updateAiRewriteConfig,
 } from "@fwqgo/ai/rewrite-config";
 import { checkAiRewriteConfigStatus } from "@fwqgo/ai/rewrite-status-check";
+import { defineAdminAction } from "@/features/cms/lib/define-admin-action";
 
 const configSchema = z.object({
   name: z.string().trim().min(1, "名称不能为空"),
@@ -48,32 +49,78 @@ const configSchema = z.object({
   ),
 });
 
+function parseConfigFormData(formData: FormData) {
+  return configSchema.parse(Object.fromEntries(formData));
+}
+
+const createAiRewriteConfigMutation = defineAdminAction({
+  action: "ai_rewrite_config.create",
+  entityType: "ai_rewrite_config",
+  parse: parseConfigFormData,
+  execute: async (input) => {
+    const result = await createAiRewriteConfig(input);
+    if (!result) throw new Error("AI 改写配置创建失败");
+    revalidatePath("/collect/ai-rewrite");
+    return result;
+  },
+  successMessage: "AI 改写配置已添加",
+  errorTitle: "AI 改写配置添加失败",
+  errorSuggestion: "请检查 Base URL、模型、API Key 和数值范围。",
+  entityId: (_input, result) => result?.id,
+});
+
+const updateAiRewriteConfigMutation = defineAdminAction({
+  action: "ai_rewrite_config.update",
+  entityType: "ai_rewrite_config",
+  parse: (input: { id: number; formData: FormData }) => ({
+    id: z.number().int().positive("配置 ID 无效").parse(input.id),
+    config: parseConfigFormData(input.formData),
+  }),
+  execute: async ({ id, config }) => {
+    const result = await updateAiRewriteConfig(id, config);
+    if (!result) throw new Error("AI 改写配置不存在或已被删除");
+    revalidatePath("/collect/ai-rewrite");
+    return result;
+  },
+  successMessage: "AI 改写配置已更新",
+  errorTitle: "AI 改写配置更新失败",
+  errorSuggestion: "请检查 Base URL、模型、API Key 和数值范围。",
+  entityId: ({ id }) => id,
+});
+
+const deleteAiRewriteConfigMutation = defineAdminAction({
+  action: "ai_rewrite_config.delete",
+  entityType: "ai_rewrite_config",
+  parse: (id: number) => z.number().int().positive("配置 ID 无效").parse(id),
+  execute: async (id) => {
+    await deleteAiRewriteConfig(id);
+    revalidatePath("/collect/ai-rewrite");
+    return { id };
+  },
+  successMessage: "AI 改写配置已删除",
+  errorTitle: "AI 改写配置删除失败",
+  errorSuggestion: "请刷新配置列表后重试。",
+  entityId: (id) => id,
+});
+
 export async function getAiRewriteConfigList() {
   await requireAdminSession();
   return getAiRewriteConfigs();
 }
 
 export async function createAiRewriteConfigAction(formData: FormData) {
-  await requireAdminSession();
-  const input = configSchema.parse(Object.fromEntries(formData));
-  await createAiRewriteConfig(input);
-  revalidatePath("/collect/ai-rewrite");
+  return createAiRewriteConfigMutation(formData);
 }
 
 export async function updateAiRewriteConfigAction(
   id: number,
   formData: FormData,
 ) {
-  await requireAdminSession();
-  const input = configSchema.parse(Object.fromEntries(formData));
-  await updateAiRewriteConfig(id, input);
-  revalidatePath("/collect/ai-rewrite");
+  return updateAiRewriteConfigMutation({ id, formData });
 }
 
 export async function deleteAiRewriteConfigAction(id: number) {
-  await requireAdminSession();
-  await deleteAiRewriteConfig(id);
-  revalidatePath("/collect/ai-rewrite");
+  return deleteAiRewriteConfigMutation(id);
 }
 
 export async function checkAiRewriteConfigStatusAction(id: number) {

@@ -48,9 +48,6 @@
       "@fwqgo/ai/*": [
         "./packages/ai/*"
       ],
-      "@fwqgo/scrape/*": [
-        "./packages/scrape/*"
-      ],
       "@/*": [
         "./src/*"
       ]

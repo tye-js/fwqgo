@@ -131,8 +131,8 @@ export function useAdminMutation() {
         startTransition(async () => {
           let optimisticApplied = false;
           try {
-            options.optimistic?.apply();
             optimisticApplied = Boolean(options.optimistic);
+            options.optimistic?.apply();
 
             let result: TResult;
             try {

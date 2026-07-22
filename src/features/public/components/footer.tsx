@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { BrandLogo } from "@/components/brand/brand-logo";
+import { LanguageSwitchLink } from "@/features/public/components/language-switch-link";
 import { getCategories } from "@/features/shared/data/category";
 
 type PublicLanguage = "zh" | "en";
@@ -72,7 +73,6 @@ const footerCopy = {
     utilityTitle: "常用入口",
     contactTitle: "联系与说明",
     languageLabel: "English",
-    languageHref: "/en",
     contactEmail: "contact@fwqgo.com",
     copyright: "服务器go 保留所有权利。",
     highlights: [
@@ -134,7 +134,6 @@ const footerCopy = {
     utilityTitle: "Useful Links",
     contactTitle: "Contact",
     languageLabel: "中文",
-    languageHref: "/",
     contactEmail: "contact@fwqgo.com",
     copyright: "fwqgo. All rights reserved.",
     highlights: [
@@ -197,7 +196,6 @@ const footerCopy = {
     utilityTitle: string;
     contactTitle: string;
     languageLabel: string;
-    languageHref: string;
     contactEmail: string;
     copyright: string;
     highlights: FooterLink[];
@@ -358,14 +356,27 @@ function FooterView({
                 <Mail className="size-4 text-primary" />
                 {copy.contactEmail}
               </a>
-              <Link
-                href={copy.languageHref}
-                prefetch
-                className="inline-flex min-h-11 w-fit items-center gap-2 rounded-md px-2 transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              <Suspense
+                fallback={
+                  <Link
+                    href={language === "en" ? "/" : "/en"}
+                    prefetch
+                    className="inline-flex min-h-11 w-fit items-center gap-2 rounded-md px-2 transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    <Globe2 className="size-4 text-primary" />
+                    {copy.languageLabel}
+                  </Link>
+                }
               >
-                <Globe2 className="size-4 text-primary" />
-                {copy.languageLabel}
-              </Link>
+                <LanguageSwitchLink
+                  currentLanguage={language}
+                  prefetch
+                  className="inline-flex min-h-11 w-fit items-center gap-2 rounded-md px-2 transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <Globe2 className="size-4 text-primary" />
+                  {copy.languageLabel}
+                </LanguageSwitchLink>
+              </Suspense>
             </div>
           </section>
 

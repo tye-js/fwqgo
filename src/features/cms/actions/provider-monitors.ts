@@ -15,6 +15,7 @@ import {
   adminActionFailure,
   adminActionSuccess,
 } from "@/lib/admin-action-result";
+import { defineAdminAction } from "@/features/cms/lib/define-admin-action";
 import {
   createProviderMonitor,
   deleteProviderMonitor,
@@ -77,12 +78,17 @@ function parseConfigText(value: string, adapter: ProviderSourceAdapter) {
   return parseProviderMonitorConfig(config, adapter);
 }
 
-export async function saveProviderMonitorAction(
-  rawInput: ProviderMonitorActionInput,
-) {
-  try {
-    await requireAdminSession();
-    const input = monitorInputSchema.parse(rawInput);
+const providerMonitorIdSchema = z.number().int().positive("采集源 ID 无效");
+const providerMonitorRunIdSchema = z
+  .number()
+  .int()
+  .positive("采集运行 ID 无效");
+
+const saveProviderMonitorMutation = defineAdminAction({
+  action: "provider_monitor.save",
+  entityType: "provider_monitor",
+  parse: (input: ProviderMonitorActionInput) => monitorInputSchema.parse(input),
+  execute: async (input) => {
     const endpointUrl = requirePublicHttpUrl(
       input.endpointUrl,
       "供应商采集地址",
@@ -104,27 +110,21 @@ export async function saveProviderMonitorAction(
     const result = input.id
       ? await updateProviderMonitor(input.id, mutationInput)
       : await createProviderMonitor(mutationInput);
-
     revalidatePath("/servers/monitor");
-    return adminActionSuccess(
-      result,
-      input.id ? "供应商采集源已更新" : "供应商采集源已创建",
-    );
-  } catch (error) {
-    return adminActionFailure(error, {
-      title: "保存供应商采集源失败",
-      suggestion:
-        "请检查供应商、网址、适配器、字段映射 JSON、执行间隔和超时时间。",
-    });
-  }
-}
+    return result;
+  },
+  successMessage: "供应商采集源已保存",
+  errorTitle: "保存供应商采集源失败",
+  errorSuggestion:
+    "请检查供应商、网址、适配器、字段映射 JSON、执行间隔和超时时间。",
+  entityId: (input, result) => result?.id ?? input.id,
+});
 
-export async function runProviderMonitorNowAction(id: number) {
-  try {
-    await requireAdminSession();
-    if (!Number.isInteger(id) || id <= 0) {
-      throw new Error("采集源 ID 无效");
-    }
+const runProviderMonitorNowMutation = defineAdminAction({
+  action: "provider_monitor.enqueue",
+  entityType: "provider_monitor",
+  parse: (id: number) => providerMonitorIdSchema.parse(id),
+  execute: async (id) => {
     const monitor = (await getProviderMonitorList()).find(
       (item) => item.id === id,
     );
@@ -132,30 +132,106 @@ export async function runProviderMonitorNowAction(id: number) {
     if (!monitor.enabled) throw new Error("请先启用采集源再立即运行");
     await enqueueProviderMonitorTask(id, new Date());
     revalidatePath("/servers/monitor");
-    return adminActionSuccess({ id }, "供应商采集任务已加入后台队列");
-  } catch (error) {
-    return adminActionFailure(error, {
-      title: "启动供应商采集失败",
-      suggestion: "请确认采集源仍然存在且已启用，然后重新执行。",
+    return { id };
+  },
+  successMessage: "供应商采集任务已加入后台队列",
+  errorTitle: "启动供应商采集失败",
+  errorSuggestion: "请确认采集源仍然存在且已启用，然后重新执行。",
+  entityId: (id) => id,
+});
+
+const deleteProviderMonitorMutation = defineAdminAction({
+  action: "provider_monitor.delete",
+  entityType: "provider_monitor",
+  parse: (id: number) => providerMonitorIdSchema.parse(id),
+  execute: async (id) => {
+    const result = await deleteProviderMonitor(id);
+    revalidatePath("/servers/monitor");
+    return result;
+  },
+  successMessage: "供应商采集源已删除",
+  errorTitle: "删除供应商采集源失败",
+  errorSuggestion: "正在运行的采集需要等待本次执行结束后再删除。",
+  entityId: (id) => id,
+});
+
+const reviewProviderOfferCandidateMutation = defineAdminAction({
+  action: "provider_offer_candidate.review",
+  entityType: "provider_offer_candidate",
+  parse: (input: z.input<typeof candidateReviewSchema>) =>
+    candidateReviewSchema.parse(input),
+  execute: async (input, session) => {
+    const result =
+      input.decision === "accept"
+        ? await acceptProviderOfferCandidate({
+            candidateId: input.candidateId,
+            reviewerId: session.userId,
+          })
+        : await rejectProviderOfferCandidate({
+            candidateId: input.candidateId,
+            reviewerId: session.userId,
+            reason: input.reason,
+          });
+    revalidatePath("/servers/monitor");
+    revalidatePath("/servers/manage");
+    revalidatePath("/ai-tasks");
+    return result;
+  },
+  successMessage: "候选套餐审核已完成",
+  errorTitle: "审核候选套餐失败",
+  errorSuggestion: "请刷新页面确认候选状态后重试。",
+  entityId: (input) => input.candidateId,
+});
+
+const reviewProviderOfferCandidatesMutation = defineAdminAction({
+  action: "provider_offer_candidate.bulk_review",
+  entityType: "provider_offer_candidate",
+  parse: (input: z.input<typeof candidateBatchReviewSchema>) =>
+    candidateBatchReviewSchema.parse(input),
+  execute: async (input, session) => {
+    const result = await reviewProviderOfferCandidates({
+      ...input,
+      reviewerId: session.userId,
     });
-  }
+    revalidatePath("/servers/monitor");
+    revalidatePath("/servers/manage");
+    revalidatePath("/ai-tasks");
+    return result;
+  },
+  successMessage: (result) => `已审核 ${result.processed} 个候选套餐`,
+  errorTitle: "批量审核候选套餐失败",
+  errorSuggestion: "请刷新页面确认候选状态后重试。",
+  entityId: (input) => `batch:${input.candidateIds.length}`,
+});
+
+const retryProviderMonitorRunMutation = defineAdminAction({
+  action: "provider_monitor_run.retry",
+  entityType: "provider_monitor_run",
+  parse: (runId: number) => providerMonitorRunIdSchema.parse(runId),
+  execute: async (runId) => {
+    const result = await retryProviderMonitorRun(runId);
+    revalidatePath("/ai-tasks");
+    revalidatePath("/servers/monitor");
+    return result;
+  },
+  successMessage: "供应商采集已重新加入后台队列",
+  errorTitle: "重试供应商采集失败",
+  errorSuggestion: "请确认采集源已启用，并刷新任务中心确认最新状态。",
+  entityId: (runId) => runId,
+});
+
+export async function saveProviderMonitorAction(
+  rawInput: ProviderMonitorActionInput,
+) {
+  return saveProviderMonitorMutation(rawInput);
+}
+
+export async function runProviderMonitorNowAction(id: number) {
+  return runProviderMonitorNowMutation(id);
 }
 
 export async function deleteProviderMonitorAction(id: number) {
-  try {
-    await requireAdminSession();
-    if (!Number.isInteger(id) || id <= 0) {
-      throw new Error("采集源 ID 无效");
-    }
-    const result = await deleteProviderMonitor(id);
-    revalidatePath("/servers/monitor");
-    return adminActionSuccess(result, "供应商采集源已删除");
-  } catch (error) {
-    return adminActionFailure(error, {
-      title: "删除供应商采集源失败",
-      suggestion: "正在运行的采集需要等待本次执行结束后再删除。",
-    });
-  }
+  return deleteProviderMonitorMutation(id);
 }
 
 export async function previewProviderMonitorAction(
@@ -170,6 +246,7 @@ export async function previewProviderMonitorAction(
     ).toString();
     const config = parseConfigText(input.configText, input.adapter);
     const preview = await previewProviderMonitorSource({
+      monitorId: input.id,
       adapter: input.adapter,
       endpointUrl,
       config,
@@ -194,33 +271,7 @@ export async function reviewProviderOfferCandidateAction(input: {
   decision: "accept" | "reject";
   reason?: string;
 }) {
-  try {
-    const session = await requireAdminSession();
-    const parsed = candidateReviewSchema.parse(input);
-    const result =
-      parsed.decision === "accept"
-        ? await acceptProviderOfferCandidate({
-            candidateId: parsed.candidateId,
-            reviewerId: session.userId,
-          })
-        : await rejectProviderOfferCandidate({
-            candidateId: parsed.candidateId,
-            reviewerId: session.userId,
-            reason: parsed.reason,
-          });
-    revalidatePath("/servers/monitor");
-    revalidatePath("/servers/manage");
-    revalidatePath("/ai-tasks");
-    return adminActionSuccess(
-      result,
-      parsed.decision === "accept" ? "候选套餐已接受" : "候选套餐已拒绝",
-    );
-  } catch (error) {
-    return adminActionFailure(error, {
-      title: input.decision === "accept" ? "接受候选失败" : "拒绝候选失败",
-      suggestion: "请刷新页面确认候选状态后重试。",
-    });
-  }
+  return reviewProviderOfferCandidateMutation(input);
 }
 
 export async function reviewProviderOfferCandidatesAction(input: {
@@ -228,45 +279,9 @@ export async function reviewProviderOfferCandidatesAction(input: {
   decision: "accept" | "reject";
   reason?: string;
 }) {
-  try {
-    const session = await requireAdminSession();
-    const parsed = candidateBatchReviewSchema.parse(input);
-    const result = await reviewProviderOfferCandidates({
-      ...parsed,
-      reviewerId: session.userId,
-    });
-    revalidatePath("/servers/monitor");
-    revalidatePath("/servers/manage");
-    revalidatePath("/ai-tasks");
-    return adminActionSuccess(
-      result,
-      parsed.decision === "accept"
-        ? `已批量接受 ${result.processed} 个候选套餐`
-        : `已批量拒绝 ${result.processed} 个候选套餐`,
-    );
-  } catch (error) {
-    return adminActionFailure(error, {
-      title:
-        input.decision === "accept" ? "批量接受候选失败" : "批量拒绝候选失败",
-      suggestion: "请刷新页面确认候选状态后重试。",
-    });
-  }
+  return reviewProviderOfferCandidatesMutation(input);
 }
 
 export async function retryProviderMonitorRunAction(runId: number) {
-  try {
-    await requireAdminSession();
-    if (!Number.isInteger(runId) || runId <= 0) {
-      throw new Error("采集运行 ID 无效");
-    }
-    const result = await retryProviderMonitorRun(runId);
-    revalidatePath("/ai-tasks");
-    revalidatePath("/servers/monitor");
-    return adminActionSuccess(result, "供应商采集已重新加入后台队列");
-  } catch (error) {
-    return adminActionFailure(error, {
-      title: "重试供应商采集失败",
-      suggestion: "请确认采集源已启用，并刷新任务中心确认最新状态。",
-    });
-  }
+  return retryProviderMonitorRunMutation(runId);
 }

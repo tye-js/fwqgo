@@ -8,6 +8,9 @@ if (!targetPath || !overridePath) {
 
 const allowedKeys = new Set([
   "ANALYTICS_DATABASE_URL",
+  "SECRET_ENCRYPTION_ACTIVE_KEY_ID",
+  "SECRET_ENCRYPTION_KEY",
+  "SECRET_ENCRYPTION_KEYS",
   "WEB_REVALIDATION_SECRET",
   "WEB_REVALIDATION_URL",
 ]);

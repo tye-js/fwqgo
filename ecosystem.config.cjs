@@ -143,6 +143,7 @@ function createApp({
       ...roleDatabaseEnv,
       PORT: resolvedPort,
       NODE_ENV: "production",
+      TZ: "UTC",
       RELEASE_ID:
         process.env.RELEASE_ID ?? productionEnv.RELEASE_ID ?? "unknown",
       BUN_BIN: bunInterpreter,

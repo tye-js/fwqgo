@@ -1,7 +1,20 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { env } from "@/env";
 import * as schema from "./schema";
+
+function databaseUrl(name: string, fallback?: string) {
+  const value = process.env[name]?.trim() ?? fallback;
+  if (value) return value;
+  if (process.env.SKIP_ENV_VALIDATION) {
+    return "postgresql://build:build@127.0.0.1:5432/fwqgo_build";
+  }
+  throw new Error(`${name} is required`);
+}
+
+const primaryDatabaseUrl = databaseUrl(
+  "DATABASE_URL",
+  process.env.READ_DATABASE_URL,
+);
 
 /**
  * Cache the database connection in development. This avoids creating a new connection on every HMR
@@ -34,41 +47,43 @@ function withCredentials(
 }
 
 function resolveWriteDatabaseUrl() {
-  if (env.CMS_DATABASE_URL) {
-    return env.CMS_DATABASE_URL;
+  if (process.env.CMS_DATABASE_URL) {
+    return databaseUrl("CMS_DATABASE_URL");
   }
 
-  if (!env.CMS_PASSWORD && !env.CMS_USERNAME) {
-    return env.DATABASE_URL;
+  if (!process.env.CMS_PASSWORD && !process.env.CMS_USERNAME) {
+    return primaryDatabaseUrl;
   }
 
-  const baseUrl = new URL(env.DATABASE_URL);
+  const baseUrl = new URL(primaryDatabaseUrl);
 
-  return withCredentials(env.DATABASE_URL, {
-    username: env.CMS_USERNAME ?? baseUrl.username,
-    password: env.CMS_PASSWORD,
+  return withCredentials(primaryDatabaseUrl, {
+    username: process.env.CMS_USERNAME ?? baseUrl.username,
+    password: process.env.CMS_PASSWORD,
   });
 }
 
 function resolveReadDatabaseUrl() {
-  if (env.READ_DATABASE_URL) {
-    return env.READ_DATABASE_URL;
+  if (process.env.READ_DATABASE_URL) {
+    return databaseUrl("READ_DATABASE_URL");
   }
 
-  if (!env.READ_PASSWORD && !env.READ_USERNAME) {
+  if (!process.env.READ_PASSWORD && !process.env.READ_USERNAME) {
     return resolveWriteDatabaseUrl();
   }
 
-  const baseUrl = new URL(env.DATABASE_URL);
+  const baseUrl = new URL(primaryDatabaseUrl);
 
-  return withCredentials(env.DATABASE_URL, {
-    username: env.READ_USERNAME ?? `${baseUrl.username}_readonly`,
-    password: env.READ_PASSWORD,
+  return withCredentials(primaryDatabaseUrl, {
+    username: process.env.READ_USERNAME ?? `${baseUrl.username}_readonly`,
+    password: process.env.READ_PASSWORD,
   });
 }
 
 function resolveAnalyticsDatabaseUrl() {
-  return env.ANALYTICS_DATABASE_URL ?? resolveWriteDatabaseUrl();
+  return process.env.ANALYTICS_DATABASE_URL
+    ? databaseUrl("ANALYTICS_DATABASE_URL")
+    : resolveWriteDatabaseUrl();
 }
 
 function isBuildProcess() {
@@ -92,6 +107,7 @@ const connectionOptions = {
   connect_timeout: 10,
   idle_timeout: 20,
   max: resolveMaxConnections(),
+  connection: { TimeZone: "UTC" },
 };
 
 const writeConn =
@@ -102,7 +118,7 @@ const analyticsConn =
   globalForDb.analyticsConn ??
   postgres(resolveAnalyticsDatabaseUrl(), { ...connectionOptions, max: 1 });
 
-if (env.NODE_ENV !== "production") {
+if (process.env.NODE_ENV !== "production") {
   globalForDb.writeConn = writeConn;
   globalForDb.readConn = readConn;
   globalForDb.analyticsConn = analyticsConn;

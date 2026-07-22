@@ -6,6 +6,19 @@ type LogContext = Record<string, unknown>;
 const SENSITIVE_KEY =
   /(authorization|cookie|password|secret|token|api[-_]?key|database[-_]?url)/i;
 const MAX_LOG_DEPTH = 8;
+const SAFE_ERROR_METADATA_KEYS = [
+  "code",
+  "severity",
+  "schema_name",
+  "table_name",
+  "column_name",
+  "constraint_name",
+] as const;
+
+function sanitizeErrorMessage(value: string) {
+  const [message = ""] = value.split(/\nparams:/i, 1);
+  return message.slice(0, 1_000);
+}
 
 function sanitizeValue(
   key: string,
@@ -16,7 +29,31 @@ function sanitizeValue(
   if (SENSITIVE_KEY.test(key)) return "[REDACTED]";
   if (depth > MAX_LOG_DEPTH) return "[MAX_DEPTH]";
   if (value instanceof Error) {
-    return { name: value.name, message: value.message.slice(0, 1_000) };
+    if (seen.has(value)) return "[CIRCULAR]";
+    seen.add(value);
+
+    const error = value as Error & Record<string, unknown>;
+    const result: Record<string, unknown> = {
+      name: value.name,
+      message: sanitizeErrorMessage(value.message),
+    };
+    for (const metadataKey of SAFE_ERROR_METADATA_KEYS) {
+      const metadataValue = error[metadataKey];
+      if (metadataValue !== undefined && metadataValue !== null) {
+        result[metadataKey] = sanitizeValue(
+          metadataKey,
+          metadataValue,
+          seen,
+          depth + 1,
+        );
+      }
+    }
+    if (error.cause !== undefined) {
+      result.cause = sanitizeValue("cause", error.cause, seen, depth + 1);
+    }
+
+    seen.delete(value);
+    return result;
   }
   if (typeof value === "string") return value.slice(0, 2_000);
   if (typeof value === "bigint") return value.toString();

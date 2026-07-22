@@ -3,22 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { requireAdminSession } from "@fwqgo/auth/session";
 import { isHttpHref, isInternalHref } from "@fwqgo/core/utils";
 import {
   SERVER_OFFER_BILLING_CYCLES,
   SERVER_OFFER_CURRENCIES,
 } from "@fwqgo/core/server-offer-price";
 import { SERVER_OFFER_KINDS } from "@fwqgo/core/server-offer-kind";
-import {
-  adminActionFailure,
-  adminActionSuccess,
-  getErrorMessage,
-} from "@/lib/admin-action-result";
-import {
-  cancelServerOfferImportTask,
-  getServerOfferImportTaskStatus,
-} from "@/server/offers/import-task-runner";
+import { defineAdminAction } from "@/features/cms/lib/define-admin-action";
 import {
   bulkUpdateServerOffers,
   deleteServerOfferArticleRelation,
@@ -167,7 +158,9 @@ const bulkUpdateOfferSchema = z
     status: z.enum(offerStatuses).optional(),
     visible: z.boolean().optional(),
     featured: z.boolean().optional(),
-    reviewStatus: z.enum(offerReviewStatuses).optional(),
+    reviewStatus: z
+      .enum(["pending", "reviewed", "needs_fix", "duplicate"])
+      .optional(),
   })
   .refine(
     (value) =>
@@ -178,6 +171,21 @@ const bulkUpdateOfferSchema = z
       value.reviewStatus !== undefined,
     { message: "请选择至少一个要更新的字段" },
   );
+
+const offerArticleRelationSchema = z.object({
+  offerId: z.number().int().positive("套餐 ID 无效"),
+  postId: z.number().int().positive("请选择文章"),
+  relationType: z.enum(["review", "mention", "deal"]),
+});
+
+type BulkUpdateOfferActionInput = {
+  ids: number[];
+  offerKind?: string;
+  status?: string;
+  visible?: boolean;
+  featured?: boolean;
+  reviewStatus?: string;
+};
 
 function parseJsonField(value: FormDataEntryValue | null, label: string) {
   if (typeof value !== "string" || !value.trim()) return [];
@@ -200,182 +208,134 @@ function revalidateOfferPages() {
   revalidatePath("/servers/cheap-vps");
 }
 
-export async function importServerOffersFromPostAction(postId: number) {
-  await requireAdminSession();
-  void postId;
-  return adminActionFailure(new Error("文章套餐提取已停用"), {
-    title: "套餐数据源已迁移",
-    suggestion:
-      "请到“套餐 → 供应商采集”配置供应商官网；文章只关联测评、提及或优惠关系。",
-  });
-}
-
-export async function importServerOffersFromSelectedPostsAction(
-  postIds: number[],
-) {
-  await requireAdminSession();
-  void postIds;
-  return adminActionFailure(new Error("文章套餐提取已停用"), {
-    title: "套餐数据源已迁移",
-    suggestion: "请到“套餐 → 供应商采集”配置供应商官网。",
-  });
-}
-
-export async function importServerOffersFromPostsAction() {
-  await requireAdminSession();
-  return adminActionFailure(new Error("历史文章套餐提取已停用"), {
-    title: "套餐数据源已迁移",
-    suggestion: "请到“套餐 → 供应商采集”配置供应商官网。",
-  });
-}
-
-export async function getServerOfferImportTaskStatusAction(taskId: number) {
-  try {
-    await requireAdminSession();
-    if (!Number.isInteger(taskId) || taskId <= 0) {
-      return adminActionFailure(new Error("任务 ID 无效"), {
-        title: "读取套餐提取任务失败",
-        suggestion: "请从最新任务提示中重新打开状态。",
-      });
-    }
-
-    const task = await getServerOfferImportTaskStatus(taskId);
-    return adminActionSuccess(task);
-  } catch (error) {
-    return adminActionFailure(error, {
-      title: "读取套餐提取任务失败",
-      suggestion: "请刷新页面后重试。",
-    });
+function parseUpdateOfferActionInput(input: { id: number; formData: FormData }) {
+  if (!Number.isInteger(input.id) || input.id <= 0) {
+    throw new Error("套餐 ID 无效");
   }
+
+  return {
+    id: input.id,
+    offer: updateOfferSchema.parse({
+      title: input.formData.get("title"),
+      offerKind: input.formData.get("offerKind"),
+      providerId: input.formData.get("providerId"),
+      providerName: input.formData.get("providerName"),
+      externalProductId: input.formData.get("externalProductId"),
+      productGroup: input.formData.get("productGroup"),
+      productType: input.formData.get("productType"),
+      cpu: input.formData.get("cpu"),
+      memory: input.formData.get("memory"),
+      storage: input.formData.get("storage"),
+      bandwidth: input.formData.get("bandwidth"),
+      traffic: input.formData.get("traffic"),
+      priceAmount: input.formData.get("priceAmount"),
+      currency: input.formData.get("currency"),
+      billingCycle: input.formData.get("billingCycle"),
+      region: input.formData.get("region"),
+      lineType: input.formData.get("lineType"),
+      status: input.formData.get("status"),
+      purchaseUrl: input.formData.get("purchaseUrl"),
+      promoCode: input.formData.get("promoCode"),
+      articleUrl: input.formData.get("articleUrl"),
+      reviewUrl: input.formData.get("reviewUrl"),
+      visible: input.formData.get("visible") === "true",
+      featured: input.formData.get("featured") === "true",
+      reviewStatus: input.formData.get("reviewStatus"),
+      lockedFields: parseJsonField(
+        input.formData.get("lockedFieldsJson"),
+        "锁定字段",
+      ),
+      validUntil: input.formData.get("validUntil"),
+      prices: parseJsonField(
+        input.formData.get("pricesJson"),
+        "多周期价格",
+      ),
+    }),
+  };
 }
 
-export async function retryServerOfferImportTaskAction(taskId: number) {
-  await requireAdminSession();
-  void taskId;
-  return adminActionFailure(new Error("历史套餐提取任务不能恢复"), {
-    title: "旧任务已归档",
-    suggestion: "请在供应商采集页面重新运行对应采集源。",
-  });
-}
+const saveServerOfferArticleRelation = defineAdminAction({
+  action: "server_offer.article_relation.save",
+  entityType: "server_offer",
+  parse: (input: z.input<typeof offerArticleRelationSchema>) =>
+    offerArticleRelationSchema.parse(input),
+  execute: async (input) => {
+    const result = await upsertServerOfferArticleRelation(input);
+    revalidatePath("/servers/manage");
+    return result;
+  },
+  successMessage: "套餐文章关系已保存",
+  errorTitle: "保存套餐文章关系失败",
+  errorSuggestion: "请确认套餐和文章仍然存在后重试。",
+  entityId: (input) => input.offerId,
+});
 
-export async function cancelServerOfferImportTaskAction(taskId: number) {
-  try {
-    await requireAdminSession();
-    if (!Number.isInteger(taskId) || taskId <= 0) {
-      return adminActionFailure(new Error("任务 ID 无效"), {
-        title: "取消套餐提取任务失败",
-        suggestion: "请从任务中心重新打开任务详情。",
-      });
-    }
+const deleteServerOfferArticleRelationMutation = defineAdminAction({
+  action: "server_offer.article_relation.delete",
+  entityType: "server_offer_article_relation",
+  parse: (sourceId: number) =>
+    z.number().int().positive("文章关系 ID 无效").parse(sourceId),
+  execute: async (sourceId) => {
+    const result = await deleteServerOfferArticleRelation(sourceId);
+    revalidatePath("/servers/manage");
+    return result;
+  },
+  successMessage: "套餐文章关系已删除",
+  errorTitle: "删除套餐文章关系失败",
+  errorSuggestion: "请刷新套餐列表后重试。",
+  entityId: (sourceId) => sourceId,
+});
 
-    const task = await cancelServerOfferImportTask(taskId);
-    return adminActionSuccess(task, "套餐提取任务已取消");
-  } catch (error) {
-    return adminActionFailure(error, {
-      title: "取消套餐提取任务失败",
-      suggestion: "只能取消尚未开始执行的排队任务。",
-    });
-  }
-}
+const updateServerOfferMutation = defineAdminAction({
+  action: "server_offer.update",
+  entityType: "server_offer",
+  parse: parseUpdateOfferActionInput,
+  execute: async ({ id, offer }) => {
+    const updated = await updateServerOffer(id, offer);
+    if (!updated) throw new Error("套餐不存在");
+    revalidateOfferPages();
+    return updated;
+  },
+  successMessage: "套餐已更新",
+  errorTitle: "保存套餐失败",
+  errorSuggestion: "请检查套餐字段和价格配置后重试。",
+  entityId: ({ id }) => id,
+});
+
+const bulkUpdateServerOffersMutation = defineAdminAction({
+  action: "server_offer.bulk_update",
+  entityType: "server_offer",
+  parse: (input: BulkUpdateOfferActionInput): z.output<
+    typeof bulkUpdateOfferSchema
+  > => {
+    const parsed = bulkUpdateOfferSchema.parse(input);
+    return { ...parsed, ids: [...new Set(parsed.ids)] };
+  },
+  execute: async (input) => {
+    const result = await bulkUpdateServerOffers(input);
+    revalidateOfferPages();
+    return result;
+  },
+  successMessage: (result) => `已更新 ${result.updated} 条套餐`,
+  errorTitle: "批量更新服务器套餐失败",
+  errorSuggestion: "请刷新列表确认套餐状态后重试。",
+  entityId: (input) => `batch:${input.ids.length}`,
+});
 
 export async function saveServerOfferArticleRelationAction(input: {
   offerId: number;
   postId: number;
   relationType: "review" | "mention" | "deal";
 }) {
-  try {
-    await requireAdminSession();
-    if (!Number.isInteger(input.offerId) || input.offerId <= 0) {
-      throw new Error("套餐 ID 无效");
-    }
-    if (!Number.isInteger(input.postId) || input.postId <= 0) {
-      throw new Error("请选择文章");
-    }
-    if (
-      !(["review", "mention", "deal"] as const).includes(input.relationType)
-    ) {
-      throw new Error("文章关系类型无效");
-    }
-    const result = await upsertServerOfferArticleRelation(input);
-    revalidatePath("/servers/manage");
-    return adminActionSuccess(result, "套餐文章关系已保存");
-  } catch (error) {
-    return adminActionFailure(error, {
-      title: "保存套餐文章关系失败",
-      suggestion: "请确认套餐和文章仍然存在后重试。",
-    });
-  }
+  return saveServerOfferArticleRelation(input);
 }
 
 export async function deleteServerOfferArticleRelationAction(sourceId: number) {
-  try {
-    await requireAdminSession();
-    if (!Number.isInteger(sourceId) || sourceId <= 0) {
-      throw new Error("文章关系 ID 无效");
-    }
-    const result = await deleteServerOfferArticleRelation(sourceId);
-    revalidatePath("/servers/manage");
-    return adminActionSuccess(result, "套餐文章关系已删除");
-  } catch (error) {
-    return adminActionFailure(error, {
-      title: "删除套餐文章关系失败",
-      suggestion: "请刷新套餐列表后重试。",
-    });
-  }
+  return deleteServerOfferArticleRelationMutation(sourceId);
 }
 
 export async function updateServerOfferAction(id: number, formData: FormData) {
-  try {
-    await requireAdminSession();
-    if (!Number.isInteger(id) || id <= 0) {
-      return { error: "套餐 ID 无效" };
-    }
-
-    const input = updateOfferSchema.parse({
-      title: formData.get("title"),
-      offerKind: formData.get("offerKind"),
-      providerId: formData.get("providerId"),
-      providerName: formData.get("providerName"),
-      externalProductId: formData.get("externalProductId"),
-      productGroup: formData.get("productGroup"),
-      productType: formData.get("productType"),
-      cpu: formData.get("cpu"),
-      memory: formData.get("memory"),
-      storage: formData.get("storage"),
-      bandwidth: formData.get("bandwidth"),
-      traffic: formData.get("traffic"),
-      priceAmount: formData.get("priceAmount"),
-      currency: formData.get("currency"),
-      billingCycle: formData.get("billingCycle"),
-      region: formData.get("region"),
-      lineType: formData.get("lineType"),
-      status: formData.get("status"),
-      purchaseUrl: formData.get("purchaseUrl"),
-      promoCode: formData.get("promoCode"),
-      articleUrl: formData.get("articleUrl"),
-      reviewUrl: formData.get("reviewUrl"),
-      visible: formData.get("visible") === "true",
-      featured: formData.get("featured") === "true",
-      reviewStatus: formData.get("reviewStatus"),
-      lockedFields: parseJsonField(
-        formData.get("lockedFieldsJson"),
-        "锁定字段",
-      ),
-      validUntil: formData.get("validUntil"),
-      prices: parseJsonField(formData.get("pricesJson"), "多周期价格"),
-    });
-    const updated = await updateServerOffer(id, input);
-
-    if (!updated) {
-      return { error: "套餐不存在" };
-    }
-
-    revalidateOfferPages();
-    return { data: updated };
-  } catch (error) {
-    console.error("更新服务器套餐失败:", error);
-    return { error: getErrorMessage(error) };
-  }
+  return updateServerOfferMutation({ id, formData });
 }
 
 export async function bulkUpdateServerOffersAction(input: {
@@ -386,23 +346,5 @@ export async function bulkUpdateServerOffersAction(input: {
   featured?: boolean;
   reviewStatus?: string;
 }) {
-  try {
-    await requireAdminSession();
-    const parsed = bulkUpdateOfferSchema.parse(input);
-    const ids = [...new Set(parsed.ids)];
-    const result = await bulkUpdateServerOffers({
-      ids,
-      offerKind: parsed.offerKind,
-      status: parsed.status,
-      visible: parsed.visible,
-      featured: parsed.featured,
-      reviewStatus: parsed.reviewStatus,
-    });
-
-    revalidateOfferPages();
-    return { data: result };
-  } catch (error) {
-    console.error("批量更新服务器套餐失败:", error);
-    return { error: getErrorMessage(error) };
-  }
+  return bulkUpdateServerOffersMutation(input);
 }

@@ -288,6 +288,20 @@
       "when": 1784236133681,
       "tag": "0040_aspiring_jane_foster",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1784615937444,
+      "tag": "0041_brainy_mastermind",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1784638262100,
+      "tag": "0042_wonderful_red_wolf",
+      "breakpoints": true
     }
   ]
 }

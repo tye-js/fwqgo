@@ -40,6 +40,9 @@ function buildFallbackHref(
     if (pathname === "/en" || pathname.startsWith("/en/")) {
       return toHref(pathname, params);
     }
+    if (pathname.startsWith("/fwq/posts/")) {
+      return "/en";
+    }
     if (pathname.startsWith("/fwq/")) {
       return toHref(`/en${pathname}`, params);
     }
@@ -47,6 +50,7 @@ function buildFallbackHref(
   }
 
   if (pathname === "/en") return toHref("/", params);
+  if (pathname.startsWith("/en/fwq/posts/")) return "/";
   if (pathname.startsWith("/en/")) {
     return toHref(pathname.slice(3) || "/", params);
   }

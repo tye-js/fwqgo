@@ -38,7 +38,10 @@ if (!dbUrl) {
 }
 
 console.log("Connecting to PostgreSQL to run migrations...");
-const sql = postgres(dbUrl, { max: 1 });
+const sql = postgres(dbUrl, {
+  max: 1,
+  connection: { TimeZone: "UTC" },
+});
 const db = drizzle(sql);
 
 const migrationsFolder = path.resolve(__dirname, "../drizzle");

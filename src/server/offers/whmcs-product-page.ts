@@ -3,6 +3,7 @@ import {
   assertPublicHttpUrl,
   requirePublicHttpUrl,
 } from "@fwqgo/core/network-url";
+import { normalizeServerOfferBillingCycle } from "@fwqgo/core/server-offer-price";
 import type { ProviderOfferCandidate } from "@/server/offers/provider-source-parser";
 import { parseWhmcsBillingCyclePrices } from "@/server/offers/provider-source-parser";
 
@@ -151,7 +152,7 @@ function mergeFallbackPrices(
 ) {
   const merged = new Map<string, ProviderOfferCandidate["prices"][number]>();
   for (const price of [...current, ...(previous ?? [])]) {
-    const key = `${price.billingCycle.trim().toLowerCase()}:${price.currency.trim().toUpperCase()}`;
+    const key = `${normalizeServerOfferBillingCycle(price.billingCycle)}:${price.currency.trim().toUpperCase()}`;
     if (!merged.has(key)) merged.set(key, price);
   }
   return [...merged.values()];

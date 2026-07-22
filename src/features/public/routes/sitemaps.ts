@@ -169,8 +169,6 @@ export async function sitemapPostsGET() {
       .select({
         id: posts.id,
         slug: posts.slug,
-        enSlug: posts.enSlug,
-        enContent: posts.enContent,
         updatedAt: posts.updatedAt,
         createdAt: posts.createdAt,
       })
@@ -199,9 +197,7 @@ export async function sitemapPostsGET() {
 
   return urlset(
     rows.map((post) => {
-      const englishSlug =
-        englishSlugBySourcePostId.get(post.id) ??
-        (post.enSlug && post.enContent ? post.enSlug : null);
+      const englishSlug = englishSlugBySourcePostId.get(post.id) ?? null;
 
       return urlEntry({
         loc: `${baseUrl}/fwq/posts/${encodeURIComponent(post.slug)}`,
@@ -264,25 +260,6 @@ export async function sitemapEnglishGET() {
   const sourceSlugById = new Map(
     sourcePosts.map((post) => [post.id, post.slug]),
   );
-  const independentSourcePostIds = new Set(sourcePostIds);
-  const legacyRows = await readDb
-    .select({
-      id: posts.id,
-      slug: posts.slug,
-      enSlug: posts.enSlug,
-      enUpdatedAt: posts.enUpdatedAt,
-      updatedAt: posts.updatedAt,
-      createdAt: posts.createdAt,
-    })
-    .from(posts)
-    .where(
-      and(
-        publishedChinesePostCondition(),
-        isNotNull(posts.enSlug),
-        isNotNull(posts.enContent),
-      ),
-    )
-    .orderBy(desc(posts.enUpdatedAt));
   const entries = [
     ...englishRows.map((post) => {
       const sourceSlug = post.translationSourcePostId
@@ -317,30 +294,6 @@ export async function sitemapEnglishGET() {
             ],
       });
     }),
-    ...legacyRows
-      .filter((post) => !independentSourcePostIds.has(post.id))
-      .map((post) =>
-        urlEntry({
-          loc: `${baseUrl}/en/fwq/posts/${encodeURIComponent(post.enSlug!)}`,
-          lastmod: post.enUpdatedAt ?? post.updatedAt ?? post.createdAt,
-          changefreq: "weekly",
-          priority: "0.8",
-          alternates: [
-            {
-              hreflang: "zh-CN",
-              href: `${baseUrl}/fwq/posts/${encodeURIComponent(post.slug)}`,
-            },
-            {
-              hreflang: "en",
-              href: `${baseUrl}/en/fwq/posts/${encodeURIComponent(post.enSlug!)}`,
-            },
-            {
-              hreflang: "x-default",
-              href: `${baseUrl}/fwq/posts/${encodeURIComponent(post.slug)}`,
-            },
-          ],
-        }),
-      ),
   ];
 
   return urlset(entries);

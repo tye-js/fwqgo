@@ -3,7 +3,7 @@ import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { slugify } from "@fwqgo/core/utils";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { readDb } from "@fwqgo/db";
-import { attachTagsToPosts } from "@fwqgo/db/post-tags";
+import { attachTagsToPosts } from "@/features/public/data/post-tags";
 import { postTags, posts, tags } from "@fwqgo/db/schema";
 import { resolveEnglishTagIdentity } from "@fwqgo/core/taxonomy";
 

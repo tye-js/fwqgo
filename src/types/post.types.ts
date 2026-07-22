@@ -53,13 +53,6 @@ export interface PostEditFormData {
     | "recommendedTagName"
     | "keywords"
     | "categoryId"
-    | "enTitle"
-    | "enSlug"
-    | "enContent"
-    | "enKeywords"
-    | "enDescription"
-    | "enImgUrl"
-    | "enUpdatedAt"
     | "language"
     | "translationSourcePostId"
   >;

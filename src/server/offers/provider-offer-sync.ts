@@ -25,6 +25,7 @@ import {
   type ProviderOfferCandidate,
 } from "@/server/offers/provider-source-parser";
 import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
+import { getServerOfferExchangeRateSnapshot } from "@/server/offers/exchange-rates";
 
 export type ProviderSyncContext = {
   monitorId: number;
@@ -81,6 +82,7 @@ function parseNumberWithUnit(value: string | null, unit: "mb" | "gbps") {
 function normalizedPrices(
   candidate: ProviderOfferCandidate,
   context: ProviderSyncContext,
+  exchangeRates: Parameters<typeof calculateMonthlyPriceUsd>[0]["exchangeRates"],
 ) {
   return candidate.prices
     .map<StoredPrice | null>((price) => {
@@ -90,6 +92,7 @@ function normalizedPrices(
         amount: price.amount,
         currency,
         billingCycle,
+        exchangeRates,
       });
       if (monthlyPriceUsd === null) return null;
       const rawPurchaseUrl = price.purchaseUrl ?? candidate.purchaseUrl;
@@ -247,7 +250,8 @@ async function materializeOffer(
   database: ProviderOfferDatabase = db,
 ) {
   const { candidate, context, sourceHash, now } = input;
-  const prices = normalizedPrices(candidate, context);
+  const exchangeRateSnapshot = await getServerOfferExchangeRateSnapshot();
+  const prices = normalizedPrices(candidate, context, exchangeRateSnapshot.rates);
   if (prices.length === 0) throw new Error("套餐价格无法折算为美元月价");
   const primaryPrice = prices[0]!;
   const purchaseUrl = applyProviderAffiliateUrl(candidate.purchaseUrl, context);

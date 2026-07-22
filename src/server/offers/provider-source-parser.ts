@@ -99,6 +99,12 @@ function inferCurrency(value: unknown, fallback: string) {
   if (text.includes("€")) return "EUR";
   if (text.includes("£")) return "GBP";
   if (text.includes("¥") || text.includes("￥")) return "CNY";
+  const trailingCode = /-?\d[\d,.]*\s+([A-Z]{3})(?:\s*[/／].*)?$/.exec(
+    text,
+  )?.[1];
+  if (trailingCode && !["FOR", "PER"].includes(trailingCode)) {
+    return trailingCode;
+  }
   return fallback.trim().toUpperCase() || "USD";
 }
 

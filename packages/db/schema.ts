@@ -30,13 +30,6 @@ export const posts = pgTable(
     keywords: varchar("keywords", { length: 800 }),
     description: varchar("description", { length: 800 }),
     imgUrl: text("imgUrl"),
-    enTitle: text("enTitle"),
-    enSlug: varchar("enSlug", { length: 320 }).unique(),
-    enContent: text("enContent"),
-    enKeywords: varchar("enKeywords", { length: 800 }),
-    enDescription: varchar("enDescription", { length: 800 }),
-    enImgUrl: text("enImgUrl"),
-    enUpdatedAt: timestamp("enUpdatedAt"),
     language: varchar("language", { length: 8 }).default("zh").notNull(),
     affiliateReviewStatus: varchar("affiliateReviewStatus", { length: 24 })
       .default("pending")
@@ -104,9 +97,22 @@ export const posts = pgTable(
       table.published,
       table.id,
     ),
-    enSlugPublishedIdx: index("posts_enSlug_published_idx").on(
-      table.enSlug,
-      table.published,
+    translationSourceLanguageUnique: uniqueIndex(
+      "posts_translationSource_language_unique",
+    )
+      .on(table.translationSourcePostId, table.language)
+      .where(sql`${table.translationSourcePostId} is not null`),
+    languageCheck: check(
+      "posts_language_check",
+      sql`${table.language} in ('zh', 'en')`,
+    ),
+    translationDirectionCheck: check(
+      "posts_translation_direction_check",
+      sql`${table.language} <> 'zh' or ${table.translationSourcePostId} is null`,
+    ),
+    affiliateReviewStatusCheck: check(
+      "posts_affiliateReviewStatus_check",
+      sql`${table.affiliateReviewStatus} in ('pending', 'manual_required', 'passed')`,
     ),
     categoryFk: foreignKey({
       columns: [table.categoryId],
@@ -218,33 +224,43 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updatedAt").notNull(),
 });
 
-// Account table
-export const accounts = pgTable(
-  "accounts",
+export const adminAuditLogs = pgTable(
+  "admin_audit_logs",
   {
-    id: text("id").primaryKey(),
-    userId: text("userId").notNull(),
-    type: text("type").notNull(),
-    provider: text("provider").notNull(),
-    providerAccountId: text("providerAccountId").notNull(),
-    refresh_token: text("refresh_token"),
-    access_token: text("access_token"),
-    expires_at: integer("expires_at"),
-    token_type: text("token_type"),
-    scope: text("scope"),
-    id_token: text("id_token"),
-    session_state: text("session_state"),
-    refresh_token_expires_in: integer("refresh_token_expires_in"),
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    actorId: text("actorId"),
+    action: varchar("action", { length: 160 }).notNull(),
+    entityType: varchar("entityType", { length: 80 }).notNull(),
+    entityId: varchar("entityId", { length: 160 }),
+    status: varchar("status", { length: 16 }).notNull(),
+    requestId: varchar("requestId", { length: 120 }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    error: text("error"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   (table) => ({
-    providerProviderAccountIdKey: unique(
-      "accounts_provider_providerAccountId_key",
-    ).on(table.provider, table.providerAccountId),
-    userFk: foreignKey({
-      columns: [table.userId],
+    actorCreatedAtIdx: index("admin_audit_logs_actorId_createdAt_idx").on(
+      table.actorId,
+      table.createdAt,
+    ),
+    actionCreatedAtIdx: index("admin_audit_logs_action_createdAt_idx").on(
+      table.action,
+      table.createdAt,
+    ),
+    entityIdx: index("admin_audit_logs_entity_idx").on(
+      table.entityType,
+      table.entityId,
+      table.createdAt,
+    ),
+    statusCheck: check(
+      "admin_audit_logs_status_check",
+      sql`${table.status} in ('success', 'failure')`,
+    ),
+    actorFk: foreignKey({
+      columns: [table.actorId],
       foreignColumns: [users.id],
-      name: "accounts_userId_users_id_fk",
-    }).onDelete("cascade"),
+      name: "admin_audit_logs_actorId_users_id_fk",
+    }).onDelete("set null"),
   }),
 );
 
@@ -269,22 +285,6 @@ export const sessions = pgTable(
   }),
 );
 
-// VerificationToken table
-export const verificationTokens = pgTable(
-  "verification_tokens",
-  {
-    identifier: text("identifier").notNull(),
-    token: text("token").notNull().unique(),
-    expires: timestamp("expires").notNull(),
-  },
-  (table) => ({
-    identifierTokenKey: unique("verification_tokens_identifier_token_key").on(
-      table.identifier,
-      table.token,
-    ),
-  }),
-);
-
 // AffServiceProvider table
 export const affServiceProviders = pgTable(
   "aff_service_providers",
@@ -305,37 +305,6 @@ export const affServiceProviders = pgTable(
     officialUrlIdx: index("aff_service_providers_officialUrl_idx").on(
       table.officialUrl,
     ),
-    slugIdx: index("aff_service_providers_slug_idx").on(table.slug),
-  }),
-);
-
-// Homepage promoted posts table
-export const homepagePromotedPosts = pgTable(
-  "homepage_promoted_posts",
-  {
-    id: serial("id").primaryKey(),
-    postId: integer("postId").notNull().unique(),
-    language: varchar("language", { length: 8 }).default("zh").notNull(),
-    sortOrder: integer("sortOrder").default(0).notNull(),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-  },
-  (table) => ({
-    postIdx: index("homepage_promoted_posts_postId_idx").on(table.postId),
-    languageIdx: index("homepage_promoted_posts_language_idx").on(
-      table.language,
-    ),
-    sortIdx: index("homepage_promoted_posts_sortOrder_idx").on(table.sortOrder),
-    sortCreatedAtIdx: index(
-      "homepage_promoted_posts_sortOrder_createdAt_idx",
-    ).on(table.sortOrder, table.createdAt),
-    languageSortCreatedAtIdx: index(
-      "homepage_promoted_posts_language_sortOrder_createdAt_idx",
-    ).on(table.language, table.sortOrder, table.createdAt),
-    postFk: foreignKey({
-      columns: [table.postId],
-      foreignColumns: [posts.id],
-      name: "homepage_promoted_posts_postId_posts_id_fk",
-    }).onDelete("cascade"),
   }),
 );
 
@@ -351,9 +320,6 @@ export const siteSeoConfigs = pgTable(
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
   },
-  (table) => ({
-    languageIdx: index("site_seo_configs_language_idx").on(table.language),
-  }),
 );
 
 export const imageAssets = pgTable(
@@ -380,7 +346,6 @@ export const imageAssets = pgTable(
     updatedAt: timestamp("updatedAt"),
   },
   (table) => ({
-    pathIdx: index("image_assets_path_idx").on(table.path),
     hashIdx: index("image_assets_hash_idx").on(table.hash),
     uploadedByIdx: index("image_assets_uploadedBy_idx").on(table.uploadedBy),
     createdAtIdx: index("image_assets_createdAt_idx").on(table.createdAt),
@@ -391,6 +356,14 @@ export const imageAssets = pgTable(
     imageTypeCreatedAtIdx: index("image_assets_imageType_createdAt_idx").on(
       table.imageType,
       table.createdAt,
+    ),
+    imageTypeCheck: check(
+      "image_assets_imageType_check",
+      sql`${table.imageType} in ('upload', 'ai_cover', 'ai_generated', 'provider', 'post_cover')`,
+    ),
+    statusCheck: check(
+      "image_assets_status_check",
+      sql`${table.status} in ('active', 'archived', 'missing')`,
     ),
     uploadedByFk: foreignKey({
       columns: [table.uploadedBy],
@@ -458,7 +431,6 @@ export const aiRewriteConfigs = pgTable(
   (table) => ({
     providerIdx: index("ai_rewrite_configs_provider_idx").on(table.provider),
     enabledIdx: index("ai_rewrite_configs_enabled_idx").on(table.enabled),
-    defaultIdx: index("ai_rewrite_configs_isDefault_idx").on(table.isDefault),
     singleDefault: uniqueIndex("ai_rewrite_configs_single_default_unique")
       .on(table.isDefault)
       .where(sql`${table.isDefault} = true`),
@@ -500,6 +472,14 @@ export const sourceMaterials = pgTable(
     statusCreatedAtIdx: index("source_materials_status_createdAt_idx").on(
       table.status,
       table.createdAt,
+    ),
+    materialTypeCheck: check(
+      "source_materials_materialType_check",
+      sql`${table.materialType} in ('url', 'text', 'email', 'file')`,
+    ),
+    statusCheck: check(
+      "source_materials_status_check",
+      sql`${table.status} in ('queued', 'running', 'succeeded', 'failed', 'manual_required', 'cancelled', 'deleted')`,
     ),
     categoryFk: foreignKey({
       columns: [table.categoryId],
@@ -580,6 +560,22 @@ export const aiRewriteTasks = pgTable(
       table.sourceUrl,
       table.createdAt,
     ),
+    statusCheck: check(
+      "ai_rewrite_tasks_status_check",
+      sql`${table.status} in ('pending', 'running', 'succeeded', 'failed', 'manual_required', 'cancelled')`,
+    ),
+    sourceTypeCheck: check(
+      "ai_rewrite_tasks_sourceType_check",
+      sql`${table.sourceType} in ('url', 'text', 'email', 'file', 'english', 'seo')`,
+    ),
+    progressCheck: check(
+      "ai_rewrite_tasks_progress_check",
+      sql`${table.progress} between 0 and 100`,
+    ),
+    attemptsCheck: check(
+      "ai_rewrite_tasks_attempts_check",
+      sql`${table.attempts} >= 0`,
+    ),
     sourceMaterialFk: foreignKey({
       columns: [table.sourceMaterialId],
       foreignColumns: [sourceMaterials.id],
@@ -633,6 +629,18 @@ export const aiTaskSteps = pgTable(
       table.taskId,
       table.stepKey,
       table.attempt,
+    ),
+    statusCheck: check(
+      "ai_task_steps_status_check",
+      sql`${table.status} in ('pending', 'running', 'success', 'failed', 'skipped', 'manual_required')`,
+    ),
+    progressCheck: check(
+      "ai_task_steps_progress_check",
+      sql`${table.progress} between 0 and 100`,
+    ),
+    attemptCheck: check(
+      "ai_task_steps_attempt_check",
+      sql`${table.attempt} >= 1`,
     ),
     taskFk: foreignKey({
       columns: [table.taskId],
@@ -704,9 +712,6 @@ export const imageGenerationConfigs = pgTable(
   },
   (table) => ({
     enabledIdx: index("image_generation_configs_enabled_idx").on(table.enabled),
-    defaultIdx: index("image_generation_configs_isDefault_idx").on(
-      table.isDefault,
-    ),
     singleDefault: uniqueIndex("image_generation_configs_single_default_unique")
       .on(table.isDefault)
       .where(sql`${table.isDefault} = true`),
@@ -759,6 +764,10 @@ export const imageCoverGenerationTasks = pgTable(
     configIdx: index("image_cover_generation_tasks_configId_idx").on(
       table.configId,
     ),
+    statusCheck: check(
+      "image_cover_generation_tasks_status_check",
+      sql`${table.status} in ('pending', 'running', 'succeeded', 'failed', 'cancelled')`,
+    ),
     postFk: foreignKey({
       columns: [table.postId],
       foreignColumns: [posts.id],
@@ -778,50 +787,6 @@ export const imageCoverGenerationTasks = pgTable(
       columns: [table.createdBy],
       foreignColumns: [users.id],
       name: "image_cover_generation_tasks_createdBy_users_id_fk",
-    }).onDelete("set null"),
-  }),
-);
-
-export const serverOfferImportTasks = pgTable(
-  "server_offer_import_tasks",
-  {
-    id: serial("id").primaryKey(),
-    mode: varchar("mode", { length: 24 }).default("single").notNull(),
-    postId: integer("postId"),
-    status: varchar("status", { length: 24 }).default("pending").notNull(),
-    progress: integer("progress").default(0).notNull(),
-    message: text("message"),
-    result: text("result"),
-    errorTitle: text("errorTitle"),
-    errorDetail: text("errorDetail"),
-    createdBy: text("createdBy"),
-    startedAt: timestamp("startedAt"),
-    finishedAt: timestamp("finishedAt"),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt"),
-    leaseOwner: varchar("leaseOwner", { length: 128 }),
-    leaseExpiresAt: timestamp("leaseExpiresAt"),
-    heartbeatAt: timestamp("heartbeatAt"),
-  },
-  (table) => ({
-    modeIdx: index("server_offer_import_tasks_mode_idx").on(table.mode),
-    statusIdx: index("server_offer_import_tasks_status_idx").on(table.status),
-    postIdx: index("server_offer_import_tasks_postId_idx").on(table.postId),
-    statusCreatedAtIdx: index(
-      "server_offer_import_tasks_status_createdAt_idx",
-    ).on(table.status, table.createdAt),
-    statusLeaseExpiresAtIdx: index(
-      "server_offer_import_tasks_status_leaseExpiresAt_idx",
-    ).on(table.status, table.leaseExpiresAt),
-    postFk: foreignKey({
-      columns: [table.postId],
-      foreignColumns: [posts.id],
-      name: "server_offer_import_tasks_postId_posts_id_fk",
-    }).onDelete("set null"),
-    creatorFk: foreignKey({
-      columns: [table.createdBy],
-      foreignColumns: [users.id],
-      name: "server_offer_import_tasks_createdBy_users_id_fk",
     }).onDelete("set null"),
   }),
 );
@@ -865,6 +830,14 @@ export const adminBackgroundJobs = pgTable(
     )
       .on(table.jobKey)
       .where(sql`${table.status} = 'queued'`),
+    statusCheck: check(
+      "admin_background_jobs_status_check",
+      sql`${table.status} in ('queued', 'running', 'succeeded', 'failed', 'cancelled')`,
+    ),
+    attemptsCheck: check(
+      "admin_background_jobs_attempts_check",
+      sql`${table.attempts} >= 0 and ${table.maxAttempts} between 1 and 100`,
+    ),
   }),
 );
 
@@ -877,10 +850,6 @@ export const outboundLinks = pgTable(
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
   },
-  (table) => ({
-    slugIdx: index("outbound_links_slug_idx").on(table.slug),
-    targetUrlIdx: index("outbound_links_targetUrl_idx").on(table.targetUrl),
-  }),
 );
 
 export const serverRegions = pgTable(
@@ -926,6 +895,32 @@ export const serverNetworkLines = pgTable(
   }),
 );
 
+export const serverExchangeRates = pgTable(
+  "server_exchange_rates",
+  {
+    currency: varchar("currency", { length: 16 }).primaryKey(),
+    unitsPerUsd: numeric("unitsPerUsd", { precision: 18, scale: 8 }).notNull(),
+    source: varchar("source", { length: 120 }).notNull(),
+    fetchedAt: timestamp("fetchedAt").notNull(),
+    enabled: boolean("enabled").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    enabledFetchedAtIdx: index(
+      "server_exchange_rates_enabled_fetchedAt_idx",
+    ).on(table.enabled, table.fetchedAt),
+    currencyCheck: check(
+      "server_exchange_rates_currency_check",
+      sql`${table.currency} in ('USD', 'CNY', 'EUR', 'GBP', 'HKD', 'JPY', 'CAD', 'AUD')`,
+    ),
+    rateCheck: check(
+      "server_exchange_rates_unitsPerUsd_check",
+      sql`${table.unitsPerUsd} > 0`,
+    ),
+  }),
+);
+
 export const providerMonitors = pgTable(
   "provider_monitors",
   {
@@ -957,6 +952,9 @@ export const providerMonitors = pgTable(
   },
   (table) => ({
     providerIdx: index("provider_monitors_providerId_idx").on(table.providerId),
+    idProviderUnique: unique(
+      "provider_monitors_id_providerId_unique",
+    ).on(table.id, table.providerId),
     enabledNextRunIdx: index("provider_monitors_enabled_nextRunAt_idx").on(
       table.enabled,
       table.nextRunAt,
@@ -1037,6 +1035,22 @@ export const providerMonitorRuns = pgTable(
     statusCheck: check(
       "provider_monitor_runs_status_check",
       sql`${table.status} in ('running', 'succeeded', 'failed')`,
+    ),
+    countersCheck: check(
+      "provider_monitor_runs_counters_check",
+      sql`least(
+        ${table.received},
+        ${table.created},
+        ${table.pending},
+        ${table.updated},
+        ${table.unchanged},
+        ${table.skipped},
+        ${table.missing}
+      ) >= 0`,
+    ),
+    httpStatusCheck: check(
+      "provider_monitor_runs_httpStatus_check",
+      sql`${table.httpStatus} is null or ${table.httpStatus} between 100 and 599`,
     ),
   }),
 );
@@ -1132,6 +1146,9 @@ export const serverOffers = pgTable(
     duplicateKeyIdx: index("server_offers_duplicateKey_idx").on(
       table.duplicateKey,
     ),
+    mergedIntoOfferIdx: index("server_offers_mergedIntoOfferId_idx").on(
+      table.mergedIntoOfferId,
+    ),
     visibleIdx: index("server_offers_visible_idx").on(table.visible),
     regionIdx: index("server_offers_region_idx").on(table.region),
     lineTypeIdx: index("server_offers_lineType_idx").on(table.lineType),
@@ -1177,6 +1194,10 @@ export const serverOffers = pgTable(
       .where(
         sql`${table.providerId} is not null and ${table.externalProductId} is not null`,
       ),
+    idProviderUnique: unique("server_offers_id_providerId_unique").on(
+      table.id,
+      table.providerId,
+    ),
     statusCheck: check(
       "server_offers_status_check",
       sql`${table.status} in ('in_stock', 'out_of_stock', 'restocking', 'discontinued', 'preorder')`,
@@ -1188,6 +1209,46 @@ export const serverOffers = pgTable(
     checkStatusCheck: check(
       "server_offers_checkStatus_check",
       sql`${table.checkStatus} in ('ok', 'failed', 'unknown')`,
+    ),
+    reviewStatusCheck: check(
+      "server_offers_reviewStatus_check",
+      sql`${table.reviewStatus} in ('pending', 'reviewed', 'needs_fix', 'duplicate', 'merged')`,
+    ),
+    reviewTimestampCheck: check(
+      "server_offers_reviewedAt_check",
+      sql`(${table.reviewStatus} = 'pending' and ${table.reviewedAt} is null) or (${table.reviewStatus} <> 'pending' and ${table.reviewedAt} is not null)`,
+    ),
+    mergedTargetCheck: check(
+      "server_offers_merged_target_check",
+      sql`(${table.reviewStatus} = 'merged') = (${table.mergedIntoOfferId} is not null)`,
+    ),
+    mergedNotSelfCheck: check(
+      "server_offers_merged_not_self_check",
+      sql`${table.mergedIntoOfferId} is null or ${table.mergedIntoOfferId} <> ${table.id}`,
+    ),
+    sourceMonitorProviderCheck: check(
+      "server_offers_sourceMonitor_provider_check",
+      sql`${table.sourceMonitorId} is null or (${table.providerId} is not null and nullif(btrim(${table.externalProductId}), '') is not null)`,
+    ),
+    legacyPriceAmountCheck: check(
+      "server_offers_priceAmount_check",
+      sql`${table.priceAmount} is null or ${table.priceAmount} >= 0`,
+    ),
+    legacyOriginalPriceAmountCheck: check(
+      "server_offers_originalPriceAmount_check",
+      sql`${table.originalPriceAmount} is null or ${table.originalPriceAmount} >= 0`,
+    ),
+    legacyMonthlyPriceCheck: check(
+      "server_offers_monthlyPriceUsd_check",
+      sql`${table.monthlyPriceUsd} is null or ${table.monthlyPriceUsd} >= 0`,
+    ),
+    legacyCurrencyCheck: check(
+      "server_offers_currency_check",
+      sql`${table.currency} is null or ${table.currency} in ('USD', 'CNY', 'EUR', 'GBP', 'HKD', 'JPY', 'CAD', 'AUD')`,
+    ),
+    legacyBillingCycleCheck: check(
+      "server_offers_billingCycle_check",
+      sql`${table.billingCycle} is null or ${table.billingCycle} in ('monthly', 'quarterly', 'semiannual', 'yearly', 'biennial', 'triennial')`,
     ),
     lockedFieldsCheck: check(
       "server_offers_lockedFields_check",
@@ -1203,6 +1264,16 @@ export const serverOffers = pgTable(
       foreignColumns: [providerMonitors.id],
       name: "server_offers_sourceMonitorId_provider_monitors_id_fk",
     }).onDelete("set null"),
+    sourceMonitorProviderFk: foreignKey({
+      columns: [table.sourceMonitorId, table.providerId],
+      foreignColumns: [providerMonitors.id, providerMonitors.providerId],
+      name: "server_offers_sourceMonitorId_providerId_provider_monitors_fk",
+    }),
+    mergedIntoOfferFk: foreignKey({
+      columns: [table.mergedIntoOfferId],
+      foreignColumns: [table.id],
+      name: "server_offers_mergedIntoOfferId_server_offers_id_fk",
+    }).onDelete("restrict"),
     missingRunsCheck: check(
       "server_offers_missingRuns_check",
       sql`${table.missingRuns} >= 0`,
@@ -1262,9 +1333,34 @@ export const serverOfferPrices = pgTable(
       "server_offer_prices_amount_check",
       sql`${table.amount} >= 0`,
     ),
+    originalAmountCheck: check(
+      "server_offer_prices_originalAmount_check",
+      sql`${table.originalAmount} is null or ${table.originalAmount} >= 0`,
+    ),
+    monthlyPriceCheck: check(
+      "server_offer_prices_monthlyPriceUsd_check",
+      sql`${table.monthlyPriceUsd} >= 0`,
+    ),
+    billingCycleCheck: check(
+      "server_offer_prices_billingCycle_check",
+      sql`${table.billingCycle} in ('monthly', 'quarterly', 'semiannual', 'yearly', 'biennial', 'triennial')`,
+    ),
+    currencyCheck: check(
+      "server_offer_prices_currency_check",
+      sql`${table.currency} in ('USD', 'CNY', 'EUR', 'GBP', 'HKD', 'JPY', 'CAD', 'AUD')`,
+    ),
     termMonthsCheck: check(
       "server_offer_prices_termMonths_check",
       sql`${table.termMonths} between 1 and 120`,
+    ),
+    billingCycleTermCheck: check(
+      "server_offer_prices_billingCycle_termMonths_check",
+      sql`(${table.billingCycle} = 'monthly' and ${table.termMonths} = 1)
+        or (${table.billingCycle} = 'quarterly' and ${table.termMonths} = 3)
+        or (${table.billingCycle} = 'semiannual' and ${table.termMonths} = 6)
+        or (${table.billingCycle} = 'yearly' and ${table.termMonths} = 12)
+        or (${table.billingCycle} = 'biennial' and ${table.termMonths} = 24)
+        or (${table.billingCycle} = 'triennial' and ${table.termMonths} = 36)`,
     ),
   }),
 );
@@ -1332,6 +1428,18 @@ export const serverOfferChecks = pgTable(
       "server_offer_checks_responseTimeMs_check",
       sql`${table.responseTimeMs} is null or ${table.responseTimeMs} >= 0`,
     ),
+    statusCheck: check(
+      "server_offer_checks_status_check",
+      sql`${table.status} in ('ok', 'failed')`,
+    ),
+    priceAmountCheck: check(
+      "server_offer_checks_priceAmount_check",
+      sql`${table.priceAmount} is null or ${table.priceAmount} >= 0`,
+    ),
+    currencyCheck: check(
+      "server_offer_checks_currency_check",
+      sql`${table.currency} is null or ${table.currency} in ('USD', 'CNY', 'EUR', 'GBP', 'HKD', 'JPY', 'CAD', 'AUD')`,
+    ),
   }),
 );
 
@@ -1370,6 +1478,19 @@ export const serverOfferSources = pgTable(
     relationTypeCheck: check(
       "server_offer_sources_relationType_check",
       sql`${table.relationType} is null or ${table.relationType} in ('review', 'mention', 'deal')`,
+    ),
+    sourceTypeCheck: check(
+      "server_offer_sources_sourceType_check",
+      sql`${table.sourceType} in ('article', 'provider', 'monitor')`,
+    ),
+    relationScopeCheck: check(
+      "server_offer_sources_relation_scope_check",
+      sql`(${table.sourceType} = 'article' and ${table.relationType} is not null)
+        or (${table.sourceType} <> 'article' and ${table.relationType} is null)`,
+    ),
+    providerExternalIdCheck: check(
+      "server_offer_sources_provider_externalId_check",
+      sql`${table.sourceType} <> 'provider' or nullif(btrim(${table.externalId}), '') is not null`,
     ),
     offerFk: foreignKey({
       columns: [table.offerId],
@@ -1433,6 +1554,16 @@ export const providerOfferCandidates = pgTable(
       foreignColumns: [serverOffers.id],
       name: "provider_offer_candidates_offerId_server_offers_id_fk",
     }).onDelete("set null"),
+    monitorProviderFk: foreignKey({
+      columns: [table.monitorId, table.providerId],
+      foreignColumns: [providerMonitors.id, providerMonitors.providerId],
+      name: "provider_offer_candidates_monitorId_providerId_provider_monitors_fk",
+    }),
+    offerProviderFk: foreignKey({
+      columns: [table.offerId, table.providerId],
+      foreignColumns: [serverOffers.id, serverOffers.providerId],
+      name: "provider_offer_candidates_offerId_providerId_server_offers_fk",
+    }),
     reviewerFk: foreignKey({
       columns: [table.reviewedBy],
       foreignColumns: [users.id],
@@ -1495,7 +1626,9 @@ export const homepageSlots = pgTable(
     }).onDelete("restrict"),
     contentCheck: check(
       "homepage_slots_content_check",
-      sql`(${table.contentType} = 'post' and ${table.postId} is not null) or (${table.contentType} = 'offer' and ${table.offerId} is not null) or (${table.contentType} = 'image_link' and ${table.imageAssetId} is not null)`,
+      sql`(${table.contentType} = 'post' and ${table.postId} is not null and ${table.offerId} is null)
+        or (${table.contentType} = 'offer' and ${table.offerId} is not null and ${table.postId} is null)
+        or (${table.contentType} = 'image_link' and ${table.imageAssetId} is not null and ${table.postId} is null and ${table.offerId} is null and nullif(btrim(${table.targetUrl}), '') is not null)`,
     ),
     scheduleCheck: check(
       "homepage_slots_schedule_check",
@@ -1567,30 +1700,23 @@ export const postTagsRelations = relations(postTags, ({ one }) => ({
   }),
 }));
 
-export const homepagePromotedPostsRelations = relations(
-  homepagePromotedPosts,
-  ({ one }) => ({
-    post: one(posts, {
-      fields: [homepagePromotedPosts.postId],
-      references: [posts.id],
-    }),
-  }),
-);
-
 export const usersRelations = relations(users, ({ many }) => ({
-  accounts: many(accounts),
   sessions: many(sessions),
   posts: many(posts),
   uploadedImages: many(imageAssets),
   reviewedProviderOfferCandidates: many(providerOfferCandidates),
+  auditLogs: many(adminAuditLogs),
 }));
 
-export const accountsRelations = relations(accounts, ({ one }) => ({
-  user: one(users, {
-    fields: [accounts.userId],
-    references: [users.id],
+export const adminAuditLogsRelations = relations(
+  adminAuditLogs,
+  ({ one }) => ({
+    actor: one(users, {
+      fields: [adminAuditLogs.actorId],
+      references: [users.id],
+    }),
   }),
-}));
+);
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, {
@@ -1694,6 +1820,14 @@ export const serverOffersRelations = relations(
     sourceMonitor: one(providerMonitors, {
       fields: [serverOffers.sourceMonitorId],
       references: [providerMonitors.id],
+    }),
+    mergedIntoOffer: one(serverOffers, {
+      fields: [serverOffers.mergedIntoOfferId],
+      references: [serverOffers.id],
+      relationName: "serverOfferMerge",
+    }),
+    mergedOffers: many(serverOffers, {
+      relationName: "serverOfferMerge",
     }),
     sourcePost: one(posts, {
       fields: [serverOffers.sourcePostId],

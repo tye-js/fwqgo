@@ -14,7 +14,7 @@ import {
   revalidateSiteContent,
   revalidateSiteContentFromRouteHandler,
 } from "@fwqgo/cache/tags";
-import { rewriteAffiliateLinks } from "@fwqgo/scrape/affiliate-link-rewriter";
+import { rewriteAffiliateLinks } from "@/server/links/affiliate-link-rewriter";
 import {
   createPostRecord,
   getErrorMessage,
@@ -26,7 +26,7 @@ import {
   syncImageReferencesForPost,
 } from "@/server/images/assets";
 import { posts, categories, tags, postTags } from "@fwqgo/db/schema";
-import { eq, and, inArray, ne, or } from "drizzle-orm";
+import { desc, eq, and, inArray, ne, or } from "drizzle-orm";
 import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
 
 function normalizeTagName(name: string) {
@@ -1019,25 +1019,50 @@ export async function updatePostEnglishContent(input: {
       return { error: "英文摘要不能超过 800 个字符" };
     }
 
-    const [currentPost] = await db
+    const [sourcePost] = await db
       .select({
         id: posts.id,
         slug: posts.slug,
-        enSlug: posts.enSlug,
         categoryId: posts.categoryId,
+        language: posts.language,
+        authorId: posts.authorId,
+        translationSourcePostId: posts.translationSourcePostId,
       })
       .from(posts)
       .where(eq(posts.id, input.id))
       .limit(1);
 
-    if (!currentPost) {
+    if (!sourcePost) {
       return { error: "文章不存在" };
     }
 
+    const [existingEnglishPost] = await db
+      .select({
+        id: posts.id,
+        slug: posts.slug,
+        categoryId: posts.categoryId,
+        translationSourcePostId: posts.translationSourcePostId,
+      })
+      .from(posts)
+      .where(
+        sourcePost.language === "en"
+          ? eq(posts.id, sourcePost.id)
+          : and(
+              eq(posts.translationSourcePostId, sourcePost.id),
+              eq(posts.language, "en"),
+            ),
+      )
+      .orderBy(desc(posts.updatedAt), desc(posts.createdAt))
+      .limit(1);
+
+    const targetSourcePostId =
+      sourcePost.language === "en"
+        ? sourcePost.translationSourcePostId
+        : sourcePost.id;
     const [duplicatedPost] = await db
       .select({ id: posts.id })
       .from(posts)
-      .where(and(eq(posts.enSlug, normalizedSlug), ne(posts.id, input.id)))
+      .where(and(eq(posts.slug, normalizedSlug), ne(posts.id, existingEnglishPost?.id ?? -1)))
       .limit(1);
 
     if (duplicatedPost) {
@@ -1047,30 +1072,48 @@ export async function updatePostEnglishContent(input: {
     const preparedContent =
       await prepareEditedArticleContent(normalizedContent);
 
-    const [post] = await db
-      .update(posts)
-      .set({
-        enTitle: normalizedTitle,
-        enSlug: normalizedSlug,
-        enDescription:
-          normalizedDescription.length > 0 ? normalizedDescription : null,
-        enContent: preparedContent.content,
-        enKeywords: normalizedKeywords.length > 0 ? normalizedKeywords : null,
-        enImgUrl:
-          input.enImgUrl && input.enImgUrl.trim().length > 0
-            ? input.enImgUrl.trim()
-            : null,
-        enUpdatedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(posts.id, input.id))
-      .returning({
-        id: posts.id,
-        slug: posts.slug,
-        enSlug: posts.enSlug,
-        categoryId: posts.categoryId,
-        translationSourcePostId: posts.translationSourcePostId,
-      });
+    const now = new Date();
+    const values = {
+      title: normalizedTitle,
+      slug: normalizedSlug,
+      description:
+        normalizedDescription.length > 0 ? normalizedDescription : null,
+      content: preparedContent.content,
+      keywords: normalizedKeywords.length > 0 ? normalizedKeywords : null,
+      imgUrl:
+        input.enImgUrl && input.enImgUrl.trim().length > 0
+          ? input.enImgUrl.trim()
+          : null,
+      language: "en" as const,
+      translationSourcePostId: targetSourcePostId,
+      categoryId: sourcePost.categoryId,
+      authorId: sourcePost.authorId,
+      updatedAt: now,
+    };
+    const [post] = existingEnglishPost
+      ? await db
+          .update(posts)
+          .set(values)
+          .where(eq(posts.id, existingEnglishPost.id))
+          .returning({
+            id: posts.id,
+            slug: posts.slug,
+            categoryId: posts.categoryId,
+            translationSourcePostId: posts.translationSourcePostId,
+          })
+      : await db
+          .insert(posts)
+          .values({
+            ...values,
+            published: false,
+            affiliateReviewStatus: "pending",
+          })
+          .returning({
+            id: posts.id,
+            slug: posts.slug,
+            categoryId: posts.categoryId,
+            translationSourcePostId: posts.translationSourcePostId,
+          });
 
     if (!post) {
       return { error: "文章不存在或已被删除" };
@@ -1081,10 +1124,7 @@ export async function updatePostEnglishContent(input: {
       revalidationTags: [
         cacheTags.post(post.id),
         cacheTags.postSlug(post.slug),
-        ...(post.enSlug ? [cacheTags.postSlug(post.enSlug)] : []),
-        ...(currentPost.enSlug && currentPost.enSlug !== post.enSlug
-          ? [cacheTags.postSlug(currentPost.enSlug)]
-          : []),
+        cacheTags.postSlug(post.slug),
         cacheTags.category(post.categoryId),
       ],
     });
@@ -1109,7 +1149,6 @@ export async function deletePostById(id: number) {
       .returning({
         id: posts.id,
         slug: posts.slug,
-        enSlug: posts.enSlug,
         categoryId: posts.categoryId,
         translationSourcePostId: posts.translationSourcePostId,
       });
@@ -1136,7 +1175,6 @@ export async function deletePostById(id: number) {
     revalidateSiteContent([
       cacheTags.post(deletedPost.id),
       cacheTags.postSlug(deletedPost.slug),
-      ...(deletedPost.enSlug ? [cacheTags.postSlug(deletedPost.enSlug)] : []),
       cacheTags.category(deletedPost.categoryId),
       ...(translationSourcePost
         ? [
@@ -1153,7 +1191,6 @@ export async function deletePostById(id: number) {
       ],
       postSlugs: [
         deletedPost.slug,
-        ...(deletedPost.enSlug ? [deletedPost.enSlug] : []),
         ...(translationSourcePost ? [translationSourcePost.slug] : []),
       ],
       categoryIds: [
@@ -1184,7 +1221,6 @@ export async function deletePostsByIds(ids: number[]) {
       .returning({
         id: posts.id,
         slug: posts.slug,
-        enSlug: posts.enSlug,
         categoryId: posts.categoryId,
         translationSourcePostId: posts.translationSourcePostId,
       });
@@ -1218,7 +1254,6 @@ export async function deletePostsByIds(ids: number[]) {
       ...deletedPosts.flatMap((post) => [
         cacheTags.post(post.id),
         cacheTags.postSlug(post.slug),
-        ...(post.enSlug ? [cacheTags.postSlug(post.enSlug)] : []),
         cacheTags.category(post.categoryId),
       ]),
       ...translationSourcePosts.flatMap((post) => [
@@ -1233,10 +1268,7 @@ export async function deletePostsByIds(ids: number[]) {
         ...translationSourcePosts.map((post) => post.id),
       ],
       postSlugs: [
-        ...deletedPosts.flatMap((post) => [
-          post.slug,
-          ...(post.enSlug ? [post.enSlug] : []),
-        ]),
+        ...deletedPosts.map((post) => post.slug),
         ...translationSourcePosts.map((post) => post.slug),
       ],
       categoryIds: [

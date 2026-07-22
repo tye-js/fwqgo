@@ -10,6 +10,7 @@ export type AdminActionError = {
 
 export type AdminActionFailure = {
   success: false;
+  data?: never;
   error: string;
   message: string;
   errorTitle: string;
@@ -105,4 +106,11 @@ export function adminActionFailure(
 
 export function getErrorMessage(error: unknown) {
   return normalizeUnknownError(error);
+}
+
+export function unwrapAdminActionResult<T>(
+  result: AdminActionSuccess<T> | AdminActionFailure,
+) {
+  if (!result.success) throw new Error(result.message);
+  return result.data;
 }

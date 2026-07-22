@@ -1,6 +1,6 @@
 import { eq, or } from "drizzle-orm";
 
-import { pullSourceSiteToAiTasks } from "@fwqgo/ai/source-site-puller";
+import { pullSourceSiteToAiTasks } from "@/server/ai/source-site-puller";
 import { db } from "@fwqgo/db";
 import { categories } from "@fwqgo/db/schema";
 

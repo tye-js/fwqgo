@@ -28,6 +28,16 @@ if (requiredSecretsBody.includes("WEB_REVALIDATION_SECRET")) {
   );
 }
 
+for (const key of [
+  "SECRET_ENCRYPTION_KEYS",
+  "SECRET_ENCRYPTION_KEY",
+  "SECRET_ENCRYPTION_ACTIVE_KEY_ID",
+]) {
+  if (!workflow.includes(`${key}=%s`)) {
+    throw new Error(`Deploy workflow does not persist optional ${key}`);
+  }
+}
+
 const heredocStart = "cat > \"$remote_script\" <<'REMOTE_SCRIPT'";
 const startIndex = workflow.indexOf(heredocStart);
 

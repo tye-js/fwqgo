@@ -1,6 +1,6 @@
 "use client";
 
-import { useOptimistic, useState, useTransition } from "react";
+import { useOptimistic, useRef, useState } from "react";
 import {
   Check,
   CheckCheck,
@@ -13,9 +13,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-
 import {
   deleteProviderMonitorAction,
   previewProviderMonitorAction,
@@ -72,6 +69,7 @@ import type {
   getProviderOfferCandidateList,
   getProviderOptionsForMonitoring,
 } from "@/server/offers/provider-monitor";
+import { formatServerOfferAmount } from "@fwqgo/core/server-offer-price";
 
 type Monitor = Awaited<ReturnType<typeof getProviderMonitorList>>[number];
 type Provider = Awaited<
@@ -85,6 +83,23 @@ type CandidateRow = Awaited<
   ReturnType<typeof getProviderOfferCandidateList>
 >[number];
 type MonitorAdapter = "json" | "html" | "whmcs";
+
+function formatCheckPrice(check: CheckRow) {
+  if (
+    check.priceAmount === null ||
+    check.priceAmount === undefined ||
+    String(check.priceAmount).trim() === ""
+  ) {
+    return "-";
+  }
+
+  return (
+    formatServerOfferAmount({
+      amount: check.priceAmount,
+      currency: check.currency,
+    }) ?? "待确认"
+  );
+}
 
 const defaultJsonConfig = {
   itemsPath: "data",
@@ -183,18 +198,6 @@ function getFormDataText(formData: FormData, key: string) {
   return typeof value === "string" ? value : "";
 }
 
-function showFailure(result: {
-  error: string;
-  message: string;
-  actionError?: { suggestion?: string };
-}) {
-  toast.error(result.error, {
-    description: [result.message, result.actionError?.suggestion]
-      .filter(Boolean)
-      .join("；"),
-  });
-}
-
 function getCandidateData(row: CandidateRow) {
   return row.normalizedData as {
     title?: string;
@@ -243,11 +246,14 @@ function MonitorFormDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [pendingAction, setPendingAction] = useState<"preview" | "save" | null>(
-    null,
-  );
+  const { mutate, isPending } = useAdminMutation();
+  const formMutationLockRef = useRef(false);
+  const mutationKeyPrefix = `provider-monitor-form:${monitor?.id ?? "new"}`;
+  const saveMutationKey = `${mutationKeyPrefix}:save`;
+  const previewMutationKey = `${mutationKeyPrefix}:preview`;
+  const savePending = isPending(saveMutationKey);
+  const previewPending = isPending(previewMutationKey);
+  const formPending = savePending || previewPending;
   const [enabled, setEnabled] = useState(monitor?.enabled ?? false);
   const [autoPublish, setAutoPublish] = useState(monitor?.autoPublish ?? false);
   const [adapter, setAdapter] = useState<MonitorAdapter>(
@@ -301,45 +307,46 @@ function MonitorFormDialog({
   }
 
   function submit(formData: FormData) {
-    setPendingAction("save");
-    startTransition(async () => {
-      try {
-        const result = await saveProviderMonitorAction(actionInput(formData));
-        if (!result.success) {
-          showFailure(result);
-          return;
-        }
-        toast.success(result.message ?? "供应商采集源已保存", {
-          description: enabled
-            ? "配置已启用，后台会按执行间隔采集供应商套餐。"
-            : "配置已保存为停用状态。",
-        });
-        onOpenChange(false);
-        router.refresh();
-      } finally {
-        setPendingAction(null);
-      }
+    if (formMutationLockRef.current) return;
+    formMutationLockRef.current = true;
+    void mutate({
+      key: saveMutationKey,
+      action: () => saveProviderMonitorAction(actionInput(formData)),
+      pendingMessage: "正在保存供应商采集源...",
+      successMessage: (result) => ({
+        title: result.message ?? "供应商采集源已保存",
+        description: enabled
+          ? "配置已启用，后台会按执行间隔采集供应商套餐。"
+          : "配置已保存为停用状态。",
+      }),
+      errorTitle: "保存供应商采集源失败",
+      errorSuggestion: "请检查配置与网络状态后重试。",
+      onSuccess: () => onOpenChange(false),
+    }).finally(() => {
+      formMutationLockRef.current = false;
     });
   }
 
   function runPreview(formData: FormData) {
-    setPendingAction("preview");
-    startTransition(async () => {
-      try {
-        const result = await previewProviderMonitorAction(
-          actionInput(formData),
-        );
+    if (formMutationLockRef.current) return;
+    formMutationLockRef.current = true;
+    void mutate({
+      key: previewMutationKey,
+      action: async () => {
+        const result = await previewProviderMonitorAction(actionInput(formData));
         setPreview(result);
-        if (!result.success) {
-          showFailure(result);
-          return;
-        }
-        toast.success(result.message ?? "采集预览完成", {
-          description: "预览不会写入候选或套餐数据。",
-        });
-      } finally {
-        setPendingAction(null);
-      }
+        return result;
+      },
+      pendingMessage: "正在检测供应商页面...",
+      successMessage: (result) => ({
+        title: result.message ?? "采集预览完成",
+        description: "预览不会写入候选或套餐数据。",
+      }),
+      errorTitle: "采集预览失败",
+      errorSuggestion: "请检查供应商网址、字段映射与登录状态后重试。",
+      refresh: false,
+    }).finally(() => {
+      formMutationLockRef.current = false;
     });
   }
 
@@ -356,6 +363,9 @@ function MonitorFormDialog({
           </DialogDescription>
         </DialogHeader>
         <form action={submit} className="space-y-4">
+          {monitor ? (
+            <input type="hidden" name="providerId" value={providerId} />
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="monitor-provider">厂商</Label>
@@ -371,11 +381,13 @@ function MonitorFormDialog({
                   placeholder="搜索名称、域名或别名"
                   aria-label="搜索供应商"
                   className="min-h-11 pl-9"
+                  disabled={Boolean(monitor)}
                 />
               </div>
               <Select
-                name="providerId"
+                name={monitor ? undefined : "providerId"}
                 value={providerId}
+                disabled={Boolean(monitor)}
                 onValueChange={(value) => {
                   setProviderId(value);
                   setProviderQuery("");
@@ -601,7 +613,7 @@ function MonitorFormDialog({
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              disabled={isPending}
+              disabled={formPending}
             >
               取消
             </Button>
@@ -609,18 +621,16 @@ function MonitorFormDialog({
               type="submit"
               variant="outline"
               formAction={runPreview}
-              disabled={isPending || providers.length === 0 || !providerId}
+              disabled={formPending || providers.length === 0 || !providerId}
             >
               <Eye className="size-4" />
-              {isPending && pendingAction === "preview"
-                ? "检测中..."
-                : "预览采集"}
+              {previewPending ? "检测中..." : "预览采集"}
             </Button>
             <Button
               type="submit"
-              disabled={isPending || providers.length === 0 || !providerId}
+              disabled={formPending || providers.length === 0 || !providerId}
             >
-              {isPending && pendingAction === "save" ? "保存中..." : "保存配置"}
+              {savePending ? "保存中..." : "保存配置"}
             </Button>
           </DialogFooter>
         </form>
@@ -652,6 +662,7 @@ export function ProviderMonitorManager({
   const [batchDecision, setBatchDecision] = useState<
     "accept" | "reject" | null
   >(null);
+  const candidateReviewLockRef = useRef(false);
   const [visibleMonitors, removeOptimisticMonitor] = useOptimistic(
     monitors,
     (current, monitorId: number) =>
@@ -692,6 +703,9 @@ export function ProviderMonitorManager({
     ),
   );
   const batchReviewPending = isPending(providerCandidateBatchMutationKey);
+  const individualCandidateReviewPending = candidates.some((candidate) =>
+    isPending(getProviderCandidateMutationKey(candidate.id)),
+  );
   const deletingPending = deleting
     ? isPending(getProviderMonitorMutationKey(deleting.id))
     : false;
@@ -741,6 +755,8 @@ export function ProviderMonitorManager({
     candidate: CandidateRow,
     decision: "accept" | "reject",
   ) {
+    if (candidateReviewLockRef.current) return;
+    candidateReviewLockRef.current = true;
     void mutate({
       key: getProviderCandidateMutationKey(candidate.id),
       action: () =>
@@ -766,6 +782,8 @@ export function ProviderMonitorManager({
         setSelectedCandidateIds((current) =>
           current.filter((candidateId) => candidateId !== candidate.id),
         ),
+    }).finally(() => {
+      candidateReviewLockRef.current = false;
     });
   }
 
@@ -786,7 +804,13 @@ export function ProviderMonitorManager({
   }
 
   function reviewSelectedCandidates() {
-    if (!batchDecision || visibleSelectedCandidateIds.length === 0) return;
+    if (
+      !batchDecision ||
+      visibleSelectedCandidateIds.length === 0 ||
+      candidateReviewLockRef.current
+    )
+      return;
+    candidateReviewLockRef.current = true;
     const decision = batchDecision;
     const candidateIds = visibleSelectedCandidateIds;
     void mutate({
@@ -815,6 +839,8 @@ export function ProviderMonitorManager({
         setSelectedCandidateIds([]);
         setBatchDecision(null);
       },
+    }).finally(() => {
+      candidateReviewLockRef.current = false;
     });
   }
 
@@ -984,7 +1010,9 @@ export function ProviderMonitorManager({
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={batchReviewPending}
+                  disabled={
+                    batchReviewPending || individualCandidateReviewPending
+                  }
                   onClick={() => setBatchDecision("reject")}
                 >
                   <X className="size-4 text-destructive" />
@@ -993,7 +1021,9 @@ export function ProviderMonitorManager({
                 <Button
                   type="button"
                   size="sm"
-                  disabled={batchReviewPending}
+                  disabled={
+                    batchReviewPending || individualCandidateReviewPending
+                  }
                   onClick={() => setBatchDecision("accept")}
                 >
                   <CheckCheck className="size-4" />
@@ -1025,7 +1055,9 @@ export function ProviderMonitorManager({
                           : false
                     }
                     disabled={
-                      batchReviewPending || visibleCandidates.length === 0
+                      batchReviewPending ||
+                      individualCandidateReviewPending ||
+                      visibleCandidates.length === 0
                     }
                     onCheckedChange={(checked) =>
                       toggleAllCandidates(checked === true)
@@ -1064,7 +1096,11 @@ export function ProviderMonitorManager({
                       <Checkbox
                         className={tableCheckboxClassName}
                         checked={selectedCandidateIdSet.has(candidate.id)}
-                        disabled={candidatePending || batchReviewPending}
+                        disabled={
+                          candidatePending ||
+                          batchReviewPending ||
+                          individualCandidateReviewPending
+                        }
                         onCheckedChange={(checked) =>
                           toggleCandidate(candidate.id, checked === true)
                         }
@@ -1133,7 +1169,11 @@ export function ProviderMonitorManager({
                           variant="outline"
                           title="拒绝候选"
                           aria-label={`拒绝 ${data.title ?? candidate.externalProductId}`}
-                          disabled={candidatePending || batchReviewPending}
+                          disabled={
+                            candidatePending ||
+                            batchReviewPending ||
+                            individualCandidateReviewPending
+                          }
                           onClick={() => reviewCandidate(candidate, "reject")}
                         >
                           <X className="size-4 text-destructive" />
@@ -1143,7 +1183,11 @@ export function ProviderMonitorManager({
                           size="icon"
                           title="接受并创建套餐"
                           aria-label={`接受 ${data.title ?? candidate.externalProductId}`}
-                          disabled={candidatePending || batchReviewPending}
+                          disabled={
+                            candidatePending ||
+                            batchReviewPending ||
+                            individualCandidateReviewPending
+                          }
                           onClick={() => reviewCandidate(candidate, "accept")}
                         >
                           <Check className="size-4" />
@@ -1172,8 +1216,8 @@ export function ProviderMonitorManager({
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {batchDecision === "accept"
-                  ? `将处理选中的 ${selectedCandidateIds.length} 个套餐，并创建或更新前台套餐。`
-                  : `将拒绝选中的 ${selectedCandidateIds.length} 个套餐，后续不会自动发布。`}
+                  ? `将处理选中的 ${visibleSelectedCandidateIds.length} 个套餐，并创建或更新前台套餐。`
+                  : `将拒绝选中的 ${visibleSelectedCandidateIds.length} 个套餐，后续不会自动发布。`}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -1181,7 +1225,9 @@ export function ProviderMonitorManager({
                 取消
               </AlertDialogCancel>
               <AlertDialogAction
-                disabled={batchReviewPending}
+                disabled={
+                  batchReviewPending || individualCandidateReviewPending
+                }
                 onClick={reviewSelectedCandidates}
               >
                 {batchReviewPending
@@ -1343,9 +1389,7 @@ export function ProviderMonitorManager({
                         : "无货"}
                   </TableCell>
                   <TableCell className="tabular-nums">
-                    {check.priceAmount
-                      ? `${check.currency === "CNY" ? "¥" : "$"}${check.priceAmount}`
-                      : "-"}
+                    {formatCheckPrice(check)}
                   </TableCell>
                   <TableCell className="tabular-nums">
                     {check.responseTimeMs === null

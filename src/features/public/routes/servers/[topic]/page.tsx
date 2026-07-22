@@ -12,6 +12,12 @@ import {
   getServerOfferTopic,
   offerTopics,
 } from "@/server/offers/server-offers";
+import {
+  formatServerOfferAmount,
+  isSupportedServerOfferCurrency,
+  parseServerOfferAmount,
+  resolveMonthlyPriceUsd,
+} from "@fwqgo/core/server-offer-price";
 import { jsonLdScriptContent, toAbsoluteHttpUrl } from "@fwqgo/core/utils";
 
 function getSiteUrl() {
@@ -83,17 +89,22 @@ async function ServerTopicContent({
   ).size;
   const minPriceOffer = offers
     .map((offer) => {
-      const amount = Number(offer.priceAmount);
-      if (!offer.priceAmount || !Number.isFinite(amount) || amount < 0) {
+      const formattedAmount = formatServerOfferAmount({
+        amount: offer.priceAmount,
+        currency: offer.currency,
+      });
+      const monthlyPriceUsd = resolveMonthlyPriceUsd({
+        monthlyPriceUsd: offer.monthlyPriceUsd,
+        amount: offer.priceAmount,
+        currency: offer.currency,
+        billingCycle: offer.billingCycle,
+      });
+      if (!formattedAmount || monthlyPriceUsd === null) {
         return null;
       }
-      const monthlyPriceUsd = Number(offer.monthlyPriceUsd);
       return {
-        amount,
-        currency: offer.currency === "CNY" ? "¥" : "$",
-        monthlyPriceUsd: Number.isFinite(monthlyPriceUsd)
-          ? monthlyPriceUsd
-          : amount,
+        formattedAmount,
+        monthlyPriceUsd,
       };
     })
     .filter((price): price is NonNullable<typeof price> => Boolean(price))
@@ -104,9 +115,7 @@ async function ServerTopicContent({
     { label: "商家", value: providerCount.toLocaleString("zh-CN") },
     {
       label: "起价",
-      value: minPriceOffer
-        ? `${minPriceOffer.currency}${minPriceOffer.amount.toFixed(2)}`
-        : "待补充",
+      value: minPriceOffer?.formattedAmount ?? "待补充",
     },
   ];
   const pageUrl = `${getSiteUrl()}/servers/${topicInfo.slug}`;
@@ -118,34 +127,47 @@ async function ServerTopicContent({
     description: topicInfo.description,
     url: pageUrl,
     numberOfItems: offers.length,
-    itemListElement: offers.slice(0, 30).map((offer, index) => ({
-      "@type": "ListItem",
-      position: index + 1,
-      url: toAbsoluteHttpUrl(offer.articleUrl, siteUrl) ?? pageUrl,
-      item: {
-        "@type": "Product",
-        name: offer.title,
-        brand: offer.providerName
+    itemListElement: offers.slice(0, 30).map((offer, index) => {
+      const purchaseUrl = toAbsoluteHttpUrl(offer.purchaseUrl, siteUrl);
+      const price = parseServerOfferAmount(offer.priceAmount);
+      const currency = offer.currency?.trim().toUpperCase();
+      const structuredOffer =
+        purchaseUrl &&
+        price !== null &&
+        price > 0 &&
+        isSupportedServerOfferCurrency(currency)
           ? {
-              "@type": "Brand",
-              name: offer.providerName,
+              "@type": "Offer",
+              url: purchaseUrl,
+              price: String(price),
+              priceCurrency: currency,
+              availability:
+                offer.status === "in_stock"
+                  ? "https://schema.org/InStock"
+                  : offer.status === "preorder"
+                    ? "https://schema.org/PreOrder"
+                    : "https://schema.org/OutOfStock",
             }
-          : undefined,
-        category: "VPS and Server Hosting",
-        offers: {
-          "@type": "Offer",
-          url: toAbsoluteHttpUrl(offer.purchaseUrl, siteUrl) ?? pageUrl,
-          price: offer.priceAmount ? String(offer.priceAmount) : undefined,
-          priceCurrency: offer.currency ?? undefined,
-          availability:
-            offer.status === "in_stock"
-              ? "https://schema.org/InStock"
-              : offer.status === "preorder"
-                ? "https://schema.org/PreOrder"
-                : "https://schema.org/OutOfStock",
+          : undefined;
+
+      return {
+        "@type": "ListItem",
+        position: index + 1,
+        url: toAbsoluteHttpUrl(offer.articleUrl, siteUrl) ?? pageUrl,
+        item: {
+          "@type": "Product",
+          name: offer.title,
+          brand: offer.providerName
+            ? {
+                "@type": "Brand",
+                name: offer.providerName,
+              }
+            : undefined,
+          category: "VPS and Server Hosting",
+          offers: structuredOffer,
         },
-      },
-    })),
+      };
+    }),
   };
   const faqJsonLd = {
     "@context": "https://schema.org",
