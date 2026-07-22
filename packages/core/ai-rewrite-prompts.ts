@@ -1,21 +1,32 @@
-export const defaultBaseRewritePrompt = `你是一个专业的推广文章写作助手，你了解各种服务器的配置，了解这些配置的优缺点，知道每款服务器能跑通的应用类型，以及服务器适合的人群。
+export const defaultBaseRewritePrompt = `你是服务器/VPS 优惠与评测网站的中文主编。你拿到的是从来源文章提取出的事实包，而不是可供仿写的原文。请依据事实重新创作一篇独立、准确、便于读者决策的 Markdown 正文。
 
-改写风格：
+写作风格：
 {stylePrompt}
 
-请根据以下文本，写出更优秀的文章，要求：
-1. 需详细介绍商家特点及其最新活动、硬件配置（CPU、内存、存储）、支持的网络线路（如 BGP、CN2）、适用地区（如亚太或北美），并列出性能优势、适合的应用场景（如游戏加速、企业网站托管）。
-2. 使用更专业和流畅的表达方式，文本中的服务器配置信息为主要信息，不要省略和折叠。
-3. 分段展示，保持良好的文章结构，保持表格内数据的完整性，可优化，但不要删减。内容的最高标题从二级标题开始，第一段不需要标题。
-4. 结尾增加商家总结部分：总结商家的信息和优势。
-5. 第二段标题为：商家官方网站，商家替换成当前商家的名字，内容为带链接的官方网址，不需要修改链接，使用原文链接。
-6. 如果有优惠码，则第三段标题为 [商家名字]优惠码，内容为优惠码的信息；如果没有，则不要这部分内容。
-7. 倒数第二段为相关知识，分别科普当前商家的网络线路、服务器特点、原生 IP 等信息。
-8. 不要编造原文没有的价格、配置、优惠码、库存、线路或商家承诺。
-9. 只输出正文 HTML 片段，不要输出标题、摘要、关键词、标签、JSON、Markdown 代码块或解释文字。
+事实包：
+{factSheet}
 
-原文：
-{content}`;
+建议大纲：
+{outline}
+
+可引用的知识库上下文：
+{knowledgeContext}
+
+受保护内容：
+{protectedContent}
+
+本次质量反馈：
+{retryFeedback}
+
+硬性要求：
+1. 只输出正文 Markdown，不要输出文章标题、JSON、代码块围栏、解释或写作过程；小标题从 ## 开始，第一段不需要标题。
+2. 根据事实包重新组织叙事，不得还原或猜测来源文章的段落顺序、标题顺序、开头方式和总结句式，不做逐句同义词替换。
+3. 除商家名、技术名词、数字、优惠码和受保护内容外，不连续复用来源措辞。使用全新的论述、过渡和信息分组。
+4. 先给出读者最关心的核心结论，再解释活动规则、套餐差异、线路与配置含义、适合与不适合的人群、购买前注意事项。
+5. 只允许使用事实包和知识库上下文中的信息。知识库内容只能用于通用解释，并必须写成编辑判断；不得转写成商家承诺、商家实测、库存、解锁保证或当前活动事实。
+6. 不得编造或修改价格、配置、优惠码、日期、库存、机房、线路、解锁能力、退款政策、测速结果或商家承诺。
+7. 每个受保护占位符必须原样出现且只出现一次。不要自行重写占位符代表的套餐表格或链接，系统会在生成后恢复原始数据。
+8. 避免空泛宣传、重复总结和固定模板套话；信息不足时宁可明确说明需要购买前确认，也不要补造事实。`;
 
 export const defaultMetadataStylePrompt =
   "标题要偏 SEO 长尾词，摘要要准确概括商家、价格、配置、线路和适用场景。关键词和标签服务于搜索流量，不要影响正文写作风格。";
@@ -26,7 +37,7 @@ export const defaultEnglishStylePrompt =
 export const defaultEnglishMetadataStylePrompt =
   "Write concise English SEO metadata for VPS/server deal readers. Prioritize provider name, price, specs, location, network route and buying intent. Keep the slug short and readable.";
 
-export const defaultMetadataPrompt = `你是服务器/VPS推广文章的 SEO 编辑。请根据改写后的 HTML 正文生成文章元信息。
+export const defaultMetadataPrompt = `你是服务器/VPS推广文章的 SEO 编辑。请根据已经通过原创度和事实校验的 Markdown 正文生成文章元信息。
 
 元信息生成风格：
 {metadataStylePrompt}
@@ -48,5 +59,5 @@ export const defaultMetadataPrompt = `你是服务器/VPS推广文章的 SEO 编
   "recommendTagName": "推荐标签"
 }
 
-HTML 正文：
-{htmlContent}`;
+Markdown 正文：
+{markdownContent}`;

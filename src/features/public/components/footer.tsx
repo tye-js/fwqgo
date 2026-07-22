@@ -3,9 +3,9 @@ import { Suspense } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowUpRight,
+  BookOpen,
   Globe2,
   Mail,
-  Search,
   Server,
   ShieldCheck,
   Tags,
@@ -103,6 +103,11 @@ const footerCopy = {
       },
     ],
     utilities: [
+      {
+        title: "服务器知识库",
+        href: "/knowledge",
+        description: "配置、线路、机房与 IP 基础知识",
+      },
       {
         title: "站内搜索",
         href: "/search",
@@ -314,7 +319,7 @@ function FooterView({
     {
       id: "utilities",
       title: copy.utilityTitle,
-      icon: Search,
+      icon: BookOpen,
       links: copy.utilities,
     },
   ];

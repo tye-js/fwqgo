@@ -23,7 +23,7 @@ import {
 import { LanguageSwitchLink } from "@/features/public/components/language-switch-link";
 import { getCategories } from "@/features/shared/data/category";
 import { cn } from "@fwqgo/core/utils";
-import { Globe2, Menu, Search, Server } from "lucide-react";
+import { BookOpen, Globe2, Menu, Search, Server } from "lucide-react";
 
 type PublicLanguage = "zh" | "en";
 
@@ -44,6 +44,8 @@ const headerCopy: Record<
     categoriesTitle: string;
     searchHref: string;
     searchLabel: string;
+    knowledgeHref?: string;
+    knowledgeLabel?: string;
     errorLabel: string;
     errorDescription: string;
     navigationTitle: string;
@@ -65,6 +67,8 @@ const headerCopy: Record<
     categoriesTitle: "套餐专题",
     searchHref: "/search",
     searchLabel: "搜索",
+    knowledgeHref: "/knowledge",
+    knowledgeLabel: "知识库",
     errorLabel: "分类暂不可用",
     errorDescription: "分类暂时加载失败，可以先进入服务器比价或稍后刷新页面。",
     navigationTitle: "导航",
@@ -304,6 +308,22 @@ const HeaderContent = async ({
                   </NavigationMenuLink>
                 </NavigationMenuItem>
               ) : null}
+              {copy.knowledgeHref && copy.knowledgeLabel ? (
+                <NavigationMenuItem>
+                  <NavigationMenuLink asChild>
+                    <Link
+                      href={copy.knowledgeHref}
+                      prefetch
+                      className={cn(
+                        navigationMenuTriggerStyle(),
+                        "rounded-md bg-transparent",
+                      )}
+                    >
+                      {copy.knowledgeLabel}
+                    </Link>
+                  </NavigationMenuLink>
+                </NavigationMenuItem>
+              ) : null}
               <NavigationMenuItem>
                 <NavigationMenuLink asChild>
                   <Link
@@ -326,10 +346,7 @@ const HeaderContent = async ({
             variant="outline"
             className="hidden shrink-0 lg:inline-flex"
           >
-            <LanguageSwitchLink
-              currentLanguage={language}
-              prefetch
-            >
+            <LanguageSwitchLink currentLanguage={language} prefetch>
               <Globe2 className="size-4" />
               {copy.languageLabel}
             </LanguageSwitchLink>
@@ -393,6 +410,16 @@ const HeaderContent = async ({
                       {copy.languageLabel}
                     </LanguageSwitchLink>
                   </SheetClose>
+                  {copy.knowledgeHref && copy.knowledgeLabel ? (
+                    <MobileNavLink
+                      href={copy.knowledgeHref}
+                      prefetch
+                      className="flex min-h-11 items-center gap-2 rounded-md border border-border/70 px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <BookOpen className="size-4" />
+                      {copy.knowledgeLabel}
+                    </MobileNavLink>
+                  ) : null}
                   <MobileNavLink
                     href={copy.searchHref}
                     prefetch

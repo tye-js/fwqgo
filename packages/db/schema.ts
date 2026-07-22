@@ -298,6 +298,14 @@ export const affServiceProviders = pgTable(
     affParam: text("affParam").notNull(),
     affValue: text("affValue").notNull(),
     officialUrl: text("officialUrl").notNull(),
+    summary: text("summary"),
+    summarySourceUrl: text("summarySourceUrl"),
+    refundPolicy: text("refundPolicy"),
+    refundPolicySourceUrl: text("refundPolicySourceUrl"),
+    prohibitedUses: text("prohibitedUses"),
+    prohibitedUsesSourceUrl: text("prohibitedUsesSourceUrl"),
+    profileVerifiedAt: timestamp("profileVerifiedAt"),
+    profileUpdatedAt: timestamp("profileUpdatedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
   },
@@ -308,19 +316,119 @@ export const affServiceProviders = pgTable(
   }),
 );
 
-export const siteSeoConfigs = pgTable(
-  "site_seo_configs",
+export const providerPromoCodes = pgTable(
+  "provider_promo_codes",
   {
     id: serial("id").primaryKey(),
-    language: varchar("language", { length: 8 }).notNull().unique(),
-    siteName: text("siteName").notNull(),
-    title: text("title").notNull(),
-    description: varchar("description", { length: 800 }),
-    keywords: varchar("keywords", { length: 800 }),
+    providerId: integer("providerId").notNull(),
+    code: varchar("code", { length: 160 }).notNull(),
+    description: text("description"),
+    discountText: varchar("discountText", { length: 500 }),
+    terms: text("terms"),
+    startsAt: timestamp("startsAt"),
+    endsAt: timestamp("endsAt"),
+    active: boolean("active").default(true).notNull(),
+    isDefault: boolean("isDefault").default(false).notNull(),
+    sourceUrl: text("sourceUrl"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
   },
+  (table) => ({
+    providerCodeUnique: uniqueIndex(
+      "provider_promo_codes_providerId_code_unique",
+    ).on(table.providerId, sql`lower(${table.code})`),
+    providerDefaultUnique: uniqueIndex(
+      "provider_promo_codes_providerId_default_unique",
+    )
+      .on(table.providerId)
+      .where(sql`${table.isDefault} = true`),
+    providerActiveEndsAtIdx: index(
+      "provider_promo_codes_providerId_active_endsAt_idx",
+    ).on(table.providerId, table.active, table.endsAt),
+    providerFk: foreignKey({
+      columns: [table.providerId],
+      foreignColumns: [affServiceProviders.id],
+      name: "provider_promo_codes_providerId_aff_service_providers_id_fk",
+    }).onDelete("cascade"),
+    dateRangeCheck: check(
+      "provider_promo_codes_date_range_check",
+      sql`${table.startsAt} is null or ${table.endsAt} is null or ${table.endsAt} >= ${table.startsAt}`,
+    ),
+    defaultActiveCheck: check(
+      "provider_promo_codes_default_active_check",
+      sql`${table.isDefault} = false or ${table.active} = true`,
+    ),
+  }),
 );
+
+export const providerProfileSnapshots = pgTable(
+  "provider_profile_snapshots",
+  {
+    id: serial("id").primaryKey(),
+    providerId: integer("providerId").notNull(),
+    status: varchar("status", { length: 24 }).default("queued").notNull(),
+    summary: text("summary"),
+    summarySourceUrl: text("summarySourceUrl"),
+    refundPolicy: text("refundPolicy"),
+    refundPolicySourceUrl: text("refundPolicySourceUrl"),
+    prohibitedUses: text("prohibitedUses"),
+    prohibitedUsesSourceUrl: text("prohibitedUsesSourceUrl"),
+    discoveredUrls: jsonb("discoveredUrls")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    error: text("error"),
+    requestedBy: text("requestedBy"),
+    reviewedBy: text("reviewedBy"),
+    fetchedAt: timestamp("fetchedAt"),
+    reviewedAt: timestamp("reviewedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    providerStatusCreatedAtIdx: index(
+      "provider_profile_snapshots_providerId_status_createdAt_idx",
+    ).on(table.providerId, table.status, table.createdAt),
+    providerOpenUnique: uniqueIndex(
+      "provider_profile_snapshots_providerId_open_unique",
+    )
+      .on(table.providerId)
+      .where(sql`${table.status} in ('queued', 'running', 'pending')`),
+    statusCreatedAtIdx: index(
+      "provider_profile_snapshots_status_createdAt_idx",
+    ).on(table.status, table.createdAt),
+    providerFk: foreignKey({
+      columns: [table.providerId],
+      foreignColumns: [affServiceProviders.id],
+      name: "provider_profile_snapshots_providerId_aff_service_providers_id_fk",
+    }).onDelete("cascade"),
+    requestedByFk: foreignKey({
+      columns: [table.requestedBy],
+      foreignColumns: [users.id],
+      name: "provider_profile_snapshots_requestedBy_users_id_fk",
+    }).onDelete("set null"),
+    reviewedByFk: foreignKey({
+      columns: [table.reviewedBy],
+      foreignColumns: [users.id],
+      name: "provider_profile_snapshots_reviewedBy_users_id_fk",
+    }).onDelete("set null"),
+    statusCheck: check(
+      "provider_profile_snapshots_status_check",
+      sql`${table.status} in ('queued', 'running', 'pending', 'applied', 'rejected', 'failed')`,
+    ),
+  }),
+);
+
+export const siteSeoConfigs = pgTable("site_seo_configs", {
+  id: serial("id").primaryKey(),
+  language: varchar("language", { length: 8 }).notNull().unique(),
+  siteName: text("siteName").notNull(),
+  title: text("title").notNull(),
+  description: varchar("description", { length: 800 }),
+  keywords: varchar("keywords", { length: 800 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt"),
+});
 
 export const imageAssets = pgTable(
   "image_assets",
@@ -846,16 +954,13 @@ export const adminBackgroundJobs = pgTable(
   }),
 );
 
-export const outboundLinks = pgTable(
-  "outbound_links",
-  {
-    id: serial("id").primaryKey(),
-    slug: varchar("slug", { length: 64 }).notNull().unique(),
-    targetUrl: text("targetUrl").notNull().unique(),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt"),
-  },
-);
+export const outboundLinks = pgTable("outbound_links", {
+  id: serial("id").primaryKey(),
+  slug: varchar("slug", { length: 64 }).notNull().unique(),
+  targetUrl: text("targetUrl").notNull().unique(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt"),
+});
 
 export const serverRegions = pgTable(
   "server_regions",
@@ -957,9 +1062,10 @@ export const providerMonitors = pgTable(
   },
   (table) => ({
     providerIdx: index("provider_monitors_providerId_idx").on(table.providerId),
-    idProviderUnique: unique(
-      "provider_monitors_id_providerId_unique",
-    ).on(table.id, table.providerId),
+    idProviderUnique: unique("provider_monitors_id_providerId_unique").on(
+      table.id,
+      table.providerId,
+    ),
     enabledNextRunIdx: index("provider_monitors_enabled_nextRunAt_idx").on(
       table.enabled,
       table.nextRunAt,
@@ -1650,6 +1756,75 @@ export const homepageSlots = pgTable(
   }),
 );
 
+export const knowledgeCategories = pgTable(
+  "knowledge_categories",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull().unique(),
+    slug: varchar("slug", { length: 160 }).notNull().unique(),
+    description: varchar("description", { length: 800 }),
+    sortOrder: integer("sortOrder").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    sortOrderIdx: index("knowledge_categories_sortOrder_id_idx").on(
+      table.sortOrder,
+      table.id,
+    ),
+  }),
+);
+
+export const knowledgeArticles = pgTable(
+  "knowledge_articles",
+  {
+    id: serial("id").primaryKey(),
+    categoryId: integer("categoryId").notNull(),
+    title: text("title").notNull(),
+    slug: varchar("slug", { length: 320 }).notNull().unique(),
+    summary: varchar("summary", { length: 1_200 }),
+    content: text("content").notNull(),
+    keywords: text("keywords"),
+    aliases: text("aliases"),
+    retrievalTerms: text("retrievalTerms"),
+    sourceNotes: text("sourceNotes"),
+    published: boolean("published").default(false).notNull(),
+    allowAiReference: boolean("allowAiReference").default(true).notNull(),
+    publishedAt: timestamp("publishedAt"),
+    createdBy: text("createdBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    categoryIdx: index("knowledge_articles_categoryId_idx").on(
+      table.categoryId,
+    ),
+    publishedCategoryUpdatedIdx: index(
+      "knowledge_articles_published_category_updatedAt_idx",
+    ).on(table.published, table.categoryId, table.updatedAt),
+    aiReferenceIdx: index("knowledge_articles_aiReference_idx").on(
+      table.published,
+      table.allowAiReference,
+    ),
+    createdByIdx: index("knowledge_articles_createdBy_idx").on(table.createdBy),
+    titleIdx: index("knowledge_articles_title_idx").on(table.title),
+    categoryFk: foreignKey({
+      columns: [table.categoryId],
+      foreignColumns: [knowledgeCategories.id],
+      name: "knowledge_articles_categoryId_knowledge_categories_id_fk",
+    }).onDelete("restrict"),
+    createdByFk: foreignKey({
+      columns: [table.createdBy],
+      foreignColumns: [users.id],
+      name: "knowledge_articles_createdBy_users_id_fk",
+    }).onDelete("set null"),
+    contentCheck: check(
+      "knowledge_articles_content_check",
+      sql`length(btrim(${table.content})) > 0`,
+    ),
+  }),
+);
+
 // Relations
 export const postsRelations = relations(posts, ({ one, many }) => ({
   author: one(users, {
@@ -1710,18 +1885,81 @@ export const usersRelations = relations(users, ({ many }) => ({
   posts: many(posts),
   uploadedImages: many(imageAssets),
   reviewedProviderOfferCandidates: many(providerOfferCandidates),
+  requestedProviderProfileSnapshots: many(providerProfileSnapshots, {
+    relationName: "provider_profile_snapshot_requester",
+  }),
+  reviewedProviderProfileSnapshots: many(providerProfileSnapshots, {
+    relationName: "provider_profile_snapshot_reviewer",
+  }),
   auditLogs: many(adminAuditLogs),
+  knowledgeArticles: many(knowledgeArticles),
 }));
 
-export const adminAuditLogsRelations = relations(
-  adminAuditLogs,
+export const affServiceProvidersRelations = relations(
+  affServiceProviders,
+  ({ many }) => ({
+    promoCodes: many(providerPromoCodes),
+    profileSnapshots: many(providerProfileSnapshots),
+  }),
+);
+
+export const providerPromoCodesRelations = relations(
+  providerPromoCodes,
   ({ one }) => ({
-    actor: one(users, {
-      fields: [adminAuditLogs.actorId],
+    provider: one(affServiceProviders, {
+      fields: [providerPromoCodes.providerId],
+      references: [affServiceProviders.id],
+    }),
+  }),
+);
+
+export const providerProfileSnapshotsRelations = relations(
+  providerProfileSnapshots,
+  ({ one }) => ({
+    provider: one(affServiceProviders, {
+      fields: [providerProfileSnapshots.providerId],
+      references: [affServiceProviders.id],
+    }),
+    requester: one(users, {
+      fields: [providerProfileSnapshots.requestedBy],
+      references: [users.id],
+      relationName: "provider_profile_snapshot_requester",
+    }),
+    reviewer: one(users, {
+      fields: [providerProfileSnapshots.reviewedBy],
+      references: [users.id],
+      relationName: "provider_profile_snapshot_reviewer",
+    }),
+  }),
+);
+
+export const knowledgeCategoriesRelations = relations(
+  knowledgeCategories,
+  ({ many }) => ({
+    articles: many(knowledgeArticles),
+  }),
+);
+
+export const knowledgeArticlesRelations = relations(
+  knowledgeArticles,
+  ({ one }) => ({
+    category: one(knowledgeCategories, {
+      fields: [knowledgeArticles.categoryId],
+      references: [knowledgeCategories.id],
+    }),
+    creator: one(users, {
+      fields: [knowledgeArticles.createdBy],
       references: [users.id],
     }),
   }),
 );
+
+export const adminAuditLogsRelations = relations(adminAuditLogs, ({ one }) => ({
+  actor: one(users, {
+    fields: [adminAuditLogs.actorId],
+    references: [users.id],
+  }),
+}));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, {

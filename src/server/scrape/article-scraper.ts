@@ -13,6 +13,7 @@ import {
   requirePublicHttpUrl,
 } from "@fwqgo/core/network-url";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
+import type { ArticleRewriteQuality } from "@fwqgo/ai/article-rewriter";
 import RewriteArticle from "@/langchain/rewrite-article";
 import {
   mergeAffiliateReports,
@@ -38,6 +39,7 @@ export interface ScrapeDiagnostics {
   affiliateReport: AffiliateRewriteReport;
   warnings: string[];
   aiRewriteError?: string;
+  rewriteQuality?: ArticleRewriteQuality;
 }
 
 export interface ScrapedArticle {
@@ -539,6 +541,7 @@ async function scrapeByRule(input: {
         );
         diagnostics.usedAiRewrite = true;
         diagnostics.rewriteOutputLength = repairedMarkdown.length;
+        diagnostics.rewriteQuality = rewritten.quality;
         return createArticle({
           htmlContent: repairedMarkdown,
           cleanedHtmlContent: rawHtml,

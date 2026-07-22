@@ -3,9 +3,14 @@
 import { db } from "@fwqgo/db";
 import { type AffManData } from "@/types";
 import { revalidatePath } from "next/cache";
-import { affServiceProviders } from "@fwqgo/db/schema";
+import {
+  affServiceProviders,
+  providerMonitors,
+  serverOffers,
+} from "@fwqgo/db/schema";
 import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { requireAdminSession } from "@fwqgo/auth/session";
+import { getAffiliateConfigState } from "@fwqgo/core/affiliate-provider";
 import { normalizeOffsetPagination } from "@fwqgo/core/pagination";
 import { parsePostgresIntegerId } from "@fwqgo/core/utils";
 import { ilikeContains } from "@/server/db/search";
@@ -16,12 +21,14 @@ type AffProviderActionResult =
   | { error: string; message: string };
 
 type AffProviderDeleteActionResult =
-  | { data: number | typeof affServiceProviders.$inferSelect }
+  | { data: number }
   | { error: string; message: string };
 
 const MAX_TEXT_LENGTH = 500;
 const MAX_NAME_LENGTH = 80;
 const MAX_PARAM_LENGTH = 80;
+
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export type AffProviderFilter = "all" | "with-aff" | "empty-aff";
 export type AffProviderSort =
@@ -119,9 +126,17 @@ function getAffProviderWhereCondition({
     : undefined;
   const filterCondition =
     filter === "with-aff"
-      ? sql`btrim(${affServiceProviders.affUrl}) <> ''`
+      ? and(
+          sql`btrim(${affServiceProviders.affUrl}) <> ''`,
+          sql`btrim(${affServiceProviders.affParam}) <> ''`,
+          sql`btrim(${affServiceProviders.affValue}) <> ''`,
+        )
       : filter === "empty-aff"
-        ? sql`btrim(${affServiceProviders.affUrl}) = ''`
+        ? or(
+            sql`btrim(${affServiceProviders.affUrl}) = ''`,
+            sql`btrim(${affServiceProviders.affParam}) = ''`,
+            sql`btrim(${affServiceProviders.affValue}) = ''`,
+          )
         : undefined;
 
   return and(searchCondition, filterCondition);
@@ -136,14 +151,16 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
     officialUrl: normalizeOfficialUrl(data.officialUrl),
   };
 
-  if (
-    !normalizedData.name ||
-    !normalizedData.affUrl ||
-    !normalizedData.affParam ||
-    !normalizedData.affValue ||
-    !normalizedData.officialUrl
-  ) {
-    return { error: "请填写完整信息", data: normalizedData };
+  if (!normalizedData.name || !normalizedData.officialUrl) {
+    return { error: "请填写商家名和官网域名", data: normalizedData };
+  }
+
+  const affiliateConfigState = getAffiliateConfigState(normalizedData);
+  if (affiliateConfigState === "partial") {
+    return {
+      error: "返利链接、返利参数和返利值需全部填写，或全部留空",
+      data: normalizedData,
+    };
   }
 
   if (normalizedData.name.length > MAX_NAME_LENGTH) {
@@ -171,17 +188,22 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
     };
   }
 
-  try {
-    const parsedUrl = new URL(normalizedData.affUrl);
+  if (affiliateConfigState === "complete") {
+    try {
+      const parsedUrl = new URL(normalizedData.affUrl);
 
-    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-      return { error: "返利链接只支持 http 或 https", data: normalizedData };
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+        return {
+          error: "返利链接只支持 http 或 https",
+          data: normalizedData,
+        };
+      }
+    } catch {
+      return {
+        error: "返利链接格式不正确，请填写完整 URL",
+        data: normalizedData,
+      };
     }
-  } catch {
-    return {
-      error: "返利链接格式不正确，请填写完整 URL",
-      data: normalizedData,
-    };
   }
 
   if (
@@ -197,6 +219,58 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
   return { data: normalizedData };
 }
 
+async function assertProvidersCanBeDeleted(
+  tx: DbTransaction,
+  providers: Array<{ id: number; name: string }>,
+) {
+  const providerIds = providers.map((provider) => provider.id);
+  const monitorReferences = await tx
+    .select({
+      providerId: providerMonitors.providerId,
+      count: count(),
+    })
+    .from(providerMonitors)
+    .where(inArray(providerMonitors.providerId, providerIds))
+    .groupBy(providerMonitors.providerId);
+  const offerReferences = await tx
+    .select({
+      providerId: serverOffers.providerId,
+      count: count(),
+    })
+    .from(serverOffers)
+    .where(inArray(serverOffers.providerId, providerIds))
+    .groupBy(serverOffers.providerId);
+  const monitorCountByProvider = new Map(
+    monitorReferences.map((reference) => [
+      reference.providerId,
+      reference.count,
+    ]),
+  );
+  const offerCountByProvider = new Map(
+    offerReferences.map((reference) => [reference.providerId, reference.count]),
+  );
+  const blockers = providers.flatMap((provider) => {
+    const monitorCount = monitorCountByProvider.get(provider.id) ?? 0;
+    const offerCount = offerCountByProvider.get(provider.id) ?? 0;
+    if (monitorCount === 0 && offerCount === 0) return [];
+    return [{ ...provider, monitorCount, offerCount }];
+  });
+
+  if (blockers.length === 0) return;
+
+  const details = blockers
+    .slice(0, 5)
+    .map(
+      (provider) =>
+        `${provider.name}（采集监控 ${provider.monitorCount}，套餐 ${provider.offerCount}）`,
+    )
+    .join("；");
+  const omitted = blockers.length > 5 ? `；另有 ${blockers.length - 5} 个` : "";
+  throw new Error(
+    `仍有关联数据，不能删除：${details}${omitted}。请先删除或迁移采集监控，并解除套餐关联。`,
+  );
+}
+
 // 通过href查询affServiceProvider
 export async function getAffValueByHref(hostname: string) {
   try {
@@ -210,7 +284,14 @@ export async function getAffValueByHref(hostname: string) {
     const matches = await db
       .select()
       .from(affServiceProviders)
-      .where(inArray(affServiceProviders.officialUrl, possibleDomains));
+      .where(
+        and(
+          inArray(affServiceProviders.officialUrl, possibleDomains),
+          sql`btrim(${affServiceProviders.affUrl}) <> ''`,
+          sql`btrim(${affServiceProviders.affParam}) <> ''`,
+          sql`btrim(${affServiceProviders.affValue}) <> ''`,
+        ),
+      );
     const matchesByDomain = new Map(
       matches.map((provider) => [
         normalizeOfficialUrl(provider.officialUrl),
@@ -371,10 +452,25 @@ export async function deleteAffProvider(
       return { error: "删除返利商家失败", message: "商家 ID 不正确" };
     }
 
-    const [result] = await db
-      .delete(affServiceProviders)
-      .where(eq(affServiceProviders.id, providerId))
-      .returning();
+    const result = await db.transaction(async (tx) => {
+      const [provider] = await tx
+        .select({
+          id: affServiceProviders.id,
+          name: affServiceProviders.name,
+        })
+        .from(affServiceProviders)
+        .where(eq(affServiceProviders.id, providerId))
+        .for("update")
+        .limit(1);
+      if (!provider) return null;
+
+      await assertProvidersCanBeDeleted(tx, [provider]);
+      const [deleted] = await tx
+        .delete(affServiceProviders)
+        .where(eq(affServiceProviders.id, providerId))
+        .returning();
+      return deleted ?? null;
+    });
 
     if (!result) {
       return {
@@ -410,10 +506,28 @@ export async function deleteAffProviders(
       return { data: 0 };
     }
 
-    const result = await db
-      .delete(affServiceProviders)
-      .where(inArray(affServiceProviders.id, validIds))
-      .returning({ id: affServiceProviders.id });
+    const result = await db.transaction(async (tx) => {
+      const providers = await tx
+        .select({
+          id: affServiceProviders.id,
+          name: affServiceProviders.name,
+        })
+        .from(affServiceProviders)
+        .where(inArray(affServiceProviders.id, validIds))
+        .orderBy(asc(affServiceProviders.id))
+        .for("update");
+      if (providers.length !== validIds.length) {
+        throw new Error(
+          `所选供应商中有 ${validIds.length - providers.length} 个不存在，请刷新列表后重试。`,
+        );
+      }
+
+      await assertProvidersCanBeDeleted(tx, providers);
+      return tx
+        .delete(affServiceProviders)
+        .where(inArray(affServiceProviders.id, validIds))
+        .returning({ id: affServiceProviders.id });
+    });
 
     if (result.length > 0) {
       clearOutboundAffiliateProviderCache();

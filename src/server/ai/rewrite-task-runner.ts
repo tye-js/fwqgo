@@ -1520,45 +1520,28 @@ async function createArticleFromManualTask(input: {
       : [],
   };
 
-  try {
-    const rewritten = await RewriteArticle(markdownInput.markdown, {
-      styleId: input.rewriteStyleId,
-    });
-    const repairedMarkdown = repairMarkdownAffiliateLinks(
-      rewritten.markdownContent,
-      affiliateReport,
-    );
-    diagnostics.usedAiRewrite = true;
-    diagnostics.rewriteOutputLength = repairedMarkdown.length;
+  const rewritten = await RewriteArticle(markdownInput.markdown, {
+    styleId: input.rewriteStyleId,
+  });
+  const repairedMarkdown = repairMarkdownAffiliateLinks(
+    rewritten.markdownContent,
+    affiliateReport,
+  );
+  diagnostics.usedAiRewrite = true;
+  diagnostics.rewriteOutputLength = repairedMarkdown.length;
+  diagnostics.rewriteQuality = rewritten.quality;
 
-    return {
-      title: rewritten.title || sourceTitle,
-      content: repairedMarkdown,
-      htmlContent: repairedMarkdown,
-      cleanedHtmlContent: cleanedHtml,
-      description: rewritten.description,
-      keywords: rewritten.keywords,
-      recommendTagName: rewritten.recommendTagName,
-      tagsName: rewritten.tagsName,
-      diagnostics,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "AI 改写失败";
-    diagnostics.aiRewriteError = message;
-    diagnostics.warnings.push(`AI 改写失败，已回退为原始素材内容：${message}`);
-
-    return {
-      title: sourceTitle,
-      content: cleanedHtml,
-      htmlContent: cleanedHtml,
-      cleanedHtmlContent: cleanedHtml,
-      description: diagnostics.scrapedDescription ?? sourceTitle,
-      keywords: [],
-      recommendTagName: "",
-      tagsName: [],
-      diagnostics,
-    };
-  }
+  return {
+    title: rewritten.title || sourceTitle,
+    content: repairedMarkdown,
+    htmlContent: repairedMarkdown,
+    cleanedHtmlContent: cleanedHtml,
+    description: rewritten.description,
+    keywords: rewritten.keywords,
+    recommendTagName: rewritten.recommendTagName,
+    tagsName: rewritten.tagsName,
+    diagnostics,
+  };
 }
 
 async function loadTaskArticle(
@@ -1873,9 +1856,24 @@ export async function runAiRewriteTask(taskId: number) {
         status: article.diagnostics.usedAiRewrite ? "success" : "skipped",
         progress: 72,
         message: article.diagnostics.usedAiRewrite
-          ? `AI 输出 ${article.diagnostics.rewriteOutputLength ?? article.htmlContent.length} 字符`
+          ? article.diagnostics.rewriteQuality
+            ? `AI 输出 ${article.diagnostics.rewriteOutputLength ?? article.htmlContent.length} 字符；原创度 ${article.diagnostics.rewriteQuality.originalityScore}%；事实覆盖 ${article.diagnostics.rewriteQuality.criticalFactCoverage}%；${article.diagnostics.rewriteQuality.attempts} 轮通过`
+            : `AI 输出 ${article.diagnostics.rewriteOutputLength ?? article.htmlContent.length} 字符`
           : (article.diagnostics.aiRewriteError ??
             "AI 未改写，使用原始采集内容"),
+        payload: article.diagnostics.rewriteQuality
+          ? {
+              promptVersion: article.diagnostics.rewriteQuality.promptVersion,
+              originalityScore:
+                article.diagnostics.rewriteQuality.originalityScore,
+              criticalFactCoverage:
+                article.diagnostics.rewriteQuality.criticalFactCoverage,
+              factualScore: article.diagnostics.rewriteQuality.factualScore,
+              attempts: article.diagnostics.rewriteQuality.attempts,
+              knowledgeReferences:
+                article.diagnostics.rewriteQuality.knowledgeReferences,
+            }
+          : undefined,
       });
       activeStep = {
         key: "save_draft",

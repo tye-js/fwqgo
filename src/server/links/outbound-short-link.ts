@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 
 import { db, readDb } from "@fwqgo/db";
 import { affServiceProviders, outboundLinks } from "@fwqgo/db/schema";
+import { hasCompleteAffiliateConfig } from "@fwqgo/core/affiliate-provider";
 
 const siteBaseUrl = "https://fwqgo.com";
 const slugAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -18,7 +19,10 @@ export function clearOutboundAffiliateProviderCache() {
 
 function getAffiliateProviders() {
   if (!providerCache) {
-    const request = db.select().from(affServiceProviders);
+    const request = db
+      .select()
+      .from(affServiceProviders)
+      .then((providers) => providers.filter(hasCompleteAffiliateConfig));
     providerCache = request;
     void request.catch(() => {
       if (providerCache === request) {

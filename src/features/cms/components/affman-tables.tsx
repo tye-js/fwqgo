@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { FileText, Pencil, Trash2 } from "lucide-react";
 
 import {
   addAffProvider,
@@ -15,6 +15,7 @@ import {
   AdminTableWorkbench,
 } from "@/features/cms/components/admin-table-workbench";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,8 +51,10 @@ import {
   notifyInfo,
   notifySuccess,
 } from "@/lib/admin-toast";
-import { type AffManData } from "@/types";
+import { type AffManData, type AffProviderTableData } from "@/types";
 import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
+import { ProviderProfileSheet } from "@/features/cms/components/provider-profile-sheet";
+import { getAffiliateConfigState } from "@fwqgo/core/affiliate-provider";
 
 type ActionErrorResult = {
   error: string;
@@ -81,6 +84,47 @@ function normalizeOfficialUrl(value: string) {
     .toLowerCase();
 }
 
+function getProfileCompletion(provider: AffProviderTableData) {
+  return [
+    provider.summary,
+    provider.refundPolicy,
+    provider.prohibitedUses,
+  ].filter(Boolean).length;
+}
+
+function getCollectionStatusLabel(provider: AffProviderTableData) {
+  switch (provider.latestSnapshot?.status) {
+    case "queued":
+      return "等待采集";
+    case "running":
+      return "采集中";
+    case "pending":
+      return "待审核";
+    case "failed":
+      return "失败";
+    case "applied":
+      return "已应用";
+    case "rejected":
+      return "已驳回";
+    default:
+      return "未采集";
+  }
+}
+
+function getCollectionStatusVariant(provider: AffProviderTableData) {
+  switch (provider.latestSnapshot?.status) {
+    case "pending":
+      return "default" as const;
+    case "failed":
+      return "destructive" as const;
+    case "queued":
+    case "running":
+      return "secondary" as const;
+    default:
+      return "outline" as const;
+  }
+}
+
 function validateAffProviderForm(input: Omit<AffManData, "id">) {
   const normalizedInput = {
     name: normalizeText(input.name),
@@ -90,27 +134,34 @@ function validateAffProviderForm(input: Omit<AffManData, "id">) {
     officialUrl: normalizeOfficialUrl(input.officialUrl),
   };
 
-  if (
-    !normalizedInput.name ||
-    !normalizedInput.affUrl ||
-    !normalizedInput.affParam ||
-    !normalizedInput.affValue ||
-    !normalizedInput.officialUrl
-  ) {
-    return { error: "请填写完整信息", data: normalizedInput };
+  if (!normalizedInput.name || !normalizedInput.officialUrl) {
+    return { error: "请填写商家名和官网域名", data: normalizedInput };
   }
 
-  try {
-    const parsedUrl = new URL(normalizedInput.affUrl);
-
-    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-      return { error: "返利链接只支持 http 或 https", data: normalizedInput };
-    }
-  } catch {
+  const affiliateConfigState = getAffiliateConfigState(normalizedInput);
+  if (affiliateConfigState === "partial") {
     return {
-      error: "返利链接格式不正确，请填写完整 URL",
+      error: "返利链接、返利参数和返利值需全部填写，或全部留空",
       data: normalizedInput,
     };
+  }
+
+  if (affiliateConfigState === "complete") {
+    try {
+      const parsedUrl = new URL(normalizedInput.affUrl);
+
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+        return {
+          error: "返利链接只支持 http 或 https",
+          data: normalizedInput,
+        };
+      }
+    } catch {
+      return {
+        error: "返利链接格式不正确，请填写完整 URL",
+        data: normalizedInput,
+      };
+    }
   }
 
   if (
@@ -124,6 +175,12 @@ function validateAffProviderForm(input: Omit<AffManData, "id">) {
   }
 
   return { data: normalizedInput };
+}
+
+function getAffiliateConfigSummary(input: Omit<AffManData, "id">) {
+  return getAffiliateConfigState(input) === "complete"
+    ? `${input.affParam}=${input.affValue}`
+    : "未配置返利";
 }
 
 function withTimeout<T>(promise: Promise<T>, message: string) {
@@ -147,7 +204,7 @@ export default function AffManTable({
   initialFilter = "all",
   initialSort = "id-desc",
 }: {
-  data: AffManData[];
+  data: AffProviderTableData[];
   initialQuery: string;
   initialFilter?: string;
   initialSort?: string;
@@ -169,6 +226,41 @@ export default function AffManTable({
   const [isAdd, setIsAdd] = useState(false);
   const [isAddSave, setIsAddSave] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [activeProviderId, setActiveProviderId] = useState<number | null>(null);
+
+  function resetProviderForm() {
+    setName("");
+    setAffUrl("");
+    setAffParam("");
+    setAffValue("");
+    setOfficialUrl("");
+  }
+
+  function openAddForm() {
+    setEditId(null);
+    resetProviderForm();
+    setIsAdd(true);
+  }
+
+  function closeAddForm() {
+    setIsAdd(false);
+    resetProviderForm();
+  }
+
+  function openEditForm(provider: AffProviderTableData) {
+    setIsAdd(false);
+    setEditId(provider.id);
+    setName(provider.name);
+    setAffUrl(provider.affUrl);
+    setAffParam(provider.affParam);
+    setAffValue(provider.affValue);
+    setOfficialUrl(provider.officialUrl);
+  }
+
+  function closeEditForm() {
+    setEditId(null);
+    resetProviderForm();
+  }
 
   useEffect(() => {
     const normalizedInitialQuery = initialQuery.trim();
@@ -186,6 +278,8 @@ export default function AffManTable({
   }, [initialQuery, query, updateUrlQuery]);
 
   const sortedData = data;
+  const activeProvider =
+    data.find((provider) => provider.id === activeProviderId) ?? null;
 
   const allFilteredSelected =
     sortedData.length > 0 &&
@@ -241,13 +335,13 @@ export default function AffManTable({
         return;
       }
 
-      setEditId(null);
+      closeEditForm();
       notifySuccess({
         title: "返利商家已更新",
         description: describeAdminResult([
           validation.data.name,
           validation.data.officialUrl,
-          `${validation.data.affParam}=${validation.data.affValue}`,
+          getAffiliateConfigSummary(validation.data),
         ]),
       });
       router.refresh();
@@ -336,7 +430,7 @@ export default function AffManTable({
       notifySuccess({
         title: "批量删除完成",
         description: describeAdminResult([
-          `已删除 ${selectedIds.length} 个返利商家`,
+          `已删除 ${result.data} 个供应商`,
           "相关历史文章内容不会自动回滚",
         ]),
       });
@@ -420,19 +514,16 @@ export default function AffManTable({
         return;
       }
 
-      setName("");
-      setAffUrl("");
-      setAffParam("");
-      setAffValue("");
-      setOfficialUrl("");
-      setIsAdd(false);
+      closeAddForm();
       notifySuccess({
         title: "返利商家已添加",
         description: describeAdminResult([
           validation.data.name,
           validation.data.officialUrl,
-          `${validation.data.affParam}=${validation.data.affValue}`,
-          "采集和草稿编辑时可命中替换",
+          getAffiliateConfigSummary(validation.data),
+          validation.data.affUrl
+            ? "采集和草稿编辑时可命中替换"
+            : "已创建供应商档案",
         ]),
       });
       router.refresh();
@@ -469,7 +560,7 @@ export default function AffManTable({
               <SelectContent>
                 <SelectItem value="all">全部商家</SelectItem>
                 <SelectItem value="with-aff">已配置返利</SelectItem>
-                <SelectItem value="empty-aff">空返利链接</SelectItem>
+                <SelectItem value="empty-aff">未配置返利</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -512,7 +603,7 @@ export default function AffManTable({
                 <AlertDialogTitle>删除选中的返利商家？</AlertDialogTitle>
                 <AlertDialogDescription>
                   将永久删除 {selectedIds.length}{" "}
-                  条返利规则，后续文章将无法再命中这些商家。此操作不可撤销。
+                  个供应商。存在采集监控或套餐关联时将拒绝删除；优惠码和档案采集快照会一并删除。
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -529,7 +620,7 @@ export default function AffManTable({
       <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
         <p className="text-sm font-medium text-foreground">添加商家</p>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          新增商家后，这里的返利配置会直接影响采集文章中的返利链接替换逻辑。
+          返利配置为可选；填写时，链接、参数和值必须同时完整。
         </p>
         {isAdd ? (
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_140px_140px_1fr_auto]">
@@ -543,7 +634,7 @@ export default function AffManTable({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="new-aff-provider-url">返利链接</Label>
+              <Label htmlFor="new-aff-provider-url">返利链接（可选）</Label>
               <Input
                 id="new-aff-provider-url"
                 value={affUrl}
@@ -552,7 +643,7 @@ export default function AffManTable({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="new-aff-provider-param">返利参数</Label>
+              <Label htmlFor="new-aff-provider-param">返利参数（可选）</Label>
               <Input
                 id="new-aff-provider-param"
                 value={affParam}
@@ -561,7 +652,7 @@ export default function AffManTable({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="new-aff-provider-value">返利值</Label>
+              <Label htmlFor="new-aff-provider-value">返利值（可选）</Label>
               <Input
                 id="new-aff-provider-value"
                 value={affValue}
@@ -581,7 +672,7 @@ export default function AffManTable({
             <div className="flex flex-col gap-2 self-end sm:flex-row">
               <Button
                 variant="secondary"
-                onClick={() => setIsAdd(false)}
+                onClick={closeAddForm}
                 className="min-h-11"
               >
                 取消
@@ -597,7 +688,7 @@ export default function AffManTable({
           </div>
         ) : (
           <div className="mt-4">
-            <Button variant="outline" onClick={() => setIsAdd(true)}>
+            <Button variant="outline" onClick={openAddForm}>
               添加新商家
             </Button>
           </div>
@@ -611,7 +702,7 @@ export default function AffManTable({
         />
       ) : (
         <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-          <Table className="min-w-[980px]">
+          <Table className="min-w-[1280px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[44px]">
@@ -633,6 +724,9 @@ export default function AffManTable({
                 <TableHead className="text-nowrap">返利参数</TableHead>
                 <TableHead className="text-nowrap">返利值</TableHead>
                 <TableHead>商家官网</TableHead>
+                <TableHead className="text-nowrap">档案</TableHead>
+                <TableHead className="text-nowrap">优惠码</TableHead>
+                <TableHead className="text-nowrap">采集状态</TableHead>
                 <TableHead className="text-center">操作</TableHead>
               </TableRow>
             </TableHeader>
@@ -690,12 +784,29 @@ export default function AffManTable({
                           onChange={(e) => setOfficialUrl(e.target.value)}
                         />
                       </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            getProfileCompletion(item) === 3
+                              ? "default"
+                              : "outline"
+                          }
+                        >
+                          {getProfileCompletion(item)}/3
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{item.promoCodes.length}</TableCell>
+                      <TableCell>
+                        <Badge variant={getCollectionStatusVariant(item)}>
+                          {getCollectionStatusLabel(item)}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="text-center">
                         <div className="flex justify-center gap-2">
                           <Button
                             variant="secondary"
                             size="sm"
-                            onClick={() => setEditId(null)}
+                            onClick={closeEditForm}
                           >
                             取消
                           </Button>
@@ -714,29 +825,62 @@ export default function AffManTable({
                       <TableCell>{item.id}</TableCell>
                       <TableCell>{item.name}</TableCell>
                       <TableCell className="max-w-[220px]">
-                        <span className="block truncate">{item.affUrl}</span>
+                        <span
+                          className={`block truncate ${item.affUrl ? "" : "text-muted-foreground"}`}
+                        >
+                          {item.affUrl || "未配置"}
+                        </span>
                       </TableCell>
-                      <TableCell>{item.affParam}</TableCell>
-                      <TableCell>{item.affValue}</TableCell>
+                      <TableCell>{item.affParam || "-"}</TableCell>
+                      <TableCell>{item.affValue || "-"}</TableCell>
                       <TableCell className="max-w-[220px]">
                         <span className="block truncate text-muted-foreground">
                           {item.officialUrl}
                         </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            getProfileCompletion(item) === 3
+                              ? "default"
+                              : "outline"
+                          }
+                        >
+                          {getProfileCompletion(item)}/3
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm">
+                          {
+                            item.promoCodes.filter((promo) => promo.active)
+                              .length
+                          }
+                          <span className="text-muted-foreground">
+                            /{item.promoCodes.length}
+                          </span>
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={getCollectionStatusVariant(item)}>
+                          {getCollectionStatusLabel(item)}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-center">
                         <div className="flex justify-center gap-2">
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => {
-                              setEditId(item.id);
-                              setName(item.name);
-                              setAffUrl(item.affUrl);
-                              setAffParam(item.affParam);
-                              setAffValue(item.affValue);
-                              setOfficialUrl(item.officialUrl);
-                            }}
+                            onClick={() => setActiveProviderId(item.id)}
                           >
+                            <FileText className="size-4" />
+                            档案
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEditForm(item)}
+                          >
+                            <Pencil className="size-4" />
                             编辑
                           </Button>
                           <AlertDialog>
@@ -746,6 +890,7 @@ export default function AffManTable({
                                 size="sm"
                                 disabled={deletingId !== null}
                               >
+                                <Trash2 className="size-4" />
                                 删除
                               </Button>
                             </AlertDialogTrigger>
@@ -755,7 +900,7 @@ export default function AffManTable({
                                   确定删除这个商家吗？
                                 </AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  删除后将无法恢复，当前商家为
+                                  仅未关联采集监控或套餐的供应商可以删除。优惠码和档案采集快照会一并删除，当前供应商为
                                   <span className="mt-2 block text-red-500">
                                     {item.name}
                                   </span>
@@ -784,6 +929,16 @@ export default function AffManTable({
           </Table>
         </div>
       )}
+
+      {activeProvider ? (
+        <ProviderProfileSheet
+          provider={activeProvider}
+          open
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setActiveProviderId(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

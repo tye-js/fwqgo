@@ -231,6 +231,11 @@ function normalizeTaskDiagnostics(
       typeof diagnostics.aiRewriteError === "string"
         ? diagnostics.aiRewriteError
         : undefined,
+    rewriteQuality:
+      diagnostics.rewriteQuality &&
+      typeof diagnostics.rewriteQuality === "object"
+        ? diagnostics.rewriteQuality
+        : undefined,
   };
 }
 
@@ -515,6 +520,7 @@ function AffiliateDiagnosticsSummary({
   diagnostics: ScrapeDiagnostics | null;
 }) {
   const report = diagnostics?.affiliateReport;
+  const quality = diagnostics?.rewriteQuality;
 
   if (!report) {
     return <span className="text-sm text-muted-foreground">等待抓取</span>;
@@ -570,6 +576,50 @@ function AffiliateDiagnosticsSummary({
             </p>
           </div>
         </div>
+
+        {quality ? (
+          <div className="space-y-2 border-t border-border/60 pt-2">
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-md border border-border/70 p-2">
+                <p className="text-muted-foreground">原创度</p>
+                <p className="mt-1 font-medium text-foreground">
+                  {quality.originalityScore}%
+                </p>
+              </div>
+              <div className="rounded-md border border-border/70 p-2">
+                <p className="text-muted-foreground">关键事实覆盖</p>
+                <p className="mt-1 font-medium text-foreground">
+                  {quality.criticalFactCoverage}%
+                </p>
+              </div>
+              <div className="rounded-md border border-border/70 p-2">
+                <p className="text-muted-foreground">事实审查</p>
+                <p className="mt-1 font-medium text-foreground">
+                  {quality.factualScore}/100
+                </p>
+              </div>
+              <div className="rounded-md border border-border/70 p-2">
+                <p className="text-muted-foreground">生成轮数</p>
+                <p className="mt-1 font-medium text-foreground">
+                  {quality.attempts}
+                </p>
+              </div>
+            </div>
+            {quality.knowledgeReferences.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {quality.knowledgeReferences.map((reference) => (
+                  <Badge key={reference.id} variant="outline">
+                    知识：{reference.title}
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                本次未引用知识库条目
+              </p>
+            )}
+          </div>
+        ) : null}
 
         <p className="text-xs text-muted-foreground">
           正文 {diagnostics.contentLength} 字

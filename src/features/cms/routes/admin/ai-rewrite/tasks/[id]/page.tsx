@@ -141,6 +141,63 @@ function normalizeAffiliateReport(
   };
 }
 
+function normalizeRewriteQuality(
+  value: unknown,
+): ScrapeDiagnostics["rewriteQuality"] {
+  if (!isRecord(value)) return undefined;
+  const knowledgeReferences = Array.isArray(value.knowledgeReferences)
+    ? value.knowledgeReferences.flatMap((item) => {
+        if (!isRecord(item)) return [];
+        const id = numberValue(item.id);
+        const title = stringValue(item.title);
+        if (!id || !title) return [];
+        return [
+          {
+            id,
+            title,
+            slug: stringValue(item.slug),
+            categoryName: stringValue(item.categoryName),
+          },
+        ];
+      })
+    : [];
+
+  return {
+    passed: booleanValue(value.passed),
+    originalityScore: numberValue(value.originalityScore),
+    narrativeSimilarity: numberValue(value.narrativeSimilarity),
+    exactSentenceRatio: numberValue(value.exactSentenceRatio),
+    headingSimilarity: numberValue(value.headingSimilarity),
+    criticalFactCoverage: numberValue(value.criticalFactCoverage),
+    missingCriticalFacts: arrayValue(value.missingCriticalFacts, (item) =>
+      stringValue(item),
+    ).filter(Boolean),
+    unsupportedCriticalFacts: arrayValue(
+      value.unsupportedCriticalFacts,
+      (item) => stringValue(item),
+    ).filter(Boolean),
+    sourceNarrativeLength: numberValue(value.sourceNarrativeLength),
+    outputNarrativeLength: numberValue(value.outputNarrativeLength),
+    reasons: arrayValue(value.reasons, (item) => stringValue(item)).filter(
+      Boolean,
+    ),
+    promptVersion: stringValue(value.promptVersion),
+    attempts: numberValue(value.attempts),
+    factualScore: numberValue(value.factualScore),
+    reviewPassed: booleanValue(value.reviewPassed),
+    missingFacts: arrayValue(value.missingFacts, (item) =>
+      stringValue(item),
+    ).filter(Boolean),
+    unsupportedClaims: arrayValue(value.unsupportedClaims, (item) =>
+      stringValue(item),
+    ).filter(Boolean),
+    distortedFacts: arrayValue(value.distortedFacts, (item) =>
+      stringValue(item),
+    ).filter(Boolean),
+    knowledgeReferences,
+  };
+}
+
 function parseDiagnostics(value: string | null) {
   if (!value) return null;
 
@@ -189,6 +246,7 @@ function parseDiagnostics(value: string | null) {
         typeof parsed.aiRewriteError === "string"
           ? parsed.aiRewriteError
           : undefined,
+      rewriteQuality: normalizeRewriteQuality(parsed.rewriteQuality),
     } satisfies ScrapeDiagnostics;
   } catch {
     return null;
@@ -328,7 +386,9 @@ function buildTaskSteps({
             ? "skipped"
             : "pending",
       description: diagnostics?.usedAiRewrite
-        ? `输入 ${diagnostics.aiInputLength ?? "-"} 字符，输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符`
+        ? diagnostics.rewriteQuality
+          ? `输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符，原创度 ${diagnostics.rewriteQuality.originalityScore}%，事实覆盖 ${diagnostics.rewriteQuality.criticalFactCoverage}%，共 ${diagnostics.rewriteQuality.attempts} 轮`
+          : `输入 ${diagnostics.aiInputLength ?? "-"} 字符，输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符`
         : isEnglishTask
           ? "等待从中文改写正文翻译英文正文，SEO 字段会单独生成"
           : (diagnostics?.aiRewriteError ?? "等待 AI 改写"),
@@ -892,6 +952,44 @@ export async function AiRewriteTaskDetailPageContent({
                 <Badge variant="destructive">AI 回退</Badge>
               )}
             </div>
+            {diagnostics.rewriteQuality ? (
+              <div className="space-y-3 border-t border-border/70 pt-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <Stat
+                    label="原创度"
+                    value={`${diagnostics.rewriteQuality.originalityScore}%`}
+                  />
+                  <Stat
+                    label="关键事实覆盖"
+                    value={`${diagnostics.rewriteQuality.criticalFactCoverage}%`}
+                  />
+                  <Stat
+                    label="模型事实审查"
+                    value={`${diagnostics.rewriteQuality.factualScore}/100`}
+                  />
+                  <Stat
+                    label="自动重写"
+                    value={`${diagnostics.rewriteQuality.attempts} 轮`}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">
+                    {diagnostics.rewriteQuality.promptVersion}
+                  </Badge>
+                  {diagnostics.rewriteQuality.knowledgeReferences.map(
+                    (reference) => (
+                      <Badge key={reference.id} variant="secondary">
+                        知识：{reference.title}
+                      </Badge>
+                    ),
+                  )}
+                  {diagnostics.rewriteQuality.knowledgeReferences.length ===
+                  0 ? (
+                    <Badge variant="outline">未引用知识库</Badge>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             {diagnostics.removedSelectors.length > 0 ? (
               <div className="space-y-2">
                 <p className="text-sm font-medium">清理模块</p>

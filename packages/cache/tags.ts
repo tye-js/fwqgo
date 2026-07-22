@@ -10,6 +10,7 @@ export const cacheTags = {
   sitemap: "sitemap",
   siteSeo: "site-seo",
   serverOffers: "server-offers",
+  knowledge: "knowledge",
   category: (id: number) => `category:${id}`,
   categorySlug: (slug: string) => `category-slug:${slug}`,
   tag: (id: number) => `tag:${id}`,
@@ -17,6 +18,8 @@ export const cacheTags = {
   post: (id: number) => `post:${id}`,
   postSlug: (slug: string) => `post-slug:${slug}`,
   serverOfferTopic: (slug: string) => `server-offer-topic:${slug}`,
+  knowledgeArticle: (id: number) => `knowledge-article:${id}`,
+  knowledgeSlug: (slug: string) => `knowledge-slug:${slug}`,
 };
 
 export const publicCacheEvents = [
@@ -26,6 +29,7 @@ export const publicCacheEvents = [
   "seo.changed",
   "taxonomy.changed",
   "image.changed",
+  "knowledge.changed",
 ] as const;
 
 export type PublicCacheEvent = (typeof publicCacheEvents)[number];
@@ -35,6 +39,8 @@ export type PublicCacheEventPayload = {
   categoryIds?: number[];
   tagIds?: number[];
   topicSlugs?: string[];
+  knowledgeArticleIds?: number[];
+  knowledgeSlugs?: string[];
 };
 
 export function tagCache(...tags: string[]) {
@@ -61,11 +67,22 @@ export function getPublicCacheEventTargets(
   const paths = new Set<string>();
 
   if (event === "post.changed") {
-    [cacheTags.posts, cacheTags.homepage, cacheTags.sidebar, cacheTags.sitemap]
-      .forEach((tag) => tags.add(tag));
-    ["/", "/en", "/sitemap.xml", "/sitemap-posts.xml", "/sitemap-en.xml"]
-      .forEach((path) => paths.add(path));
-    uniquePositiveIds(payload.postIds).forEach((id) => tags.add(cacheTags.post(id)));
+    [
+      cacheTags.posts,
+      cacheTags.homepage,
+      cacheTags.sidebar,
+      cacheTags.sitemap,
+    ].forEach((tag) => tags.add(tag));
+    [
+      "/",
+      "/en",
+      "/sitemap.xml",
+      "/sitemap-posts.xml",
+      "/sitemap-en.xml",
+    ].forEach((path) => paths.add(path));
+    uniquePositiveIds(payload.postIds).forEach((id) =>
+      tags.add(cacheTags.post(id)),
+    );
     uniqueSlugs(payload.postSlugs).forEach((slug) => {
       tags.add(cacheTags.postSlug(slug));
       paths.add(`/fwq/posts/${encodeURIComponent(slug)}`);
@@ -94,8 +111,12 @@ export function getPublicCacheEventTargets(
     [cacheTags.siteSeo, cacheTags.homepage].forEach((tag) => tags.add(tag));
     ["/", "/en"].forEach((path) => paths.add(path));
   } else if (event === "taxonomy.changed") {
-    [cacheTags.categories, cacheTags.tags, cacheTags.posts, cacheTags.sitemap]
-      .forEach((tag) => tags.add(tag));
+    [
+      cacheTags.categories,
+      cacheTags.tags,
+      cacheTags.posts,
+      cacheTags.sitemap,
+    ].forEach((tag) => tags.add(tag));
     [
       "/",
       "/en",
@@ -107,13 +128,29 @@ export function getPublicCacheEventTargets(
     uniquePositiveIds(payload.categoryIds).forEach((id) =>
       tags.add(cacheTags.category(id)),
     );
-    uniquePositiveIds(payload.tagIds).forEach((id) => tags.add(cacheTags.tag(id)));
+    uniquePositiveIds(payload.tagIds).forEach((id) =>
+      tags.add(cacheTags.tag(id)),
+    );
   } else if (event === "image.changed") {
     [cacheTags.posts, cacheTags.homepage, cacheTags.homepageSlots].forEach(
       (tag) => tags.add(tag),
     );
     ["/", "/en"].forEach((path) => paths.add(path));
-    uniquePositiveIds(payload.postIds).forEach((id) => tags.add(cacheTags.post(id)));
+    uniquePositiveIds(payload.postIds).forEach((id) =>
+      tags.add(cacheTags.post(id)),
+    );
+  } else if (event === "knowledge.changed") {
+    [cacheTags.knowledge, cacheTags.sitemap].forEach((tag) => tags.add(tag));
+    ["/knowledge", "/sitemap.xml", "/sitemap-knowledge.xml"].forEach((path) =>
+      paths.add(path),
+    );
+    uniquePositiveIds(payload.knowledgeArticleIds).forEach((id) =>
+      tags.add(cacheTags.knowledgeArticle(id)),
+    );
+    uniqueSlugs(payload.knowledgeSlugs).forEach((slug) => {
+      tags.add(cacheTags.knowledgeSlug(slug));
+      paths.add(`/knowledge/${encodeURIComponent(slug)}`);
+    });
   }
 
   return { tags: [...tags], paths: [...paths] };
@@ -133,7 +170,8 @@ function expandLegacyTags(inputTags: string[]) {
     (tag) => tag === cacheTags.posts || tag.startsWith("post:"),
   );
   const hasOfferTag = inputTags.some(
-    (tag) => tag === cacheTags.serverOffers || tag.startsWith("server-offer-topic:"),
+    (tag) =>
+      tag === cacheTags.serverOffers || tag.startsWith("server-offer-topic:"),
   );
   if (hasPostTag) {
     tags.add(cacheTags.posts);
@@ -169,6 +207,10 @@ function legacyPathsForTags(tags: Set<string>) {
   if (tags.has(cacheTags.serverOffers)) {
     paths.add("/servers");
     paths.add("/sitemap-servers.xml");
+  }
+  if (tags.has(cacheTags.knowledge)) {
+    paths.add("/knowledge");
+    paths.add("/sitemap-knowledge.xml");
   }
   return paths;
 }

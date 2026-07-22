@@ -17,6 +17,14 @@ const requestSchema = z.object({
       categoryIds: z.array(z.number().int().positive()).max(50).optional(),
       tagIds: z.array(z.number().int().positive()).max(50).optional(),
       topicSlugs: z.array(z.string().trim().min(1).max(160)).max(20).optional(),
+      knowledgeArticleIds: z
+        .array(z.number().int().positive())
+        .max(50)
+        .optional(),
+      knowledgeSlugs: z
+        .array(z.string().trim().min(1).max(360))
+        .max(50)
+        .optional(),
     })
     .default({}),
 });

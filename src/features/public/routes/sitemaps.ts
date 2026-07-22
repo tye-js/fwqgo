@@ -3,7 +3,13 @@ import { renderSitemapLastmod } from "@fwqgo/core/sitemap-lastmod";
 import { getLatestDateValue } from "@fwqgo/core/date-value";
 import { resolveEnglishTagIdentity } from "@fwqgo/core/taxonomy";
 import { connection } from "next/server";
-import { categories, posts, serverOffers, tags } from "@fwqgo/db/schema";
+import {
+  categories,
+  knowledgeArticles,
+  posts,
+  serverOffers,
+  tags,
+} from "@fwqgo/db/schema";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   getServerOfferCollectionIndex,
@@ -81,43 +87,61 @@ ${entries.join("")}
 
 export async function sitemapIndexGET() {
   const baseUrl = getBaseUrl();
-  const [[latestPost], [latestOffer], [latestCategory], [latestTag]] =
-    await Promise.all([
-      readDb
-        .select({ updatedAt: posts.updatedAt, createdAt: posts.createdAt })
-        .from(posts)
-        .where(eq(posts.published, true))
-        .orderBy(desc(sql`coalesce(${posts.updatedAt}, ${posts.createdAt})`))
-        .limit(1),
-      readDb
-        .select({
-          updatedAt: serverOffers.updatedAt,
-          createdAt: serverOffers.createdAt,
-        })
-        .from(serverOffers)
-        .where(eq(serverOffers.visible, true))
-        .orderBy(
-          desc(
-            sql`coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt})`,
-          ),
-        )
-        .limit(1),
-      readDb
-        .select({
-          updatedAt: categories.updatedAt,
-          createdAt: categories.createdAt,
-        })
-        .from(categories)
-        .orderBy(
-          desc(sql`coalesce(${categories.updatedAt}, ${categories.createdAt})`),
-        )
-        .limit(1),
-      readDb
-        .select({ updatedAt: tags.updatedAt, createdAt: tags.createdAt })
-        .from(tags)
-        .orderBy(desc(sql`coalesce(${tags.updatedAt}, ${tags.createdAt})`))
-        .limit(1),
-    ]);
+  const [
+    [latestPost],
+    [latestOffer],
+    [latestCategory],
+    [latestTag],
+    [latestKnowledge],
+  ] = await Promise.all([
+    readDb
+      .select({ updatedAt: posts.updatedAt, createdAt: posts.createdAt })
+      .from(posts)
+      .where(eq(posts.published, true))
+      .orderBy(desc(sql`coalesce(${posts.updatedAt}, ${posts.createdAt})`))
+      .limit(1),
+    readDb
+      .select({
+        updatedAt: serverOffers.updatedAt,
+        createdAt: serverOffers.createdAt,
+      })
+      .from(serverOffers)
+      .where(eq(serverOffers.visible, true))
+      .orderBy(
+        desc(
+          sql`coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt})`,
+        ),
+      )
+      .limit(1),
+    readDb
+      .select({
+        updatedAt: categories.updatedAt,
+        createdAt: categories.createdAt,
+      })
+      .from(categories)
+      .orderBy(
+        desc(sql`coalesce(${categories.updatedAt}, ${categories.createdAt})`),
+      )
+      .limit(1),
+    readDb
+      .select({ updatedAt: tags.updatedAt, createdAt: tags.createdAt })
+      .from(tags)
+      .orderBy(desc(sql`coalesce(${tags.updatedAt}, ${tags.createdAt})`))
+      .limit(1),
+    readDb
+      .select({
+        updatedAt: knowledgeArticles.updatedAt,
+        createdAt: knowledgeArticles.createdAt,
+      })
+      .from(knowledgeArticles)
+      .where(eq(knowledgeArticles.published, true))
+      .orderBy(
+        desc(
+          sql`coalesce(${knowledgeArticles.updatedAt}, ${knowledgeArticles.createdAt})`,
+        ),
+      )
+      .limit(1),
+  ]);
   const latestPostDate = getLatestDateValue([
     latestPost?.updatedAt,
     latestPost?.createdAt,
@@ -133,6 +157,10 @@ export async function sitemapIndexGET() {
   const latestTagDate = getLatestDateValue([
     latestTag?.updatedAt,
     latestTag?.createdAt,
+  ]);
+  const latestKnowledgeDate = getLatestDateValue([
+    latestKnowledge?.updatedAt,
+    latestKnowledge?.createdAt,
   ]);
 
   return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>
@@ -157,6 +185,10 @@ ${[
   sitemapEntry({
     loc: `${baseUrl}/sitemap-servers.xml`,
     lastmod: latestOfferDate ?? latestPostDate,
+  }),
+  sitemapEntry({
+    loc: `${baseUrl}/sitemap-knowledge.xml`,
+    lastmod: latestKnowledgeDate,
   }),
 ].join("")}
 </sitemapindex>`);
@@ -297,6 +329,39 @@ export async function sitemapEnglishGET() {
   ];
 
   return urlset(entries);
+}
+
+export async function sitemapKnowledgeGET() {
+  const baseUrl = getBaseUrl();
+  const rows = await readDb
+    .select({
+      slug: knowledgeArticles.slug,
+      updatedAt: knowledgeArticles.updatedAt,
+      createdAt: knowledgeArticles.createdAt,
+    })
+    .from(knowledgeArticles)
+    .where(eq(knowledgeArticles.published, true))
+    .orderBy(desc(knowledgeArticles.updatedAt), desc(knowledgeArticles.id));
+  const latestDate = getLatestDateValue(
+    rows.flatMap((row) => [row.updatedAt, row.createdAt]),
+  );
+
+  return urlset([
+    urlEntry({
+      loc: `${baseUrl}/knowledge`,
+      lastmod: latestDate,
+      changefreq: "weekly",
+      priority: "0.75",
+    }),
+    ...rows.map((article) =>
+      urlEntry({
+        loc: `${baseUrl}/knowledge/${encodeURIComponent(article.slug)}`,
+        lastmod: article.updatedAt ?? article.createdAt,
+        changefreq: "monthly",
+        priority: "0.7",
+      }),
+    ),
+  ]);
 }
 
 export async function sitemapCategoriesGET() {

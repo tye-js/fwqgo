@@ -47,7 +47,7 @@ export const imageGenerationNavItems: AdminSectionNavItem[] = [
 ];
 
 export const linkManagementNavItems: AdminSectionNavItem[] = [
-  { label: "返利商家", href: "/collect/aff-man" },
+  { label: "供应商档案", href: "/collect/aff-man" },
   { label: "短链跳转", href: "/collect/short-links" },
 ];
 

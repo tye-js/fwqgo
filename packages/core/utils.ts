@@ -8,12 +8,14 @@ export function cn(...inputs: ClassValue[]) {
 export function slugify(text: string): string {
   const processedText = text
     .trim()
+    // 仅保留数字内部的小数点，避免 1.99 被错误转换为 199
+    .replace(/(?<![0-9])\.|\.(?![0-9])/g, "")
     // 移除特殊字符和标点符号
     .replace(/[：，。！？「」（）\[\]{}|@#$%^&*+=\\/<>～｜、；'："】【]/g, "")
     // 替换冒号和空格为连字符
     .replace(/[:：\s]+/g, "-")
-    // 移除字母数字之外的字符，但保留中文和连字符
-    .replace(/[^\w\u4e00-\u9fa5-]/g, "")
+    // 移除字母数字之外的字符，但保留中文、连字符和小数点
+    .replace(/[^\w\u4e00-\u9fa5.-]/g, "")
     // 转换为小写
     .toLowerCase()
     // 移除连续的连字符
@@ -21,7 +23,9 @@ export function slugify(text: string): string {
     // 移除首尾的连字符
     .replace(/^-+|-+$/g, "")
     // 限制长度
-    .substring(0, 40);
+    .substring(0, 40)
+    // 避免长度截断后留下不完整的小数点
+    .replace(/\.$/, "");
 
   // URL 编码，处理中文字符
   return processedText

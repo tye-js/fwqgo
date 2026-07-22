@@ -1,6 +1,7 @@
 import type * as cheerio from "cheerio";
 import { db } from "@fwqgo/db";
 import { affServiceProviders } from "@fwqgo/db/schema";
+import { hasCompleteAffiliateConfig } from "@fwqgo/core/affiliate-provider";
 
 export type AffiliateRewriteMatch = {
   originalHref: string;
@@ -91,6 +92,8 @@ async function loadProvidersForHosts(hostnames: string[]) {
   const domainSet = new Set(domains);
   const providerByDomain = new Map<string, Provider>();
   for (const provider of rows) {
+    if (!hasCompleteAffiliateConfig(provider)) continue;
+
     const providerDomains = [
       normalizeProviderDomain(provider.officialUrl),
       normalizeProviderDomain(provider.affUrl),
