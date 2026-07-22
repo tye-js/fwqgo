@@ -103,25 +103,28 @@ async function CategoryPageContent({
   if (categoryError) return <div>Failed to load category.</div>;
   if (!category) notFound();
 
+  const { data: totalCount } = await getPublishedPostCountByCategoryId(
+    category.id,
+    "en",
+  );
+  const totalPage = Math.ceil((totalCount ?? 0) / 10);
+
+  if (pageNo > Math.max(totalPage, 1)) {
+    notFound();
+  }
+
   const [
     { data: posts, error: postsError },
-    { data: totalCount },
     { data: latestPosts },
     relatedOffers,
   ] = await Promise.all([
     getPostsWithTagsByCategoryId(category.id, pageNo, "en"),
-    getPublishedPostCountByCategoryId(category.id, "en"),
     getLatestPostsForSidebar("en"),
     getServerOffersByKeywords({
       keywords: [category.name, ...splitKeywords(category.keywords)],
       limit: 6,
     }),
   ]);
-  const totalPage = Math.ceil((totalCount ?? 0) / 10);
-
-  if ((totalCount ?? 0) > 0 && pageNo > totalPage) {
-    notFound();
-  }
 
   if (postsError) return <div>Failed to load articles.</div>;
   if (!posts) notFound();

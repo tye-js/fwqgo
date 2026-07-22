@@ -6,6 +6,8 @@ import { revalidatePath } from "next/cache";
 import { affServiceProviders } from "@fwqgo/db/schema";
 import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { requireAdminSession } from "@fwqgo/auth/session";
+import { normalizeOffsetPagination } from "@fwqgo/core/pagination";
+import { parsePostgresIntegerId } from "@fwqgo/core/utils";
 import { ilikeContains } from "@/server/db/search";
 import { clearOutboundAffiliateProviderCache } from "@/server/links/outbound-short-link";
 
@@ -243,10 +245,8 @@ export async function getAffProviderList({
 }) {
   await requireAdminSession();
 
-  const normalizedQuery = query.trim();
-  const normalizedPage = Number.isInteger(page) && page > 0 ? page : 1;
-  const normalizedPageSize =
-    Number.isInteger(pageSize) && pageSize > 0 ? Math.min(pageSize, 100) : 20;
+  const normalizedQuery = query.trim().slice(0, 160);
+  const pagination = normalizeOffsetPagination({ pageNo: page, pageSize });
   const normalizedFilter = normalizeAffProviderFilter(filter);
   const normalizedSort = normalizeAffProviderSort(sort);
   const whereCondition = getAffProviderWhereCondition({
@@ -267,8 +267,8 @@ export async function getAffProviderList({
     .from(affServiceProviders)
     .where(whereCondition)
     .orderBy(orderBy)
-    .offset((normalizedPage - 1) * normalizedPageSize)
-    .limit(normalizedPageSize);
+    .offset(pagination.offset)
+    .limit(pagination.pageSize);
 
   return { data: result };
 }
@@ -282,7 +282,7 @@ export async function getAffProviderCount({
 } = {}) {
   await requireAdminSession();
 
-  const normalizedQuery = query.trim();
+  const normalizedQuery = query.trim().slice(0, 160);
   const whereCondition = getAffProviderWhereCondition({
     query: normalizedQuery,
     filter: normalizeAffProviderFilter(filter),
@@ -300,8 +300,9 @@ export async function updateAffProvider(
 ): Promise<AffProviderActionResult> {
   try {
     await requireAdminSession();
+    const providerId = parsePostgresIntegerId(data.id);
 
-    if (!Number.isSafeInteger(data.id) || data.id <= 0) {
+    if (providerId === null) {
       return { error: "更新返利商家失败", message: "商家 ID 不正确" };
     }
 
@@ -327,7 +328,7 @@ export async function updateAffProvider(
       )
       .limit(1);
 
-    if (existingProvider && existingProvider.id !== data.id) {
+    if (existingProvider && existingProvider.id !== providerId) {
       const duplicatedField =
         existingProvider.name === normalizedData.name ? "商家名" : "官网域名";
 
@@ -340,7 +341,7 @@ export async function updateAffProvider(
     const [result] = await db
       .update(affServiceProviders)
       .set({ ...normalizedData, updatedAt: new Date() })
-      .where(eq(affServiceProviders.id, data.id))
+      .where(eq(affServiceProviders.id, providerId))
       .returning();
 
     if (!result) {
@@ -364,14 +365,15 @@ export async function deleteAffProvider(
 ): Promise<AffProviderActionResult> {
   try {
     await requireAdminSession();
+    const providerId = parsePostgresIntegerId(id);
 
-    if (!Number.isInteger(id) || id <= 0) {
+    if (providerId === null) {
       return { error: "删除返利商家失败", message: "商家 ID 不正确" };
     }
 
     const [result] = await db
       .delete(affServiceProviders)
-      .where(eq(affServiceProviders.id, id))
+      .where(eq(affServiceProviders.id, providerId))
       .returning();
 
     if (!result) {
@@ -396,7 +398,13 @@ export async function deleteAffProviders(
   try {
     await requireAdminSession();
 
-    const validIds = ids.filter((id) => Number.isInteger(id) && id > 0);
+    const validIds = [
+      ...new Set(
+        ids
+          .map(parsePostgresIntegerId)
+          .filter((id): id is number => id !== null),
+      ),
+    ].slice(0, 500);
 
     if (validIds.length === 0) {
       return { data: 0 };

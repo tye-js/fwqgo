@@ -10,6 +10,10 @@ import { ilikeContains } from "@/server/db/search";
 import { db } from "@fwqgo/db";
 import { outboundLinks } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
+import {
+  boundOffsetPaginationByTotal,
+  normalizeOffsetPagination,
+} from "@fwqgo/core/pagination";
 import { parsePositiveInt } from "@fwqgo/core/utils";
 import {
   AdminSectionNav,
@@ -39,27 +43,48 @@ async function loadShortLinks({
     : undefined;
 
   try {
-    const [links, countRows] = await Promise.all([
-      db
-        .select({
-          id: outboundLinks.id,
-          slug: outboundLinks.slug,
-          targetUrl: outboundLinks.targetUrl,
-          createdAt: outboundLinks.createdAt,
-          updatedAt: outboundLinks.updatedAt,
-        })
-        .from(outboundLinks)
-        .where(searchCondition)
-        .orderBy(desc(outboundLinks.createdAt))
-        .offset((pageNo - 1) * PAGE_SIZE)
-        .limit(PAGE_SIZE),
-      db.select({ value: count() }).from(outboundLinks).where(searchCondition),
-    ]);
+    const [countRow] = await db
+      .select({ value: count() })
+      .from(outboundLinks)
+      .where(searchCondition);
+    const requestedPagination = normalizeOffsetPagination({
+      pageNo,
+      pageSize: PAGE_SIZE,
+    });
+    const pagination = boundOffsetPaginationByTotal(
+      requestedPagination,
+      countRow?.value ?? 0,
+    );
+    const links = await db
+      .select({
+        id: outboundLinks.id,
+        slug: outboundLinks.slug,
+        targetUrl: outboundLinks.targetUrl,
+        createdAt: outboundLinks.createdAt,
+        updatedAt: outboundLinks.updatedAt,
+      })
+      .from(outboundLinks)
+      .where(searchCondition)
+      .orderBy(desc(outboundLinks.createdAt), desc(outboundLinks.id))
+      .offset(pagination.offset)
+      .limit(pagination.pageSize);
 
-    return { links, totalCount: countRows[0]?.value ?? 0, error: null };
+    return {
+      links,
+      totalCount: pagination.totalCount,
+      totalPage: pagination.totalPage,
+      pageNo: pagination.pageNo,
+      error: null,
+    };
   } catch (error) {
     console.error("短链管理页加载失败:", error);
-    return { links: [], totalCount: 0, error: getErrorMessage(error) };
+    return {
+      links: [],
+      totalCount: 0,
+      totalPage: 0,
+      pageNo: 1,
+      error: getErrorMessage(error),
+    };
   }
 }
 
@@ -71,23 +96,20 @@ export default async function ShortLinksPage({
   await requireAdminSession();
 
   const params = await searchParams;
-  const pageNo = parsePositiveInt(params.pageNo) ?? 1;
+  const requestedPageNo = parsePositiveInt(params.pageNo) ?? 1;
   const query = params.query?.trim().slice(0, 200) ?? "";
   const {
     links,
-    totalCount,
+    pageNo,
+    totalPage,
     error: loadError,
   } = await loadShortLinks({
-    pageNo,
+    pageNo: requestedPageNo,
     query,
   });
-  const totalPage = Math.ceil(totalCount / PAGE_SIZE);
 
   return (
-    <AdminPageShell
-      badge="推广运营"
-      title="短链跳转"
-    >
+    <AdminPageShell badge="推广运营" title="短链跳转">
       <AdminSectionNav
         label="链接管理"
         currentHref="/collect/short-links"

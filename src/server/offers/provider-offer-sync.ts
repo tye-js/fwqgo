@@ -6,7 +6,7 @@ import {
   getServerOfferTermMonths,
   normalizeServerOfferBillingCycle,
 } from "@fwqgo/core/server-offer-price";
-import { slugify } from "@fwqgo/core/utils";
+import { parsePostgresIntegerId, slugify } from "@fwqgo/core/utils";
 import {
   canReviewProviderOfferCandidate,
   getMissingOfferTransition,
@@ -24,7 +24,7 @@ import {
   applyProviderAffiliateUrl,
   type ProviderOfferCandidate,
 } from "@/server/offers/provider-source-parser";
-import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
+import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 import { getServerOfferExchangeRateSnapshot } from "@/server/offers/exchange-rates";
 
 export type ProviderSyncContext = {
@@ -53,14 +53,43 @@ type StoredPrice = {
 
 type ProviderOfferDatabase = Pick<typeof db, "select" | "insert" | "update">;
 
-async function safelyNotifyProviderOfferChanges() {
-  try {
-    await notifyPublicWebCache("offer.changed", {
-      topicSlugs: ["hong-kong", "united-states", "cheap-vps"],
-    });
-  } catch (error) {
-    console.error("供应商套餐缓存通知失败:", error);
+export type ProviderMonitorRunOwnership = {
+  monitorId: number;
+  checkedAt: Date;
+};
+
+export class ProviderMonitorRunSupersededError extends Error {
+  constructor() {
+    super("供应商采集运行已被更新的运行接管");
+    this.name = "ProviderMonitorRunSupersededError";
   }
+}
+
+export async function assertProviderMonitorRunOwnership(
+  ownership: ProviderMonitorRunOwnership,
+  database: ProviderOfferDatabase,
+) {
+  const [ownedMonitor] = await database
+    .select({ id: providerMonitors.id })
+    .from(providerMonitors)
+    .where(
+      and(
+        eq(providerMonitors.id, ownership.monitorId),
+        eq(providerMonitors.enabled, true),
+        eq(providerMonitors.lastStatus, "running"),
+        eq(providerMonitors.lastRunAt, ownership.checkedAt),
+      ),
+    )
+    .for("update")
+    .limit(1);
+
+  if (!ownedMonitor) throw new ProviderMonitorRunSupersededError();
+}
+
+function scheduleProviderOfferChanges() {
+  schedulePublicWebCache("offer.changed", {
+    topicSlugs: ["hong-kong", "united-states", "cheap-vps"],
+  });
 }
 
 function parseNumberWithUnit(value: string | null, unit: "mb" | "gbps") {
@@ -82,7 +111,9 @@ function parseNumberWithUnit(value: string | null, unit: "mb" | "gbps") {
 function normalizedPrices(
   candidate: ProviderOfferCandidate,
   context: ProviderSyncContext,
-  exchangeRates: Parameters<typeof calculateMonthlyPriceUsd>[0]["exchangeRates"],
+  exchangeRates: Parameters<
+    typeof calculateMonthlyPriceUsd
+  >[0]["exchangeRates"],
 ) {
   return candidate.prices
     .map<StoredPrice | null>((price) => {
@@ -251,7 +282,11 @@ async function materializeOffer(
 ) {
   const { candidate, context, sourceHash, now } = input;
   const exchangeRateSnapshot = await getServerOfferExchangeRateSnapshot();
-  const prices = normalizedPrices(candidate, context, exchangeRateSnapshot.rates);
+  const prices = normalizedPrices(
+    candidate,
+    context,
+    exchangeRateSnapshot.rates,
+  );
   if (prices.length === 0) throw new Error("套餐价格无法折算为美元月价");
   const primaryPrice = prices[0]!;
   const purchaseUrl = applyProviderAffiliateUrl(candidate.purchaseUrl, context);
@@ -406,6 +441,7 @@ async function upsertCandidateRecord(
         ),
       ),
     )
+    .for("update")
     .limit(1);
   const sameRejected =
     existing?.status === "rejected" && existing.sourceHash === input.sourceHash;
@@ -456,8 +492,26 @@ export async function syncProviderOfferCandidate(input: {
   candidate: ProviderOfferCandidate;
   sourceHash: string;
   now: Date;
+  ownership: ProviderMonitorRunOwnership;
 }) {
   return db.transaction(async (tx) => {
+    await assertProviderMonitorRunOwnership(input.ownership, tx);
+
+    await tx
+      .select({ id: providerOfferCandidates.id })
+      .from(providerOfferCandidates)
+      .where(
+        and(
+          eq(providerOfferCandidates.monitorId, input.context.monitorId),
+          eq(
+            providerOfferCandidates.externalProductId,
+            input.candidate.externalProductId,
+          ),
+        ),
+      )
+      .for("update")
+      .limit(1);
+
     const [existingOffer] = await tx
       .select()
       .from(serverOffers)
@@ -467,6 +521,7 @@ export async function syncProviderOfferCandidate(input: {
           eq(serverOffers.externalProductId, input.candidate.externalProductId),
         ),
       )
+      .for("update")
       .limit(1);
 
     if (existingOffer) {
@@ -549,43 +604,49 @@ export async function markMissingProviderOffers(input: {
   context: ProviderSyncContext;
   seenExternalIds: Set<string>;
   now: Date;
+  ownership: ProviderMonitorRunOwnership;
 }) {
-  const offers = await db
-    .select({
-      id: serverOffers.id,
-      externalProductId: serverOffers.externalProductId,
-      missingRuns: serverOffers.missingRuns,
-      status: serverOffers.status,
-      lockedFields: serverOffers.lockedFields,
-    })
-    .from(serverOffers)
-    .where(eq(serverOffers.sourceMonitorId, input.context.monitorId));
-  let missing = 0;
-  for (const offer of offers) {
-    if (
-      offer.externalProductId &&
-      input.seenExternalIds.has(offer.externalProductId)
-    ) {
-      continue;
-    }
-    missing += 1;
-    const transition = getMissingOfferTransition({
-      missingRuns: offer.missingRuns,
-      threshold: input.context.missingThreshold,
-      status: offer.status,
-      statusLocked: (offer.lockedFields ?? []).includes("status"),
-    });
-    await db
-      .update(serverOffers)
-      .set({
-        missingRuns: transition.missingRuns,
-        status: transition.status,
-        statusChangedAt: transition.statusChanged ? input.now : undefined,
-        updatedAt: transition.statusChanged ? input.now : undefined,
+  return db.transaction(async (tx) => {
+    await assertProviderMonitorRunOwnership(input.ownership, tx);
+
+    const offers = await tx
+      .select({
+        id: serverOffers.id,
+        externalProductId: serverOffers.externalProductId,
+        missingRuns: serverOffers.missingRuns,
+        status: serverOffers.status,
+        lockedFields: serverOffers.lockedFields,
       })
-      .where(eq(serverOffers.id, offer.id));
-  }
-  return missing;
+      .from(serverOffers)
+      .where(eq(serverOffers.sourceMonitorId, input.context.monitorId))
+      .for("update");
+    let missing = 0;
+    for (const offer of offers) {
+      if (
+        offer.externalProductId &&
+        input.seenExternalIds.has(offer.externalProductId)
+      ) {
+        continue;
+      }
+      missing += 1;
+      const transition = getMissingOfferTransition({
+        missingRuns: offer.missingRuns,
+        threshold: input.context.missingThreshold,
+        status: offer.status,
+        statusLocked: (offer.lockedFields ?? []).includes("status"),
+      });
+      await tx
+        .update(serverOffers)
+        .set({
+          missingRuns: transition.missingRuns,
+          status: transition.status,
+          statusChangedAt: transition.statusChanged ? input.now : undefined,
+          updatedAt: transition.statusChanged ? input.now : undefined,
+        })
+        .where(eq(serverOffers.id, offer.id));
+    }
+    return missing;
+  });
 }
 
 async function acceptProviderOfferCandidateInTransaction(
@@ -653,8 +714,7 @@ async function acceptProviderOfferCandidateInTransaction(
       candidate,
       sourceHash: row.candidate.sourceHash,
       now,
-      existingOfferId:
-        row.candidate.offerId ?? existingOffer?.id ?? undefined,
+      existingOfferId: row.candidate.offerId ?? existingOffer?.id ?? undefined,
     },
     database,
   );
@@ -691,7 +751,7 @@ export async function acceptProviderOfferCandidate(input: {
       tx,
     ),
   );
-  await safelyNotifyProviderOfferChanges();
+  scheduleProviderOfferChanges();
   return { offerId };
 }
 
@@ -733,7 +793,11 @@ export async function reviewProviderOfferCandidates(input: {
   );
   if (candidateIds.length === 0) throw new Error("请选择需要审核的候选套餐");
   if (candidateIds.length > 100) throw new Error("一次最多审核 100 个候选套餐");
-  if (candidateIds.some((candidateId) => !Number.isInteger(candidateId) || candidateId <= 0)) {
+  if (
+    candidateIds.some(
+      (candidateId) => parsePostgresIntegerId(candidateId) === null,
+    )
+  ) {
     throw new Error("候选套餐 ID 无效");
   }
 
@@ -780,19 +844,19 @@ export async function reviewProviderOfferCandidates(input: {
   const processedIdSet = new Set(processedIds);
   const results = candidateIds.map((candidateId) =>
     processedIdSet.has(candidateId)
-      ? ({ candidateId, status: "processed" as const })
-      : ({
+      ? { candidateId, status: "processed" as const }
+      : {
           candidateId,
           status: "failed" as const,
           error: "候选套餐不存在或已被其他管理员处理",
-        }),
+        },
   );
   const processed = processedIds.length;
   if (processed === 0) {
     throw new Error("没有候选套餐可以处理，可能已被其他管理员审核");
   }
   if (input.decision === "accept") {
-    await safelyNotifyProviderOfferChanges();
+    scheduleProviderOfferChanges();
   }
 
   return {

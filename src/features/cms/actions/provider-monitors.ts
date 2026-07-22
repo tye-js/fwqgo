@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { requirePublicHttpUrl } from "@fwqgo/core/network-url";
+import { postgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
 import {
   parseProviderMonitorConfig,
   PROVIDER_SOURCE_ADAPTERS,
@@ -32,8 +33,8 @@ import {
 } from "@/server/offers/provider-offer-sync";
 
 const monitorInputSchema = z.object({
-  id: z.number().int().positive().optional(),
-  providerId: z.number().int().positive("请选择厂商"),
+  id: postgresIntegerIdSchema.optional(),
+  providerId: postgresIntegerIdSchema,
   name: z.string().trim().min(1, "请输入采集源名称").max(160),
   adapter: z.enum(PROVIDER_SOURCE_ADAPTERS),
   purpose: z.enum(PROVIDER_SOURCE_PURPOSES),
@@ -47,14 +48,14 @@ const monitorInputSchema = z.object({
 });
 
 const candidateReviewSchema = z.object({
-  candidateId: z.number().int().positive("候选套餐 ID 无效"),
+  candidateId: postgresIntegerIdSchema,
   decision: z.enum(["accept", "reject"]),
   reason: z.string().trim().max(500, "拒绝原因不能超过 500 个字符").optional(),
 });
 
 const candidateBatchReviewSchema = z.object({
   candidateIds: z
-    .array(z.number().int().positive())
+    .array(postgresIntegerIdSchema)
     .min(1, "请至少选择一个候选套餐")
     .max(100, "一次最多审核 100 个候选套餐"),
   decision: z.enum(["accept", "reject"]),
@@ -78,11 +79,12 @@ function parseConfigText(value: string, adapter: ProviderSourceAdapter) {
   return parseProviderMonitorConfig(config, adapter);
 }
 
-const providerMonitorIdSchema = z.number().int().positive("采集源 ID 无效");
+const providerMonitorIdSchema = postgresIntegerIdSchema;
 const providerMonitorRunIdSchema = z
   .number()
   .int()
-  .positive("采集运行 ID 无效");
+  .positive("采集运行 ID 无效")
+  .refine(Number.isSafeInteger, "采集运行 ID 超出安全范围");
 
 const saveProviderMonitorMutation = defineAdminAction({
   action: "provider_monitor.save",

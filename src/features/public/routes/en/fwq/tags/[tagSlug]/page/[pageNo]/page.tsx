@@ -96,11 +96,11 @@ async function TagPageContent({
   const pageNo = parsePositiveInt(params.pageNo);
   if (!pageNo) notFound();
 
-  const [{ data: postsWithTag, error }, { data: latestPosts }] =
-    await Promise.all([
-      getPostsWithTagsByTagSlug(decodedTagSlug, pageNo, "en"),
-      getLatestPostsForSidebar("en"),
-    ]);
+  const { data: postsWithTag, error } = await getPostsWithTagsByTagSlug(
+    decodedTagSlug,
+    pageNo,
+    "en",
+  );
 
   if (error) {
     return (
@@ -118,14 +118,17 @@ async function TagPageContent({
 
   const posts = postsWithTag.posts;
   const totalPage = Math.ceil((postsWithTag.totalCount ?? 0) / 10);
-  const relatedOffers = await getServerOffersByKeywords({
-    keywords: [postsWithTag.name, ...splitKeywords(postsWithTag.keywords)],
-    limit: 6,
-  });
 
-  if ((postsWithTag.totalCount ?? 0) > 0 && postsWithTag.pageNo > totalPage) {
+  if (postsWithTag.pageNo > Math.max(totalPage, 1)) {
     notFound();
   }
+  const [{ data: latestPosts }, relatedOffers] = await Promise.all([
+    getLatestPostsForSidebar("en"),
+    getServerOffersByKeywords({
+      keywords: [postsWithTag.name, ...splitKeywords(postsWithTag.keywords)],
+      limit: 6,
+    }),
+  ]);
   const pageDescription =
     postsWithTag.description ??
     `${postsWithTag.name} server deals, VPS reviews, and buying guides.`;

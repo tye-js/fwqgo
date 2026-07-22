@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, or, sql } from "drizzle-orm";
 
 import { slugify } from "@fwqgo/core/utils";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
@@ -6,6 +6,7 @@ import { readDb } from "@fwqgo/db";
 import { attachTagsToPosts } from "@/features/public/data/post-tags";
 import { postTags, posts, tags } from "@fwqgo/db/schema";
 import { resolveEnglishTagIdentity } from "@fwqgo/core/taxonomy";
+import { ilikeContains } from "@/server/db/search";
 
 type PublicLanguage = "zh" | "en";
 
@@ -93,7 +94,7 @@ export async function getPostsWithTagsByTagSlug(
   tagCache(cacheTags.posts, cacheTags.tags, cacheTags.tagSlug(tagSlug));
 
   try {
-    const currentPage = Number.isFinite(pageNo) && pageNo > 0 ? pageNo : 1;
+    const currentPage = Number.isSafeInteger(pageNo) && pageNo > 0 ? pageNo : 1;
 
     // 首先获取标签信息
     const [tag] = await readDb
@@ -125,39 +126,40 @@ export async function getPostsWithTagsByTagSlug(
       return { data: null };
     }
 
-    const [[countResult], tagPosts] = await Promise.all([
-      readDb
-        .select({ count: count() })
-        .from(postTags)
-        .innerJoin(posts, eq(posts.id, postTags.postId))
-        .where(
-          and(eq(postTags.tagId, tag.id), publishedPostCondition(language)),
-        ),
-      readDb
-        .select({
-          id: posts.id,
-          title: posts.title,
-          description: posts.description,
-          slug: posts.slug,
-          imgUrl: posts.imgUrl,
-          createdAt: posts.createdAt,
-        })
-        .from(posts)
-        .innerJoin(postTags, eq(posts.id, postTags.postId))
-        .where(
-          and(eq(postTags.tagId, tag.id), publishedPostCondition(language)),
-        )
-        .orderBy(desc(posts.createdAt))
-        .offset((currentPage - 1) * 10)
-        .limit(10),
-    ]);
+    const [countResult] = await readDb
+      .select({ count: count() })
+      .from(postTags)
+      .innerJoin(posts, eq(posts.id, postTags.postId))
+      .where(and(eq(postTags.tagId, tag.id), publishedPostCondition(language)));
+    const totalCount = countResult?.count ?? 0;
+    const totalPage = Math.ceil(totalCount / 10);
+    const tagPosts =
+      currentPage > Math.max(totalPage, 1)
+        ? []
+        : await readDb
+            .select({
+              id: posts.id,
+              title: posts.title,
+              description: posts.description,
+              slug: posts.slug,
+              imgUrl: posts.imgUrl,
+              createdAt: posts.createdAt,
+            })
+            .from(posts)
+            .innerJoin(postTags, eq(posts.id, postTags.postId))
+            .where(
+              and(eq(postTags.tagId, tag.id), publishedPostCondition(language)),
+            )
+            .orderBy(desc(posts.createdAt), desc(posts.id))
+            .offset((currentPage - 1) * 10)
+            .limit(10);
 
     const postsWithTags = await attachTagsToPosts(tagPosts, language);
 
     const result = {
       ...localizedTag,
       pageNo: currentPage,
-      totalCount: countResult?.count ?? 0,
+      totalCount,
       posts: postsWithTags.map((post) => ({ post })),
     };
 
@@ -186,8 +188,8 @@ export async function findBestTagMatch(keyword: string) {
     .from(tags)
     .where(
       or(
-        ilike(tags.name, `%${normalizedKeyword}%`),
-        ilike(tags.slug, `%${normalizedSlug}%`),
+        ilikeContains(tags.name, normalizedKeyword),
+        ilikeContains(tags.slug, normalizedSlug),
       ),
     )
     .orderBy(

@@ -45,13 +45,6 @@ import {
   serverRegions,
 } from "@fwqgo/db/schema";
 import { ilikeContains } from "@/server/db/search";
-import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
-
-const publicOfferTopicSlugs = [
-  "hong-kong",
-  "united-states",
-  "cheap-vps",
-] as const;
 
 export const offerStatuses = [
   "in_stock",
@@ -964,7 +957,7 @@ export async function getAdminServerOffers(
     .from(serverOffers)
     .leftJoin(posts, eq(serverOffers.sourcePostId, posts.id))
     .where(whereCondition)
-    .orderBy(desc(serverOffers.createdAt))
+    .orderBy(desc(serverOffers.createdAt), desc(serverOffers.id))
     .offset((page - 1) * filters.pageSize)
     .limit(filters.pageSize);
 
@@ -1103,9 +1096,6 @@ export async function upsertServerOfferArticleRelation(input: {
       .returning({ id: serverOfferSources.id });
     if (!updated) throw new Error("文章关系更新失败");
     revalidateSiteContent([cacheTags.serverOffers]);
-    await notifyPublicWebCache("offer.changed", {
-      topicSlugs: [...publicOfferTopicSlugs],
-    });
     return updated;
   }
   const [created] = await db
@@ -1138,9 +1128,6 @@ export async function upsertServerOfferArticleRelation(input: {
     )[0];
   if (!relation) throw new Error("文章关系创建失败");
   revalidateSiteContent([cacheTags.serverOffers]);
-  await notifyPublicWebCache("offer.changed", {
-    topicSlugs: [...publicOfferTopicSlugs],
-  });
   return relation;
 }
 
@@ -1156,9 +1143,6 @@ export async function deleteServerOfferArticleRelation(sourceId: number) {
     .returning({ id: serverOfferSources.id });
   if (!deleted) throw new Error("文章关系不存在");
   revalidateSiteContent([cacheTags.serverOffers]);
-  await notifyPublicWebCache("offer.changed", {
-    topicSlugs: [...publicOfferTopicSlugs],
-  });
   return deleted;
 }
 
@@ -1533,9 +1517,6 @@ export async function updateServerOffer(
       });
     }
     revalidateSiteContent([cacheTags.serverOffers]);
-    await notifyPublicWebCache("offer.changed", {
-      topicSlugs: [...publicOfferTopicSlugs],
-    });
   }
 
   return updated ?? null;
@@ -1596,9 +1577,6 @@ export async function bulkUpdateServerOffers(input: {
 
   if (rows.length > 0) {
     revalidateSiteContent([cacheTags.serverOffers]);
-    await notifyPublicWebCache("offer.changed", {
-      topicSlugs: [...publicOfferTopicSlugs],
-    });
   }
 
   return { updated: rows.length };

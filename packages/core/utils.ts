@@ -64,7 +64,7 @@ export function normalizeDecodedSlug(value: string | null | undefined) {
 
 export function parsePositiveInt(value: string | number | null | undefined) {
   if (typeof value === "number") {
-    return Number.isInteger(value) && value > 0 ? value : null;
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
   }
 
   const trimmed = value?.trim();
@@ -72,6 +72,15 @@ export function parsePositiveInt(value: string | number | null | undefined) {
 
   const parsed = Number.parseInt(trimmed, 10);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+export const MAX_POSTGRES_INTEGER = 2_147_483_647;
+
+export function parsePostgresIntegerId(
+  value: string | number | null | undefined,
+) {
+  const parsed = parsePositiveInt(value);
+  return parsed !== null && parsed <= MAX_POSTGRES_INTEGER ? parsed : null;
 }
 
 export function isInternalHref(

@@ -6,6 +6,7 @@ import {
   type ServerOfferCurrency,
   type ServerOfferExchangeRates,
 } from "@fwqgo/core/server-offer-price";
+import { isPostgresUndefinedTableError } from "@fwqgo/core/postgres-error";
 import { readDb } from "@fwqgo/db";
 import { serverExchangeRates } from "@fwqgo/db/schema";
 
@@ -16,16 +17,19 @@ export type ServerOfferExchangeRateSnapshot = {
   fallbackCurrencies: ServerOfferCurrency[];
 };
 
+export type ServerOfferExchangeRateRow = {
+  currency: string;
+  unitsPerUsd: string;
+  source: string;
+  fetchedAt: Date;
+};
+
 let cachedSnapshot: ServerOfferExchangeRateSnapshot | null = null;
 let cachedAt = 0;
 const CACHE_MS = 5 * 60 * 1_000;
 
-export async function getServerOfferExchangeRateSnapshot() {
-  if (cachedSnapshot && Date.now() - cachedAt < CACHE_MS) {
-    return cachedSnapshot;
-  }
-
-  const rows = await readDb
+async function loadServerOfferExchangeRateRows() {
+  return readDb
     .select({
       currency: serverExchangeRates.currency,
       unitsPerUsd: serverExchangeRates.unitsPerUsd,
@@ -34,6 +38,29 @@ export async function getServerOfferExchangeRateSnapshot() {
     })
     .from(serverExchangeRates)
     .where(eq(serverExchangeRates.enabled, true));
+}
+
+export function isMissingServerExchangeRateTableError(error: unknown) {
+  return isPostgresUndefinedTableError(error, "server_exchange_rates");
+}
+
+export async function getServerOfferExchangeRateSnapshot(
+  loadRows: () => Promise<
+    ServerOfferExchangeRateRow[]
+  > = loadServerOfferExchangeRateRows,
+) {
+  if (cachedSnapshot && Date.now() - cachedAt < CACHE_MS) {
+    return cachedSnapshot;
+  }
+
+  let rows: ServerOfferExchangeRateRow[];
+  try {
+    rows = await loadRows();
+  } catch (error) {
+    if (!isMissingServerExchangeRateTableError(error)) throw error;
+    console.warn("server_exchange_rates 尚未迁移，服务器套餐暂时使用内置汇率");
+    rows = [];
+  }
   const rates: ServerOfferExchangeRates = {};
   const fallbackCurrencies: ServerOfferCurrency[] = [];
   const sourceNames = new Set<string>();

@@ -1,6 +1,9 @@
 import { eq, or } from "drizzle-orm";
 
-import { looksLikeHtmlContent, normalizeArticleHtml } from "@fwqgo/core/content";
+import {
+  looksLikeHtmlContent,
+  normalizeArticleHtml,
+} from "@fwqgo/core/content";
 import { slugify } from "@fwqgo/core/utils";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { db } from "@fwqgo/db";
@@ -11,7 +14,7 @@ import {
   shortenMarkdownOutboundLinks,
 } from "@/server/links/outbound-short-link";
 import { type CreatePostParams } from "@/types/post.types";
-import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
+import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 
 export interface CreatePostInput {
   title: string;
@@ -136,7 +139,9 @@ export async function createPostRecord(
   options: CreatePostRecordOptions = {},
 ) {
   const shouldRevalidate = options.revalidate ?? true;
-  const result = await db.transaction((tx) => createPostRecordInTransaction(input, tx));
+  const result = await db.transaction((tx) =>
+    createPostRecordInTransaction(input, tx),
+  );
 
   if (result.data) {
     try {
@@ -149,7 +154,7 @@ export async function createPostRecord(
   if (result.data && shouldRevalidate) {
     try {
       revalidateSiteContent(result.revalidateTags);
-      await notifyPublicWebCache("post.changed", {
+      schedulePublicWebCache("post.changed", {
         postIds: [result.data.id],
         postSlugs: [result.data.slug],
         categoryIds: [result.data.categoryId],

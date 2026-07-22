@@ -440,45 +440,57 @@ async function claimNextBackgroundJob() {
   if (registeredKeys.length === 0) return null;
 
   while (true) {
-    const [candidate] = await db
-      .select({ id: adminBackgroundJobs.id })
-      .from(adminBackgroundJobs)
-      .where(
-        and(
-          eq(adminBackgroundJobs.status, "queued"),
-          lte(adminBackgroundJobs.runAfter, new Date()),
-          inArray(adminBackgroundJobs.jobKey, registeredKeys),
-          withoutRunningBackgroundJobForSameKey(),
-        ),
-      )
-      .orderBy(asc(adminBackgroundJobs.runAfter), asc(adminBackgroundJobs.id))
-      .limit(1);
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(${BACKGROUND_JOB_COORDINATION_LOCK_ID})`,
+      );
 
-    if (!candidate) return null;
+      const [candidate] = await tx
+        .select({ id: adminBackgroundJobs.id })
+        .from(adminBackgroundJobs)
+        .where(
+          and(
+            eq(adminBackgroundJobs.status, "queued"),
+            lte(adminBackgroundJobs.runAfter, new Date()),
+            inArray(adminBackgroundJobs.jobKey, registeredKeys),
+            withoutRunningBackgroundJobForSameKey(),
+          ),
+        )
+        .orderBy(asc(adminBackgroundJobs.runAfter), asc(adminBackgroundJobs.id))
+        .limit(1);
 
-    const now = new Date();
-    const nowSqlValue = now.toISOString();
-    const [claimedJob] = await db
-      .update(adminBackgroundJobs)
-      .set({
-        status: "running",
-        attempts: sql`${adminBackgroundJobs.attempts} + 1`,
-        lockedBy: WORKER_ID,
-        lockedAt: now,
-        heartbeatAt: now,
-        startedAt: sql`coalesce(${adminBackgroundJobs.startedAt}, ${nowSqlValue})`,
-        finishedAt: null,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(adminBackgroundJobs.id, candidate.id),
-          eq(adminBackgroundJobs.status, "queued"),
-        ),
-      )
-      .returning();
+      if (!candidate) return { state: "empty" as const };
 
-    if (claimedJob) return claimedJob;
+      const now = new Date();
+      const nowSqlValue = now.toISOString();
+      const [claimedJob] = await tx
+        .update(adminBackgroundJobs)
+        .set({
+          status: "running",
+          attempts: sql`${adminBackgroundJobs.attempts} + 1`,
+          lockedBy: WORKER_ID,
+          lockedAt: now,
+          heartbeatAt: now,
+          startedAt: sql`coalesce(${adminBackgroundJobs.startedAt}, ${nowSqlValue})`,
+          finishedAt: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(adminBackgroundJobs.id, candidate.id),
+            eq(adminBackgroundJobs.status, "queued"),
+            withoutRunningBackgroundJobForSameKey(),
+          ),
+        )
+        .returning();
+
+      return claimedJob
+        ? { state: "claimed" as const, job: claimedJob }
+        : { state: "retry" as const };
+    });
+
+    if (result.state === "empty") return null;
+    if (result.state === "claimed") return result.job;
   }
 }
 
@@ -499,7 +511,7 @@ async function heartbeat(jobId: number) {
 }
 
 async function completeBackgroundJob(jobId: number) {
-  await db
+  const [completedJob] = await db
     .update(adminBackgroundJobs)
     .set({
       status: "succeeded",
@@ -516,7 +528,10 @@ async function completeBackgroundJob(jobId: number) {
         eq(adminBackgroundJobs.status, "running"),
         eq(adminBackgroundJobs.lockedBy, WORKER_ID),
       ),
-    );
+    )
+    .returning({ id: adminBackgroundJobs.id });
+
+  return Boolean(completedJob);
 }
 
 async function failOrRetryBackgroundJob(
@@ -524,37 +539,66 @@ async function failOrRetryBackgroundJob(
   error: unknown,
 ) {
   const message = truncateErrorMessage(getErrorMessage(error));
-  const shouldRetry = job.attempts < job.maxAttempts;
   const now = new Date();
   const retryAt = new Date(
     now.getTime() + getBackgroundJobRetryDelayMs(job.attempts),
   );
 
-  await db
-    .update(adminBackgroundJobs)
-    .set({
-      status: shouldRetry ? "queued" : "failed",
-      runAfter: shouldRetry ? retryAt : job.runAfter,
-      lockedBy: null,
-      lockedAt: null,
-      heartbeatAt: null,
-      lastError: message,
-      finishedAt: shouldRetry ? null : now,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(adminBackgroundJobs.id, job.id),
-        eq(adminBackgroundJobs.status, "running"),
-        eq(adminBackgroundJobs.lockedBy, WORKER_ID),
-      ),
+  const transition = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(${BACKGROUND_JOB_COORDINATION_LOCK_ID})`,
     );
 
-  if (shouldRetry) {
+    const [queuedReplacement] = await tx
+      .select({ id: adminBackgroundJobs.id })
+      .from(adminBackgroundJobs)
+      .where(
+        and(
+          eq(adminBackgroundJobs.jobKey, job.jobKey),
+          eq(adminBackgroundJobs.status, "queued"),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    const shouldRetry = !queuedReplacement && job.attempts < job.maxAttempts;
+    const nextStatus = queuedReplacement
+      ? "cancelled"
+      : shouldRetry
+        ? "queued"
+        : "failed";
+    const [updatedJob] = await tx
+      .update(adminBackgroundJobs)
+      .set({
+        status: nextStatus,
+        runAfter: shouldRetry ? retryAt : job.runAfter,
+        lockedBy: null,
+        lockedAt: null,
+        heartbeatAt: null,
+        lastError: queuedReplacement
+          ? `任务执行失败；已有更新任务排队，旧任务不再重试：${message}`
+          : message,
+        finishedAt: shouldRetry ? null : now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(adminBackgroundJobs.id, job.id),
+          eq(adminBackgroundJobs.status, "running"),
+          eq(adminBackgroundJobs.lockedBy, WORKER_ID),
+        ),
+      )
+      .returning({ id: adminBackgroundJobs.id });
+
+    if (!updatedJob) return "lease_lost" as const;
+    if (queuedReplacement) return "cancelled" as const;
+    return shouldRetry ? ("retried" as const) : ("failed" as const);
+  });
+
+  if (transition === "retried") {
     scheduleAdminBackgroundJobWorker(retryAt);
   }
 
-  return shouldRetry;
+  return transition;
 }
 
 async function runClaimedBackgroundJob(job: AdminBackgroundJobRow) {
@@ -581,7 +625,15 @@ async function runClaimedBackgroundJob(job: AdminBackgroundJobRow) {
 
   try {
     await runner.run(context);
-    await completeBackgroundJob(job.id);
+    const completed = await completeBackgroundJob(job.id);
+    if (!completed) {
+      structuredLog("warn", "background.completion_lease_lost", {
+        jobId: job.id,
+        jobKey: job.jobKey,
+        workerId: WORKER_ID,
+      });
+      return;
+    }
     terminalContext = { ...context, status: "succeeded" };
   } catch (error) {
     structuredLog("error", "background.job_failed", {
@@ -591,8 +643,24 @@ async function runClaimedBackgroundJob(job: AdminBackgroundJobRow) {
       label: runner.label,
       error,
     });
-    const shouldRetry = await failOrRetryBackgroundJob(job, error);
-    if (!shouldRetry) {
+    const failureTransition = await failOrRetryBackgroundJob(job, error);
+    if (failureTransition === "lease_lost") {
+      structuredLog("warn", "background.failure_lease_lost", {
+        jobId: job.id,
+        jobKey: job.jobKey,
+        workerId: WORKER_ID,
+      });
+      return;
+    }
+    if (failureTransition === "cancelled") {
+      structuredLog("info", "background.failure_superseded", {
+        jobId: job.id,
+        jobKey: job.jobKey,
+        workerId: WORKER_ID,
+      });
+      return;
+    }
+    if (failureTransition === "failed") {
       terminalContext = { ...context, status: "failed", error };
     }
   } finally {
@@ -757,6 +825,7 @@ async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {
           eq(adminBackgroundJobs.status, "queued"),
         ),
       )
+      .for("update")
       .limit(1);
 
     if (existingJob) {
@@ -805,6 +874,7 @@ async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {
             eq(adminBackgroundJobs.status, "queued"),
           ),
         )
+        .for("update")
         .limit(1);
 
       if (!concurrentJob) {

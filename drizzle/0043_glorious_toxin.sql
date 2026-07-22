@@ -1,0 +1,2 @@
+ALTER TABLE "ai_source_sites" ADD COLUMN "runGeneration" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "ai_source_sites" ADD CONSTRAINT "ai_source_sites_runGeneration_check" CHECK ("ai_source_sites"."runGeneration" >= 0);

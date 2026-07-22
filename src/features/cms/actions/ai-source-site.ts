@@ -1,14 +1,24 @@
 "use server";
 
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { isPublicHttpUrl } from "@fwqgo/core/network-url";
+import { getAiSourceSiteJobKey } from "@fwqgo/core/ai-source-site-job-key";
+import {
+  formPostgresIntegerIdSchema,
+  postgresIntegerIdSchema,
+} from "@fwqgo/core/postgres-id";
 import { db } from "@fwqgo/db";
-import { aiRewriteConfigs, aiSourceSites, categories } from "@fwqgo/db/schema";
+import {
+  adminBackgroundJobs,
+  aiRewriteConfigs,
+  aiSourceSites,
+  categories,
+} from "@fwqgo/db/schema";
 import { enqueueAiSourceSiteBackgroundJob } from "@/server/ai/source-site-background";
 
 const sourceSiteSchema = z.object({
@@ -27,8 +37,8 @@ const sourceSiteSchema = z.object({
       })
       .nullable(),
   ),
-  categoryId: z.coerce.number().int().positive("请选择分类"),
-  rewriteStyleId: z.coerce.number().int().positive().optional().nullable(),
+  categoryId: formPostgresIntegerIdSchema,
+  rewriteStyleId: formPostgresIntegerIdSchema.optional().nullable(),
   limit: z.coerce.number().int().min(1).max(50),
   enabled: z.coerce.boolean().default(true),
 });
@@ -145,21 +155,59 @@ export async function createAiSourceSiteAction(formData: FormData) {
 export async function updateAiSourceSiteAction(id: number, formData: FormData) {
   try {
     await requireAdminSession();
+    const sourceSiteId = postgresIntegerIdSchema.parse(id);
     const input = parseSourceSiteFormData(formData);
 
     await assertCategoryExists(input.categoryId);
     await assertRewriteStyleAvailable(input.rewriteStyleId);
 
-    const [updated] = await db
-      .update(aiSourceSites)
-      .set({
-        ...input,
-        siteUrl: new URL(input.siteUrl).toString(),
-        feedUrl: input.feedUrl ? new URL(input.feedUrl).toString() : null,
-        updatedAt: new Date(),
-      })
-      .where(eq(aiSourceSites.id, id))
-      .returning({ id: aiSourceSites.id });
+    const now = new Date();
+    const updated = await db.transaction(async (tx) => {
+      const [updatedSite] = await tx
+        .update(aiSourceSites)
+        .set({
+          ...input,
+          siteUrl: new URL(input.siteUrl).toString(),
+          feedUrl: input.feedUrl ? new URL(input.feedUrl).toString() : null,
+          lastRunAt: input.enabled ? undefined : now,
+          lastRunDetails: input.enabled
+            ? undefined
+            : JSON.stringify({
+                runAt: now.toISOString(),
+                state: "cancelled",
+                message: "来源站已停用，排队任务已取消，运行中结果将被忽略",
+              }),
+          lastError: input.enabled ? undefined : null,
+          runGeneration: input.enabled
+            ? undefined
+            : sql`${aiSourceSites.runGeneration} + 1`,
+          updatedAt: now,
+        })
+        .where(eq(aiSourceSites.id, sourceSiteId))
+        .returning({ id: aiSourceSites.id });
+
+      if (updatedSite && !input.enabled) {
+        await tx
+          .update(adminBackgroundJobs)
+          .set({
+            status: "cancelled",
+            lastError: "来源站已停用",
+            finishedAt: now,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(
+                adminBackgroundJobs.jobKey,
+                getAiSourceSiteJobKey(sourceSiteId),
+              ),
+              eq(adminBackgroundJobs.status, "queued"),
+            ),
+          );
+      }
+
+      return updatedSite ?? null;
+    });
 
     if (!updated) {
       return { error: "来源站配置不存在" };
@@ -176,15 +224,46 @@ export async function updateAiSourceSiteAction(id: number, formData: FormData) {
 export async function deleteAiSourceSiteAction(id: number) {
   try {
     await requireAdminSession();
+    const sourceSiteId = postgresIntegerIdSchema.parse(id);
 
-    if (!Number.isSafeInteger(id) || id <= 0) {
-      return { error: "来源站 ID 不正确" };
-    }
+    const deleted = await db.transaction(async (tx) => {
+      const jobKey = getAiSourceSiteJobKey(sourceSiteId);
+      const now = new Date();
+      await tx
+        .update(adminBackgroundJobs)
+        .set({
+          status: "cancelled",
+          lastError: "来源站配置已删除",
+          finishedAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(adminBackgroundJobs.jobKey, jobKey),
+            eq(adminBackgroundJobs.status, "queued"),
+          ),
+        );
 
-    const [deleted] = await db
-      .delete(aiSourceSites)
-      .where(eq(aiSourceSites.id, id))
-      .returning({ id: aiSourceSites.id });
+      const [runningJob] = await tx
+        .select({ id: adminBackgroundJobs.id })
+        .from(adminBackgroundJobs)
+        .where(
+          and(
+            eq(adminBackgroundJobs.jobKey, jobKey),
+            eq(adminBackgroundJobs.status, "running"),
+          ),
+        )
+        .limit(1);
+      if (runningJob) {
+        throw new Error("来源站抓取正在执行，请等待本次任务结束后再删除");
+      }
+
+      const [deletedSite] = await tx
+        .delete(aiSourceSites)
+        .where(eq(aiSourceSites.id, sourceSiteId))
+        .returning({ id: aiSourceSites.id });
+      return deletedSite ?? null;
+    });
 
     if (!deleted) {
       return { error: "来源站配置不存在或已被删除" };
@@ -200,19 +279,17 @@ export async function deleteAiSourceSiteAction(id: number) {
 
 export async function runAiSourceSiteAction(id: number) {
   let canRecordFailure = false;
+  let queuedRunGeneration: number | null = null;
 
   try {
     await requireAdminSession();
     canRecordFailure = true;
-
-    if (!Number.isSafeInteger(id) || id <= 0) {
-      return { error: "来源站 ID 不正确" };
-    }
+    const sourceSiteId = postgresIntegerIdSchema.parse(id);
 
     const [site] = await db
       .select()
       .from(aiSourceSites)
-      .where(eq(aiSourceSites.id, id))
+      .where(eq(aiSourceSites.id, sourceSiteId))
       .limit(1);
 
     if (!site) {
@@ -226,22 +303,35 @@ export async function runAiSourceSiteAction(id: number) {
     await assertCategoryExists(site.categoryId);
     await assertRewriteStyleAvailable(site.rewriteStyleId);
 
-    await db
+    const queuedAt = new Date();
+    const [queuedSite] = await db
       .update(aiSourceSites)
       .set({
-        lastRunAt: new Date(),
+        lastRunAt: queuedAt,
         lastDiscoveredCount: 0,
         lastCreatedCount: 0,
         lastSkippedCount: 0,
         lastRunDetails: JSON.stringify({
-          runAt: new Date().toISOString(),
+          runAt: queuedAt.toISOString(),
+          state: "queued",
           queued: true,
           message: "来源站抓取已进入后台队列",
         }),
         lastError: null,
-        updatedAt: new Date(),
+        runGeneration: sql`${aiSourceSites.runGeneration} + 1`,
+        updatedAt: queuedAt,
       })
-      .where(eq(aiSourceSites.id, id));
+      .where(
+        and(
+          eq(aiSourceSites.id, sourceSiteId),
+          eq(aiSourceSites.enabled, true),
+        ),
+      )
+      .returning({ runGeneration: aiSourceSites.runGeneration });
+    if (!queuedSite) {
+      return { error: "来源站配置不存在或已停用" };
+    }
+    queuedRunGeneration = queuedSite.runGeneration;
 
     await enqueueAiSourceSiteBackgroundJob({
       sourceSiteId: site.id,
@@ -262,7 +352,12 @@ export async function runAiSourceSiteAction(id: number) {
     };
   } catch (error) {
     console.error("执行来源站抓取失败:", error);
-    if (canRecordFailure && Number.isSafeInteger(id) && id > 0) {
+    const parsedSourceSiteId = postgresIntegerIdSchema.safeParse(id);
+    if (
+      canRecordFailure &&
+      parsedSourceSiteId.success &&
+      queuedRunGeneration !== null
+    ) {
       try {
         await db
           .update(aiSourceSites)
@@ -271,11 +366,18 @@ export async function runAiSourceSiteAction(id: number) {
             lastError: getErrorMessage(error),
             lastRunDetails: JSON.stringify({
               runAt: new Date().toISOString(),
+              state: "failed",
+              runGeneration: queuedRunGeneration,
               error: getErrorMessage(error),
             }),
             updatedAt: new Date(),
           })
-          .where(eq(aiSourceSites.id, id));
+          .where(
+            and(
+              eq(aiSourceSites.id, parsedSourceSiteId.data),
+              eq(aiSourceSites.runGeneration, queuedRunGeneration),
+            ),
+          );
       } catch (recordError) {
         console.error("记录来源站抓取失败状态失败:", recordError);
       }

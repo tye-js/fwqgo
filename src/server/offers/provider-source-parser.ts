@@ -12,6 +12,7 @@ import type {
   ProviderSourceAdapter,
 } from "@fwqgo/core/provider-monitor-config";
 import {
+  isPersistableServerOfferAmount,
   isSupportedServerOfferCurrency,
   normalizeServerOfferBillingCycle,
 } from "@fwqgo/core/server-offer-price";
@@ -81,11 +82,115 @@ function nullableText(value: unknown) {
   return toText(value) || null;
 }
 
+type NumericToken = {
+  raw: string;
+  index: number;
+};
+
+function numericTokens(text: string) {
+  const pattern =
+    /[-+]?(?:\d{1,3}(?:[.,'’\s\u00a0]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)/g;
+  return [...text.matchAll(pattern)].map<NumericToken>((match) => ({
+    raw: match[0],
+    index: match.index,
+  }));
+}
+
+function currencyMarkerIndexes(text: string) {
+  const indexes: Array<{ index: number; length: number }> = [];
+  const explicit =
+    /(?:HK\$|US\$|C\$|A\$|USD|EUR|GBP|CNY|RMB|HKD|JPY|CAD|AUD|[$€£¥￥])/gi;
+  const genericCode = /\b[A-Z]{3}\b/g;
+
+  for (const match of text.matchAll(explicit)) {
+    indexes.push({ index: match.index, length: match[0].length });
+  }
+  for (const match of text.matchAll(genericCode)) {
+    indexes.push({ index: match.index, length: match[0].length });
+  }
+  return indexes;
+}
+
+function tokenDistance(
+  token: NumericToken,
+  marker: { index: number; length: number },
+) {
+  const tokenEnd = token.index + token.raw.length;
+  const markerEnd = marker.index + marker.length;
+  if (tokenEnd <= marker.index) return marker.index - tokenEnd;
+  if (markerEnd <= token.index) return token.index - markerEnd;
+  return 0;
+}
+
+function selectAmountToken(text: string) {
+  const tokens = numericTokens(text);
+  if (tokens.length <= 1) return tokens[0] ?? null;
+
+  const markers = currencyMarkerIndexes(text);
+  if (markers.length > 0) {
+    return tokens.reduce((best, token) => {
+      const bestDistance = Math.min(
+        ...markers.map((marker) => tokenDistance(best, marker)),
+      );
+      const tokenMarkerDistance = Math.min(
+        ...markers.map((marker) => tokenDistance(token, marker)),
+      );
+      return tokenMarkerDistance < bestDistance ? token : best;
+    });
+  }
+
+  const withoutCycleQuantities = tokens.filter((token) => {
+    const suffix = text.slice(token.index + token.raw.length);
+    return !/^\s*(?:months?|mos?|years?|yrs?|days?|个月|月|年)\b/i.test(suffix);
+  });
+  return withoutCycleQuantities.at(-1) ?? tokens.at(-1) ?? null;
+}
+
+function normalizeNumericToken(raw: string) {
+  const compact = raw.replace(/[\s\u00a0'’]/g, "");
+  if (!compact || compact.startsWith("-")) return "";
+  const unsigned = compact.startsWith("+") ? compact.slice(1) : compact;
+  const commaIndex = unsigned.lastIndexOf(",");
+  const dotIndex = unsigned.lastIndexOf(".");
+  let normalized = unsigned;
+
+  if (commaIndex >= 0 && dotIndex >= 0) {
+    const decimalSeparator = commaIndex > dotIndex ? "," : ".";
+    const thousandsSeparator = decimalSeparator === "," ? "." : ",";
+    normalized = unsigned.replaceAll(thousandsSeparator, "");
+    if (decimalSeparator === ",") normalized = normalized.replace(",", ".");
+  } else if (commaIndex >= 0) {
+    const parts = unsigned.split(",");
+    const decimalDigits = parts.at(-1)?.length ?? 0;
+    normalized =
+      decimalDigits > 0 && decimalDigits <= 2
+        ? `${parts.slice(0, -1).join("")}.${parts.at(-1)}`
+        : parts.join("");
+  } else if ((unsigned.match(/\./g) ?? []).length > 1) {
+    const parts = unsigned.split(".");
+    const decimalDigits = parts.at(-1)?.length ?? 0;
+    normalized =
+      decimalDigits > 0 && decimalDigits <= 2
+        ? `${parts.slice(0, -1).join("")}.${parts.at(-1)}`
+        : parts.join("");
+  }
+
+  if (!isPersistableServerOfferAmount(normalized)) return "";
+  const amount = Number(normalized);
+  return Object.is(amount, -0) ? "0" : normalized;
+}
+
 function normalizeAmount(value: unknown) {
-  const text = toText(value).replaceAll(",", "");
-  const match = /-?\d+(?:\.\d+)?/.exec(text);
-  const amount = match?.[0] ?? "";
-  return amount && Number(amount) >= 0 ? amount : "";
+  if (typeof value === "number") {
+    return isPersistableServerOfferAmount(value) ? String(value) : "";
+  }
+
+  const text = toText(value);
+  const token = selectAmountToken(text);
+  if (!token) return "";
+  const prefix = text.slice(Math.max(0, token.index - 4), token.index);
+  if (/-(?:HK\$|US\$|C\$|A\$|[$€£¥￥])\s*$/i.test(prefix)) return "";
+  return normalizeNumericToken(token.raw);
 }
 
 function inferCurrency(value: unknown, fallback: string) {
@@ -98,7 +203,9 @@ function inferCurrency(value: unknown, fallback: string) {
   }
   if (text.includes("€")) return "EUR";
   if (text.includes("£")) return "GBP";
-  if (text.includes("¥") || text.includes("￥")) return "CNY";
+  if (text.includes("¥") || text.includes("￥")) {
+    return fallback.trim().toUpperCase() === "JPY" ? "JPY" : "CNY";
+  }
   const trailingCode = /-?\d[\d,.]*\s+([A-Z]{3})(?:\s*[/／].*)?$/.exec(
     text,
   )?.[1];
@@ -396,8 +503,10 @@ export function parseWhmcsBillingCyclePrices(input: {
   optionSelector?: string;
 }) {
   const $ = load(input.body);
-  const selector =
-    input.optionSelector?.trim() ?? 'select[name="billingcycle"] option';
+  let selector = input.optionSelector?.trim();
+  if (selector === undefined || selector.length === 0) {
+    selector = 'select[name="billingcycle"] option';
+  }
   const unique = new Map<string, ProviderOfferPriceCandidate>();
   const supportedWhmcsCycles = new Set([
     "monthly",

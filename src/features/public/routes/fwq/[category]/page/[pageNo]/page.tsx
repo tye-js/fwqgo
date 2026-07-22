@@ -97,25 +97,27 @@ const CategoryPageContent = async ({
   );
   if (categoryError) return <div>加载失败: {categoryError}</div>;
   if (!category) notFound();
+  const { data: totalCount } = await getPublishedPostCountByCategoryId(
+    category.id,
+  );
+  const totalPage = Math.ceil((totalCount ?? 0) / 10);
+
+  if (pageNo > Math.max(totalPage, 1)) {
+    notFound();
+  }
+
   const [
     { data: posts, error: postsError },
-    { data: totalCount },
     { data: latestPosts },
     relatedOffers,
   ] = await Promise.all([
     getPostsWithTagsByCategoryId(category.id, pageNo),
-    getPublishedPostCountByCategoryId(category.id),
     getLatestPostsForSidebar(),
     getServerOffersByKeywords({
       keywords: [category.name, ...splitKeywords(category.keywords)],
       limit: 6,
     }),
   ]);
-  const totalPage = Math.ceil((totalCount ?? 0) / 10);
-
-  if ((totalCount ?? 0) > 0 && pageNo > totalPage) {
-    notFound();
-  }
 
   const categoryInfo = {
     kind: "分类页",

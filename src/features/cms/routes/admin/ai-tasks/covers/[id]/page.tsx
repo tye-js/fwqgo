@@ -20,6 +20,7 @@ import {
   getOptimizedImageSrc,
   isRenderableImageSrc,
 } from "@fwqgo/core/image-src";
+import { parsePostgresIntegerId } from "@fwqgo/core/utils";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -58,9 +59,9 @@ function CoverPreview({ src, title }: { src: string | null; title: string }) {
 
 export default async function CoverTaskDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const taskId = Number(id);
+  const taskId = parsePostgresIntegerId(id);
 
-  if (!Number.isInteger(taskId) || taskId <= 0) {
+  if (taskId === null) {
     notFound();
   }
 
@@ -93,7 +94,11 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
           />
           {task.post ? (
             <Button asChild>
-              <Link href={`/posts/edit/post/${encodeURIComponent(task.post.slug)}`}>编辑文章</Link>
+              <Link
+                href={`/posts/edit/post/${encodeURIComponent(task.post.slug)}`}
+              >
+                编辑文章
+              </Link>
             </Button>
           ) : null}
         </div>

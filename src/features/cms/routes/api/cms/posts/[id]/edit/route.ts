@@ -3,6 +3,8 @@ import {
   readRequestTextWithLimit,
   RequestBodyTooLargeError,
 } from "@fwqgo/core/bounded-request-body";
+import { postgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
+import { parsePostgresIntegerId } from "@fwqgo/core/utils";
 import { connection } from "next/server";
 import { z } from "zod";
 
@@ -18,7 +20,7 @@ const MAX_POST_EDIT_BODY_BYTES = 3 * 1024 * 1024;
 
 const tagSchema = z.object({
   tag: z.object({
-    id: z.number().int().positive().optional(),
+    id: postgresIntegerIdSchema.optional(),
     name: z.string().trim().min(1),
     slug: z.string().trim(),
   }),
@@ -42,7 +44,7 @@ const payloadSchema = z.object({
   description: z.string().trim().min(1, "文章简述不能为空"),
   content: z.string().trim().min(1, "文章正文不能为空"),
   imgUrl: z.string().nullable().optional(),
-  categoryId: z.number().int().positive("文章分类不正确"),
+  categoryId: postgresIntegerIdSchema,
   recommendTagName: z.string().max(160, "推荐标签不能超过 160 个字符"),
   keywords: z.string().max(800, "关键词不能超过 800 个字符"),
   oldTags: z.array(tagSchema).max(100, "原标签数量不能超过 100 个"),
@@ -109,8 +111,8 @@ export async function POST(
     await requireAdminSession();
 
     const { id } = await props.params;
-    const postId = Number(id);
-    if (!Number.isSafeInteger(postId) || postId <= 0) {
+    const postId = parsePostgresIntegerId(id);
+    if (postId === null) {
       return adminApiFailure("文章 ID 不正确", {
         status: 400,
         title: "文章保存失败",

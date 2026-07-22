@@ -1,17 +1,25 @@
 import crypto from "node:crypto";
 import { existsSync } from "node:fs";
 import {
+  link,
   mkdir,
   readdir,
   readFile,
-  rename,
   stat,
   unlink,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  notExists,
+  sql,
+  type AnyColumn,
+  type SQL,
+} from "drizzle-orm";
 
 import { db } from "@fwqgo/db";
 import {
@@ -53,6 +61,30 @@ type ImageReference = {
 };
 
 type ImageAssetLookup = Pick<ImageAssetRow, "id" | "path">;
+
+type ImageAssetWarning = {
+  path: string;
+  warning: string;
+};
+
+function imagePathContains(
+  column: AnyColumn | SQL,
+  relativePath: string,
+  absolutePath: string,
+) {
+  return sql`strpos(${column}, ${relativePath}) > 0 or strpos(${column}, ${absolutePath}) > 0`;
+}
+
+function replaceImagePath(
+  column: AnyColumn | SQL,
+  relativePath: string,
+  replacementPath: string,
+  absolutePath: string,
+  absoluteReplacementPath: string,
+) {
+  const absolutePathMarker = `__fwqgo_image_path_${crypto.randomUUID()}__`;
+  return sql`replace(replace(replace(${column}, ${absolutePath}, ${absolutePathMarker}), ${relativePath}, ${replacementPath}), ${absolutePathMarker}, ${absoluteReplacementPath})`;
+}
 
 async function loadSharp() {
   try {
@@ -119,6 +151,23 @@ async function getAvailablePublicPath(fileName: string) {
   }
 
   return `${UPLOAD_PUBLIC_PREFIX}${candidate}`;
+}
+
+async function createAvailableUploadFile(fileName: string, buffer: Buffer) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const publicPath = await getAvailablePublicPath(fileName);
+
+    try {
+      await writeNewUploadFile(publicPath, buffer);
+      return publicPath;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error("图片目标文件持续发生冲突，请稍后重试");
 }
 
 function buildRenamedPublicPath(input: {
@@ -242,11 +291,6 @@ async function createResponsiveVariants(input: {
     );
   }
 
-  const [thumbPath, largePath] = await Promise.all([
-    getAvailablePublicPath(buildVariantName(input.publicPath, "thumb")),
-    getAvailablePublicPath(buildVariantName(input.publicPath, "large")),
-  ]);
-
   const [thumbBuffer, largeBuffer] = await Promise.all([
     sharp(input.buffer)
       .resize({
@@ -266,27 +310,34 @@ async function createResponsiveVariants(input: {
       .toBuffer(),
   ]);
 
-  const variantPaths = [thumbPath, largePath] as const;
-  const results = await Promise.allSettled([
-    writeFile(uploadPathToFilePath(thumbPath), thumbBuffer),
-    writeFile(uploadPathToFilePath(largePath), largeBuffer),
+  const [thumbResult, largeResult] = await Promise.allSettled([
+    createAvailableUploadFile(
+      buildVariantName(input.publicPath, "thumb"),
+      thumbBuffer,
+    ),
+    createAvailableUploadFile(
+      buildVariantName(input.publicPath, "large"),
+      largeBuffer,
+    ),
   ]);
-  const failed = results.find(
-    (result): result is PromiseRejectedResult => result.status === "rejected",
-  );
 
-  if (failed) {
+  if (thumbResult.status === "rejected" || largeResult.status === "rejected") {
     await Promise.allSettled(
-      results.flatMap((result, index) =>
+      [thumbResult, largeResult].flatMap((result) =>
         result.status === "fulfilled"
-          ? [removeCreatedUploadFile(variantPaths[index]!)]
+          ? [removeCreatedUploadFile(result.value)]
           : [],
       ),
     );
-    throw failed.reason;
+    if (thumbResult.status === "rejected") {
+      throw thumbResult.reason;
+    }
+    if (largeResult.status === "rejected") {
+      throw largeResult.reason;
+    }
   }
 
-  return { thumbPath, largePath };
+  return { thumbPath: thumbResult.value, largePath: largeResult.value };
 }
 
 async function removeCreatedUploadFile(publicPath: string) {
@@ -297,6 +348,42 @@ async function removeCreatedUploadFile(publicPath: string) {
       throw error;
     }
   }
+}
+
+async function writeNewUploadFile(publicPath: string, buffer: Buffer) {
+  await writeFile(uploadPathToFilePath(publicPath), buffer, { flag: "wx" });
+}
+
+type UploadFileSnapshot = {
+  publicPath: string;
+  buffer: Buffer | null;
+};
+
+async function snapshotUploadFile(
+  publicPath: string | null,
+): Promise<UploadFileSnapshot | null> {
+  if (!publicPath) return null;
+
+  try {
+    return {
+      publicPath,
+      buffer: await readFile(uploadPathToFilePath(publicPath)),
+    };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { publicPath, buffer: null };
+    }
+    throw error;
+  }
+}
+
+async function restoreUploadFileSnapshot(snapshot: UploadFileSnapshot) {
+  if (snapshot.buffer === null) {
+    await removeCreatedUploadFile(snapshot.publicPath);
+    return;
+  }
+
+  await writeFile(uploadPathToFilePath(snapshot.publicPath), snapshot.buffer);
 }
 
 async function removeVariantFiles(asset: {
@@ -363,13 +450,11 @@ async function persistOptimizedImageAsset(input: OptimizedImageAssetInput) {
   }
 
   const fileName = buildOutputName(input.originalName, input.mime);
-  const publicPath = await getAvailablePublicPath(fileName);
-  const filePath = uploadPathToFilePath(publicPath);
   const dimensions = await getDimensions(input.buffer);
 
   return withAsyncRollback(async (defer) => {
     await mkdir(getUploadDir(), { recursive: true });
-    await writeFile(filePath, input.buffer);
+    const publicPath = await createAvailableUploadFile(fileName, input.buffer);
     defer(() => removeCreatedUploadFile(publicPath));
 
     const variants = await createResponsiveVariants({
@@ -506,31 +591,55 @@ export async function replaceImageAssetFile(input: { id: number; file: File }) {
   const filePath = uploadPathToFilePath(asset.path);
 
   await mkdir(getUploadDir(), { recursive: true });
-  await writeFile(filePath, optimized.buffer);
-  await removeVariantFiles(asset);
-  const variants = await createResponsiveVariants({
-    buffer: optimized.buffer,
-    mime: optimized.mime,
-    publicPath: asset.path,
-  });
+  const snapshots = (
+    await Promise.all(
+      [asset.path, asset.thumbPath, asset.largePath].map(snapshotUploadFile),
+    )
+  ).filter((snapshot): snapshot is UploadFileSnapshot => snapshot !== null);
+  const snapshotPaths = new Set(
+    snapshots.map((snapshot) => snapshot.publicPath),
+  );
 
-  const [updated] = await db
-    .update(imageAssets)
-    .set({
-      thumbPath: variants.thumbPath,
-      largePath: variants.largePath,
-      originalName: input.file.name,
+  return withAsyncRollback(async (defer) => {
+    for (const snapshot of snapshots) {
+      defer(() => restoreUploadFileSnapshot(snapshot));
+    }
+
+    await writeFile(filePath, optimized.buffer);
+    await removeVariantFiles(asset);
+    const variants = await createResponsiveVariants({
+      buffer: optimized.buffer,
       mime: optimized.mime,
-      size: optimized.buffer.length,
-      width: dimensions.width,
-      height: dimensions.height,
-      hash: hashBuffer(optimized.buffer),
-      updatedAt: new Date(),
-    })
-    .where(eq(imageAssets.id, asset.id))
-    .returning();
+      publicPath: asset.path,
+    });
+    for (const variantPath of [variants.thumbPath, variants.largePath]) {
+      if (variantPath && !snapshotPaths.has(variantPath)) {
+        defer(() => removeCreatedUploadFile(variantPath));
+      }
+    }
 
-  return updated!;
+    const [updated] = await db
+      .update(imageAssets)
+      .set({
+        thumbPath: variants.thumbPath,
+        largePath: variants.largePath,
+        originalName: input.file.name,
+        mime: optimized.mime,
+        size: optimized.buffer.length,
+        width: dimensions.width,
+        height: dimensions.height,
+        hash: hashBuffer(optimized.buffer),
+        updatedAt: new Date(),
+      })
+      .where(eq(imageAssets.id, asset.id))
+      .returning();
+
+    if (!updated) {
+      throw new Error("Image asset was deleted while replacing its file");
+    }
+
+    return updated;
+  });
 }
 
 export async function updateImageAssetMetadata(input: {
@@ -587,15 +696,25 @@ async function renameUploadFileIfPresent(input: {
   const fromFile = uploadPathToFilePath(input.fromPath);
   const toFile = uploadPathToFilePath(input.toPath);
 
-  if (!existsSync(fromFile)) {
-    throw new Error(`服务器文件不存在：${input.fromPath}`);
+  try {
+    await link(fromFile, toFile);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      throw new Error(`服务器文件不存在：${input.fromPath}`);
+    }
+    if (code === "EEXIST") {
+      throw new Error(`目标文件已存在：${input.toPath}`);
+    }
+    throw error;
   }
 
-  if (existsSync(toFile)) {
-    throw new Error(`目标文件已存在：${input.toPath}`);
+  try {
+    await unlink(fromFile);
+  } catch (error) {
+    await removeCreatedUploadFile(input.toPath);
+    throw error;
   }
-
-  await rename(fromFile, toFile);
 }
 
 export async function renameImageAssetFile(input: {
@@ -647,6 +766,8 @@ export async function renameImageAssetFile(input: {
     fromPath: string | null;
     toPath: string | null;
   }> = [];
+  const warnings: ImageAssetWarning[] = [];
+  let databaseCommitted = false;
 
   try {
     await renameUploadFileIfPresent({ fromPath: asset.path, toPath: nextPath });
@@ -662,7 +783,7 @@ export async function renameImageAssetFile(input: {
     });
     renamedFiles.push({ fromPath: nextLargePath, toPath: asset.largePath });
 
-    const [updated] = await db.transaction(async (tx) => {
+    const updatedAsset = await db.transaction(async (tx) => {
       const [updatedAsset] = await tx
         .update(imageAssets)
         .set({
@@ -675,6 +796,10 @@ export async function renameImageAssetFile(input: {
         .where(eq(imageAssets.id, asset.id))
         .returning();
 
+      if (!updatedAsset) {
+        throw new Error("图片在重命名过程中已被删除，请刷新后重试");
+      }
+
       const siteBaseUrl = (
         process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com"
       ).replace(/\/+$/, "");
@@ -684,44 +809,70 @@ export async function renameImageAssetFile(input: {
       await tx
         .update(posts)
         .set({
-          imgUrl: sql`replace(replace(${posts.imgUrl}, ${absoluteAssetPath}, ${absoluteNextPath}), ${asset.path}, ${nextPath})`,
+          imgUrl: replaceImagePath(
+            posts.imgUrl,
+            asset.path,
+            nextPath,
+            absoluteAssetPath,
+            absoluteNextPath,
+          ),
           updatedAt: new Date(),
         })
-        .where(
-          sql`${posts.imgUrl} like ${`%${asset.path}%`} or ${posts.imgUrl} like ${`%${absoluteAssetPath}%`}`,
-        );
+        .where(imagePathContains(posts.imgUrl, asset.path, absoluteAssetPath));
 
       await tx
         .update(posts)
         .set({
-          content: sql`replace(replace(${posts.content}, ${absoluteAssetPath}, ${absoluteNextPath}), ${asset.path}, ${nextPath})`,
+          content: replaceImagePath(
+            posts.content,
+            asset.path,
+            nextPath,
+            absoluteAssetPath,
+            absoluteNextPath,
+          ),
           updatedAt: new Date(),
         })
-        .where(
-          sql`${posts.content} like ${`%${asset.path}%`} or ${posts.content} like ${`%${absoluteAssetPath}%`}`,
-        );
+        .where(imagePathContains(posts.content, asset.path, absoluteAssetPath));
 
       await tx
         .update(users)
         .set({
-          image: sql`replace(replace(${users.image}, ${absoluteAssetPath}, ${absoluteNextPath}), ${asset.path}, ${nextPath})`,
+          image: replaceImagePath(
+            users.image,
+            asset.path,
+            nextPath,
+            absoluteAssetPath,
+            absoluteNextPath,
+          ),
           updatedAt: new Date(),
         })
-        .where(
-          sql`${users.image} like ${`%${asset.path}%`} or ${users.image} like ${`%${absoluteAssetPath}%`}`,
-        );
+        .where(imagePathContains(users.image, asset.path, absoluteAssetPath));
 
-      return [updatedAsset];
+      return updatedAsset;
     });
-    await rebuildImageReferences();
+    databaseCommitted = true;
 
-    return { data: updated! };
+    try {
+      await rebuildImageReferences();
+    } catch (error) {
+      warnings.push({
+        path: "image_asset_references",
+        warning:
+          error instanceof Error
+            ? `图片文件和数据库已生效，但引用索引重建失败：${error.message}`
+            : "图片文件和数据库已生效，但引用索引重建失败",
+      });
+    }
+
+    return { data: updatedAsset, warnings };
   } catch (error) {
-    for (const file of renamedFiles.reverse()) {
-      try {
-        await renameUploadFileIfPresent(file);
-      } catch {
-        // Best-effort rollback only. Return the original failure below.
+    if (!databaseCommitted) {
+      for (const file of renamedFiles.reverse()) {
+        try {
+          await renameUploadFileIfPresent(file);
+        } catch {
+          // Best-effort rollback only. Return the original failure below.
+        }
       }
     }
 
@@ -749,6 +900,10 @@ export async function convertExistingUploadsToWebp() {
   let converted = 0;
   let skipped = 0;
   const failed: Array<{ path: string; error: string }> = [];
+  const warnings: ImageAssetWarning[] = [];
+  const siteBaseUrl = (
+    process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com"
+  ).replace(/\/+$/, "");
 
   for (const asset of assets) {
     const currentPath = toUploadPath(asset.path);
@@ -776,10 +931,7 @@ export async function convertExistingUploadsToWebp() {
       }
 
       const parsed = path.parse(path.basename(currentPath));
-      const nextPublicPath = await getAvailablePublicPath(
-        `${parsed.name}.webp`,
-      );
-      const nextFilePath = uploadPathToFilePath(nextPublicPath);
+      const absoluteCurrentPath = `${siteBaseUrl}${currentPath}`;
       const optimized = await sharp(currentFilePath)
         .rotate()
         .resize({
@@ -792,56 +944,126 @@ export async function convertExistingUploadsToWebp() {
         .toBuffer();
       const dimensions = await getDimensions(optimized);
 
-      await writeFile(nextFilePath, optimized);
-      await removeVariantFiles(asset);
-      const variants = await createResponsiveVariants({
-        buffer: optimized,
-        mime: "image/webp",
-        publicPath: nextPublicPath,
+      const snapshots = (
+        await Promise.all(
+          [currentPath, asset.thumbPath, asset.largePath].map(
+            snapshotUploadFile,
+          ),
+        )
+      ).filter((snapshot): snapshot is UploadFileSnapshot => snapshot !== null);
+      const snapshotPaths = new Set(
+        snapshots.map((snapshot) => snapshot.publicPath),
+      );
+
+      await withAsyncRollback(async (defer) => {
+        for (const snapshot of snapshots) {
+          defer(() => restoreUploadFileSnapshot(snapshot));
+        }
+
+        const nextPublicPath = await createAvailableUploadFile(
+          `${parsed.name}.webp`,
+          optimized,
+        );
+        const absoluteNextPath = `${siteBaseUrl}${nextPublicPath}`;
+        defer(() => removeCreatedUploadFile(nextPublicPath));
+        await removeVariantFiles(asset);
+        const variants = await createResponsiveVariants({
+          buffer: optimized,
+          mime: "image/webp",
+          publicPath: nextPublicPath,
+        });
+        for (const variantPath of [variants.thumbPath, variants.largePath]) {
+          if (variantPath && !snapshotPaths.has(variantPath)) {
+            defer(() => removeCreatedUploadFile(variantPath));
+          }
+        }
+
+        await db.transaction(async (tx) => {
+          const [updatedAsset] = await tx
+            .update(imageAssets)
+            .set({
+              path: nextPublicPath,
+              thumbPath: variants.thumbPath,
+              largePath: variants.largePath,
+              mime: "image/webp",
+              size: optimized.length,
+              width: dimensions.width,
+              height: dimensions.height,
+              hash: hashBuffer(optimized),
+              updatedAt: new Date(),
+            })
+            .where(eq(imageAssets.id, asset.id))
+            .returning({ id: imageAssets.id });
+
+          if (!updatedAsset) {
+            throw new Error("Image asset was deleted during WebP conversion");
+          }
+
+          await tx
+            .update(posts)
+            .set({
+              imgUrl: replaceImagePath(
+                posts.imgUrl,
+                currentPath,
+                nextPublicPath,
+                absoluteCurrentPath,
+                absoluteNextPath,
+              ),
+              updatedAt: new Date(),
+            })
+            .where(
+              imagePathContains(posts.imgUrl, currentPath, absoluteCurrentPath),
+            );
+
+          await tx
+            .update(posts)
+            .set({
+              content: replaceImagePath(
+                posts.content,
+                currentPath,
+                nextPublicPath,
+                absoluteCurrentPath,
+                absoluteNextPath,
+              ),
+              updatedAt: new Date(),
+            })
+            .where(
+              imagePathContains(
+                posts.content,
+                currentPath,
+                absoluteCurrentPath,
+              ),
+            );
+
+          await tx
+            .update(users)
+            .set({
+              image: replaceImagePath(
+                users.image,
+                currentPath,
+                nextPublicPath,
+                absoluteCurrentPath,
+                absoluteNextPath,
+              ),
+              updatedAt: new Date(),
+            })
+            .where(
+              imagePathContains(users.image, currentPath, absoluteCurrentPath),
+            );
+        });
+
+        try {
+          await unlink(currentFilePath);
+        } catch (error) {
+          warnings.push({
+            path: currentPath,
+            warning:
+              error instanceof Error
+                ? `转换已完成，但旧文件清理失败：${error.message}`
+                : "转换已完成，但旧文件清理失败",
+          });
+        }
       });
-
-      await db.transaction(async (tx) => {
-        await tx
-          .update(imageAssets)
-          .set({
-            path: nextPublicPath,
-            thumbPath: variants.thumbPath,
-            largePath: variants.largePath,
-            mime: "image/webp",
-            size: optimized.length,
-            width: dimensions.width,
-            height: dimensions.height,
-            hash: hashBuffer(optimized),
-            updatedAt: new Date(),
-          })
-          .where(eq(imageAssets.id, asset.id));
-
-        await tx
-          .update(posts)
-          .set({
-            imgUrl: sql`replace(${posts.imgUrl}, ${currentPath}, ${nextPublicPath})`,
-            updatedAt: new Date(),
-          })
-          .where(sql`${posts.imgUrl} like ${`%${currentPath}%`}`);
-
-        await tx
-          .update(posts)
-          .set({
-            content: sql`replace(${posts.content}, ${currentPath}, ${nextPublicPath})`,
-            updatedAt: new Date(),
-          })
-          .where(sql`${posts.content} like ${`%${currentPath}%`}`);
-
-        await tx
-          .update(users)
-          .set({
-            image: sql`replace(${users.image}, ${currentPath}, ${nextPublicPath})`,
-            updatedAt: new Date(),
-          })
-          .where(sql`${users.image} like ${`%${currentPath}%`}`);
-      });
-
-      await unlink(currentFilePath);
       converted += 1;
     } catch (error) {
       failed.push({
@@ -851,8 +1073,26 @@ export async function convertExistingUploadsToWebp() {
     }
   }
 
-  const rebuilt = await rebuildImageReferences();
-  return { converted, skipped, failed, references: rebuilt.references };
+  let references = 0;
+  try {
+    references = (await rebuildImageReferences()).references;
+  } catch (error) {
+    warnings.push({
+      path: "image_asset_references",
+      warning:
+        error instanceof Error
+          ? `图片已转换，但引用索引重建失败：${error.message}`
+          : "图片已转换，但引用索引重建失败",
+    });
+  }
+
+  return {
+    converted,
+    skipped,
+    failed,
+    warnings,
+    references,
+  };
 }
 
 export async function rebuildResponsiveImageVariants() {
@@ -884,21 +1124,46 @@ export async function rebuildResponsiveImageVariants() {
       }
 
       const buffer = await readFile(filePath);
-      await removeVariantFiles(asset);
-      const variants = await createResponsiveVariants({
-        buffer,
-        mime: asset.mime,
-        publicPath: asset.path,
-      });
+      const snapshots = (
+        await Promise.all(
+          [asset.thumbPath, asset.largePath].map(snapshotUploadFile),
+        )
+      ).filter((snapshot): snapshot is UploadFileSnapshot => snapshot !== null);
+      const snapshotPaths = new Set(
+        snapshots.map((snapshot) => snapshot.publicPath),
+      );
 
-      await db
-        .update(imageAssets)
-        .set({
-          thumbPath: variants.thumbPath,
-          largePath: variants.largePath,
-          updatedAt: new Date(),
-        })
-        .where(eq(imageAssets.id, asset.id));
+      await withAsyncRollback(async (defer) => {
+        for (const snapshot of snapshots) {
+          defer(() => restoreUploadFileSnapshot(snapshot));
+        }
+
+        await removeVariantFiles(asset);
+        const variants = await createResponsiveVariants({
+          buffer,
+          mime: asset.mime,
+          publicPath: asset.path,
+        });
+        for (const variantPath of [variants.thumbPath, variants.largePath]) {
+          if (variantPath && !snapshotPaths.has(variantPath)) {
+            defer(() => removeCreatedUploadFile(variantPath));
+          }
+        }
+
+        const [updatedAsset] = await db
+          .update(imageAssets)
+          .set({
+            thumbPath: variants.thumbPath,
+            largePath: variants.largePath,
+            updatedAt: new Date(),
+          })
+          .where(eq(imageAssets.id, asset.id))
+          .returning({ id: imageAssets.id });
+
+        if (!updatedAsset) {
+          throw new Error("图片在重建响应式规格图时已被删除");
+        }
+      });
 
       rebuilt += 1;
     } catch (error) {
@@ -932,6 +1197,7 @@ export async function auditAndRepairImageAssets() {
   let missing = 0;
   let skipped = 0;
   const failed: Array<{ path: string; error: string }> = [];
+  const warnings: ImageAssetWarning[] = [];
 
   await mkdir(getUploadDir(), { recursive: true });
 
@@ -947,10 +1213,14 @@ export async function auditAndRepairImageAssets() {
       if (!existsSync(filePath)) {
         missing += 1;
         if (asset.status !== "missing") {
-          await db
+          const [updatedAsset] = await db
             .update(imageAssets)
             .set({ status: "missing", updatedAt: new Date() })
-            .where(eq(imageAssets.id, asset.id));
+            .where(eq(imageAssets.id, asset.id))
+            .returning({ id: imageAssets.id });
+          if (!updatedAsset) {
+            throw new Error("图片在标记缺失状态时已被删除");
+          }
           repaired += 1;
         }
         continue;
@@ -979,26 +1249,60 @@ export async function auditAndRepairImageAssets() {
           !variantFileExists(asset.thumbPath) ||
           !variantFileExists(asset.largePath));
 
-      if (shouldRebuildVariants) {
-        await removeVariantFiles(asset);
-        const variants = await createResponsiveVariants({
-          buffer,
-          mime: nextMime,
-          publicPath: currentPath,
-        });
-        patch.thumbPath = variants.thumbPath;
-        patch.largePath = variants.largePath;
-        variantsRebuilt += 1;
-      }
+      const snapshots = shouldRebuildVariants
+        ? (
+            await Promise.all(
+              [asset.thumbPath, asset.largePath].map(snapshotUploadFile),
+            )
+          ).filter(
+            (snapshot): snapshot is UploadFileSnapshot => snapshot !== null,
+          )
+        : [];
+      const snapshotPaths = new Set(
+        snapshots.map((snapshot) => snapshot.publicPath),
+      );
 
-      if (Object.keys(patch).length > 0) {
-        await db
+      await withAsyncRollback(async (defer) => {
+        for (const snapshot of snapshots) {
+          defer(() => restoreUploadFileSnapshot(snapshot));
+        }
+
+        if (shouldRebuildVariants) {
+          await removeVariantFiles(asset);
+          const variants = await createResponsiveVariants({
+            buffer,
+            mime: nextMime,
+            publicPath: currentPath,
+          });
+          patch.thumbPath = variants.thumbPath;
+          patch.largePath = variants.largePath;
+          for (const variantPath of [variants.thumbPath, variants.largePath]) {
+            if (variantPath && !snapshotPaths.has(variantPath)) {
+              defer(() => removeCreatedUploadFile(variantPath));
+            }
+          }
+        }
+
+        if (Object.keys(patch).length === 0) return;
+
+        const [updatedAsset] = await db
           .update(imageAssets)
           .set({ ...patch, updatedAt: new Date() })
-          .where(eq(imageAssets.id, asset.id));
+          .where(eq(imageAssets.id, asset.id))
+          .returning({ id: imageAssets.id });
+
+        if (!updatedAsset) {
+          throw new Error("图片在资产体检修复时已被删除");
+        }
+      });
+
+      if (Object.keys(patch).length > 0) {
         repaired += 1;
       } else {
         skipped += 1;
+      }
+      if (shouldRebuildVariants) {
+        variantsRebuilt += 1;
       }
     } catch (error) {
       failed.push({
@@ -1008,7 +1312,18 @@ export async function auditAndRepairImageAssets() {
     }
   }
 
-  const rebuilt = await rebuildImageReferences();
+  let references = 0;
+  try {
+    references = (await rebuildImageReferences()).references;
+  } catch (error) {
+    warnings.push({
+      path: "image_asset_references",
+      warning:
+        error instanceof Error
+          ? `图片资产修复已完成，但引用索引重建失败：${error.message}`
+          : "图片资产修复已完成，但引用索引重建失败",
+    });
+  }
 
   return {
     scanned: assets.length,
@@ -1017,7 +1332,8 @@ export async function auditAndRepairImageAssets() {
     missing,
     skipped,
     failed,
-    references: rebuilt.references,
+    warnings,
+    references,
   };
 }
 
@@ -1028,6 +1344,7 @@ export async function importExistingUploads() {
   const files = await readdir(uploadDir, { withFileTypes: true });
   let imported = 0;
   let skipped = 0;
+  const warnings: ImageAssetWarning[] = [];
 
   for (const entry of files) {
     if (!entry.isFile()) {
@@ -1063,32 +1380,49 @@ export async function importExistingUploads() {
       getDimensionsFromFile(filePath),
     ]);
     const mime = inferMimeFromExtension(entry.name);
-    const variants = await createResponsiveVariants({
-      buffer,
-      mime,
-      publicPath,
-    });
+    await withAsyncRollback(async (defer) => {
+      const variants = await createResponsiveVariants({
+        buffer,
+        mime,
+        publicPath,
+      });
+      for (const variantPath of [variants.thumbPath, variants.largePath]) {
+        if (variantPath) {
+          defer(() => removeCreatedUploadFile(variantPath));
+        }
+      }
 
-    await db.insert(imageAssets).values({
-      path: publicPath,
-      thumbPath: variants.thumbPath,
-      largePath: variants.largePath,
-      originalName: entry.name.replace(/^\d+-/, ""),
-      mime,
-      size: fileStat.size,
-      width: dimensions.width,
-      height: dimensions.height,
-      hash: hashBuffer(buffer),
-      uploadedBy: null,
-      createdAt: fileStat.mtime,
+      await db.insert(imageAssets).values({
+        path: publicPath,
+        thumbPath: variants.thumbPath,
+        largePath: variants.largePath,
+        originalName: entry.name.replace(/^\d+-/, ""),
+        mime,
+        size: fileStat.size,
+        width: dimensions.width,
+        height: dimensions.height,
+        hash: hashBuffer(buffer),
+        uploadedBy: null,
+        createdAt: fileStat.mtime,
+      });
     });
 
     imported += 1;
   }
 
-  await rebuildImageReferences();
+  try {
+    await rebuildImageReferences();
+  } catch (error) {
+    warnings.push({
+      path: "image_asset_references",
+      warning:
+        error instanceof Error
+          ? `历史图片已导入，但引用索引重建失败：${error.message}`
+          : "历史图片已导入，但引用索引重建失败",
+    });
+  }
 
-  return { imported, skipped };
+  return { imported, skipped, warnings };
 }
 
 export async function getImageAssetList() {
@@ -1345,7 +1679,9 @@ export async function rebuildImageReferences() {
   return { references: dedupeImageReferences(references).length };
 }
 
-export async function deleteImageAsset(id: number) {
+export async function deleteImageAsset(
+  id: number,
+): Promise<{ data?: ImageAssetRow; error?: string }> {
   const [asset] = await db
     .select()
     .from(imageAssets)
@@ -1366,21 +1702,52 @@ export async function deleteImageAsset(id: number) {
     return { error: "图片正在被内容引用，不能删除" };
   }
 
-  await db.delete(imageAssets).where(eq(imageAssets.id, id));
+  const snapshots = (
+    await Promise.all(
+      [asset.path, asset.thumbPath, asset.largePath].map(snapshotUploadFile),
+    )
+  ).filter((snapshot): snapshot is UploadFileSnapshot => snapshot !== null);
 
-  const filePath = uploadPathToFilePath(asset.path);
-  if (existsSync(filePath)) {
-    await unlink(filePath);
+  try {
+    return await withAsyncRollback(async (defer) => {
+      for (const snapshot of snapshots) {
+        defer(() => restoreUploadFileSnapshot(snapshot));
+        await removeCreatedUploadFile(snapshot.publicPath);
+      }
+
+      const [deleted] = await db
+        .delete(imageAssets)
+        .where(
+          and(
+            eq(imageAssets.id, id),
+            notExists(
+              db
+                .select({ id: imageAssetReferences.id })
+                .from(imageAssetReferences)
+                .where(eq(imageAssetReferences.imageId, imageAssets.id)),
+            ),
+          ),
+        )
+        .returning();
+
+      if (!deleted) {
+        throw new Error("图片状态已变化或新增引用，请刷新后重试");
+      }
+
+      return { data: deleted };
+    });
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "删除图片失败",
+    };
   }
-  await removeVariantFiles(asset);
-
-  return { data: asset };
 }
 
 export async function replaceImageReferences(input: {
   imageId: number;
   replacementPath: string;
 }) {
+  const warnings: ImageAssetWarning[] = [];
   const [asset] = await db
     .select()
     .from(imageAssets)
@@ -1417,36 +1784,59 @@ export async function replaceImageReferences(input: {
     await tx
       .update(posts)
       .set({
-        imgUrl: sql`replace(replace(${posts.imgUrl}, ${absoluteAssetPath}, ${absoluteReplacementPath}), ${asset.path}, ${replacementPath})`,
+        imgUrl: replaceImagePath(
+          posts.imgUrl,
+          asset.path,
+          replacementPath,
+          absoluteAssetPath,
+          absoluteReplacementPath,
+        ),
         updatedAt: new Date(),
       })
-      .where(
-        sql`${posts.imgUrl} like ${`%${asset.path}%`} or ${posts.imgUrl} like ${`%${absoluteAssetPath}%`}`,
-      );
+      .where(imagePathContains(posts.imgUrl, asset.path, absoluteAssetPath));
 
     await tx
       .update(posts)
       .set({
-        content: sql`replace(replace(${posts.content}, ${absoluteAssetPath}, ${absoluteReplacementPath}), ${asset.path}, ${replacementPath})`,
+        content: replaceImagePath(
+          posts.content,
+          asset.path,
+          replacementPath,
+          absoluteAssetPath,
+          absoluteReplacementPath,
+        ),
         updatedAt: new Date(),
       })
-      .where(
-        sql`${posts.content} like ${`%${asset.path}%`} or ${posts.content} like ${`%${absoluteAssetPath}%`}`,
-      );
+      .where(imagePathContains(posts.content, asset.path, absoluteAssetPath));
 
     await tx
       .update(users)
       .set({
-        image: sql`replace(replace(${users.image}, ${absoluteAssetPath}, ${absoluteReplacementPath}), ${asset.path}, ${replacementPath})`,
+        image: replaceImagePath(
+          users.image,
+          asset.path,
+          replacementPath,
+          absoluteAssetPath,
+          absoluteReplacementPath,
+        ),
         updatedAt: new Date(),
       })
-      .where(
-        sql`${users.image} like ${`%${asset.path}%`} or ${users.image} like ${`%${absoluteAssetPath}%`}`,
-      );
+      .where(imagePathContains(users.image, asset.path, absoluteAssetPath));
   });
 
-  await rebuildImageReferences();
-  return { data: true };
+  try {
+    await rebuildImageReferences();
+  } catch (error) {
+    warnings.push({
+      path: "image_asset_references",
+      warning:
+        error instanceof Error
+          ? `内容引用已更新，但引用索引重建失败：${error.message}`
+          : "内容引用已更新，但引用索引重建失败",
+    });
+  }
+
+  return { data: true, warnings };
 }
 
 export async function findDuplicateImages() {

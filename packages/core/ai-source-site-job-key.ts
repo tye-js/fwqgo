@@ -1,7 +1,9 @@
+import { parsePostgresIntegerId } from "./utils";
+
 export const AI_SOURCE_SITE_JOB_KEY_PREFIX = "ai-source-site:";
 
 export function getAiSourceSiteJobKey(sourceSiteId: number) {
-  if (!Number.isSafeInteger(sourceSiteId) || sourceSiteId <= 0) {
+  if (parsePostgresIntegerId(sourceSiteId) === null) {
     throw new RangeError("来源站 ID 必须是正整数");
   }
 
@@ -14,6 +16,5 @@ export function parseAiSourceSiteJobKey(jobKey: string) {
   const sourceSiteIdText = jobKey.slice(AI_SOURCE_SITE_JOB_KEY_PREFIX.length);
   if (!/^[1-9]\d*$/.test(sourceSiteIdText)) return null;
 
-  const sourceSiteId = Number(sourceSiteIdText);
-  return Number.isSafeInteger(sourceSiteId) ? sourceSiteId : null;
+  return parsePostgresIntegerId(sourceSiteIdText);
 }

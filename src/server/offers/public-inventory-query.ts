@@ -24,6 +24,10 @@ import {
   type PublicInventorySearchParams,
   type PublicInventorySort,
 } from "@fwqgo/core/public-inventory-filters";
+import {
+  decodePublicInventoryCursor,
+  encodePublicInventoryCursor,
+} from "@fwqgo/core/public-inventory-cursor";
 import type { ServerOfferKind } from "@fwqgo/core/server-offer-kind";
 import { readDb } from "@fwqgo/db";
 import {
@@ -38,13 +42,6 @@ import { ilikeContains } from "@/server/db/search";
 
 const PAGE_SIZE = 30;
 
-type InventoryCursor = {
-  sort: PublicInventorySort;
-  id: number;
-  price?: string | null;
-  date?: string;
-};
-
 export {
   parsePublicInventoryFilters,
   publicInventorySorts,
@@ -52,30 +49,6 @@ export {
   type PublicInventorySearchParams,
   type PublicInventorySort,
 };
-
-function encodeCursor(cursor: InventoryCursor) {
-  return Buffer.from(JSON.stringify(cursor)).toString("base64url");
-}
-
-function decodeCursor(value: string, sort: PublicInventorySort) {
-  if (!value) return null;
-
-  try {
-    const parsed = JSON.parse(
-      Buffer.from(value, "base64url").toString("utf8"),
-    ) as Partial<InventoryCursor>;
-    if (
-      parsed.sort !== sort ||
-      !Number.isInteger(parsed.id) ||
-      (parsed.id ?? 0) <= 0
-    ) {
-      return null;
-    }
-    return parsed as InventoryCursor;
-  } catch {
-    return null;
-  }
-}
 
 function publicOfferWhere(filters: PublicInventoryFilters) {
   const searchDocument = sql<string>`
@@ -151,12 +124,11 @@ function publicOfferWhere(filters: PublicInventoryFilters) {
 }
 
 function cursorWhere(filters: PublicInventoryFilters) {
-  const cursor = decodeCursor(filters.cursor, filters.sort);
+  const cursor = decodePublicInventoryCursor(filters.cursor, filters.sort);
   if (!cursor) return undefined;
 
-  if (filters.sort === "latest") {
-    const date = cursor.date ? new Date(cursor.date) : null;
-    if (!date || Number.isNaN(date.getTime())) return undefined;
+  if (cursor.sort === "latest") {
+    const date = new Date(cursor.date);
     const effectiveDate = sql<Date>`coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt})`;
     return or(
       lt(effectiveDate, date),
@@ -167,13 +139,13 @@ function cursorWhere(filters: PublicInventoryFilters) {
   if (cursor.price == null) {
     return and(
       isNull(serverOffers.monthlyPriceUsd),
-      filters.sort === "price-desc"
+      cursor.sort === "price-desc"
         ? lt(serverOffers.id, cursor.id)
         : gt(serverOffers.id, cursor.id),
     );
   }
 
-  if (filters.sort === "price-desc") {
+  if (cursor.sort === "price-desc") {
     return or(
       isNull(serverOffers.monthlyPriceUsd),
       lt(serverOffers.monthlyPriceUsd, cursor.price),
@@ -346,12 +318,17 @@ export async function getPublicInventoryPage(filters: PublicInventoryFilters) {
   const last = enrichedItems.at(-1);
   const nextCursor =
     hasMore && last
-      ? encodeCursor({
-          sort: filters.sort,
-          id: last.id,
-          price: last.monthlyPriceUsd,
-          date: (last.updatedAt ?? last.createdAt).toISOString(),
-        })
+      ? filters.sort === "latest"
+        ? encodePublicInventoryCursor({
+            sort: "latest",
+            id: last.id,
+            date: (last.updatedAt ?? last.createdAt).toISOString(),
+          })
+        : encodePublicInventoryCursor({
+            sort: filters.sort,
+            id: last.id,
+            price: last.monthlyPriceUsd,
+          })
       : null;
 
   return {

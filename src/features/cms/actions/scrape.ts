@@ -10,6 +10,7 @@ import {
 import { getAiRewriteContentLimit } from "@fwqgo/ai/article-rewriter";
 import { reserveBoundedMapCapacity } from "@fwqgo/core/bounded-map";
 import { isPublicHttpUrl } from "@fwqgo/core/network-url";
+import { formPostgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
 import {
   getActiveAiRewriteConfig,
   getAiRewriteConfigs,
@@ -27,7 +28,7 @@ const urlSchema = z.object({
     message:
       "抓取 URL 只允许公网 http/https 地址，不能使用 localhost 或内网地址",
   }),
-  rewriteStyleId: z.coerce.number().int().positive().optional(),
+  rewriteStyleId: formPostgresIntegerIdSchema.optional(),
 });
 const SCRAPE_ACTION_TIMEOUT_MS = 330_000;
 

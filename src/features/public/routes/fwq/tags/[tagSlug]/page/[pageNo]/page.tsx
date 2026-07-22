@@ -112,16 +112,6 @@ async function TagPageContent({
     notFound();
   }
 
-  const [{ data: latestPosts }, relatedOffers] = await Promise.all([
-    getLatestPostsForSidebar(),
-    getServerOffersByKeywords({
-      keywords: [
-        postsWithTag?.name ?? decodedTagSlug,
-        ...splitKeywords(postsWithTag?.keywords),
-      ],
-      limit: 6,
-    }),
-  ]);
   const cardInfo = {
     kind: "标签页",
     name: postsWithTag.name,
@@ -134,9 +124,19 @@ async function TagPageContent({
   const posts = postsWithTag.posts;
   const totalPage = Math.ceil((postsWithTag.totalCount ?? 0) / 10);
 
-  if ((postsWithTag.totalCount ?? 0) > 0 && postsWithTag.pageNo > totalPage) {
+  if (postsWithTag.pageNo > Math.max(totalPage, 1)) {
     notFound();
   }
+  const [{ data: latestPosts }, relatedOffers] = await Promise.all([
+    getLatestPostsForSidebar(),
+    getServerOffersByKeywords({
+      keywords: [
+        postsWithTag.name ?? decodedTagSlug,
+        ...splitKeywords(postsWithTag.keywords),
+      ],
+      limit: 6,
+    }),
+  ]);
   const pageSlug = postsWithTag.slug ?? decodedTagSlug;
   const pageUrl = `${getSiteUrl()}/fwq/tags/${encodeURIComponent(pageSlug)}/page/${postsWithTag.pageNo}`;
   const collectionJsonLd = {

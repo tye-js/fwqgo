@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 
+import { parsePositiveInt } from "@fwqgo/core/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,8 +35,8 @@ const purposeLabels: Record<string, string> = {
 
 export default async function ProviderRunDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const runId = Number(id);
-  if (!Number.isInteger(runId) || runId <= 0) notFound();
+  const runId = parsePositiveInt(id);
+  if (runId === null) notFound();
 
   const run = await getProviderRunDetail(runId);
   if (!run) notFound();
@@ -68,12 +69,21 @@ export default async function ProviderRunDetailPage({ params }: PageProps) {
       }
     >
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <UnifiedTaskStat label="状态" value={statusLabels[run.status] ?? run.status} />
+        <UnifiedTaskStat
+          label="状态"
+          value={statusLabels[run.status] ?? run.status}
+        />
         <UnifiedTaskStat label="适配器" value={run.adapter.toUpperCase()} />
-        <UnifiedTaskStat label="采集目的" value={purposeLabels[run.purpose] ?? run.purpose} />
+        <UnifiedTaskStat
+          label="采集目的"
+          value={purposeLabels[run.purpose] ?? run.purpose}
+        />
         <UnifiedTaskStat label="HTTP" value={run.httpStatus ?? "-"} />
         <UnifiedTaskStat label="接收套餐" value={run.received} />
-        <UnifiedTaskStat label="完成时间" value={formatUnifiedTaskTime(run.finishedAt)} />
+        <UnifiedTaskStat
+          label="完成时间"
+          value={formatUnifiedTaskTime(run.finishedAt)}
+        />
       </div>
 
       <AdminSectionCard
@@ -82,13 +92,17 @@ export default async function ProviderRunDetailPage({ params }: PageProps) {
       >
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={run.status === "failed" ? "destructive" : "outline"}>
+            <Badge
+              variant={run.status === "failed" ? "destructive" : "outline"}
+            >
               {statusLabels[run.status] ?? run.status}
             </Badge>
             <Badge variant="outline">
               {run.autoPublish ? "新套餐自动发布" : "新套餐先审核"}
             </Badge>
-            <Badge variant="outline">连续缺失 {run.missingThreshold} 次后停售</Badge>
+            <Badge variant="outline">
+              连续缺失 {run.missingThreshold} 次后停售
+            </Badge>
           </div>
           <a
             href={run.endpointUrl}

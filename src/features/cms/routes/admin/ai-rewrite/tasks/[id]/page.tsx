@@ -21,7 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { type ScrapeDiagnostics } from "@/server/scrape/article-scraper";
-import { isHttpHref } from "@fwqgo/core/utils";
+import { isHttpHref, parsePostgresIntegerId } from "@fwqgo/core/utils";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -681,9 +681,9 @@ export async function AiRewriteTaskDetailPageContent({
   basePath = "/ai-rewrite/tasks",
 }: AiRewriteTaskDetailPageContentProps) {
   const { id } = await params;
-  const taskId = Number(id);
+  const taskId = parsePostgresIntegerId(id);
 
-  if (!Number.isInteger(taskId) || taskId <= 0) {
+  if (taskId === null) {
     notFound();
   }
 

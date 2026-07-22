@@ -14,6 +14,7 @@ import {
   revalidateSiteContent,
   revalidateSiteContentFromRouteHandler,
 } from "@fwqgo/cache/tags";
+import { postgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
 import { rewriteAffiliateLinks } from "@/server/links/affiliate-link-rewriter";
 import {
   createPostRecord,
@@ -27,7 +28,7 @@ import {
 } from "@/server/images/assets";
 import { posts, categories, tags, postTags } from "@fwqgo/db/schema";
 import { desc, eq, and, inArray, ne, or } from "drizzle-orm";
-import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
+import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 
 function normalizeTagName(name: string) {
   return name.trim();
@@ -51,6 +52,84 @@ function revalidatePostWorkbenches() {
   revalidatePath("/posts/edit");
   revalidatePath("/posts/drafts");
   revalidatePath("/posts/quality");
+}
+
+type PostCacheIdentity = {
+  id: number;
+  slug: string;
+  categoryId: number;
+};
+
+function parseIntegerId(value: number) {
+  const parsed = postgresIntegerIdSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function normalizePostIds(ids: number[], limit = 100) {
+  return [
+    ...new Set(
+      ids.map(parseIntegerId).filter((id): id is number => id !== null),
+    ),
+  ].slice(0, limit);
+}
+
+function getPostCacheTags(
+  deletedPosts: PostCacheIdentity[],
+  translationSourcePosts: PostCacheIdentity[],
+) {
+  return [...deletedPosts, ...translationSourcePosts].flatMap((post) => [
+    cacheTags.post(post.id),
+    cacheTags.postSlug(post.slug),
+    cacheTags.category(post.categoryId),
+  ]);
+}
+
+async function runPostDeletionMaintenance(input: {
+  deletedPosts: PostCacheIdentity[];
+  translationSourcePosts: PostCacheIdentity[];
+  cleanup: () => Promise<unknown>;
+}) {
+  const warnings: string[] = [];
+
+  try {
+    await input.cleanup();
+  } catch (error) {
+    console.error("文章已删除，但图片引用清理失败:", error);
+    warnings.push("文章已删除，但图片引用索引暂未清理");
+  }
+
+  try {
+    revalidateImageAssetList();
+    revalidatePostWorkbenches();
+  } catch (error) {
+    console.error("文章已删除，但后台列表刷新失败:", error);
+    warnings.push("文章已删除，但后台列表刷新延迟");
+  }
+
+  const allPosts = [...input.deletedPosts, ...input.translationSourcePosts];
+  const tags = getPostCacheTags(
+    input.deletedPosts,
+    input.translationSourcePosts,
+  );
+  try {
+    revalidateSiteContent(tags);
+  } catch (error) {
+    console.error("文章已删除，但站内缓存刷新失败:", error);
+    warnings.push("文章已删除，但页面缓存刷新延迟");
+  }
+
+  try {
+    schedulePublicWebCache("post.changed", {
+      postIds: allPosts.map((post) => post.id),
+      postSlugs: allPosts.map((post) => post.slug),
+      categoryIds: allPosts.map((post) => post.categoryId),
+    });
+  } catch (error) {
+    console.error("文章已删除，但公网缓存刷新未排队:", error);
+    warnings.push("文章已删除，但公网页面可能需要稍后刷新");
+  }
+
+  return warnings;
 }
 
 async function prepareEditedArticleContent(content: string) {
@@ -90,7 +169,7 @@ async function runPostSaveMaintenance(input: {
     } else {
       revalidateSiteContent(input.revalidationTags);
     }
-    await notifyPublicWebCache("post.changed", {
+    schedulePublicWebCache("post.changed", {
       postIds: [input.postId],
     });
   } catch (error) {
@@ -99,13 +178,6 @@ async function runPostSaveMaintenance(input: {
   }
 
   return warnings;
-}
-
-function normalizePostIds(ids: number[], limit = 100) {
-  return [...new Set(ids.filter((id) => Number.isInteger(id) && id > 0))].slice(
-    0,
-    limit,
-  );
 }
 
 async function revalidateChangedPosts(
@@ -153,7 +225,7 @@ async function revalidateChangedPosts(
       cacheTags.category(post.categoryId),
     ]),
   ]);
-  await notifyPublicWebCache("post.changed", {
+  schedulePublicWebCache("post.changed", {
     postIds: [
       ...changedPosts.map((post) => post.id),
       ...translationSourcePosts.map((post) => post.id),
@@ -277,6 +349,9 @@ export async function createPost(input: CreatePostInput | CreatePostParams) {
   try {
     await requireAdminSession();
     const postInput = "post" in input ? input.post : input;
+    if (parseIntegerId(postInput.categoryId) === null) {
+      return { error: "文章分类不正确" };
+    }
     const publishAudit = postInput.published
       ? await auditAffiliateLinksForPublish(postInput.content)
       : null;
@@ -325,6 +400,8 @@ export async function updatePostByRecommendedTagName(
 ) {
   try {
     await requireAdminSession();
+    const parsedPostId = parseIntegerId(postId);
+    if (parsedPostId === null) return { error: "文章 ID 不正确" };
 
     // 先验证标签是否存在
     const [tag] = await db
@@ -344,7 +421,7 @@ export async function updatePostByRecommendedTagName(
         recommendedTagId: tag.id,
         updatedAt: new Date(),
       })
-      .where(eq(posts.id, postId))
+      .where(eq(posts.id, parsedPostId))
       .returning();
 
     if (result) {
@@ -352,7 +429,7 @@ export async function updatePostByRecommendedTagName(
         cacheTags.post(result.id),
         cacheTags.postSlug(result.slug),
       ]);
-      await notifyPublicWebCache("post.changed", {
+      schedulePublicWebCache("post.changed", {
         postIds: [result.id],
         postSlugs: [result.slug],
         categoryIds: [result.categoryId],
@@ -379,7 +456,8 @@ export async function updatePost(input: {
   try {
     await requireAdminSession();
 
-    if (!Number.isSafeInteger(input.id) || input.id <= 0) {
+    const parsedPostId = parseIntegerId(input.id);
+    if (parsedPostId === null) {
       return { error: "文章 ID 不正确" };
     }
 
@@ -423,7 +501,7 @@ export async function updatePost(input: {
         translationSourcePostId: posts.translationSourcePostId,
       })
       .from(posts)
-      .where(eq(posts.id, input.id))
+      .where(eq(posts.id, parsedPostId))
       .limit(1);
 
     if (!currentPost) {
@@ -433,7 +511,7 @@ export async function updatePost(input: {
     const [duplicatedSlugPost] = await db
       .select({ id: posts.id })
       .from(posts)
-      .where(and(eq(posts.slug, normalizedSlug), ne(posts.id, input.id)))
+      .where(and(eq(posts.slug, normalizedSlug), ne(posts.id, parsedPostId)))
       .limit(1);
 
     if (duplicatedSlugPost) {
@@ -466,7 +544,7 @@ export async function updatePost(input: {
             affiliateReviewUpdatedAt: new Date(),
             updatedAt: new Date(),
           })
-          .where(eq(posts.id, input.id))
+          .where(eq(posts.id, parsedPostId))
           .returning({
             id: posts.id,
             slug: posts.slug,
@@ -513,7 +591,7 @@ export async function updatePost(input: {
         affiliateReviewUpdatedAt: input.published ? new Date() : null,
         updatedAt: new Date(),
       })
-      .where(eq(posts.id, input.id))
+      .where(eq(posts.id, parsedPostId))
       .returning();
 
     if (!post) {
@@ -560,7 +638,8 @@ export async function updatePost(input: {
 }
 
 async function getAffiliateReviewTarget(postId: number) {
-  if (!Number.isSafeInteger(postId) || postId <= 0) {
+  const parsedPostId = parseIntegerId(postId);
+  if (parsedPostId === null) {
     return null;
   }
 
@@ -574,7 +653,7 @@ async function getAffiliateReviewTarget(postId: number) {
       translationSourcePostId: posts.translationSourcePostId,
     })
     .from(posts)
-    .where(eq(posts.id, postId))
+    .where(eq(posts.id, parsedPostId))
     .limit(1);
 
   return post ?? null;
@@ -868,6 +947,11 @@ export async function updatePostContent(input: {
   try {
     await requireAdminSession();
 
+    const parsedPostId = parseIntegerId(input.id);
+    const parsedCategoryId = parseIntegerId(input.categoryId);
+    if (parsedPostId === null) return { error: "文章 ID 不正确" };
+    if (parsedCategoryId === null) return { error: "文章分类不正确" };
+
     const [currentPost] = await db
       .select({
         slug: posts.slug,
@@ -875,7 +959,7 @@ export async function updatePostContent(input: {
         language: posts.language,
       })
       .from(posts)
-      .where(eq(posts.id, input.id))
+      .where(eq(posts.id, parsedPostId))
       .limit(1);
 
     if (!currentPost) {
@@ -890,14 +974,10 @@ export async function updatePostContent(input: {
       return { error: "文章简述和正文不能为空" };
     }
 
-    if (!Number.isInteger(input.categoryId) || input.categoryId <= 0) {
-      return { error: "文章分类不正确" };
-    }
-
     const [category] = await db
       .select({ id: categories.id })
       .from(categories)
-      .where(eq(categories.id, input.categoryId))
+      .where(eq(categories.id, parsedCategoryId))
       .limit(1);
 
     if (!category) {
@@ -954,7 +1034,7 @@ export async function updatePostContent(input: {
         description: normalizedDescription,
         content: preparedContent.content,
         imgUrl: normalizedImgUrl.length > 0 ? normalizedImgUrl : null,
-        categoryId: input.categoryId,
+        categoryId: parsedCategoryId,
         recommendedTagName: recommendedTag?.name ?? null,
         recommendedTagId: recommendedTag?.id ?? null,
         keywords: normalizeSeoKeywords(input.keywords),
@@ -963,7 +1043,7 @@ export async function updatePostContent(input: {
         affiliateReviewUpdatedAt: null,
         updatedAt: new Date(),
       })
-      .where(eq(posts.id, input.id))
+      .where(eq(posts.id, parsedPostId))
       .returning();
 
     if (!post) {
@@ -1005,6 +1085,9 @@ export async function updatePostEnglishContent(input: {
   try {
     await requireAdminSession();
 
+    const parsedSourcePostId = parseIntegerId(input.id);
+    if (parsedSourcePostId === null) return { error: "文章 ID 不正确" };
+
     const normalizedTitle = input.enTitle.trim();
     const normalizedContent = input.enContent.trim();
     const normalizedSlug = slugify(input.enSlug.trim() || normalizedTitle);
@@ -1029,7 +1112,7 @@ export async function updatePostEnglishContent(input: {
         translationSourcePostId: posts.translationSourcePostId,
       })
       .from(posts)
-      .where(eq(posts.id, input.id))
+      .where(eq(posts.id, parsedSourcePostId))
       .limit(1);
 
     if (!sourcePost) {
@@ -1062,7 +1145,12 @@ export async function updatePostEnglishContent(input: {
     const [duplicatedPost] = await db
       .select({ id: posts.id })
       .from(posts)
-      .where(and(eq(posts.slug, normalizedSlug), ne(posts.id, existingEnglishPost?.id ?? -1)))
+      .where(
+        and(
+          eq(posts.slug, normalizedSlug),
+          ne(posts.id, existingEnglishPost?.id ?? -1),
+        ),
+      )
       .limit(1);
 
     if (duplicatedPost) {
@@ -1124,7 +1212,6 @@ export async function updatePostEnglishContent(input: {
       revalidationTags: [
         cacheTags.post(post.id),
         cacheTags.postSlug(post.slug),
-        cacheTags.postSlug(post.slug),
         cacheTags.category(post.categoryId),
       ],
     });
@@ -1142,10 +1229,12 @@ export async function updatePostEnglishContent(input: {
 export async function deletePostById(id: number) {
   try {
     await requireAdminSession();
+    const postId = parseIntegerId(id);
+    if (postId === null) return { error: "文章 ID 不正确" };
 
     const [deletedPost] = await db
       .delete(posts)
-      .where(eq(posts.id, id))
+      .where(eq(posts.id, postId))
       .returning({
         id: posts.id,
         slug: posts.slug,
@@ -1157,8 +1246,11 @@ export async function deletePostById(id: number) {
       return { error: "文章不存在或已被删除" };
     }
 
-    const [translationSourcePost] = deletedPost.translationSourcePostId
-      ? await db
+    const metadataWarnings: string[] = [];
+    let translationSourcePost: PostCacheIdentity | undefined;
+    if (deletedPost.translationSourcePostId) {
+      try {
+        [translationSourcePost] = await db
           .select({
             id: posts.id,
             slug: posts.slug,
@@ -1166,40 +1258,25 @@ export async function deletePostById(id: number) {
           })
           .from(posts)
           .where(eq(posts.id, deletedPost.translationSourcePostId))
-          .limit(1)
-      : [];
+          .limit(1);
+      } catch (error) {
+        console.error("文章已删除，但关联原文信息读取失败:", error);
+        metadataWarnings.push("文章已删除，但关联原文缓存可能延迟刷新");
+      }
+    }
 
-    await syncImageReferencesForPost(deletedPost.id);
-    revalidateImageAssetList();
-    revalidatePostWorkbenches();
-    revalidateSiteContent([
-      cacheTags.post(deletedPost.id),
-      cacheTags.postSlug(deletedPost.slug),
-      cacheTags.category(deletedPost.categoryId),
-      ...(translationSourcePost
-        ? [
-            cacheTags.post(translationSourcePost.id),
-            cacheTags.postSlug(translationSourcePost.slug),
-            cacheTags.category(translationSourcePost.categoryId),
-          ]
-        : []),
-    ]);
-    await notifyPublicWebCache("post.changed", {
-      postIds: [
-        deletedPost.id,
-        ...(translationSourcePost ? [translationSourcePost.id] : []),
-      ],
-      postSlugs: [
-        deletedPost.slug,
-        ...(translationSourcePost ? [translationSourcePost.slug] : []),
-      ],
-      categoryIds: [
-        deletedPost.categoryId,
-        ...(translationSourcePost ? [translationSourcePost.categoryId] : []),
-      ],
+    const maintenanceWarnings = await runPostDeletionMaintenance({
+      deletedPosts: [deletedPost],
+      translationSourcePosts: translationSourcePost
+        ? [translationSourcePost]
+        : [],
+      cleanup: () => syncImageReferencesForPost(deletedPost.id),
     });
 
-    return { data: "删除文章成功" };
+    return {
+      data: "删除文章成功",
+      warnings: [...metadataWarnings, ...maintenanceWarnings],
+    };
   } catch (error) {
     return { error: "删除文章失败", message: getErrorMessage(error) };
   }
@@ -1209,7 +1286,7 @@ export async function deletePostsByIds(ids: number[]) {
   try {
     await requireAdminSession();
 
-    const validIds = ids.filter((id) => Number.isInteger(id) && id > 0);
+    const validIds = normalizePostIds(ids);
 
     if (validIds.length === 0) {
       return { data: 0 };
@@ -1225,12 +1302,6 @@ export async function deletePostsByIds(ids: number[]) {
         translationSourcePostId: posts.translationSourcePostId,
       });
 
-    if (deletedPosts.length > 0) {
-      await deleteImageReferencesForPosts(deletedPosts.map((post) => post.id));
-      revalidateImageAssetList();
-      revalidatePostWorkbenches();
-    }
-
     const translationSourceIds = [
       ...new Set(
         deletedPosts
@@ -1238,46 +1309,40 @@ export async function deletePostsByIds(ids: number[]) {
           .filter((id): id is number => typeof id === "number"),
       ),
     ];
-    const translationSourcePosts =
-      translationSourceIds.length > 0
-        ? await db
-            .select({
-              id: posts.id,
-              slug: posts.slug,
-              categoryId: posts.categoryId,
-            })
-            .from(posts)
-            .where(inArray(posts.id, translationSourceIds))
+    const metadataWarnings: string[] = [];
+    let translationSourcePosts: PostCacheIdentity[] = [];
+    if (translationSourceIds.length > 0) {
+      try {
+        translationSourcePosts = await db
+          .select({
+            id: posts.id,
+            slug: posts.slug,
+            categoryId: posts.categoryId,
+          })
+          .from(posts)
+          .where(inArray(posts.id, translationSourceIds));
+      } catch (error) {
+        console.error("文章已批量删除，但关联原文信息读取失败:", error);
+        metadataWarnings.push("部分关联原文缓存可能延迟刷新");
+      }
+    }
+
+    const maintenanceWarnings =
+      deletedPosts.length > 0
+        ? await runPostDeletionMaintenance({
+            deletedPosts,
+            translationSourcePosts,
+            cleanup: () =>
+              deleteImageReferencesForPosts(
+                deletedPosts.map((post) => post.id),
+              ),
+          })
         : [];
 
-    revalidateSiteContent([
-      ...deletedPosts.flatMap((post) => [
-        cacheTags.post(post.id),
-        cacheTags.postSlug(post.slug),
-        cacheTags.category(post.categoryId),
-      ]),
-      ...translationSourcePosts.flatMap((post) => [
-        cacheTags.post(post.id),
-        cacheTags.postSlug(post.slug),
-        cacheTags.category(post.categoryId),
-      ]),
-    ]);
-    await notifyPublicWebCache("post.changed", {
-      postIds: [
-        ...deletedPosts.map((post) => post.id),
-        ...translationSourcePosts.map((post) => post.id),
-      ],
-      postSlugs: [
-        ...deletedPosts.map((post) => post.slug),
-        ...translationSourcePosts.map((post) => post.slug),
-      ],
-      categoryIds: [
-        ...deletedPosts.map((post) => post.categoryId),
-        ...translationSourcePosts.map((post) => post.categoryId),
-      ],
-    });
-
-    return { data: deletedPosts.length };
+    return {
+      data: deletedPosts.length,
+      warnings: [...metadataWarnings, ...maintenanceWarnings],
+    };
   } catch (error) {
     return {
       error: "批量删除文章失败",
@@ -1292,6 +1357,9 @@ export async function updatePostTags({
 }: UpdatePostTagsParams) {
   try {
     await requireAdminSession();
+    const parsedPostId = parseIntegerId(postId);
+    if (parsedPostId === null) return { error: "文章 ID 不正确" };
+
     const uniqueNewTags = Array.from(
       new Map(
         newTags
@@ -1321,7 +1389,7 @@ export async function updatePostTags({
       const [targetPost] = await tx
         .select({ id: posts.id, language: posts.language })
         .from(posts)
-        .where(eq(posts.id, postId))
+        .where(eq(posts.id, parsedPostId))
         .limit(1);
 
       if (!targetPost) {
@@ -1333,6 +1401,10 @@ export async function updatePostTags({
 
       for (const tag of uniqueNewTags) {
         const { id, name, slug } = tag.tag;
+        const parsedTagId = id === undefined ? null : parseIntegerId(id);
+        if (id !== undefined && parsedTagId === null) {
+          throw new Error(`标签 ID 无效：${name}`);
+        }
         if (
           isEnglishPost &&
           (/\p{Script=Han}/u.test(name) || !/^[a-z0-9-]+$/.test(slug))
@@ -1340,11 +1412,11 @@ export async function updatePostTags({
           throw new Error(`英文文章不能使用中文标签：${name}`);
         }
 
-        const [existingById] = id
+        const [existingById] = parsedTagId
           ? await tx
               .select({ id: tags.id })
               .from(tags)
-              .where(eq(tags.id, id))
+              .where(eq(tags.id, parsedTagId))
               .limit(1)
           : [];
         if (existingById) {
@@ -1401,14 +1473,14 @@ export async function updatePostTags({
 
       const uniqueTagIds = Array.from(new Set(tagIds));
 
-      await tx.delete(postTags).where(eq(postTags.postId, postId));
+      await tx.delete(postTags).where(eq(postTags.postId, parsedPostId));
 
       if (uniqueTagIds.length > 0) {
         await tx
           .insert(postTags)
           .values(
             uniqueTagIds.map((tagId) => ({
-              postId,
+              postId: parsedPostId,
               tagId,
             })),
           )
@@ -1423,7 +1495,7 @@ export async function updatePostTags({
         categoryId: posts.categoryId,
       })
       .from(posts)
-      .where(eq(posts.id, postId))
+      .where(eq(posts.id, parsedPostId))
       .limit(1);
 
     const warnings: string[] = [];
@@ -1435,7 +1507,7 @@ export async function updatePostTags({
           cacheTags.category(post.categoryId),
           cacheTags.tags,
         ]);
-        await notifyPublicWebCache("post.changed", {
+        schedulePublicWebCache("post.changed", {
           postIds: [post.id],
           postSlugs: [post.slug],
           categoryIds: [post.categoryId],

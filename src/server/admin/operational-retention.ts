@@ -1,5 +1,6 @@
 import { and, inArray, lt, notExists, sql } from "drizzle-orm";
 
+import { isPostgresUndefinedTableError } from "@fwqgo/core/postgres-error";
 import { structuredLog } from "@fwqgo/core/structured-log";
 import { db } from "@fwqgo/db";
 import {
@@ -26,6 +27,22 @@ function cutoff(days: number, now: Date) {
   return new Date(now.getTime() - days * DAY_MS);
 }
 
+async function deleteExpiredAdminAuditLogs(auditCutoff: Date) {
+  try {
+    return await db
+      .delete(adminAuditLogs)
+      .where(lt(adminAuditLogs.createdAt, auditCutoff))
+      .returning({ id: adminAuditLogs.id });
+  } catch (error) {
+    if (!isPostgresUndefinedTableError(error, "admin_audit_logs")) throw error;
+    structuredLog("warn", "maintenance.audit_retention_skipped", {
+      reason: "admin_audit_logs table is not migrated",
+      error,
+    });
+    return [];
+  }
+}
+
 export async function runOperationalRetention(now = new Date()) {
   const aiCutoff = cutoff(daysFromEnv("AI_TASK_RETENTION_DAYS", 180), now);
   const coverCutoff = cutoff(daysFromEnv("COVER_TASK_RETENTION_DAYS", 90), now);
@@ -38,7 +55,7 @@ export async function runOperationalRetention(now = new Date()) {
     now,
   );
 
-  const [aiTasks, coverTasks, providerRuns, providerCandidates, auditLogs] =
+  const [aiTasks, coverTasks, providerRuns, providerCandidates] =
     await db.transaction(async (tx) => {
       const ai = await tx
         .delete(aiRewriteTasks)
@@ -98,11 +115,6 @@ export async function runOperationalRetention(now = new Date()) {
           ),
         )
         .returning({ id: providerOfferCandidates.id });
-      const audits = await tx
-        .delete(adminAuditLogs)
-        .where(lt(adminAuditLogs.createdAt, auditCutoff))
-        .returning({ id: adminAuditLogs.id });
-
       await tx.delete(sourceMaterials).where(
         and(
           inArray(sourceMaterials.status, [
@@ -127,8 +139,9 @@ export async function runOperationalRetention(now = new Date()) {
         ),
       );
 
-      return [ai, covers, runs, candidates, audits] as const;
+      return [ai, covers, runs, candidates] as const;
     });
+  const auditLogs = await deleteExpiredAdminAuditLogs(auditCutoff);
 
   const result = {
     aiTasks: aiTasks.length,

@@ -8,7 +8,11 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { reserveBoundedMapCapacity } from "@fwqgo/core/bounded-map";
-import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
+import {
+  formPostgresIntegerIdSchema,
+  postgresIntegerIdSchema,
+} from "@fwqgo/core/postgres-id";
+import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 import { db } from "@fwqgo/db";
 import { imageCoverGenerationTasks, posts } from "@fwqgo/db/schema";
 import { generateArticleCoverImage } from "@/server/images/generated-cover";
@@ -27,19 +31,26 @@ import {
 } from "@/lib/admin-action-result";
 
 const coverSchema = z.object({
-  postId: z.coerce.number().int().positive().optional(),
+  postId: formPostgresIntegerIdSchema.optional(),
   title: z.string().trim().min(1, "标题不能为空"),
   description: z.string().trim().optional(),
   keywords: z.string().trim().optional(),
   content: z.string().optional(),
   fileSlug: z.string().trim().optional(),
   language: z.enum(["zh", "en"]).default("zh"),
-  configId: z.coerce.number().int().positive().optional(),
+  configId: formPostgresIntegerIdSchema.optional(),
 });
 
 const batchCoverSchema = z.object({
-  postIds: z.array(z.coerce.number().int().positive()).min(1).max(20),
+  postIds: z.array(formPostgresIntegerIdSchema).min(1).max(20),
 });
+
+const coverBatchIdSchema = z.string().trim().uuid("封面生成批次号无效");
+
+function parseTaskId(taskId: number) {
+  const parsed = postgresIntegerIdSchema.safeParse(taskId);
+  return parsed.success ? parsed.data : null;
+}
 
 const finalizedCoverGenerationBatches = new Set<string>();
 
@@ -365,7 +376,9 @@ export async function batchGenerateArticleCoverImagesAction(input: {
         ),
       );
     const activePostIds = new Set(activeTaskRows.map((task) => task.postId));
-    const queuedPostRows = postRows.filter((post) => !activePostIds.has(post.id));
+    const queuedPostRows = postRows.filter(
+      (post) => !activePostIds.has(post.id),
+    );
 
     if (queuedPostRows.length === 0) {
       return {
@@ -423,8 +436,9 @@ export async function batchGenerateArticleCoverImagesAction(input: {
 export async function retryCoverGenerationTaskAction(taskId: number) {
   try {
     await requireAdminSession();
+    const parsedTaskId = parseTaskId(taskId);
 
-    if (!Number.isInteger(taskId) || taskId <= 0) {
+    if (parsedTaskId === null) {
       return adminActionFailure(new Error("任务 ID 无效"), {
         title: "恢复封面生成任务失败",
         suggestion: "请从任务中心重新打开任务详情。",
@@ -434,7 +448,7 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
     const [existingTask] = await db
       .select({ status: imageCoverGenerationTasks.status })
       .from(imageCoverGenerationTasks)
-      .where(eq(imageCoverGenerationTasks.id, taskId))
+      .where(eq(imageCoverGenerationTasks.id, parsedTaskId))
       .limit(1);
 
     if (
@@ -485,7 +499,7 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
       .set(retryValues)
       .where(
         and(
-          eq(imageCoverGenerationTasks.id, taskId),
+          eq(imageCoverGenerationTasks.id, parsedTaskId),
           eq(imageCoverGenerationTasks.status, existingTask.status),
         ),
       )
@@ -499,7 +513,7 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
     }
 
     await ensureCoverGenerationWorker();
-    revalidateCoverGenerationTaskPaths(taskId);
+    revalidateCoverGenerationTaskPaths(parsedTaskId);
     return adminActionSuccess(
       serializeCoverTask(task),
       defaultConfig
@@ -518,8 +532,9 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
 export async function cancelCoverGenerationTaskAction(taskId: number) {
   try {
     await requireAdminSession();
+    const parsedTaskId = parseTaskId(taskId);
 
-    if (!Number.isInteger(taskId) || taskId <= 0) {
+    if (parsedTaskId === null) {
       return adminActionFailure(new Error("任务 ID 无效"), {
         title: "取消封面生成任务失败",
         suggestion: "请从任务中心重新打开任务详情。",
@@ -540,7 +555,7 @@ export async function cancelCoverGenerationTaskAction(taskId: number) {
       })
       .where(
         and(
-          eq(imageCoverGenerationTasks.id, taskId),
+          eq(imageCoverGenerationTasks.id, parsedTaskId),
           eq(imageCoverGenerationTasks.status, "pending"),
         ),
       )
@@ -558,7 +573,7 @@ export async function cancelCoverGenerationTaskAction(taskId: number) {
       );
     }
 
-    revalidateCoverGenerationTaskPaths(taskId);
+    revalidateCoverGenerationTaskPaths(parsedTaskId);
     return adminActionSuccess(serializeCoverTask(task), "封面生成任务已取消");
   } catch (error) {
     const readableError = formatCoverGenerationError(error);
@@ -572,8 +587,9 @@ export async function cancelCoverGenerationTaskAction(taskId: number) {
 export async function deleteCoverGenerationTaskAction(taskId: number) {
   try {
     await requireAdminSession();
+    const parsedTaskId = parseTaskId(taskId);
 
-    if (!Number.isInteger(taskId) || taskId <= 0) {
+    if (parsedTaskId === null) {
       return adminActionFailure(new Error("任务 ID 无效"), {
         title: "删除封面生成任务失败",
         suggestion: "请从任务中心重新打开任务后再删除。",
@@ -588,7 +604,7 @@ export async function deleteCoverGenerationTaskAction(taskId: number) {
         status: imageCoverGenerationTasks.status,
       })
       .from(imageCoverGenerationTasks)
-      .where(eq(imageCoverGenerationTasks.id, taskId))
+      .where(eq(imageCoverGenerationTasks.id, parsedTaskId))
       .limit(1);
 
     if (!existingTask) {
@@ -609,7 +625,7 @@ export async function deleteCoverGenerationTaskAction(taskId: number) {
       .delete(imageCoverGenerationTasks)
       .where(
         and(
-          eq(imageCoverGenerationTasks.id, taskId),
+          eq(imageCoverGenerationTasks.id, parsedTaskId),
           eq(imageCoverGenerationTasks.status, existingTask.status),
         ),
       )
@@ -622,7 +638,7 @@ export async function deleteCoverGenerationTaskAction(taskId: number) {
       });
     }
 
-    revalidateCoverGenerationTaskPaths(taskId);
+    revalidateCoverGenerationTaskPaths(parsedTaskId);
     return adminActionSuccess(
       {
         id: existingTask.id,
@@ -644,10 +660,7 @@ export async function getCoverGenerationBatchStatusAction(batchId: string) {
   try {
     await requireAdminSession();
 
-    const normalizedBatchId = batchId.trim();
-    if (!normalizedBatchId) {
-      return { success: false, error: "批次号不能为空" };
-    }
+    const normalizedBatchId = coverBatchIdSchema.parse(batchId);
 
     const ephemeralTasks = ephemeralCoverBatches.get(normalizedBatchId);
     if (ephemeralTasks) {
@@ -712,10 +725,7 @@ export async function finalizeCoverGenerationBatchAction(batchId: string) {
   try {
     await requireAdminSession();
 
-    const normalizedBatchId = batchId.trim();
-    if (!normalizedBatchId) {
-      return { success: false, error: "批次号不能为空" };
-    }
+    const normalizedBatchId = coverBatchIdSchema.parse(batchId);
 
     if (finalizedCoverGenerationBatches.has(normalizedBatchId)) {
       return { success: true, revalidated: false };
@@ -767,7 +777,7 @@ export async function finalizeCoverGenerationBatchAction(batchId: string) {
 
     if (tags.length > 0) {
       revalidateSiteContent(tags);
-      await notifyPublicWebCache("image.changed", {
+      schedulePublicWebCache("image.changed", {
         postIds: succeededPostIds,
       });
     }

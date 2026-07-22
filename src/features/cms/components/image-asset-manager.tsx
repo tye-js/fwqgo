@@ -277,6 +277,13 @@ export function ImageAssetManager({
       toast.error(result.error);
       return;
     }
+    if (result.data.warnings.length > 0) {
+      toast.warning(
+        result.data.warnings[0]?.warning ??
+          "历史图片已导入，但存在需要人工检查的警告",
+      );
+      return;
+    }
     toast.success(
       `导入完成：新增 ${result.data.imported}，跳过 ${result.data.skipped}`,
     );
@@ -294,6 +301,13 @@ export function ImageAssetManager({
       if (failedCount > 0) {
         toast.warning(
           `历史图片转换完成：成功 ${result.data.converted}，跳过 ${result.data.skipped}，失败 ${failedCount}。首个失败：${result.data.failed[0]?.path} ${result.data.failed[0]?.error}`,
+        );
+        return;
+      }
+
+      if (result.data.warnings.length > 0) {
+        toast.warning(
+          `历史图片已转换：成功 ${result.data.converted}，跳过 ${result.data.skipped}；${result.data.warnings[0]?.warning ?? "存在需要人工检查的警告"}`,
         );
         return;
       }
@@ -329,6 +343,14 @@ export function ImageAssetManager({
     if (failedCount > 0) {
       toast.warning(
         `${message}，失败 ${failedCount}。首个失败：${result.data.failed[0]?.path} ${result.data.failed[0]?.error}`,
+      );
+      return;
+    }
+
+    if (result.data.warnings.length > 0) {
+      toast.warning(
+        result.data.warnings[0]?.warning ??
+          "图片资产修复已完成，但存在需要人工检查的警告",
       );
       return;
     }
@@ -378,6 +400,11 @@ export function ImageAssetManager({
       return;
     }
 
+    if (result.warnings?.length) {
+      toast.warning(result.warnings[0]?.warning ?? "引用已更新，但存在警告");
+      return;
+    }
+
     toast.success("引用已更新");
   }
 
@@ -417,7 +444,14 @@ export function ImageAssetManager({
       return;
     }
 
-    toast.success(`图片已重命名：${result.data.path}`);
+    if (result.warnings?.length) {
+      toast.warning(
+        result.warnings[0]?.warning ??
+          `图片已重命名：${result.data.path}，但存在警告`,
+      );
+    } else {
+      toast.success(`图片已重命名：${result.data.path}`);
+    }
     setFileNameById((prev) => {
       const next = { ...prev };
       delete next[image.id];
@@ -671,7 +705,10 @@ export function ImageAssetManager({
                         aria-label={`复制图片 URL：${image.path}`}
                         title="复制图片 URL"
                       >
-                        <Copy className="size-3.5 shrink-0" aria-hidden="true" />
+                        <Copy
+                          className="size-3.5 shrink-0"
+                          aria-hidden="true"
+                        />
                         <span className="truncate">{image.path}</span>
                       </button>
                       <div className="flex flex-wrap gap-1.5">
@@ -924,7 +961,10 @@ export function ImageAssetManager({
                             aria-label={`复制图片 URL：${image.path}`}
                             title="复制图片 URL"
                           >
-                            <Copy className="size-3.5 shrink-0" aria-hidden="true" />
+                            <Copy
+                              className="size-3.5 shrink-0"
+                              aria-hidden="true"
+                            />
                             <span className="truncate">{image.path}</span>
                           </button>
                           <div className="flex items-center gap-2">

@@ -61,7 +61,12 @@ function getRoutes(distDir) {
  *   allowedRoutes?: string[];
  * }} options
  */
-function assertNoRoutes({ appName, routes, blockedPrefixes, allowedRoutes = [] }) {
+function assertNoRoutes({
+  appName,
+  routes,
+  blockedPrefixes,
+  allowedRoutes = [],
+}) {
   const allowed = new Set(allowedRoutes);
   const invalidRoutes = routes.filter(
     (route) =>
@@ -91,7 +96,6 @@ assertNoRoutes({
     "/signup",
     "/api/auth",
     "/api/upload",
-    "/api/tags/search",
     "/ai-rewrite",
     "/ai-tasks",
     "/collect",

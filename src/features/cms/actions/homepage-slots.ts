@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { isHttpHref, isInternalHref } from "@fwqgo/core/utils";
+import {
+  isHttpHref,
+  isInternalHref,
+  MAX_POSTGRES_INTEGER,
+  parsePostgresIntegerId,
+} from "@fwqgo/core/utils";
 import { defineAdminAction } from "@/features/cms/lib/define-admin-action";
 import {
   deleteHomepageSlot,
@@ -12,20 +17,34 @@ import {
   homepageSlotPlacements,
   saveHomepageSlot,
 } from "@/server/homepage/homepage-slots";
-import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
+import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 
 const nullableString = z.preprocess(
   (value) => (typeof value === "string" && value.trim() ? value.trim() : null),
   z.string().nullable(),
 );
 
+const postgresIntegerId = z
+  .number()
+  .int()
+  .positive()
+  .max(MAX_POSTGRES_INTEGER, "ID 超出数据库范围");
+
 const nullableId = z.preprocess((value) => {
-  if (value === null || value === undefined || value === "" || value === "none") {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    value === "none"
+  ) {
     return null;
   }
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : value;
-}, z.number().int().positive().nullable());
+  const parsed =
+    typeof value === "string" || typeof value === "number"
+      ? parsePostgresIntegerId(value)
+      : null;
+  return parsed ?? value;
+}, postgresIntegerId.nullable());
 
 const nullableDate = z.preprocess((value) => {
   if (value === null || value === undefined || value === "") return null;
@@ -64,16 +83,32 @@ const homepageSlotInputSchema = z
   })
   .superRefine((value, context) => {
     if (value.contentType === "post" && !value.postId) {
-      context.addIssue({ code: "custom", path: ["postId"], message: "请选择文章" });
+      context.addIssue({
+        code: "custom",
+        path: ["postId"],
+        message: "请选择文章",
+      });
     }
     if (value.contentType === "offer" && !value.offerId) {
-      context.addIssue({ code: "custom", path: ["offerId"], message: "请选择套餐" });
+      context.addIssue({
+        code: "custom",
+        path: ["offerId"],
+        message: "请选择套餐",
+      });
     }
     if (value.contentType === "image_link" && !value.imageAssetId) {
-      context.addIssue({ code: "custom", path: ["imageAssetId"], message: "请选择图片" });
+      context.addIssue({
+        code: "custom",
+        path: ["imageAssetId"],
+        message: "请选择图片",
+      });
     }
     if (value.contentType === "image_link" && !value.targetUrl) {
-      context.addIssue({ code: "custom", path: ["targetUrl"], message: "图片推广位需要目标链接" });
+      context.addIssue({
+        code: "custom",
+        path: ["targetUrl"],
+        message: "图片推广位需要目标链接",
+      });
     }
     if (
       value.startsAt &&
@@ -113,7 +148,7 @@ const saveHomepageSlotMutation = defineAdminAction({
       enabled: input.enabled,
     });
     revalidatePath("/collect/homepage-promoted");
-    await notifyPublicWebCache("homepage.changed");
+    schedulePublicWebCache("homepage.changed");
     return result;
   },
   successMessage: "首页推广位已保存",
@@ -125,11 +160,11 @@ const saveHomepageSlotMutation = defineAdminAction({
 const deleteHomepageSlotMutation = defineAdminAction({
   action: "homepage_slot.delete",
   entityType: "homepage_slot",
-  parse: (id: number) => z.number().int().positive("推广位 ID 无效").parse(id),
+  parse: (id: number) => postgresIntegerId.parse(id),
   execute: async (id) => {
     const result = await deleteHomepageSlot(id);
     revalidatePath("/collect/homepage-promoted");
-    await notifyPublicWebCache("homepage.changed");
+    schedulePublicWebCache("homepage.changed");
     return result;
   },
   successMessage: "首页推广位已删除",
@@ -138,7 +173,9 @@ const deleteHomepageSlotMutation = defineAdminAction({
   entityId: (id) => id,
 });
 
-export async function saveHomepageSlotAction(rawInput: HomepageSlotActionInput) {
+export async function saveHomepageSlotAction(
+  rawInput: HomepageSlotActionInput,
+) {
   return saveHomepageSlotMutation(rawInput);
 }
 

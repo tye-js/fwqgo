@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
 import type { Element } from "domhandler";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { enqueueAiRewriteTask } from "@/server/ai/rewrite-task-runner";
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
@@ -370,23 +370,36 @@ export async function pullSourceSiteToAiTasks(input: SourceSitePullInput) {
   const filtered = await filterExistingTasks(discoveredUrls);
   const urls = filtered.newUrls.slice(0, limit);
   const overflowSkippedUrls = filtered.newUrls.slice(limit);
-  const skippedUrls = [...filtered.existingUrls, ...overflowSkippedUrls];
-  const skippedCount = skippedUrls.length;
+  const initiallySkippedUrls = [
+    ...filtered.existingUrls,
+    ...overflowSkippedUrls,
+  ];
 
   if (urls.length === 0) {
     return {
       discoveredCount: discoveredUrls.length,
       createdCount: 0,
-      skippedCount,
+      skippedCount: initiallySkippedUrls.length,
       discoveredUrls,
-      skippedUrls,
+      skippedUrls: initiallySkippedUrls,
       tasks: [],
     };
   }
 
   const tasks = [];
+  const concurrentlySkippedUrls: string[] = [];
   for (const sourceUrl of urls) {
     const task = await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${sourceUrl}, 0))`,
+      );
+      const [existingTask] = await tx
+        .select({ id: aiRewriteTasks.id })
+        .from(aiRewriteTasks)
+        .where(eq(aiRewriteTasks.sourceUrl, sourceUrl))
+        .limit(1);
+      if (existingTask) return null;
+
       const [material] = await tx
         .insert(sourceMaterials)
         .values({
@@ -434,6 +447,8 @@ export async function pullSourceSiteToAiTasks(input: SourceSitePullInput) {
 
     if (task) {
       tasks.push(task);
+    } else {
+      concurrentlySkippedUrls.push(sourceUrl);
     }
   }
 
@@ -441,10 +456,11 @@ export async function pullSourceSiteToAiTasks(input: SourceSitePullInput) {
     await enqueueAiRewriteTask(task.id);
   }
 
+  const skippedUrls = [...initiallySkippedUrls, ...concurrentlySkippedUrls];
   return {
     discoveredCount: discoveredUrls.length,
     createdCount: tasks.length,
-    skippedCount,
+    skippedCount: skippedUrls.length,
     discoveredUrls,
     skippedUrls,
     tasks,

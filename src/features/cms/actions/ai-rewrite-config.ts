@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { isPublicHttpUrl } from "@fwqgo/core/network-url";
+import { postgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
 import {
   aiProviderOptions,
   createAiRewriteConfig,
@@ -73,7 +74,7 @@ const updateAiRewriteConfigMutation = defineAdminAction({
   action: "ai_rewrite_config.update",
   entityType: "ai_rewrite_config",
   parse: (input: { id: number; formData: FormData }) => ({
-    id: z.number().int().positive("配置 ID 无效").parse(input.id),
+    id: postgresIntegerIdSchema.parse(input.id),
     config: parseConfigFormData(input.formData),
   }),
   execute: async ({ id, config }) => {
@@ -91,7 +92,7 @@ const updateAiRewriteConfigMutation = defineAdminAction({
 const deleteAiRewriteConfigMutation = defineAdminAction({
   action: "ai_rewrite_config.delete",
   entityType: "ai_rewrite_config",
-  parse: (id: number) => z.number().int().positive("配置 ID 无效").parse(id),
+  parse: (id: number) => postgresIntegerIdSchema.parse(id),
   execute: async (id) => {
     await deleteAiRewriteConfig(id);
     revalidatePath("/collect/ai-rewrite");
@@ -125,6 +126,6 @@ export async function deleteAiRewriteConfigAction(id: number) {
 
 export async function checkAiRewriteConfigStatusAction(id: number) {
   await requireAdminSession();
-  const configId = z.coerce.number().int().positive().parse(id);
+  const configId = postgresIntegerIdSchema.parse(id);
   return checkAiRewriteConfigStatus(configId);
 }

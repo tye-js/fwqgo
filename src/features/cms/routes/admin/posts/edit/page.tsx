@@ -18,6 +18,10 @@ import { PaginationComponent } from "@/features/shared/components/pagination";
 import { PostList } from "@/features/cms/components/posts-tables";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import {
+  boundOffsetPaginationByTotal,
+  normalizeOffsetPagination,
+} from "@fwqgo/core/pagination";
 import { parsePositiveInt } from "@fwqgo/core/utils";
 
 function parsePageNo(value: string | undefined) {
@@ -88,20 +92,11 @@ async function PostListWrapper({
   searchParamsPromise: Promise<PostListSearchParams>;
 }) {
   const searchParams = await searchParamsPromise;
-  const pageNo = parsePageNo(searchParams.pageNo);
+  const requestedPageNo = parsePageNo(searchParams.pageNo);
   const language = normalizePostLanguageFilter(searchParams.language);
   const query = searchParams.query?.trim().slice(0, 160) ?? "";
   const status = normalizePostStatusFilter(searchParams.status);
   const sort = normalizePostSort(searchParams.sort);
-  const { data: posts, error } = await getPosts({
-    pageNo,
-    pageSize: 15,
-    language,
-    query,
-    status,
-    sort,
-  });
-
   const { data: postCount, error: countError } = await getPostCount({
     language,
     query,
@@ -112,13 +107,27 @@ async function PostListWrapper({
       console.error("文章列表计数加载失败:", countLoadError);
       return { data: 0, error: getErrorMessage(countLoadError) };
     });
+  const pagination = boundOffsetPaginationByTotal(
+    normalizeOffsetPagination({
+      pageNo: requestedPageNo,
+      pageSize: 15,
+    }),
+    postCount ?? 0,
+  );
+  const { data: posts, error } = await getPosts({
+    pageNo: pagination.pageNo,
+    pageSize: pagination.pageSize,
+    language,
+    query,
+    status,
+    sort,
+  });
   const loadError = error
     ? getErrorMessage(error)
     : posts
       ? countError
       : "获取文章列表失败";
   const visiblePosts = posts ?? [];
-  const totalPage = Math.ceil((postCount ?? 0) / 15);
 
   return (
     <AdminPageShell title="文章库" showHeading={false}>
@@ -135,13 +144,16 @@ async function PostListWrapper({
           <LanguageFilter value={language} filters={{ query, status, sort }} />
         </div>
         <PostList
-          key={`${pageNo}:${language}:${query}:${status}:${sort}`}
+          key={`${pagination.pageNo}:${language}:${query}:${status}:${sort}`}
           posts={visiblePosts}
           initialQuery={query}
           defaultStatusFilter={status}
           initialSort={sort}
         />
-        <PaginationComponent pageNo={pageNo} totalPage={totalPage} />
+        <PaginationComponent
+          pageNo={pagination.pageNo}
+          totalPage={pagination.totalPage}
+        />
       </AdminSectionCard>
     </AdminPageShell>
   );

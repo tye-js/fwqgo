@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { isPublicHttpUrl } from "@fwqgo/core/network-url";
+import { postgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
 import {
   createImageGenerationConfig,
   deleteImageGenerationConfig,
@@ -80,7 +81,7 @@ const updateImageGenerationConfigMutation = defineAdminAction({
   action: "image_generation_config.update",
   entityType: "image_generation_config",
   parse: (input: { id: number; formData: FormData }) => ({
-    id: z.number().int().positive("配置 ID 无效").parse(input.id),
+    id: postgresIntegerIdSchema.parse(input.id),
     config: parseConfigFormData(input.formData),
   }),
   execute: async ({ id, config }) => {
@@ -97,7 +98,7 @@ const updateImageGenerationConfigMutation = defineAdminAction({
 const deleteImageGenerationConfigMutation = defineAdminAction({
   action: "image_generation_config.delete",
   entityType: "image_generation_config",
-  parse: (id: number) => z.number().int().positive("配置 ID 无效").parse(id),
+  parse: (id: number) => postgresIntegerIdSchema.parse(id),
   execute: async (id) => {
     const result = await deleteImageGenerationConfig(id);
     revalidateImageGenerationPages();

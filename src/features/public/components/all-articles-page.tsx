@@ -61,15 +61,18 @@ export async function AllArticlesPageContent({
   const pageNo = parsePositiveInt(params.pageNo);
   if (!pageNo) notFound();
 
-  const [{ data: articles, error }, { data: totalCount }, { data: latestPosts }] =
-    await Promise.all([
-      getPublishedPostsPage(pageNo, language),
-      getPublishedPostCount(language),
-      getLatestPostsForSidebar(language),
-    ]);
+  const [{ data: totalCount }, { data: latestPosts }] = await Promise.all([
+    getPublishedPostCount(language),
+    getLatestPostsForSidebar(language),
+  ]);
   const totalPage = Math.ceil((totalCount ?? 0) / 10);
 
   if (pageNo > Math.max(totalPage, 1)) notFound();
+
+  const { data: articles, error } = await getPublishedPostsPage(
+    pageNo,
+    language,
+  );
 
   const copy = pageCopy[language];
   if (error) {
@@ -145,10 +148,7 @@ export async function AllArticlesPageContent({
 
       <aside className="hidden xl:block">
         <div className="sticky top-24">
-          <LatestPostsSidebar
-            posts={latestPosts ?? []}
-            language={language}
-          />
+          <LatestPostsSidebar posts={latestPosts ?? []} language={language} />
         </div>
       </aside>
     </div>

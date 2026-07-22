@@ -12,6 +12,7 @@ import { adminBackgroundJobs, aiSourceSites } from "@fwqgo/db/schema";
 import {
   enqueueAdminBackgroundJob,
   registerAdminBackgroundJobRunner,
+  type BackgroundJobRunnerInput,
   wakeAdminBackgroundJobWorkerForRegisteredKeys,
 } from "@/server/admin/background-jobs";
 
@@ -32,16 +33,17 @@ async function getAiSourceSiteForRun(sourceSiteId: number) {
       rewriteStyleId: aiSourceSites.rewriteStyleId,
       limit: aiSourceSites.limit,
       enabled: aiSourceSites.enabled,
+      runGeneration: aiSourceSites.runGeneration,
     })
     .from(aiSourceSites)
     .where(eq(aiSourceSites.id, sourceSiteId))
     .limit(1);
 
   if (!site) {
-    throw new Error(`来源站配置不存在（ID: ${sourceSiteId}）`);
+    return null;
   }
   if (!site.enabled) {
-    throw new Error(`来源站已停用（ID: ${sourceSiteId}）`);
+    return null;
   }
 
   return site;
@@ -49,6 +51,7 @@ async function getAiSourceSiteForRun(sourceSiteId: number) {
 
 async function recordAiSourceSiteRunFailure(
   sourceSiteId: number,
+  runGeneration: number,
   error: unknown,
 ) {
   const message = getErrorMessage(error);
@@ -61,16 +64,54 @@ async function recordAiSourceSiteRunFailure(
       lastError: message,
       lastRunDetails: JSON.stringify({
         runAt: runAt.toISOString(),
+        state: "failed",
+        runGeneration,
         error: message,
       }),
       updatedAt: runAt,
     })
-    .where(eq(aiSourceSites.id, sourceSiteId));
+    .where(
+      and(
+        eq(aiSourceSites.id, sourceSiteId),
+        eq(aiSourceSites.runGeneration, runGeneration),
+      ),
+    );
 }
 
-export async function runAiSourceSiteInBackground(sourceSiteId: number) {
+export async function runAiSourceSiteInBackground(
+  sourceSiteId: number,
+  jobId?: number,
+) {
+  let runGeneration: number | null = null;
+
   try {
     const site = await getAiSourceSiteForRun(sourceSiteId);
+    if (!site) return;
+    runGeneration = site.runGeneration;
+    const startedAt = new Date();
+    const [claimedSite] = await db
+      .update(aiSourceSites)
+      .set({
+        lastRunAt: startedAt,
+        lastRunDetails: JSON.stringify({
+          runAt: startedAt.toISOString(),
+          state: "running",
+          jobId: jobId ?? null,
+          runGeneration,
+        }),
+        lastError: null,
+        updatedAt: startedAt,
+      })
+      .where(
+        and(
+          eq(aiSourceSites.id, sourceSiteId),
+          eq(aiSourceSites.enabled, true),
+          eq(aiSourceSites.runGeneration, runGeneration),
+        ),
+      )
+      .returning({ id: aiSourceSites.id });
+    if (!claimedSite) return;
+
     const result = await pullSourceSiteToAiTasks({
       siteUrl: site.siteUrl,
       feedUrl: site.feedUrl,
@@ -89,14 +130,24 @@ export async function runAiSourceSiteInBackground(sourceSiteId: number) {
         lastSkippedCount: result.skippedCount,
         lastRunDetails: JSON.stringify({
           runAt: runAt.toISOString(),
+          state: "succeeded",
+          runGeneration,
           ...result,
         }),
         lastError: null,
         updatedAt: runAt,
       })
-      .where(eq(aiSourceSites.id, sourceSiteId));
+      .where(
+        and(
+          eq(aiSourceSites.id, sourceSiteId),
+          eq(aiSourceSites.enabled, true),
+          eq(aiSourceSites.runGeneration, runGeneration),
+        ),
+      );
   } catch (error) {
-    await recordAiSourceSiteRunFailure(sourceSiteId, error);
+    if (runGeneration !== null) {
+      await recordAiSourceSiteRunFailure(sourceSiteId, runGeneration, error);
+    }
     throw error;
   }
 }
@@ -104,11 +155,11 @@ export async function runAiSourceSiteInBackground(sourceSiteId: number) {
 function createAiSourceSiteBackgroundJobRunner(input: {
   sourceSiteId: number;
   label: string;
-}) {
+}): BackgroundJobRunnerInput {
   return {
     key: getAiSourceSiteJobKey(input.sourceSiteId),
     label: input.label,
-    run: () => runAiSourceSiteInBackground(input.sourceSiteId),
+    run: ({ job }) => runAiSourceSiteInBackground(input.sourceSiteId, job.id),
   };
 }
 

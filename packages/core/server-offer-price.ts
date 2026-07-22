@@ -24,6 +24,23 @@ export type ServerOfferExchangeRates = Partial<
   Record<ServerOfferCurrency, number>
 >;
 
+export const MAX_SERVER_OFFER_STORED_AMOUNT = 9_999_999_999.99;
+
+export function isPersistableServerOfferAmount(
+  value: string | number | null | undefined,
+) {
+  if (value === null || value === undefined) return false;
+  const text = typeof value === "number" ? String(value) : value.trim();
+  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) return false;
+
+  const amount = Number(text);
+  return (
+    Number.isFinite(amount) &&
+    amount >= 0 &&
+    amount <= MAX_SERVER_OFFER_STORED_AMOUNT
+  );
+}
+
 export const FALLBACK_SERVER_OFFER_EXCHANGE_RATES: Readonly<
   Record<ServerOfferCurrency, number>
 > = {
@@ -53,18 +70,14 @@ function parseSpecNumber(value: string | undefined) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
-export function parseServerOfferMemoryMb(
-  value: string | null | undefined,
-) {
+export function parseServerOfferMemoryMb(value: string | null | undefined) {
   const match = value?.match(/([0-9]+(?:\.[0-9]+)?)\s*(GB|G|MB|M)\b/i);
   const amount = parseSpecNumber(match?.[1]);
   if (amount === null || !match?.[2]) return null;
   return Math.round(/g/i.test(match[2]) ? amount * 1024 : amount);
 }
 
-export function parseServerOfferStorageGb(
-  value: string | null | undefined,
-) {
+export function parseServerOfferStorageGb(value: string | null | undefined) {
   const match = value?.match(/([0-9]+(?:\.[0-9]+)?)\s*(TB|T|GB|G)\b/i);
   const amount = parseSpecNumber(match?.[1]);
   if (amount === null || !match?.[2]) return null;
@@ -82,9 +95,7 @@ export function parseServerOfferBandwidthMbps(
   return Math.round(/g/i.test(match[2]) ? amount * 1000 : amount);
 }
 
-export function parseServerOfferTrafficGb(
-  value: string | null | undefined,
-) {
+export function parseServerOfferTrafficGb(value: string | null | undefined) {
   return parseServerOfferStorageGb(value);
 }
 

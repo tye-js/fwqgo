@@ -1,6 +1,10 @@
 import { and, count, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
+import {
+  boundOffsetPaginationByTotal,
+  normalizeOffsetPagination,
+} from "@fwqgo/core/pagination";
 import { db } from "@fwqgo/db";
 import {
   aiRewriteTasks,
@@ -135,22 +139,16 @@ function normalizeUnifiedTaskStatus(
 }
 
 function normalizeUnifiedTaskListFilters(input: UnifiedTaskListFilters = {}) {
-  const pageNo =
-    Number.isInteger(input.pageNo) && (input.pageNo ?? 0) > 0
-      ? input.pageNo!
-      : 1;
-  const pageSize =
-    Number.isInteger(input.pageSize) && (input.pageSize ?? 0) > 0
-      ? Math.min(input.pageSize!, 100)
-      : 20;
+  const pagination = normalizeOffsetPagination({
+    pageNo: input.pageNo,
+    pageSize: input.pageSize,
+  });
 
   return {
     type: normalizeUnifiedTaskType(input.type),
     status: normalizeUnifiedTaskStatus(input.status),
     query: input.query?.trim().slice(0, 160) ?? "",
-    pageNo,
-    pageSize,
-    offset: (pageNo - 1) * pageSize,
+    ...pagination,
   };
 }
 
@@ -570,7 +568,6 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
   const shouldReadAi = filters.type === "all" || filters.type === "ai";
   const shouldReadCover = filters.type === "all" || filters.type === "cover";
   const shouldReadOffer = filters.type === "all" || filters.type === "offer";
-  const readLimit = filters.offset + filters.pageSize;
   const aiWhere = andMaybe(
     statusConditions(aiRewriteTasks.status, filters.status),
     filters.query
@@ -609,14 +606,61 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
       : undefined,
   );
 
-  const [
-    aiRows,
-    coverRows,
-    offerRows,
-    aiCountRows,
-    coverCountRows,
-    offerCountRows,
-  ] = await Promise.all([
+  const [aiCountRows, coverCountRows, offerCountRows] = await Promise.all([
+    shouldReadAi
+      ? db
+          .select({ value: count() })
+          .from(aiRewriteTasks)
+          .leftJoin(posts, eq(aiRewriteTasks.postId, posts.id))
+          .where(aiWhere)
+      : [],
+    shouldReadCover
+      ? db
+          .select({ value: count() })
+          .from(imageCoverGenerationTasks)
+          .leftJoin(posts, eq(imageCoverGenerationTasks.postId, posts.id))
+          .where(coverWhere)
+      : [],
+    shouldReadOffer
+      ? db
+          .select({ value: count() })
+          .from(providerMonitorRuns)
+          .innerJoin(
+            providerMonitors,
+            eq(providerMonitorRuns.monitorId, providerMonitors.id),
+          )
+          .innerJoin(
+            affServiceProviders,
+            eq(providerMonitors.providerId, affServiceProviders.id),
+          )
+          .where(offerWhere)
+      : [],
+  ]);
+  const totalCount =
+    (aiCountRows[0]?.value ?? 0) +
+    (coverCountRows[0]?.value ?? 0) +
+    (offerCountRows[0]?.value ?? 0);
+  const boundedPagination = boundOffsetPaginationByTotal(filters, totalCount);
+  const boundedFilters = { ...filters, ...boundedPagination };
+
+  if (totalCount === 0) {
+    return {
+      filters: boundedFilters,
+      totalCount: 0,
+      totalPage: 1,
+      items: [] as UnifiedTaskListItem[],
+    };
+  }
+
+  const readsMergedSources = filters.type === "all";
+  const readOffset = readsMergedSources ? 0 : boundedPagination.offset;
+  const readLimit = readsMergedSources
+    ? Math.min(
+        boundedPagination.offset + boundedPagination.pageSize,
+        totalCount,
+      )
+    : boundedPagination.pageSize;
+  const [aiRows, coverRows, offerRows] = await Promise.all([
     shouldReadAi
       ? db
           .select({
@@ -647,6 +691,7 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
             ),
             desc(aiRewriteTasks.id),
           )
+          .offset(readOffset)
           .limit(readLimit)
       : [],
     shouldReadCover
@@ -677,6 +722,7 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
             ),
             desc(imageCoverGenerationTasks.id),
           )
+          .offset(readOffset)
           .limit(readLimit)
       : [],
     shouldReadOffer
@@ -717,35 +763,8 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
             desc(providerMonitorRuns.startedAt),
             desc(providerMonitorRuns.id),
           )
+          .offset(readOffset)
           .limit(readLimit)
-      : [],
-    shouldReadAi
-      ? db
-          .select({ value: count() })
-          .from(aiRewriteTasks)
-          .leftJoin(posts, eq(aiRewriteTasks.postId, posts.id))
-          .where(aiWhere)
-      : [],
-    shouldReadCover
-      ? db
-          .select({ value: count() })
-          .from(imageCoverGenerationTasks)
-          .leftJoin(posts, eq(imageCoverGenerationTasks.postId, posts.id))
-          .where(coverWhere)
-      : [],
-    shouldReadOffer
-      ? db
-          .select({ value: count() })
-          .from(providerMonitorRuns)
-          .innerJoin(
-            providerMonitors,
-            eq(providerMonitorRuns.monitorId, providerMonitors.id),
-          )
-          .innerJoin(
-            affServiceProviders,
-            eq(providerMonitors.providerId, affServiceProviders.id),
-          )
-          .where(offerWhere)
       : [],
   ]);
 
@@ -824,16 +843,13 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
       (Number.isNaN(leftTime) ? 0 : leftTime)
     );
   });
-  const totalCount =
-    (aiCountRows[0]?.value ?? 0) +
-    (coverCountRows[0]?.value ?? 0) +
-    (offerCountRows[0]?.value ?? 0);
+  const sliceOffset = readsMergedSources ? boundedPagination.offset : 0;
 
   return {
-    filters,
+    filters: boundedFilters,
     totalCount,
-    totalPage: Math.max(1, Math.ceil(totalCount / filters.pageSize)),
-    items: items.slice(filters.offset, filters.offset + filters.pageSize),
+    totalPage: Math.max(1, boundedPagination.totalPage),
+    items: items.slice(sliceOffset, sliceOffset + boundedPagination.pageSize),
   };
 }
 

@@ -3,13 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { isHttpHref, isInternalHref } from "@fwqgo/core/utils";
 import {
+  isHttpHref,
+  isInternalHref,
+  MAX_POSTGRES_INTEGER,
+  parsePostgresIntegerId,
+} from "@fwqgo/core/utils";
+import {
+  isPersistableServerOfferAmount,
   SERVER_OFFER_BILLING_CYCLES,
   SERVER_OFFER_CURRENCIES,
 } from "@fwqgo/core/server-offer-price";
 import { SERVER_OFFER_KINDS } from "@fwqgo/core/server-offer-kind";
 import { defineAdminAction } from "@/features/cms/lib/define-admin-action";
+import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 import {
   bulkUpdateServerOffers,
   deleteServerOfferArticleRelation,
@@ -19,15 +26,26 @@ import {
   updateServerOffer,
 } from "@/server/offers/server-offers";
 
+const publicOfferTopicSlugs = [
+  "hong-kong",
+  "united-states",
+  "cheap-vps",
+] as const;
+
+function scheduleOfferCacheRefresh() {
+  schedulePublicWebCache("offer.changed", {
+    topicSlugs: [...publicOfferTopicSlugs],
+  });
+}
+
 const nullableString = z.preprocess(
   (value) => (typeof value === "string" && value.trim() ? value.trim() : null),
   z.string().nullable(),
 );
 
 const nullablePrice = nullableString.refine(
-  (value) =>
-    value === null || (Number.isFinite(Number(value)) && Number(value) >= 0),
-  "价格必须是大于或等于 0 的数字",
+  (value) => value === null || isPersistableServerOfferAmount(value),
+  "价格必须是 0 到 9999999999.99 之间且最多保留两位小数",
 );
 
 const nullableCurrency = z.preprocess((value) => {
@@ -53,6 +71,12 @@ const nullableInternalOrHttpUrl = nullableString.refine(
   "链接必须是站内路径或 http/https URL",
 );
 
+const postgresIntegerId = z
+  .number()
+  .int()
+  .positive()
+  .max(MAX_POSTGRES_INTEGER, "ID 超出数据库范围");
+
 const nullablePositiveInteger = z.preprocess((value) => {
   if (
     value === null ||
@@ -62,9 +86,12 @@ const nullablePositiveInteger = z.preprocess((value) => {
   ) {
     return null;
   }
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : value;
-}, z.number().int().positive().nullable());
+  const parsed =
+    typeof value === "string" || typeof value === "number"
+      ? parsePostgresIntegerId(value)
+      : null;
+  return parsed ?? value;
+}, postgresIntegerId.nullable());
 
 const nullableDate = z.preprocess((value) => {
   if (value === null || value === undefined || value === "") return null;
@@ -80,8 +107,8 @@ const offerPriceSchema = z.object({
     .string()
     .trim()
     .min(1, "请输入价格")
-    .refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0, {
-      message: "价格必须是大于或等于 0 的数字",
+    .refine(isPersistableServerOfferAmount, {
+      message: "价格必须是 0 到 9999999999.99 之间且最多保留两位小数",
     }),
   originalAmount: nullablePrice.optional(),
   currency: z.enum(SERVER_OFFER_CURRENCIES),
@@ -153,7 +180,7 @@ const updateOfferSchema = z.object({
 
 const bulkUpdateOfferSchema = z
   .object({
-    ids: z.array(z.number().int().positive()).min(1).max(500),
+    ids: z.array(postgresIntegerId).min(1).max(500),
     offerKind: z.enum(SERVER_OFFER_KINDS).optional(),
     status: z.enum(offerStatuses).optional(),
     visible: z.boolean().optional(),
@@ -173,8 +200,8 @@ const bulkUpdateOfferSchema = z
   );
 
 const offerArticleRelationSchema = z.object({
-  offerId: z.number().int().positive("套餐 ID 无效"),
-  postId: z.number().int().positive("请选择文章"),
+  offerId: postgresIntegerId,
+  postId: postgresIntegerId,
   relationType: z.enum(["review", "mention", "deal"]),
 });
 
@@ -208,8 +235,15 @@ function revalidateOfferPages() {
   revalidatePath("/servers/cheap-vps");
 }
 
-function parseUpdateOfferActionInput(input: { id: number; formData: FormData }) {
-  if (!Number.isInteger(input.id) || input.id <= 0) {
+function parseUpdateOfferActionInput(input: {
+  id: number;
+  formData: FormData;
+}) {
+  if (
+    !Number.isSafeInteger(input.id) ||
+    input.id <= 0 ||
+    input.id > MAX_POSTGRES_INTEGER
+  ) {
     throw new Error("套餐 ID 无效");
   }
 
@@ -246,10 +280,7 @@ function parseUpdateOfferActionInput(input: { id: number; formData: FormData }) 
         "锁定字段",
       ),
       validUntil: input.formData.get("validUntil"),
-      prices: parseJsonField(
-        input.formData.get("pricesJson"),
-        "多周期价格",
-      ),
+      prices: parseJsonField(input.formData.get("pricesJson"), "多周期价格"),
     }),
   };
 }
@@ -262,6 +293,7 @@ const saveServerOfferArticleRelation = defineAdminAction({
   execute: async (input) => {
     const result = await upsertServerOfferArticleRelation(input);
     revalidatePath("/servers/manage");
+    scheduleOfferCacheRefresh();
     return result;
   },
   successMessage: "套餐文章关系已保存",
@@ -273,11 +305,11 @@ const saveServerOfferArticleRelation = defineAdminAction({
 const deleteServerOfferArticleRelationMutation = defineAdminAction({
   action: "server_offer.article_relation.delete",
   entityType: "server_offer_article_relation",
-  parse: (sourceId: number) =>
-    z.number().int().positive("文章关系 ID 无效").parse(sourceId),
+  parse: (sourceId: number) => postgresIntegerId.parse(sourceId),
   execute: async (sourceId) => {
     const result = await deleteServerOfferArticleRelation(sourceId);
     revalidatePath("/servers/manage");
+    scheduleOfferCacheRefresh();
     return result;
   },
   successMessage: "套餐文章关系已删除",
@@ -294,6 +326,7 @@ const updateServerOfferMutation = defineAdminAction({
     const updated = await updateServerOffer(id, offer);
     if (!updated) throw new Error("套餐不存在");
     revalidateOfferPages();
+    scheduleOfferCacheRefresh();
     return updated;
   },
   successMessage: "套餐已更新",
@@ -305,15 +338,16 @@ const updateServerOfferMutation = defineAdminAction({
 const bulkUpdateServerOffersMutation = defineAdminAction({
   action: "server_offer.bulk_update",
   entityType: "server_offer",
-  parse: (input: BulkUpdateOfferActionInput): z.output<
-    typeof bulkUpdateOfferSchema
-  > => {
+  parse: (
+    input: BulkUpdateOfferActionInput,
+  ): z.output<typeof bulkUpdateOfferSchema> => {
     const parsed = bulkUpdateOfferSchema.parse(input);
     return { ...parsed, ids: [...new Set(parsed.ids)] };
   },
   execute: async (input) => {
     const result = await bulkUpdateServerOffers(input);
     revalidateOfferPages();
+    if (result.updated > 0) scheduleOfferCacheRefresh();
     return result;
   },
   successMessage: (result) => `已更新 ${result.updated} 条套餐`,

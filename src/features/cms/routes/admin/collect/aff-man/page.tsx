@@ -10,6 +10,10 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import AffManTable from "@/features/cms/components/affman-tables";
 import { PaginationComponent } from "@/features/shared/components/pagination";
+import {
+  boundOffsetPaginationByTotal,
+  normalizeOffsetPagination,
+} from "@fwqgo/core/pagination";
 import { parsePositiveInt } from "@fwqgo/core/utils";
 import {
   AdminSectionNav,
@@ -37,8 +41,8 @@ async function AffManList({
   }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const pageNo = parsePageNo(searchParams.pageNo);
-  const query = searchParams.query?.trim() ?? "";
+  const requestedPageNo = parsePageNo(searchParams.pageNo);
+  const query = searchParams.query?.trim().slice(0, 160) ?? "";
   const filter = ["all", "with-aff", "empty-aff"].includes(
     searchParams.filter ?? "",
   )
@@ -49,32 +53,32 @@ async function AffManList({
   )
     ? searchParams.sort!
     : "id-desc";
-  const result = await Promise.all([
-    getAffProviderList({
-      page: pageNo,
-      query,
-      filter,
-      sort,
-    }),
-    getAffProviderCount({ query, filter }),
-  ])
-    .then(([listResult, countResult]) => ({
-      data: listResult.data ?? [],
-      postCount: countResult.data ?? 0,
-      error: null,
-    }))
+  const countResult = await getAffProviderCount({ query, filter })
+    .then((result) => ({ data: result.data ?? 0, error: null }))
     .catch((error: unknown) => {
-      console.error("返利商家管理页加载失败:", error);
-      return { data: [], postCount: 0, error: getErrorMessage(error) };
+      console.error("返利商家管理页计数加载失败:", error);
+      return { data: 0, error: getErrorMessage(error) };
     });
-  const { data, postCount, error: loadError } = result;
-  const totalPage = Math.ceil((postCount ?? 0) / 20);
+  const pagination = boundOffsetPaginationByTotal(
+    normalizeOffsetPagination({ pageNo: requestedPageNo, pageSize: 20 }),
+    countResult.data,
+  );
+  const listResult = await getAffProviderList({
+    page: pagination.pageNo,
+    pageSize: pagination.pageSize,
+    query,
+    filter,
+    sort,
+  })
+    .then((result) => ({ data: result.data ?? [], error: null }))
+    .catch((error: unknown) => {
+      console.error("返利商家管理页列表加载失败:", error);
+      return { data: [], error: getErrorMessage(error) };
+    });
+  const loadError = listResult.error ?? countResult.error;
 
   return (
-    <AdminPageShell
-      badge="采集配置"
-      title="返利商家管理"
-    >
+    <AdminPageShell badge="采集配置" title="返利商家管理">
       <AdminSectionNav
         label="链接管理"
         currentHref="/collect/aff-man"
@@ -90,13 +94,16 @@ async function AffManList({
       ) : null}
       <AdminSectionCard>
         <AffManTable
-          key={`${query}-${filter}-${sort}`}
-          data={data}
+          key={`${pagination.pageNo}-${query}-${filter}-${sort}`}
+          data={listResult.data}
           initialQuery={query}
           initialFilter={filter}
           initialSort={sort}
         />
-        <PaginationComponent pageNo={pageNo} totalPage={totalPage} />
+        <PaginationComponent
+          pageNo={pagination.pageNo}
+          totalPage={pagination.totalPage}
+        />
       </AdminSectionCard>
     </AdminPageShell>
   );

@@ -4,8 +4,9 @@ import { db } from "@fwqgo/db";
 import { postTags } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
+import { parsePostgresIntegerId } from "@fwqgo/core/utils";
 import { getErrorMessage } from "@/lib/admin-action-result";
-import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
+import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 
 interface CreatePostTagsInput {
   postId: number;
@@ -15,8 +16,9 @@ interface CreatePostTagsInput {
 export async function createPostTags({ postId, tags }: CreatePostTagsInput) {
   try {
     await requireAdminSession();
+    const parsedPostId = parsePostgresIntegerId(postId);
 
-    if (!Number.isSafeInteger(postId) || postId <= 0) {
+    if (parsedPostId === null) {
       return { error: "创建文章标签关联失败", message: "文章 ID 不正确" };
     }
 
@@ -24,7 +26,8 @@ export async function createPostTags({ postId, tags }: CreatePostTagsInput) {
       ...new Set(
         tags
           .map((tag) => tag.id)
-          .filter((id) => Number.isSafeInteger(id) && id > 0),
+          .map(parsePostgresIntegerId)
+          .filter((id): id is number => id !== null),
       ),
     ];
 
@@ -34,12 +37,12 @@ export async function createPostTags({ postId, tags }: CreatePostTagsInput) {
 
     const result = await db
       .insert(postTags)
-      .values(tagIds.map((tagId) => ({ postId, tagId })))
+      .values(tagIds.map((tagId) => ({ postId: parsedPostId, tagId })))
       .onConflictDoNothing()
       .returning({ postId: postTags.postId, tagId: postTags.tagId });
 
-    revalidateSiteContent([cacheTags.post(postId), cacheTags.tags]);
-    await notifyPublicWebCache("taxonomy.changed", { tagIds });
+    revalidateSiteContent([cacheTags.post(parsedPostId), cacheTags.tags]);
+    schedulePublicWebCache("taxonomy.changed", { tagIds });
 
     return { data: result };
   } catch (error) {

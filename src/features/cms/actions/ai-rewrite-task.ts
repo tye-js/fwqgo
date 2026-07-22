@@ -19,6 +19,14 @@ import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
+import {
+  boundOffsetPaginationByTotal,
+  normalizeOffsetPagination,
+} from "@fwqgo/core/pagination";
+import {
+  formPostgresIntegerIdSchema,
+  postgresIntegerIdSchema,
+} from "@fwqgo/core/postgres-id";
 import { enqueueAiRewriteTask } from "@/server/ai/rewrite-task-runner";
 import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
 import { db } from "@fwqgo/db";
@@ -39,16 +47,16 @@ import { ilikeContains } from "@/server/db/search";
 
 const taskInputSchema = z.object({
   sourceUrl: z.string().url("请输入有效 URL"),
-  categoryId: z.coerce.number().int().positive("请选择分类"),
-  rewriteStyleId: z.coerce.number().int().positive().optional(),
+  categoryId: formPostgresIntegerIdSchema,
+  rewriteStyleId: formPostgresIntegerIdSchema.optional(),
 });
 
 const manualTaskInputSchema = z.object({
   sourceType: z.enum(["text", "email"]),
   sourceTitle: z.string().trim().min(1, "请输入素材标题").max(180),
   sourceContent: z.string().trim().min(20, "素材内容至少需要 20 个字符"),
-  categoryId: z.coerce.number().int().positive("请选择分类"),
-  rewriteStyleId: z.coerce.number().int().positive().optional(),
+  categoryId: formPostgresIntegerIdSchema,
+  rewriteStyleId: formPostgresIntegerIdSchema.optional(),
 });
 
 const fileTaskInputSchema = z.object({
@@ -64,8 +72,8 @@ const fileTaskInputSchema = z.object({
     .int()
     .nonnegative()
     .max(2 * 1024 * 1024),
-  categoryId: z.coerce.number().int().positive("请选择分类"),
-  rewriteStyleId: z.coerce.number().int().positive().optional(),
+  categoryId: formPostgresIntegerIdSchema,
+  rewriteStyleId: formPostgresIntegerIdSchema.optional(),
 });
 
 function parseSourceUrls(value: FormDataEntryValue | null) {
@@ -105,17 +113,18 @@ function revalidateAiTaskPages(taskId?: number) {
   }
 }
 
+function parseIntegerId(value: number) {
+  const parsed = postgresIntegerIdSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 function normalizeAiRewriteTaskListFilters(
   filters: AiRewriteTaskListFilters = {},
 ) {
-  const pageNo =
-    Number.isInteger(filters.pageNo) && (filters.pageNo ?? 0) > 0
-      ? filters.pageNo!
-      : 1;
-  const pageSize =
-    Number.isInteger(filters.pageSize) && (filters.pageSize ?? 0) > 0
-      ? Math.min(filters.pageSize!, 100)
-      : 20;
+  const pagination = normalizeOffsetPagination({
+    pageNo: filters.pageNo,
+    pageSize: filters.pageSize,
+  });
   const status = aiRewriteTaskStatusFilters.includes(
     filters.status as (typeof aiRewriteTaskStatusFilters)[number],
   )
@@ -132,9 +141,7 @@ function normalizeAiRewriteTaskListFilters(
       : "all";
 
   return {
-    pageNo,
-    pageSize,
-    offset: (pageNo - 1) * pageSize,
+    ...pagination,
     status,
     sourceType,
     language,
@@ -195,7 +202,9 @@ function seoSourceUrl(postId: number) {
 
 function normalizePostIds(postIds: number[], limit = 50) {
   return [
-    ...new Set(postIds.filter((id) => Number.isInteger(id) && id > 0)),
+    ...new Set(
+      postIds.map(parseIntegerId).filter((id): id is number => id !== null),
+    ),
   ].slice(0, limit);
 }
 
@@ -486,58 +495,68 @@ export async function createAiRewriteTaskAction(formData: FormData) {
 export async function retryAiRewriteTaskAction(taskId: number) {
   try {
     await requireAdminSession();
+    const parsedTaskId = parseIntegerId(taskId);
+    if (parsedTaskId === null) return { error: "任务 ID 不正确" };
 
-    const [task] = await db
-      .update(aiRewriteTasks)
-      .set({
-        status: "pending",
-        progress: 0,
-        currentStep: "等待重试",
-        error: null,
-        resultTitle: null,
-        scrapedTitle: null,
-        scrapedDescription: null,
-        scrapedHtml: null,
-        aiInputLength: null,
-        rewriteOutputLength: null,
-        diagnostics: null,
-        updatedAt: new Date(),
-        startedAt: null,
-        finishedAt: null,
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        heartbeatAt: null,
-      })
-      .where(
-        and(
-          eq(aiRewriteTasks.id, taskId),
-          inArray(aiRewriteTasks.status, [
-            "failed",
-            "manual_required",
-            "cancelled",
-          ]),
-        ),
-      )
-      .returning({
-        id: aiRewriteTasks.id,
-        sourceMaterialId: aiRewriteTasks.sourceMaterialId,
-      });
+    const task = await db.transaction(async (tx) => {
+      const [updatedTask] = await tx
+        .update(aiRewriteTasks)
+        .set({
+          status: "pending",
+          progress: 0,
+          currentStep: "等待重试",
+          error: null,
+          resultTitle: null,
+          scrapedTitle: null,
+          scrapedDescription: null,
+          scrapedHtml: null,
+          aiInputLength: null,
+          rewriteOutputLength: null,
+          diagnostics: null,
+          updatedAt: new Date(),
+          startedAt: null,
+          finishedAt: null,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          heartbeatAt: null,
+        })
+        .where(
+          and(
+            eq(aiRewriteTasks.id, parsedTaskId),
+            inArray(aiRewriteTasks.status, [
+              "failed",
+              "manual_required",
+              "cancelled",
+            ]),
+          ),
+        )
+        .returning({
+          id: aiRewriteTasks.id,
+          sourceMaterialId: aiRewriteTasks.sourceMaterialId,
+        });
+
+      if (!updatedTask) return null;
+
+      await tx
+        .delete(aiTaskSteps)
+        .where(eq(aiTaskSteps.taskId, updatedTask.id));
+
+      if (updatedTask.sourceMaterialId) {
+        await tx
+          .update(sourceMaterials)
+          .set({ status: "queued", updatedAt: new Date() })
+          .where(eq(sourceMaterials.id, updatedTask.sourceMaterialId));
+      }
+
+      return updatedTask;
+    });
 
     if (!task) {
       return { error: "任务不存在，或当前状态不能重试" };
     }
 
-    await db.delete(aiTaskSteps).where(eq(aiTaskSteps.taskId, task.id));
-
-    if (task.sourceMaterialId) {
-      await db
-        .update(sourceMaterials)
-        .set({ status: "queued", updatedAt: new Date() })
-        .where(eq(sourceMaterials.id, task.sourceMaterialId));
-    }
-
     await enqueueAiRewriteTask(task.id);
-    revalidateAiTaskPages(taskId);
+    revalidateAiTaskPages(parsedTaskId);
 
     return { data: task };
   } catch (error) {
@@ -549,41 +568,52 @@ export async function retryAiRewriteTaskAction(taskId: number) {
 export async function deleteAiRewriteTaskAction(taskId: number) {
   try {
     await requireAdminSession();
+    const parsedTaskId = parseIntegerId(taskId);
+    if (parsedTaskId === null) return { error: "任务 ID 不正确" };
 
-    const [task] = await db
-      .select({
-        id: aiRewriteTasks.id,
-        status: aiRewriteTasks.status,
-        sourceMaterialId: aiRewriteTasks.sourceMaterialId,
-        postId: aiRewriteTasks.postId,
-      })
-      .from(aiRewriteTasks)
-      .where(eq(aiRewriteTasks.id, taskId))
-      .limit(1);
+    const task = await db.transaction(async (tx) => {
+      const [deletedTask] = await tx
+        .delete(aiRewriteTasks)
+        .where(
+          and(
+            eq(aiRewriteTasks.id, parsedTaskId),
+            ne(aiRewriteTasks.status, "running"),
+          ),
+        )
+        .returning({
+          id: aiRewriteTasks.id,
+          sourceMaterialId: aiRewriteTasks.sourceMaterialId,
+          postId: aiRewriteTasks.postId,
+        });
 
-    if (!task) {
-      return { error: "任务不存在或已被删除" };
-    }
+      if (!deletedTask) return null;
 
-    if (task.status === "running") {
-      return { error: "任务正在处理中，不能删除。请等待任务结束后再删除。" };
-    }
-
-    await db.transaction(async (tx) => {
-      await tx.delete(aiRewriteTasks).where(eq(aiRewriteTasks.id, taskId));
-
-      if (task.sourceMaterialId) {
+      if (deletedTask.sourceMaterialId) {
         await tx
           .update(sourceMaterials)
           .set({
             status: "deleted",
             updatedAt: new Date(),
           })
-          .where(eq(sourceMaterials.id, task.sourceMaterialId));
+          .where(eq(sourceMaterials.id, deletedTask.sourceMaterialId));
       }
+
+      return deletedTask;
     });
 
-    revalidateAiTaskPages(taskId);
+    if (!task) {
+      const [existingTask] = await db
+        .select({ status: aiRewriteTasks.status })
+        .from(aiRewriteTasks)
+        .where(eq(aiRewriteTasks.id, parsedTaskId))
+        .limit(1);
+
+      return existingTask?.status === "running"
+        ? { error: "任务正在处理中，不能删除。请等待任务结束后再删除。" }
+        : { error: "任务不存在或已被删除" };
+    }
+
+    revalidateAiTaskPages(parsedTaskId);
 
     return {
       data: {
@@ -600,27 +630,46 @@ export async function deleteAiRewriteTaskAction(taskId: number) {
 export async function cancelAiRewriteTaskAction(taskId: number) {
   try {
     await requireAdminSession();
+    const parsedTaskId = parseIntegerId(taskId);
+    if (parsedTaskId === null) return { error: "任务 ID 不正确" };
 
-    const [task] = await db
-      .update(aiRewriteTasks)
-      .set({
-        status: "cancelled",
-        progress: 0,
-        currentStep: "任务已取消",
-        error: null,
-        finishedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(aiRewriteTasks.id, taskId),
-          eq(aiRewriteTasks.status, "pending"),
-        ),
-      )
-      .returning({
-        id: aiRewriteTasks.id,
-        sourceMaterialId: aiRewriteTasks.sourceMaterialId,
-      });
+    const task = await db.transaction(async (tx) => {
+      const now = new Date();
+      const [updatedTask] = await tx
+        .update(aiRewriteTasks)
+        .set({
+          status: "cancelled",
+          progress: 0,
+          currentStep: "任务已取消",
+          error: null,
+          finishedAt: now,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          heartbeatAt: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(aiRewriteTasks.id, parsedTaskId),
+            eq(aiRewriteTasks.status, "pending"),
+          ),
+        )
+        .returning({
+          id: aiRewriteTasks.id,
+          sourceMaterialId: aiRewriteTasks.sourceMaterialId,
+        });
+
+      if (!updatedTask) return null;
+
+      if (updatedTask.sourceMaterialId) {
+        await tx
+          .update(sourceMaterials)
+          .set({ status: "cancelled", updatedAt: now })
+          .where(eq(sourceMaterials.id, updatedTask.sourceMaterialId));
+      }
+
+      return updatedTask;
+    });
 
     if (!task) {
       return {
@@ -628,14 +677,7 @@ export async function cancelAiRewriteTaskAction(taskId: number) {
       };
     }
 
-    if (task.sourceMaterialId) {
-      await db
-        .update(sourceMaterials)
-        .set({ status: "cancelled", updatedAt: new Date() })
-        .where(eq(sourceMaterials.id, task.sourceMaterialId));
-    }
-
-    revalidateAiTaskPages(taskId);
+    revalidateAiTaskPages(parsedTaskId);
 
     return { data: task };
   } catch (error) {
@@ -647,6 +689,8 @@ export async function cancelAiRewriteTaskAction(taskId: number) {
 export async function enqueueEnglishVersionForPostAction(postId: number) {
   try {
     await requireAdminSession();
+    const parsedPostId = parseIntegerId(postId);
+    if (parsedPostId === null) return { error: "文章 ID 不正确" };
 
     const [post] = await db
       .select({
@@ -659,7 +703,7 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
         translationSourcePostId: posts.translationSourcePostId,
       })
       .from(posts)
-      .where(eq(posts.id, postId))
+      .where(eq(posts.id, parsedPostId))
       .limit(1);
 
     if (!post) {
@@ -1104,6 +1148,8 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
 export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
   try {
     await requireAdminSession();
+    const parsedTaskId = parseIntegerId(taskId);
+    if (parsedTaskId === null) return { error: "任务 ID 不正确" };
 
     const [task] = await db
       .select({
@@ -1113,7 +1159,7 @@ export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
         sourceMaterialId: aiRewriteTasks.sourceMaterialId,
       })
       .from(aiRewriteTasks)
-      .where(eq(aiRewriteTasks.id, taskId))
+      .where(eq(aiRewriteTasks.id, parsedTaskId))
       .limit(1);
 
     if (!task) {
@@ -1128,39 +1174,46 @@ export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
       return { error: "任务还没有生成草稿，不能标记完成" };
     }
 
-    const [updated] = await db
-      .update(aiRewriteTasks)
-      .set({
-        status: "succeeded",
-        progress: 100,
-        currentStep: "人工审核已完成",
-        error: null,
-        finishedAt: new Date(),
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        heartbeatAt: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(aiRewriteTasks.id, taskId),
-          eq(aiRewriteTasks.status, "manual_required"),
-        ),
-      )
-      .returning({ id: aiRewriteTasks.id });
+    const updated = await db.transaction(async (tx) => {
+      const now = new Date();
+      const [updatedTask] = await tx
+        .update(aiRewriteTasks)
+        .set({
+          status: "succeeded",
+          progress: 100,
+          currentStep: "人工审核已完成",
+          error: null,
+          finishedAt: now,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          heartbeatAt: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(aiRewriteTasks.id, parsedTaskId),
+            eq(aiRewriteTasks.status, "manual_required"),
+          ),
+        )
+        .returning({ id: aiRewriteTasks.id });
+
+      if (!updatedTask) return null;
+
+      if (task.sourceMaterialId) {
+        await tx
+          .update(sourceMaterials)
+          .set({ status: "succeeded", updatedAt: now })
+          .where(eq(sourceMaterials.id, task.sourceMaterialId));
+      }
+
+      return updatedTask;
+    });
 
     if (!updated) {
       return { error: "任务状态已经变化，请刷新后重试" };
     }
 
-    if (task.sourceMaterialId) {
-      await db
-        .update(sourceMaterials)
-        .set({ status: "succeeded", updatedAt: new Date() })
-        .where(eq(sourceMaterials.id, task.sourceMaterialId));
-    }
-
-    revalidateAiTaskPages(taskId);
+    revalidateAiTaskPages(parsedTaskId);
 
     return { data: updated };
   } catch (error) {
@@ -1176,6 +1229,22 @@ export async function getAiRewriteTaskList(
 
   const filters = normalizeAiRewriteTaskListFilters(filtersInput);
   const whereCondition = getAiRewriteTaskWhereConditions(filters);
+  const [countRow] = await db
+    .select({ count: count() })
+    .from(aiRewriteTasks)
+    .leftJoin(categories, eq(aiRewriteTasks.categoryId, categories.id))
+    .leftJoin(
+      aiRewriteConfigs,
+      eq(aiRewriteTasks.rewriteStyleId, aiRewriteConfigs.id),
+    )
+    .leftJoin(posts, eq(aiRewriteTasks.postId, posts.id))
+    .where(whereCondition);
+  const pagination = boundOffsetPaginationByTotal(
+    filters,
+    countRow?.count ?? 0,
+  );
+
+  if (pagination.totalCount === 0) return [];
 
   return db
     .select({
@@ -1219,8 +1288,8 @@ export async function getAiRewriteTaskList(
     .leftJoin(posts, eq(aiRewriteTasks.postId, posts.id))
     .where(whereCondition)
     .orderBy(desc(aiRewriteTasks.createdAt))
-    .offset(filters.offset)
-    .limit(filters.pageSize);
+    .offset(pagination.offset)
+    .limit(pagination.pageSize);
 }
 
 export async function getAiRewriteTaskStatusSummary() {
@@ -1277,6 +1346,8 @@ export async function getAiRewriteTaskCount(
 
 export async function getAiRewriteTaskDetail(id: number) {
   await requireAdminSession();
+  const taskId = parseIntegerId(id);
+  if (taskId === null) return null;
 
   const [task] = await db
     .select({
@@ -1327,7 +1398,7 @@ export async function getAiRewriteTaskDetail(id: number) {
       eq(aiRewriteTasks.rewriteStyleId, aiRewriteConfigs.id),
     )
     .leftJoin(posts, eq(aiRewriteTasks.postId, posts.id))
-    .where(eq(aiRewriteTasks.id, id))
+    .where(eq(aiRewriteTasks.id, taskId))
     .limit(1);
 
   if (!task) {
@@ -1352,7 +1423,7 @@ export async function getAiRewriteTaskDetail(id: number) {
       updatedAt: aiTaskSteps.updatedAt,
     })
     .from(aiTaskSteps)
-    .where(eq(aiTaskSteps.taskId, id))
+    .where(eq(aiTaskSteps.taskId, taskId))
     .orderBy(asc(aiTaskSteps.attempt), asc(aiTaskSteps.id));
 
   return { ...task, steps };

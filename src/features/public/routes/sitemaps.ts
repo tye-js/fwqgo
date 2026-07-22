@@ -174,7 +174,7 @@ export async function sitemapPostsGET() {
       })
       .from(posts)
       .where(publishedChinesePostCondition())
-      .orderBy(desc(posts.createdAt)),
+      .orderBy(desc(posts.createdAt), desc(posts.id)),
     readDb
       .select({
         slug: posts.slug,

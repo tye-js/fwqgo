@@ -667,6 +667,7 @@ export const aiSourceSites = pgTable(
     lastSkippedCount: integer("lastSkippedCount").default(0).notNull(),
     lastRunDetails: text("lastRunDetails"),
     lastError: text("lastError"),
+    runGeneration: integer("runGeneration").default(0).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
   },
@@ -686,6 +687,10 @@ export const aiSourceSites = pgTable(
       foreignColumns: [aiRewriteConfigs.id],
       name: "ai_source_sites_rewriteStyleId_ai_rewrite_configs_id_fk",
     }).onDelete("set null"),
+    runGenerationCheck: check(
+      "ai_source_sites_runGeneration_check",
+      sql`${table.runGeneration} >= 0`,
+    ),
   }),
 );
 

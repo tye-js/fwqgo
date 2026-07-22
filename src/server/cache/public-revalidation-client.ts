@@ -1,4 +1,5 @@
 import "server-only";
+import { after } from "next/server";
 
 import type {
   PublicCacheEvent,
@@ -61,4 +62,18 @@ export async function notifyPublicWebCache(
 
   console.error(`Web 缓存刷新失败（${event}）：${lastError}`);
   return { delivered: false, attempts: MAX_ATTEMPTS, reason: lastError };
+}
+
+export function schedulePublicWebCache(
+  event: PublicCacheEvent,
+  payload: PublicCacheEventPayload = {},
+) {
+  try {
+    after(() => notifyPublicWebCache(event, payload));
+  } catch {
+    // Background workers do not have a Next.js request scope for after().
+    void notifyPublicWebCache(event, payload).catch((error) => {
+      console.error(`Web 缓存异步刷新失败（${event}）：`, error);
+    });
+  }
 }

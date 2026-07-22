@@ -5,15 +5,16 @@ import { and, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import { generateCategorySeoMetadata } from "@fwqgo/ai/category-seo-generator";
+import { postgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
 import { slugify } from "@fwqgo/core/utils";
 import { db } from "@fwqgo/db";
 import { categories } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
-import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
+import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 
 const updateCategorySeoSchema = z.object({
-  id: z.number().int().positive("分类 ID 不正确"),
+  id: postgresIntegerIdSchema,
   description: z.string().trim().max(800, "中文描述不能超过800个字符"),
   keywords: z.string().trim().max(800, "中文关键词不能超过800个字符"),
   enName: z.string().trim().max(120, "英文分类名不能超过120个字符").optional(),
@@ -31,12 +32,12 @@ const updateCategorySeoSchema = z.object({
 });
 
 const generateCategorySeoSchema = z.object({
-  id: z.number().int().positive("分类 ID 不正确"),
+  id: postgresIntegerIdSchema,
 });
 
 const batchGenerateCategorySeoSchema = z.object({
   ids: z
-    .array(z.number().int().positive())
+    .array(postgresIntegerIdSchema)
     .min(1, "请先选择要生成的分类")
     .max(20, "一次最多批量生成 20 个分类"),
 });
@@ -219,7 +220,7 @@ async function saveCategorySeo(
     enSlug: category.enSlug,
     previousEnSlug: currentCategory.enSlug,
   });
-  await notifyPublicWebCache("taxonomy.changed", {
+  schedulePublicWebCache("taxonomy.changed", {
     categoryIds: [category.id],
   });
 

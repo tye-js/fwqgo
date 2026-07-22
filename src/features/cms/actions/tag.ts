@@ -4,12 +4,13 @@ import { and, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import { generateTagSeoMetadata } from "@fwqgo/ai/tag-seo-generator";
+import { postgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
 import { slugify } from "@fwqgo/core/utils";
 import { db } from "@fwqgo/db";
 import { tags } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
-import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
+import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 import { isPriceLikeTag } from "@/features/cms/lib/tag-price-filter";
 
 const createTagSchema = z.object({
@@ -21,12 +22,12 @@ const createTagSchema = z.object({
 });
 
 const updateTagIndexableSchema = z.object({
-  id: z.number().int().positive(),
+  id: postgresIntegerIdSchema,
   indexable: z.boolean(),
 });
 
 const updateTagSeoSchema = z.object({
-  id: z.number().int().positive(),
+  id: postgresIntegerIdSchema,
   enName: z.string().trim().max(120, "英文标签名不能超过120个字符").optional(),
   enSlug: z.string().trim().max(180, "英文 slug 不能超过180个字符").optional(),
   description: z
@@ -52,12 +53,12 @@ const updateTagSeoSchema = z.object({
 });
 
 const generateTagSeoSchema = z.object({
-  id: z.number().int().positive(),
+  id: postgresIntegerIdSchema,
 });
 
 const batchGenerateTagSeoSchema = z.object({
   ids: z
-    .array(z.number().int().positive())
+    .array(postgresIntegerIdSchema)
     .min(1, "请先选择要生成的标签")
     .max(20, "一次最多批量生成 20 个标签"),
 });
@@ -208,7 +209,7 @@ export async function createTag(input: z.infer<typeof createTagSchema>) {
   await requireAdminSession();
   const result = await createTagRecord(input);
   if (!("error" in result)) {
-    await notifyPublicWebCache("taxonomy.changed", { tagIds: [result.id] });
+    schedulePublicWebCache("taxonomy.changed", { tagIds: [result.id] });
   }
   return result;
 }
@@ -227,7 +228,7 @@ export async function createTags(inputTags: z.infer<typeof createTagSchema>[]) {
   );
 
   revalidateSiteContent([cacheTags.tags]);
-  await notifyPublicWebCache("taxonomy.changed", {
+  schedulePublicWebCache("taxonomy.changed", {
     tagIds: resultTags.map((tag) => tag.id),
   });
 
@@ -260,7 +261,7 @@ export async function updateTagIndexable(
   }
 
   revalidateSiteContent([cacheTags.tags, cacheTags.tagSlug(tag.slug)]);
-  await notifyPublicWebCache("taxonomy.changed", { tagIds: [tag.id] });
+  schedulePublicWebCache("taxonomy.changed", { tagIds: [tag.id] });
 
   return { data: tag };
 }
@@ -344,7 +345,7 @@ async function saveTagSeo(
       ? [cacheTags.tagSlug(currentTag.enSlug)]
       : []),
   ]);
-  await notifyPublicWebCache("taxonomy.changed", { tagIds: [tag.id] });
+  schedulePublicWebCache("taxonomy.changed", { tagIds: [tag.id] });
 
   return { data: tag };
 }

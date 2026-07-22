@@ -27,6 +27,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { decodeSlug } from "@fwqgo/core/utils";
+import { normalizeOffsetPagination } from "@fwqgo/core/pagination";
 import { ilikeContains } from "@/server/db/search";
 
 export type PostLanguageFilter = "all" | "zh" | "en";
@@ -145,28 +146,6 @@ function localizeCmsTag(
 
 function englishTaskSourceUrl(postId: number) {
   return `post://${postId}/english`;
-}
-
-function normalizePagination({
-  pageNo,
-  pageSize,
-  defaultPageSize,
-}: {
-  pageNo: number;
-  pageSize: number;
-  defaultPageSize: number;
-}) {
-  const normalizedPageNo = Number.isInteger(pageNo) && pageNo > 0 ? pageNo : 1;
-  const normalizedPageSize =
-    Number.isInteger(pageSize) && pageSize > 0
-      ? Math.min(pageSize, 100)
-      : defaultPageSize;
-
-  return {
-    pageNo: normalizedPageNo,
-    pageSize: normalizedPageSize,
-    offset: (normalizedPageNo - 1) * normalizedPageSize,
-  };
 }
 
 export async function getPostBySlug(slug: string) {
@@ -414,7 +393,7 @@ export async function getPosts({
   try {
     await requireAdminSession();
 
-    const pagination = normalizePagination({
+    const pagination = normalizeOffsetPagination({
       pageNo,
       pageSize,
       defaultPageSize: 10,
@@ -460,7 +439,7 @@ export async function getDraftPosts({
   try {
     await requireAdminSession();
 
-    const pagination = normalizePagination({
+    const pagination = normalizeOffsetPagination({
       pageNo,
       pageSize,
       defaultPageSize: 15,

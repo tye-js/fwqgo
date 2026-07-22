@@ -31,9 +31,11 @@ import {
   serverOfferChecks,
   serverOffers,
 } from "@fwqgo/db/schema";
-import { notifyPublicWebCache } from "@/server/cache/public-revalidation-client";
+import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 import {
+  assertProviderMonitorRunOwnership,
   markMissingProviderOffers,
+  ProviderMonitorRunSupersededError,
   syncProviderOfferCandidate,
   type ProviderSyncContext,
 } from "@/server/offers/provider-offer-sync";
@@ -70,6 +72,50 @@ function truncate(value: string, length = 5_000) {
   return value.length > length ? `${value.slice(0, length)}...` : value;
 }
 
+async function completeProviderMonitorRun(input: {
+  monitorId: number;
+  runId: number;
+  checkedAt: Date;
+  monitorValues: Partial<typeof providerMonitors.$inferInsert>;
+  runValues: Partial<typeof providerMonitorRuns.$inferInsert>;
+}) {
+  try {
+    await db.transaction(async (tx) => {
+      const [updatedMonitor] = await tx
+        .update(providerMonitors)
+        .set(input.monitorValues)
+        .where(
+          and(
+            eq(providerMonitors.id, input.monitorId),
+            eq(providerMonitors.enabled, true),
+            eq(providerMonitors.lastStatus, "running"),
+            eq(providerMonitors.lastRunAt, input.checkedAt),
+          ),
+        )
+        .returning({ id: providerMonitors.id });
+
+      if (!updatedMonitor) throw new ProviderMonitorRunSupersededError();
+
+      const [updatedRun] = await tx
+        .update(providerMonitorRuns)
+        .set(input.runValues)
+        .where(
+          and(
+            eq(providerMonitorRuns.id, input.runId),
+            eq(providerMonitorRuns.status, "running"),
+          ),
+        )
+        .returning({ id: providerMonitorRuns.id });
+
+      if (!updatedRun) throw new ProviderMonitorRunSupersededError();
+    });
+    return true;
+  } catch (error) {
+    if (error instanceof ProviderMonitorRunSupersededError) return false;
+    throw error;
+  }
+}
+
 async function pruneProviderMonitorCheckHistory(referenceTime: Date) {
   const cutoff = getProviderMonitorCheckRetentionCutoff(referenceTime);
   await db
@@ -85,14 +131,10 @@ async function safelyPruneProviderMonitorCheckHistory(referenceTime: Date) {
   }
 }
 
-async function safelyNotifyProviderOfferChanges() {
-  try {
-    await notifyPublicWebCache("offer.changed", {
-      topicSlugs: ["hong-kong", "united-states", "cheap-vps"],
-    });
-  } catch (error) {
-    console.error("供应商套餐缓存通知失败:", error);
-  }
+function scheduleProviderOfferChanges() {
+  schedulePublicWebCache("offer.changed", {
+    topicSlugs: ["hong-kong", "united-states", "cheap-vps"],
+  });
 }
 
 export type ProviderMonitorRunSummary = {
@@ -109,6 +151,49 @@ export type ProviderMonitorRunSummary = {
   configHash: string | null;
   checkedAt: string;
 };
+
+function createSupersededProviderMonitorRunSummary(input: {
+  monitorId: number;
+  runId: number;
+  providerName: string;
+  configHash: string;
+  checkedAt: Date;
+}): ProviderMonitorRunSummary {
+  return {
+    monitorId: input.monitorId,
+    runId: input.runId,
+    providerName: input.providerName,
+    received: 0,
+    created: 0,
+    pending: 0,
+    updated: 0,
+    unchanged: 0,
+    skipped: 0,
+    missing: 0,
+    configHash: input.configHash,
+    checkedAt: input.checkedAt.toISOString(),
+  };
+}
+
+async function markProviderMonitorRunSuperseded(
+  runId: number,
+  finishedAt: Date,
+) {
+  await db
+    .update(providerMonitorRuns)
+    .set({
+      status: "failed",
+      errorTitle: "采集运行被接管",
+      errorDetail: "采集源已停用，或更新的运行已接管该采集源",
+      finishedAt,
+    })
+    .where(
+      and(
+        eq(providerMonitorRuns.id, runId),
+        eq(providerMonitorRuns.status, "running"),
+      ),
+    );
+}
 
 export async function runProviderMonitor(
   monitorId: number,
@@ -214,22 +299,50 @@ export async function runProviderMonitor(
   );
   let responseStatus: number | null = null;
 
-  const [claimedMonitor] = await db
-    .update(providerMonitors)
-    .set({
-      lastStatus: "running",
-      lastError: null,
-      lastRunAt: checkedAt,
-      updatedAt: checkedAt,
-    })
-    .where(
-      and(
-        eq(providerMonitors.id, monitor.id),
-        eq(providerMonitors.enabled, true),
-      ),
-    )
-    .returning({ id: providerMonitors.id });
-  if (!claimedMonitor) {
+  const run = await db.transaction(async (tx) => {
+    const [claimedMonitor] = await tx
+      .update(providerMonitors)
+      .set({
+        lastStatus: "running",
+        lastError: null,
+        lastRunAt: checkedAt,
+        updatedAt: checkedAt,
+      })
+      .where(
+        and(
+          eq(providerMonitors.id, monitor.id),
+          eq(providerMonitors.enabled, true),
+        ),
+      )
+      .returning({ id: providerMonitors.id });
+    if (!claimedMonitor) return null;
+
+    await tx
+      .update(providerMonitorRuns)
+      .set({
+        status: "failed",
+        errorTitle: "采集运行被中断",
+        errorDetail: "进程重启或 worker 心跳超时，后续运行已接管该采集源",
+        finishedAt: checkedAt,
+      })
+      .where(
+        and(
+          eq(providerMonitorRuns.monitorId, monitor.id),
+          eq(providerMonitorRuns.status, "running"),
+        ),
+      );
+    const [createdRun] = await tx
+      .insert(providerMonitorRuns)
+      .values({
+        monitorId: monitor.id,
+        status: "running",
+        startedAt: checkedAt,
+      })
+      .returning({ id: providerMonitorRuns.id });
+    if (!createdRun) throw new Error("供应商采集运行记录创建失败");
+    return createdRun;
+  });
+  if (!run) {
     return {
       monitorId: monitor.id,
       runId: null,
@@ -245,26 +358,7 @@ export async function runProviderMonitor(
       checkedAt: checkedAt.toISOString(),
     };
   }
-
-  await db
-    .update(providerMonitorRuns)
-    .set({
-      status: "failed",
-      errorTitle: "采集运行被中断",
-      errorDetail: "进程重启或 worker 心跳超时，后续运行已接管该采集源",
-      finishedAt: checkedAt,
-    })
-    .where(
-      and(
-        eq(providerMonitorRuns.monitorId, monitor.id),
-        eq(providerMonitorRuns.status, "running"),
-      ),
-    );
-  const [run] = await db
-    .insert(providerMonitorRuns)
-    .values({ monitorId: monitor.id, status: "running", startedAt: checkedAt })
-    .returning({ id: providerMonitorRuns.id });
-  if (!run) throw new Error("供应商采集运行记录创建失败");
+  const ownership = { monitorId: monitor.id, checkedAt };
 
   try {
     const conditionalHeaders: Record<string, string> = {};
@@ -317,27 +411,33 @@ export async function runProviderMonitor(
         ));
 
     if (notModified) {
-      const refreshed = await db
-        .update(serverOffers)
-        .set({
-          sourceLastSeenAt: checkedAt,
-          missingRuns: 0,
-          lastCheckedAt: checkedAt,
-          checkStatus: "ok",
-        })
-        .where(eq(serverOffers.sourceMonitorId, monitor.id))
-        .returning({ id: serverOffers.id });
-      if (refreshed.length === 0) {
-        await db
-          .update(providerMonitors)
+      const refreshed = await db.transaction(async (tx) => {
+        await assertProviderMonitorRunOwnership(ownership, tx);
+        const rows = await tx
+          .update(serverOffers)
           .set({
-            etag: null,
-            lastModified: null,
-            responseHash: null,
-            lastSummary: null,
-            updatedAt: checkedAt,
+            sourceLastSeenAt: checkedAt,
+            missingRuns: 0,
+            lastCheckedAt: checkedAt,
+            checkStatus: "ok",
           })
-          .where(eq(providerMonitors.id, monitor.id));
+          .where(eq(serverOffers.sourceMonitorId, monitor.id))
+          .returning({ id: serverOffers.id });
+        if (rows.length === 0) {
+          await tx
+            .update(providerMonitors)
+            .set({
+              etag: null,
+              lastModified: null,
+              responseHash: null,
+              lastSummary: null,
+              updatedAt: checkedAt,
+            })
+            .where(eq(providerMonitors.id, monitor.id));
+        }
+        return rows;
+      });
+      if (refreshed.length === 0) {
         throw new Error(
           "供应商返回未变化，但本地没有套餐；已清除缓存，下次采集将重新读取完整数据",
         );
@@ -356,19 +456,18 @@ export async function runProviderMonitor(
         configHash,
         checkedAt: checkedAt.toISOString(),
       };
-      await db
-        .update(providerMonitorRuns)
-        .set({
+      const completed = await completeProviderMonitorRun({
+        monitorId: monitor.id,
+        runId: run.id,
+        checkedAt,
+        runValues: {
           status: "succeeded",
           httpStatus: response.status,
           responseHash,
           unchanged: refreshed.length,
           finishedAt: new Date(),
-        })
-        .where(eq(providerMonitorRuns.id, run.id));
-      await db
-        .update(providerMonitors)
-        .set({
+        },
+        monitorValues: {
           lastRunAt: checkedAt,
           nextRunAt,
           lastStatus: "succeeded",
@@ -379,14 +478,13 @@ export async function runProviderMonitor(
           responseHash,
           lastSummary: summary,
           updatedAt: checkedAt,
-        })
-        .where(
-          and(
-            eq(providerMonitors.id, monitor.id),
-            eq(providerMonitors.enabled, true),
-          ),
-        );
-      await enqueueEnabledProviderMonitorTask(monitor.id, nextRunAt);
+        },
+      });
+      if (!completed) {
+        await markProviderMonitorRunSuperseded(run.id, new Date());
+        return summary;
+      }
+      await safelyEnqueueEnabledProviderMonitorTask(monitor.id, nextRunAt);
       return summary;
     }
 
@@ -463,6 +561,7 @@ export async function runProviderMonitor(
         candidate,
         sourceHash: hashProviderOfferSyncState(candidate, context),
         now: checkedAt,
+        ownership,
       });
       counters[result.outcome] += 1;
       if (result.offerId) {
@@ -484,9 +583,14 @@ export async function runProviderMonitor(
       context,
       seenExternalIds: preparedCandidates.seenExternalIds,
       now: checkedAt,
+      ownership,
     });
-    if (checkRows.length > 0)
-      await db.insert(serverOfferChecks).values(checkRows);
+    if (checkRows.length > 0) {
+      await db.transaction(async (tx) => {
+        await assertProviderMonitorRunOwnership(ownership, tx);
+        await tx.insert(serverOfferChecks).values(checkRows);
+      });
+    }
     const summary: ProviderMonitorRunSummary = {
       monitorId: monitor.id,
       runId: run.id,
@@ -497,9 +601,11 @@ export async function runProviderMonitor(
       configHash,
       checkedAt: checkedAt.toISOString(),
     };
-    await db
-      .update(providerMonitorRuns)
-      .set({
+    const completed = await completeProviderMonitorRun({
+      monitorId: monitor.id,
+      runId: run.id,
+      checkedAt,
+      runValues: {
         status: "succeeded",
         httpStatus: response.status,
         responseHash,
@@ -507,11 +613,8 @@ export async function runProviderMonitor(
         ...counters,
         missing,
         finishedAt: new Date(),
-      })
-      .where(eq(providerMonitorRuns.id, run.id));
-    await db
-      .update(providerMonitors)
-      .set({
+      },
+      monitorValues: {
         lastRunAt: checkedAt,
         nextRunAt,
         lastStatus: "succeeded",
@@ -521,77 +624,110 @@ export async function runProviderMonitor(
         responseHash,
         lastSummary: summary,
         updatedAt: checkedAt,
-      })
-      .where(
-        and(
-          eq(providerMonitors.id, monitor.id),
-          eq(providerMonitors.enabled, true),
-        ),
-      );
+      },
+    });
+    if (!completed) {
+      await markProviderMonitorRunSuperseded(run.id, new Date());
+      return summary;
+    }
     await safelyPruneProviderMonitorCheckHistory(checkedAt);
     if (counters.created > 0 || counters.updated > 0 || missing > 0) {
-      await safelyNotifyProviderOfferChanges();
+      scheduleProviderOfferChanges();
     }
-    await enqueueEnabledProviderMonitorTask(monitor.id, nextRunAt);
+    await safelyEnqueueEnabledProviderMonitorTask(monitor.id, nextRunAt);
     return summary;
   } catch (error) {
+    const supersededSummary = createSupersededProviderMonitorRunSummary({
+      monitorId: monitor.id,
+      runId: run.id,
+      providerName: monitor.providerName,
+      configHash,
+      checkedAt,
+    });
+    if (error instanceof ProviderMonitorRunSupersededError) {
+      await markProviderMonitorRunSuperseded(run.id, new Date());
+      return supersededSummary;
+    }
+
     const message = truncate(getErrorMessage(error));
     let failedOfferCount = 0;
     try {
-      const mappedOffers = await db
-        .select({ id: serverOffers.id })
-        .from(serverOffers)
-        .where(eq(serverOffers.sourceMonitorId, monitor.id))
-        .limit(MAX_MONITOR_ITEMS);
-      const failedOfferIds = mappedOffers.map((offer) => offer.id);
-      failedOfferCount = failedOfferIds.length;
-      if (failedOfferIds.length > 0) {
-        await db
-          .update(serverOffers)
-          .set({ checkStatus: "failed", lastCheckedAt: checkedAt })
-          .where(inArray(serverOffers.id, failedOfferIds));
-        await db.insert(serverOfferChecks).values(
-          failedOfferIds.map((offerId) => ({
-            offerId,
-            monitorId: monitor.id,
+      failedOfferCount = await db.transaction(async (tx) => {
+        await assertProviderMonitorRunOwnership(ownership, tx);
+        const mappedOffers = await tx
+          .select({ id: serverOffers.id })
+          .from(serverOffers)
+          .where(eq(serverOffers.sourceMonitorId, monitor.id))
+          .limit(MAX_MONITOR_ITEMS);
+        const failedOfferIds = mappedOffers.map((offer) => offer.id);
+        if (failedOfferIds.length > 0) {
+          await tx
+            .update(serverOffers)
+            .set({ checkStatus: "failed", lastCheckedAt: checkedAt })
+            .where(inArray(serverOffers.id, failedOfferIds));
+          await tx.insert(serverOfferChecks).values(
+            failedOfferIds.map((offerId) => ({
+              offerId,
+              monitorId: monitor.id,
+              status: "failed",
+              error: message,
+              responseTimeMs: Date.now() - startedAt,
+              checkedAt,
+            })),
+          );
+        }
+
+        const finishedAt = new Date();
+        const [updatedRun] = await tx
+          .update(providerMonitorRuns)
+          .set({
             status: "failed",
-            error: message,
-            responseTimeMs: Date.now() - startedAt,
-            checkedAt,
-          })),
-        );
-      }
+            httpStatus: responseStatus,
+            errorTitle: "供应商采集失败",
+            errorDetail: message,
+            finishedAt,
+          })
+          .where(
+            and(
+              eq(providerMonitorRuns.id, run.id),
+              eq(providerMonitorRuns.status, "running"),
+            ),
+          )
+          .returning({ id: providerMonitorRuns.id });
+        if (!updatedRun) throw new ProviderMonitorRunSupersededError();
+
+        const [updatedMonitor] = await tx
+          .update(providerMonitors)
+          .set({
+            lastRunAt: checkedAt,
+            nextRunAt,
+            lastStatus: "failed",
+            lastError: message,
+            updatedAt: checkedAt,
+          })
+          .where(
+            and(
+              eq(providerMonitors.id, monitor.id),
+              eq(providerMonitors.enabled, true),
+              eq(providerMonitors.lastStatus, "running"),
+              eq(providerMonitors.lastRunAt, checkedAt),
+            ),
+          )
+          .returning({ id: providerMonitors.id });
+        if (!updatedMonitor) throw new ProviderMonitorRunSupersededError();
+
+        return failedOfferIds.length;
+      });
     } catch (recordError) {
+      if (recordError instanceof ProviderMonitorRunSupersededError) {
+        await markProviderMonitorRunSuperseded(run.id, new Date());
+        return supersededSummary;
+      }
       console.error("记录供应商采集失败状态时发生错误:", recordError);
     }
-    await db
-      .update(providerMonitorRuns)
-      .set({
-        status: "failed",
-        httpStatus: responseStatus,
-        errorTitle: "供应商采集失败",
-        errorDetail: message,
-        finishedAt: new Date(),
-      })
-      .where(eq(providerMonitorRuns.id, run.id));
-    await db
-      .update(providerMonitors)
-      .set({
-        lastRunAt: checkedAt,
-        nextRunAt,
-        lastStatus: "failed",
-        lastError: message,
-        updatedAt: checkedAt,
-      })
-      .where(
-        and(
-          eq(providerMonitors.id, monitor.id),
-          eq(providerMonitors.enabled, true),
-        ),
-      );
     await safelyPruneProviderMonitorCheckHistory(checkedAt);
     if (failedOfferCount > 0) {
-      await safelyNotifyProviderOfferChanges();
+      scheduleProviderOfferChanges();
     }
     throw new Error(message);
   }
@@ -624,7 +760,7 @@ export async function enqueueProviderMonitorTask(
             .where(eq(providerMonitors.id, monitorId))
             .limit(1);
           if (current?.nextRunAt) {
-            await enqueueEnabledProviderMonitorTask(
+            await safelyEnqueueEnabledProviderMonitorTask(
               monitorId,
               current.nextRunAt,
             );
@@ -652,6 +788,18 @@ async function enqueueEnabledProviderMonitorTask(
     .limit(1);
   if (!monitor) return null;
   return enqueueProviderMonitorTask(monitorId, runAfter);
+}
+
+async function safelyEnqueueEnabledProviderMonitorTask(
+  monitorId: number,
+  runAfter: Date,
+) {
+  try {
+    return await enqueueEnabledProviderMonitorTask(monitorId, runAfter);
+  } catch (error) {
+    console.error("供应商采集下次调度失败，当前采集结果不受影响:", error);
+    return null;
+  }
 }
 
 export async function retryProviderMonitorRun(runId: number) {
@@ -842,8 +990,24 @@ async function cancelQueuedProviderMonitorJobs(monitorId: number) {
 }
 
 export async function deleteProviderMonitor(id: number) {
-  const [[runningJob], [runningRun]] = await Promise.all([
-    db
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    await tx
+      .update(adminBackgroundJobs)
+      .set({
+        status: "cancelled",
+        lastError: "供应商采集源已删除",
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(adminBackgroundJobs.jobKey, `provider-monitor:${id}`),
+          eq(adminBackgroundJobs.status, "queued"),
+        ),
+      );
+
+    const [runningJob] = await tx
       .select({ id: adminBackgroundJobs.id })
       .from(adminBackgroundJobs)
       .where(
@@ -852,8 +1016,8 @@ export async function deleteProviderMonitor(id: number) {
           eq(adminBackgroundJobs.status, "running"),
         ),
       )
-      .limit(1),
-    db
+      .limit(1);
+    const [runningRun] = await tx
       .select({ id: providerMonitorRuns.id })
       .from(providerMonitorRuns)
       .where(
@@ -862,19 +1026,18 @@ export async function deleteProviderMonitor(id: number) {
           eq(providerMonitorRuns.status, "running"),
         ),
       )
-      .limit(1),
-  ]);
-  if (runningJob || runningRun) {
-    throw new Error("采集正在执行，请等待本次执行结束后再删除");
-  }
+      .limit(1);
+    if (runningJob || runningRun) {
+      throw new Error("采集正在执行，请等待本次执行结束后再删除");
+    }
 
-  await cancelQueuedProviderMonitorJobs(id);
-  const [deleted] = await db
-    .delete(providerMonitors)
-    .where(eq(providerMonitors.id, id))
-    .returning({ id: providerMonitors.id });
-  if (!deleted) throw new Error("供应商采集源不存在");
-  return deleted;
+    const [deleted] = await tx
+      .delete(providerMonitors)
+      .where(eq(providerMonitors.id, id))
+      .returning({ id: providerMonitors.id });
+    if (!deleted) throw new Error("供应商采集源不存在");
+    return deleted;
+  });
 }
 
 export async function getProviderMonitorCheckHistory(

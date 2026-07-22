@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, isNull, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "@fwqgo/db";
 import { imageCoverGenerationTasks, posts } from "@fwqgo/db/schema";
@@ -125,92 +125,112 @@ export async function enqueueArticleCoverGenerationTask(
 ) {
   const requestedBatchId = input.batchId?.trim();
   const batchId = requestedBatchId?.length ? requestedBatchId : randomUUID();
-  const [existingTask] = requestedBatchId
-    ? await db
-        .select()
-        .from(imageCoverGenerationTasks)
-        .where(
-          and(
-            eq(imageCoverGenerationTasks.batchId, batchId),
-            eq(imageCoverGenerationTasks.postId, input.postId),
-          ),
-        )
-        .orderBy(desc(imageCoverGenerationTasks.id))
-        .limit(1)
-    : [];
+  const enqueueResult = await db.transaction(async (tx) => {
+    if (requestedBatchId) {
+      const lockKey = `${batchId}:${input.postId}`;
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
+      );
+    }
 
-  if (
-    existingTask &&
-    (existingTask.status === "pending" || existingTask.status === "running")
-  ) {
-    await ensureCoverGenerationWorker();
-    return { task: existingTask, reused: true };
-  }
+    const [existingTask] = requestedBatchId
+      ? await tx
+          .select()
+          .from(imageCoverGenerationTasks)
+          .where(
+            and(
+              eq(imageCoverGenerationTasks.batchId, batchId),
+              eq(imageCoverGenerationTasks.postId, input.postId),
+            ),
+          )
+          .orderBy(desc(imageCoverGenerationTasks.id))
+          .limit(1)
+      : [];
 
-  if (existingTask?.status === "succeeded" && !input.restartTerminal) {
-    return { task: existingTask, reused: true };
-  }
+    if (
+      existingTask &&
+      (existingTask.status === "pending" || existingTask.status === "running")
+    ) {
+      return { task: existingTask, reused: true, ensureWorker: true };
+    }
 
-  const config = await getActiveImageGenerationConfig(
-    input.configId ?? undefined,
-  );
-  if (!config) {
-    throw new Error(
-      input.configId
-        ? `任务绑定的生图配置 #${input.configId} 已停用或不存在`
-        : "当前没有已启用的默认生图配置",
+    if (existingTask?.status === "succeeded" && !input.restartTerminal) {
+      return { task: existingTask, reused: true, ensureWorker: false };
+    }
+
+    const config = await getActiveImageGenerationConfig(
+      input.configId ?? undefined,
+      tx,
     );
-  }
+    if (!config) {
+      throw new Error(
+        input.configId
+          ? `任务绑定的生图配置 #${input.configId} 已停用或不存在`
+          : "当前没有已启用的默认生图配置",
+      );
+    }
 
-  const task = existingTask
-    ? (
-        await db
-          .update(imageCoverGenerationTasks)
-          .set({
-            title: input.title,
-            configId: config.id,
-            configName: config.name,
-            provider: config.provider,
-            model: config.model,
-            status: "pending",
-            outputUrl: null,
-            assetId: null,
-            errorTitle: null,
-            errorDetail: null,
-            createdBy: input.createdBy ?? existingTask.createdBy,
-            startedAt: null,
-            finishedAt: null,
-            leaseOwner: null,
-            leaseExpiresAt: null,
-            heartbeatAt: null,
-            updatedAt: new Date(),
-          })
-          .where(eq(imageCoverGenerationTasks.id, existingTask.id))
-          .returning()
-      )[0]
-    : (
-        await db
-          .insert(imageCoverGenerationTasks)
-          .values({
-            batchId,
-            postId: input.postId,
-            title: input.title,
-            configId: config.id,
-            configName: config.name,
-            provider: config.provider,
-            model: config.model,
-            status: "pending",
-            createdBy: input.createdBy ?? null,
-          })
-          .returning()
-      )[0];
+    const task = existingTask
+      ? (
+          await tx
+            .update(imageCoverGenerationTasks)
+            .set({
+              title: input.title,
+              configId: config.id,
+              configName: config.name,
+              provider: config.provider,
+              model: config.model,
+              status: "pending",
+              outputUrl: null,
+              assetId: null,
+              errorTitle: null,
+              errorDetail: null,
+              createdBy: input.createdBy ?? existingTask.createdBy,
+              startedAt: null,
+              finishedAt: null,
+              leaseOwner: null,
+              leaseExpiresAt: null,
+              heartbeatAt: null,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(imageCoverGenerationTasks.id, existingTask.id),
+                eq(imageCoverGenerationTasks.status, existingTask.status),
+              ),
+            )
+            .returning()
+        )[0]
+      : (
+          await tx
+            .insert(imageCoverGenerationTasks)
+            .values({
+              batchId,
+              postId: input.postId,
+              title: input.title,
+              configId: config.id,
+              configName: config.name,
+              provider: config.provider,
+              model: config.model,
+              status: "pending",
+              createdBy: input.createdBy ?? null,
+            })
+            .returning()
+        )[0];
 
-  if (!task) {
-    throw new Error("封面生成任务创建失败");
-  }
+    if (!task) {
+      throw new Error("封面生成任务状态已变化，请刷新后重试");
+    }
 
-  await ensureCoverGenerationWorker();
-  return { task, reused: Boolean(existingTask) };
+    return {
+      task,
+      reused: Boolean(existingTask),
+      ensureWorker: true,
+    };
+  });
+
+  if (enqueueResult.ensureWorker) await ensureCoverGenerationWorker();
+  return { task: enqueueResult.task, reused: enqueueResult.reused };
 }
 
 async function persistCoverTaskConfig(
@@ -567,14 +587,40 @@ async function runCoverGenerationWorker() {
           .where(
             and(
               eq(imageCoverGenerationTasks.id, task.id),
+              eq(imageCoverGenerationTasks.status, "running"),
               eq(imageCoverGenerationTasks.leaseOwner, task.leaseOwner ?? ""),
             ),
           )
           .returning({ id: imageCoverGenerationTasks.id });
         if (completed.length === 0) throw new TaskLeaseLostError();
       } catch (error) {
+        if (error instanceof TaskLeaseLostError) {
+          structuredLog("warn", "cover.task_result_ignored_after_lease_loss", {
+            taskId: task.id,
+            postId: task.postId,
+            leaseOwner: task.leaseOwner,
+          });
+          continue;
+        }
+
         if (error instanceof ImageGenerationRateLimitError) {
-          await requeueRateLimitedCoverTask(task, error);
+          try {
+            await requeueRateLimitedCoverTask(task, error);
+          } catch (requeueError) {
+            if (requeueError instanceof TaskLeaseLostError) {
+              structuredLog(
+                "warn",
+                "cover.task_rate_limit_requeue_ignored_after_lease_loss",
+                {
+                  taskId: task.id,
+                  postId: task.postId,
+                  leaseOwner: task.leaseOwner,
+                },
+              );
+              continue;
+            }
+            throw requeueError;
+          }
           structuredLog("warn", "cover.task_rate_limited", {
             taskId: task.id,
             postId: task.postId,
@@ -607,11 +653,19 @@ async function runCoverGenerationWorker() {
           .where(
             and(
               eq(imageCoverGenerationTasks.id, task.id),
+              eq(imageCoverGenerationTasks.status, "running"),
               eq(imageCoverGenerationTasks.leaseOwner, task.leaseOwner ?? ""),
             ),
           )
           .returning({ id: imageCoverGenerationTasks.id });
-        if (failed.length === 0) throw new TaskLeaseLostError();
+        if (failed.length === 0) {
+          structuredLog("warn", "cover.task_failure_ignored_after_lease_loss", {
+            taskId: task.id,
+            postId: task.postId,
+            leaseOwner: task.leaseOwner,
+          });
+          continue;
+        }
 
         if (
           error instanceof ImageGenerationConnectionInterruptedError &&

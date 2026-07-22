@@ -37,6 +37,8 @@ export type ImageGenerationConfigInput = {
 };
 
 type ConfigTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type ConfigDatabase = Pick<typeof db, "select" | "update">;
+type ImageGenerationConfigRow = typeof imageGenerationConfigs.$inferSelect;
 
 const IMAGE_GENERATION_DEFAULT_LOCK_ID = 9_021_002;
 
@@ -50,12 +52,12 @@ function maskApiKey(apiKey: string | null) {
 
 async function resolveStoredApiKey<
   T extends { id: number; apiKey: string | null },
->(config: T): Promise<T> {
+>(config: T, database: ConfigDatabase = db): Promise<T> {
   if (!config.apiKey) return config;
   const decrypted = decryptSecret(config.apiKey);
   if (decrypted.needsMigration && hasSecretEncryptionKey()) {
     const encrypted = encryptSecret(decrypted.value);
-    await db
+    await database
       .update(imageGenerationConfigs)
       .set({ apiKey: encrypted, updatedAt: new Date() })
       .where(
@@ -162,7 +164,10 @@ export async function getImageGenerationConfigs() {
   }));
 }
 
-export async function getActiveImageGenerationConfig(configId?: number) {
+export async function getActiveImageGenerationConfig(
+  configId?: number,
+  database: ConfigDatabase = db,
+): Promise<ImageGenerationConfigRow | null> {
   const where = configId
     ? and(
         eq(imageGenerationConfigs.id, configId),
@@ -173,23 +178,23 @@ export async function getActiveImageGenerationConfig(configId?: number) {
         eq(imageGenerationConfigs.isDefault, true),
       );
 
-  const [preferred] = await db
-    .select()
-    .from(imageGenerationConfigs)
-    .where(where)
-    .limit(1);
+  const preferred = (
+    await database.select().from(imageGenerationConfigs).where(where).limit(1)
+  )[0];
 
-  if (preferred) return resolveStoredApiKey(preferred);
+  if (preferred) return resolveStoredApiKey(preferred, database);
   if (configId) return null;
 
-  const [fallback] = await db
-    .select()
-    .from(imageGenerationConfigs)
-    .where(eq(imageGenerationConfigs.enabled, true))
-    .orderBy(desc(imageGenerationConfigs.id))
-    .limit(1);
+  const fallback = (
+    await database
+      .select()
+      .from(imageGenerationConfigs)
+      .where(eq(imageGenerationConfigs.enabled, true))
+      .orderBy(desc(imageGenerationConfigs.id))
+      .limit(1)
+  )[0];
 
-  return fallback ? resolveStoredApiKey(fallback) : null;
+  return fallback ? resolveStoredApiKey(fallback, database) : null;
 }
 
 export async function getEnabledImageGenerationConfigs() {
@@ -201,7 +206,7 @@ export async function getEnabledImageGenerationConfigs() {
       desc(imageGenerationConfigs.isDefault),
       desc(imageGenerationConfigs.id),
     );
-  return Promise.all(rows.map(resolveStoredApiKey));
+  return Promise.all(rows.map((row) => resolveStoredApiKey(row)));
 }
 
 export async function createImageGenerationConfig(

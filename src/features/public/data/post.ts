@@ -61,7 +61,7 @@ async function getPublishedEnglishSlugForSourcePost(postId: number) {
         eq(posts.published, true),
       ),
     )
-    .orderBy(desc(posts.updatedAt), desc(posts.createdAt))
+    .orderBy(desc(posts.updatedAt), desc(posts.createdAt), desc(posts.id))
     .limit(1);
 
   return englishPost?.slug ?? null;
@@ -94,7 +94,10 @@ export async function getPostsWithTags(
   try {
     const postsData = await readDb.query.posts.findMany({
       where: publishedPostCondition(language),
-      orderBy: desc(posts.createdAt),
+      orderBy: (postTable, { desc: orderByDesc }) => [
+        orderByDesc(postTable.createdAt),
+        orderByDesc(postTable.id),
+      ],
       limit,
       columns: {
         id: true,
@@ -143,7 +146,7 @@ export async function searchPublishedPosts(input: {
           ),
         ),
       )
-      .orderBy(desc(posts.createdAt))
+      .orderBy(desc(posts.createdAt), desc(posts.id))
       .limit(input.limit ?? 20);
 
     return { data: await attachTagsToPosts(postsData, language) };
@@ -195,14 +198,21 @@ export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
             eq(homepageSlots.placement, "sidebar"),
             eq(homepageSlots.contentType, "post"),
             eq(homepageSlots.enabled, true),
-            or(isNull(homepageSlots.startsAt), lte(homepageSlots.startsAt, new Date())),
-            or(isNull(homepageSlots.endsAt), gt(homepageSlots.endsAt, new Date())),
+            or(
+              isNull(homepageSlots.startsAt),
+              lte(homepageSlots.startsAt, new Date()),
+            ),
+            or(
+              isNull(homepageSlots.endsAt),
+              gt(homepageSlots.endsAt, new Date()),
+            ),
             publishedPostCondition(language),
           ),
         )
         .orderBy(
           asc(homepageSlots.sortOrder),
           desc(homepageSlots.createdAt),
+          desc(homepageSlots.id),
         )
         .limit(6);
     } catch (error) {
@@ -225,7 +235,7 @@ export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
         })
         .from(posts)
         .where(publishedPostCondition(language))
-        .orderBy(desc(posts.views), desc(posts.createdAt))
+        .orderBy(desc(posts.views), desc(posts.createdAt), desc(posts.id))
         .limit(6);
     } catch (error) {
       console.error("Failed to load homepage popular posts:", error);
@@ -276,7 +286,7 @@ export async function getRecommendedPosts(
           publishedChinesePostCondition(),
         ),
       )
-      .orderBy(desc(posts.createdAt))
+      .orderBy(desc(posts.createdAt), desc(posts.id))
       .limit(5);
 
     return { data: postsData };
@@ -469,7 +479,7 @@ export async function getPostsWithTagsByCategoryId(
       })
       .from(posts)
       .where(and(eq(posts.categoryId, id), publishedPostCondition(language)))
-      .orderBy(desc(posts.createdAt))
+      .orderBy(desc(posts.createdAt), desc(posts.id))
       .offset((pageNo - 1) * 10)
       .limit(10);
 
@@ -481,9 +491,7 @@ export async function getPostsWithTagsByCategoryId(
   }
 }
 
-export async function getPublishedPostCount(
-  language: PublicLanguage = "zh",
-) {
+export async function getPublishedPostCount(language: PublicLanguage = "zh") {
   "use cache";
   tagCache(cacheTags.posts);
 
@@ -571,7 +579,7 @@ export async function getLatestPostsForSidebar(
     })
     .from(posts)
     .where(publishedPostCondition(language))
-    .orderBy(desc(posts.createdAt))
+    .orderBy(desc(posts.createdAt), desc(posts.id))
     .limit(5);
 
   return { data: postsData };
