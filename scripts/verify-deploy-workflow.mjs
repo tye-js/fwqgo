@@ -11,7 +11,9 @@ if (
     "CONFIGURED_WEB_REVALIDATION_SECRET: ${{ secrets.WEB_REVALIDATION_SECRET }}",
   ) ||
   !workflow.includes('secret="$(openssl rand -hex 32)"') ||
-  !workflow.includes('printf \'WEB_REVALIDATION_SECRET=%s\\n\' "$secret" >> "$GITHUB_ENV"')
+  !workflow.includes(
+    'printf \'WEB_REVALIDATION_SECRET=%s\\n\' "$secret" >> "$GITHUB_ENV"',
+  )
 ) {
   throw new Error(
     "Deploy workflow must generate and persist a masked cache revalidation secret when the GitHub secret is absent",
@@ -29,12 +31,47 @@ if (requiredSecretsBody.includes("WEB_REVALIDATION_SECRET")) {
 }
 
 for (const key of [
+  "DATABASE_URL",
+  "CMS_DATABASE_URL",
+  "READ_DATABASE_URL",
+  "ANALYTICS_DATABASE_URL",
   "SECRET_ENCRYPTION_KEYS",
   "SECRET_ENCRYPTION_KEY",
   "SECRET_ENCRYPTION_ACTIVE_KEY_ID",
 ]) {
   if (!workflow.includes(`${key}=%s`)) {
     throw new Error(`Deploy workflow does not persist optional ${key}`);
+  }
+}
+
+const requiredDatabaseSecrets = [
+  "DATABASE_URL",
+  "CMS_DATABASE_URL",
+  "READ_DATABASE_URL",
+  "ANALYTICS_DATABASE_URL",
+];
+for (const key of requiredDatabaseSecrets) {
+  if (!requiredSecretsBody.includes(key)) {
+    throw new Error(`${key} must be required by the deploy workflow`);
+  }
+
+  const secretReference = `${key}: ` + "${{ secrets." + key + " }}";
+  if (!workflow.includes(secretReference)) {
+    throw new Error(`${key} must come from its dedicated GitHub secret`);
+  }
+}
+
+for (const obsoleteSecret of [
+  "CMS_USERNAME",
+  "CMS_PASSWORD",
+  "READ_USERNAME",
+  "READ_PASSWORD",
+  "GOOGLE_AI_API_KEY",
+]) {
+  if (workflow.includes(`secrets.${obsoleteSecret}`)) {
+    throw new Error(
+      `Deploy workflow must not inject obsolete secret ${obsoleteSecret}`,
+    );
   }
 }
 

@@ -52,6 +52,24 @@ function parseEnvFile(filePath) {
     );
 }
 
+/**
+ * Apply role-specific credentials when a deployment still uses the base URL
+ * plus username/password fallback variables.
+ *
+ * @param {string} baseUrl
+ * @param {string | undefined} username
+ * @param {string | undefined} password
+ * @returns {string}
+ */
+function withCredentials(baseUrl, username, password) {
+  if (!baseUrl) return "";
+
+  const url = new URL(baseUrl);
+  if (username) url.username = username;
+  if (password) url.password = password;
+  return url.toString();
+}
+
 const productionEnv = parseEnvFile(path.join(__dirname, ".env.production"));
 const bunInterpreter = process.env.BUN_BIN ?? productionEnv.BUN_BIN ?? "";
 const useBun = Boolean(bunInterpreter);
@@ -97,17 +115,24 @@ function createApp({
   // is the actual runtime and both apps keep their single listening port.
   const instances = useBun ? 1 : requestedInstances;
 
+  const primaryDatabaseUrl =
+    process.env.DATABASE_URL ?? productionEnv.DATABASE_URL ?? "";
   const readDatabaseUrl =
     process.env.READ_DATABASE_URL ??
     productionEnv.READ_DATABASE_URL ??
-    productionEnv.DATABASE_URL ??
-    "";
+    withCredentials(
+      primaryDatabaseUrl,
+      process.env.READ_USERNAME ?? productionEnv.READ_USERNAME,
+      process.env.READ_PASSWORD ?? productionEnv.READ_PASSWORD,
+    );
   const writeDatabaseUrl =
     process.env.CMS_DATABASE_URL ??
     productionEnv.CMS_DATABASE_URL ??
-    process.env.DATABASE_URL ??
-    productionEnv.DATABASE_URL ??
-    "";
+    withCredentials(
+      process.env.DATABASE_URL ?? productionEnv.DATABASE_URL ?? "",
+      process.env.CMS_USERNAME ?? productionEnv.CMS_USERNAME,
+      process.env.CMS_PASSWORD ?? productionEnv.CMS_PASSWORD,
+    );
   const analyticsDatabaseUrl =
     process.env.ANALYTICS_DATABASE_URL ??
     productionEnv.ANALYTICS_DATABASE_URL ??

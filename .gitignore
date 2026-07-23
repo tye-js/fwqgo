@@ -41,9 +41,10 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # local env files
-# do not commit any .env files to git, except for the .env.example file. https://create.t3.gg/en/usage/env-variables#using-environment-variables
+# Do not commit any .env files except the safe template.
 .env
-.env*.local
+.env.*
+!.env.example
 
 # vercel
 .vercel
@@ -62,10 +63,9 @@ fwqgo.com
 
 7d103d60e34c489ca909b9ffcba3897f.txt
 
-/tests
-
-.claude
-
-.agents
+# local-only tests and agent workspaces
+/tests/
+/.claude/
+/.agents/
 
 /output/imagegen

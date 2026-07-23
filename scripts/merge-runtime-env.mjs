@@ -3,10 +3,15 @@ import path from "node:path";
 
 const [targetPath, overridePath] = process.argv.slice(2);
 if (!targetPath || !overridePath) {
-  throw new Error("Usage: node merge-runtime-env.mjs <target-env> <override-env>");
+  throw new Error(
+    "Usage: node merge-runtime-env.mjs <target-env> <override-env>",
+  );
 }
 
 const allowedKeys = new Set([
+  "DATABASE_URL",
+  "CMS_DATABASE_URL",
+  "READ_DATABASE_URL",
   "ANALYTICS_DATABASE_URL",
   "SECRET_ENCRYPTION_ACTIVE_KEY_ID",
   "SECRET_ENCRYPTION_KEY",
@@ -68,4 +73,6 @@ const temporaryPath = path.join(
 fs.writeFileSync(temporaryPath, `${output.join("\n")}\n`, { mode: 0o600 });
 fs.renameSync(temporaryPath, targetPath);
 fs.chmodSync(targetPath, 0o600);
-console.log(`Runtime environment updated: keys=${[...overrides.keys()].join(",")}`);
+console.log(
+  `Runtime environment updated: keys=${[...overrides.keys()].join(",")}`,
+);

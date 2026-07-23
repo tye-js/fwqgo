@@ -223,7 +223,8 @@ bun run db:studio         # 打开 Drizzle Studio
 | `bun run build`               | 依次构建双应用并检查应用边界   |
 | `bun run start:web`           | 启动 Web 生产构建              |
 | `bun run start:cms`           | 启动 CMS 生产构建              |
-| `bun run test`                | 运行核心业务回归测试           |
+| `bun run test`                | 运行本地私有测试，无目录时跳过 |
+| `bun run verify:repository`   | 拒绝跟踪本地配置和工具目录     |
 | `bun run verify:architecture` | 验证 package 与应用层依赖边界  |
 | `bun run verify:apps`         | 验证 Web/CMS 路由和产物边界    |
 | `bun run verify:deploy`       | 验证 Actions 远端激活脚本      |
@@ -293,7 +294,9 @@ DEPLOY_HOST
 DEPLOY_USER
 SSH_PRIVATE_KEY
 DATABASE_URL
+CMS_DATABASE_URL
 READ_DATABASE_URL
+ANALYTICS_DATABASE_URL
 CMS_BASIC_AUTH_USERNAME
 CMS_BASIC_AUTH_PASSWORD
 ```
@@ -307,15 +310,13 @@ SECRET_ENCRYPTION_ACTIVE_KEY_ID
 
 `SECRET_ENCRYPTION_KEY` 仅用于单密钥兼容模式。Actions 对这些可选值采用非空合并：未配置时保留服务器共享环境中的现有密钥环，不会用空值覆盖。
 
-按数据库角色方案可额外配置：
+本项目生产环境使用四个独立连接：迁移、CMS 写入、公开只读和浏览量埋点。生产部署必须配置上面的四个完整 URL；开发环境需要兼容旧配置时，才使用以下基础连接加角色凭据 fallback：
 
 ```text
-CMS_DATABASE_URL
 CMS_USERNAME
 CMS_PASSWORD
 READ_USERNAME
 READ_PASSWORD
-ANALYTICS_DATABASE_URL
 ```
 
 GitHub Actions Variables：
@@ -330,7 +331,7 @@ NEXT_PUBLIC_CMS_URL=https://cms.fwqgo.com
 WEB_REVALIDATION_URL=http://127.0.0.1:3000/api/internal/revalidate
 ```
 
-`WEB_REVALIDATION_SECRET` 可作为 GitHub Secret 固定配置；未配置时，Actions 会为本次发布生成随机密钥并进行日志掩码。Actions 会把该密钥、`WEB_REVALIDATION_URL` 和 `ANALYTICS_DATABASE_URL` 合并进服务器共享 `.env.production`，保证 Web 与 CMS 使用同一值。其他运行时配置仍由服务器文件维护。所有真实凭据都不能提交到仓库。
+`WEB_REVALIDATION_SECRET` 可作为 GitHub Secret 固定配置；未配置时，Actions 会为本次发布生成随机密钥并进行日志掩码。Actions 会把该密钥、`WEB_REVALIDATION_URL` 和四个数据库 URL 合并进服务器共享 `.env.production`，保证 Web 与 CMS 使用同一组连接配置。其他运行时配置仍由服务器文件维护。所有真实凭据都不能提交到仓库。
 
 ### 本地应急部署
 

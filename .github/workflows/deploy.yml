@@ -32,11 +32,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       CMS_DATABASE_URL: ${{ secrets.CMS_DATABASE_URL }}
       READ_DATABASE_URL: ${{ secrets.READ_DATABASE_URL }}
-      ANALYTICS_DATABASE_URL: ${{ secrets.ANALYTICS_DATABASE_URL || secrets.DATABASE_URL }}
-      CMS_USERNAME: ${{ secrets.CMS_USERNAME }}
-      READ_USERNAME: ${{ secrets.READ_USERNAME }}
-      CMS_PASSWORD: ${{ secrets.CMS_PASSWORD }}
-      READ_PASSWORD: ${{ secrets.READ_PASSWORD }}
+      ANALYTICS_DATABASE_URL: ${{ secrets.ANALYTICS_DATABASE_URL }}
       WEB_REVALIDATION_URL: ${{ vars.WEB_REVALIDATION_URL || 'http://127.0.0.1:3000/api/internal/revalidate' }}
       NEXT_PUBLIC_URL: ${{ vars.NEXT_PUBLIC_URL || 'https://fwqgo.com' }}
       NEXT_PUBLIC_CMS_URL: ${{ vars.NEXT_PUBLIC_CMS_URL || 'https://cms.fwqgo.com' }}
@@ -45,7 +41,6 @@ jobs:
       SECRET_ENCRYPTION_KEYS: ${{ secrets.SECRET_ENCRYPTION_KEYS }}
       SECRET_ENCRYPTION_KEY: ${{ secrets.SECRET_ENCRYPTION_KEY }}
       SECRET_ENCRYPTION_ACTIVE_KEY_ID: ${{ secrets.SECRET_ENCRYPTION_ACTIVE_KEY_ID || vars.SECRET_ENCRYPTION_ACTIVE_KEY_ID }}
-      GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
 
     steps:
       - name: Checkout
@@ -114,7 +109,9 @@ jobs:
             DEPLOY_USER
             SSH_PRIVATE_KEY
             DATABASE_URL
+            CMS_DATABASE_URL
             READ_DATABASE_URL
+            ANALYTICS_DATABASE_URL
             CMS_BASIC_AUTH_USERNAME
             CMS_BASIC_AUTH_PASSWORD
           )
@@ -183,7 +180,10 @@ jobs:
           set -euo pipefail
           runtime_env=".deploy/runtime-$RELEASE_ID.env"
           umask 077
-          printf 'ANALYTICS_DATABASE_URL=%s\nWEB_REVALIDATION_SECRET=%s\nWEB_REVALIDATION_URL=%s\nSECRET_ENCRYPTION_KEYS=%s\nSECRET_ENCRYPTION_KEY=%s\nSECRET_ENCRYPTION_ACTIVE_KEY_ID=%s\n' \
+          printf 'DATABASE_URL=%s\nCMS_DATABASE_URL=%s\nREAD_DATABASE_URL=%s\nANALYTICS_DATABASE_URL=%s\nWEB_REVALIDATION_SECRET=%s\nWEB_REVALIDATION_URL=%s\nSECRET_ENCRYPTION_KEYS=%s\nSECRET_ENCRYPTION_KEY=%s\nSECRET_ENCRYPTION_ACTIVE_KEY_ID=%s\n' \
+            "$DATABASE_URL" \
+            "$CMS_DATABASE_URL" \
+            "$READ_DATABASE_URL" \
             "$ANALYTICS_DATABASE_URL" \
             "$WEB_REVALIDATION_SECRET" \
             "$WEB_REVALIDATION_URL" \
