@@ -65,7 +65,7 @@ function getAiRewriteTimeoutMs() {
   return DEFAULT_AI_REWRITE_TIMEOUT_MS;
 }
 
-function getTagSeoMaxTokens(maxTokens: number) {
+export function getTagSeoMaxTokens(maxTokens: number) {
   if (Number.isFinite(maxTokens) && maxTokens > 0) {
     return Math.min(Math.floor(maxTokens), TAG_SEO_MAX_TOKENS);
   }
@@ -77,7 +77,7 @@ function createReadableError(message: string, detail?: string) {
   return new Error(detail ? `${message}；原因：${detail}` : message);
 }
 
-function normalizeStringArray(value: unknown) {
+export function normalizeStringArray(value: unknown) {
   if (Array.isArray(value)) {
     return value.map((item) => String(item).trim()).filter(Boolean);
   }
@@ -93,7 +93,7 @@ function normalizeStringArray(value: unknown) {
   return [];
 }
 
-function normalizeEnglishSlug(value: string, fallback: string) {
+export function normalizeEnglishSlug(value: string, fallback: string) {
   const normalized = slugify(value)
     .replace(/[^a-z0-9-]/g, "")
     .replace(/-+/g, "-")
@@ -111,7 +111,10 @@ function normalizeEnglishSlug(value: string, fallback: string) {
     .slice(0, 80);
 }
 
-function normalizeTagSeoOutput(raw: RawTagSeoOutput, fallback: TagSeoInput) {
+export function normalizeTagSeoOutput(
+  raw: RawTagSeoOutput,
+  fallback: TagSeoInput,
+) {
   const description =
     typeof raw.description === "string" && raw.description.trim()
       ? raw.description.trim().slice(0, 180)
@@ -141,7 +144,7 @@ function normalizeTagSeoOutput(raw: RawTagSeoOutput, fallback: TagSeoInput) {
   };
 }
 
-function validateTagSeoOutput(output: TagSeoOutput) {
+export function validateTagSeoOutput(output: TagSeoOutput) {
   const issues: string[] = [];
 
   if (output.description.length < 20) {
@@ -176,7 +179,7 @@ function validateTagSeoOutput(output: TagSeoOutput) {
   }
 }
 
-function getAiProviderErrorMessage(input: {
+export function getAiProviderErrorMessage(input: {
   status: number;
   statusText: string;
   error?: ChatCompletionResponse["error"];

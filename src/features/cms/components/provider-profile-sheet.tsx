@@ -62,6 +62,7 @@ import {
   notifyInfo,
   notifySuccess,
 } from "@/lib/admin-toast";
+import { useUnsavedChangesGuard } from "@/features/cms/hooks/use-unsaved-changes-guard";
 import type {
   AffProviderTableData,
   ProviderProfileSnapshotData,
@@ -84,6 +85,16 @@ type PromoFormState = {
   sourceUrl: string;
 };
 
+type ProviderProfileFormState = {
+  summary: string;
+  summarySourceUrl: string;
+  refundPolicy: string;
+  refundPolicySourceUrl: string;
+  prohibitedUses: string;
+  prohibitedUsesSourceUrl: string;
+  markVerified: boolean;
+};
+
 const emptyPromoForm: PromoFormState = {
   code: "",
   description: "",
@@ -95,6 +106,50 @@ const emptyPromoForm: PromoFormState = {
   isDefault: false,
   sourceUrl: "",
 };
+
+function getProviderProfileForm(
+  provider: AffProviderTableData,
+): ProviderProfileFormState {
+  return {
+    summary: provider.summary ?? "",
+    summarySourceUrl: provider.summarySourceUrl ?? "",
+    refundPolicy: provider.refundPolicy ?? "",
+    refundPolicySourceUrl: provider.refundPolicySourceUrl ?? "",
+    prohibitedUses: provider.prohibitedUses ?? "",
+    prohibitedUsesSourceUrl: provider.prohibitedUsesSourceUrl ?? "",
+    markVerified: Boolean(provider.profileVerifiedAt),
+  };
+}
+
+function providerProfileFormsEqual(
+  left: ProviderProfileFormState,
+  right: ProviderProfileFormState,
+) {
+  return (
+    left.summary === right.summary &&
+    left.summarySourceUrl === right.summarySourceUrl &&
+    left.refundPolicy === right.refundPolicy &&
+    left.refundPolicySourceUrl === right.refundPolicySourceUrl &&
+    left.prohibitedUses === right.prohibitedUses &&
+    left.prohibitedUsesSourceUrl === right.prohibitedUsesSourceUrl &&
+    left.markVerified === right.markVerified
+  );
+}
+
+function promoFormsEqual(left: PromoFormState, right: PromoFormState) {
+  return (
+    left.id === right.id &&
+    left.code === right.code &&
+    left.description === right.description &&
+    left.discountText === right.discountText &&
+    left.terms === right.terms &&
+    left.startsAt === right.startsAt &&
+    left.endsAt === right.endsAt &&
+    left.active === right.active &&
+    left.isDefault === right.isDefault &&
+    left.sourceUrl === right.sourceUrl
+  );
+}
 
 function getPromoForm(promo: ProviderPromoCodeData | null): PromoFormState {
   return promo
@@ -225,16 +280,45 @@ function PromoCodeDialog({
   promo,
   open,
   onOpenChange,
+  onBusyChange,
+  onDirtyChange,
   onSaved,
 }: {
   providerId: number;
   promo: ProviderPromoCodeData | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onBusyChange: (busy: boolean) => void;
+  onDirtyChange: (dirty: boolean) => void;
   onSaved: () => void;
 }) {
-  const [form, setForm] = useState<PromoFormState>(() => getPromoForm(promo));
+  const [initialForm] = useState(() => getPromoForm(promo));
+  const [form, setForm] = useState<PromoFormState>(initialForm);
+  const [savedForm, setSavedForm] = useState(initialForm);
   const [saving, setSaving] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const formDirty = !promoFormsEqual(form, savedForm);
+
+  useEffect(() => {
+    onDirtyChange(formDirty);
+  }, [formDirty, onDirtyChange]);
+
+  useEffect(() => {
+    return () => onDirtyChange(false);
+  }, [onDirtyChange]);
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (nextOpen) {
+      onOpenChange(true);
+      return;
+    }
+    if (saving) return;
+    if (formDirty) {
+      setDiscardOpen(true);
+      return;
+    }
+    onOpenChange(false);
+  }
 
   async function handleSave() {
     if (!form.code.trim()) {
@@ -246,6 +330,7 @@ function PromoCodeDialog({
     }
 
     setSaving(true);
+    onBusyChange(true);
     try {
       const result = await withTimeout(
         saveProviderPromoCode({
@@ -279,6 +364,8 @@ function PromoCodeDialog({
           result.data.isDefault ? "默认优惠码" : null,
         ]),
       });
+      setSavedForm(form);
+      onDirtyChange(false);
       onOpenChange(false);
       onSaved();
     } catch (error) {
@@ -288,171 +375,219 @@ function PromoCodeDialog({
       });
     } finally {
       setSaving(false);
+      onBusyChange(false);
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{promo ? "编辑优惠码" : "新增优惠码"}</DialogTitle>
-          <DialogDescription>供应商 #{providerId}</DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{promo ? "编辑优惠码" : "新增优惠码"}</DialogTitle>
+            <DialogDescription>供应商 #{providerId}</DialogDescription>
+          </DialogHeader>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="provider-promo-code">优惠码</Label>
-            <Input
-              id="provider-promo-code"
-              value={form.code}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, code: event.target.value }))
-              }
-              placeholder="SAVE20"
-            />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="provider-promo-code">优惠码</Label>
+              <Input
+                id="provider-promo-code"
+                value={form.code}
+                disabled={saving}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    code: event.target.value,
+                  }))
+                }
+                placeholder="SAVE20"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="provider-promo-discount">优惠内容</Label>
+              <Input
+                id="provider-promo-discount"
+                value={form.discountText}
+                disabled={saving}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    discountText: event.target.value,
+                  }))
+                }
+                placeholder="首年 8 折"
+              />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="provider-promo-description">说明</Label>
+              <Input
+                id="provider-promo-description"
+                value={form.description}
+                disabled={saving}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    description: event.target.value,
+                  }))
+                }
+                placeholder="适用产品或活动"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="provider-promo-start">开始时间</Label>
+              <Input
+                id="provider-promo-start"
+                type="datetime-local"
+                value={form.startsAt}
+                disabled={saving}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    startsAt: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="provider-promo-end">结束时间</Label>
+              <Input
+                id="provider-promo-end"
+                type="datetime-local"
+                value={form.endsAt}
+                disabled={saving}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    endsAt: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="provider-promo-terms">使用条件</Label>
+              <Textarea
+                id="provider-promo-terms"
+                className="min-h-24"
+                value={form.terms}
+                disabled={saving}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    terms: event.target.value,
+                  }))
+                }
+                placeholder="产品范围、付款周期、次数限制等"
+              />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="provider-promo-source">来源 URL</Label>
+              <Input
+                id="provider-promo-source"
+                value={form.sourceUrl}
+                disabled={saving}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    sourceUrl: event.target.value,
+                  }))
+                }
+                placeholder="https://..."
+              />
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="provider-promo-discount">优惠内容</Label>
-            <Input
-              id="provider-promo-discount"
-              value={form.discountText}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  discountText: event.target.value,
-                }))
-              }
-              placeholder="首年 8 折"
-            />
-          </div>
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="provider-promo-description">说明</Label>
-            <Input
-              id="provider-promo-description"
-              value={form.description}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  description: event.target.value,
-                }))
-              }
-              placeholder="适用产品或活动"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="provider-promo-start">开始时间</Label>
-            <Input
-              id="provider-promo-start"
-              type="datetime-local"
-              value={form.startsAt}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  startsAt: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="provider-promo-end">结束时间</Label>
-            <Input
-              id="provider-promo-end"
-              type="datetime-local"
-              value={form.endsAt}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  endsAt: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="provider-promo-terms">使用条件</Label>
-            <Textarea
-              id="provider-promo-terms"
-              className="min-h-24"
-              value={form.terms}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  terms: event.target.value,
-                }))
-              }
-              placeholder="产品范围、付款周期、次数限制等"
-            />
-          </div>
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="provider-promo-source">来源 URL</Label>
-            <Input
-              id="provider-promo-source"
-              value={form.sourceUrl}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  sourceUrl: event.target.value,
-                }))
-              }
-              placeholder="https://..."
-            />
-          </div>
-        </div>
 
-        <div className="flex flex-wrap gap-6 border-t pt-4">
-          <div className="flex items-center gap-2">
-            <Switch
-              id="provider-promo-active"
-              checked={form.active}
-              onCheckedChange={(checked) =>
-                setForm((current) => ({
-                  ...current,
-                  active: checked,
-                  isDefault: checked ? current.isDefault : false,
-                }))
-              }
-            />
-            <Label htmlFor="provider-promo-active">启用</Label>
+          <div className="flex flex-wrap gap-6 border-t pt-4">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="provider-promo-active"
+                checked={form.active}
+                disabled={saving}
+                onCheckedChange={(checked) =>
+                  setForm((current) => ({
+                    ...current,
+                    active: checked,
+                    isDefault: checked ? current.isDefault : false,
+                  }))
+                }
+              />
+              <Label htmlFor="provider-promo-active">启用</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="provider-promo-default"
+                checked={form.isDefault}
+                disabled={saving || !form.active}
+                onCheckedChange={(checked) =>
+                  setForm((current) => ({ ...current, isDefault: checked }))
+                }
+              />
+              <Label htmlFor="provider-promo-default">默认优惠码</Label>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Switch
-              id="provider-promo-default"
-              checked={form.isDefault}
-              disabled={!form.active}
-              onCheckedChange={(checked) =>
-                setForm((current) => ({ ...current, isDefault: checked }))
-              }
-            />
-            <Label htmlFor="provider-promo-default">默认优惠码</Label>
-          </div>
-        </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
-          </Button>
-          <Button disabled={saving} onClick={handleSave}>
-            <Save className="size-4" />
-            {saving ? "保存中..." : "保存"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={saving}
+              onClick={() => handleOpenChange(false)}
+            >
+              取消
+            </Button>
+            <Button disabled={saving} onClick={handleSave}>
+              <Save className="size-4" />
+              {saving ? "保存中..." : "保存"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>放弃优惠码修改？</AlertDialogTitle>
+            <AlertDialogDescription>
+              当前优惠码有尚未保存的内容，关闭后这些修改将丢失。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>继续编辑</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                setSavedForm(form);
+                onDirtyChange(false);
+                onOpenChange(false);
+              }}
+            >
+              放弃修改
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
 function ProviderCandidateReview({
   snapshot,
   providerName,
+  applyBlocked,
   onApplied,
+  onBusyChange,
+  onDirtyChange,
   onStatusChange,
 }: {
   snapshot: ProviderProfileSnapshotData;
   providerName: string;
+  applyBlocked: boolean;
   onApplied: (input: {
     summary: string;
     refundPolicy: string;
     prohibitedUses: string;
   }) => void;
+  onBusyChange: (busy: boolean) => void;
+  onDirtyChange: (dirty: boolean) => void;
   onStatusChange: (status: "applied" | "rejected") => void;
 }) {
   const router = useRouter();
@@ -462,9 +597,30 @@ function ProviderCandidateReview({
     snapshot.prohibitedUses ?? "",
   );
   const [reviewing, setReviewing] = useState<"apply" | "reject" | null>(null);
+  const candidateDirty =
+    summary !== (snapshot.summary ?? "") ||
+    refundPolicy !== (snapshot.refundPolicy ?? "") ||
+    prohibitedUses !== (snapshot.prohibitedUses ?? "");
+
+  useEffect(() => {
+    onDirtyChange(candidateDirty);
+  }, [candidateDirty, onDirtyChange]);
+
+  useEffect(() => {
+    return () => onDirtyChange(false);
+  }, [onDirtyChange]);
 
   async function handleApply() {
+    if (applyBlocked) {
+      notifyInfo({
+        title: "请先完成正式档案保存",
+        description: "正式档案正在保存或有未保存修改，完成后再应用采集候选。",
+      });
+      return;
+    }
+
     setReviewing("apply");
+    onBusyChange(true);
     try {
       const result = await withTimeout(
         applyProviderProfileSnapshot({
@@ -484,6 +640,7 @@ function ProviderCandidateReview({
       }
 
       onApplied({ summary, refundPolicy, prohibitedUses });
+      onDirtyChange(false);
       onStatusChange("applied");
       notifySuccess({
         title: "采集结果已应用",
@@ -497,11 +654,13 @@ function ProviderCandidateReview({
       });
     } finally {
       setReviewing(null);
+      onBusyChange(false);
     }
   }
 
   async function handleReject() {
     setReviewing("reject");
+    onBusyChange(true);
     try {
       const result = await withTimeout(
         rejectProviderProfileSnapshot({ snapshotId: snapshot.id }),
@@ -515,6 +674,7 @@ function ProviderCandidateReview({
         return;
       }
 
+      onDirtyChange(false);
       onStatusChange("rejected");
       notifySuccess({
         title: "采集结果已驳回",
@@ -528,6 +688,7 @@ function ProviderCandidateReview({
       });
     } finally {
       setReviewing(null);
+      onBusyChange(false);
     }
   }
 
@@ -544,6 +705,7 @@ function ProviderCandidateReview({
           id={`candidate-provider-summary-${snapshot.id}`}
           className="min-h-28"
           value={summary}
+          disabled={reviewing !== null}
           onChange={(event) => setSummary(event.target.value)}
         />
       </div>
@@ -558,6 +720,7 @@ function ProviderCandidateReview({
           id={`candidate-provider-refund-${snapshot.id}`}
           className="min-h-40"
           value={refundPolicy}
+          disabled={reviewing !== null}
           onChange={(event) => setRefundPolicy(event.target.value)}
         />
       </div>
@@ -572,19 +735,45 @@ function ProviderCandidateReview({
           id={`candidate-provider-prohibited-${snapshot.id}`}
           className="min-h-40"
           value={prohibitedUses}
+          disabled={reviewing !== null}
           onChange={(event) => setProhibitedUses(event.target.value)}
         />
       </div>
+      {applyBlocked ? (
+        <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+          正式档案正在保存或有未保存修改，请完成保存后再应用采集候选。
+        </p>
+      ) : null}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="outline" disabled={reviewing !== null}>
+              <XCircle className="size-4" />
+              {reviewing === "reject" ? "驳回中..." : "驳回"}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>驳回这次采集结果？</AlertDialogTitle>
+              <AlertDialogDescription>
+                候选内容不会写入正式档案，本次快照将标记为已驳回。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={handleReject}
+              >
+                确认驳回
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         <Button
-          variant="outline"
-          disabled={reviewing !== null}
-          onClick={handleReject}
+          disabled={reviewing !== null || applyBlocked}
+          onClick={handleApply}
         >
-          <XCircle className="size-4" />
-          {reviewing === "reject" ? "驳回中..." : "驳回"}
-        </Button>
-        <Button disabled={reviewing !== null} onClick={handleApply}>
           <CheckCircle2 className="size-4" />
           {reviewing === "apply" ? "应用中..." : "应用到档案"}
         </Button>
@@ -620,6 +809,9 @@ export function ProviderProfileSheet({
   const [markVerified, setMarkVerified] = useState(
     Boolean(provider.profileVerifiedAt),
   );
+  const [savedProfile, setSavedProfile] = useState(() =>
+    getProviderProfileForm(provider),
+  );
   const [optimisticSnapshot, setOptimisticSnapshot] = useState<{
     id: number;
     status: ProviderProfileSnapshotStatus;
@@ -630,11 +822,34 @@ export function ProviderProfileSheet({
   const [editingPromo, setEditingPromo] =
     useState<ProviderPromoCodeData | null>(null);
   const [deletingPromoId, setDeletingPromoId] = useState<number | null>(null);
-  const snapshot = provider.latestSnapshot;
-  const latestStatus = snapshot?.status ?? null;
+  const [candidateDirty, setCandidateDirty] = useState(false);
+  const [candidateReviewing, setCandidateReviewing] = useState(false);
+  const [promoDirty, setPromoDirty] = useState(false);
+  const [promoSaving, setPromoSaving] = useState(false);
+  const [pendingExit, setPendingExit] = useState<{
+    href: string | null;
+  } | null>(null);
+  const profileForm: ProviderProfileFormState = {
+    summary,
+    summarySourceUrl,
+    refundPolicy,
+    refundPolicySourceUrl,
+    prohibitedUses,
+    prohibitedUsesSourceUrl,
+    markVerified,
+  };
+  const profileDirty = !providerProfileFormsEqual(profileForm, savedProfile);
+  const hasUnsavedChanges = profileDirty || candidateDirty || promoDirty;
+  const exitBusy = savingProfile || candidateReviewing || promoSaving;
+  const serverSnapshot = provider.latestSnapshot;
+  const visibleSnapshot =
+    !optimisticSnapshot || serverSnapshot?.id === optimisticSnapshot.id
+      ? serverSnapshot
+      : null;
+  const latestStatus = serverSnapshot?.status ?? null;
   const effectiveStatus = (() => {
     if (!optimisticSnapshot) return latestStatus;
-    if (snapshot?.id !== optimisticSnapshot.id)
+    if (serverSnapshot?.id !== optimisticSnapshot.id)
       return optimisticSnapshot.status;
     if (optimisticSnapshot.status === "queued") return latestStatus;
     if (
@@ -647,6 +862,14 @@ export function ProviderProfileSheet({
     return latestStatus;
   })();
 
+  useUnsavedChangesGuard({
+    enabled: open && (hasUnsavedChanges || exitBusy),
+    onNavigationAttempt: (href) => {
+      if (exitBusy) return;
+      setPendingExit({ href });
+    },
+  });
+
   useEffect(() => {
     if (
       !open ||
@@ -658,11 +881,9 @@ export function ProviderProfileSheet({
     return () => window.clearInterval(interval);
   }, [effectiveStatus, open, router]);
 
-  const completionCount = [
-    provider.summary,
-    provider.refundPolicy,
-    provider.prohibitedUses,
-  ].filter(Boolean).length;
+  const completionCount = [summary, refundPolicy, prohibitedUses].filter(
+    (value) => value.trim().length > 0,
+  ).length;
   const snapshotMeta = getSnapshotStatusMeta(effectiveStatus);
   const SnapshotIcon = snapshotMeta.icon;
 
@@ -741,6 +962,7 @@ export function ProviderProfileSheet({
           markVerified ? "已标记核验" : "未标记核验",
         ]),
       });
+      setSavedProfile(profileForm);
       router.refresh();
     } catch (error) {
       notifyError({
@@ -757,24 +979,59 @@ export function ProviderProfileSheet({
     refundPolicy: string;
     prohibitedUses: string;
   }) {
-    if (input.summary) {
-      setSummary(input.summary);
-      setSummarySourceUrl(snapshot?.summarySourceUrl ?? "");
-    }
-    if (input.refundPolicy) {
-      setRefundPolicy(input.refundPolicy);
-      setRefundPolicySourceUrl(snapshot?.refundPolicySourceUrl ?? "");
-    }
-    if (input.prohibitedUses) {
-      setProhibitedUses(input.prohibitedUses);
-      setProhibitedUsesSourceUrl(snapshot?.prohibitedUsesSourceUrl ?? "");
-    }
+    const nextProfile = {
+      ...profileForm,
+      summary: input.summary.trim() || profileForm.summary,
+      summarySourceUrl: input.summary.trim()
+        ? (visibleSnapshot?.summarySourceUrl ?? "")
+        : profileForm.summarySourceUrl,
+      refundPolicy: input.refundPolicy.trim() || profileForm.refundPolicy,
+      refundPolicySourceUrl: input.refundPolicy.trim()
+        ? (visibleSnapshot?.refundPolicySourceUrl ?? "")
+        : profileForm.refundPolicySourceUrl,
+      prohibitedUses: input.prohibitedUses.trim() || profileForm.prohibitedUses,
+      prohibitedUsesSourceUrl: input.prohibitedUses.trim()
+        ? (visibleSnapshot?.prohibitedUsesSourceUrl ?? "")
+        : profileForm.prohibitedUsesSourceUrl,
+      markVerified: true,
+    };
+    setSummary(nextProfile.summary);
+    setSummarySourceUrl(nextProfile.summarySourceUrl);
+    setRefundPolicy(nextProfile.refundPolicy);
+    setRefundPolicySourceUrl(nextProfile.refundPolicySourceUrl);
+    setProhibitedUses(nextProfile.prohibitedUses);
+    setProhibitedUsesSourceUrl(nextProfile.prohibitedUsesSourceUrl);
     setMarkVerified(true);
+    setSavedProfile(nextProfile);
   }
 
   function handleCandidateStatusChange(status: "applied" | "rejected") {
-    if (!snapshot) return;
-    setOptimisticSnapshot({ id: snapshot.id, status });
+    if (!visibleSnapshot) return;
+    setCandidateDirty(false);
+    setOptimisticSnapshot({ id: visibleSnapshot.id, status });
+  }
+
+  function handleSheetOpenChange(nextOpen: boolean) {
+    if (nextOpen) {
+      onOpenChange(true);
+      return;
+    }
+    if (exitBusy) return;
+    if (hasUnsavedChanges) {
+      setPendingExit({ href: null });
+      return;
+    }
+    onOpenChange(false);
+  }
+
+  function discardChangesAndExit() {
+    const href = pendingExit?.href;
+    setPendingExit(null);
+    if (href) {
+      router.push(href);
+      return;
+    }
+    onOpenChange(false);
   }
 
   async function handleDeletePromo(promo: ProviderPromoCodeData) {
@@ -809,7 +1066,7 @@ export function ProviderProfileSheet({
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
+      <Sheet open={open} onOpenChange={handleSheetOpenChange}>
         <SheetContent className="w-full overflow-y-auto sm:max-w-3xl">
           <SheetHeader>
             <div className="flex flex-wrap items-center gap-2">
@@ -847,9 +1104,11 @@ export function ProviderProfileSheet({
                     />
                     {snapshotMeta.label}
                   </Badge>
-                  {snapshot ? (
+                  {visibleSnapshot ? (
                     <span className="text-xs text-muted-foreground">
-                      {formatDate(snapshot.updatedAt ?? snapshot.createdAt)}
+                      {formatDate(
+                        visibleSnapshot.updatedAt ?? visibleSnapshot.createdAt,
+                      )}
                     </span>
                   ) : null}
                 </div>
@@ -871,30 +1130,33 @@ export function ProviderProfileSheet({
               </Button>
             </div>
 
-            {effectiveStatus === "failed" && snapshot?.error ? (
+            {effectiveStatus === "failed" && visibleSnapshot?.error ? (
               <p className="mt-4 break-words rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                {snapshot.error}
+                {visibleSnapshot.error}
               </p>
             ) : null}
 
-            {effectiveStatus === "pending" && snapshot?.error ? (
+            {effectiveStatus === "pending" && visibleSnapshot?.error ? (
               <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
                 <p className="flex items-center gap-2 font-medium">
                   <TriangleAlert className="size-4 shrink-0" />
                   采集结果不完整
                 </p>
                 <p className="mt-1 whitespace-pre-wrap break-words leading-6">
-                  {snapshot.error}
+                  {visibleSnapshot.error}
                 </p>
               </div>
             ) : null}
 
-            {effectiveStatus === "pending" && snapshot ? (
+            {effectiveStatus === "pending" && visibleSnapshot ? (
               <ProviderCandidateReview
-                key={snapshot.id}
-                snapshot={snapshot}
+                key={visibleSnapshot.id}
+                snapshot={visibleSnapshot}
                 providerName={provider.name}
+                applyBlocked={profileDirty || savingProfile}
                 onApplied={handleCandidateApplied}
+                onBusyChange={setCandidateReviewing}
+                onDirtyChange={setCandidateDirty}
                 onStatusChange={handleCandidateStatusChange}
               />
             ) : null}
@@ -913,6 +1175,7 @@ export function ProviderProfileSheet({
                 <Switch
                   id="provider-profile-verified"
                   checked={markVerified}
+                  disabled={candidateReviewing}
                   onCheckedChange={setMarkVerified}
                 />
                 <Label htmlFor="provider-profile-verified">已核验</Label>
@@ -926,11 +1189,13 @@ export function ProviderProfileSheet({
                   id="provider-profile-summary"
                   className="min-h-28"
                   value={summary}
+                  disabled={candidateReviewing}
                   onChange={(event) => setSummary(event.target.value)}
                 />
                 <Input
                   aria-label="供应商介绍来源 URL"
                   value={summarySourceUrl}
+                  disabled={candidateReviewing}
                   onChange={(event) => setSummarySourceUrl(event.target.value)}
                   placeholder="介绍来源 URL"
                 />
@@ -941,11 +1206,13 @@ export function ProviderProfileSheet({
                   id="provider-profile-refund"
                   className="min-h-40"
                   value={refundPolicy}
+                  disabled={candidateReviewing}
                   onChange={(event) => setRefundPolicy(event.target.value)}
                 />
                 <Input
                   aria-label="退款政策来源 URL"
                   value={refundPolicySourceUrl}
+                  disabled={candidateReviewing}
                   onChange={(event) =>
                     setRefundPolicySourceUrl(event.target.value)
                   }
@@ -958,11 +1225,13 @@ export function ProviderProfileSheet({
                   id="provider-profile-prohibited"
                   className="min-h-40"
                   value={prohibitedUses}
+                  disabled={candidateReviewing}
                   onChange={(event) => setProhibitedUses(event.target.value)}
                 />
                 <Input
                   aria-label="禁止事项来源 URL"
                   value={prohibitedUsesSourceUrl}
+                  disabled={candidateReviewing}
                   onChange={(event) =>
                     setProhibitedUsesSourceUrl(event.target.value)
                   }
@@ -970,7 +1239,10 @@ export function ProviderProfileSheet({
                 />
               </div>
               <div className="flex justify-end">
-                <Button disabled={savingProfile} onClick={handleSaveProfile}>
+                <Button
+                  disabled={savingProfile || candidateReviewing}
+                  onClick={handleSaveProfile}
+                >
                   <Save className="size-4" />
                   {savingProfile ? "保存中..." : "保存档案"}
                 </Button>
@@ -1105,9 +1377,34 @@ export function ProviderProfileSheet({
           promo={editingPromo}
           open
           onOpenChange={setPromoDialogOpen}
+          onBusyChange={setPromoSaving}
+          onDirtyChange={setPromoDirty}
           onSaved={() => router.refresh()}
         />
       ) : null}
+
+      <AlertDialog
+        open={pendingExit !== null}
+        onOpenChange={(nextOpen) => !nextOpen && setPendingExit(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>放弃未保存的修改？</AlertDialogTitle>
+            <AlertDialogDescription>
+              供应商档案、采集候选或优惠码中有未保存内容，继续后这些修改将丢失。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>继续编辑</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={discardChangesAndExit}
+            >
+              放弃修改
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

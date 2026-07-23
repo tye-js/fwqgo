@@ -61,7 +61,13 @@ function SafeLinkButton({
   if (!isSafePublicHref(href)) return null;
 
   return (
-    <Button asChild size="sm" variant={variant} aria-label={ariaLabel}>
+    <Button
+      asChild
+      size="sm"
+      variant={variant}
+      className="min-h-11"
+      aria-label={ariaLabel}
+    >
       {isInternalHref(href) ? (
         <Link href={href} rel={sponsored ? "nofollow sponsored" : undefined}>
           {children}
@@ -159,7 +165,7 @@ export function ServerInventoryOfferActions({
         <div className="space-y-1">
           {options.length > 1 ? (
             <Select value={selectedValue} onValueChange={setSelectedId}>
-              <SelectTrigger className="h-9 min-w-[150px] text-xs">
+              <SelectTrigger className="min-h-11 min-w-[150px] text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -193,10 +199,10 @@ export function ServerInventoryOfferActions({
         <button
           type="button"
           onClick={copyPromoCode}
-          className="inline-flex min-h-8 items-center gap-1.5 rounded-md bg-primary/10 px-2 font-mono text-xs font-medium text-primary hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1.5 text-left font-mono text-xs font-medium text-primary hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {promoCode}
-          <Copy className="size-3.5" />
+          <span className="min-w-0 break-all">{promoCode}</span>
+          <Copy className="size-3.5 shrink-0" />
         </button>
       ) : null}
 

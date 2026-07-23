@@ -18,13 +18,6 @@ type SearchPageProps = {
   searchParams: Promise<{ q?: string | string[]; lang?: string | string[] }>;
 };
 
-function getSiteUrl() {
-  return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
-    /\/+$/,
-    "",
-  );
-}
-
 function normalizeQuery(value: string | string[] | undefined) {
   const raw = Array.isArray(value) ? value[0] : value;
   return raw?.trim().slice(0, 80) ?? "";
@@ -45,9 +38,6 @@ export const metadata: Metadata = {
   title: "搜索服务器优惠、文章和套餐 - 服务器go",
   description:
     "搜索服务器优惠文章、VPS 套餐、商家、地区、线路和优惠码，快速找到合适的购买入口和测评内容。",
-  alternates: {
-    canonical: `${getSiteUrl()}/search`,
-  },
   robots: {
     index: false,
     follow: true,
@@ -165,7 +155,7 @@ async function SearchContent({ searchParams }: SearchPageProps) {
                   key={item}
                   href={getSearchHref(item, language)}
                   prefetch
-                  className="inline-flex min-h-9 items-center rounded-full border border-border/70 bg-background px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-accent/30 hover:bg-accent/5 hover:text-accent"
+                  className="inline-flex min-h-11 items-center rounded-full border border-border bg-background px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-9 md:px-3"
                 >
                   {item}
                 </Link>

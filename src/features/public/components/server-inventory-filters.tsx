@@ -1,7 +1,15 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import type { FormEvent } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import type { FormEvent, ReactNode } from "react";
 import { Filter, RotateCcw, Search, Store } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
@@ -43,14 +51,44 @@ function isDefaultValue(key: FilterKey, value: string) {
   return value === "all";
 }
 
-function useInventoryNavigation() {
+type InventoryNavigation = {
+  isPending: boolean;
+  navigate: (updates: Record<string, string | null>) => void;
+  resetFilters: () => void;
+  updateFilter: (key: FilterKey, value: string) => void;
+};
+
+const InventoryNavigationContext = createContext<InventoryNavigation | null>(
+  null,
+);
+
+function useInventoryNavigationController(): InventoryNavigation {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
+  const navigationLockRef = useRef(false);
+  const serializedSearchParams = searchParams.toString();
+  const currentHref = serializedSearchParams
+    ? `${pathname}?${serializedSearchParams}`
+    : pathname;
+
+  useEffect(() => {
+    navigationLockRef.current = false;
+  }, [pathname, serializedSearchParams]);
+
+  useEffect(() => {
+    if (!isPending) navigationLockRef.current = false;
+  }, [isPending]);
+
+  function replace(href: string) {
+    if (href === currentHref || navigationLockRef.current) return;
+    navigationLockRef.current = true;
+    startTransition(() => router.replace(href, { scroll: false }));
+  }
 
   function navigate(updates: Record<string, string | null>) {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(serializedSearchParams);
     params.delete("cursor");
 
     for (const [key, value] of Object.entries(updates)) {
@@ -59,7 +97,7 @@ function useInventoryNavigation() {
     }
 
     const href = params.size ? `${pathname}?${params.toString()}` : pathname;
-    startTransition(() => router.replace(href, { scroll: false }));
+    replace(href);
   }
 
   function updateFilter(key: FilterKey, value: string) {
@@ -67,10 +105,33 @@ function useInventoryNavigation() {
   }
 
   function resetFilters() {
-    startTransition(() => router.replace(pathname, { scroll: false }));
+    replace(pathname);
   }
 
   return { isPending, navigate, resetFilters, updateFilter };
+}
+
+function useInventoryNavigation() {
+  const navigation = useContext(InventoryNavigationContext);
+  if (!navigation) {
+    throw new Error(
+      "Server inventory controls require ServerInventoryNavigationProvider",
+    );
+  }
+  return navigation;
+}
+
+export function ServerInventoryNavigationProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const navigation = useInventoryNavigationController();
+  return (
+    <InventoryNavigationContext.Provider value={navigation}>
+      {children}
+    </InventoryNavigationContext.Provider>
+  );
 }
 
 export function ServerInventoryProviderNav({
@@ -113,7 +174,7 @@ export function ServerInventoryProviderNav({
           onClick={() => updateFilter("provider", "all")}
           disabled={isPending}
           aria-pressed={filters.provider === "all"}
-          className={`flex min-h-10 w-full items-center justify-between rounded-md px-3 text-left text-sm transition-colors disabled:opacity-50 ${
+          className={`flex min-h-11 w-full items-center justify-between rounded-md px-3 text-left text-sm transition-colors disabled:opacity-50 ${
             filters.provider === "all"
               ? "bg-primary text-primary-foreground"
               : "hover:bg-muted"
@@ -129,7 +190,7 @@ export function ServerInventoryProviderNav({
             onClick={() => updateFilter("provider", provider.key)}
             disabled={isPending}
             aria-pressed={filters.provider === provider.key}
-            className={`mt-1 flex min-h-10 w-full items-center justify-between gap-2 rounded-md px-3 text-left text-sm transition-colors disabled:opacity-50 ${
+            className={`mt-1 flex min-h-11 w-full items-center justify-between gap-2 rounded-md px-3 text-left text-sm transition-colors disabled:opacity-50 ${
               filters.provider === provider.key
                 ? "bg-primary text-primary-foreground"
                 : "hover:bg-muted"
@@ -156,16 +217,18 @@ function FacetSelect({
   placeholder,
   allLabel,
   items,
+  disabled,
   onValueChange,
 }: {
   value: string;
   placeholder: string;
   allLabel: string;
   items: Array<{ key: string; label: string; count: number }>;
+  disabled?: boolean;
   onValueChange: (value: string) => void;
 }) {
   return (
-    <Select value={value} onValueChange={onValueChange}>
+    <Select value={value} disabled={disabled} onValueChange={onValueChange}>
       <SelectTrigger className="min-h-11 md:min-h-9">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
@@ -220,6 +283,7 @@ export function ServerInventoryToolbar({
           type="button"
           size="sm"
           variant="ghost"
+          className="min-h-11"
           onClick={resetFilters}
           disabled={isPending}
         >
@@ -232,10 +296,12 @@ export function ServerInventoryToolbar({
         className="mb-3 grid grid-cols-2 rounded-md border border-border/70 bg-muted/30 p-1"
         aria-label="套餐属性"
       >
-        {([
-          ["regular", "常规款"],
-          ["promotion", "活动款"],
-        ] as const).map(([value, label]) => (
+        {(
+          [
+            ["regular", "常规款"],
+            ["promotion", "活动款"],
+          ] as const
+        ).map(([value, label]) => (
           <button
             key={value}
             type="button"
@@ -247,7 +313,7 @@ export function ServerInventoryToolbar({
                 check: null,
               })
             }
-            className={`min-h-10 rounded-sm px-3 text-sm font-medium transition-colors disabled:opacity-50 ${
+            className={`min-h-11 rounded-sm px-3 text-sm font-medium transition-colors disabled:opacity-50 ${
               filters.kind === value
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
@@ -267,6 +333,7 @@ export function ServerInventoryToolbar({
           defaultValue={filters.query}
           placeholder="搜索名称、厂商、机房、线路或规格"
           aria-label="搜索服务器套餐"
+          disabled={isPending}
           className="min-h-11"
         />
         <Button type="submit" className="min-h-11" disabled={isPending}>
@@ -282,11 +349,13 @@ export function ServerInventoryToolbar({
             placeholder="厂商"
             allLabel="全部厂商"
             items={facets.providers}
+            disabled={isPending}
             onValueChange={(value) => updateFilter("provider", value)}
           />
         </div>
         <Select
           value={filters.stock}
+          disabled={isPending}
           onValueChange={(value) => updateFilter("stock", value)}
         >
           <SelectTrigger className="min-h-11 md:min-h-9">
@@ -306,10 +375,12 @@ export function ServerInventoryToolbar({
           placeholder="产品组"
           allLabel="全部产品组"
           items={facets.groups}
+          disabled={isPending}
           onValueChange={(value) => updateFilter("group", value)}
         />
         <Select
           value={filters.sort}
+          disabled={isPending}
           onValueChange={(value) => updateFilter("sort", value)}
         >
           <SelectTrigger className="min-h-11 md:min-h-9">
@@ -333,6 +404,7 @@ export function ServerInventoryToolbar({
             placeholder="地区"
             allLabel="全部地区"
             items={facets.regions}
+            disabled={isPending}
             onValueChange={(value) => updateFilter("region", value)}
           />
           <FacetSelect
@@ -340,6 +412,7 @@ export function ServerInventoryToolbar({
             placeholder="线路"
             allLabel="全部线路"
             items={facets.lines}
+            disabled={isPending}
             onValueChange={(value) => updateFilter("line", value)}
           />
           <FacetSelect
@@ -347,10 +420,12 @@ export function ServerInventoryToolbar({
             placeholder="特征"
             allLabel="全部特征"
             items={facets.features}
+            disabled={isPending}
             onValueChange={(value) => updateFilter("feature", value)}
           />
           <Select
             value={filters.promo}
+            disabled={isPending}
             onValueChange={(value) => updateFilter("promo", value)}
           >
             <SelectTrigger className="min-h-11 md:min-h-9">
@@ -365,6 +440,7 @@ export function ServerInventoryToolbar({
           {filters.kind === "promotion" ? (
             <Select
               value={filters.check}
+              disabled={isPending}
               onValueChange={(value) => updateFilter("check", value)}
             >
               <SelectTrigger className="min-h-11 md:min-h-9">
@@ -392,6 +468,7 @@ export function ServerInventoryToolbar({
             defaultValue={filters.minPrice}
             placeholder="最低月价 USD"
             aria-label="最低美元月价"
+            disabled={isPending}
             className="min-h-11 md:min-h-9"
           />
           <Input
@@ -403,6 +480,7 @@ export function ServerInventoryToolbar({
             defaultValue={filters.maxPrice}
             placeholder="最高月价 USD"
             aria-label="最高美元月价"
+            disabled={isPending}
             className="min-h-11 md:min-h-9"
           />
           <Button

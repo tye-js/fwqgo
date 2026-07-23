@@ -2,11 +2,18 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { ArrowRight, Database, MapPin, Server, ShieldCheck } from "lucide-react";
+import {
+  ArrowRight,
+  Database,
+  MapPin,
+  Server,
+  ShieldCheck,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import {
   ServerInventoryProviderNav,
+  ServerInventoryNavigationProvider,
   ServerInventoryToolbar,
 } from "@/features/public/components/server-inventory-filters";
 import { ServerInventoryResults } from "@/features/public/components/server-inventory-results";
@@ -115,17 +122,19 @@ async function InventoryRuntime({
   }
 
   return (
-    <div className="grid min-h-0 gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
-      <ServerInventoryProviderNav facets={result.facets} filters={filters} />
-      <div className="min-w-0 space-y-4">
-        <ServerInventoryToolbar
-          key={JSON.stringify(filters)}
-          facets={result.facets}
-          filters={filters}
-        />
-        <ServerInventoryResults page={result.page} filters={filters} />
+    <ServerInventoryNavigationProvider>
+      <div className="grid min-h-0 gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <ServerInventoryProviderNav facets={result.facets} filters={filters} />
+        <div className="min-w-0 space-y-4">
+          <ServerInventoryToolbar
+            key={JSON.stringify(filters)}
+            facets={result.facets}
+            filters={filters}
+          />
+          <ServerInventoryResults page={result.page} filters={filters} />
+        </div>
       </div>
-    </div>
+    </ServerInventoryNavigationProvider>
   );
 }
 

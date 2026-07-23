@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import {
+  type FormEvent,
+  type MouseEvent as ReactMouseEvent,
+  useState,
+} from "react";
 import {
   BookOpen,
   ExternalLink,
@@ -21,6 +25,7 @@ import {
   saveKnowledgeCategory,
 } from "@/features/cms/actions/knowledge";
 import { useAdminMutation } from "@/features/cms/hooks/use-admin-mutation";
+import { useUnsavedChangesGuard } from "@/features/cms/hooks/use-unsaved-changes-guard";
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import {
   AlertDialog,
@@ -140,6 +145,23 @@ function createArticleForm(
       };
 }
 
+function articleFormsEqual(left: ArticleFormState, right: ArticleFormState) {
+  return (
+    left.id === right.id &&
+    left.categoryId === right.categoryId &&
+    left.title === right.title &&
+    left.slug === right.slug &&
+    left.summary === right.summary &&
+    left.content === right.content &&
+    left.keywords === right.keywords &&
+    left.aliases === right.aliases &&
+    left.retrievalTerms === right.retrievalTerms &&
+    left.sourceNotes === right.sourceNotes &&
+    left.published === right.published &&
+    left.allowAiReference === right.allowAiReference
+  );
+}
+
 function FormField({
   id,
   label,
@@ -179,9 +201,11 @@ export function KnowledgeManager({
 }) {
   const router = useRouter();
   const { mutate, isPending } = useAdminMutation();
-  const [form, setForm] = useState(() =>
+  const [initialForm] = useState(() =>
     createArticleForm(selectedArticle, categories),
   );
+  const [form, setForm] = useState(initialForm);
+  const [savedForm, setSavedForm] = useState(initialForm);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(
     null,
@@ -193,12 +217,65 @@ export function KnowledgeManager({
   const [deleteArticleOpen, setDeleteArticleOpen] = useState(false);
   const [categoryToDelete, setCategoryToDelete] =
     useState<KnowledgeCategoryRow | null>(null);
+  const [pendingNavigationHref, setPendingNavigationHref] = useState<
+    string | null
+  >(null);
+  const articleFormDirty = !articleFormsEqual(form, savedForm);
+  const savingArticle = isPending(`knowledge-article-save:${form.id ?? "new"}`);
+  const deletingArticle = Boolean(
+    form.id && isPending(`knowledge-article-delete:${form.id}`),
+  );
+
+  useUnsavedChangesGuard({
+    enabled: articleFormDirty || savingArticle,
+    onNavigationAttempt: (href) => {
+      if (!savingArticle) setPendingNavigationHref(href);
+    },
+  });
 
   function updateForm<TKey extends keyof ArticleFormState>(
     key: TKey,
     value: ArticleFormState[TKey],
   ) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function requestArticleNavigation(
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    href: string,
+    targetId: number | null,
+  ) {
+    const targetsCurrentForm =
+      targetId === null ? !form.id : targetId === form.id;
+    if (targetsCurrentForm || savingArticle) {
+      event.preventDefault();
+      return;
+    }
+    if (!articleFormDirty) return;
+
+    event.preventDefault();
+    setPendingNavigationHref(href);
+  }
+
+  function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
+    if (!articleFormDirty && !savingArticle) return;
+
+    event.preventDefault();
+    if (savingArticle) return;
+    const formData = new FormData(event.currentTarget);
+    const value = formData.get("q");
+    const nextQuery = typeof value === "string" ? value.trim() : "";
+    setPendingNavigationHref(
+      nextQuery
+        ? `/knowledge?q=${encodeURIComponent(nextQuery)}`
+        : "/knowledge",
+    );
+  }
+
+  function discardChangesAndNavigate() {
+    const href = pendingNavigationHref;
+    setPendingNavigationHref(null);
+    if (href) router.push(href);
   }
 
   function startNewCategory() {
@@ -244,7 +321,9 @@ export function KnowledgeManager({
       refresh: false,
       onSuccess: (result) => {
         if (!result.success) return;
-        setForm(createArticleForm(result.data, categories));
+        const savedArticle = createArticleForm(result.data, categories);
+        setForm(savedArticle);
+        setSavedForm(savedArticle);
         router.replace(`/knowledge?id=${result.data.id}`);
         router.refresh();
       },
@@ -285,6 +364,17 @@ export function KnowledgeManager({
       refresh: false,
       onSuccess: (result) => {
         if (!result.success) return;
+        const createdCategoryId = String(result.data.id);
+        setForm((current) =>
+          current.categoryId
+            ? current
+            : { ...current, categoryId: createdCategoryId },
+        );
+        setSavedForm((current) =>
+          current.categoryId
+            ? current
+            : { ...current, categoryId: createdCategoryId },
+        );
         startNewCategory();
         router.refresh();
       },
@@ -302,6 +392,19 @@ export function KnowledgeManager({
       refresh: false,
       onSuccess: (result) => {
         if (!result.success) return;
+        const fallbackCategoryId = String(
+          categories.find((item) => item.id !== category.id)?.id ?? "",
+        );
+        setForm((current) =>
+          current.categoryId === String(category.id)
+            ? { ...current, categoryId: fallbackCategoryId }
+            : current,
+        );
+        setSavedForm((current) =>
+          current.categoryId === String(category.id)
+            ? { ...current, categoryId: fallbackCategoryId }
+            : current,
+        );
         setCategoryToDelete(null);
         startNewCategory();
         router.refresh();
@@ -309,15 +412,14 @@ export function KnowledgeManager({
     });
   }
 
-  const savingArticle = isPending(`knowledge-article-save:${form.id ?? "new"}`);
-  const deletingArticle = Boolean(
-    form.id && isPending(`knowledge-article-delete:${form.id}`),
-  );
-
   return (
     <>
       <div className="mb-4 flex flex-col gap-3 border-b border-border/70 pb-4 lg:flex-row lg:items-center lg:justify-between">
-        <form action="/knowledge" className="flex min-w-0 flex-1 gap-2">
+        <form
+          action="/knowledge"
+          onSubmit={handleSearchSubmit}
+          className="flex min-w-0 flex-1 gap-2"
+        >
           <div className="relative min-w-0 flex-1 lg:max-w-md">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -328,7 +430,7 @@ export function KnowledgeManager({
               placeholder="搜索标题、摘要、关键词或别名"
             />
           </div>
-          <Button type="submit" variant="outline">
+          <Button type="submit" variant="outline" disabled={savingArticle}>
             搜索
           </Button>
         </form>
@@ -342,7 +444,12 @@ export function KnowledgeManager({
             分类管理
           </Button>
           <Button asChild>
-            <Link href="/knowledge">
+            <Link
+              href="/knowledge"
+              onClick={(event) =>
+                requestArticleNavigation(event, "/knowledge", null)
+              }
+            >
               <FilePlus2 className="size-4" />
               新建条目
             </Link>
@@ -357,40 +464,46 @@ export function KnowledgeManager({
             <Badge variant="outline">{articles.length} 条</Badge>
           </div>
           <div className="max-h-[calc(100dvh-220px)] overflow-y-auto rounded-md border border-border/70">
-            {articles.map((article) => (
-              <Link
-                key={article.id}
-                href={`/knowledge?id=${article.id}${query ? `&q=${encodeURIComponent(query)}` : ""}`}
-                className={cn(
-                  "block border-b border-border/60 px-3 py-3 transition-colors last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  article.id === selectedArticle?.id && "bg-primary/5",
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <p className="line-clamp-2 text-sm font-medium leading-5">
-                    {article.title}
+            {articles.map((article) => {
+              const articleHref = `/knowledge?id=${article.id}${query ? `&q=${encodeURIComponent(query)}` : ""}`;
+              return (
+                <Link
+                  key={article.id}
+                  href={articleHref}
+                  onClick={(event) =>
+                    requestArticleNavigation(event, articleHref, article.id)
+                  }
+                  className={cn(
+                    "block border-b border-border/60 px-3 py-3 transition-colors last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                    article.id === selectedArticle?.id && "bg-primary/5",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="line-clamp-2 text-sm font-medium leading-5">
+                      {article.title}
+                    </p>
+                    <span
+                      className={cn(
+                        "mt-1 size-2 shrink-0 rounded-full",
+                        article.published ? "bg-emerald-500" : "bg-amber-500",
+                      )}
+                      title={article.published ? "已发布" : "草稿"}
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {article.categoryName}
+                    {article.allowAiReference
+                      ? " · AI 可引用"
+                      : " · 禁止 AI 引用"}
                   </p>
-                  <span
-                    className={cn(
-                      "mt-1 size-2 shrink-0 rounded-full",
-                      article.published ? "bg-emerald-500" : "bg-amber-500",
-                    )}
-                    title={article.published ? "已发布" : "草稿"}
-                  />
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {article.categoryName}
-                  {article.allowAiReference
-                    ? " · AI 可引用"
-                    : " · 禁止 AI 引用"}
-                </p>
-                {article.summary ? (
-                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                    {article.summary}
-                  </p>
-                ) : null}
-              </Link>
-            ))}
+                  {article.summary ? (
+                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                      {article.summary}
+                    </p>
+                  ) : null}
+                </Link>
+              );
+            })}
             {articles.length === 0 ? (
               <div className="px-4 py-12 text-center text-sm text-muted-foreground">
                 没有匹配的知识条目。
@@ -399,202 +512,214 @@ export function KnowledgeManager({
           </div>
         </section>
 
-        <form onSubmit={handleArticleSave} className="min-w-0 space-y-5">
-          <div className="flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <BookOpen className="size-4 text-primary" />
-                <h2 className="text-base font-semibold">
-                  {form.id ? "编辑知识条目" : "新建知识条目"}
-                </h2>
-                <Badge variant={form.published ? "secondary" : "outline"}>
-                  {form.published ? "已发布" : "草稿"}
-                </Badge>
+        <form
+          onSubmit={handleArticleSave}
+          className="min-w-0"
+          aria-busy={savingArticle}
+        >
+          <fieldset disabled={savingArticle} className="min-w-0 space-y-5">
+            <div className="flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <BookOpen className="size-4 text-primary" />
+                  <h2 className="text-base font-semibold">
+                    {form.id ? "编辑知识条目" : "新建知识条目"}
+                  </h2>
+                  <Badge variant={form.published ? "secondary" : "outline"}>
+                    {form.published ? "已发布" : "草稿"}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  公开状态控制前台展示；AI 引用开关控制文章改写时是否参与检索。
+                </p>
               </div>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                公开状态控制前台展示；AI 引用开关控制文章改写时是否参与检索。
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-wrap gap-2">
-              {form.id && form.published ? (
-                <Button asChild type="button" variant="outline" size="sm">
-                  <a
-                    href={`${publicOrigin}/knowledge/${encodeURIComponent(form.slug)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+              <div className="flex shrink-0 flex-wrap gap-2">
+                {form.id && form.published ? (
+                  <Button asChild type="button" variant="outline" size="sm">
+                    <a
+                      href={`${publicOrigin}/knowledge/${encodeURIComponent(form.slug)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <ExternalLink className="size-4" />
+                      查看前台
+                    </a>
+                  </Button>
+                ) : null}
+                {form.id ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setDeleteArticleOpen(true)}
                   >
-                    <ExternalLink className="size-4" />
-                    查看前台
-                  </a>
-                </Button>
-              ) : null}
-              {form.id ? (
+                    <Trash2 className="size-4" />
+                    删除
+                  </Button>
+                ) : null}
                 <Button
-                  type="button"
-                  variant="destructive"
+                  type="submit"
                   size="sm"
-                  onClick={() => setDeleteArticleOpen(true)}
+                  disabled={savingArticle || categories.length === 0}
                 >
-                  <Trash2 className="size-4" />
-                  删除
+                  <Save className="size-4" />
+                  {savingArticle ? "保存中..." : "保存"}
                 </Button>
-              ) : null}
-              <Button
-                type="submit"
-                size="sm"
-                disabled={savingArticle || categories.length === 0}
-              >
-                <Save className="size-4" />
-                {savingArticle ? "保存中..." : "保存"}
-              </Button>
+              </div>
             </div>
-          </div>
 
-          {categories.length === 0 ? (
-            <div className="rounded-md border border-amber-300/70 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
-              请先创建至少一个知识分类，再新建知识条目。
+            {categories.length === 0 ? (
+              <div className="rounded-md border border-amber-300/70 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
+                请先创建至少一个知识分类，再新建知识条目。
+              </div>
+            ) : null}
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField id="knowledge-title" label="标题">
+                <Input
+                  id="knowledge-title"
+                  value={form.title}
+                  onChange={(event) => updateForm("title", event.target.value)}
+                  required
+                />
+              </FormField>
+              <FormField id="knowledge-category" label="分类">
+                <Select
+                  value={form.categoryId}
+                  onValueChange={(value) => updateForm("categoryId", value)}
+                >
+                  <SelectTrigger id="knowledge-category">
+                    <SelectValue placeholder="选择分类" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={String(category.id)}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormField>
             </div>
-          ) : null}
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <FormField id="knowledge-title" label="标题">
+            <FormField id="knowledge-slug" label="Slug" hint="留空时按标题生成">
               <Input
-                id="knowledge-title"
-                value={form.title}
-                onChange={(event) => updateForm("title", event.target.value)}
-                required
+                id="knowledge-slug"
+                value={form.slug}
+                onChange={(event) => updateForm("slug", event.target.value)}
+                placeholder="例如 cn2-gia"
               />
             </FormField>
-            <FormField id="knowledge-category" label="分类">
-              <Select
-                value={form.categoryId}
-                onValueChange={(value) => updateForm("categoryId", value)}
-              >
-                <SelectTrigger id="knowledge-category">
-                  <SelectValue placeholder="选择分类" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((category) => (
-                    <SelectItem key={category.id} value={String(category.id)}>
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FormField>
-          </div>
 
-          <FormField id="knowledge-slug" label="Slug" hint="留空时按标题生成">
-            <Input
-              id="knowledge-slug"
-              value={form.slug}
-              onChange={(event) => updateForm("slug", event.target.value)}
-              placeholder="例如 cn2-gia"
-            />
-          </FormField>
-
-          <FormField
-            id="knowledge-summary"
-            label="摘要"
-            hint="用于列表和检索上下文"
-          >
-            <Textarea
+            <FormField
               id="knowledge-summary"
-              value={form.summary}
-              onChange={(event) => updateForm("summary", event.target.value)}
-              rows={3}
-            />
-          </FormField>
-
-          <FormField id="knowledge-content" label="正文" hint="Markdown">
-            <MarkdownEditor
-              content={form.content}
-              onChange={(value) => updateForm("content", value)}
-              minHeightClassName="min-h-[420px]"
-            />
-          </FormField>
-
-          <div className="grid gap-4 lg:grid-cols-3">
-            <FormField
-              id="knowledge-keywords"
-              label="关键词"
-              hint="逗号或换行分隔"
+              label="摘要"
+              hint="用于列表和检索上下文"
             >
               <Textarea
+                id="knowledge-summary"
+                value={form.summary}
+                onChange={(event) => updateForm("summary", event.target.value)}
+                rows={3}
+              />
+            </FormField>
+
+            <FormField id="knowledge-content" label="正文" hint="Markdown">
+              <MarkdownEditor
+                content={form.content}
+                onChange={(value) => updateForm("content", value)}
+                minHeightClassName="min-h-[420px]"
+              />
+            </FormField>
+
+            <div className="grid gap-4 lg:grid-cols-3">
+              <FormField
                 id="knowledge-keywords"
-                value={form.keywords}
-                onChange={(event) => updateForm("keywords", event.target.value)}
-                rows={4}
-              />
-            </FormField>
-            <FormField
-              id="knowledge-aliases"
-              label="别名"
-              hint="如 CMIN2、移动精品网"
-            >
-              <Textarea
+                label="关键词"
+                hint="逗号或换行分隔"
+              >
+                <Textarea
+                  id="knowledge-keywords"
+                  value={form.keywords}
+                  onChange={(event) =>
+                    updateForm("keywords", event.target.value)
+                  }
+                  rows={4}
+                />
+              </FormField>
+              <FormField
                 id="knowledge-aliases"
-                value={form.aliases}
-                onChange={(event) => updateForm("aliases", event.target.value)}
-                rows={4}
-              />
-            </FormField>
-            <FormField
-              id="knowledge-retrieval"
-              label="AI 检索词"
-              hint="补充容易命中的表达"
-            >
-              <Textarea
+                label="别名"
+                hint="如 CMIN2、移动精品网"
+              >
+                <Textarea
+                  id="knowledge-aliases"
+                  value={form.aliases}
+                  onChange={(event) =>
+                    updateForm("aliases", event.target.value)
+                  }
+                  rows={4}
+                />
+              </FormField>
+              <FormField
                 id="knowledge-retrieval"
-                value={form.retrievalTerms}
+                label="AI 检索词"
+                hint="补充容易命中的表达"
+              >
+                <Textarea
+                  id="knowledge-retrieval"
+                  value={form.retrievalTerms}
+                  onChange={(event) =>
+                    updateForm("retrievalTerms", event.target.value)
+                  }
+                  rows={4}
+                />
+              </FormField>
+            </div>
+
+            <FormField id="knowledge-source" label="来源说明" hint="仅后台可见">
+              <Textarea
+                id="knowledge-source"
+                value={form.sourceNotes}
                 onChange={(event) =>
-                  updateForm("retrievalTerms", event.target.value)
+                  updateForm("sourceNotes", event.target.value)
                 }
-                rows={4}
+                rows={3}
+                placeholder="记录资料来源、更新时间和需要复核的事项"
               />
             </FormField>
-          </div>
 
-          <FormField id="knowledge-source" label="来源说明" hint="仅后台可见">
-            <Textarea
-              id="knowledge-source"
-              value={form.sourceNotes}
-              onChange={(event) =>
-                updateForm("sourceNotes", event.target.value)
-              }
-              rows={3}
-              placeholder="记录资料来源、更新时间和需要复核的事项"
-            />
-          </FormField>
-
-          <div className="grid gap-px overflow-hidden rounded-md border border-border/70 bg-border/70 sm:grid-cols-2">
-            <label className="flex min-h-16 cursor-pointer items-center justify-between gap-4 bg-background px-4 py-3">
-              <span>
-                <span className="block text-sm font-medium">公开发布</span>
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  在前台知识库展示
+            <div className="grid gap-px overflow-hidden rounded-md border border-border/70 bg-border/70 sm:grid-cols-2">
+              <label className="flex min-h-16 cursor-pointer items-center justify-between gap-4 bg-background px-4 py-3">
+                <span>
+                  <span className="block text-sm font-medium">公开发布</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    在前台知识库展示
+                  </span>
                 </span>
-              </span>
-              <Switch
-                checked={form.published}
-                onCheckedChange={(value) => updateForm("published", value)}
-              />
-            </label>
-            <label className="flex min-h-16 cursor-pointer items-center justify-between gap-4 bg-background px-4 py-3">
-              <span>
-                <span className="block text-sm font-medium">允许 AI 引用</span>
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  改写时作为通用知识检索
+                <Switch
+                  checked={form.published}
+                  onCheckedChange={(value) => updateForm("published", value)}
+                />
+              </label>
+              <label className="flex min-h-16 cursor-pointer items-center justify-between gap-4 bg-background px-4 py-3">
+                <span>
+                  <span className="block text-sm font-medium">
+                    允许 AI 引用
+                  </span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    改写时作为通用知识检索
+                  </span>
                 </span>
-              </span>
-              <Switch
-                checked={form.allowAiReference}
-                onCheckedChange={(value) =>
-                  updateForm("allowAiReference", value)
-                }
-              />
-            </label>
-          </div>
+                <Switch
+                  checked={form.allowAiReference}
+                  onCheckedChange={(value) =>
+                    updateForm("allowAiReference", value)
+                  }
+                />
+              </label>
+            </div>
+          </fieldset>
         </form>
       </div>
 
@@ -724,6 +849,29 @@ export function KnowledgeManager({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={Boolean(pendingNavigationHref)}
+        onOpenChange={(open) => !open && setPendingNavigationHref(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>放弃未保存的修改？</AlertDialogTitle>
+            <AlertDialogDescription>
+              当前知识条目有尚未保存的内容，继续后这些修改将丢失。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>继续编辑</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={discardChangesAndNavigate}
+            >
+              放弃修改
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={deleteArticleOpen} onOpenChange={setDeleteArticleOpen}>
         <AlertDialogContent>
