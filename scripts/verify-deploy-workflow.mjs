@@ -1,9 +1,14 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const workflowPath = path.resolve(".github/workflows/deploy.yml");
 const workflow = fs.readFileSync(workflowPath, "utf8");
+const localDeployPath = path.resolve("scripts/deploy-local-build.sh");
+const localDeploy = fs.readFileSync(localDeployPath, "utf8");
+const backupScriptPath = path.resolve("scripts/secure-db-backup.sh");
+const backupScript = fs.readFileSync(backupScriptPath, "utf8");
 
 if (
   !workflow.includes("- name: Prepare cache revalidation secret") ||
@@ -109,6 +114,173 @@ if (syntaxCheck.status !== 0) {
   );
 }
 
+for (const { label, filePath } of [
+  { label: "Local deployment script", filePath: localDeployPath },
+  { label: "Secure database backup script", filePath: backupScriptPath },
+]) {
+  const result = spawnSync("bash", ["-n", filePath], { encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(`${label} failed bash -n:\n${result.stderr.trim()}`);
+  }
+}
+
+for (const source of [workflow, localDeploy]) {
+  for (const requiredValue of [
+    "KEEP_DB_BACKUPS",
+    "DB_BACKUP_RETENTION_DAYS",
+    "secure-db-backup.sh",
+  ]) {
+    if (!source.includes(requiredValue)) {
+      throw new Error(
+        `Deployment path is missing database backup control: ${requiredValue}`,
+      );
+    }
+  }
+}
+
+for (const requiredFragment of [
+  'chmod 700 "$backup_dir"',
+  "umask 077",
+  'PGDATABASE="$database_url" pg_dump',
+  '--file="$backup_tmp"',
+  'pg_restore --list "$backup_tmp"',
+  'chmod 600 "$backup_tmp"',
+  'mv -f "$backup_tmp" "$backup_file"',
+  '-mtime "+$retention_days"',
+  "while ((${#backup_files[@]} > keep_count))",
+]) {
+  if (!backupScript.includes(requiredFragment)) {
+    throw new Error(
+      `Secure database backup is missing invariant: ${requiredFragment}`,
+    );
+  }
+}
+
+if (
+  backupScript.includes('pg_dump "$DATABASE_URL"') ||
+  backupScript.includes('--dbname="$DATABASE_URL"')
+) {
+  throw new Error("Database credentials must not be exposed in pg_dump argv");
+}
+
+const backupTestRoot = fs.mkdtempSync(
+  path.join(os.tmpdir(), "fwqgo-secure-backup-"),
+);
+try {
+  const fakeBin = path.join(backupTestRoot, "bin");
+  const backupDir = path.join(backupTestRoot, "backups");
+  fs.mkdirSync(fakeBin);
+  fs.mkdirSync(backupDir, { mode: 0o755 });
+
+  const fakePgDump = path.join(fakeBin, "pg_dump");
+  fs.writeFileSync(
+    fakePgDump,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      'output=""',
+      'for arg in "$@"; do',
+      '  [[ "$arg" != *"super-secret"* ]] || exit 90',
+      '  case "$arg" in',
+      '    --file=*) output="${arg#--file=}" ;;',
+      "  esac",
+      "done",
+      '[[ -n "${PGDATABASE:-}" && -n "$output" ]] || exit 91',
+      "printf 'fake custom archive\\n' > \"$output\"",
+      '[[ "${FAKE_PG_DUMP_FAIL:-0}" != "1" ]] || exit 92',
+      "",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+
+  const fakePgRestore = path.join(fakeBin, "pg_restore");
+  fs.writeFileSync(
+    fakePgRestore,
+    `#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == "--list" && -s "$2" ]]
+`,
+    { mode: 0o755 },
+  );
+
+  const now = Date.now();
+  for (let index = 0; index < 5; index += 1) {
+    const oldBackup = path.join(backupDir, `fwqgo-before-old-${index}.dump`);
+    fs.writeFileSync(oldBackup, "old backup", { mode: 0o644 });
+    const timestamp = new Date(now - (index + 1) * 60_000);
+    fs.utimesSync(oldBackup, timestamp, timestamp);
+  }
+
+  const testDatabaseUrl = "test-database-super-secret-marker";
+  const backupEnvironment = {
+    ...process.env,
+    PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+    DATABASE_URL: testDatabaseUrl,
+  };
+  const success = spawnSync(
+    "bash",
+    [backupScriptPath, backupDir, "test-release", "3", "30"],
+    { encoding: "utf8", env: backupEnvironment },
+  );
+  if (success.status !== 0) {
+    throw new Error(
+      `Secure backup smoke test failed:\n${success.stderr.trim()}`,
+    );
+  }
+  if (`${success.stdout}\n${success.stderr}`.includes(testDatabaseUrl)) {
+    throw new Error("Secure backup output exposed DATABASE_URL");
+  }
+
+  const backupMode = fs.statSync(backupDir).mode & 0o777;
+  if (backupMode !== 0o700) {
+    throw new Error(
+      `Secure backup directory mode is ${backupMode.toString(8)}; expected 700`,
+    );
+  }
+
+  const retainedBackups = fs
+    .readdirSync(backupDir)
+    .filter((name) => name.endsWith(".dump"));
+  if (
+    retainedBackups.length !== 3 ||
+    !retainedBackups.includes("fwqgo-before-test-release.dump")
+  ) {
+    throw new Error(
+      `Secure backup retention kept unexpected files: ${retainedBackups.join(", ")}`,
+    );
+  }
+  for (const backup of retainedBackups) {
+    const mode = fs.statSync(path.join(backupDir, backup)).mode & 0o777;
+    if (mode !== 0o600) {
+      throw new Error(
+        `Secure backup file ${backup} has mode ${mode.toString(8)}; expected 600`,
+      );
+    }
+  }
+
+  const failure = spawnSync(
+    "bash",
+    [backupScriptPath, backupDir, "failed-release", "3", "30"],
+    {
+      encoding: "utf8",
+      env: { ...backupEnvironment, FAKE_PG_DUMP_FAIL: "1" },
+    },
+  );
+  if (failure.status === 0) {
+    throw new Error("Secure backup smoke test expected pg_dump failure");
+  }
+  const failedArtifacts = fs
+    .readdirSync(backupDir)
+    .filter((name) => name.includes("failed-release"));
+  if (failedArtifacts.length > 0) {
+    throw new Error(
+      `Failed secure backup left artifacts: ${failedArtifacts.join(", ")}`,
+    );
+  }
+} finally {
+  fs.rmSync(backupTestRoot, { recursive: true, force: true });
+}
+
 const readEnvFunction = /read_env_value\(\) \{(?<body>[\s\S]*?)\n\}/.exec(
   remoteScript,
 );
@@ -126,4 +298,6 @@ if (outputCount !== 1) {
   );
 }
 
-console.log("Deployment workflow verified: remote activation shell is valid");
+console.log(
+  "Deployment workflow verified: remote activation shell and secure database backups are valid",
+);

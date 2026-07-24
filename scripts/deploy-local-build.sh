@@ -31,6 +31,8 @@ Common optional variables:
   RUN_CHECKS=1               # run local typecheck and lint before build
   RUN_MIGRATIONS=0           # run drizzle migrations on server before activation
   KEEP_RELEASES=5
+  KEEP_DB_BACKUPS=10
+  DB_BACKUP_RETENTION_DAYS=30
   REMOTE_UPLOAD_DIR=/var/www/uploads
   RUN_SMOKE_TEST=1
   NEXT_PUBLIC_CMS_URL=https://cms.fwqgo.com
@@ -96,6 +98,8 @@ DEPLOY_PASSWORD="${DEPLOY_PASSWORD:-${SSH_PASSWORD:-}}"
 RUN_CHECKS="${RUN_CHECKS:-1}"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-0}"
 KEEP_RELEASES="${KEEP_RELEASES:-5}"
+KEEP_DB_BACKUPS="${KEEP_DB_BACKUPS:-10}"
+DB_BACKUP_RETENTION_DAYS="${DB_BACKUP_RETENTION_DAYS:-30}"
 REMOTE_UPLOAD_DIR="${REMOTE_UPLOAD_DIR:-/var/www/uploads}"
 RUN_SMOKE_TEST="${RUN_SMOKE_TEST:-1}"
 DOCKER_IMAGE="${DOCKER_IMAGE:-node:24-bookworm-slim}"
@@ -194,6 +198,8 @@ ln -sfn "../../.next-web" "$PAYLOAD_DIR/apps/web/.next"
 ln -sfn "../../.next-cms" "$PAYLOAD_DIR/apps/cms/.next"
 cp -R "$ROOT_DIR/drizzle" "$PAYLOAD_DIR/drizzle"
 cp "$ROOT_DIR/scripts/migrate-prod.mjs" "$PAYLOAD_DIR/scripts/migrate-prod.mjs"
+cp "$ROOT_DIR/scripts/migration-manifest.mjs" "$PAYLOAD_DIR/scripts/migration-manifest.mjs"
+cp "$ROOT_DIR/scripts/secure-db-backup.sh" "$PAYLOAD_DIR/scripts/secure-db-backup.sh"
 cp "$STAGE_DIR/.deploy-runtime/bun" "$PAYLOAD_DIR/bin/bun"
 chmod 755 "$PAYLOAD_DIR/bin/bun"
 mkdir -p "$PAYLOAD_DIR/node_modules"
@@ -213,7 +219,7 @@ fi
 log "Uploading artifact to $REMOTE:$REMOTE_ARTIFACT"
 "${SCP_BIN[@]}" "${SCP_ARGS[@]}" "$ARTIFACT" "$REMOTE:$REMOTE_ARTIFACT"
 
-REMOTE_COMMAND="bash -s -- $(quote "$DEPLOY_PATH") $(quote "$RELEASE_ID") $(quote "$REMOTE_ARTIFACT") $(quote "$KEEP_RELEASES") $(quote "$REMOTE_UPLOAD_DIR") $(quote "$RUN_MIGRATIONS")"
+REMOTE_COMMAND="bash -s -- $(quote "$DEPLOY_PATH") $(quote "$RELEASE_ID") $(quote "$REMOTE_ARTIFACT") $(quote "$KEEP_RELEASES") $(quote "$REMOTE_UPLOAD_DIR") $(quote "$RUN_MIGRATIONS") $(quote "$KEEP_DB_BACKUPS") $(quote "$DB_BACKUP_RETENTION_DAYS")"
 
 log "Activating standalone release on $REMOTE"
 "${SSH_BIN[@]}" "${SSH_ARGS[@]}" "$REMOTE" "$REMOTE_COMMAND" <<'REMOTE_SCRIPT'
@@ -225,6 +231,8 @@ remote_artifact="$3"
 keep_releases="$4"
 upload_dir="$5"
 run_migrations="$6"
+keep_db_backups="$7"
+db_backup_retention_days="$8"
 
 case "$deploy_path" in
   ""|"/"|"/var"|"/var/www")
@@ -361,23 +369,15 @@ ln -sfn "$shared_dir/.env.production" "$release_dir/.env.production"
 }
 
 if [[ "$run_migrations" == "1" || "$run_migrations" == "true" ]]; then
-  if command -v pg_dump >/dev/null 2>&1; then
-    backup_dir="$shared_dir/backups/db"
-    mkdir -p "$backup_dir"
-    set -a
-    # shellcheck source=/dev/null
-    source "$shared_dir/.env.production"
-    set +a
-    if [[ -n "${DATABASE_URL:-}" ]]; then
-      backup_file="$backup_dir/fwqgo-before-${release_id}.dump"
-      echo "Creating database backup before migrations: $backup_file"
-      pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges --file="$backup_file"
-    else
-      echo "DATABASE_URL is not set; skipping database backup." >&2
-    fi
-  else
-    echo "pg_dump is not installed; skipping database backup before migrations." >&2
-  fi
+  set -a
+  # shellcheck source=/dev/null
+  source "$shared_dir/.env.production"
+  set +a
+  bash "$release_dir/scripts/secure-db-backup.sh" \
+    "$shared_dir/backups/db" \
+    "$release_id" \
+    "$keep_db_backups" \
+    "$db_backup_retention_days"
   echo "Running production database migrations on server..."
   "$release_dir/bin/bun" "$release_dir/scripts/migrate-prod.mjs"
 fi

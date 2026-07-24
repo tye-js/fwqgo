@@ -25,6 +25,8 @@ jobs:
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/var/www/fwqgo' }}
       DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
       KEEP_RELEASES: ${{ vars.KEEP_RELEASES || '5' }}
+      KEEP_DB_BACKUPS: ${{ vars.KEEP_DB_BACKUPS || '10' }}
+      DB_BACKUP_RETENTION_DAYS: ${{ vars.DB_BACKUP_RETENTION_DAYS || '30' }}
       REMOTE_UPLOAD_DIR: ${{ vars.REMOTE_UPLOAD_DIR || '/var/www/uploads' }}
       RELEASE_ID: ${{ github.run_id }}-${{ github.run_attempt }}
       NEXT_TELEMETRY_DISABLED: "1"
@@ -154,6 +156,7 @@ jobs:
           cp scripts/migrate-prod.mjs ".deploy/payload-$RELEASE_ID/scripts/migrate-prod.mjs"
           cp scripts/migration-manifest.mjs ".deploy/payload-$RELEASE_ID/scripts/migration-manifest.mjs"
           cp scripts/merge-runtime-env.mjs ".deploy/payload-$RELEASE_ID/scripts/merge-runtime-env.mjs"
+          cp scripts/secure-db-backup.sh ".deploy/payload-$RELEASE_ID/scripts/secure-db-backup.sh"
           cp "$(command -v bun)" ".deploy/payload-$RELEASE_ID/bin/bun"
           chmod 755 ".deploy/payload-$RELEASE_ID/bin/bun"
           mkdir -p ".deploy/payload-$RELEASE_ID/node_modules"
@@ -211,6 +214,8 @@ jobs:
           upload_dir="$5"
           run_migrations="$6"
           runtime_env_override="$7"
+          keep_db_backups="$8"
+          db_backup_retention_days="$9"
 
           case "$deploy_path" in
             ""|"/"|"/var"|"/var/www")
@@ -363,24 +368,16 @@ jobs:
           }
 
           if [[ "$run_migrations" != "false" ]]; then
-            if command -v pg_dump >/dev/null 2>&1; then
-              deployment_stage="database backup"
-              backup_dir="$shared_dir/backups/db"
-              mkdir -p "$backup_dir"
-              set -a
-              # shellcheck source=/dev/null
-              source "$shared_dir/.env.production"
-              set +a
-              if [[ -n "${DATABASE_URL:-}" ]]; then
-                backup_file="$backup_dir/fwqgo-before-${release_id}.dump"
-                echo "Creating database backup before migrations: $backup_file"
-                pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges --file="$backup_file"
-              else
-                echo "DATABASE_URL is not set; skipping database backup." >&2
-              fi
-            else
-              echo "pg_dump is not installed; skipping database backup before migrations." >&2
-            fi
+            deployment_stage="database backup"
+            set -a
+            # shellcheck source=/dev/null
+            source "$shared_dir/.env.production"
+            set +a
+            bash "$release_dir/scripts/secure-db-backup.sh" \
+              "$shared_dir/backups/db" \
+              "$release_id" \
+              "$keep_db_backups" \
+              "$db_backup_retention_days"
             deployment_stage="database migration"
             echo "Running production database migrations on server..."
             "$release_dir/bin/bun" "$release_dir/scripts/migrate-prod.mjs"
@@ -456,7 +453,7 @@ jobs:
           REMOTE_SCRIPT
 
           ssh -p "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
-            "bash -s -- '$DEPLOY_PATH' '$RELEASE_ID' '/tmp/fwqgo-$RELEASE_ID.tar.gz' '$KEEP_RELEASES' '$REMOTE_UPLOAD_DIR' '$RUN_MIGRATIONS' '/tmp/fwqgo-$RELEASE_ID.runtime.env'" < "$remote_script"
+            "bash -s -- '$DEPLOY_PATH' '$RELEASE_ID' '/tmp/fwqgo-$RELEASE_ID.tar.gz' '$KEEP_RELEASES' '$REMOTE_UPLOAD_DIR' '$RUN_MIGRATIONS' '/tmp/fwqgo-$RELEASE_ID.runtime.env' '$KEEP_DB_BACKUPS' '$DB_BACKUP_RETENTION_DAYS'" < "$remote_script"
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
