@@ -521,6 +521,8 @@ function AffiliateDiagnosticsSummary({
 }) {
   const report = diagnostics?.affiliateReport;
   const quality = diagnostics?.rewriteQuality;
+  const knowledgeReferences = quality?.knowledgeReferences ?? [];
+  const providerReferences = quality?.providerReferences ?? [];
 
   if (!report) {
     return <span className="text-sm text-muted-foreground">等待抓取</span>;
@@ -605,9 +607,9 @@ function AffiliateDiagnosticsSummary({
                 </p>
               </div>
             </div>
-            {quality.knowledgeReferences.length > 0 ? (
+            {knowledgeReferences.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
-                {quality.knowledgeReferences.map((reference) => (
+                {knowledgeReferences.map((reference) => (
                   <Badge key={reference.id} variant="outline">
                     知识：{reference.title}
                   </Badge>
@@ -618,6 +620,15 @@ function AffiliateDiagnosticsSummary({
                 本次未引用知识库条目
               </p>
             )}
+            {providerReferences.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {providerReferences.map((reference) => (
+                  <Badge key={reference.id} variant="outline">
+                    供应商资料：{reference.name}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
 

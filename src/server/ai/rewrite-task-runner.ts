@@ -41,6 +41,7 @@ import {
   type ScrapeDiagnostics,
 } from "@/server/scrape/article-scraper";
 import {
+  getMatchedAffiliateProviderNames,
   repairMarkdownAffiliateLinks,
   rewriteAffiliateLinks,
 } from "@/server/links/affiliate-link-rewriter";
@@ -1569,6 +1570,7 @@ async function createArticleFromManualTask(input: {
   try {
     rewritten = await RewriteArticle(markdownInput.markdown, {
       styleId: input.rewriteStyleId,
+      providerNames: getMatchedAffiliateProviderNames(affiliateReport),
       onProgress: async (ai) => {
         await input.onProgress?.({
           stage: "ai_progress",
@@ -2058,6 +2060,8 @@ export async function runAiRewriteTask(taskId: number) {
               attempts: article.diagnostics.rewriteQuality.attempts,
               knowledgeReferences:
                 article.diagnostics.rewriteQuality.knowledgeReferences,
+              providerReferences:
+                article.diagnostics.rewriteQuality.providerReferences,
             }
           : undefined,
       });

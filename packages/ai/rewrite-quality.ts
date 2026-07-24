@@ -279,6 +279,57 @@ function canonicalNumber(value: string) {
   return Number.isFinite(parsed) ? String(parsed) : normalized.toLowerCase();
 }
 
+function addOperatorTokens(tokens: Set<string>, markdown: string) {
+  const operatorKeys: Record<string, string> = {
+    电信: "telecom",
+    联通: "unicom",
+    移动: "mobile",
+  };
+  const operatorContext =
+    /用户|线路|网络|宽带|回程|去程|运营商|访问|延迟|丢包|路由|效果/;
+
+  for (const match of markdown.matchAll(/(?:中国)?(电信|联通|移动)/g)) {
+    const operator = match[1];
+    if (!operator) continue;
+
+    const index = match.index ?? 0;
+    const context = markdown.slice(
+      Math.max(0, index - 10),
+      Math.min(markdown.length, index + match[0].length + 10),
+    );
+    if (
+      operator === "移动" &&
+      !match[0].startsWith("中国") &&
+      !operatorContext.test(context)
+    ) {
+      continue;
+    }
+
+    tokens.add(`operator:${operatorKeys[operator]}`);
+  }
+}
+
+function addAttributionTokens(tokens: Set<string>, markdown: string) {
+  const patterns: Array<[string, RegExp]> = [
+    [
+      "community-feedback",
+      /(?:官方)?社区[^。！？\n]{0,16}(?:反馈|评价|讨论|显示)|(?:用户|网友)[^。！？\n]{0,12}(?:反馈|评价)/,
+    ],
+    [
+      "test-result",
+      /实测|测速结果|测试(?:显示|表明|结果)|(?:延迟|丢包)[^。！？\n]{0,10}(?:测试|实测)/,
+    ],
+    [
+      "official-claim",
+      /(?:官方|商家|供应商)[^。！？\n]{0,12}(?:表示|宣称|确认|承诺|公告)/,
+    ],
+  ];
+
+  for (const [key, pattern] of patterns) {
+    if (pattern.test(markdown)) tokens.add(`attribution:${key}`);
+  }
+}
+
 function criticalFactTokens(markdown: string) {
   const tokens = new Set<string>();
   const normalized = markdown.normalize("NFKC");
@@ -291,7 +342,14 @@ function criticalFactTokens(markdown: string) {
       Math.max(0, index - 12),
       Math.min(normalized.length, index + match[0].length + 12),
     );
-    if (numericContext.test(context)) {
+    const followingText = normalized.slice(
+      index + match[0].length,
+      index + match[0].length + 6,
+    );
+    if (
+      numericContext.test(context) ||
+      /^\s*(?:天|小时)/.test(followingText)
+    ) {
       tokens.add(`number:${canonicalNumber(match[0])}`);
     }
   }
@@ -314,11 +372,23 @@ function criticalFactTokens(markdown: string) {
     tokens.add(`url:${normalizeHref(match[0]).toLowerCase()}`);
   }
 
+  addOperatorTokens(tokens, normalized);
+  addAttributionTokens(tokens, normalized);
+
   return tokens;
 }
 
 function displayCriticalFactToken(token: string) {
-  return token.replace(/^(?:number|term|code|url):/, "");
+  const labels: Record<string, string> = {
+    "operator:telecom": "电信",
+    "operator:unicom": "联通",
+    "operator:mobile": "移动",
+    "attribution:community-feedback": "社区或用户反馈归因",
+    "attribution:test-result": "实测或测试结果归因",
+    "attribution:official-claim": "官方或商家声明归因",
+  };
+
+  return labels[token] ?? token.replace(/^(?:number|term|code|url):/, "");
 }
 
 function criticalFactComparison(

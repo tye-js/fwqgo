@@ -28,6 +28,18 @@ export type AffiliateRewriteReport = {
   invalidLinks: AffiliateRewriteMiss[];
 };
 
+export function getMatchedAffiliateProviderNames(
+  report: AffiliateRewriteReport,
+) {
+  return [
+    ...new Set(
+      report.matchedLinks
+        .map((match) => match.providerName.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
 type Provider = typeof affServiceProviders.$inferSelect;
 
 function emptyReport(): AffiliateRewriteReport {

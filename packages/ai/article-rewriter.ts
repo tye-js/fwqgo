@@ -1,6 +1,6 @@
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import {
-  defaultBaseRewritePrompt,
+  buildSourceAnchoredRewritePrompt,
   defaultEnglishMetadataStylePrompt,
   defaultEnglishStylePrompt,
   defaultMetadataPrompt,
@@ -20,6 +20,11 @@ import {
   type RewriteKnowledgeReference,
 } from "./knowledge-retrieval";
 import {
+  formatRewriteProviderContext,
+  retrieveRewriteProviderReferences,
+  type RewriteProviderReference,
+} from "./provider-context";
+import {
   evaluateRewriteQuality,
   protectMarkdownContent,
   replaceProtectedMarkdown,
@@ -35,7 +40,7 @@ const MAX_METADATA_INPUT_LENGTH = 28_000;
 const MAX_ENGLISH_CONTINUATION_ATTEMPTS = 3;
 const MAX_CHINESE_REWRITE_ATTEMPTS = 3;
 const MAX_AI_RESPONSE_BYTES = 4 * 1024 * 1024;
-const REWRITE_PROMPT_VERSION = "fact-driven-v1";
+const REWRITE_PROMPT_VERSION = "source-anchored-expansion-v2";
 
 function getAiRewriteTimeoutMs() {
   const configured = Number(process.env.AI_REWRITE_TIMEOUT_MS);
@@ -75,6 +80,7 @@ export interface ArticleRewriteProgress {
 
 export interface ArticleRewriteOptions {
   styleId?: number;
+  providerNames?: string[];
   onProgress?: (progress: ArticleRewriteProgress) => void | Promise<void>;
 }
 
@@ -91,6 +97,11 @@ export interface ArticleRewriteQuality extends RewriteQualityMetrics {
     title: string;
     slug: string;
     categoryName: string;
+  }>;
+  providerReferences: Array<{
+    id: number;
+    name: string;
+    slug: string;
   }>;
 }
 
@@ -228,6 +239,11 @@ export function getAiRewriteContentLimit(maxTokens: number) {
     : 8192;
 }
 
+export function getSourceAnchoredRewriteTemperature(temperature: number) {
+  const normalized = Number.isFinite(temperature) ? temperature / 100 : 0;
+  return Math.min(0.3, Math.max(0, normalized));
+}
+
 export function isCompleteAiJsonObject(value: string) {
   try {
     parseAiJsonObject<Record<string, unknown>>(value, "AI JSON 输出校验失败");
@@ -259,11 +275,20 @@ function normalizeFactSheet(raw: ArticleFactSheetRaw): ArticleFactSheet {
     20,
   );
   const cautions = normalizeStringArray(raw.cautions).slice(0, 30);
-  const outline = normalizeStringArray(raw.outline).slice(0, 10);
+  const outline = normalizeStringArray(raw.outline).slice(0, 6);
+  const fallbackOutline = [
+    criticalFacts.length > 0 || normalizeFactText(raw.factualSummary, 1_500)
+      ? "核心事实"
+      : "",
+    promotions.length > 0 || productGroups.length > 0 ? "活动与套餐" : "",
+    regions.length > 0 || networkFacts.length > 0 ? "机房与网络" : "",
+    supportedUseCases.length > 0 ? "来源明确提到的适用场景" : "",
+    cautions.length > 0 ? "购买前需要确认的事项" : "",
+  ].filter(Boolean);
 
   return {
     providerName: normalizeFactText(raw.providerName, 160),
-    articleType: normalizeFactText(raw.articleType, 80) || "服务器优惠与评测",
+    articleType: normalizeFactText(raw.articleType, 80) || "服务器内容",
     factualSummary:
       normalizeFactText(raw.factualSummary, 1_500) ||
       criticalFacts.slice(0, 6).join("；"),
@@ -276,23 +301,21 @@ function normalizeFactSheet(raw: ArticleFactSheetRaw): ArticleFactSheet {
     cautions,
     editorialAngle:
       normalizeFactText(raw.editorialAngle, 500) ||
-      "先给购买判断，再解释套餐差异、线路、适用场景和风险。",
-    outline:
-      outline.length > 0
-        ? outline
-        : ["核心结论", "活动与套餐", "线路与适用场景", "购买前注意事项"],
+      "以来源原文为事实主轴，补充必要解释，不引入原文未涉及的主题。",
+    outline: outline.length > 0 ? outline : fallbackOutline,
   };
 }
 
 function buildFactExtractionPrompt(sourceMarkdown: string) {
-  return `请从来源 Markdown 中提取可验证事实，并重新设计一套不沿用原文结构的文章大纲。
+  return `请从来源 Markdown 中提取一份用于忠实扩写的事实核对清单，并列出来源实际涉及的主题。
 
 要求：
 1. 只输出紧凑 JSON 对象，不要输出 Markdown、解释或额外文本。
 2. 所有价格、配置、优惠码、日期、库存、机房、线路、IP、退款和商家承诺必须逐字忠于来源，不得纠错、补全或推断。
-3. criticalFacts 应覆盖正文中的关键数字和限定条件；套餐表格会由系统原样保护，无需逐行复制到 productGroups，但不能遗漏最低价格、主要配置组和付款周期。
-4. supportedUseCases 只能收录来源明确说明的场景；编辑推断放入 cautions，不得写成实测结论。
-5. outline 输出 4 到 8 个全新中文小标题，按读者决策顺序组织，不复刻来源小标题或段落顺序。
+3. 每条事实使用完整短句，保留主体与对象、运营商名称、肯定或否定、比较关系、条件、范围、不确定性和信息归属；不得压缩成会丢失关系的关键词。
+4. criticalFacts 应覆盖正文中的关键数字和限定条件；套餐表格会由系统原样保护，无需逐行复制到 productGroups，但不能遗漏最低价格、主要配置组和付款周期。
+5. supportedUseCases 只能收录来源明确说明的场景；cautions 只能收录来源已有的限制、未知项或明确提醒，不得加入编辑推断。
+6. outline 输出 2 到 6 个来源确实涉及的中文主题。短文可以少于 2 个，不得为了凑结构增加线路分析、适用场景、实测、社区反馈、优缺点或总结。
 
 JSON 格式：
 {
@@ -337,64 +360,21 @@ function protectedAuthorityMarkdown(content: ProtectedMarkdownContent) {
     .join("\n\n");
 }
 
-function resolveRewriteTemplate(value?: string | null) {
-  const custom = value?.trim();
-  if (!custom) return defaultBaseRewritePrompt;
-  if (custom.includes("{factSheet}") && custom.includes("{protectedContent}")) {
-    return custom;
-  }
-
-  return `${defaultBaseRewritePrompt}
-
-后台补充编辑要求（如与上方硬性要求冲突，以上方硬性要求为准）：
-${custom.replaceAll("{content}", "（来源正文不直接提供，请仅使用事实包）")}`;
-}
-
-function fillPromptTemplate(template: string, values: Record<string, string>) {
-  let result = template;
-  for (const [key, value] of Object.entries(values)) {
-    result = result.replaceAll(`{${key}}`, value);
-  }
-  return result;
-}
-
-function buildFactDrivenRewritePrompt(input: {
-  config: AiRewriteConfig;
-  factSheet: ArticleFactSheet;
-  knowledgeContext: string;
-  protectedContent: ProtectedMarkdownContent;
-  retryFeedback: string;
-}) {
-  const template = resolveRewriteTemplate(input.config.basePrompt);
-  const hasKnowledgeMarker = template.includes("{knowledgeContext}");
-  const prompt = fillPromptTemplate(template, {
-    stylePrompt: input.config.stylePrompt,
-    factSheet: JSON.stringify(input.factSheet, null, 2),
-    outline: input.factSheet.outline.map((item) => `- ${item}`).join("\n"),
-    knowledgeContext: input.knowledgeContext,
-    protectedContent: describeProtectedContent(input.protectedContent),
-    retryFeedback:
-      input.retryFeedback ||
-      "首次生成，没有上一轮反馈。请直接满足全部硬性要求。",
-  });
-
-  return hasKnowledgeMarker
-    ? prompt
-    : `${prompt}\n\n可引用的知识库上下文：\n${input.knowledgeContext}`;
-}
-
 function buildQualityReviewPrompt(input: {
+  sourceContent: string;
   factSheet: ArticleFactSheet;
   protectedContent: ProtectedMarkdownContent;
+  providerContext: string;
   knowledgeContext: string;
   markdownContent: string;
 }) {
   return `请审查候选文章是否忠于允许使用的事实。
 
 事实优先级：
-1. 来源事实包和受保护原始内容是商家、套餐、价格、线路、库存、优惠和链接的唯一依据。
-2. 知识库上下文只能支持通用解释，不能转写成商家实测、承诺、当前库存、解锁保证、退款政策或套餐事实。
-3. 候选文章中的推断必须明确写成编辑判断或购买前确认事项。
+1. 完整来源原文和受保护原始内容是套餐、价格、配置、线路、运营商、库存、优惠、测试、用户反馈和链接的唯一依据。
+2. 带官网来源的供应商资料只能支持其中明确列出的供应商介绍、退款政策和禁止事项，不能支持套餐、线路、运营商、库存、解锁或测试事实。
+3. 知识库只能解释来源原文已经出现的通用概念，不能引入新的 ASN、线路名、运营商、地区、数据或商家结论。
+4. 必须逐项核对主体与对象、运营商、肯定或否定、比较关系、适用条件、不确定性及信息归属。把联通换成移动、把“可能”写成“确定”、把编辑推断写成官方或社区反馈，都属于事实失真或无依据表述。
 
 只输出紧凑 JSON：
 {
@@ -405,13 +385,19 @@ function buildQualityReviewPrompt(input: {
   "verdict": "pass 或 fail"
 }
 
-来源事实包：
+完整来源原文：
+${input.sourceContent}
+
+来源事实核对清单：
 ${JSON.stringify(input.factSheet)}
 
 受保护原始内容：
 ${protectedAuthorityMarkdown(input.protectedContent) || "无"}
 
-可引用知识库上下文：
+供应商官网资料：
+${input.providerContext}
+
+知识库通用解释：
 ${input.knowledgeContext}
 
 候选 Markdown：
@@ -470,19 +456,19 @@ function buildRewriteRetryFeedback(input: {
   ].filter((item): item is string => Boolean(item));
 
   return issues.length > 0
-    ? `上一轮未通过，请重新从事实包写作，不要局部修补原文：\n${issues
+    ? `上一轮未通过。请删除所有无依据术语和归因，再以完整来源原文为事实主轴重新扩写全文；不要只依据压缩事实包，也不要局部替换词语：\n${issues
         .slice(0, 12)
         .map((item) => `- ${item}`)
         .join("\n")}`
-    : "上一轮未通过，请重新组织全文并严格核对事实。";
+    : "上一轮未通过，请回到完整来源原文重新扩写，并逐项核对事实关系。";
 }
 
-function knowledgeAllowedFacts(references: RewriteKnowledgeReference[]) {
-  return references
-    .map((reference) =>
-      [reference.summary, reference.content].filter(Boolean).join("\n"),
-    )
-    .join("\n\n");
+function fillPromptTemplate(template: string, values: Record<string, string>) {
+  let result = template;
+  for (const [key, value] of Object.entries(values)) {
+    result = result.replaceAll(`{${key}}`, value);
+  }
+  return result;
 }
 
 function getMetadataStylePrompt(value?: string | null) {
@@ -1213,8 +1199,9 @@ export async function rewriteArticleWithAi(
   }
 
   let knowledgeReferences: RewriteKnowledgeReference[] = [];
-  try {
-    knowledgeReferences = await retrieveRewriteKnowledge({
+  let providerReferences: RewriteProviderReference[] = [];
+  const [knowledgeResult, providerResult] = await Promise.allSettled([
+    retrieveRewriteKnowledge({
       values: [
         factSheet.providerName,
         factSheet.articleType,
@@ -1227,12 +1214,29 @@ export async function rewriteArticleWithAi(
         ...factSheet.supportedUseCases,
         ...factSheet.cautions,
       ],
-    });
-  } catch (error) {
-    console.error("AI 改写知识库检索失败，将在无知识上下文下继续:", error);
+    }),
+    retrieveRewriteProviderReferences({ names: options.providerNames ?? [] }),
+  ]);
+  if (knowledgeResult.status === "fulfilled") {
+    knowledgeReferences = knowledgeResult.value;
+  } else {
+    console.error(
+      "AI 改写知识库检索失败，将在无知识上下文下继续:",
+      knowledgeResult.reason,
+    );
+  }
+  if (providerResult.status === "fulfilled") {
+    providerReferences = providerResult.value;
+  } else {
+    console.error(
+      "AI 改写供应商资料检索失败，将在无供应商上下文下继续:",
+      providerResult.reason,
+    );
   }
   const knowledgeContext = formatRewriteKnowledgeContext(knowledgeReferences);
-  const allowedKnowledgeFacts = knowledgeAllowedFacts(knowledgeReferences);
+  const providerContext = formatRewriteProviderContext(providerReferences);
+  const allowedProviderFacts =
+    providerReferences.length > 0 ? providerContext : "";
   let retryFeedback = "";
   let acceptedMarkdown = "";
   let acceptedMetrics: RewriteQualityMetrics | null = null;
@@ -1241,12 +1245,21 @@ export async function rewriteArticleWithAi(
 
   for (let attempt = 1; attempt <= MAX_CHINESE_REWRITE_ATTEMPTS; attempt += 1) {
     attempts = attempt;
-    const candidatePrompt = buildFactDrivenRewritePrompt({
-      config,
-      factSheet,
+    const candidatePrompt = buildSourceAnchoredRewritePrompt({
+      configuredPrompt: config.basePrompt,
+      stylePrompt: config.stylePrompt,
+      sourceContent: protectedSource,
+      factSheet: JSON.stringify(factSheet, null, 2),
+      outline:
+        factSheet.outline.length > 0
+          ? factSheet.outline.map((item) => `- ${item}`).join("\n")
+          : "来源内容较短，请按原文主题自然扩写，不必强行增加小节。",
+      providerContext,
       knowledgeContext,
-      protectedContent,
-      retryFeedback,
+      protectedContent: describeProtectedContent(protectedContent),
+      retryFeedback:
+        retryFeedback ||
+        "首次生成，没有上一轮反馈。请直接满足全部事实保真要求。",
     });
     await reportRewriteProgress(options, {
       stage: "content_generation",
@@ -1261,9 +1274,10 @@ export async function rewriteArticleWithAi(
       endpoint,
       timeoutMs,
       maxTokens: config.maxTokens,
-      stepName: `事实驱动正文改写（第 ${attempt} 轮）`,
+      temperature: getSourceAnchoredRewriteTemperature(config.temperature),
+      stepName: `原文锚定正文扩写（第 ${attempt} 轮）`,
       systemPrompt:
-        "你是服务器/VPS 内容主编。你只输出全新组织的中文正文 Markdown，并严格服从事实包、知识边界和受保护占位符。",
+        "你是服务器/VPS 内容主编。只输出忠实扩写的中文正文 Markdown；完整原文是事实主轴，严格保持实体关系、运营商、否定、条件与归因，并服从供应商资料和知识库的使用边界。",
       userPrompt: candidatePrompt,
     });
     const candidate = cleanMarkdownText(candidateText);
@@ -1288,7 +1302,7 @@ export async function rewriteArticleWithAi(
 
     const restored = restoreProtectedMarkdown(candidate, protectedContent);
     let metrics = evaluateRewriteQuality(normalizedContent, restored.markdown, {
-      allowedFactsMarkdown: allowedKnowledgeFacts,
+      allowedFactsMarkdown: allowedProviderFacts,
     });
     if (restored.missingPlaceholders.length > 0) {
       metrics = {
@@ -1302,8 +1316,10 @@ export async function rewriteArticleWithAi(
     }
 
     const reviewPrompt = buildQualityReviewPrompt({
+      sourceContent: protectedSource,
       factSheet,
       protectedContent,
+      providerContext,
       knowledgeContext,
       markdownContent: restored.markdown,
     });
@@ -1436,6 +1452,11 @@ export async function rewriteArticleWithAi(
         title: reference.title,
         slug: reference.slug,
         categoryName: reference.categoryName,
+      })),
+      providerReferences: providerReferences.map((reference) => ({
+        id: reference.id,
+        name: reference.name,
+        slug: reference.slug ?? "",
       })),
     },
   };

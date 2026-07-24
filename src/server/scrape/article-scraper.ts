@@ -19,6 +19,7 @@ import type {
 } from "@fwqgo/ai/article-rewriter";
 import RewriteArticle from "@/langchain/rewrite-article";
 import {
+  getMatchedAffiliateProviderNames,
   mergeAffiliateReports,
   repairMarkdownAffiliateLinks,
   rewriteAffiliateLinks,
@@ -573,6 +574,7 @@ async function scrapeByRule(input: {
       try {
         const rewritten = await RewriteArticle(preparedAiInput.markdown, {
           styleId: input.rewriteStyleId,
+          providerNames: getMatchedAffiliateProviderNames(affiliateReport),
           onProgress: async (ai) => {
             await input.onProgress?.({
               stage: "ai_progress",

@@ -164,6 +164,21 @@ function normalizeRewriteQuality(
         ];
       })
     : [];
+  const providerReferences = Array.isArray(value.providerReferences)
+    ? value.providerReferences.flatMap((item) => {
+        if (!isRecord(item)) return [];
+        const id = numberValue(item.id);
+        const name = stringValue(item.name);
+        if (!id || !name) return [];
+        return [
+          {
+            id,
+            name,
+            slug: stringValue(item.slug),
+          },
+        ];
+      })
+    : [];
 
   return {
     passed: booleanValue(value.passed),
@@ -198,6 +213,7 @@ function normalizeRewriteQuality(
       stringValue(item),
     ).filter(Boolean),
     knowledgeReferences,
+    providerReferences,
   };
 }
 
@@ -1115,6 +1131,13 @@ export async function AiRewriteTaskDetailPageContent({
                   0 ? (
                     <Badge variant="outline">未引用知识库</Badge>
                   ) : null}
+                  {diagnostics.rewriteQuality.providerReferences.map(
+                    (reference) => (
+                      <Badge key={reference.id} variant="secondary">
+                        供应商资料：{reference.name}
+                      </Badge>
+                    ),
+                  )}
                 </div>
               </div>
             ) : null}
