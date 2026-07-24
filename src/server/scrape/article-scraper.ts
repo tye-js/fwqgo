@@ -14,6 +14,7 @@ import {
 } from "@fwqgo/core/network-url";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import type {
+  AiRewriteAuditEvent,
   ArticleRewriteProgress,
   ArticleRewriteQuality,
 } from "@fwqgo/ai/article-rewriter";
@@ -80,6 +81,11 @@ export type ArticleProcessingProgress =
       stage: "ai_failed";
       snapshot: ArticleProcessingSnapshot;
       error: string;
+    }
+  | {
+      stage: "ai_audit";
+      snapshot: ArticleProcessingSnapshot;
+      audit: AiRewriteAuditEvent;
     };
 
 type SiteRule = {
@@ -560,11 +566,7 @@ async function scrapeByRule(input: {
   }
 
   try {
-    const contentSelection = selectContentHtml(
-      page$,
-      input.rule,
-      diagnostics,
-    );
+    const contentSelection = selectContentHtml(page$, input.rule, diagnostics);
     let $content = cheerio.load(contentSelection.html, null, false);
 
     removeNoise(
@@ -683,6 +685,13 @@ async function scrapeByRule(input: {
               ai,
             });
           },
+          onAudit: async (audit) => {
+            await input.onProgress?.({
+              stage: "ai_audit",
+              snapshot: progressSnapshot(),
+              audit,
+            });
+          },
         });
         const repairedMarkdown = repairMarkdownAffiliateLinks(
           rewritten.markdownContent,
@@ -691,9 +700,7 @@ async function scrapeByRule(input: {
         const finalMarkdown =
           repairedMarkdown.trim() || preparedAiInput.markdown;
         if (!repairedMarkdown.trim()) {
-          diagnostics.warnings.push(
-            "AI 返回空正文，已回退到清洗后的原始正文",
-          );
+          diagnostics.warnings.push("AI 返回空正文，已回退到清洗后的原始正文");
         }
         diagnostics.usedAiRewrite = true;
         diagnostics.rewriteOutputLength = finalMarkdown.length;

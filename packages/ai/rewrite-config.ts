@@ -3,11 +3,18 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@fwqgo/db";
 import { aiRewriteConfigs } from "@fwqgo/db/schema";
 import {
-  defaultBaseRewritePrompt,
+  defaultEnglishContentPrompt,
+  defaultEnglishContinuationPrompt,
+  defaultEnglishMetadataPrompt,
   defaultEnglishMetadataStylePrompt,
   defaultEnglishStylePrompt,
-  defaultMetadataPrompt,
+  defaultFactExtractionPrompt,
+  defaultInitialRewriteFeedbackPrompt,
   defaultMetadataStylePrompt,
+  defaultQualityReviewPrompt,
+  defaultRewriteRetryPrompt,
+  resolveMetadataPromptTemplate,
+  resolveSourceAnchoredRewriteTemplate,
 } from "@fwqgo/core/ai-rewrite-prompts";
 import {
   decryptSecret,
@@ -25,11 +32,18 @@ export type AiRewriteConfigInput = {
   baseUrl: string;
   apiKey?: string;
   model: string;
+  factExtractionPrompt: string;
   basePrompt: string;
+  initialRewritePrompt: string;
+  rewriteRetryPrompt: string;
+  qualityReviewPrompt: string;
   metadataPrompt: string;
   styleName: string;
   stylePrompt: string;
   metadataStylePrompt: string;
+  englishContentPrompt: string;
+  englishContinuationPrompt: string;
+  englishMetadataPrompt: string;
   englishStylePrompt: string;
   englishMetadataStylePrompt: string;
   temperature: number;
@@ -38,11 +52,40 @@ export type AiRewriteConfigInput = {
   isDefault: boolean;
 };
 
-export type AiRewriteConfig = Awaited<ReturnType<typeof getAiRewriteConfigs>>[number];
+export type AiRewriteConfig = Awaited<
+  ReturnType<typeof getAiRewriteConfigs>
+>[number];
 
 type ConfigTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const AI_REWRITE_DEFAULT_LOCK_ID = 9_021_001;
+
+function withPromptDefaults<T extends typeof aiRewriteConfigs.$inferSelect>(
+  row: T,
+) {
+  return {
+    ...row,
+    provider: row.provider as AiProvider,
+    factExtractionPrompt:
+      row.factExtractionPrompt ?? defaultFactExtractionPrompt,
+    basePrompt: resolveSourceAnchoredRewriteTemplate(row.basePrompt),
+    initialRewritePrompt:
+      row.initialRewritePrompt ?? defaultInitialRewriteFeedbackPrompt,
+    rewriteRetryPrompt: row.rewriteRetryPrompt ?? defaultRewriteRetryPrompt,
+    qualityReviewPrompt: row.qualityReviewPrompt ?? defaultQualityReviewPrompt,
+    metadataPrompt: resolveMetadataPromptTemplate(row.metadataPrompt),
+    metadataStylePrompt: row.metadataStylePrompt ?? defaultMetadataStylePrompt,
+    englishContentPrompt:
+      row.englishContentPrompt ?? defaultEnglishContentPrompt,
+    englishContinuationPrompt:
+      row.englishContinuationPrompt ?? defaultEnglishContinuationPrompt,
+    englishMetadataPrompt:
+      row.englishMetadataPrompt ?? defaultEnglishMetadataPrompt,
+    englishStylePrompt: row.englishStylePrompt ?? defaultEnglishStylePrompt,
+    englishMetadataStylePrompt:
+      row.englishMetadataStylePrompt ?? defaultEnglishMetadataStylePrompt,
+  };
+}
 
 export function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.trim().replace(/\/+$/, "");
@@ -80,11 +123,18 @@ export async function getAiRewriteConfigs() {
       provider: aiRewriteConfigs.provider,
       baseUrl: aiRewriteConfigs.baseUrl,
       model: aiRewriteConfigs.model,
+      factExtractionPrompt: aiRewriteConfigs.factExtractionPrompt,
       basePrompt: aiRewriteConfigs.basePrompt,
+      initialRewritePrompt: aiRewriteConfigs.initialRewritePrompt,
+      rewriteRetryPrompt: aiRewriteConfigs.rewriteRetryPrompt,
+      qualityReviewPrompt: aiRewriteConfigs.qualityReviewPrompt,
       metadataPrompt: aiRewriteConfigs.metadataPrompt,
       styleName: aiRewriteConfigs.styleName,
       stylePrompt: aiRewriteConfigs.stylePrompt,
       metadataStylePrompt: aiRewriteConfigs.metadataStylePrompt,
+      englishContentPrompt: aiRewriteConfigs.englishContentPrompt,
+      englishContinuationPrompt: aiRewriteConfigs.englishContinuationPrompt,
+      englishMetadataPrompt: aiRewriteConfigs.englishMetadataPrompt,
       englishStylePrompt: aiRewriteConfigs.englishStylePrompt,
       englishMetadataStylePrompt: aiRewriteConfigs.englishMetadataStylePrompt,
       temperature: aiRewriteConfigs.temperature,
@@ -98,26 +148,24 @@ export async function getAiRewriteConfigs() {
     .from(aiRewriteConfigs)
     .orderBy(desc(aiRewriteConfigs.isDefault), desc(aiRewriteConfigs.id));
 
-  return rows.map((row) => ({
-    ...row,
-    provider: row.provider as AiProvider,
-    basePrompt: row.basePrompt ?? defaultBaseRewritePrompt,
-    metadataPrompt: row.metadataPrompt ?? defaultMetadataPrompt,
-    metadataStylePrompt:
-      row.metadataStylePrompt ?? defaultMetadataStylePrompt,
-    englishStylePrompt: row.englishStylePrompt ?? defaultEnglishStylePrompt,
-    englishMetadataStylePrompt:
-      row.englishMetadataStylePrompt ?? defaultEnglishMetadataStylePrompt,
-    hasApiKey: Boolean(row.apiKey),
-    apiKeyPreview: maskApiKey(row.apiKey),
-    apiKey: undefined,
-  }));
+  return rows.map((row) => {
+    const normalized = withPromptDefaults(row);
+    return {
+      ...normalized,
+      hasApiKey: Boolean(row.apiKey),
+      apiKeyPreview: maskApiKey(row.apiKey),
+      apiKey: undefined,
+    };
+  });
 }
 
 export async function getActiveAiRewriteConfig(styleId?: number) {
   const where = styleId
     ? and(eq(aiRewriteConfigs.id, styleId), eq(aiRewriteConfigs.enabled, true))
-    : and(eq(aiRewriteConfigs.enabled, true), eq(aiRewriteConfigs.isDefault, true));
+    : and(
+        eq(aiRewriteConfigs.enabled, true),
+        eq(aiRewriteConfigs.isDefault, true),
+      );
 
   const [preferred] = await db
     .select()
@@ -125,7 +173,9 @@ export async function getActiveAiRewriteConfig(styleId?: number) {
     .where(where)
     .limit(1);
 
-  if (preferred) return resolveStoredApiKey(preferred);
+  if (preferred) {
+    return withPromptDefaults(await resolveStoredApiKey(preferred));
+  }
 
   if (styleId) return null;
 
@@ -136,7 +186,9 @@ export async function getActiveAiRewriteConfig(styleId?: number) {
     .orderBy(desc(aiRewriteConfigs.id))
     .limit(1);
 
-  return fallback ? resolveStoredApiKey(fallback) : null;
+  return fallback
+    ? withPromptDefaults(await resolveStoredApiKey(fallback))
+    : null;
 }
 
 export async function getAiRewriteConfigForStatusCheck(id: number) {
@@ -146,19 +198,7 @@ export async function getAiRewriteConfigForStatusCheck(id: number) {
     .where(eq(aiRewriteConfigs.id, id))
     .limit(1);
 
-  return config
-    ? {
-        ...(await resolveStoredApiKey(config)),
-        provider: config.provider as AiProvider,
-        basePrompt: config.basePrompt ?? defaultBaseRewritePrompt,
-        metadataPrompt: config.metadataPrompt ?? defaultMetadataPrompt,
-        metadataStylePrompt:
-          config.metadataStylePrompt ?? defaultMetadataStylePrompt,
-        englishStylePrompt: config.englishStylePrompt ?? defaultEnglishStylePrompt,
-        englishMetadataStylePrompt:
-          config.englishMetadataStylePrompt ?? defaultEnglishMetadataStylePrompt,
-      }
-    : null;
+  return config ? withPromptDefaults(await resolveStoredApiKey(config)) : null;
 }
 
 async function lockDefaultSelection(tx: ConfigTransaction) {
@@ -220,9 +260,16 @@ export async function createAiRewriteConfig(input: AiRewriteConfigInput) {
         ...input,
         baseUrl: normalizeBaseUrl(input.baseUrl),
         apiKey: input.apiKey?.trim() ? encryptSecret(input.apiKey) : null,
+        factExtractionPrompt: input.factExtractionPrompt,
         basePrompt: input.basePrompt,
+        initialRewritePrompt: input.initialRewritePrompt,
+        rewriteRetryPrompt: input.rewriteRetryPrompt,
+        qualityReviewPrompt: input.qualityReviewPrompt,
         metadataPrompt: input.metadataPrompt,
         metadataStylePrompt: input.metadataStylePrompt,
+        englishContentPrompt: input.englishContentPrompt,
+        englishContinuationPrompt: input.englishContinuationPrompt,
+        englishMetadataPrompt: input.englishMetadataPrompt,
         englishStylePrompt: input.englishStylePrompt,
         englishMetadataStylePrompt: input.englishMetadataStylePrompt,
       })
@@ -246,11 +293,18 @@ export async function updateAiRewriteConfig(
     provider: input.provider,
     baseUrl: normalizeBaseUrl(input.baseUrl),
     model: input.model,
+    factExtractionPrompt: input.factExtractionPrompt,
     basePrompt: input.basePrompt,
+    initialRewritePrompt: input.initialRewritePrompt,
+    rewriteRetryPrompt: input.rewriteRetryPrompt,
+    qualityReviewPrompt: input.qualityReviewPrompt,
     metadataPrompt: input.metadataPrompt,
     styleName: input.styleName,
     stylePrompt: input.stylePrompt,
     metadataStylePrompt: input.metadataStylePrompt,
+    englishContentPrompt: input.englishContentPrompt,
+    englishContinuationPrompt: input.englishContinuationPrompt,
+    englishMetadataPrompt: input.englishMetadataPrompt,
     englishStylePrompt: input.englishStylePrompt,
     englishMetadataStylePrompt: input.englishMetadataStylePrompt,
     temperature: input.temperature,

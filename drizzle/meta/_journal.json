@@ -337,6 +337,13 @@
       "when": 1784823842819,
       "tag": "0047_bright_lockjaw",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1784914299665,
+      "tag": "0048_special_red_skull",
+      "breakpoints": true
     }
   ]
 }

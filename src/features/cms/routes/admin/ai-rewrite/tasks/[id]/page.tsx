@@ -12,6 +12,7 @@ import {
 
 import { getAiRewriteTaskDetail } from "@/features/cms/actions/ai-rewrite-task";
 import { AffiliateRewriteAudit } from "@/features/cms/components/affiliate-rewrite-audit";
+import { AiRewriteAuditViewer } from "@/features/cms/components/ai-rewrite-audit-viewer";
 import { UnifiedTaskActionButtons } from "@/features/cms/components/unified-task-action-buttons";
 import { TaskDetailAutoRefresh } from "@/features/cms/components/task-detail-auto-refresh";
 import { isAiRewriteStageError } from "@/features/cms/lib/ai-rewrite-task-progress";
@@ -1009,6 +1010,13 @@ export async function AiRewriteTaskDetailPageContent({
         }
       >
         <TaskStepTimeline steps={steps} />
+      </AdminSectionCard>
+
+      <AdminSectionCard
+        title="改写过程与候选正文"
+        description="保存每次模型调用的实际提示词、原始响应、人工可读正文和质量审查结果。失败或未通过审查的候选也会保留。"
+      >
+        <AiRewriteAuditViewer artifacts={task.artifacts} />
       </AdminSectionCard>
 
       <ManualReviewHints diagnostics={diagnostics} postSlug={task.postSlug} />

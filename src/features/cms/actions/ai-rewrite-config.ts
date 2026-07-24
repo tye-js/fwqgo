@@ -16,6 +16,29 @@ import {
 import { checkAiRewriteConfigStatus } from "@fwqgo/ai/rewrite-status-check";
 import { defineAdminAction } from "@/features/cms/lib/define-admin-action";
 
+function promptSchema(label: string, placeholders: string[] = []) {
+  return z
+    .string()
+    .trim()
+    .min(1, `${label}不能为空`)
+    .max(120_000, `${label}不能超过 120000 个字符`)
+    .refine(
+      (value) =>
+        placeholders.every((placeholder) => value.includes(`{${placeholder}}`)),
+      {
+        message: `${label}缺少必要变量：${placeholders
+          .map((placeholder) => `{${placeholder}}`)
+          .join("、")}`,
+      },
+    );
+}
+
+const metadataPromptSchema = promptSchema("中文元信息 Prompt").refine(
+  (value) =>
+    value.includes("{markdownContent}") || value.includes("{htmlContent}"),
+  { message: "中文元信息 Prompt 需要包含 {markdownContent}" },
+);
+
 const configSchema = z.object({
   name: z.string().trim().min(1, "名称不能为空"),
   provider: z.enum(aiProviderOptions),
@@ -28,11 +51,50 @@ const configSchema = z.object({
     }),
   apiKey: z.string().trim().optional(),
   model: z.string().trim().min(1, "模型不能为空"),
-  basePrompt: z.string().trim().min(1, "正文改写 Prompt 不能为空"),
-  metadataPrompt: z.string().trim().min(1, "元信息 Prompt 不能为空"),
+  factExtractionPrompt: promptSchema("事实提取 Prompt", ["sourceMarkdown"]),
+  basePrompt: promptSchema("中文正文改写 Prompt", [
+    "stylePrompt",
+    "sourceContent",
+    "factSheet",
+    "outline",
+    "providerContext",
+    "knowledgeContext",
+    "protectedContent",
+    "retryFeedback",
+  ]),
+  initialRewritePrompt: promptSchema("首次改写反馈 Prompt"),
+  rewriteRetryPrompt: promptSchema("改写重试 Prompt", ["issues"]),
+  qualityReviewPrompt: promptSchema("质量审查 Prompt", [
+    "sourceContent",
+    "factSheet",
+    "protectedAuthorityContent",
+    "providerContext",
+    "knowledgeContext",
+    "markdownContent",
+  ]),
+  metadataPrompt: metadataPromptSchema,
   styleName: z.string().trim().min(1, "风格名称不能为空"),
   stylePrompt: z.string().trim().min(1, "正文改写风格不能为空"),
   metadataStylePrompt: z.string().trim().min(1, "元信息生成风格不能为空"),
+  englishContentPrompt: promptSchema("英文正文生成 Prompt", [
+    "englishStylePrompt",
+    "title",
+    "description",
+    "keywords",
+    "markdownContent",
+  ]),
+  englishContinuationPrompt: promptSchema("英文续写 Prompt", [
+    "originalPrompt",
+    "generatedContentTail",
+  ]),
+  englishMetadataPrompt: promptSchema("英文元信息 Prompt", [
+    "englishMetadataStylePrompt",
+    "title",
+    "description",
+    "keywords",
+    "categoryContext",
+    "enContent",
+  ]),
   englishStylePrompt: z.string().trim().min(1, "英文正文生成风格不能为空"),
   englishMetadataStylePrompt: z
     .string()

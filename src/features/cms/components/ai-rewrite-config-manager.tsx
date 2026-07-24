@@ -52,10 +52,17 @@ import {
 import { unwrapAdminActionResult } from "@/lib/admin-action-result";
 import {
   defaultBaseRewritePrompt,
+  defaultEnglishContentPrompt,
+  defaultEnglishContinuationPrompt,
+  defaultEnglishMetadataPrompt,
   defaultEnglishMetadataStylePrompt,
   defaultEnglishStylePrompt,
+  defaultFactExtractionPrompt,
+  defaultInitialRewriteFeedbackPrompt,
   defaultMetadataPrompt,
   defaultMetadataStylePrompt,
+  defaultQualityReviewPrompt,
+  defaultRewriteRetryPrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
 
 type Config = Awaited<ReturnType<typeof getAiRewriteConfigs>>[number];
@@ -144,6 +151,43 @@ function CheckResultPanel({ result }: { result: AiRewriteStatusCheckResult }) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function PromptTemplateField({
+  name,
+  label,
+  value,
+  variables = [],
+  description,
+  className = "min-h-56",
+}: {
+  name: string;
+  label: string;
+  value: string;
+  variables?: string[];
+  description: string;
+  className?: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Label htmlFor={name}>{label}</Label>
+        {variables.map((variable) => (
+          <Badge key={variable} variant="outline" className="font-mono text-xs">
+            {`{${variable}}`}
+          </Badge>
+        ))}
+      </div>
+      <Textarea
+        id={name}
+        name={name}
+        className={`${className} resize-y font-mono text-xs leading-5`}
+        defaultValue={value}
+        required
+      />
+      <p className="text-xs leading-5 text-muted-foreground">{description}</p>
     </div>
   );
 }
@@ -310,72 +354,159 @@ function ConfigForm({
         </div>
       </div>
 
-      <div id="prompt-template" className="scroll-mt-24 space-y-2">
-        <input
-          type="hidden"
-          name="basePrompt"
-          value={config?.basePrompt ?? defaultBaseRewritePrompt}
-        />
-        <input
-          type="hidden"
-          name="metadataPrompt"
-          value={config?.metadataPrompt ?? defaultMetadataPrompt}
-        />
-        <Label>中文正文改写风格</Label>
-        <Textarea
-          name="stylePrompt"
-          className="min-h-28"
-          defaultValue={config?.stylePrompt ?? defaultStylePrompt}
-          required
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label>中文标题 / SEO 生成风格</Label>
-        <Textarea
-          name="metadataStylePrompt"
-          className="min-h-32"
-          defaultValue={
-            config?.metadataStylePrompt ?? defaultMetadataStylePrompt
-          }
-          required
-        />
-        <p className="text-xs leading-5 text-muted-foreground">
-          这里只影响中文标题、摘要、关键词、标签和推荐标签，不会改变正文语气、结构或段落表达。
-        </p>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label>英文正文生成风格</Label>
-          <Textarea
-            name="englishStylePrompt"
-            className="min-h-32"
-            defaultValue={
-              config?.englishStylePrompt ?? defaultEnglishStylePrompt
-            }
-            required
+      <details id="prompt-template" open className="scroll-mt-24 border-t pt-4">
+        <summary className="cursor-pointer text-sm font-semibold text-foreground">
+          中文改写与审查提示词
+        </summary>
+        <div className="mt-4 space-y-6">
+          <PromptTemplateField
+            name="factExtractionPrompt"
+            label="1. 来源事实提取 Prompt"
+            value={config?.factExtractionPrompt ?? defaultFactExtractionPrompt}
+            variables={["sourceMarkdown"]}
+            description="模型收到的完整事实提取模板。输出会保存到任务审计记录。"
           />
-          <p className="text-xs leading-5 text-muted-foreground">
-            只影响英文正文翻译和本地化表达，不影响中文正文。
-          </p>
-        </div>
-        <div className="space-y-2">
-          <Label>英文标题 / SEO 生成风格</Label>
-          <Textarea
-            name="englishMetadataStylePrompt"
+          <PromptTemplateField
+            name="stylePrompt"
+            label="2. 中文正文风格片段"
+            value={config?.stylePrompt ?? defaultStylePrompt}
+            description="通过 {stylePrompt} 注入中文正文完整模板。"
+            className="min-h-28"
+          />
+          <PromptTemplateField
+            name="basePrompt"
+            label="3. 中文正文完整 Prompt"
+            value={config?.basePrompt ?? defaultBaseRewritePrompt}
+            variables={[
+              "stylePrompt",
+              "sourceContent",
+              "factSheet",
+              "outline",
+              "providerContext",
+              "knowledgeContext",
+              "protectedContent",
+              "retryFeedback",
+            ]}
+            description="每轮候选正文实际使用的完整模板，系统只替换变量，不再追加隐藏业务指令。"
+            className="min-h-[34rem]"
+          />
+          <PromptTemplateField
+            name="initialRewritePrompt"
+            label="4. 首轮反馈 Prompt"
+            value={
+              config?.initialRewritePrompt ??
+              defaultInitialRewriteFeedbackPrompt
+            }
+            description="首轮生成时填入正文模板的 {retryFeedback}。"
+            className="min-h-24"
+          />
+          <PromptTemplateField
+            name="rewriteRetryPrompt"
+            label="5. 审查未通过后的重试 Prompt"
+            value={config?.rewriteRetryPrompt ?? defaultRewriteRetryPrompt}
+            variables={["issues"]}
+            description="质量问题会整理为列表并替换 {issues}，再传给下一轮正文生成。"
             className="min-h-32"
-            defaultValue={
+          />
+          <PromptTemplateField
+            name="qualityReviewPrompt"
+            label="6. 事实质量审查 Prompt"
+            value={config?.qualityReviewPrompt ?? defaultQualityReviewPrompt}
+            variables={[
+              "sourceContent",
+              "factSheet",
+              "protectedAuthorityContent",
+              "providerContext",
+              "knowledgeContext",
+              "markdownContent",
+            ]}
+            description="每一轮候选正文都会使用该模板审查，原始 JSON 和归一化结果都会保留。"
+            className="min-h-[34rem]"
+          />
+          <PromptTemplateField
+            name="metadataStylePrompt"
+            label="7. 中文标题 / SEO 风格片段"
+            value={config?.metadataStylePrompt ?? defaultMetadataStylePrompt}
+            description="通过 {metadataStylePrompt} 注入中文元信息完整模板。"
+            className="min-h-28"
+          />
+          <PromptTemplateField
+            name="metadataPrompt"
+            label="8. 中文标题 / SEO 完整 Prompt"
+            value={config?.metadataPrompt ?? defaultMetadataPrompt}
+            variables={["metadataStylePrompt", "markdownContent"]}
+            description="用于标题、摘要、关键词、标签和推荐标签生成。"
+            className="min-h-[28rem]"
+          />
+        </div>
+      </details>
+
+      <details open className="border-t pt-4">
+        <summary className="cursor-pointer text-sm font-semibold text-foreground">
+          英文正文与 SEO 提示词
+        </summary>
+        <div className="mt-4 space-y-6">
+          <PromptTemplateField
+            name="englishStylePrompt"
+            label="1. 英文正文风格片段"
+            value={config?.englishStylePrompt ?? defaultEnglishStylePrompt}
+            description="通过 {englishStylePrompt} 注入英文正文完整模板。"
+            className="min-h-28"
+          />
+          <PromptTemplateField
+            name="englishContentPrompt"
+            label="2. 英文正文完整 Prompt"
+            value={config?.englishContentPrompt ?? defaultEnglishContentPrompt}
+            variables={[
+              "englishStylePrompt",
+              "title",
+              "description",
+              "keywords",
+              "markdownContent",
+            ]}
+            description="用于从已通过审查的中文正文生成英文 Markdown。"
+            className="min-h-[30rem]"
+          />
+          <PromptTemplateField
+            name="englishContinuationPrompt"
+            label="3. 英文正文续写 Prompt"
+            value={
+              config?.englishContinuationPrompt ??
+              defaultEnglishContinuationPrompt
+            }
+            variables={["originalPrompt", "generatedContentTail"]}
+            description="仅在英文正文因长度被截断时使用，每次续写都会单独保存。"
+            className="min-h-52"
+          />
+          <PromptTemplateField
+            name="englishMetadataStylePrompt"
+            label="4. 英文标题 / SEO 风格片段"
+            value={
               config?.englishMetadataStylePrompt ??
               defaultEnglishMetadataStylePrompt
             }
-            required
+            description="通过 {englishMetadataStylePrompt} 注入英文元信息完整模板。"
+            className="min-h-28"
           />
-          <p className="text-xs leading-5 text-muted-foreground">
-            只影响英文标题、slug、摘要和关键词，不影响中文 SEO。
-          </p>
+          <PromptTemplateField
+            name="englishMetadataPrompt"
+            label="5. 英文标题 / SEO 完整 Prompt"
+            value={
+              config?.englishMetadataPrompt ?? defaultEnglishMetadataPrompt
+            }
+            variables={[
+              "englishMetadataStylePrompt",
+              "title",
+              "description",
+              "keywords",
+              "categoryContext",
+              "enContent",
+            ]}
+            description="用于英文标题、slug、摘要、关键词、标签和分类元信息。"
+            className="min-h-[32rem]"
+          />
         </div>
-      </div>
+      </details>
 
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap gap-5">

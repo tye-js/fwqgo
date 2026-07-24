@@ -522,11 +522,18 @@ export const aiRewriteConfigs = pgTable(
     baseUrl: text("baseUrl").notNull(),
     apiKey: text("apiKey"),
     model: text("model").notNull(),
+    factExtractionPrompt: text("factExtractionPrompt"),
     basePrompt: text("basePrompt"),
+    initialRewritePrompt: text("initialRewritePrompt"),
+    rewriteRetryPrompt: text("rewriteRetryPrompt"),
+    qualityReviewPrompt: text("qualityReviewPrompt"),
     metadataPrompt: text("metadataPrompt"),
     styleName: text("styleName").notNull(),
     stylePrompt: text("stylePrompt").notNull(),
     metadataStylePrompt: text("metadataStylePrompt"),
+    englishContentPrompt: text("englishContentPrompt"),
+    englishContinuationPrompt: text("englishContinuationPrompt"),
+    englishMetadataPrompt: text("englishMetadataPrompt"),
     englishStylePrompt: text("englishStylePrompt"),
     englishMetadataStylePrompt: text("englishMetadataStylePrompt"),
     temperature: integer("temperature").default(40).notNull(),
@@ -755,6 +762,73 @@ export const aiTaskSteps = pgTable(
       columns: [table.taskId],
       foreignColumns: [aiRewriteTasks.id],
       name: "ai_task_steps_taskId_ai_rewrite_tasks_id_fk",
+    }).onDelete("cascade"),
+  }),
+);
+
+export const aiRewriteArtifacts = pgTable(
+  "ai_rewrite_artifacts",
+  {
+    id: serial("id").primaryKey(),
+    taskId: integer("taskId").notNull(),
+    taskAttempt: integer("taskAttempt").default(1).notNull(),
+    stage: varchar("stage", { length: 48 }).notNull(),
+    stageName: text("stageName").notNull(),
+    stageAttempt: integer("stageAttempt").default(1).notNull(),
+    status: varchar("status", { length: 24 }).default("running").notNull(),
+    configSnapshot: text("configSnapshot"),
+    model: text("model"),
+    maxTokens: integer("maxTokens"),
+    temperature: integer("temperature"),
+    prompt: text("prompt"),
+    promptLength: integer("promptLength"),
+    promptTruncated: boolean("promptTruncated").default(false).notNull(),
+    response: text("response"),
+    responseLength: integer("responseLength"),
+    responseTruncated: boolean("responseTruncated").default(false).notNull(),
+    readableContent: text("readableContent"),
+    readableContentLength: integer("readableContentLength"),
+    readableContentTruncated: boolean("readableContentTruncated")
+      .default(false)
+      .notNull(),
+    metadata: text("metadata"),
+    finishReason: varchar("finishReason", { length: 40 }),
+    promptTokens: integer("promptTokens"),
+    completionTokens: integer("completionTokens"),
+    totalTokens: integer("totalTokens"),
+    error: text("error"),
+    startedAt: timestamp("startedAt").defaultNow().notNull(),
+    finishedAt: timestamp("finishedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    taskIdx: index("ai_rewrite_artifacts_taskId_idx").on(table.taskId),
+    taskAttemptStageIdx: index(
+      "ai_rewrite_artifacts_task_attempt_stage_idx",
+    ).on(table.taskId, table.taskAttempt, table.stage, table.stageAttempt),
+    taskStageUnique: unique("ai_rewrite_artifacts_task_stage_unique").on(
+      table.taskId,
+      table.taskAttempt,
+      table.stage,
+      table.stageAttempt,
+    ),
+    statusCheck: check(
+      "ai_rewrite_artifacts_status_check",
+      sql`${table.status} in ('running', 'success', 'retry', 'failed')`,
+    ),
+    taskAttemptCheck: check(
+      "ai_rewrite_artifacts_task_attempt_check",
+      sql`${table.taskAttempt} >= 1`,
+    ),
+    stageAttemptCheck: check(
+      "ai_rewrite_artifacts_stage_attempt_check",
+      sql`${table.stageAttempt} >= 1`,
+    ),
+    taskFk: foreignKey({
+      columns: [table.taskId],
+      foreignColumns: [aiRewriteTasks.id],
+      name: "ai_rewrite_artifacts_taskId_ai_rewrite_tasks_id_fk",
     }).onDelete("cascade"),
   }),
 );
@@ -2045,6 +2119,7 @@ export const aiRewriteTasksRelations = relations(
       references: [posts.id],
     }),
     steps: many(aiTaskSteps),
+    artifacts: many(aiRewriteArtifacts),
   }),
 );
 
@@ -2054,6 +2129,16 @@ export const aiTaskStepsRelations = relations(aiTaskSteps, ({ one }) => ({
     references: [aiRewriteTasks.id],
   }),
 }));
+
+export const aiRewriteArtifactsRelations = relations(
+  aiRewriteArtifacts,
+  ({ one }) => ({
+    task: one(aiRewriteTasks, {
+      fields: [aiRewriteArtifacts.taskId],
+      references: [aiRewriteTasks.id],
+    }),
+  }),
+);
 
 export const serverOffersRelations = relations(
   serverOffers,

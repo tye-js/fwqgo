@@ -33,6 +33,7 @@ import { getActiveImageGenerationConfig } from "@/server/images/generation-confi
 import { db } from "@fwqgo/db";
 import {
   aiRewriteConfigs,
+  aiRewriteArtifacts,
   aiTaskSteps,
   aiRewriteTasks,
   categories,
@@ -1483,5 +1484,46 @@ export async function getAiRewriteTaskDetail(id: number) {
     .where(eq(aiTaskSteps.taskId, taskId))
     .orderBy(asc(aiTaskSteps.attempt), asc(aiTaskSteps.id));
 
-  return { ...task, steps };
+  const artifacts = await db
+    .select({
+      id: aiRewriteArtifacts.id,
+      taskId: aiRewriteArtifacts.taskId,
+      taskAttempt: aiRewriteArtifacts.taskAttempt,
+      stage: aiRewriteArtifacts.stage,
+      stageName: aiRewriteArtifacts.stageName,
+      stageAttempt: aiRewriteArtifacts.stageAttempt,
+      status: aiRewriteArtifacts.status,
+      configSnapshot: aiRewriteArtifacts.configSnapshot,
+      model: aiRewriteArtifacts.model,
+      maxTokens: aiRewriteArtifacts.maxTokens,
+      temperature: aiRewriteArtifacts.temperature,
+      prompt: aiRewriteArtifacts.prompt,
+      promptLength: aiRewriteArtifacts.promptLength,
+      promptTruncated: aiRewriteArtifacts.promptTruncated,
+      response: aiRewriteArtifacts.response,
+      responseLength: aiRewriteArtifacts.responseLength,
+      responseTruncated: aiRewriteArtifacts.responseTruncated,
+      readableContent: aiRewriteArtifacts.readableContent,
+      readableContentLength: aiRewriteArtifacts.readableContentLength,
+      readableContentTruncated: aiRewriteArtifacts.readableContentTruncated,
+      metadata: aiRewriteArtifacts.metadata,
+      finishReason: aiRewriteArtifacts.finishReason,
+      promptTokens: aiRewriteArtifacts.promptTokens,
+      completionTokens: aiRewriteArtifacts.completionTokens,
+      totalTokens: aiRewriteArtifacts.totalTokens,
+      error: aiRewriteArtifacts.error,
+      startedAt: aiRewriteArtifacts.startedAt,
+      finishedAt: aiRewriteArtifacts.finishedAt,
+      createdAt: aiRewriteArtifacts.createdAt,
+      updatedAt: aiRewriteArtifacts.updatedAt,
+    })
+    .from(aiRewriteArtifacts)
+    .where(eq(aiRewriteArtifacts.taskId, taskId))
+    .orderBy(
+      asc(aiRewriteArtifacts.taskAttempt),
+      asc(aiRewriteArtifacts.stageAttempt),
+      asc(aiRewriteArtifacts.id),
+    );
+
+  return { ...task, steps, artifacts };
 }

@@ -22,6 +22,7 @@ import {
 } from "@/server/posts/create-post-record";
 import { db } from "@fwqgo/db";
 import {
+  aiRewriteArtifacts,
   aiRewriteTasks,
   aiTaskSteps,
   categories,
@@ -50,6 +51,7 @@ import {
   generateEnglishMetadata,
   generateArticleMetadata,
   getAiRewriteContentLimit,
+  type AiRewriteAuditEvent,
   type ArticleRewriteProgress,
   type EnglishMetadataOutput,
 } from "@fwqgo/ai/article-rewriter";
@@ -61,6 +63,10 @@ import { shortenMarkdownOutboundLinks } from "@/server/links/outbound-short-link
 const runningTaskIds = new Set<number>();
 const runningTaskLeaseOwners = new Map<number, string>();
 const MAX_AI_MARKDOWN_INPUT_LENGTH = 14_000;
+const MAX_AI_AUDIT_PROMPT_LENGTH = 1_000_000;
+const MAX_AI_AUDIT_RESPONSE_LENGTH = 512_000;
+const MAX_AI_AUDIT_READABLE_CONTENT_LENGTH = 512_000;
+const MAX_AI_AUDIT_METADATA_LENGTH = 200_000;
 
 function normalizeCoverUrlForLanguageCheck(value: string | null | undefined) {
   if (!value) return "";
@@ -920,6 +926,15 @@ async function runEnglishSeoTask(
   claimedTask: typeof aiRewriteTasks.$inferSelect,
 ) {
   const attempt = claimedTask.attempts;
+  const rewriteExecutionOptions = {
+    styleId: claimedTask.rewriteStyleId ?? undefined,
+    onAudit: (audit: AiRewriteAuditEvent) =>
+      persistAiRewriteArtifactBestEffort({
+        taskId: claimedTask.id,
+        taskAttempt: attempt,
+        audit,
+      }),
+  };
   let activeStep = {
     key: "english_generate",
     name: "生成英文正文",
@@ -1002,7 +1017,7 @@ async function runEnglishSeoTask(
         keywords: post.keywords,
         markdownContent: markdownInput.markdown,
       },
-      { styleId: claimedTask.rewriteStyleId ?? undefined },
+      rewriteExecutionOptions,
     );
     const enContent = await shortenMarkdownOutboundLinks(
       generatedEnglishContent,
@@ -1056,7 +1071,7 @@ async function runEnglishSeoTask(
           enSlug: post.categoryEnSlug,
         },
       },
-      { styleId: claimedTask.rewriteStyleId ?? undefined },
+      rewriteExecutionOptions,
     );
     const existingEnglishPostId =
       claimedTask.postId && claimedTask.postId !== post.id
@@ -1245,6 +1260,15 @@ async function runSeoMetadataTask(
   claimedTask: typeof aiRewriteTasks.$inferSelect,
 ) {
   const attempt = claimedTask.attempts;
+  const rewriteExecutionOptions = {
+    styleId: claimedTask.rewriteStyleId ?? undefined,
+    onAudit: (audit: AiRewriteAuditEvent) =>
+      persistAiRewriteArtifactBestEffort({
+        taskId: claimedTask.id,
+        taskAttempt: attempt,
+        audit,
+      }),
+  };
   let activeStep = {
     key: "seo_metadata",
     name: "生成文章 SEO",
@@ -1342,7 +1366,7 @@ async function runSeoMetadataTask(
                 enSlug: post.categoryEnSlug,
               },
             },
-            { styleId: claimedTask.rewriteStyleId ?? undefined },
+            rewriteExecutionOptions,
           );
           await renewAiTaskLease(claimedTask);
           const nextSlug = await getUniqueEnglishArticleSlug(
@@ -1385,7 +1409,7 @@ async function runSeoMetadataTask(
       : await (async () => {
           const metadata = await generateArticleMetadata(
             { markdownContent: markdownInput.markdown },
-            { styleId: claimedTask.rewriteStyleId ?? undefined },
+            rewriteExecutionOptions,
           );
           await renewAiTaskLease(claimedTask);
           const nextSlug = await getUniqueEnglishArticleSlug(
@@ -1584,6 +1608,13 @@ async function createArticleFromManualTask(input: {
           ai,
         });
       },
+      onAudit: async (audit) => {
+        await input.onProgress?.({
+          stage: "ai_audit",
+          snapshot: progressSnapshot(),
+          audit,
+        });
+      },
     });
   } catch (error) {
     const message = getErrorMessage(error);
@@ -1649,6 +1680,132 @@ async function loadTaskArticle(
     aiInputMaxLength,
     onProgress,
   });
+}
+
+function boundAuditText(value: string | undefined, limit: number) {
+  if (typeof value !== "string") {
+    return { value: null, length: null, truncated: false };
+  }
+
+  return {
+    value: value.slice(0, limit),
+    length: value.length,
+    truncated: value.length > limit,
+  };
+}
+
+function auditJson(value: unknown, limit = MAX_AI_AUDIT_METADATA_LENGTH) {
+  if (typeof value === "undefined") {
+    return null;
+  }
+
+  try {
+    return JSON.stringify(value).slice(0, limit);
+  } catch {
+    return JSON.stringify({ error: "审计元数据序列化失败" });
+  }
+}
+
+async function upsertAiRewriteArtifact(input: {
+  taskId: number;
+  taskAttempt: number;
+  audit: AiRewriteAuditEvent;
+}) {
+  const now = new Date();
+  const prompt = boundAuditText(input.audit.prompt, MAX_AI_AUDIT_PROMPT_LENGTH);
+  const response = boundAuditText(
+    input.audit.response,
+    MAX_AI_AUDIT_RESPONSE_LENGTH,
+  );
+  const readableContent = boundAuditText(
+    input.audit.readableContent,
+    MAX_AI_AUDIT_READABLE_CONTENT_LENGTH,
+  );
+  const isTerminal = input.audit.status !== "running";
+
+  await db
+    .insert(aiRewriteArtifacts)
+    .values({
+      taskId: input.taskId,
+      taskAttempt: Math.max(1, input.taskAttempt),
+      stage: input.audit.stage,
+      stageName: input.audit.stageName,
+      stageAttempt: Math.max(1, input.audit.stageAttempt),
+      status: input.audit.status,
+      configSnapshot: auditJson(input.audit.config),
+      model: input.audit.config.model,
+      maxTokens: input.audit.maxTokens,
+      temperature: input.audit.temperature,
+      prompt: prompt.value,
+      promptLength: prompt.length,
+      promptTruncated: prompt.truncated,
+      response: response.value,
+      responseLength: response.length,
+      responseTruncated: response.truncated,
+      readableContent: readableContent.value,
+      readableContentLength: readableContent.length,
+      readableContentTruncated: readableContent.truncated,
+      metadata: auditJson(input.audit.metadata),
+      finishReason: input.audit.finishReason ?? null,
+      promptTokens: input.audit.promptTokens ?? null,
+      completionTokens: input.audit.completionTokens ?? null,
+      totalTokens: input.audit.totalTokens ?? null,
+      error: input.audit.error ?? null,
+      startedAt: now,
+      finishedAt: isTerminal ? now : null,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [
+        aiRewriteArtifacts.taskId,
+        aiRewriteArtifacts.taskAttempt,
+        aiRewriteArtifacts.stage,
+        aiRewriteArtifacts.stageAttempt,
+      ],
+      set: {
+        stageName: input.audit.stageName,
+        status: input.audit.status,
+        configSnapshot: auditJson(input.audit.config),
+        model: input.audit.config.model,
+        maxTokens: input.audit.maxTokens,
+        temperature: input.audit.temperature,
+        prompt: prompt.value,
+        promptLength: prompt.length,
+        promptTruncated: prompt.truncated,
+        response: response.value,
+        responseLength: response.length,
+        responseTruncated: response.truncated,
+        readableContent: readableContent.value,
+        readableContentLength: readableContent.length,
+        readableContentTruncated: readableContent.truncated,
+        metadata: auditJson(input.audit.metadata),
+        finishReason: input.audit.finishReason ?? null,
+        promptTokens: input.audit.promptTokens ?? null,
+        completionTokens: input.audit.completionTokens ?? null,
+        totalTokens: input.audit.totalTokens ?? null,
+        error: input.audit.error ?? null,
+        finishedAt: isTerminal ? now : null,
+        updatedAt: now,
+      },
+    });
+}
+
+async function persistAiRewriteArtifactBestEffort(input: {
+  taskId: number;
+  taskAttempt: number;
+  audit: AiRewriteAuditEvent;
+}) {
+  try {
+    await upsertAiRewriteArtifact(input);
+  } catch (error) {
+    structuredLog("error", "ai.rewrite_artifact_persist_failed", {
+      taskId: input.taskId,
+      taskAttempt: input.taskAttempt,
+      stage: input.audit.stage,
+      stageAttempt: input.audit.stageAttempt,
+      error,
+    });
+  }
 }
 
 export async function enqueueAiRewriteTask(taskId: number) {
@@ -1888,6 +2045,15 @@ export async function runAiRewriteTask(taskId: number) {
         aiInputLength: snapshot.diagnostics.aiInputLength ?? null,
         diagnostics,
       };
+
+      if (event.stage === "ai_audit") {
+        await persistAiRewriteArtifactBestEffort({
+          taskId,
+          taskAttempt: attempt,
+          audit: event.audit,
+        });
+        return;
+      }
 
       if (event.stage === "content_prepared") {
         await upsertTaskStep({
