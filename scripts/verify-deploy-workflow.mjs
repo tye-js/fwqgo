@@ -7,6 +7,13 @@ const workflowPath = path.resolve(".github/workflows/deploy.yml");
 const workflow = fs.readFileSync(workflowPath, "utf8");
 const localDeployPath = path.resolve("scripts/deploy-local-build.sh");
 const localDeploy = fs.readFileSync(localDeployPath, "utf8");
+const productionHealthcheckPath = path.resolve(
+  "scripts/production-healthcheck.sh",
+);
+const productionHealthcheck = fs.readFileSync(
+  productionHealthcheckPath,
+  "utf8",
+);
 const backupScriptPath = path.resolve("scripts/secure-db-backup.sh");
 const backupScript = fs.readFileSync(backupScriptPath, "utf8");
 const pgDumpRunnerPath = path.resolve("scripts/secure-pg-dump.mjs");
@@ -118,6 +125,10 @@ if (syntaxCheck.status !== 0) {
 
 for (const { label, filePath } of [
   { label: "Local deployment script", filePath: localDeployPath },
+  {
+    label: "Production healthcheck script",
+    filePath: productionHealthcheckPath,
+  },
   { label: "Secure database backup script", filePath: backupScriptPath },
 ]) {
   const result = spawnSync("bash", ["-n", filePath], { encoding: "utf8" });
@@ -185,6 +196,68 @@ if (
 ) {
   throw new Error(
     "Deployment scripts must parse runtime env files without sourcing them",
+  );
+}
+
+const smokeTestStart = workflow.lastIndexOf("      - name: Smoke test\n");
+if (smokeTestStart < 0) {
+  throw new Error("Deploy workflow is missing the post-deployment smoke test");
+}
+const nextStepStart = workflow.indexOf("\n      - name:", smokeTestStart + 1);
+const smokeTest = workflow.slice(
+  smokeTestStart,
+  nextStepStart < 0 ? undefined : nextStepStart,
+);
+const smokeRunMarker = "        run: |\n";
+const smokeRunStart = smokeTest.indexOf(smokeRunMarker);
+if (smokeRunStart < 0) {
+  throw new Error("Deploy smoke test is missing its Bash run block");
+}
+const smokeScript = smokeTest
+  .slice(smokeRunStart + smokeRunMarker.length)
+  .split("\n")
+  .map((line) => line.replace(/^ {10}/, ""))
+  .join("\n");
+const smokeSyntaxCheck = spawnSync("bash", ["-n"], {
+  input: smokeScript,
+  encoding: "utf8",
+});
+if (smokeSyntaxCheck.status !== 0) {
+  throw new Error(
+    `Deploy smoke test failed bash -n:\n${smokeSyntaxCheck.stderr.trim()}`,
+  );
+}
+
+for (const { label, source } of [
+  { label: "Deploy smoke test", source: smokeTest },
+  { label: "Production healthcheck", source: productionHealthcheck },
+]) {
+  for (const requiredFragment of [
+    "probe_http()",
+    "--head --output /dev/null",
+    "%{time_total}",
+    "HTTP probe [%s] url=%s status=%s elapsed=%ss redirect=%s",
+  ]) {
+    if (!source.includes(requiredFragment)) {
+      throw new Error(
+        `${label} is missing HEAD probe invariant: ${requiredFragment}`,
+      );
+    }
+  }
+
+  const curlInvocations = [
+    ...source.matchAll(/\bcurl\s+"\$\{CURL_RETRY_ARGS\[@\]\}"/g),
+  ].length;
+  if (curlInvocations !== 1) {
+    throw new Error(
+      `${label} must route every HTTP status check through one labeled HEAD probe; found ${curlInvocations} curl invocations`,
+    );
+  }
+}
+
+if (!smokeTest.includes("probe_cms_http()") || smokeTest.includes("cms_auth_args")) {
+  throw new Error(
+    "Deploy smoke test must handle optional CMS Basic Auth without an empty array under set -u",
   );
 }
 
@@ -338,5 +411,5 @@ if (outputCount !== 1) {
 }
 
 console.log(
-  "Deployment workflow verified: remote activation shell and secure database backups are valid",
+  "Deployment workflow verified: remote activation, HEAD smoke probes, and secure database backups are valid",
 );

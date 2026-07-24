@@ -16,10 +16,34 @@ log() {
 
 CURL_RETRY_ARGS=(--retry 3 --retry-delay 2 --retry-connrefused --retry-all-errors)
 
-read_curl_status_redirect() {
-  local target="$1"
-  shift
-  curl "${CURL_RETRY_ARGS[@]}" -sS -o /dev/null -w '%{http_code}\n%{redirect_url}' --max-time 20 "$@" "$target"
+probe_http() {
+  local label="$1"
+  local target="$2"
+  shift 2
+  local result
+  local curl_exit
+  local status
+  local elapsed
+  local redirect
+
+  if result="$(
+    curl "${CURL_RETRY_ARGS[@]}" \
+      --silent --show-error --head --output /dev/null \
+      --write-out '%{http_code}\n%{time_total}\n%{redirect_url}' \
+      --max-time 20 "$@" "$target"
+  )"; then
+    status="$(printf '%s\n' "$result" | sed -n '1p')"
+    elapsed="$(printf '%s\n' "$result" | sed -n '2p')"
+    redirect="$(printf '%s\n' "$result" | sed -n '3p')"
+  else
+    curl_exit=$?
+    printf 'ERROR: HTTP probe failed: check=%s url=%s curl_exit=%s\n' "$label" "$target" "$curl_exit" >&2
+    return "$curl_exit"
+  fi
+
+  printf 'HTTP probe [%s] url=%s status=%s elapsed=%ss redirect=%s\n' \
+    "$label" "$target" "${status:-000}" "${elapsed:-unknown}" "${redirect:-none}" >&2
+  printf '%s\n%s\n' "$status" "$redirect"
 }
 
 redirect_path() {
@@ -57,13 +81,14 @@ is_cms_login_redirect() {
 }
 
 read_cms_status_redirect() {
-  local target="$1"
+  local label="$1"
+  local target="$2"
   if [[ "$CMS_BASIC_AUTH_ENABLED" == "1" ]]; then
-    read_curl_status_redirect "$target" -u "$CMS_BASIC_AUTH_USERNAME:$CMS_BASIC_AUTH_PASSWORD"
+    probe_http "$label" "$target" -u "$CMS_BASIC_AUTH_USERNAME:$CMS_BASIC_AUTH_PASSWORD"
     return
   fi
 
-  read_curl_status_redirect "$target"
+  probe_http "$label" "$target"
 }
 
 DEPLOY_HOST="${DEPLOY_HOST:-${SSH_HOST:-}}"
@@ -107,33 +132,37 @@ done
 '
 
 log "Checking public homepage"
-home_status="$(curl "${CURL_RETRY_ARGS[@]}" -sS -o /dev/null -w '%{http_code}' --max-time 20 "$SITE_URL/")"
+home_result="$(probe_http "Public homepage" "$SITE_URL/")"
+home_status="$(printf '%s\n' "$home_result" | sed -n '1p')"
 [[ "$home_status" == "200" ]] || fail "Homepage returned HTTP $home_status"
 printf 'homepage=%s\n' "$home_status"
 
 log "Checking application health endpoints"
-web_health_status="$(curl "${CURL_RETRY_ARGS[@]}" -sS -o /dev/null -w '%{http_code}' --max-time 20 "$SITE_URL/api/health")"
-cms_health_result="$(read_cms_status_redirect "$CMS_URL/api/health")"
+web_health_result="$(probe_http "Web health endpoint" "$SITE_URL/api/health")"
+web_health_status="$(printf '%s\n' "$web_health_result" | sed -n '1p')"
+cms_health_result="$(read_cms_status_redirect "CMS health endpoint" "$CMS_URL/api/health")"
 cms_health_status="$(printf '%s\n' "$cms_health_result" | sed -n '1p')"
 [[ "$web_health_status" == "200" ]] || fail "Web health endpoint returned HTTP $web_health_status"
 [[ "$cms_health_status" == "200" ]] || fail "CMS health endpoint returned HTTP $cms_health_status"
 printf 'web_health=%s cms_health=%s\n' "$web_health_status" "$cms_health_status"
 
 log "Checking public admin redirect to CMS"
-public_admin_status="$(curl "${CURL_RETRY_ARGS[@]}" -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$SITE_URL/ai-rewrite/tasks")"
-printf 'public_admin=%s\n' "$public_admin_status"
-case "$public_admin_status" in
-  307*\ "$CMS_URL"*|302*\ "$CMS_URL"*) ;;
-  *) fail "Public admin route did not redirect to CMS: $public_admin_status" ;;
-esac
+public_admin_result="$(probe_http "Public admin redirect" "$SITE_URL/ai-rewrite/tasks")"
+public_admin_status="$(printf '%s\n' "$public_admin_result" | sed -n '1p')"
+public_admin_redirect="$(printf '%s\n' "$public_admin_result" | sed -n '2p')"
+printf 'public_admin=%s %s\n' "$public_admin_status" "$public_admin_redirect"
+if [[ ( "$public_admin_status" != "307" && "$public_admin_status" != "302" ) || "$public_admin_redirect" != "$CMS_URL"* ]]; then
+  fail "Public admin route did not redirect to CMS: $public_admin_status ${public_admin_redirect:-none}"
+fi
 
 log "Checking public CMS API isolation"
-public_api_status="$(curl "${CURL_RETRY_ARGS[@]}" -sS -o /dev/null -w '%{http_code}' --max-time 20 "$SITE_URL/api/upload")"
+public_api_result="$(probe_http "Public CMS API isolation" "$SITE_URL/api/upload")"
+public_api_status="$(printf '%s\n' "$public_api_result" | sed -n '1p')"
 printf 'public_api=%s\n' "$public_api_status"
 [[ "$public_api_status" == "404" ]] || fail "Public CMS API returned HTTP $public_api_status"
 
 log "Checking CMS home redirect"
-cms_unauth_result="$(read_curl_status_redirect "$CMS_URL/")"
+cms_unauth_result="$(probe_http "CMS unauthenticated home" "$CMS_URL/")"
 cms_unauth_status="$(printf '%s\n' "$cms_unauth_result" | sed -n '1p')"
 cms_unauth_redirect="$(printf '%s\n' "$cms_unauth_result" | sed -n '2p')"
 printf 'cms_unauth=%s %s\n' "$cms_unauth_status" "$cms_unauth_redirect"
@@ -141,7 +170,7 @@ if [[ "$cms_unauth_status" != "401" ]] && ! is_cms_login_redirect "$cms_unauth_s
   fail "Unexpected CMS unauth response: $cms_unauth_status ${cms_unauth_redirect:-none}"
 fi
 
-cms_home_result="$(read_cms_status_redirect "$CMS_URL/")"
+cms_home_result="$(read_cms_status_redirect "CMS authenticated home" "$CMS_URL/")"
 cms_home_status="$(printf '%s\n' "$cms_home_result" | sed -n '1p')"
 cms_home_redirect="$(printf '%s\n' "$cms_home_result" | sed -n '2p')"
 printf 'cms_home=%s %s\n' "$cms_home_status" "$cms_home_redirect"
@@ -150,27 +179,22 @@ if [[ "$cms_home_status" != "200" ]] && ! is_cms_login_redirect "$cms_home_statu
 fi
 
 log "Checking CMS public content redirect"
-if [[ "$CMS_BASIC_AUTH_ENABLED" == "1" ]]; then
-  cms_public_status="$(curl "${CURL_RETRY_ARGS[@]}" -sS -u "$CMS_BASIC_AUTH_USERNAME:$CMS_BASIC_AUTH_PASSWORD" -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$CMS_URL/fwq/vps/page/1")"
-else
-  cms_public_status="$(curl "${CURL_RETRY_ARGS[@]}" -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$CMS_URL/fwq/vps/page/1")"
+cms_public_result="$(read_cms_status_redirect "CMS public content redirect" "$CMS_URL/fwq/vps/page/1")"
+cms_public_status="$(printf '%s\n' "$cms_public_result" | sed -n '1p')"
+cms_public_redirect="$(printf '%s\n' "$cms_public_result" | sed -n '2p')"
+printf 'cms_public=%s %s\n' "$cms_public_status" "$cms_public_redirect"
+if [[ ( "$cms_public_status" != "307" && "$cms_public_status" != "302" ) || "$cms_public_redirect" != "$SITE_URL/fwq/vps/page/1"* ]]; then
+  fail "CMS public content did not redirect to public site: $cms_public_status ${cms_public_redirect:-none}"
 fi
-printf 'cms_public=%s\n' "$cms_public_status"
-case "$cms_public_status" in
-  307*\ "$SITE_URL/fwq/vps/page/1"*|302*\ "$SITE_URL/fwq/vps/page/1"*) ;;
-  *) fail "CMS public content did not redirect to public site: $cms_public_status" ;;
-esac
 
 log "Checking CMS admin auth redirect"
-if [[ "$CMS_BASIC_AUTH_ENABLED" == "1" ]]; then
-  admin_status="$(curl "${CURL_RETRY_ARGS[@]}" -sS -u "$CMS_BASIC_AUTH_USERNAME:$CMS_BASIC_AUTH_PASSWORD" -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$CMS_URL/ai-rewrite/tasks")"
-else
-  admin_status="$(curl "${CURL_RETRY_ARGS[@]}" -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$CMS_URL/ai-rewrite/tasks")"
-fi
-printf 'cms_admin=%s\n' "$admin_status"
+admin_result="$(read_cms_status_redirect "CMS admin auth redirect" "$CMS_URL/ai-rewrite/tasks")"
+admin_status="$(printf '%s\n' "$admin_result" | sed -n '1p')"
+admin_redirect="$(printf '%s\n' "$admin_result" | sed -n '2p')"
+printf 'cms_admin=%s %s\n' "$admin_status" "$admin_redirect"
 case "$admin_status" in
-  307*|302*|200*) ;;
-  *) fail "Unexpected admin route response: $admin_status" ;;
+  307|302|200) ;;
+  *) fail "Unexpected admin route response: $admin_status ${admin_redirect:-none}" ;;
 esac
 
 log "Health check complete"
