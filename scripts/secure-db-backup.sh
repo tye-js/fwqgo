@@ -10,20 +10,26 @@ backup_dir="${1:-}"
 release_id="${2:-}"
 keep_count="${3:-10}"
 retention_days="${4:-30}"
+database_env_file="${5:-}"
 
 [[ "$backup_dir" == /* && "$backup_dir" != "/" ]] || fail "A safe absolute backup directory is required"
 [[ "$release_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || fail "Release ID contains unsafe characters"
 [[ "$keep_count" =~ ^[1-9][0-9]{0,2}$ ]] || fail "Backup count must be an integer between 1 and 100"
 [[ "$retention_days" =~ ^[1-9][0-9]{0,3}$ ]] || fail "Backup retention days must be an integer between 1 and 3650"
+[[ "$database_env_file" == /* && -f "$database_env_file" && -r "$database_env_file" ]] || fail "A readable absolute database environment file is required"
 
 keep_count=$((10#$keep_count))
 retention_days=$((10#$retention_days))
 ((keep_count <= 100)) || fail "Backup count must be an integer between 1 and 100"
 ((retention_days <= 3650)) || fail "Backup retention days must be an integer between 1 and 3650"
 
-[[ -n "${DATABASE_URL:-}" ]] || fail "DATABASE_URL is required for a pre-migration backup"
 command -v pg_dump >/dev/null 2>&1 || fail "pg_dump is required when database migrations are enabled"
 command -v pg_restore >/dev/null 2>&1 || fail "pg_restore is required to verify the database backup"
+command -v node >/dev/null 2>&1 || fail "node is required to prepare a secure database backup"
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+pg_dump_runner="$script_dir/secure-pg-dump.mjs"
+[[ -f "$pg_dump_runner" ]] || fail "Secure pg_dump runner is missing"
 
 if [[ -L "$backup_dir" ]]; then
   fail "Backup directory must not be a symbolic link: $backup_dir"
@@ -43,7 +49,6 @@ find "$backup_dir" -type f \
 
 backup_file="$backup_dir/fwqgo-before-${release_id}.dump"
 backup_tmp="${backup_file}.partial.$$"
-database_url="$DATABASE_URL"
 
 cleanup() {
   if [[ -n "${backup_tmp:-}" ]]; then
@@ -56,21 +61,14 @@ trap 'exit 1' HUP INT TERM
 
 echo "Creating verified database backup before migrations: $backup_file"
 if ! (
-  unset DATABASE_URL
   umask 077
-  PGDATABASE="$database_url" pg_dump \
-    --no-password \
-    --format=custom \
-    --no-owner \
-    --no-privileges \
-    --file="$backup_tmp"
+  node "$pg_dump_runner" "$database_env_file" "$backup_tmp"
 ); then
   fail "Database backup failed; migrations were not started"
 fi
 
 [[ -s "$backup_tmp" ]] || fail "Database backup is empty; migrations were not started"
 if ! (
-  unset DATABASE_URL
   pg_restore --list "$backup_tmp" >/dev/null
 ); then
   fail "Database backup verification failed; migrations were not started"

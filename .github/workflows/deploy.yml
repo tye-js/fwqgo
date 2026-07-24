@@ -157,6 +157,7 @@ jobs:
           cp scripts/migration-manifest.mjs ".deploy/payload-$RELEASE_ID/scripts/migration-manifest.mjs"
           cp scripts/merge-runtime-env.mjs ".deploy/payload-$RELEASE_ID/scripts/merge-runtime-env.mjs"
           cp scripts/secure-db-backup.sh ".deploy/payload-$RELEASE_ID/scripts/secure-db-backup.sh"
+          cp scripts/secure-pg-dump.mjs ".deploy/payload-$RELEASE_ID/scripts/secure-pg-dump.mjs"
           cp "$(command -v bun)" ".deploy/payload-$RELEASE_ID/bin/bun"
           chmod 755 ".deploy/payload-$RELEASE_ID/bin/bun"
           mkdir -p ".deploy/payload-$RELEASE_ID/node_modules"
@@ -369,15 +370,12 @@ jobs:
 
           if [[ "$run_migrations" != "false" ]]; then
             deployment_stage="database backup"
-            set -a
-            # shellcheck source=/dev/null
-            source "$shared_dir/.env.production"
-            set +a
             bash "$release_dir/scripts/secure-db-backup.sh" \
               "$shared_dir/backups/db" \
               "$release_id" \
               "$keep_db_backups" \
-              "$db_backup_retention_days"
+              "$db_backup_retention_days" \
+              "$shared_dir/.env.production"
             deployment_stage="database migration"
             echo "Running production database migrations on server..."
             "$release_dir/bin/bun" "$release_dir/scripts/migrate-prod.mjs"

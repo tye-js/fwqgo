@@ -200,6 +200,7 @@ cp -R "$ROOT_DIR/drizzle" "$PAYLOAD_DIR/drizzle"
 cp "$ROOT_DIR/scripts/migrate-prod.mjs" "$PAYLOAD_DIR/scripts/migrate-prod.mjs"
 cp "$ROOT_DIR/scripts/migration-manifest.mjs" "$PAYLOAD_DIR/scripts/migration-manifest.mjs"
 cp "$ROOT_DIR/scripts/secure-db-backup.sh" "$PAYLOAD_DIR/scripts/secure-db-backup.sh"
+cp "$ROOT_DIR/scripts/secure-pg-dump.mjs" "$PAYLOAD_DIR/scripts/secure-pg-dump.mjs"
 cp "$STAGE_DIR/.deploy-runtime/bun" "$PAYLOAD_DIR/bin/bun"
 chmod 755 "$PAYLOAD_DIR/bin/bun"
 mkdir -p "$PAYLOAD_DIR/node_modules"
@@ -369,15 +370,12 @@ ln -sfn "$shared_dir/.env.production" "$release_dir/.env.production"
 }
 
 if [[ "$run_migrations" == "1" || "$run_migrations" == "true" ]]; then
-  set -a
-  # shellcheck source=/dev/null
-  source "$shared_dir/.env.production"
-  set +a
   bash "$release_dir/scripts/secure-db-backup.sh" \
     "$shared_dir/backups/db" \
     "$release_id" \
     "$keep_db_backups" \
-    "$db_backup_retention_days"
+    "$db_backup_retention_days" \
+    "$shared_dir/.env.production"
   echo "Running production database migrations on server..."
   "$release_dir/bin/bun" "$release_dir/scripts/migrate-prod.mjs"
 fi

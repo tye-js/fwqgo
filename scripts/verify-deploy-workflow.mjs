@@ -9,6 +9,8 @@ const localDeployPath = path.resolve("scripts/deploy-local-build.sh");
 const localDeploy = fs.readFileSync(localDeployPath, "utf8");
 const backupScriptPath = path.resolve("scripts/secure-db-backup.sh");
 const backupScript = fs.readFileSync(backupScriptPath, "utf8");
+const pgDumpRunnerPath = path.resolve("scripts/secure-pg-dump.mjs");
+const pgDumpRunner = fs.readFileSync(pgDumpRunnerPath, "utf8");
 
 if (
   !workflow.includes("- name: Prepare cache revalidation secret") ||
@@ -124,11 +126,21 @@ for (const { label, filePath } of [
   }
 }
 
+const pgDumpRunnerSyntax = spawnSync("node", ["--check", pgDumpRunnerPath], {
+  encoding: "utf8",
+});
+if (pgDumpRunnerSyntax.status !== 0) {
+  throw new Error(
+    `Secure pg_dump runner failed node --check:\n${pgDumpRunnerSyntax.stderr.trim()}`,
+  );
+}
+
 for (const source of [workflow, localDeploy]) {
   for (const requiredValue of [
     "KEEP_DB_BACKUPS",
     "DB_BACKUP_RETENTION_DAYS",
     "secure-db-backup.sh",
+    "secure-pg-dump.mjs",
   ]) {
     if (!source.includes(requiredValue)) {
       throw new Error(
@@ -141,8 +153,7 @@ for (const source of [workflow, localDeploy]) {
 for (const requiredFragment of [
   'chmod 700 "$backup_dir"',
   "umask 077",
-  'PGDATABASE="$database_url" pg_dump',
-  '--file="$backup_tmp"',
+  'node "$pg_dump_runner" "$database_env_file" "$backup_tmp"',
   'pg_restore --list "$backup_tmp"',
   'chmod 600 "$backup_tmp"',
   'mv -f "$backup_tmp" "$backup_file"',
@@ -156,11 +167,25 @@ for (const requiredFragment of [
   }
 }
 
+if (backupScript.includes('source "$database_env_file"')) {
+  throw new Error(
+    "Database environment files must not be executed as shell code",
+  );
+}
 if (
-  backupScript.includes('pg_dump "$DATABASE_URL"') ||
-  backupScript.includes('--dbname="$DATABASE_URL"')
+  !pgDumpRunner.includes('parsedUrl.username = ""') ||
+  !pgDumpRunner.includes('parsedUrl.password = ""') ||
+  !pgDumpRunner.includes("delete childEnvironment[key]")
 ) {
   throw new Error("Database credentials must not be exposed in pg_dump argv");
+}
+if (
+  remoteScript.includes('source "$shared_dir/.env.production"') ||
+  localDeploy.includes('source "$shared_dir/.env.production"')
+) {
+  throw new Error(
+    "Deployment scripts must parse runtime env files without sourcing them",
+  );
 }
 
 const backupTestRoot = fs.mkdtempSync(
@@ -169,6 +194,7 @@ const backupTestRoot = fs.mkdtempSync(
 try {
   const fakeBin = path.join(backupTestRoot, "bin");
   const backupDir = path.join(backupTestRoot, "backups");
+  const databaseEnvFile = path.join(backupTestRoot, ".env.production");
   fs.mkdirSync(fakeBin);
   fs.mkdirSync(backupDir, { mode: 0o755 });
 
@@ -179,13 +205,19 @@ try {
       "#!/usr/bin/env bash",
       "set -euo pipefail",
       'output=""',
+      'database_arg=""',
       'for arg in "$@"; do',
       '  [[ "$arg" != *"super-secret"* ]] || exit 90',
+      '  [[ "$arg" != *"backup%2Buser"* ]] || exit 90',
       '  case "$arg" in',
+      '    --dbname=*) database_arg="${arg#--dbname=}" ;;',
       '    --file=*) output="${arg#--file=}" ;;',
       "  esac",
       "done",
-      '[[ -n "${PGDATABASE:-}" && -n "$output" ]] || exit 91',
+      '[[ "$database_arg" == "postgresql://127.0.0.1:5432/fwqgo_test?sslmode=require" ]] || exit 91',
+      '[[ "${PGUSER:-}" == "backup+user" ]] || exit 91',
+      '[[ "${PGPASSWORD:-}" == "p@ss:word-super-secret" ]] || exit 91',
+      '[[ -z "${DATABASE_URL:-}" && -z "${PGDATABASE:-}" && -n "$output" ]] || exit 91',
       "printf 'fake custom archive\\n' > \"$output\"",
       '[[ "${FAKE_PG_DUMP_FAIL:-0}" != "1" ]] || exit 92',
       "",
@@ -211,15 +243,19 @@ set -euo pipefail
     fs.utimesSync(oldBackup, timestamp, timestamp);
   }
 
-  const testDatabaseUrl = "test-database-super-secret-marker";
+  const testDatabaseUrl =
+    "postgresql://backup%2Buser:p%40ss%3Aword-super-secret@127.0.0.1:5432/fwqgo_test?sslmode=require";
+  fs.writeFileSync(databaseEnvFile, `DATABASE_URL=${testDatabaseUrl}\n`, {
+    mode: 0o600,
+  });
   const backupEnvironment = {
     ...process.env,
     PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
-    DATABASE_URL: testDatabaseUrl,
+    DATABASE_URL: "postgresql://stale:stale@invalid.invalid/stale",
   };
   const success = spawnSync(
     "bash",
-    [backupScriptPath, backupDir, "test-release", "3", "30"],
+    [backupScriptPath, backupDir, "test-release", "3", "30", databaseEnvFile],
     { encoding: "utf8", env: backupEnvironment },
   );
   if (success.status !== 0) {
@@ -227,7 +263,10 @@ set -euo pipefail
       `Secure backup smoke test failed:\n${success.stderr.trim()}`,
     );
   }
-  if (`${success.stdout}\n${success.stderr}`.includes(testDatabaseUrl)) {
+  if (
+    `${success.stdout}\n${success.stderr}`.includes(testDatabaseUrl) ||
+    `${success.stdout}\n${success.stderr}`.includes("p@ss:word-super-secret")
+  ) {
     throw new Error("Secure backup output exposed DATABASE_URL");
   }
 
@@ -260,7 +299,7 @@ set -euo pipefail
 
   const failure = spawnSync(
     "bash",
-    [backupScriptPath, backupDir, "failed-release", "3", "30"],
+    [backupScriptPath, backupDir, "failed-release", "3", "30", databaseEnvFile],
     {
       encoding: "utf8",
       env: { ...backupEnvironment, FAKE_PG_DUMP_FAIL: "1" },
