@@ -785,6 +785,13 @@ export function htmlToArticleDocument(content: string): ArticleDocument {
       visitElement(element);
     });
 
+  if (blocks.length === 0) {
+    const fallbackText = normalizeArticleText($.root().text());
+    if (fallbackText) {
+      blocks.push({ type: "paragraph", text: fallbackText });
+    }
+  }
+
   return {
     blocks,
     sourceHtmlLength,

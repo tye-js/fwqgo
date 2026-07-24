@@ -35,6 +35,7 @@ export interface ScrapeDiagnostics {
   contentLength: number;
   scrapedTitle?: string;
   scrapedDescription?: string;
+  contentSelector?: string;
   cleanedHtmlLength?: number;
   aiInputLength?: number;
   rewriteOutputLength?: number;
@@ -121,6 +122,15 @@ const commonRemoveSelectors = [
   "#toc_container",
   ".htoc",
   ".postcopyright",
+];
+const fallbackContentSelectors = [
+  "article",
+  "main article",
+  ".entry-content",
+  ".article-content",
+  ".content",
+  "main",
+  "body",
 ];
 
 const invisibleTextPattern =
@@ -215,7 +225,10 @@ function createArticle(input: {
   recommendTagName?: string;
   diagnostics: ScrapeDiagnostics;
 }): ScrapedArticle {
-  const content = input.htmlContent ?? "";
+  const content =
+    [input.htmlContent, input.cleanedHtmlContent]
+      .find((value) => value?.trim())
+      ?.trim() ?? "";
   const htmlContent = looksLikeHtmlContent(content)
     ? normalizeArticleHtml(content)
     : content.trim();
@@ -339,6 +352,68 @@ async function installSafePuppeteerRequestGuard(page: Page) {
   });
 }
 
+function textToHtml(value: string) {
+  const escapeHtml = (text: string) =>
+    text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  return value
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map(
+      (paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`,
+    )
+    .join("");
+}
+
+function selectContentHtml(
+  page$: cheerio.CheerioAPI,
+  rule: SiteRule,
+  diagnostics: ScrapeDiagnostics,
+) {
+  const selectors = [rule.contentSelector, ...fallbackContentSelectors];
+  const seen = new Set<string>();
+
+  for (const selector of selectors) {
+    if (seen.has(selector)) continue;
+    seen.add(selector);
+
+    const html = page$(selector).first().html()?.trim() ?? "";
+    if (!html) continue;
+
+    const probe$ = cheerio.load(html, null, false);
+    const probeRemoveSelectors = [
+      ...commonRemoveSelectors,
+      ...(rule.removeSelectors ?? []),
+      ...(selector === "body"
+        ? ["header", "nav", "footer", "aside", "form"]
+        : []),
+    ];
+    probe$(probeRemoveSelectors.join(",")).remove();
+    cleanInvisibleText(probe$);
+    const visibleText = probe$.root().text().replace(/\s+/g, " ").trim();
+    if (!visibleText) continue;
+
+    diagnostics.contentSelector = selector;
+    if (selector !== rule.contentSelector) {
+      diagnostics.warnings.push(
+        `正文选择器未命中，已回退到 ${selector}，请检查站点采集规则`,
+      );
+    }
+    return { html, selector };
+  }
+
+  diagnostics.warnings.push(
+    "未找到包含可读文字的正文区域，页面可能需要登录或正文选择器已失效",
+  );
+  return { html: "", selector: null };
+}
+
 async function fetchWithPuppeteer(url: string, rule: SiteRule) {
   await assertPublicHttpUrl(url, "抓取页面");
   const browser = await puppeteer.launch({
@@ -352,7 +427,11 @@ async function fetchWithPuppeteer(url: string, rule: SiteRule) {
     await page.setUserAgent(browserHeaders["User-Agent"]);
     await page.setViewport({ width: 1920, height: 1080 });
     await page.goto(url, { waitUntil: "networkidle0", timeout: 30000 });
-    await page.waitForSelector(rule.contentSelector, { timeout: 30000 });
+    try {
+      await page.waitForSelector(rule.contentSelector, { timeout: 10000 });
+    } catch {
+      // The selector fallback below can still recover pages whose layout changed.
+    }
 
     const html = await page.content();
     if (Buffer.byteLength(html) > MAX_SCRAPED_HTML_BYTES) {
@@ -481,19 +560,22 @@ async function scrapeByRule(input: {
   }
 
   try {
-    const $content = cheerio.load(
-      page$(input.rule.contentSelector).first().html() ?? "",
-      null,
-      false,
+    const contentSelection = selectContentHtml(
+      page$,
+      input.rule,
+      diagnostics,
     );
-
-    if (!$content.root().children().length) {
-      diagnostics.warnings.push("未匹配到正文选择器");
-    }
+    let $content = cheerio.load(contentSelection.html, null, false);
 
     removeNoise(
       $content,
-      [...commonRemoveSelectors, ...(input.rule.removeSelectors ?? [])],
+      [
+        ...commonRemoveSelectors,
+        ...(input.rule.removeSelectors ?? []),
+        ...(contentSelection.selector === "body"
+          ? ["header", "nav", "footer", "aside", "form"]
+          : []),
+      ],
       diagnostics,
     );
     cleanInvisibleText($content);
@@ -534,10 +616,23 @@ async function scrapeByRule(input: {
 
     diagnostics.affiliateReport = affiliateReport;
 
-    const rawHtml = $content.html() ?? "";
-    const preparedAiInput = htmlToArticleMarkdown(rawHtml, {
+    let rawHtml = $content.html() ?? "";
+    let preparedAiInput = htmlToArticleMarkdown(rawHtml, {
       maxLength: input.aiInputMaxLength ?? MAX_AI_INPUT_MARKDOWN_LENGTH,
     });
+    if (!preparedAiInput.markdown.trim()) {
+      const visibleText = $content.root().text().replace(/\s+/g, " ").trim();
+      if (visibleText) {
+        rawHtml = normalizeArticleHtml(textToHtml(visibleText));
+        $content = cheerio.load(rawHtml, null, false);
+        preparedAiInput = htmlToArticleMarkdown(rawHtml, {
+          maxLength: input.aiInputMaxLength ?? MAX_AI_INPUT_MARKDOWN_LENGTH,
+        });
+        diagnostics.warnings.push(
+          "正文结构无法转换为 Markdown，已使用可读纯文本回退",
+        );
+      }
+    }
     const scrapedTitle =
       selectedText(page$, input.rule.titleSelector) ||
       selectedText(page$, "title") ||
@@ -570,6 +665,12 @@ async function scrapeByRule(input: {
       snapshot: progressSnapshot(),
     });
 
+    if (!preparedAiInput.markdown.trim()) {
+      throw new Error(
+        "正文提取失败：未找到可读正文，请检查正文选择器、页面访问权限或登录状态",
+      );
+    }
+
     if (preparedAiInput.markdown.trim()) {
       try {
         const rewritten = await RewriteArticle(preparedAiInput.markdown, {
@@ -587,11 +688,18 @@ async function scrapeByRule(input: {
           rewritten.markdownContent,
           affiliateReport,
         );
+        const finalMarkdown =
+          repairedMarkdown.trim() || preparedAiInput.markdown;
+        if (!repairedMarkdown.trim()) {
+          diagnostics.warnings.push(
+            "AI 返回空正文，已回退到清洗后的原始正文",
+          );
+        }
         diagnostics.usedAiRewrite = true;
-        diagnostics.rewriteOutputLength = repairedMarkdown.length;
+        diagnostics.rewriteOutputLength = finalMarkdown.length;
         diagnostics.rewriteQuality = rewritten.quality;
         return createArticle({
-          htmlContent: repairedMarkdown,
+          htmlContent: finalMarkdown,
           cleanedHtmlContent: rawHtml,
           title: rewritten.title,
           description: rewritten.description,

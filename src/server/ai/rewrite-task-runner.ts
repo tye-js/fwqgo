@@ -351,6 +351,12 @@ function textToHtml(value: string) {
     .join("");
 }
 
+function firstNonEmptyContent(
+  ...values: Array<string | null | undefined>
+): string {
+  return values.find((value) => value?.trim())?.trim() ?? "";
+}
+
 async function getTaskAiInputMaxLength(styleId?: number | null) {
   const config = await getActiveAiRewriteConfig(styleId ?? undefined);
   return config
@@ -1593,14 +1599,18 @@ async function createArticleFromManualTask(input: {
     rewritten.markdownContent,
     affiliateReport,
   );
+  const finalMarkdown = repairedMarkdown.trim() || markdownInput.markdown;
+  if (!repairedMarkdown.trim()) {
+    diagnostics.warnings.push("AI 返回空正文，已回退到清洗后的原始正文");
+  }
   diagnostics.usedAiRewrite = true;
-  diagnostics.rewriteOutputLength = repairedMarkdown.length;
+  diagnostics.rewriteOutputLength = finalMarkdown.length;
   diagnostics.rewriteQuality = rewritten.quality;
 
   return {
     title: rewritten.title || sourceTitle,
-    content: repairedMarkdown,
-    htmlContent: repairedMarkdown,
+    content: finalMarkdown,
+    htmlContent: finalMarkdown,
     cleanedHtmlContent: cleanedHtml,
     description: rewritten.description,
     keywords: rewritten.keywords,
@@ -2099,6 +2109,14 @@ export async function runAiRewriteTask(taskId: number) {
       const reusedDraft = claimedTask.postId !== null;
       const taskLeaseOwner = claimedTask.leaseOwner;
       if (!taskLeaseOwner) throw new TaskLeaseLostError();
+      const draftContent = firstNonEmptyContent(
+        article.htmlContent,
+        article.content,
+        article.cleanedHtmlContent,
+      );
+      if (!draftContent) {
+        throw new Error("正文提取失败：没有可保存的正文内容");
+      }
 
       const post = claimedTask.postId
         ? {
@@ -2112,7 +2130,7 @@ export async function runAiRewriteTask(taskId: number) {
                   title: article.title || "未命名采集文章",
                   description:
                     article.description || article.title || "待补充摘要",
-                  content: article.htmlContent || article.content,
+                  content: draftContent,
                   imgUrl: "",
                   published: false,
                   categoryId: claimedTask.categoryId,
@@ -2257,7 +2275,11 @@ export async function runAiRewriteTask(taskId: number) {
         englishTaskId = await createEnglishSeoTask({
           parentTask: claimedTask,
           post,
-          rewrittenChineseContent: article.htmlContent || article.content,
+          rewrittenChineseContent: firstNonEmptyContent(
+            article.htmlContent,
+            article.content,
+            article.cleanedHtmlContent,
+          ),
         });
         await upsertTaskStep({
           taskId,

@@ -763,7 +763,7 @@ function removeDuplicatedTitleFromMarkdown(
     lines.splice(firstContentIndex, 1);
   }
 
-  return lines.join("\n").trim();
+  return lines.join("\n").trim() || markdownContent.trim();
 }
 
 function normalizeEnglishSlug(value: string, fallback: string) {
@@ -1431,12 +1431,15 @@ export async function rewriteArticleWithAi(
     outputLength: metadataText.length,
   });
 
+  const finalMarkdown = removeDuplicatedTitleFromMarkdown(
+    acceptedMarkdown,
+    metadata.title,
+  );
+
   return {
     ...metadata,
-    markdownContent: removeDuplicatedTitleFromMarkdown(
-      acceptedMarkdown,
-      metadata.title,
-    ),
+    // Removing a duplicated heading must never turn a valid rewrite into an empty draft.
+    markdownContent: finalMarkdown || acceptedMarkdown,
     quality: {
       ...acceptedMetrics,
       passed: true,
