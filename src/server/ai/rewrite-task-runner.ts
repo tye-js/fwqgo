@@ -267,9 +267,7 @@ async function upsertTaskStep(input: {
         message: input.message ?? null,
         error: input.error ?? null,
         payload,
-        startedAt: startedAt
-          ? sql`coalesce(${aiTaskSteps.startedAt}, ${startedAt})`
-          : aiTaskSteps.startedAt,
+        startedAt: sql`coalesce(${aiTaskSteps.startedAt}, excluded."startedAt")`,
         finishedAt,
         updatedAt: now,
       },
