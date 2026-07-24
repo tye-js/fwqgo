@@ -13,6 +13,8 @@ import {
 import { getAiRewriteTaskDetail } from "@/features/cms/actions/ai-rewrite-task";
 import { AffiliateRewriteAudit } from "@/features/cms/components/affiliate-rewrite-audit";
 import { UnifiedTaskActionButtons } from "@/features/cms/components/unified-task-action-buttons";
+import { TaskDetailAutoRefresh } from "@/features/cms/components/task-detail-auto-refresh";
+import { isAiRewriteStageError } from "@/features/cms/lib/ai-rewrite-task-progress";
 import {
   AdminPageShell,
   AdminSectionCard,
@@ -64,6 +66,7 @@ const stepStatusVariants: Record<
 type StepStatus = keyof typeof stepStatusLabels;
 
 type TaskStep = {
+  key?: string;
   name: string;
   status: StepStatus;
   description: string;
@@ -434,7 +437,10 @@ function normalizeStepStatus(value: string): StepStatus {
   return "pending";
 }
 
-function buildStoredTaskSteps(steps: DbTaskStep[]): TaskStep[] {
+function buildStoredTaskSteps(
+  steps: DbTaskStep[],
+  taskError?: string | null,
+): TaskStep[] {
   if (steps.length === 0) {
     return [];
   }
@@ -444,9 +450,10 @@ function buildStoredTaskSteps(steps: DbTaskStep[]): TaskStep[] {
     0,
   );
 
-  return steps
+  const normalized = steps
     .filter((step) => step.attempt === latestAttempt)
     .map((step) => ({
+      key: step.stepKey,
       name: step.stepName,
       status: normalizeStepStatus(step.status),
       description: step.error ?? step.message ?? "等待处理",
@@ -455,6 +462,57 @@ function buildStoredTaskSteps(steps: DbTaskStep[]): TaskStep[] {
       time: step.finishedAt ?? step.updatedAt ?? step.createdAt,
       payload: step.payload,
     }));
+
+  const hasAiRewriteStep = normalized.some((step) => step.key === "ai_rewrite");
+  const failedSourceStep = normalized.find(
+    (step) => step.key === "source_collect" && step.status === "failed",
+  );
+  if (
+    !hasAiRewriteStep &&
+    failedSourceStep &&
+    isAiRewriteStageError(taskError)
+  ) {
+    failedSourceStep.status = "success";
+    failedSourceStep.description =
+      "素材读取已完成；旧任务未在 AI 失败前保存正文快照";
+
+    normalized.push(
+      {
+        key: "html_clean",
+        name: "清洗正文结构",
+        status: "success",
+        description: "正文清洗已完成；旧任务未保存长度信息",
+        progress: 45,
+        attempt: latestAttempt,
+        time: failedSourceStep.time,
+        payload: null,
+      },
+      {
+        key: "affiliate_check",
+        name: "识别商户与返利链接",
+        status: "success",
+        description: "已在进入 AI 改写前完成；旧任务未保存链接诊断",
+        progress: 58,
+        attempt: latestAttempt,
+        time: failedSourceStep.time,
+        payload: null,
+      },
+      {
+        key: "ai_rewrite",
+        name: "AI 改写文章",
+        status: "failed",
+        description: taskError ?? "AI 改写失败",
+        progress: 70,
+        attempt: latestAttempt,
+        time: failedSourceStep.time,
+        payload: null,
+      },
+    );
+  }
+
+  return normalized.sort(
+    (left, right) => (left.progress ?? 0) - (right.progress ?? 0),
+  );
 }
 
 function StepIcon({ status }: { status: StepStatus }) {
@@ -478,7 +536,7 @@ function TaskStepTimeline({ steps }: { steps: TaskStep[] }) {
     <div className="grid gap-3 lg:grid-cols-2">
       {steps.map((step) => (
         <div
-          key={step.name}
+          key={step.key ?? step.name}
           className="flex gap-3 rounded-md border border-border/70 bg-background p-3"
         >
           <div className="mt-0.5">
@@ -534,14 +592,62 @@ function ProductionChain({
   report: ScrapeDiagnostics["affiliateReport"] | undefined;
 }) {
   const isEnglishTask = task.sourceType === "english";
+  const latestAttempt = task.steps.reduce(
+    (maxAttempt, step) => Math.max(maxAttempt, step.attempt),
+    0,
+  );
+  const latestSteps = new Map(
+    task.steps
+      .filter((step) => step.attempt === latestAttempt)
+      .map((step) => [step.stepKey, step]),
+  );
+  const storedStatus = (...keys: string[]): StepStatus | undefined => {
+    for (const key of keys) {
+      const step = latestSteps.get(key);
+      if (step) return normalizeStepStatus(step.status);
+    }
+    return undefined;
+  };
+  const legacyAiFailure =
+    isAiRewriteStageError(task.error) && !latestSteps.has("ai_rewrite");
   const hasSeo =
     Boolean(task.postTitle) ||
     Boolean(task.postDescription) ||
     Boolean(task.postKeywords);
+  const sourceStatus: StepStatus = legacyAiFailure
+    ? "success"
+    : (storedStatus("source_collect", "english_source", "seo_prepare") ??
+      (task.sourceContent || task.scrapedTitle ? "success" : "pending"));
+  const cleanStatus: StepStatus = legacyAiFailure
+    ? "success"
+    : (storedStatus("html_clean") ??
+      (task.scrapedHtml ? "success" : "pending"));
+  const rewriteStatus: StepStatus = isEnglishTask
+    ? task.scrapedHtml
+      ? "success"
+      : task.status === "running" && task.progress >= 30
+        ? "running"
+        : "pending"
+    : legacyAiFailure
+      ? "failed"
+      : (storedStatus("ai_rewrite") ??
+        (task.rewriteOutputLength
+          ? "success"
+          : task.status === "running" && task.progress >= 50
+            ? "running"
+            : "pending"));
+  const affiliateStatus: StepStatus = legacyAiFailure
+    ? "success"
+    : (storedStatus("affiliate_check") ??
+      (report
+        ? report.invalidLinks.length > 0
+          ? "manual_required"
+          : "success"
+        : "pending"));
   const items = [
     {
       title: "原文 / 素材",
-      status: task.sourceContent || task.scrapedTitle ? "success" : "pending",
+      status: sourceStatus,
       detail:
         task.sourceTitle ??
         task.scrapedTitle ??
@@ -549,26 +655,37 @@ function ProductionChain({
     },
     {
       title: "清洗后正文",
-      status: task.scrapedHtml ? "success" : "pending",
+      status: cleanStatus,
       detail: task.scrapedHtml
         ? `${task.scrapedHtml.length} 字符，AI 输入 ${formatMaybeNumber(task.aiInputLength)}`
-        : "暂无正文快照",
+        : legacyAiFailure
+          ? "正文已清洗；旧任务未在失败前保存正文快照"
+          : "暂无正文快照",
     },
     {
       title: isEnglishTask ? "中文改写输入" : "改写中文",
-      status: task.rewriteOutputLength ? "success" : "pending",
-      detail: task.rewriteOutputLength
-        ? `输出 ${task.rewriteOutputLength} 字符`
-        : "等待模型输出",
+      status: rewriteStatus,
+      detail: isEnglishTask
+        ? task.scrapedHtml
+          ? `中文正文 ${task.scrapedHtml.length} 字符，AI 输入 ${formatMaybeNumber(task.aiInputLength)}`
+          : "等待读取中文改写正文"
+        : task.rewriteOutputLength
+          ? `输出 ${task.rewriteOutputLength} 字符`
+          : rewriteStatus === "failed"
+            ? (task.error ?? "AI 改写失败")
+            : task.currentStep?.startsWith("AI 改写：")
+              ? task.currentStep
+              : "等待模型输出",
     },
     {
       title: "翻译英文",
       status:
-        task.sourceType === "english" && task.postId
+        storedStatus("english_generate") ??
+        (task.sourceType === "english" && task.postId
           ? "success"
-          : task.sourceType === "english"
+          : task.sourceType === "english" && task.status === "running"
             ? "running"
-            : "pending",
+            : "pending"),
       detail:
         task.sourceType === "english"
           ? task.postId
@@ -578,7 +695,9 @@ function ProductionChain({
     },
     {
       title: "SEO 字段",
-      status: hasSeo ? "success" : "pending",
+      status:
+        storedStatus("english_metadata", "seo_metadata") ??
+        (hasSeo ? "success" : "pending"),
       detail: hasSeo
         ? [task.postTitle, task.postDescription, task.postKeywords]
             .filter(Boolean)
@@ -588,21 +707,21 @@ function ProductionChain({
     },
     {
       title: "封面图",
-      status: task.postImgUrl ? "success" : "pending",
+      status:
+        storedStatus("cover_generate", "english_cover") ??
+        (task.postImgUrl ? "success" : "pending"),
       detail: task.postImgUrl ?? "暂无封面或自动生图未完成",
     },
     {
       title: "返利审计",
-      status: report
-        ? report.invalidLinks.length > 0
-          ? "manual_required"
-          : "success"
-        : "pending",
+      status: affiliateStatus,
       detail: report
         ? `命中 ${report.matchedLinks.length}，未命中 ${report.unmatchedLinks.length}（保留原链），无效 ${report.invalidLinks.length}`
-        : diagnostics?.usedAiRewrite
-          ? "英文任务不重复采集返利诊断"
-          : "等待链接替换记录",
+        : legacyAiFailure
+          ? "已在进入 AI 审查前完成；旧任务未保存链接诊断"
+          : diagnostics?.usedAiRewrite
+            ? "英文任务不重复采集返利诊断"
+            : "等待链接替换记录",
     },
   ] satisfies Array<{
     title: string;
@@ -655,9 +774,15 @@ function TruncationHint({
         当前模型 {task.model ?? "未记录"}，Max Tokens{" "}
         {formatMaybeNumber(task.maxTokens)}，AI 输入{" "}
         {formatMaybeNumber(task.aiInputLength)}，输出{" "}
-        {formatMaybeNumber(task.rewriteOutputLength)}。如果英文 SEO
-        或正文生成被截断，优先在 AI 改写配置中调大 Max Tokens，或缩短正文输入。
+        {formatMaybeNumber(task.rewriteOutputLength)}
+        。事实提取、质量审查和正文生成现在都会使用配置中的 Max
+        Tokens；如果重试后仍被截断，说明模型或中转服务还有自身输出上限，建议缩短正文输入或更换推理消耗更低的模型。
       </p>
+      {task.aiInputLength === null && isAiRewriteStageError(error) ? (
+        <p className="mt-1 leading-6 text-amber-700/90">
+          此任务由旧流程执行，失败前没有保存输入和候选正文长度，因此历史数据无法补回；重新执行后会从正文清洗阶段开始实时记录。
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -754,7 +879,7 @@ export async function AiRewriteTaskDetailPageContent({
 
   const diagnostics = parseDiagnostics(task.diagnostics);
   const report = diagnostics?.affiliateReport;
-  const storedSteps = buildStoredTaskSteps(task.steps);
+  const storedSteps = buildStoredTaskSteps(task.steps, task.error);
   const steps =
     storedSteps.length > 0
       ? storedSteps
@@ -802,6 +927,9 @@ export async function AiRewriteTaskDetailPageContent({
         </div>
       }
     >
+      <TaskDetailAutoRefresh
+        enabled={task.status === "pending" || task.status === "running"}
+      />
       <div className="grid gap-4 md:grid-cols-4 xl:grid-cols-6">
         <Stat label="状态" value={statusLabels[task.status] ?? task.status} />
         <Stat label="尝试次数" value={task.attempts} />

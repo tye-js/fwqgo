@@ -477,6 +477,7 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
         status: "pending",
         outputUrl: null,
         assetId: null,
+        prompt: null,
         errorTitle: null,
         errorDetail: null,
         startedAt: null,

@@ -13,7 +13,10 @@ import {
   requirePublicHttpUrl,
 } from "@fwqgo/core/network-url";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
-import type { ArticleRewriteQuality } from "@fwqgo/ai/article-rewriter";
+import type {
+  ArticleRewriteProgress,
+  ArticleRewriteQuality,
+} from "@fwqgo/ai/article-rewriter";
 import RewriteArticle from "@/langchain/rewrite-article";
 import {
   mergeAffiliateReports,
@@ -53,6 +56,29 @@ export interface ScrapedArticle {
   tagsName: string[];
   diagnostics: ScrapeDiagnostics;
 }
+
+export interface ArticleProcessingSnapshot {
+  title: string;
+  description: string;
+  cleanedHtmlContent: string;
+  diagnostics: ScrapeDiagnostics;
+}
+
+export type ArticleProcessingProgress =
+  | {
+      stage: "content_prepared";
+      snapshot: ArticleProcessingSnapshot;
+    }
+  | {
+      stage: "ai_progress";
+      snapshot: ArticleProcessingSnapshot;
+      ai: ArticleRewriteProgress;
+    }
+  | {
+      stage: "ai_failed";
+      snapshot: ArticleProcessingSnapshot;
+      error: string;
+    };
 
 type SiteRule = {
   host: string;
@@ -431,6 +457,7 @@ async function scrapeByRule(input: {
   rewriteStyleId?: number;
   allowAiFallback?: boolean;
   aiInputMaxLength?: number;
+  onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>;
 }) {
   const parsedUrl = requirePublicHttpUrl(input.url, "抓取 URL");
   const diagnostics = createEmptyDiagnostics({
@@ -520,9 +547,16 @@ async function scrapeByRule(input: {
 
     diagnostics.scrapedTitle = scrapedTitle;
     diagnostics.scrapedDescription = scrapedDescription;
+    diagnostics.contentLength = rawHtml.length;
     diagnostics.cleanedHtmlLength = rawHtml.length;
     diagnostics.aiInputLength = preparedAiInput.markdown.length;
     diagnostics.aiInputTruncated = preparedAiInput.truncated;
+    const progressSnapshot = (): ArticleProcessingSnapshot => ({
+      title: scrapedTitle,
+      description: scrapedDescription,
+      cleanedHtmlContent: rawHtml,
+      diagnostics,
+    });
 
     if (preparedAiInput.truncated) {
       diagnostics.warnings.push(
@@ -530,10 +564,22 @@ async function scrapeByRule(input: {
       );
     }
 
+    await input.onProgress?.({
+      stage: "content_prepared",
+      snapshot: progressSnapshot(),
+    });
+
     if (preparedAiInput.markdown.trim()) {
       try {
         const rewritten = await RewriteArticle(preparedAiInput.markdown, {
           styleId: input.rewriteStyleId,
+          onProgress: async (ai) => {
+            await input.onProgress?.({
+              stage: "ai_progress",
+              snapshot: progressSnapshot(),
+              ai,
+            });
+          },
         });
         const repairedMarkdown = repairMarkdownAffiliateLinks(
           rewritten.markdownContent,
@@ -557,6 +603,11 @@ async function scrapeByRule(input: {
         console.error("AI rewrite failed:", error);
         diagnostics.usedAiRewrite = false;
         diagnostics.aiRewriteError = message;
+        await input.onProgress?.({
+          stage: "ai_failed",
+          snapshot: progressSnapshot(),
+          error: message,
+        });
 
         if (!input.allowAiFallback) {
           throw new Error(message);
@@ -594,6 +645,7 @@ export async function scrapeArticleWithOptions(input: {
   rewriteStyleId?: number;
   allowAiFallback?: boolean;
   aiInputMaxLength?: number;
+  onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>;
 }) {
   const parsedUrl = requirePublicHttpUrl(input.url, "抓取 URL");
   const rule = findRule(parsedUrl);
@@ -603,5 +655,6 @@ export async function scrapeArticleWithOptions(input: {
     rewriteStyleId: input.rewriteStyleId,
     allowAiFallback: input.allowAiFallback,
     aiInputMaxLength: input.aiInputMaxLength,
+    onProgress: input.onProgress,
   });
 }

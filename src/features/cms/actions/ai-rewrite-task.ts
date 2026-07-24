@@ -12,6 +12,7 @@ import {
   isNull,
   ne,
   or,
+  sql,
   type SQL,
 } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -293,6 +294,7 @@ async function createSourceMaterialAndTask(input: {
         rewriteConfigName: rewriteConfig.name,
         rewriteProvider: rewriteConfig.provider,
         rewriteModel: rewriteConfig.model,
+        rewriteMaxTokens: rewriteConfig.maxTokens,
         imageConfigId: imageConfig?.id ?? null,
         imageConfigName: imageConfig?.name ?? null,
         imageProvider: imageConfig?.provider ?? null,
@@ -498,6 +500,48 @@ export async function retryAiRewriteTaskAction(taskId: number) {
     const parsedTaskId = parseIntegerId(taskId);
     if (parsedTaskId === null) return { error: "任务 ID 不正确" };
 
+    const [retryCandidate] = await db
+      .select({
+        status: aiRewriteTasks.status,
+        rewriteStyleId: aiRewriteTasks.rewriteStyleId,
+        rewriteConfigName: aiRewriteTasks.rewriteConfigName,
+        rewriteProvider: aiRewriteTasks.rewriteProvider,
+        rewriteModel: aiRewriteTasks.rewriteModel,
+      })
+      .from(aiRewriteTasks)
+      .where(eq(aiRewriteTasks.id, parsedTaskId))
+      .limit(1);
+    if (
+      !retryCandidate ||
+      !["failed", "manual_required", "cancelled"].includes(
+        retryCandidate.status,
+      )
+    ) {
+      return { error: "任务不存在，或当前状态不能重试" };
+    }
+
+    const hasDeletedConfigSnapshot =
+      !retryCandidate.rewriteStyleId &&
+      [
+        retryCandidate.rewriteConfigName,
+        retryCandidate.rewriteProvider,
+        retryCandidate.rewriteModel,
+      ].some((value) => Boolean(value));
+    const rewriteConfig = hasDeletedConfigSnapshot
+      ? null
+      : await getActiveAiRewriteConfig(
+          retryCandidate.rewriteStyleId ?? undefined,
+        );
+    if (!rewriteConfig) {
+      return {
+        error: retryCandidate.rewriteStyleId
+          ? `任务绑定的 AI 改写配置 #${retryCandidate.rewriteStyleId} 已停用或不存在，请启用原配置后重试`
+          : hasDeletedConfigSnapshot
+            ? "任务绑定的 AI 改写配置已被删除，请重新创建任务"
+            : "当前没有可用的默认 AI 改写配置",
+      };
+    }
+
     const task = await db.transaction(async (tx) => {
       const [updatedTask] = await tx
         .update(aiRewriteTasks)
@@ -513,6 +557,11 @@ export async function retryAiRewriteTaskAction(taskId: number) {
           aiInputLength: null,
           rewriteOutputLength: null,
           diagnostics: null,
+          rewriteStyleId: rewriteConfig.id,
+          rewriteConfigName: rewriteConfig.name,
+          rewriteProvider: rewriteConfig.provider,
+          rewriteModel: rewriteConfig.model,
+          rewriteMaxTokens: rewriteConfig.maxTokens,
           updatedAt: new Date(),
           startedAt: null,
           finishedAt: null,
@@ -797,6 +846,7 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
                 rewriteConfigName: rewriteConfig.name,
                 rewriteProvider: rewriteConfig.provider,
                 rewriteModel: rewriteConfig.model,
+                rewriteMaxTokens: rewriteConfig.maxTokens,
                 imageConfigId: imageConfig?.id ?? null,
                 imageConfigName: imageConfig?.name ?? null,
                 imageProvider: imageConfig?.provider ?? null,
@@ -843,6 +893,7 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
               rewriteConfigName: rewriteConfig.name,
               rewriteProvider: rewriteConfig.provider,
               rewriteModel: rewriteConfig.model,
+              rewriteMaxTokens: rewriteConfig.maxTokens,
               imageConfigId: imageConfig?.id ?? null,
               imageConfigName: imageConfig?.name ?? null,
               imageProvider: imageConfig?.provider ?? null,
@@ -1048,6 +1099,7 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
                   rewriteConfigName: rewriteConfig.name,
                   rewriteProvider: rewriteConfig.provider,
                   rewriteModel: rewriteConfig.model,
+                  rewriteMaxTokens: rewriteConfig.maxTokens,
                   postId: post.id,
                   resultTitle: post.title,
                   scrapedTitle: post.title,
@@ -1090,6 +1142,7 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
                 rewriteConfigName: rewriteConfig.name,
                 rewriteProvider: rewriteConfig.provider,
                 rewriteModel: rewriteConfig.model,
+                rewriteMaxTokens: rewriteConfig.maxTokens,
                 postId: post.id,
                 resultTitle: post.title,
                 scrapedTitle: post.title,
@@ -1260,7 +1313,9 @@ export async function getAiRewriteTaskList(
       rewriteStyleName: aiRewriteTasks.rewriteConfigName,
       rewriteProvider: aiRewriteTasks.rewriteProvider,
       model: aiRewriteTasks.rewriteModel,
-      maxTokens: aiRewriteConfigs.maxTokens,
+      maxTokens: sql<
+        number | null
+      >`coalesce(${aiRewriteTasks.rewriteMaxTokens}, ${aiRewriteConfigs.maxTokens})`,
       imageConfigId: aiRewriteTasks.imageConfigId,
       imageConfigName: aiRewriteTasks.imageConfigName,
       imageProvider: aiRewriteTasks.imageProvider,
@@ -1365,7 +1420,9 @@ export async function getAiRewriteTaskDetail(id: number) {
       rewriteStyleName: aiRewriteTasks.rewriteConfigName,
       rewriteProvider: aiRewriteTasks.rewriteProvider,
       model: aiRewriteTasks.rewriteModel,
-      maxTokens: aiRewriteConfigs.maxTokens,
+      maxTokens: sql<
+        number | null
+      >`coalesce(${aiRewriteTasks.rewriteMaxTokens}, ${aiRewriteConfigs.maxTokens})`,
       imageConfigId: aiRewriteTasks.imageConfigId,
       imageConfigName: aiRewriteTasks.imageConfigName,
       imageProvider: aiRewriteTasks.imageProvider,

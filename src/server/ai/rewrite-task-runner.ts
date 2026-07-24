@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import * as cheerio from "cheerio";
 
 import RewriteArticle from "@/langchain/rewrite-article";
@@ -36,6 +36,7 @@ import { enqueueArticleCoverGenerationTask } from "@/server/images/cover-generat
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import {
   scrapeArticleWithOptions,
+  type ArticleProcessingProgress,
   type ScrapedArticle,
   type ScrapeDiagnostics,
 } from "@/server/scrape/article-scraper";
@@ -48,6 +49,7 @@ import {
   generateEnglishMetadata,
   generateArticleMetadata,
   getAiRewriteContentLimit,
+  type ArticleRewriteProgress,
   type EnglishMetadataOutput,
 } from "@fwqgo/ai/article-rewriter";
 import { applyEnglishTaxonomyToPost } from "@fwqgo/ai/english-taxonomy";
@@ -102,19 +104,40 @@ function shouldForceEnglishCoverGeneration(input: {
 }
 
 type TaskStatus =
-  | "pending"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "manual_required";
+  "pending" | "running" | "succeeded" | "failed" | "manual_required";
 
 type StepStatus =
-  | "pending"
-  | "running"
-  | "success"
-  | "failed"
-  | "skipped"
-  | "manual_required";
+  "pending" | "running" | "success" | "failed" | "skipped" | "manual_required";
+
+type ActiveTaskStep = {
+  key: string;
+  name: string;
+  attempt: number;
+  progress: number;
+  payload?: unknown;
+};
+
+function getArticleRewriteProgress(input: {
+  stage: ArticleRewriteProgress["stage"];
+  status: ArticleRewriteProgress["status"];
+  attempt?: ArticleRewriteProgress["attempt"];
+}) {
+  if (input.stage === "fact_extraction") {
+    return input.status === "running" ? 54 : 56;
+  }
+
+  if (input.stage === "metadata_generation") {
+    return input.status === "running" ? 78 : 80;
+  }
+
+  const attempt = Math.max(1, Math.min(Math.trunc(input.attempt ?? 1), 3));
+  const attemptBase = 58 + (attempt - 1) * 6;
+  if (input.stage === "content_generation") {
+    return attemptBase + (input.status === "running" ? 0 : 2);
+  }
+
+  return attemptBase + (input.status === "running" ? 3 : 5);
+}
 
 async function updateTask(
   taskId: number,
@@ -207,6 +230,15 @@ async function upsertTaskStep(input: {
   finishedAt?: Date | null;
 }) {
   const now = new Date();
+  const isTerminal = [
+    "success",
+    "failed",
+    "skipped",
+    "manual_required",
+  ].includes(input.status);
+  const startedAt =
+    input.startedAt ?? (input.status === "running" ? now : null);
+  const finishedAt = isTerminal ? (input.finishedAt ?? now) : null;
   const payload =
     typeof input.payload === "undefined" ? null : JSON.stringify(input.payload);
 
@@ -222,14 +254,8 @@ async function upsertTaskStep(input: {
       message: input.message ?? null,
       error: input.error ?? null,
       payload,
-      startedAt: input.startedAt ?? (input.status === "running" ? now : null),
-      finishedAt:
-        input.finishedAt ??
-        (["success", "failed", "skipped", "manual_required"].includes(
-          input.status,
-        )
-          ? now
-          : null),
+      startedAt,
+      finishedAt,
       updatedAt: now,
     })
     .onConflictDoUpdate({
@@ -241,14 +267,10 @@ async function upsertTaskStep(input: {
         message: input.message ?? null,
         error: input.error ?? null,
         payload,
-        startedAt: input.startedAt ?? (input.status === "running" ? now : null),
-        finishedAt:
-          input.finishedAt ??
-          (["success", "failed", "skipped", "manual_required"].includes(
-            input.status,
-          )
-            ? now
-            : null),
+        startedAt: startedAt
+          ? sql`coalesce(${aiTaskSteps.startedAt}, ${startedAt})`
+          : aiTaskSteps.startedAt,
+        finishedAt,
         updatedAt: now,
       },
     });
@@ -257,23 +279,28 @@ async function upsertTaskStep(input: {
 async function failTask(
   task: typeof aiRewriteTasks.$inferSelect,
   error: unknown,
-  failedStep?: {
-    key: string;
-    name: string;
-    attempt: number;
-    progress: number;
-  },
+  failedStep?: ActiveTaskStep,
 ) {
   if (failedStep) {
-    await upsertTaskStep({
-      taskId: task.id,
-      attempt: failedStep.attempt,
-      stepKey: failedStep.key,
-      stepName: failedStep.name,
-      status: "failed",
-      progress: failedStep.progress,
-      error: getErrorMessage(error),
-    });
+    try {
+      await upsertTaskStep({
+        taskId: task.id,
+        attempt: failedStep.attempt,
+        stepKey: failedStep.key,
+        stepName: failedStep.name,
+        status: "failed",
+        progress: failedStep.progress,
+        error: getErrorMessage(error),
+        payload: failedStep.payload,
+      });
+    } catch (stepError) {
+      structuredLog("error", "ai.task_failure_step_persist_failed", {
+        taskId: task.id,
+        stepKey: failedStep.key,
+        attempt: failedStep.attempt,
+        error: stepError,
+      });
+    }
   }
 
   const finalized = await finalizeTask(task, "failed", {
@@ -380,6 +407,7 @@ async function bindTaskConfigs(task: typeof aiRewriteTasks.$inferSelect) {
       rewriteConfigName: rewriteConfig.name,
       rewriteProvider: rewriteConfig.provider,
       rewriteModel: rewriteConfig.model,
+      rewriteMaxTokens: rewriteConfig.maxTokens,
       imageConfigId: imageConfig?.id ?? null,
       imageConfigName: imageConfig?.name ?? null,
       imageProvider: imageConfig?.provider ?? null,
@@ -461,7 +489,7 @@ async function createEnglishSeoTask(input: {
       return existing.id;
     }
 
-    await db
+    const [reusedTask] = await db
       .update(aiRewriteTasks)
       .set({
         status: "pending",
@@ -476,6 +504,7 @@ async function createEnglishSeoTask(input: {
         rewriteConfigName: input.parentTask.rewriteConfigName,
         rewriteProvider: input.parentTask.rewriteProvider,
         rewriteModel: input.parentTask.rewriteModel,
+        rewriteMaxTokens: input.parentTask.rewriteMaxTokens,
         imageConfigId: input.parentTask.imageConfigId,
         imageConfigName: input.parentTask.imageConfigName,
         imageProvider: input.parentTask.imageProvider,
@@ -486,9 +515,15 @@ async function createEnglishSeoTask(input: {
         finishedAt: null,
         updatedAt: new Date(),
       })
-      .where(eq(aiRewriteTasks.id, existing.id));
+      .where(
+        and(
+          eq(aiRewriteTasks.id, existing.id),
+          ne(aiRewriteTasks.status, "running"),
+        ),
+      )
+      .returning({ id: aiRewriteTasks.id });
 
-    return existing.id;
+    return reusedTask?.id ?? existing.id;
   }
 
   const [task] = await db
@@ -507,6 +542,7 @@ async function createEnglishSeoTask(input: {
       rewriteConfigName: input.parentTask.rewriteConfigName,
       rewriteProvider: input.parentTask.rewriteProvider,
       rewriteModel: input.parentTask.rewriteModel,
+      rewriteMaxTokens: input.parentTask.rewriteMaxTokens,
       imageConfigId: input.parentTask.imageConfigId,
       imageConfigName: input.parentTask.imageConfigName,
       imageProvider: input.parentTask.imageProvider,
@@ -1475,6 +1511,7 @@ async function createArticleFromManualTask(input: {
   sourceUrl: string;
   rewriteStyleId?: number;
   aiInputMaxLength: number;
+  onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>;
 }): Promise<ScrapedArticle> {
   const rawContent = input.sourceContent?.trim();
   if (!rawContent) {
@@ -1519,10 +1556,39 @@ async function createArticleFromManualTask(input: {
       ? ["AI Markdown 输入过长，已按正文结构截取前半部分核心内容改写"]
       : [],
   };
-
-  const rewritten = await RewriteArticle(markdownInput.markdown, {
-    styleId: input.rewriteStyleId,
+  const progressSnapshot = () => ({
+    title: sourceTitle,
+    description: diagnostics.scrapedDescription ?? "",
+    cleanedHtmlContent: cleanedHtml,
+    diagnostics,
   });
+  await input.onProgress?.({
+    stage: "content_prepared",
+    snapshot: progressSnapshot(),
+  });
+
+  let rewritten: Awaited<ReturnType<typeof RewriteArticle>>;
+  try {
+    rewritten = await RewriteArticle(markdownInput.markdown, {
+      styleId: input.rewriteStyleId,
+      onProgress: async (ai) => {
+        await input.onProgress?.({
+          stage: "ai_progress",
+          snapshot: progressSnapshot(),
+          ai,
+        });
+      },
+    });
+  } catch (error) {
+    const message = getErrorMessage(error);
+    diagnostics.aiRewriteError = message;
+    await input.onProgress?.({
+      stage: "ai_failed",
+      snapshot: progressSnapshot(),
+      error: message,
+    });
+    throw error;
+  }
   const repairedMarkdown = repairMarkdownAffiliateLinks(
     rewritten.markdownContent,
     affiliateReport,
@@ -1546,6 +1612,7 @@ async function createArticleFromManualTask(input: {
 
 async function loadTaskArticle(
   claimedTask: typeof aiRewriteTasks.$inferSelect,
+  onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>,
 ) {
   const aiInputMaxLength = await getTaskAiInputMaxLength(
     claimedTask.rewriteStyleId,
@@ -1562,6 +1629,7 @@ async function loadTaskArticle(
       sourceUrl: claimedTask.sourceUrl,
       rewriteStyleId: claimedTask.rewriteStyleId ?? undefined,
       aiInputMaxLength,
+      onProgress,
     });
   }
 
@@ -1569,6 +1637,7 @@ async function loadTaskArticle(
     url: claimedTask.sourceUrl,
     rewriteStyleId: claimedTask.rewriteStyleId ?? undefined,
     aiInputMaxLength,
+    onProgress,
   });
 }
 
@@ -1752,6 +1821,7 @@ export async function runAiRewriteTask(taskId: number) {
             name: claimedTask.rewriteConfigName,
             provider: claimedTask.rewriteProvider,
             model: claimedTask.rewriteModel,
+            maxTokens: claimedTask.rewriteMaxTokens,
           },
           image: claimedTask.imageConfigId
             ? {
@@ -1790,7 +1860,122 @@ export async function runAiRewriteTask(taskId: number) {
       attempt,
       progress: 20,
     };
-    let activeStep = sourceStep;
+    const aiStep = {
+      key: "ai_rewrite",
+      name: "AI 改写文章",
+      attempt,
+      progress: 54,
+    };
+    let activeStep: ActiveTaskStep = sourceStep;
+
+    const persistArticleProgress = async (event: ArticleProcessingProgress) => {
+      const snapshot = event.snapshot;
+      const diagnostics = JSON.stringify(snapshot.diagnostics);
+      const commonTaskValues: Partial<typeof aiRewriteTasks.$inferInsert> = {
+        scrapedTitle: snapshot.title,
+        scrapedDescription: snapshot.description,
+        scrapedHtml: snapshot.cleanedHtmlContent.slice(0, 60_000),
+        aiInputLength: snapshot.diagnostics.aiInputLength ?? null,
+        diagnostics,
+      };
+
+      if (event.stage === "content_prepared") {
+        await upsertTaskStep({
+          taskId,
+          attempt,
+          stepKey: sourceStep.key,
+          stepName: sourceStep.name,
+          status: "success",
+          progress: 30,
+          message: `素材读取完成，正文 ${snapshot.diagnostics.contentLength} 字`,
+          payload: {
+            strategy: snapshot.diagnostics.strategy,
+            usedPuppeteer: snapshot.diagnostics.usedPuppeteer,
+            usedFallback: snapshot.diagnostics.usedFallback,
+          },
+        });
+        await upsertTaskStep({
+          taskId,
+          attempt,
+          stepKey: "html_clean",
+          stepName: "清洗正文结构",
+          status: "success",
+          progress: 45,
+          message: `清洗后正文 ${snapshot.diagnostics.cleanedHtmlLength ?? snapshot.cleanedHtmlContent.length} 字符，AI Markdown 输入 ${snapshot.diagnostics.aiInputLength ?? "-"} 字符`,
+          payload: {
+            removedSelectors: snapshot.diagnostics.removedSelectors,
+            aiInputTruncated: snapshot.diagnostics.aiInputTruncated,
+          },
+        });
+        const affiliateReport = snapshot.diagnostics.affiliateReport;
+        await upsertTaskStep({
+          taskId,
+          attempt,
+          stepKey: "affiliate_check",
+          stepName: "识别商户与返利链接",
+          status:
+            affiliateReport.invalidLinks.length > 0
+              ? "manual_required"
+              : "success",
+          progress: 58,
+          message: `命中 ${affiliateReport.matchedLinks.length} 条，未命中 ${affiliateReport.unmatchedLinks.length} 条，无效 ${affiliateReport.invalidLinks.length} 条`,
+        });
+        activeStep = aiStep;
+        await updateTask(taskId, {
+          ...commonTaskValues,
+          progress: 50,
+          currentStep: "正文已清洗，准备执行 AI 改写",
+        });
+        return;
+      }
+
+      if (event.stage === "ai_failed") {
+        await updateTask(taskId, {
+          ...commonTaskValues,
+          currentStep: `AI 改写失败：${event.error}`,
+          error: event.error,
+        });
+        return;
+      }
+
+      const progress = getArticleRewriteProgress(event.ai);
+      const payload = {
+        stage: event.ai.stage,
+        status: event.ai.status,
+        attempt: event.ai.attempt ?? null,
+        maxTokens: event.ai.maxTokens,
+        inputLength: event.ai.inputLength ?? null,
+        outputLength: event.ai.outputLength ?? null,
+      };
+      activeStep = {
+        ...aiStep,
+        progress,
+        payload,
+      };
+      await upsertTaskStep({
+        taskId,
+        attempt,
+        stepKey: aiStep.key,
+        stepName: aiStep.name,
+        status: "running",
+        progress,
+        message: event.ai.message,
+        payload,
+      });
+      const taskValues: Partial<typeof aiRewriteTasks.$inferInsert> = {
+        ...commonTaskValues,
+        progress,
+        currentStep: `AI 改写：${event.ai.message}`,
+      };
+      if (
+        event.ai.stage === "content_generation" &&
+        event.ai.status === "success" &&
+        typeof event.ai.outputLength === "number"
+      ) {
+        taskValues.rewriteOutputLength = event.ai.outputLength;
+      }
+      await updateTask(taskId, taskValues);
+    };
 
     try {
       await upsertTaskStep({
@@ -1807,7 +1992,10 @@ export async function runAiRewriteTask(taskId: number) {
         currentStep: "抓取文章并执行 AI 改写",
       });
 
-      const article = await loadTaskArticle(claimedTask);
+      const article = await loadTaskArticle(
+        claimedTask,
+        persistArticleProgress,
+      );
       const manualRequired = needsManualAffiliateReview(article.diagnostics);
 
       await upsertTaskStep({
@@ -1817,7 +2005,7 @@ export async function runAiRewriteTask(taskId: number) {
         stepName: sourceStep.name,
         status: "success",
         progress: 30,
-        message: `素材读取完成，正文 ${article.diagnostics.contentLength} 字`,
+        message: `素材读取完成，清洗正文 ${article.diagnostics.cleanedHtmlLength ?? article.cleanedHtmlContent.length} 字`,
         payload: {
           strategy: article.diagnostics.strategy,
           usedPuppeteer: article.diagnostics.usedPuppeteer,
@@ -1854,7 +2042,7 @@ export async function runAiRewriteTask(taskId: number) {
         stepKey: "ai_rewrite",
         stepName: "AI 改写文章",
         status: article.diagnostics.usedAiRewrite ? "success" : "skipped",
-        progress: 72,
+        progress: 80,
         message: article.diagnostics.usedAiRewrite
           ? article.diagnostics.rewriteQuality
             ? `AI 输出 ${article.diagnostics.rewriteOutputLength ?? article.htmlContent.length} 字符；原创度 ${article.diagnostics.rewriteQuality.originalityScore}%；事实覆盖 ${article.diagnostics.rewriteQuality.criticalFactCoverage}%；${article.diagnostics.rewriteQuality.attempts} 轮通过`

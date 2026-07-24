@@ -24,11 +24,7 @@ import {
 } from "@/server/images/generation-config";
 
 export type CoverTaskStatus =
-  | "pending"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "cancelled";
+  "pending" | "running" | "succeeded" | "failed" | "cancelled";
 
 type CoverTaskRow = typeof imageCoverGenerationTasks.$inferSelect;
 type ImageGenerationConfig = Awaited<
@@ -183,6 +179,7 @@ export async function enqueueArticleCoverGenerationTask(
               status: "pending",
               outputUrl: null,
               assetId: null,
+              prompt: null,
               errorTitle: null,
               errorDetail: null,
               createdBy: input.createdBy ?? existingTask.createdBy,
@@ -285,6 +282,28 @@ async function bindCoverTaskConfig(task: CoverTaskRow) {
   return persistCoverTaskConfig(task, config);
 }
 
+async function persistCoverTaskPrompt(task: CoverTaskRow, prompt: string) {
+  if (!task.leaseOwner) throw new TaskLeaseLostError();
+
+  const [updatedTask] = await db
+    .update(imageCoverGenerationTasks)
+    .set({
+      prompt,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(imageCoverGenerationTasks.id, task.id),
+        eq(imageCoverGenerationTasks.status, "running"),
+        eq(imageCoverGenerationTasks.leaseOwner, task.leaseOwner),
+      ),
+    )
+    .returning();
+
+  if (!updatedTask) throw new TaskLeaseLostError();
+  return updatedTask;
+}
+
 async function resetStaleRunningCoverTasks() {
   const now = new Date();
 
@@ -379,9 +398,7 @@ async function processCoverGenerationTask(
     throw new Error("文章不存在或已被删除");
   }
 
-  const enabledConfigs = (await getEnabledImageGenerationConfigs()).filter(
-    (config) => config.apiKey?.trim(),
-  );
+  const enabledConfigs = await getEnabledImageGenerationConfigs();
   const currentConfig = enabledConfigs.find(
     (config) => config.id === boundTask.configId,
   );
@@ -413,6 +430,9 @@ async function processCoverGenerationTask(
         configId: config.id,
         uploadedBy: activeTask.createdBy,
         signal,
+        onPrompt: async (prompt) => {
+          activeTask = await persistCoverTaskPrompt(activeTask, prompt);
+        },
       });
       break;
     } catch (error) {

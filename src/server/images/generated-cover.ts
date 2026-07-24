@@ -42,6 +42,7 @@ type GenerateCoverInput = {
   uploadedBy: string | null;
   configId?: number;
   signal?: AbortSignal;
+  onPrompt?: (prompt: string) => void | Promise<void>;
 };
 
 type CoverRequestPreview = {
@@ -340,15 +341,17 @@ export async function generateArticleCoverImage(
     throw new Error("没有可用的生图配置，请先在设置里启用生图接口");
   }
 
-  if (!config.apiKey?.trim()) {
-    throw new Error("生图配置缺少 API Key");
-  }
-
   const prompt = buildCoverPrompt(
     config.promptTemplate,
     config.englishPromptTemplate ?? defaultEnglishCoverPromptTemplate,
     input,
   );
+  await input.onPrompt?.(prompt);
+  throwIfAborted(input.signal);
+  if (!config.apiKey?.trim()) {
+    throw new Error("生图配置缺少 API Key");
+  }
+
   const endpoint = buildImageGenerationEndpoint(config.baseUrl);
   let response: Response;
   let requestStarted = false;

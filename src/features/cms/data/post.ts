@@ -33,11 +33,7 @@ import { ilikeContains } from "@/server/db/search";
 export type PostLanguageFilter = "all" | "zh" | "en";
 export type PostStatusFilter = "all" | "published" | "draft";
 export type PostSort =
-  | "id-desc"
-  | "id-asc"
-  | "title-asc"
-  | "slug-asc"
-  | "published-desc";
+  "id-desc" | "id-asc" | "title-asc" | "slug-asc" | "published-desc";
 
 function getDataErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -297,8 +293,12 @@ export async function getPostProductionContext(postId: number) {
       postId: aiRewriteTasks.postId,
       postSlug: posts.slug,
       postTitle: posts.title,
-      model: aiRewriteConfigs.model,
-      maxTokens: aiRewriteConfigs.maxTokens,
+      model: sql<
+        string | null
+      >`coalesce(${aiRewriteTasks.rewriteModel}, ${aiRewriteConfigs.model})`,
+      maxTokens: sql<
+        number | null
+      >`coalesce(${aiRewriteTasks.rewriteMaxTokens}, ${aiRewriteConfigs.maxTokens})`,
       aiInputLength: aiRewriteTasks.aiInputLength,
       rewriteOutputLength: aiRewriteTasks.rewriteOutputLength,
       createdAt: aiRewriteTasks.createdAt,

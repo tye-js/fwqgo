@@ -8,6 +8,7 @@ import {
 } from "@fwqgo/core/ai-rewrite-prompts";
 import { contentToArticleMarkdown } from "@fwqgo/core/content";
 import { assertPublicHttpUrl } from "@fwqgo/core/network-url";
+import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 
 import {
   buildOpenAiChatCompletionsEndpoint,
@@ -33,8 +34,7 @@ const MIN_REWRITTEN_MARKDOWN_LENGTH = 120;
 const MAX_METADATA_INPUT_LENGTH = 28_000;
 const MAX_ENGLISH_CONTINUATION_ATTEMPTS = 3;
 const MAX_CHINESE_REWRITE_ATTEMPTS = 3;
-const FACT_EXTRACTION_MAX_TOKENS = 6_000;
-const QUALITY_REVIEW_MAX_TOKENS = 2_500;
+const MAX_AI_RESPONSE_BYTES = 4 * 1024 * 1024;
 const REWRITE_PROMPT_VERSION = "fact-driven-v1";
 
 function getAiRewriteTimeoutMs() {
@@ -55,6 +55,27 @@ export interface ArticleRewriteOutput {
   tagsName: string[];
   recommendTagName: string;
   quality: ArticleRewriteQuality;
+}
+
+export type ArticleRewriteProgressStage =
+  | "fact_extraction"
+  | "content_generation"
+  | "quality_review"
+  | "metadata_generation";
+
+export interface ArticleRewriteProgress {
+  stage: ArticleRewriteProgressStage;
+  status: "running" | "success" | "retry";
+  message: string;
+  maxTokens: number;
+  attempt?: number;
+  inputLength?: number;
+  outputLength?: number;
+}
+
+export interface ArticleRewriteOptions {
+  styleId?: number;
+  onProgress?: (progress: ArticleRewriteProgress) => void | Promise<void>;
 }
 
 export interface ArticleRewriteQuality extends RewriteQualityMetrics {
@@ -205,6 +226,22 @@ export function getAiRewriteContentLimit(maxTokens: number) {
   return Number.isFinite(maxTokens) && maxTokens > 0
     ? Math.floor(maxTokens)
     : 8192;
+}
+
+export function isCompleteAiJsonObject(value: string) {
+  try {
+    parseAiJsonObject<Record<string, unknown>>(value, "AI JSON 输出校验失败");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function reportRewriteProgress(
+  options: ArticleRewriteOptions,
+  progress: ArticleRewriteProgress,
+) {
+  await options.onProgress?.(progress);
 }
 
 function normalizeFactText(value: unknown, maxLength = 800) {
@@ -958,9 +995,22 @@ async function requestChatCompletionResult(input: {
           ],
         }),
       });
-      const data = (await response
-        .json()
-        .catch(() => null)) as ChatCompletionResponse | null;
+      const responseText = await readResponseTextWithLimit(
+        response,
+        MAX_AI_RESPONSE_BYTES,
+      );
+      if (responseText === null) {
+        throw createReadableError(
+          `${input.stepName}失败：AI 响应过大`,
+          "服务商返回超过 4 MiB 安全限制，请检查中转接口或更换服务商",
+        );
+      }
+      let data: ChatCompletionResponse | null = null;
+      try {
+        data = JSON.parse(responseText || "{}") as ChatCompletionResponse;
+      } catch {
+        // HTTP errors may legitimately return non-JSON bodies; classify them below.
+      }
 
       return { response, data };
     };
@@ -989,12 +1039,32 @@ async function requestChatCompletionResult(input: {
       );
     }
 
+    if (!result.data) {
+      throw createReadableError(
+        `${input.stepName}失败：AI 接口返回格式错误`,
+        "服务商没有返回有效 JSON，请检查中转接口的 OpenAI 兼容性",
+      );
+    }
+
     const choice = result.data?.choices?.[0];
     const text = choice?.message?.content;
-    if (choice?.finish_reason === "length" && !input.allowLengthFinishReason) {
+    const completionTokens =
+      typeof result.data?.usage?.completion_tokens === "number"
+        ? result.data.usage.completion_tokens
+        : null;
+    const hasCompleteStructuredOutput =
+      input.responseFormat?.type === "json_object" &&
+      typeof text === "string" &&
+      isCompleteAiJsonObject(text);
+
+    if (
+      choice?.finish_reason === "length" &&
+      !input.allowLengthFinishReason &&
+      !hasCompleteStructuredOutput
+    ) {
       throw createReadableError(
         `${input.stepName}失败：模型输出被截断`,
-        "请调大 Max Tokens，或缩短抓取正文/提示词",
+        `本步骤实际请求 Max Tokens ${input.maxTokens}${completionTokens === null ? "" : `，已消耗 ${completionTokens} 个输出 token`}。请缩短正文输入，或更换支持更大输出/更少推理消耗的模型`,
       );
     }
 
@@ -1008,10 +1078,7 @@ async function requestChatCompletionResult(input: {
     return {
       text,
       finishReason: choice?.finish_reason ?? null,
-      completionTokens:
-        typeof result.data?.usage?.completion_tokens === "number"
-          ? result.data.usage.completion_tokens
-          : null,
+      completionTokens,
     };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
@@ -1067,7 +1134,7 @@ function appendMarkdownContinuation(content: string, continuation: string) {
 
 export async function rewriteArticleWithAi(
   content: string,
-  options: { styleId?: number } = {},
+  options: ArticleRewriteOptions = {},
 ): Promise<ArticleRewriteOutput> {
   const config = await getActiveAiRewriteConfig(options.styleId);
   const timeoutMs = getAiRewriteTimeoutMs();
@@ -1100,21 +1167,37 @@ export async function rewriteArticleWithAi(
     normalizedContent,
     protectedContent,
   );
+  const factExtractionPrompt = buildFactExtractionPrompt(
+    `${protectedSource}\n\n受保护原始内容：\n${
+      protectedAuthorityMarkdown(protectedContent) || "无"
+    }`,
+  );
+  await reportRewriteProgress(options, {
+    stage: "fact_extraction",
+    status: "running",
+    message: "正在提取来源事实",
+    maxTokens: config.maxTokens,
+    inputLength: factExtractionPrompt.length,
+  });
   const factExtractionText = await requestChatCompletion({
     config,
     endpoint,
     timeoutMs,
-    maxTokens: Math.min(config.maxTokens, FACT_EXTRACTION_MAX_TOKENS),
+    maxTokens: config.maxTokens,
     responseFormat: { type: "json_object" },
     temperature: 0.1,
     stepName: "来源事实提取",
     systemPrompt:
       "你是严格的服务器文章事实抽取器。只输出 JSON；不得改写、纠错、推断或补造来源事实。",
-    userPrompt: buildFactExtractionPrompt(
-      `${protectedSource}\n\n受保护原始内容：\n${
-        protectedAuthorityMarkdown(protectedContent) || "无"
-      }`,
-    ),
+    userPrompt: factExtractionPrompt,
+  });
+  await reportRewriteProgress(options, {
+    stage: "fact_extraction",
+    status: "success",
+    message: "来源事实提取完成",
+    maxTokens: config.maxTokens,
+    inputLength: factExtractionPrompt.length,
+    outputLength: factExtractionText.length,
   });
   const factSheet = normalizeFactSheet(
     parseAiJsonObject<ArticleFactSheetRaw>(
@@ -1158,6 +1241,21 @@ export async function rewriteArticleWithAi(
 
   for (let attempt = 1; attempt <= MAX_CHINESE_REWRITE_ATTEMPTS; attempt += 1) {
     attempts = attempt;
+    const candidatePrompt = buildFactDrivenRewritePrompt({
+      config,
+      factSheet,
+      knowledgeContext,
+      protectedContent,
+      retryFeedback,
+    });
+    await reportRewriteProgress(options, {
+      stage: "content_generation",
+      status: "running",
+      message: `正在生成第 ${attempt} 轮候选正文`,
+      maxTokens: config.maxTokens,
+      attempt,
+      inputLength: candidatePrompt.length,
+    });
     const candidateText = await requestChatCompletion({
       config,
       endpoint,
@@ -1166,15 +1264,18 @@ export async function rewriteArticleWithAi(
       stepName: `事实驱动正文改写（第 ${attempt} 轮）`,
       systemPrompt:
         "你是服务器/VPS 内容主编。你只输出全新组织的中文正文 Markdown，并严格服从事实包、知识边界和受保护占位符。",
-      userPrompt: buildFactDrivenRewritePrompt({
-        config,
-        factSheet,
-        knowledgeContext,
-        protectedContent,
-        retryFeedback,
-      }),
+      userPrompt: candidatePrompt,
     });
     const candidate = cleanMarkdownText(candidateText);
+    await reportRewriteProgress(options, {
+      stage: "content_generation",
+      status: "success",
+      message: `第 ${attempt} 轮候选正文生成完成`,
+      maxTokens: config.maxTokens,
+      attempt,
+      inputLength: candidatePrompt.length,
+      outputLength: candidate.length,
+    });
 
     if (!candidate || candidate.length < MIN_REWRITTEN_MARKDOWN_LENGTH) {
       retryFeedback = buildRewriteRetryFeedback({
@@ -1200,22 +1301,32 @@ export async function rewriteArticleWithAi(
       };
     }
 
+    const reviewPrompt = buildQualityReviewPrompt({
+      factSheet,
+      protectedContent,
+      knowledgeContext,
+      markdownContent: restored.markdown,
+    });
+    await reportRewriteProgress(options, {
+      stage: "quality_review",
+      status: "running",
+      message: `正在执行第 ${attempt} 轮事实质量审查`,
+      maxTokens: config.maxTokens,
+      attempt,
+      inputLength: reviewPrompt.length,
+      outputLength: restored.markdown.length,
+    });
     const reviewText = await requestChatCompletion({
       config,
       endpoint,
       timeoutMs,
-      maxTokens: Math.min(config.maxTokens, QUALITY_REVIEW_MAX_TOKENS),
+      maxTokens: config.maxTokens,
       responseFormat: { type: "json_object" },
       temperature: 0.1,
       stepName: `事实质量审查（第 ${attempt} 轮）`,
       systemPrompt:
         "你是独立的事实审查员。只输出 JSON，严格区分来源事实、通用知识和无依据商家结论。",
-      userPrompt: buildQualityReviewPrompt({
-        factSheet,
-        protectedContent,
-        knowledgeContext,
-        markdownContent: restored.markdown,
-      }),
+      userPrompt: reviewPrompt,
     });
     const review = normalizeQualityReview(
       parseAiJsonObject<ArticleQualityReviewRaw>(
@@ -1225,6 +1336,15 @@ export async function rewriteArticleWithAi(
     );
 
     if (metrics.passed && review.passed) {
+      await reportRewriteProgress(options, {
+        stage: "quality_review",
+        status: "success",
+        message: `第 ${attempt} 轮事实质量审查通过`,
+        maxTokens: config.maxTokens,
+        attempt,
+        inputLength: reviewPrompt.length,
+        outputLength: reviewText.length,
+      });
       acceptedMarkdown = restored.markdown;
       acceptedMetrics = metrics;
       acceptedReview = review;
@@ -1236,6 +1356,15 @@ export async function rewriteArticleWithAi(
       review,
       placeholderIssues: restored.missingPlaceholders,
     });
+    await reportRewriteProgress(options, {
+      stage: "quality_review",
+      status: "retry",
+      message: `第 ${attempt} 轮质量审查未通过，准备重试`,
+      maxTokens: config.maxTokens,
+      attempt,
+      inputLength: reviewPrompt.length,
+      outputLength: reviewText.length,
+    });
   }
 
   if (!acceptedMarkdown || !acceptedMetrics || !acceptedReview) {
@@ -1245,6 +1374,19 @@ export async function rewriteArticleWithAi(
     );
   }
 
+  const metadataPrompt = buildMetadataPrompt(
+    acceptedMarkdown,
+    config.metadataStylePrompt,
+    getAiRewriteContentLimit(config.maxTokens),
+    config.metadataPrompt,
+  );
+  await reportRewriteProgress(options, {
+    stage: "metadata_generation",
+    status: "running",
+    message: "正在生成标题与 SEO 元信息",
+    maxTokens: config.maxTokens,
+    inputLength: metadataPrompt.length,
+  });
   const metadataText = await requestChatCompletion({
     config,
     endpoint,
@@ -1254,12 +1396,7 @@ export async function rewriteArticleWithAi(
     stepName: "标题/SEO 元信息生成",
     systemPrompt:
       "你只输出符合要求的 JSON 对象，不输出 Markdown、解释或额外文本。",
-    userPrompt: buildMetadataPrompt(
-      acceptedMarkdown,
-      config.metadataStylePrompt,
-      getAiRewriteContentLimit(config.maxTokens),
-      config.metadataPrompt,
-    ),
+    userPrompt: metadataPrompt,
   });
   const metadata = normalizeMetadata(
     parseAiJsonObject<Partial<ArticleMetadataOutput>>(
@@ -1269,6 +1406,14 @@ export async function rewriteArticleWithAi(
     acceptedMarkdown,
   );
   validateMetadata(metadata);
+  await reportRewriteProgress(options, {
+    stage: "metadata_generation",
+    status: "success",
+    message: "标题与 SEO 元信息生成完成",
+    maxTokens: config.maxTokens,
+    inputLength: metadataPrompt.length,
+    outputLength: metadataText.length,
+  });
 
   return {
     ...metadata,

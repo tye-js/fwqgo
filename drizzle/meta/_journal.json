@@ -323,6 +323,20 @@
       "when": 1784713403220,
       "tag": "0045_salty_angel",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1784822365080,
+      "tag": "0046_nostalgic_power_pack",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1784823842819,
+      "tag": "0047_bright_lockjaw",
+      "breakpoints": true
     }
   ]
 }

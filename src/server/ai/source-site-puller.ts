@@ -429,6 +429,7 @@ export async function pullSourceSiteToAiTasks(input: SourceSitePullInput) {
           rewriteConfigName: rewriteConfig.name,
           rewriteProvider: rewriteConfig.provider,
           rewriteModel: rewriteConfig.model,
+          rewriteMaxTokens: rewriteConfig.maxTokens,
           imageConfigId: imageConfig?.id ?? null,
           imageConfigName: imageConfig?.name ?? null,
           imageProvider: imageConfig?.provider ?? null,

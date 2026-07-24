@@ -870,6 +870,7 @@ export async function getCoverTaskDetail(taskId: number) {
       configName: imageCoverGenerationTasks.configName,
       provider: imageCoverGenerationTasks.provider,
       model: imageCoverGenerationTasks.model,
+      prompt: imageCoverGenerationTasks.prompt,
       status: imageCoverGenerationTasks.status,
       outputUrl: imageCoverGenerationTasks.outputUrl,
       errorTitle: imageCoverGenerationTasks.errorTitle,
@@ -899,6 +900,9 @@ export async function getCoverTaskDetail(taskId: number) {
     .limit(1);
 
   if (!task) return null;
+
+  const rawPrompt = task.prompt?.trim() ?? task.assetPrompt?.trim();
+  const prompt = rawPrompt?.length ? rawPrompt : null;
 
   const steps: UnifiedTaskStep[] = [
     {
@@ -943,7 +947,7 @@ export async function getCoverTaskDetail(taskId: number) {
             ? `输出 ${task.outputUrl}`
             : "等待调用生图接口",
       time: serializeDate(task.finishedAt ?? task.updatedAt),
-      payload: task.assetPrompt,
+      payload: prompt,
     },
     {
       key: "write-post",
@@ -962,6 +966,7 @@ export async function getCoverTaskDetail(taskId: number) {
 
   return {
     ...task,
+    prompt,
     description: coverTaskDescription(task),
     error:
       task.errorTitle || task.errorDetail

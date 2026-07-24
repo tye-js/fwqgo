@@ -9,6 +9,7 @@ import {
   AdminPageShell,
   AdminSectionCard,
 } from "@/features/cms/components/admin-page-shell";
+import { CoverTaskPromptCopy } from "@/features/cms/components/cover-task-prompt-copy";
 import { UnifiedTaskActionButtons } from "@/features/cms/components/unified-task-action-buttons";
 import {
   UnifiedTaskStat,
@@ -156,19 +157,28 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
                 输出地址：{task.outputUrl}
               </p>
             ) : null}
-            {task.asset?.prompt ? (
+            {task.prompt && task.status !== "failed" ? (
               <details>
                 <summary className="cursor-pointer text-xs font-medium text-primary">
                   查看生图提示词
                 </summary>
                 <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
-                  {task.asset.prompt}
+                  {task.prompt}
                 </pre>
               </details>
             ) : null}
           </div>
         </div>
       </AdminSectionCard>
+
+      {task.status === "failed" ? (
+        <AdminSectionCard
+          title="外部生图提示词"
+          description="AI 生图失败时，可复制本次任务的完整提示词并交给其他生图工具。"
+        >
+          <CoverTaskPromptCopy prompt={task.prompt} />
+        </AdminSectionCard>
+      ) : null}
 
       <AdminSectionCard
         title="步骤日志"

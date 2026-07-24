@@ -1,4 +1,5 @@
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
+import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import { assertPublicHttpUrl } from "@fwqgo/core/network-url";
 import { slugify } from "@fwqgo/core/utils";
 
@@ -9,6 +10,7 @@ import {
 
 const DEFAULT_AI_REWRITE_TIMEOUT_MS = 300_000;
 const TAG_SEO_MAX_TOKENS = 2_000;
+const MAX_AI_RESPONSE_BYTES = 512 * 1024;
 
 type AiRewriteConfig = NonNullable<
   Awaited<ReturnType<typeof getActiveAiRewriteConfig>>
@@ -245,9 +247,22 @@ async function requestTagSeoJson(input: {
           ],
         }),
       });
-      const data = (await response
-        .json()
-        .catch(() => null)) as ChatCompletionResponse | null;
+      const responseText = await readResponseTextWithLimit(
+        response,
+        MAX_AI_RESPONSE_BYTES,
+      );
+      if (responseText === null) {
+        throw createReadableError(
+          "标签 SEO AI 生成失败：AI 响应过大",
+          "服务商返回超过 512 KiB 安全限制，请检查中转接口或更换服务商",
+        );
+      }
+      let data: ChatCompletionResponse | null = null;
+      try {
+        data = JSON.parse(responseText || "{}") as ChatCompletionResponse;
+      } catch {
+        // HTTP errors may legitimately return non-JSON bodies; classify them below.
+      }
 
       return { response, data };
     };
@@ -273,6 +288,13 @@ async function requestTagSeoJson(input: {
           statusText: result.response.statusText,
           error: result.data?.error,
         }),
+      );
+    }
+
+    if (!result.data) {
+      throw createReadableError(
+        "标签 SEO AI 生成失败：AI 接口返回格式错误",
+        "服务商没有返回有效 JSON，请检查中转接口的 OpenAI 兼容性",
       );
     }
 
