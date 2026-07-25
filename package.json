@@ -4,9 +4,10 @@
   "type": "module",
   "packageManager": "bun@1.3.14",
   "scripts": {
-    "build": "bun run build:web && bun run build:cms && bun run verify:apps",
+    "build": "bun run build:web && bun run build:cms && bun run prepare:standalone && bun run verify:apps",
     "build:web": "next build apps/web --turbopack",
     "build:cms": "next build apps/cms --turbopack",
+    "prepare:standalone": "node scripts/prepare-standalone-runtime.mjs",
     "check": "bun run verify:repository && bun run lint && bun run typecheck && bun run test && bun run verify:architecture && bun run verify:deploy && bun run verify:migrations && bun run verify:security && bun run verify:cache",
     "deploy:local": "bash scripts/deploy-local-build.sh",
     "healthcheck:prod": "bash scripts/production-healthcheck.sh",

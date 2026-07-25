@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import path from "node:path";
 
@@ -72,6 +72,47 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function verifySharpRuntime() {
+  const cmsDirectory = path.join(
+    root,
+    ".next-cms",
+    "standalone",
+    "apps",
+    "cms",
+  );
+  const script = `
+import("sharp")
+  .then(async ({ default: sharp }) => {
+    const output = await sharp({
+      create: {
+        width: 1,
+        height: 1,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 1 },
+      },
+    }).webp().toBuffer();
+    if (output.subarray(8, 12).toString("ascii") !== "WEBP") {
+      throw new Error("sharp did not produce a WebP image");
+    }
+    process.stdout.write("sharp-webp-ok");
+  })
+  .catch((error) => {
+    console.error(error?.stack ?? error);
+    process.exit(1);
+  });
+`;
+  const result = spawnSync(runtime, ["-e", script], {
+    cwd: cmsDirectory,
+    env: process.env,
+    encoding: "utf8",
+  });
+
+  assert(
+    result.status === 0 && result.stdout.includes("sharp-webp-ok"),
+    `Standalone sharp WebP check failed:\n${result.stderr || result.stdout}`,
+  );
+}
+
 /** @param {string} origin @param {string} service @param {import("node:child_process").ChildProcess} child @param {Record<string, string>} [headers] */
 async function checkHealth(origin, service, child, headers = {}) {
   const response = await waitForServer(`${origin}/api/health`, child, headers);
@@ -91,6 +132,8 @@ async function checkHealth(origin, service, child, headers = {}) {
 }
 
 async function run() {
+  verifySharpRuntime();
+
   const webPort = await getAvailablePort();
   const cmsPort = await getAvailablePort(new Set([webPort]));
   const webProcess = startServer(
@@ -161,7 +204,7 @@ async function run() {
   );
 
   console.log(
-    "Built app smoke tests passed: health, redirects, auth boundary, route isolation",
+    "Built app smoke tests passed: sharp WebP, health, redirects, auth boundary, route isolation",
   );
 }
 

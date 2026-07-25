@@ -18,6 +18,49 @@ const backupScriptPath = path.resolve("scripts/secure-db-backup.sh");
 const backupScript = fs.readFileSync(backupScriptPath, "utf8");
 const pgDumpRunnerPath = path.resolve("scripts/secure-pg-dump.mjs");
 const pgDumpRunner = fs.readFileSync(pgDumpRunnerPath, "utf8");
+const standaloneRuntimePath = path.resolve(
+  "scripts/prepare-standalone-runtime.mjs",
+);
+const standaloneRuntime = fs.readFileSync(standaloneRuntimePath, "utf8");
+const builtSmokePath = path.resolve("scripts/smoke-built-apps.mjs");
+const builtSmoke = fs.readFileSync(builtSmokePath, "utf8");
+const packageSource = fs.readFileSync("package.json", "utf8");
+
+if (
+  !packageSource.includes("bun run prepare:standalone") ||
+  !packageSource.includes(
+    '"prepare:standalone": "node scripts/prepare-standalone-runtime.mjs"',
+  )
+) {
+  throw new Error(
+    "Production builds must prepare standalone native dependencies before packaging",
+  );
+}
+
+for (const requiredFragment of [
+  '"sharp"',
+  '"@img"',
+  '"detect-libc"',
+  '"semver"',
+  'entry.name.endsWith(".node")',
+  'entry.name.startsWith("libvips-cpp")',
+]) {
+  if (!standaloneRuntime.includes(requiredFragment)) {
+    throw new Error(
+      `Standalone runtime preparation is missing sharp invariant: ${requiredFragment}`,
+    );
+  }
+}
+
+if (
+  !builtSmoke.includes("function verifySharpRuntime()") ||
+  !builtSmoke.includes('import("sharp")') ||
+  !builtSmoke.includes('toString("ascii") !== "WEBP"')
+) {
+  throw new Error(
+    "Built application smoke tests must perform a real sharp WebP conversion",
+  );
+}
 
 if (
   !workflow.includes("- name: Prepare cache revalidation secret") ||
@@ -143,6 +186,17 @@ const pgDumpRunnerSyntax = spawnSync("node", ["--check", pgDumpRunnerPath], {
 if (pgDumpRunnerSyntax.status !== 0) {
   throw new Error(
     `Secure pg_dump runner failed node --check:\n${pgDumpRunnerSyntax.stderr.trim()}`,
+  );
+}
+
+const standaloneRuntimeSyntax = spawnSync(
+  "node",
+  ["--check", standaloneRuntimePath],
+  { encoding: "utf8" },
+);
+if (standaloneRuntimeSyntax.status !== 0) {
+  throw new Error(
+    `Standalone runtime preparation failed node --check:\n${standaloneRuntimeSyntax.stderr.trim()}`,
   );
 }
 
