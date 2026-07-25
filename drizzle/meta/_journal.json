@@ -344,6 +344,13 @@
       "when": 1784914299665,
       "tag": "0048_special_red_skull",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1784975219879,
+      "tag": "0049_dusty_marauders",
+      "breakpoints": true
     }
   ]
 }

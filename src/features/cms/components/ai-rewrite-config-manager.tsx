@@ -11,7 +11,12 @@ import {
   updateAiRewriteConfigAction,
 } from "@/features/cms/actions/ai-rewrite-config";
 import { type AiRewriteStatusCheckResult } from "@fwqgo/ai/rewrite-status-check";
-import { type getAiRewriteConfigs } from "@fwqgo/ai/rewrite-config";
+import {
+  DEFAULT_AI_REWRITE_MAX_ATTEMPTS,
+  MAX_AI_REWRITE_MAX_ATTEMPTS,
+  MIN_AI_REWRITE_MAX_ATTEMPTS,
+} from "@fwqgo/core/ai-rewrite-limits";
+import type { getAiRewriteConfigs } from "@fwqgo/ai/rewrite-config";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,6 +66,7 @@ import {
   defaultInitialRewriteFeedbackPrompt,
   defaultMetadataPrompt,
   defaultMetadataStylePrompt,
+  defaultQualityRepairPrompt,
   defaultQualityReviewPrompt,
   defaultRewriteRetryPrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
@@ -317,7 +323,7 @@ function ConfigForm({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-[minmax(220px,0.4fr)_120px_140px]">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_120px_180px_160px]">
         <div className="space-y-2">
           <Label>风格名称</Label>
           <Input
@@ -350,6 +356,22 @@ function ConfigForm({
           <p className="text-xs leading-5 text-muted-foreground">
             同时限制中文正文改写、英文正文生成的 Markdown 输入长度和模型输出
             max_tokens。
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Label>最多改写 / 修订轮数</Label>
+          <Input
+            name="rewriteMaxAttempts"
+            type="number"
+            min={MIN_AI_REWRITE_MAX_ATTEMPTS}
+            max={MAX_AI_REWRITE_MAX_ATTEMPTS}
+            defaultValue={
+              config?.rewriteMaxAttempts ?? DEFAULT_AI_REWRITE_MAX_ATTEMPTS
+            }
+            required
+          />
+          <p className="text-xs leading-5 text-muted-foreground">
+            首轮生成后按审查问题直接修订并复审，达到上限仍未通过才停止。
           </p>
         </div>
       </div>
@@ -402,15 +424,34 @@ function ConfigForm({
           />
           <PromptTemplateField
             name="rewriteRetryPrompt"
-            label="5. 审查未通过后的重试 Prompt"
+            label="5. 审查问题整理 Prompt"
             value={config?.rewriteRetryPrompt ?? defaultRewriteRetryPrompt}
             variables={["issues"]}
-            description="质量问题会整理为列表并替换 {issues}，再传给下一轮正文生成。"
+            description="把确定性检查和 AI 审查问题整理为修订指令，再注入下一轮直接修订 Prompt。"
             className="min-h-32"
           />
           <PromptTemplateField
+            name="qualityRepairPrompt"
+            label="6. 审查后直接修订 Prompt"
+            value={config?.qualityRepairPrompt ?? defaultQualityRepairPrompt}
+            variables={[
+              "stylePrompt",
+              "sourceContent",
+              "factSheet",
+              "outline",
+              "protectedAuthorityContent",
+              "protectedContent",
+              "providerContext",
+              "knowledgeContext",
+              "candidateContent",
+              "issues",
+            ]}
+            description="第 2 轮起直接修改上一版候选正文，只修复审查问题；修订结果会再次交给独立审查器。"
+            className="min-h-[38rem]"
+          />
+          <PromptTemplateField
             name="qualityReviewPrompt"
-            label="6. 事实质量审查 Prompt"
+            label="7. 事实质量审查 Prompt"
             value={config?.qualityReviewPrompt ?? defaultQualityReviewPrompt}
             variables={[
               "sourceContent",
@@ -425,14 +466,14 @@ function ConfigForm({
           />
           <PromptTemplateField
             name="metadataStylePrompt"
-            label="7. 中文标题 / SEO 风格片段"
+            label="8. 中文标题 / SEO 风格片段"
             value={config?.metadataStylePrompt ?? defaultMetadataStylePrompt}
             description="通过 {metadataStylePrompt} 注入中文元信息完整模板。"
             className="min-h-28"
           />
           <PromptTemplateField
             name="metadataPrompt"
-            label="8. 中文标题 / SEO 完整 Prompt"
+            label="9. 中文标题 / SEO 完整 Prompt"
             value={config?.metadataPrompt ?? defaultMetadataPrompt}
             variables={["metadataStylePrompt", "markdownContent"]}
             description="用于标题、摘要、关键词、标签和推荐标签生成。"

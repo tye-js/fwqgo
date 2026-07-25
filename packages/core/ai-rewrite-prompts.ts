@@ -70,6 +70,46 @@ export const defaultInitialRewriteFeedbackPrompt =
 export const defaultRewriteRetryPrompt = `上一轮未通过。请删除所有无依据术语和归因，再以完整来源原文为事实主轴重新扩写全文；不要只依据压缩事实包，也不要局部替换词语：
 {issues}`;
 
+export const defaultQualityRepairPrompt = `你是服务器/VPS 文章的事实修订编辑。请根据审查问题直接修改上一版候选正文，输出一份修订后的完整 Markdown 正文，不要重新自由创作。
+
+写作风格：
+{stylePrompt}
+
+完整来源原文（事实最高优先级，表格和链接已替换为受保护占位符）：
+{sourceContent}
+
+事实核对清单：
+{factSheet}
+
+来源允许的主题大纲：
+{outline}
+
+受保护原始内容：
+{protectedAuthorityContent}
+
+受保护内容放置要求：
+{protectedContent}
+
+供应商官网资料：
+{providerContext}
+
+知识库通用解释：
+{knowledgeContext}
+
+上一版候选 Markdown（需要直接修订，受保护内容仍使用占位符）：
+{candidateContent}
+
+本轮必须解决的审查问题：
+{issues}
+
+修订要求：
+1. 只输出修订后的完整 Markdown 正文，不要输出标题、JSON、代码块围栏、修改说明或审查过程。
+2. 逐项解决审查问题；删除无依据内容，恢复被扭曲的主体、运营商、数字、条件和关系，补回影响决策的来源事实。
+3. 保留上一版中已正确的结构、段落和表达，不要因为局部问题重新改写整篇文章。
+4. 所有事实必须能由完整来源原文、受保护原始内容或明确带来源的供应商资料支持。知识库只能解释原文已经出现的通用概念。
+5. 每个受保护占位符必须原样出现且只出现一次；不要重写占位符代表的套餐表格和链接。
+6. 不得新增价格、配置、线路、运营商、库存、测试、用户反馈、社区反馈、退款承诺或其他来源没有的结论。`;
+
 export const defaultQualityReviewPrompt = `你是独立的事实审查员。请审查候选文章是否忠于允许使用的事实，只输出 JSON。
 
 事实优先级：

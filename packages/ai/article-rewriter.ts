@@ -1,5 +1,10 @@
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import {
+  DEFAULT_AI_REWRITE_MAX_ATTEMPTS,
+  MAX_AI_REWRITE_MAX_ATTEMPTS,
+  MIN_AI_REWRITE_MAX_ATTEMPTS,
+} from "@fwqgo/core/ai-rewrite-limits";
+import {
   buildSourceAnchoredRewritePrompt,
   defaultEnglishMetadataStylePrompt,
   defaultEnglishStylePrompt,
@@ -39,7 +44,6 @@ const MIN_AI_INPUT_LENGTH = 80;
 const MIN_REWRITTEN_MARKDOWN_LENGTH = 120;
 const MAX_METADATA_INPUT_LENGTH = 28_000;
 const MAX_ENGLISH_CONTINUATION_ATTEMPTS = 3;
-const MAX_CHINESE_REWRITE_ATTEMPTS = 3;
 const MAX_AI_RESPONSE_BYTES = 4 * 1024 * 1024;
 
 function getAiRewriteTimeoutMs() {
@@ -74,6 +78,7 @@ export interface ArticleRewriteProgress {
   message: string;
   maxTokens: number;
   attempt?: number;
+  maxAttempts?: number;
   inputLength?: number;
   outputLength?: number;
 }
@@ -95,6 +100,7 @@ export interface AiRewriteConfigSnapshot {
   provider: string;
   model: string;
   maxTokens: number;
+  rewriteMaxAttempts: number;
   temperature: number;
   updatedAt: string | null;
 }
@@ -322,6 +328,7 @@ function createConfigSnapshot(
     provider: config.provider,
     model: config.model,
     maxTokens: config.maxTokens,
+    rewriteMaxAttempts: config.rewriteMaxAttempts,
     temperature: config.temperature,
     updatedAt: (config.updatedAt ?? config.createdAt)?.toISOString() ?? null,
   };
@@ -437,6 +444,33 @@ function buildQualityReviewPrompt(input: {
     providerContext: input.providerContext,
     knowledgeContext: input.knowledgeContext,
     markdownContent: input.markdownContent,
+  });
+}
+
+function buildQualityRepairPrompt(input: {
+  template: string;
+  stylePrompt: string;
+  sourceContent: string;
+  factSheet: ArticleFactSheet;
+  outline: string;
+  protectedContent: ProtectedMarkdownContent;
+  providerContext: string;
+  knowledgeContext: string;
+  candidateContent: string;
+  issues: string;
+}) {
+  return fillPromptTemplate(input.template, {
+    stylePrompt: input.stylePrompt,
+    sourceContent: input.sourceContent,
+    factSheet: JSON.stringify(input.factSheet, null, 2),
+    outline: input.outline,
+    protectedAuthorityContent:
+      protectedAuthorityMarkdown(input.protectedContent) || "无",
+    protectedContent: describeProtectedContent(input.protectedContent),
+    providerContext: input.providerContext,
+    knowledgeContext: input.knowledgeContext,
+    candidateContent: input.candidateContent,
+    issues: input.issues,
   });
 }
 
@@ -1318,34 +1352,65 @@ export async function rewriteArticleWithAi(
   const providerContext = formatRewriteProviderContext(providerReferences);
   const allowedProviderFacts =
     providerReferences.length > 0 ? providerContext : "";
+  const configuredRewriteMaxAttempts = Number.isFinite(
+    config.rewriteMaxAttempts,
+  )
+    ? Math.trunc(config.rewriteMaxAttempts)
+    : DEFAULT_AI_REWRITE_MAX_ATTEMPTS;
+  const maxRewriteAttempts = Math.max(
+    MIN_AI_REWRITE_MAX_ATTEMPTS,
+    Math.min(MAX_AI_REWRITE_MAX_ATTEMPTS, configuredRewriteMaxAttempts),
+  );
+  const rewriteOutline =
+    factSheet.outline.length > 0
+      ? factSheet.outline.map((item) => `- ${item}`).join("\n")
+      : "来源内容较短，请按原文主题自然扩写，不必强行增加小节。";
   let retryFeedback = config.initialRewritePrompt;
+  let repairCandidate = "";
   let acceptedMarkdown = "";
   let acceptedMetrics: RewriteQualityMetrics | null = null;
   let acceptedReview: ArticleQualityReview | null = null;
   let attempts = 0;
 
-  for (let attempt = 1; attempt <= MAX_CHINESE_REWRITE_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= maxRewriteAttempts; attempt += 1) {
     attempts = attempt;
-    const candidatePrompt = buildSourceAnchoredRewritePrompt({
-      configuredPrompt: config.basePrompt,
-      stylePrompt: config.stylePrompt,
-      sourceContent: protectedSource,
-      factSheet: JSON.stringify(factSheet, null, 2),
-      outline:
-        factSheet.outline.length > 0
-          ? factSheet.outline.map((item) => `- ${item}`).join("\n")
-          : "来源内容较短，请按原文主题自然扩写，不必强行增加小节。",
-      providerContext,
-      knowledgeContext,
-      protectedContent: describeProtectedContent(protectedContent),
-      retryFeedback: retryFeedback,
-    });
+    const isRepairAttempt = repairCandidate.trim().length > 0;
+    const candidatePrompt = isRepairAttempt
+      ? buildQualityRepairPrompt({
+          template: config.qualityRepairPrompt,
+          stylePrompt: config.stylePrompt,
+          sourceContent: protectedSource,
+          factSheet,
+          outline: rewriteOutline,
+          protectedContent,
+          providerContext,
+          knowledgeContext,
+          candidateContent: repairCandidate,
+          issues: retryFeedback,
+        })
+      : buildSourceAnchoredRewritePrompt({
+          configuredPrompt: config.basePrompt,
+          stylePrompt: config.stylePrompt,
+          sourceContent: protectedSource,
+          factSheet: JSON.stringify(factSheet, null, 2),
+          outline: rewriteOutline,
+          providerContext,
+          knowledgeContext,
+          protectedContent: describeProtectedContent(protectedContent),
+          retryFeedback,
+        });
+    const candidateStepName = isRepairAttempt
+      ? `审查反馈直接修订（第 ${attempt} 轮）`
+      : `原文锚定正文扩写（第 ${attempt} 轮）`;
     await reportRewriteProgress(options, {
       stage: "content_generation",
       status: "running",
-      message: `正在生成第 ${attempt} 轮候选正文`,
+      message: isRepairAttempt
+        ? `正在按审查问题直接修订第 ${attempt} 轮候选正文`
+        : `正在生成第 ${attempt} 轮候选正文`,
       maxTokens: config.maxTokens,
       attempt,
+      maxAttempts: maxRewriteAttempts,
       inputLength: candidatePrompt.length,
     });
     const candidateResult = await requestAuditedChatCompletion({
@@ -1355,7 +1420,7 @@ export async function rewriteArticleWithAi(
       timeoutMs,
       maxTokens: config.maxTokens,
       temperature: getSourceAnchoredRewriteTemperature(config.temperature),
-      stepName: `原文锚定正文扩写（第 ${attempt} 轮）`,
+      stepName: candidateStepName,
       stage: "content_generation",
       stageAttempt: attempt,
       userPrompt: candidatePrompt,
@@ -1365,9 +1430,12 @@ export async function rewriteArticleWithAi(
     await reportRewriteProgress(options, {
       stage: "content_generation",
       status: "success",
-      message: `第 ${attempt} 轮候选正文生成完成`,
+      message: isRepairAttempt
+        ? `第 ${attempt} 轮候选正文修订完成`
+        : `第 ${attempt} 轮候选正文生成完成`,
       maxTokens: config.maxTokens,
       attempt,
+      maxAttempts: maxRewriteAttempts,
       inputLength: candidatePrompt.length,
       outputLength: candidate.length,
     });
@@ -1379,9 +1447,12 @@ export async function rewriteArticleWithAi(
           ? `正文只有 ${candidate.length} 个字符，内容不完整`
           : "模型返回空正文",
       });
+      if (candidate) {
+        repairCandidate = candidate;
+      }
       await updateRewriteAudit(options, config, {
         stage: "content_generation",
-        stageName: `原文锚定正文扩写（第 ${attempt} 轮）`,
+        stageName: candidateStepName,
         stageAttempt: attempt,
         status: "retry",
         prompt: candidatePrompt,
@@ -1393,6 +1464,8 @@ export async function rewriteArticleWithAi(
         totalTokens: candidateResult.totalTokens,
         metadata: {
           accepted: false,
+          generationMode: isRepairAttempt ? "repair" : "initial",
+          maxAttempts: maxRewriteAttempts,
           retryFeedback,
           outputIssue: candidate
             ? `正文只有 ${candidate.length} 个字符，内容不完整`
@@ -1419,7 +1492,7 @@ export async function rewriteArticleWithAi(
 
     await updateRewriteAudit(options, config, {
       stage: "content_generation",
-      stageName: `原文锚定正文扩写（第 ${attempt} 轮）`,
+      stageName: candidateStepName,
       stageAttempt: attempt,
       status: "success",
       prompt: candidatePrompt,
@@ -1431,6 +1504,8 @@ export async function rewriteArticleWithAi(
       totalTokens: candidateResult.totalTokens,
       metadata: {
         accepted: null,
+        generationMode: isRepairAttempt ? "repair" : "initial",
+        maxAttempts: maxRewriteAttempts,
         reviewStatus: "pending",
         deterministicMetrics: metrics,
         missingPlaceholders: restored.missingPlaceholders,
@@ -1452,6 +1527,7 @@ export async function rewriteArticleWithAi(
       message: `正在执行第 ${attempt} 轮事实质量审查`,
       maxTokens: config.maxTokens,
       attempt,
+      maxAttempts: maxRewriteAttempts,
       inputLength: reviewPrompt.length,
       outputLength: restored.markdown.length,
     });
@@ -1474,7 +1550,7 @@ export async function rewriteArticleWithAi(
       const message = error instanceof Error ? error.message : String(error);
       await updateRewriteAudit(options, config, {
         stage: "content_generation",
-        stageName: `原文锚定正文扩写（第 ${attempt} 轮）`,
+        stageName: candidateStepName,
         stageAttempt: attempt,
         status: "failed",
         prompt: candidatePrompt,
@@ -1487,6 +1563,8 @@ export async function rewriteArticleWithAi(
         totalTokens: candidateResult.totalTokens,
         metadata: {
           accepted: false,
+          generationMode: isRepairAttempt ? "repair" : "initial",
+          maxAttempts: maxRewriteAttempts,
           reviewStatus: "failed",
           deterministicMetrics: metrics,
           missingPlaceholders: restored.missingPlaceholders,
@@ -1507,7 +1585,7 @@ export async function rewriteArticleWithAi(
       const message = error instanceof Error ? error.message : String(error);
       await updateRewriteAudit(options, config, {
         stage: "content_generation",
-        stageName: `原文锚定正文扩写（第 ${attempt} 轮）`,
+        stageName: candidateStepName,
         stageAttempt: attempt,
         status: "failed",
         prompt: candidatePrompt,
@@ -1520,6 +1598,8 @@ export async function rewriteArticleWithAi(
         totalTokens: candidateResult.totalTokens,
         metadata: {
           accepted: false,
+          generationMode: isRepairAttempt ? "repair" : "initial",
+          maxAttempts: maxRewriteAttempts,
           reviewStatus: "failed",
           deterministicMetrics: metrics,
           missingPlaceholders: restored.missingPlaceholders,
@@ -1550,6 +1630,7 @@ export async function rewriteArticleWithAi(
         message: `第 ${attempt} 轮事实质量审查通过`,
         maxTokens: config.maxTokens,
         attempt,
+        maxAttempts: maxRewriteAttempts,
         inputLength: reviewPrompt.length,
         outputLength: reviewText.length,
       });
@@ -1558,7 +1639,7 @@ export async function rewriteArticleWithAi(
       acceptedReview = review;
       await updateRewriteAudit(options, config, {
         stage: "content_generation",
-        stageName: `原文锚定正文扩写（第 ${attempt} 轮）`,
+        stageName: candidateStepName,
         stageAttempt: attempt,
         status: "success",
         prompt: candidatePrompt,
@@ -1570,6 +1651,8 @@ export async function rewriteArticleWithAi(
         totalTokens: candidateResult.totalTokens,
         metadata: {
           accepted: true,
+          generationMode: isRepairAttempt ? "repair" : "initial",
+          maxAttempts: maxRewriteAttempts,
           deterministicMetrics: metrics,
           missingPlaceholders: restored.missingPlaceholders,
         },
@@ -1597,9 +1680,10 @@ export async function rewriteArticleWithAi(
       review,
       placeholderIssues: restored.missingPlaceholders,
     });
+    repairCandidate = candidate;
     await updateRewriteAudit(options, config, {
       stage: "content_generation",
-      stageName: `原文锚定正文扩写（第 ${attempt} 轮）`,
+      stageName: candidateStepName,
       stageAttempt: attempt,
       status: "retry",
       prompt: candidatePrompt,
@@ -1611,6 +1695,8 @@ export async function rewriteArticleWithAi(
       totalTokens: candidateResult.totalTokens,
       metadata: {
         accepted: false,
+        generationMode: isRepairAttempt ? "repair" : "initial",
+        maxAttempts: maxRewriteAttempts,
         deterministicMetrics: metrics,
         missingPlaceholders: restored.missingPlaceholders,
         retryFeedback,
@@ -1638,9 +1724,13 @@ export async function rewriteArticleWithAi(
     await reportRewriteProgress(options, {
       stage: "quality_review",
       status: "retry",
-      message: `第 ${attempt} 轮质量审查未通过，准备重试`,
+      message:
+        attempt < maxRewriteAttempts
+          ? `第 ${attempt} 轮质量审查未通过，准备按问题直接修订`
+          : `第 ${attempt} 轮质量审查未通过，已达到配置的最大轮数`,
       maxTokens: config.maxTokens,
       attempt,
+      maxAttempts: maxRewriteAttempts,
       inputLength: reviewPrompt.length,
       outputLength: reviewText.length,
     });
@@ -1648,7 +1738,7 @@ export async function rewriteArticleWithAi(
 
   if (!acceptedMarkdown || !acceptedMetrics || !acceptedReview) {
     throw createReadableError(
-      `正文改写质量审查未通过（已尝试 ${attempts} 轮）`,
+      `正文改写质量审查未通过（已尝试 ${attempts}/${maxRewriteAttempts} 轮）`,
       retryFeedback.replace(/\n+/g, " ").slice(0, 1_200),
     );
   }

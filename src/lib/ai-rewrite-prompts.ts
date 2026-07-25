@@ -9,6 +9,7 @@ export {
   defaultInitialRewriteFeedbackPrompt,
   defaultMetadataPrompt,
   defaultMetadataStylePrompt,
+  defaultQualityRepairPrompt,
   defaultQualityReviewPrompt,
   defaultRewriteRetryPrompt,
   resolveMetadataPromptTemplate,

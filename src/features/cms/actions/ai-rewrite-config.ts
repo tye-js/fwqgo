@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
+import {
+  MAX_AI_REWRITE_MAX_ATTEMPTS,
+  MIN_AI_REWRITE_MAX_ATTEMPTS,
+} from "@fwqgo/core/ai-rewrite-limits";
 import { isPublicHttpUrl } from "@fwqgo/core/network-url";
 import { postgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
 import {
@@ -64,6 +68,18 @@ const configSchema = z.object({
   ]),
   initialRewritePrompt: promptSchema("首次改写反馈 Prompt"),
   rewriteRetryPrompt: promptSchema("改写重试 Prompt", ["issues"]),
+  qualityRepairPrompt: promptSchema("审查后直接修订 Prompt", [
+    "stylePrompt",
+    "sourceContent",
+    "factSheet",
+    "outline",
+    "protectedAuthorityContent",
+    "protectedContent",
+    "providerContext",
+    "knowledgeContext",
+    "candidateContent",
+    "issues",
+  ]),
   qualityReviewPrompt: promptSchema("质量审查 Prompt", [
     "sourceContent",
     "factSheet",
@@ -102,6 +118,11 @@ const configSchema = z.object({
     .min(1, "英文 SEO 生成风格不能为空"),
   temperature: z.coerce.number().int().min(0).max(200),
   maxTokens: z.coerce.number().int().min(1000).max(64000),
+  rewriteMaxAttempts: z.coerce
+    .number()
+    .int()
+    .min(MIN_AI_REWRITE_MAX_ATTEMPTS)
+    .max(MAX_AI_REWRITE_MAX_ATTEMPTS),
   enabled: z.preprocess(
     (value) => value === "true" || value === true,
     z.boolean(),

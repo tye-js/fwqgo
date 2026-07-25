@@ -7,6 +7,11 @@ import {
   htmlToArticleMarkdown,
   normalizeArticleHtml,
 } from "@fwqgo/core/content";
+import {
+  DEFAULT_AI_REWRITE_MAX_ATTEMPTS,
+  MAX_AI_REWRITE_MAX_ATTEMPTS,
+  MIN_AI_REWRITE_MAX_ATTEMPTS,
+} from "@fwqgo/core/ai-rewrite-limits";
 import { parsePostgresIntegerId, slugify } from "@fwqgo/core/utils";
 import {
   createTaskLeaseOwner,
@@ -128,6 +133,7 @@ function getArticleRewriteProgress(input: {
   stage: ArticleRewriteProgress["stage"];
   status: ArticleRewriteProgress["status"];
   attempt?: ArticleRewriteProgress["attempt"];
+  maxAttempts?: ArticleRewriteProgress["maxAttempts"];
 }) {
   if (input.stage === "fact_extraction") {
     return input.status === "running" ? 54 : 56;
@@ -137,13 +143,28 @@ function getArticleRewriteProgress(input: {
     return input.status === "running" ? 78 : 80;
   }
 
-  const attempt = Math.max(1, Math.min(Math.trunc(input.attempt ?? 1), 3));
-  const attemptBase = 58 + (attempt - 1) * 6;
+  const maxAttempts = Math.max(
+    MIN_AI_REWRITE_MAX_ATTEMPTS,
+    Math.min(
+      Math.trunc(input.maxAttempts ?? DEFAULT_AI_REWRITE_MAX_ATTEMPTS),
+      MAX_AI_REWRITE_MAX_ATTEMPTS,
+    ),
+  );
+  const attempt = Math.max(
+    1,
+    Math.min(Math.trunc(input.attempt ?? 1), maxAttempts),
+  );
+  const attemptStart = 58 + Math.floor(((attempt - 1) * 18) / maxAttempts);
+  const attemptEnd = 58 + Math.floor((attempt * 18) / maxAttempts);
   if (input.stage === "content_generation") {
-    return attemptBase + (input.status === "running" ? 0 : 2);
+    return input.status === "running"
+      ? attemptStart
+      : Math.min(attemptEnd, attemptStart + 1);
   }
 
-  return attemptBase + (input.status === "running" ? 3 : 5);
+  return input.status === "running"
+    ? Math.min(attemptEnd, Math.max(attemptStart + 1, attemptEnd - 1))
+    : attemptEnd;
 }
 
 async function updateTask(
@@ -2119,6 +2140,7 @@ export async function runAiRewriteTask(taskId: number) {
         stage: event.ai.stage,
         status: event.ai.status,
         attempt: event.ai.attempt ?? null,
+        maxAttempts: event.ai.maxAttempts ?? null,
         maxTokens: event.ai.maxTokens,
         inputLength: event.ai.inputLength ?? null,
         outputLength: event.ai.outputLength ?? null,

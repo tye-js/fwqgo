@@ -11,6 +11,7 @@ import {
   defaultFactExtractionPrompt,
   defaultInitialRewriteFeedbackPrompt,
   defaultMetadataStylePrompt,
+  defaultQualityRepairPrompt,
   defaultQualityReviewPrompt,
   defaultRewriteRetryPrompt,
   resolveMetadataPromptTemplate,
@@ -36,6 +37,7 @@ export type AiRewriteConfigInput = {
   basePrompt: string;
   initialRewritePrompt: string;
   rewriteRetryPrompt: string;
+  qualityRepairPrompt: string;
   qualityReviewPrompt: string;
   metadataPrompt: string;
   styleName: string;
@@ -48,6 +50,7 @@ export type AiRewriteConfigInput = {
   englishMetadataStylePrompt: string;
   temperature: number;
   maxTokens: number;
+  rewriteMaxAttempts: number;
   enabled: boolean;
   isDefault: boolean;
 };
@@ -72,6 +75,8 @@ function withPromptDefaults<T extends typeof aiRewriteConfigs.$inferSelect>(
     initialRewritePrompt:
       row.initialRewritePrompt ?? defaultInitialRewriteFeedbackPrompt,
     rewriteRetryPrompt: row.rewriteRetryPrompt ?? defaultRewriteRetryPrompt,
+    qualityRepairPrompt:
+      row.qualityRepairPrompt ?? defaultQualityRepairPrompt,
     qualityReviewPrompt: row.qualityReviewPrompt ?? defaultQualityReviewPrompt,
     metadataPrompt: resolveMetadataPromptTemplate(row.metadataPrompt),
     metadataStylePrompt: row.metadataStylePrompt ?? defaultMetadataStylePrompt,
@@ -127,6 +132,7 @@ export async function getAiRewriteConfigs() {
       basePrompt: aiRewriteConfigs.basePrompt,
       initialRewritePrompt: aiRewriteConfigs.initialRewritePrompt,
       rewriteRetryPrompt: aiRewriteConfigs.rewriteRetryPrompt,
+      qualityRepairPrompt: aiRewriteConfigs.qualityRepairPrompt,
       qualityReviewPrompt: aiRewriteConfigs.qualityReviewPrompt,
       metadataPrompt: aiRewriteConfigs.metadataPrompt,
       styleName: aiRewriteConfigs.styleName,
@@ -139,6 +145,7 @@ export async function getAiRewriteConfigs() {
       englishMetadataStylePrompt: aiRewriteConfigs.englishMetadataStylePrompt,
       temperature: aiRewriteConfigs.temperature,
       maxTokens: aiRewriteConfigs.maxTokens,
+      rewriteMaxAttempts: aiRewriteConfigs.rewriteMaxAttempts,
       enabled: aiRewriteConfigs.enabled,
       isDefault: aiRewriteConfigs.isDefault,
       createdAt: aiRewriteConfigs.createdAt,
@@ -264,6 +271,7 @@ export async function createAiRewriteConfig(input: AiRewriteConfigInput) {
         basePrompt: input.basePrompt,
         initialRewritePrompt: input.initialRewritePrompt,
         rewriteRetryPrompt: input.rewriteRetryPrompt,
+        qualityRepairPrompt: input.qualityRepairPrompt,
         qualityReviewPrompt: input.qualityReviewPrompt,
         metadataPrompt: input.metadataPrompt,
         metadataStylePrompt: input.metadataStylePrompt,
@@ -297,6 +305,7 @@ export async function updateAiRewriteConfig(
     basePrompt: input.basePrompt,
     initialRewritePrompt: input.initialRewritePrompt,
     rewriteRetryPrompt: input.rewriteRetryPrompt,
+    qualityRepairPrompt: input.qualityRepairPrompt,
     qualityReviewPrompt: input.qualityReviewPrompt,
     metadataPrompt: input.metadataPrompt,
     styleName: input.styleName,
@@ -309,6 +318,7 @@ export async function updateAiRewriteConfig(
     englishMetadataStylePrompt: input.englishMetadataStylePrompt,
     temperature: input.temperature,
     maxTokens: input.maxTokens,
+    rewriteMaxAttempts: input.rewriteMaxAttempts,
     enabled: input.enabled,
     isDefault: input.isDefault,
     updatedAt: new Date(),

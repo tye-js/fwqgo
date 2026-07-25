@@ -1,0 +1,3 @@
+export const MIN_AI_REWRITE_MAX_ATTEMPTS = 2;
+export const DEFAULT_AI_REWRITE_MAX_ATTEMPTS = 3;
+export const MAX_AI_REWRITE_MAX_ATTEMPTS = 10;
