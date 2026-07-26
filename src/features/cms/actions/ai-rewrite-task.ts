@@ -29,6 +29,7 @@ import {
   postgresIntegerIdSchema,
 } from "@fwqgo/core/postgres-id";
 import { enqueueAiRewriteTask } from "@/server/ai/rewrite-task-runner";
+import { upsertDerivedAiTask } from "@/server/ai/derived-task";
 import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
 import { db } from "@fwqgo/db";
 import {
@@ -818,109 +819,33 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
       };
     }
 
-    const [existingTask] = await db
-      .select({
-        id: aiRewriteTasks.id,
-        status: aiRewriteTasks.status,
-      })
-      .from(aiRewriteTasks)
-      .where(eq(aiRewriteTasks.sourceUrl, sourceUrl))
-      .orderBy(desc(aiRewriteTasks.createdAt))
-      .limit(1);
-
-    let task = existingTask
-      ? existingTask.status === "running"
-        ? existingTask
-        : (
-            await db
-              .update(aiRewriteTasks)
-              .set({
-                sourceTitle: parentPost.title,
-                sourceContent: sourceSnapshot,
-                sourceType: "english",
-                status: "pending",
-                progress: 0,
-                currentStep: "等待翻译中文改写正文并生成英文 SEO",
-                error: null,
-                categoryId: parentPost.categoryId,
-                rewriteStyleId: rewriteConfig.id,
-                rewriteConfigName: rewriteConfig.name,
-                rewriteProvider: rewriteConfig.provider,
-                rewriteModel: rewriteConfig.model,
-                rewriteMaxTokens: rewriteConfig.maxTokens,
-                imageConfigId: imageConfig?.id ?? null,
-                imageConfigName: imageConfig?.name ?? null,
-                imageProvider: imageConfig?.provider ?? null,
-                imageModel: imageConfig?.model ?? null,
-                postId: parentPost.id,
-                resultTitle: parentPost.title,
-                scrapedTitle: parentPost.title,
-                scrapedHtml: sourceSnapshot,
-                aiInputLength: null,
-                rewriteOutputLength: null,
-                diagnostics: null,
-                startedAt: null,
-                finishedAt: null,
-                leaseOwner: null,
-                leaseExpiresAt: null,
-                heartbeatAt: null,
-                updatedAt: new Date(),
-              })
-              .where(
-                and(
-                  eq(aiRewriteTasks.id, existingTask.id),
-                  ne(aiRewriteTasks.status, "running"),
-                ),
-              )
-              .returning({
-                id: aiRewriteTasks.id,
-                status: aiRewriteTasks.status,
-              })
-          )[0]
-      : (
-          await db
-            .insert(aiRewriteTasks)
-            .values({
-              sourceMaterialId: null,
-              sourceUrl,
-              sourceType: "english",
-              sourceTitle: parentPost.title,
-              sourceContent: sourceSnapshot,
-              status: "pending",
-              progress: 0,
-              currentStep: "等待翻译中文改写正文并生成英文 SEO",
-              categoryId: parentPost.categoryId,
-              rewriteStyleId: rewriteConfig.id,
-              rewriteConfigName: rewriteConfig.name,
-              rewriteProvider: rewriteConfig.provider,
-              rewriteModel: rewriteConfig.model,
-              rewriteMaxTokens: rewriteConfig.maxTokens,
-              imageConfigId: imageConfig?.id ?? null,
-              imageConfigName: imageConfig?.name ?? null,
-              imageProvider: imageConfig?.provider ?? null,
-              imageModel: imageConfig?.model ?? null,
-              postId: parentPost.id,
-              resultTitle: parentPost.title,
-              scrapedTitle: parentPost.title,
-              scrapedHtml: sourceSnapshot,
-            })
-            .returning({ id: aiRewriteTasks.id, status: aiRewriteTasks.status })
-        )[0];
-
-    if (!task && existingTask) {
-      [task] = await db
-        .select({ id: aiRewriteTasks.id, status: aiRewriteTasks.status })
-        .from(aiRewriteTasks)
-        .where(eq(aiRewriteTasks.id, existingTask.id))
-        .limit(1);
-    }
-
-    if (!task) {
-      return { error: "英文生成任务创建失败" };
-    }
+    const task = await upsertDerivedAiTask({
+      sourceUrl,
+      sourceType: "english",
+      sourceTitle: parentPost.title,
+      sourceContent: sourceSnapshot,
+      categoryId: parentPost.categoryId,
+      initialPostId: parentPost.id,
+      currentStep: "等待翻译中文改写正文并生成英文 SEO",
+      rewriteConfig: {
+        id: rewriteConfig.id,
+        name: rewriteConfig.name,
+        provider: rewriteConfig.provider,
+        model: rewriteConfig.model,
+        maxTokens: rewriteConfig.maxTokens,
+      },
+      imageConfig: imageConfig
+        ? {
+            id: imageConfig.id,
+            name: imageConfig.name,
+            provider: imageConfig.provider,
+            model: imageConfig.model,
+          }
+        : null,
+      clearStepsOnReuse: true,
+    });
 
     if (task.status !== "running") {
-      await db.delete(aiTaskSteps).where(eq(aiTaskSteps.taskId, task.id));
       await enqueueAiRewriteTask(task.id);
     }
 
@@ -1072,101 +997,23 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
         continue;
       }
       const sourceUrl = seoSourceUrl(post.id);
-      const [existingTask] = await db
-        .select({
-          id: aiRewriteTasks.id,
-          status: aiRewriteTasks.status,
-        })
-        .from(aiRewriteTasks)
-        .where(eq(aiRewriteTasks.sourceUrl, sourceUrl))
-        .orderBy(desc(aiRewriteTasks.createdAt))
-        .limit(1);
-      let task = existingTask
-        ? existingTask.status === "running"
-          ? existingTask
-          : (
-              await db
-                .update(aiRewriteTasks)
-                .set({
-                  sourceTitle: post.title,
-                  sourceContent: sourceSnapshot,
-                  sourceType: "seo",
-                  status: "pending",
-                  progress: 0,
-                  currentStep: "等待更新文章 SEO",
-                  error: null,
-                  categoryId: post.categoryId,
-                  rewriteStyleId: rewriteConfig.id,
-                  rewriteConfigName: rewriteConfig.name,
-                  rewriteProvider: rewriteConfig.provider,
-                  rewriteModel: rewriteConfig.model,
-                  rewriteMaxTokens: rewriteConfig.maxTokens,
-                  postId: post.id,
-                  resultTitle: post.title,
-                  scrapedTitle: post.title,
-                  scrapedHtml: sourceSnapshot,
-                  aiInputLength: null,
-                  rewriteOutputLength: null,
-                  diagnostics: null,
-                  startedAt: null,
-                  finishedAt: null,
-                  leaseOwner: null,
-                  leaseExpiresAt: null,
-                  heartbeatAt: null,
-                  updatedAt: new Date(),
-                })
-                .where(
-                  and(
-                    eq(aiRewriteTasks.id, existingTask.id),
-                    ne(aiRewriteTasks.status, "running"),
-                  ),
-                )
-                .returning({
-                  id: aiRewriteTasks.id,
-                  status: aiRewriteTasks.status,
-                })
-            )[0]
-        : (
-            await db
-              .insert(aiRewriteTasks)
-              .values({
-                sourceMaterialId: null,
-                sourceUrl,
-                sourceType: "seo",
-                sourceTitle: post.title,
-                sourceContent: sourceSnapshot,
-                status: "pending",
-                progress: 0,
-                currentStep: "等待更新文章 SEO",
-                categoryId: post.categoryId,
-                rewriteStyleId: rewriteConfig.id,
-                rewriteConfigName: rewriteConfig.name,
-                rewriteProvider: rewriteConfig.provider,
-                rewriteModel: rewriteConfig.model,
-                rewriteMaxTokens: rewriteConfig.maxTokens,
-                postId: post.id,
-                resultTitle: post.title,
-                scrapedTitle: post.title,
-                scrapedHtml: sourceSnapshot,
-              })
-              .returning({
-                id: aiRewriteTasks.id,
-                status: aiRewriteTasks.status,
-              })
-          )[0];
-
-      if (!task && existingTask) {
-        [task] = await db
-          .select({ id: aiRewriteTasks.id, status: aiRewriteTasks.status })
-          .from(aiRewriteTasks)
-          .where(eq(aiRewriteTasks.id, existingTask.id))
-          .limit(1);
-      }
-
-      if (!task) {
-        errors.push({ postId: post.id, reason: "SEO 任务创建失败" });
-        continue;
-      }
+      const task = await upsertDerivedAiTask({
+        sourceUrl,
+        sourceType: "seo",
+        sourceTitle: post.title,
+        sourceContent: sourceSnapshot,
+        categoryId: post.categoryId,
+        initialPostId: post.id,
+        currentStep: "等待更新文章 SEO",
+        rewriteConfig: {
+          id: rewriteConfig.id,
+          name: rewriteConfig.name,
+          provider: rewriteConfig.provider,
+          model: rewriteConfig.model,
+          maxTokens: rewriteConfig.maxTokens,
+        },
+        clearStepsOnReuse: true,
+      });
 
       taskIds.push(task.id);
 
@@ -1175,7 +1022,6 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
         continue;
       }
 
-      await db.delete(aiTaskSteps).where(eq(aiTaskSteps.taskId, task.id));
       await enqueueAiRewriteTask(task.id);
       queued += 1;
     }

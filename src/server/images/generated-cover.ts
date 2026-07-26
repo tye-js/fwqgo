@@ -10,9 +10,8 @@ import {
   normalizeImageGenerationResultUrl,
 } from "@fwqgo/core/image-generation-endpoint";
 import {
+  buildArticleCoverPrompt,
   defaultEnglishCoverPromptTemplate,
-  getMandatoryCoverVisualRules,
-  renderCoverPromptTemplate,
 } from "@fwqgo/core/image-generation-prompts";
 import {
   extractGeneratedImageSource,
@@ -64,40 +63,6 @@ type CoverRequestPreview = {
 
 const MAX_IMAGE_API_RESPONSE_BYTES = 24 * 1024 * 1024;
 const MAX_GENERATED_IMAGE_BYTES = 16 * 1024 * 1024;
-
-function fillPromptTemplate(
-  template: string,
-  input: Pick<GenerateCoverInput, "description" | "keywords">,
-) {
-  return renderCoverPromptTemplate(template, input);
-}
-
-function buildLanguagePromptRules(
-  englishPromptTemplate: string,
-  input: Pick<GenerateCoverInput, "language" | "description" | "keywords">,
-) {
-  if (input.language === "en") {
-    return [
-      fillPromptTemplate(englishPromptTemplate, input),
-      getMandatoryCoverVisualRules("en"),
-    ].join("\n\n");
-  }
-
-  return [
-    "Chinese article cover rules:",
-    "- This cover is for a Chinese article and Chinese public page.",
-    "- If readable text appears, use Simplified Chinese only, except standard technical abbreviations such as VPS, CPU, RAM, SSD, GB, and TB.",
-    getMandatoryCoverVisualRules("zh"),
-  ].join("\n");
-}
-
-function buildCoverPrompt(
-  template: string,
-  englishPromptTemplate: string,
-  input: GenerateCoverInput,
-) {
-  return `${fillPromptTemplate(template, input)}\n\n${buildLanguagePromptRules(englishPromptTemplate, input)}`;
-}
 
 function stripHtml(value: string) {
   return value
@@ -257,7 +222,7 @@ export async function previewArticleCoverImageRequest(
     throw new Error("生图配置缺少 API Key");
   }
 
-  const prompt = buildCoverPrompt(
+  const prompt = buildArticleCoverPrompt(
     config.promptTemplate,
     config.englishPromptTemplate ?? defaultEnglishCoverPromptTemplate,
     input,
@@ -341,7 +306,7 @@ export async function generateArticleCoverImage(
     throw new Error("没有可用的生图配置，请先在设置里启用生图接口");
   }
 
-  const prompt = buildCoverPrompt(
+  const prompt = buildArticleCoverPrompt(
     config.promptTemplate,
     config.englishPromptTemplate ?? defaultEnglishCoverPromptTemplate,
     input,

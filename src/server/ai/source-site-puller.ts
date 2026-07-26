@@ -12,7 +12,11 @@ import {
 } from "@fwqgo/core/network-url";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import { db } from "@fwqgo/db";
-import { aiRewriteTasks, sourceMaterials } from "@fwqgo/db/schema";
+import {
+  aiRewriteTasks,
+  aiSourceSites,
+  sourceMaterials,
+} from "@fwqgo/db/schema";
 
 const browserHeaders = {
   "User-Agent":
@@ -37,6 +41,10 @@ export type SourceSitePullInput = {
   categoryId: number;
   rewriteStyleId?: number | null;
   limit: number;
+  runFence?: {
+    sourceSiteId: number;
+    runGeneration: number;
+  };
 };
 
 async function fetchText(url: string) {
@@ -390,6 +398,24 @@ export async function pullSourceSiteToAiTasks(input: SourceSitePullInput) {
   const concurrentlySkippedUrls: string[] = [];
   for (const sourceUrl of urls) {
     const task = await db.transaction(async (tx) => {
+      if (input.runFence) {
+        const [activeSourceSite] = await tx
+          .select({ id: aiSourceSites.id })
+          .from(aiSourceSites)
+          .where(
+            and(
+              eq(aiSourceSites.id, input.runFence.sourceSiteId),
+              eq(aiSourceSites.runGeneration, input.runFence.runGeneration),
+              eq(aiSourceSites.enabled, true),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!activeSourceSite) {
+          throw new Error("来源站配置已更新或停用，本轮旧配置抓取已停止");
+        }
+      }
+
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${sourceUrl}, 0))`,
       );

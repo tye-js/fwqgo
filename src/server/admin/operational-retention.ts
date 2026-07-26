@@ -69,7 +69,7 @@ export async function runOperationalRetention(now = new Date()) {
             ]),
             lt(
               sql`coalesce(${aiRewriteTasks.finishedAt}, ${aiRewriteTasks.updatedAt}, ${aiRewriteTasks.createdAt})`,
-              aiCutoff,
+              sql.param(aiCutoff, aiRewriteTasks.createdAt),
             ),
           ),
         )
@@ -85,7 +85,7 @@ export async function runOperationalRetention(now = new Date()) {
             ]),
             lt(
               sql`coalesce(${imageCoverGenerationTasks.finishedAt}, ${imageCoverGenerationTasks.updatedAt}, ${imageCoverGenerationTasks.createdAt})`,
-              coverCutoff,
+              sql.param(coverCutoff, imageCoverGenerationTasks.createdAt),
             ),
           ),
         )
@@ -97,7 +97,7 @@ export async function runOperationalRetention(now = new Date()) {
             inArray(providerMonitorRuns.status, ["succeeded", "failed"]),
             lt(
               sql`coalesce(${providerMonitorRuns.finishedAt}, ${providerMonitorRuns.createdAt})`,
-              providerCutoff,
+              sql.param(providerCutoff, providerMonitorRuns.createdAt),
             ),
           ),
         )
@@ -126,7 +126,7 @@ export async function runOperationalRetention(now = new Date()) {
           ]),
           lt(
             sql`coalesce(${sourceMaterials.updatedAt}, ${sourceMaterials.createdAt})`,
-            aiCutoff,
+            sql.param(aiCutoff, sourceMaterials.createdAt),
           ),
           notExists(
             tx

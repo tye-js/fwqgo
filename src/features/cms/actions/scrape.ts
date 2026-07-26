@@ -182,12 +182,17 @@ export async function scrapeArticleAction(
       updatedAt: Date.now(),
     });
 
-    await enqueueAdminBackgroundJob({
-      key: `scrape-article:${jobId}`,
-      label: `抓取并改写文章：${url}`,
-      maxAttempts: 1,
-      run: () => runScrapeJob(jobId),
-    });
+    try {
+      await enqueueAdminBackgroundJob({
+        key: `scrape-article:${jobId}`,
+        label: `抓取并改写文章：${url}`,
+        maxAttempts: 1,
+        run: () => runScrapeJob(jobId),
+      });
+    } catch (error) {
+      scrapeJobs.delete(jobId);
+      throw error;
+    }
 
     return {
       success: true,

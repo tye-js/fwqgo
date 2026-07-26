@@ -258,7 +258,7 @@ function ConfigForm({
       </div>
 
       <div className="space-y-2">
-        <Label>通用封面 Prompt 模板</Label>
+        <Label>中文封面 Prompt 模板</Label>
         <Textarea
           name="promptTemplate"
           className="min-h-56 font-mono text-xs leading-5"
@@ -266,13 +266,13 @@ function ConfigForm({
           required
         />
         <p className="text-xs leading-5 text-muted-foreground">
-          支持占位符：<code>{"{description}"}</code>、
-          <code>{"{keywords}"}</code>。系统会自动追加中英文语言约束和旗帜限制。
+          仅用于中文文章封面。支持占位符：
+          <code>{"{description}"}</code>、<code>{"{keywords}"}</code>。系统会自动追加中文语言约束和旗帜限制。
         </p>
       </div>
 
       <div className="space-y-2">
-        <Label>英文封面附加 Prompt</Label>
+        <Label>英文封面 Prompt 模板</Label>
         <Textarea
           name="englishPromptTemplate"
           className="min-h-72 font-mono text-xs leading-5"
@@ -282,7 +282,7 @@ function ConfigForm({
           required
         />
         <p className="text-xs leading-5 text-muted-foreground">
-          仅生成英文文章封面时追加，并覆盖通用模板中冲突的语言和文字要求。支持占位符：
+          仅用于英文文章封面，不会拼接中文封面模板。支持占位符：
           <code>{"{description}"}</code>、<code>{"{keywords}"}</code>。
         </p>
       </div>

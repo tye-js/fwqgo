@@ -8,13 +8,17 @@ import {
   providerMonitors,
   serverOffers,
 } from "@fwqgo/db/schema";
-import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { requireAdminSession } from "@fwqgo/auth/session";
-import { getAffiliateConfigState } from "@fwqgo/core/affiliate-provider";
+import {
+  getAffiliateConfigState,
+  normalizeAffiliateProviderDomain,
+} from "@fwqgo/core/affiliate-provider";
 import { normalizeOffsetPagination } from "@fwqgo/core/pagination";
 import { parsePostgresIntegerId } from "@fwqgo/core/utils";
 import { ilikeContains } from "@/server/db/search";
 import { clearOutboundAffiliateProviderCache } from "@/server/links/outbound-short-link";
+import { enqueueProviderMonitorTask } from "@/server/offers/provider-monitor";
 
 type AffProviderActionResult =
   | { data: typeof affServiceProviders.$inferSelect }
@@ -56,16 +60,6 @@ function normalizeText(value: string) {
   return value.trim();
 }
 
-function normalizeOfficialUrl(value: string) {
-  const trimmedValue = normalizeText(value)
-    .replace(/^https?:\/\//i, "")
-    .replace(/^www\./i, "")
-    .replace(/\/.*$/, "")
-    .toLowerCase();
-
-  return trimmedValue;
-}
-
 function normalizeAffUrl(value: string) {
   return normalizeText(value);
 }
@@ -82,26 +76,8 @@ function normalizeAffProviderSort(value: string): AffProviderSort {
     : "id-desc";
 }
 
-function normalizeHostnameInput(value: string) {
-  const normalizedValue = value.trim();
-  if (!normalizedValue) return null;
-
-  try {
-    const parsedUrl = new URL(
-      /^[a-z][a-z\d+.-]*:\/\//i.test(normalizedValue)
-        ? normalizedValue
-        : `http://${normalizedValue}`,
-    );
-
-    if (!parsedUrl.hostname) return null;
-    return parsedUrl.hostname.toLowerCase().replace(/\.$/, "");
-  } catch {
-    return null;
-  }
-}
-
 function getCandidateDomains(value: string) {
-  const hostname = normalizeHostnameInput(value);
+  const hostname = normalizeAffiliateProviderDomain(value);
   if (!hostname?.includes(".")) return [];
 
   const domainParts = hostname.split(".").filter(Boolean);
@@ -148,7 +124,7 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
     affUrl: normalizeAffUrl(data.affUrl),
     affParam: normalizeText(data.affParam),
     affValue: normalizeText(data.affValue),
-    officialUrl: normalizeOfficialUrl(data.officialUrl),
+    officialUrl: normalizeAffiliateProviderDomain(data.officialUrl) ?? "",
   };
 
   if (!normalizedData.name || !normalizedData.officialUrl) {
@@ -294,7 +270,7 @@ export async function getAffValueByHref(hostname: string) {
       );
     const matchesByDomain = new Map(
       matches.map((provider) => [
-        normalizeOfficialUrl(provider.officialUrl),
+        normalizeAffiliateProviderDomain(provider.officialUrl),
         provider,
       ]),
     );
@@ -393,48 +369,83 @@ export async function updateAffProvider(
     }
 
     const normalizedData = validation.data;
+    const monitorsInvalidatedAt = new Date();
+    const mutation = await db.transaction(async (tx) => {
+      const [existingProvider] = await tx
+        .select({
+          id: affServiceProviders.id,
+          name: affServiceProviders.name,
+          officialUrl: affServiceProviders.officialUrl,
+        })
+        .from(affServiceProviders)
+        .where(
+          and(
+            ne(affServiceProviders.id, providerId),
+            or(
+              eq(affServiceProviders.name, normalizedData.name),
+              eq(affServiceProviders.officialUrl, normalizedData.officialUrl),
+            ),
+          ),
+        )
+        .limit(1);
 
-    const [existingProvider] = await db
-      .select({
-        id: affServiceProviders.id,
-        name: affServiceProviders.name,
-        officialUrl: affServiceProviders.officialUrl,
-      })
-      .from(affServiceProviders)
-      .where(
-        or(
-          eq(affServiceProviders.name, normalizedData.name),
-          eq(affServiceProviders.officialUrl, normalizedData.officialUrl),
-        ),
-      )
-      .limit(1);
+      if (existingProvider) {
+        return { existingProvider, result: null, monitors: [] };
+      }
 
-    if (existingProvider && existingProvider.id !== providerId) {
+      const [result] = await tx
+        .update(affServiceProviders)
+        .set({ ...normalizedData, updatedAt: monitorsInvalidatedAt })
+        .where(eq(affServiceProviders.id, providerId))
+        .returning();
+      if (!result) {
+        return { existingProvider: null, result: null, monitors: [] };
+      }
+
+      const monitors = await tx
+        .update(providerMonitors)
+        .set({
+          runGeneration: sql`${providerMonitors.runGeneration} + 1`,
+          nextRunAt: monitorsInvalidatedAt,
+          updatedAt: monitorsInvalidatedAt,
+        })
+        .where(
+          and(
+            eq(providerMonitors.providerId, providerId),
+            eq(providerMonitors.enabled, true),
+          ),
+        )
+        .returning({ id: providerMonitors.id });
+
+      return { existingProvider: null, result, monitors };
+    });
+
+    if (mutation.existingProvider) {
       const duplicatedField =
-        existingProvider.name === normalizedData.name ? "商家名" : "官网域名";
+        mutation.existingProvider.name === normalizedData.name
+          ? "商家名"
+          : "官网域名";
 
       return {
         error: "返利商家已存在",
-        message: `${duplicatedField} 已存在：${existingProvider.name}（ID ${existingProvider.id}）`,
+        message: `${duplicatedField} 已存在：${mutation.existingProvider.name}（ID ${mutation.existingProvider.id}）`,
       };
     }
 
-    const [result] = await db
-      .update(affServiceProviders)
-      .set({ ...normalizedData, updatedAt: new Date() })
-      .where(eq(affServiceProviders.id, providerId))
-      .returning();
-
-    if (!result) {
+    if (!mutation.result) {
       return {
         error: "更新返利商家失败",
         message: "商家不存在或已被删除，请刷新列表后重试",
       };
     }
 
+    for (const monitor of mutation.monitors) {
+      await enqueueProviderMonitorTask(monitor.id, monitorsInvalidatedAt);
+    }
     clearOutboundAffiliateProviderCache();
     revalidatePath("/collect/aff-man");
-    return { data: result };
+    revalidatePath("/servers/monitor");
+    return { data: mutation.result };
   } catch (error) {
     console.error("更新返利商家失败:", error);
     return { error: "更新返利商家失败", message: getErrorMessage(error) };

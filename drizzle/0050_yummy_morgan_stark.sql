@@ -1,0 +1,2 @@
+ALTER TABLE "provider_monitors" ADD COLUMN "runGeneration" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "provider_monitors" ADD CONSTRAINT "provider_monitors_runGeneration_check" CHECK ("provider_monitors"."runGeneration" >= 0);

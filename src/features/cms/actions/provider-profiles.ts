@@ -10,10 +10,12 @@ import { postgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
 import { db } from "@fwqgo/db";
 import {
   affServiceProviders,
+  providerMonitors,
   providerProfileSnapshots,
   providerPromoCodes,
 } from "@fwqgo/db/schema";
 import { defineAdminAction } from "@/features/cms/lib/define-admin-action";
+import { enqueueProviderMonitorTask } from "@/server/offers/provider-monitor";
 import { enqueueProviderProfileSnapshotTask } from "@/server/providers/provider-profile-tasks";
 import { isOfficialProviderUrl } from "@/server/providers/provider-profile-scraper";
 import type {
@@ -166,6 +168,7 @@ async function lockProvider(tx: DbTransaction, providerId: number) {
     .select({
       id: affServiceProviders.id,
       officialUrl: affServiceProviders.officialUrl,
+      defaultPromoCode: affServiceProviders.defaultPromoCode,
     })
     .from(affServiceProviders)
     .where(eq(affServiceProviders.id, providerId))
@@ -178,6 +181,8 @@ async function lockProvider(tx: DbTransaction, providerId: number) {
 async function syncLegacyDefaultPromoCode(
   tx: DbTransaction,
   providerId: number,
+  previousDefaultPromoCode: string | null,
+  invalidatedAt: Date,
 ) {
   const [defaultCode] = await tx
     .select({ code: providerPromoCodes.code })
@@ -191,13 +196,39 @@ async function syncLegacyDefaultPromoCode(
     )
     .limit(1);
 
+  const nextDefaultPromoCode = defaultCode?.code ?? null;
   await tx
     .update(affServiceProviders)
     .set({
-      defaultPromoCode: defaultCode?.code ?? null,
-      updatedAt: new Date(),
+      defaultPromoCode: nextDefaultPromoCode,
+      updatedAt: invalidatedAt,
     })
     .where(eq(affServiceProviders.id, providerId));
+
+  if (nextDefaultPromoCode === previousDefaultPromoCode) return [];
+  return tx
+    .update(providerMonitors)
+    .set({
+      runGeneration: sql`${providerMonitors.runGeneration} + 1`,
+      nextRunAt: invalidatedAt,
+      updatedAt: invalidatedAt,
+    })
+    .where(
+      and(
+        eq(providerMonitors.providerId, providerId),
+        eq(providerMonitors.enabled, true),
+      ),
+    )
+    .returning({ id: providerMonitors.id });
+}
+
+async function enqueueInvalidatedProviderMonitors(
+  monitors: Array<{ id: number }>,
+  runAfter: Date,
+) {
+  for (const monitor of monitors) {
+    await enqueueProviderMonitorTask(monitor.id, runAfter);
+  }
 }
 
 export async function getProviderProfileWorkspace(providerIds: number[]) {
@@ -560,8 +591,9 @@ export const saveProviderPromoCode = defineAdminAction({
     return { ...parsed, startsAt, endsAt };
   },
   execute: async (input) => {
-    const result = await db.transaction(async (tx) => {
-      await lockProvider(tx, input.providerId);
+    const monitorsInvalidatedAt = new Date();
+    const mutation = await db.transaction(async (tx) => {
+      const provider = await lockProvider(tx, input.providerId);
       const [current] = input.id
         ? await tx
             .select()
@@ -610,7 +642,6 @@ export const saveProviderPromoCode = defineAdminAction({
           .where(eq(providerPromoCodes.providerId, input.providerId));
       }
 
-      const now = new Date();
       const values = {
         providerId: input.providerId,
         code: input.code,
@@ -622,7 +653,7 @@ export const saveProviderPromoCode = defineAdminAction({
         active: input.active,
         isDefault: shouldBeDefault,
         sourceUrl: normalizePublicSourceUrl(input.sourceUrl, "优惠码来源 URL"),
-        updatedAt: now,
+        updatedAt: monitorsInvalidatedAt,
       };
       const [saved] = input.id
         ? await tx
@@ -633,12 +664,22 @@ export const saveProviderPromoCode = defineAdminAction({
         : await tx.insert(providerPromoCodes).values(values).returning();
       if (!saved) throw new Error("优惠码不存在或保存失败");
 
-      await syncLegacyDefaultPromoCode(tx, input.providerId);
-      return saved;
+      const monitors = await syncLegacyDefaultPromoCode(
+        tx,
+        input.providerId,
+        provider.defaultPromoCode,
+        monitorsInvalidatedAt,
+      );
+      return { saved, monitors };
     });
 
+    await enqueueInvalidatedProviderMonitors(
+      mutation.monitors,
+      monitorsInvalidatedAt,
+    );
     refreshProviderWorkspace();
-    return serializePromoCode(result);
+    if (mutation.monitors.length > 0) revalidatePath("/servers/monitor");
+    return serializePromoCode(mutation.saved);
   },
   successMessage: "优惠码已保存",
   errorTitle: "优惠码保存失败",
@@ -652,7 +693,8 @@ export const deleteProviderPromoCode = defineAdminAction({
   parse: (input: z.input<typeof promoCodeIdSchema>) =>
     promoCodeIdSchema.parse(input),
   execute: async ({ id }) => {
-    const result = await db.transaction(async (tx) => {
+    const monitorsInvalidatedAt = new Date();
+    const mutation = await db.transaction(async (tx) => {
       const [existing] = await tx
         .select({ providerId: providerPromoCodes.providerId })
         .from(providerPromoCodes)
@@ -660,7 +702,7 @@ export const deleteProviderPromoCode = defineAdminAction({
         .limit(1);
       if (!existing) throw new Error("优惠码不存在或已被删除");
 
-      await lockProvider(tx, existing.providerId);
+      const provider = await lockProvider(tx, existing.providerId);
       const [current] = await tx
         .select()
         .from(providerPromoCodes)
@@ -672,12 +714,25 @@ export const deleteProviderPromoCode = defineAdminAction({
       await tx
         .delete(providerPromoCodes)
         .where(eq(providerPromoCodes.id, current.id));
-      await syncLegacyDefaultPromoCode(tx, current.providerId);
-      return { id: current.id, providerId: current.providerId };
+      const monitors = await syncLegacyDefaultPromoCode(
+        tx,
+        current.providerId,
+        provider.defaultPromoCode,
+        monitorsInvalidatedAt,
+      );
+      return {
+        result: { id: current.id, providerId: current.providerId },
+        monitors,
+      };
     });
 
+    await enqueueInvalidatedProviderMonitors(
+      mutation.monitors,
+      monitorsInvalidatedAt,
+    );
     refreshProviderWorkspace();
-    return result;
+    if (mutation.monitors.length > 0) revalidatePath("/servers/monitor");
+    return mutation.result;
   },
   successMessage: "优惠码已删除",
   errorTitle: "优惠码删除失败",

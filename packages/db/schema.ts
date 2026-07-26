@@ -1134,6 +1134,7 @@ export const providerMonitors = pgTable(
     lastRunAt: timestamp("lastRunAt"),
     nextRunAt: timestamp("nextRunAt"),
     lastStatus: varchar("lastStatus", { length: 24 }).default("idle").notNull(),
+    runGeneration: integer("runGeneration").default(0).notNull(),
     lastError: text("lastError"),
     etag: text("etag"),
     lastModified: text("lastModified"),
@@ -1184,6 +1185,10 @@ export const providerMonitors = pgTable(
     lastStatusCheck: check(
       "provider_monitors_lastStatus_check",
       sql`${table.lastStatus} in ('idle', 'running', 'succeeded', 'failed')`,
+    ),
+    runGenerationCheck: check(
+      "provider_monitors_runGeneration_check",
+      sql`${table.runGeneration} >= 0`,
     ),
   }),
 );

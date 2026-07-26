@@ -170,17 +170,15 @@ export async function updateAiSourceSiteAction(id: number, formData: FormData) {
           siteUrl: new URL(input.siteUrl).toString(),
           feedUrl: input.feedUrl ? new URL(input.feedUrl).toString() : null,
           lastRunAt: input.enabled ? undefined : now,
-          lastRunDetails: input.enabled
-            ? undefined
-            : JSON.stringify({
-                runAt: now.toISOString(),
-                state: "cancelled",
-                message: "来源站已停用，排队任务已取消，运行中结果将被忽略",
-              }),
-          lastError: input.enabled ? undefined : null,
-          runGeneration: input.enabled
-            ? undefined
-            : sql`${aiSourceSites.runGeneration} + 1`,
+          lastRunDetails: JSON.stringify({
+            runAt: now.toISOString(),
+            state: "cancelled",
+            message: input.enabled
+              ? "来源站配置已更新，旧配置下的运行结果将被忽略"
+              : "来源站已停用，排队任务已取消，运行中结果将被忽略",
+          }),
+          lastError: null,
+          runGeneration: sql`${aiSourceSites.runGeneration} + 1`,
           updatedAt: now,
         })
         .where(eq(aiSourceSites.id, sourceSiteId))

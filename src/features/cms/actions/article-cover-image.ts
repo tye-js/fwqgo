@@ -52,7 +52,8 @@ function parseTaskId(taskId: number) {
   return parsed.success ? parsed.data : null;
 }
 
-const finalizedCoverGenerationBatches = new Set<string>();
+const finalizedCoverGenerationBatches = new Map<string, number>();
+const MAX_FINALIZED_COVER_GENERATION_BATCHES = 500;
 
 type EphemeralCoverTask = {
   taskId: number;
@@ -69,6 +70,17 @@ type EphemeralCoverTask = {
 
 const ephemeralCoverBatches = new Map<string, EphemeralCoverTask[]>();
 const MAX_EPHEMERAL_COVER_BATCHES = 30;
+
+function markCoverGenerationBatchFinalized(batchId: string) {
+  if (finalizedCoverGenerationBatches.has(batchId)) return;
+
+  reserveBoundedMapCapacity(finalizedCoverGenerationBatches, {
+    maxEntries: MAX_FINALIZED_COVER_GENERATION_BATCHES,
+    isEvictable: () => true,
+    getEvictionPriority: (finalizedAt) => finalizedAt,
+  });
+  finalizedCoverGenerationBatches.set(batchId, Date.now());
+}
 
 async function requireActiveImageConfig(configId?: number) {
   const config = await getActiveImageGenerationConfig(configId);
@@ -313,13 +325,22 @@ export async function generateArticleCoverImageAction(input: {
       finishedAt: null,
     };
     ephemeralCoverBatches.set(batchId, [task]);
-    await enqueueAdminBackgroundJob({
-      key: `article-cover-generation:${batchId}`,
-      label: `Article cover generation: ${payload.title}`,
-      maxAttempts: 1,
-      run: () =>
-        runEphemeralCoverGenerationTask(batchId, boundPayload, session.userId),
-    });
+    try {
+      await enqueueAdminBackgroundJob({
+        key: `article-cover-generation:${batchId}`,
+        label: `Article cover generation: ${payload.title}`,
+        maxAttempts: 1,
+        run: () =>
+          runEphemeralCoverGenerationTask(
+            batchId,
+            boundPayload,
+            session.userId,
+          ),
+      });
+    } catch (error) {
+      ephemeralCoverBatches.delete(batchId);
+      throw error;
+    }
 
     return {
       success: true,
@@ -745,7 +766,7 @@ export async function finalizeCoverGenerationBatchAction(batchId: string) {
       }
 
       revalidateCoverGenerationAdminPaths();
-      finalizedCoverGenerationBatches.add(normalizedBatchId);
+      markCoverGenerationBatchFinalized(normalizedBatchId);
       return { success: true, revalidated: true };
     }
 
@@ -783,7 +804,7 @@ export async function finalizeCoverGenerationBatchAction(batchId: string) {
       });
     }
     revalidateCoverGenerationAdminPaths();
-    finalizedCoverGenerationBatches.add(normalizedBatchId);
+    markCoverGenerationBatchFinalized(normalizedBatchId);
 
     return {
       success: true,

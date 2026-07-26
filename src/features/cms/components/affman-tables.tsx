@@ -54,7 +54,10 @@ import {
 import { type AffManData, type AffProviderTableData } from "@/types";
 import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
 import { ProviderProfileSheet } from "@/features/cms/components/provider-profile-sheet";
-import { getAffiliateConfigState } from "@fwqgo/core/affiliate-provider";
+import {
+  getAffiliateConfigState,
+  normalizeAffiliateProviderDomain,
+} from "@fwqgo/core/affiliate-provider";
 
 type ActionErrorResult = {
   error: string;
@@ -74,14 +77,6 @@ function isActionError(result: unknown): result is ActionErrorResult {
 
 function normalizeText(value: string) {
   return value.trim();
-}
-
-function normalizeOfficialUrl(value: string) {
-  return normalizeText(value)
-    .replace(/^https?:\/\//i, "")
-    .replace(/^www\./i, "")
-    .replace(/\/.*$/, "")
-    .toLowerCase();
 }
 
 function getProfileCompletion(provider: AffProviderTableData) {
@@ -131,7 +126,7 @@ function validateAffProviderForm(input: Omit<AffManData, "id">) {
     affUrl: normalizeText(input.affUrl),
     affParam: normalizeText(input.affParam),
     affValue: normalizeText(input.affValue),
-    officialUrl: normalizeOfficialUrl(input.officialUrl),
+    officialUrl: normalizeAffiliateProviderDomain(input.officialUrl) ?? "",
   };
 
   if (!normalizedInput.name || !normalizedInput.officialUrl) {
@@ -470,7 +465,8 @@ export default function AffManTable({
     const duplicatedProvider = data.find((item) => {
       return (
         item.name.trim() === validation.data.name ||
-        normalizeOfficialUrl(item.officialUrl) === validation.data.officialUrl
+        normalizeAffiliateProviderDomain(item.officialUrl) ===
+          validation.data.officialUrl
       );
     });
 

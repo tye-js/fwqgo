@@ -26,29 +26,28 @@ import {
 } from "@fwqgo/core/background-job-policy";
 
 type AdminBackgroundJobStatus =
-  | "queued"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "cancelled";
+  "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
 type AdminBackgroundJobRow = typeof adminBackgroundJobs.$inferSelect;
+type AdminBackgroundJobTransaction = Parameters<
+  Parameters<typeof db.transaction>[0]
+>[0];
 
 export type BackgroundJobContext = {
   job: AdminBackgroundJobRow;
   payload: string | null;
 };
 
+type BackgroundJobTerminalContext = BackgroundJobContext & {
+  status: "succeeded" | "failed";
+  error?: unknown;
+};
+
 export type BackgroundJobRunnerInput = {
   key: string;
   label: string;
   run: (context: BackgroundJobContext) => Promise<void>;
-  onTerminal?: (
-    context: BackgroundJobContext & {
-      status: "succeeded" | "failed";
-      error?: unknown;
-    },
-  ) => Promise<void>;
+  onTerminal?: (context: BackgroundJobTerminalContext) => Promise<void>;
 };
 
 type BackgroundJobInput = BackgroundJobRunnerInput & {
@@ -198,6 +197,46 @@ export function registerAdminBackgroundJobRunner(
   });
 }
 
+async function invokeBackgroundJobTerminalHandler(
+  runner: Pick<BackgroundJobInput, "onTerminal">,
+  context: BackgroundJobTerminalContext,
+) {
+  if (!runner.onTerminal) return;
+
+  try {
+    await runner.onTerminal(context);
+  } catch (error) {
+    structuredLog("error", "background.terminal_handler_failed", {
+      jobId: context.job.id,
+      jobKey: context.job.jobKey,
+      workerId: WORKER_ID,
+      error,
+    });
+  }
+}
+
+async function pruneIdleAdminBackgroundJobRunners() {
+  const registeredEntries = [...jobRunners.entries()];
+  if (registeredEntries.length === 0) return 0;
+
+  const recoverableRows = await db
+    .select({ jobKey: adminBackgroundJobs.jobKey })
+    .from(adminBackgroundJobs)
+    .where(inArray(adminBackgroundJobs.status, ["queued", "running"]))
+    .groupBy(adminBackgroundJobs.jobKey);
+  const recoverableKeys = new Set(recoverableRows.map((row) => row.jobKey));
+  let prunedCount = 0;
+
+  for (const [key, registeredRunner] of registeredEntries) {
+    if (!recoverableKeys.has(key) && jobRunners.get(key) === registeredRunner) {
+      jobRunners.delete(key);
+      prunedCount += 1;
+    }
+  }
+
+  return prunedCount;
+}
+
 export function wakeAdminBackgroundJobWorkerForRegisteredKeys(
   keys: Iterable<string>,
 ) {
@@ -244,6 +283,81 @@ function withoutRunningBackgroundJobForSameKey() {
     where running_jobs."jobKey" = ${adminBackgroundJobs.jobKey}
       and running_jobs."status" = 'running'
   )`;
+}
+
+function activeBackgroundJobLeaseWhere(job: AdminBackgroundJobRow) {
+  if (!job.lockedBy) return sql`false`;
+
+  return and(
+    eq(adminBackgroundJobs.id, job.id),
+    eq(adminBackgroundJobs.status, "running"),
+    eq(adminBackgroundJobs.lockedBy, job.lockedBy),
+    eq(adminBackgroundJobs.attempts, job.attempts),
+  );
+}
+
+export async function runWithActiveAdminBackgroundJobLease<T>(
+  context: Pick<BackgroundJobContext, "job">,
+  operation: (tx: AdminBackgroundJobTransaction) => Promise<T>,
+) {
+  return db.transaction(async (tx) => {
+    const [lease] = await tx
+      .select({ id: adminBackgroundJobs.id })
+      .from(adminBackgroundJobs)
+      .where(activeBackgroundJobLeaseWhere(context.job))
+      .for("update")
+      .limit(1);
+
+    if (!lease) return { active: false as const };
+
+    return {
+      active: true as const,
+      value: await operation(tx),
+    };
+  });
+}
+
+export async function runWithCurrentAdminBackgroundJobTerminalState<T>(
+  context: Pick<BackgroundJobTerminalContext, "job" | "status">,
+  operation: (tx: AdminBackgroundJobTransaction) => Promise<T>,
+) {
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(${BACKGROUND_JOB_COORDINATION_LOCK_ID})`,
+    );
+
+    const [terminalJob] = await tx
+      .select({ id: adminBackgroundJobs.id })
+      .from(adminBackgroundJobs)
+      .where(
+        and(
+          eq(adminBackgroundJobs.id, context.job.id),
+          eq(adminBackgroundJobs.jobKey, context.job.jobKey),
+          eq(adminBackgroundJobs.attempts, context.job.attempts),
+          eq(adminBackgroundJobs.status, context.status),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    const [replacementJob] = await tx
+      .select({ id: adminBackgroundJobs.id })
+      .from(adminBackgroundJobs)
+      .where(
+        and(
+          eq(adminBackgroundJobs.jobKey, context.job.jobKey),
+          inArray(adminBackgroundJobs.status, ["queued", "running"]),
+        ),
+      )
+      .for("update")
+      .limit(1);
+
+    if (!terminalJob || replacementJob) return { active: false as const };
+
+    return {
+      active: true as const,
+      value: await operation(tx),
+    };
+  });
 }
 
 async function scheduleNextQueuedBackgroundJob() {
@@ -327,28 +441,10 @@ async function resetStaleBackgroundJobs() {
     ),
   );
 
-  await db.transaction(async (tx) => {
+  const failedJobs = await db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(${BACKGROUND_JOB_COORDINATION_LOCK_ID})`,
     );
-
-    await tx
-      .update(adminBackgroundJobs)
-      .set({
-        status: "failed",
-        lockedBy: null,
-        lockedAt: null,
-        heartbeatAt: null,
-        lastError: "后台 worker 心跳超时，且已达到最大重试次数",
-        finishedAt: now,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          staleRunningWhere,
-          sql`${adminBackgroundJobs.attempts} >= ${adminBackgroundJobs.maxAttempts}`,
-        ),
-      );
 
     await tx
       .update(adminBackgroundJobs)
@@ -364,7 +460,6 @@ async function resetStaleBackgroundJobs() {
       .where(
         and(
           staleRunningWhere,
-          sql`${adminBackgroundJobs.attempts} < ${adminBackgroundJobs.maxAttempts}`,
           sql`exists (
             select 1 from "admin_background_jobs" as queued_jobs
             where queued_jobs."jobKey" = ${adminBackgroundJobs.jobKey}
@@ -372,6 +467,25 @@ async function resetStaleBackgroundJobs() {
           )`,
         ),
       );
+
+    const failedJobs = await tx
+      .update(adminBackgroundJobs)
+      .set({
+        status: "failed",
+        lockedBy: null,
+        lockedAt: null,
+        heartbeatAt: null,
+        lastError: "后台 worker 心跳超时，且已达到最大重试次数",
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          staleRunningWhere,
+          sql`${adminBackgroundJobs.attempts} >= ${adminBackgroundJobs.maxAttempts}`,
+        ),
+      )
+      .returning();
 
     const staleRecoverableRows = await tx
       .select({
@@ -432,7 +546,22 @@ async function resetStaleBackgroundJobs() {
           and(inArray(adminBackgroundJobs.id, requeueIds), staleRunningWhere),
         );
     }
+
+    return failedJobs.filter((job) => !selectedJobKeys.has(job.jobKey));
   });
+
+  for (const job of failedJobs) {
+    const runner = jobRunners.get(job.jobKey);
+    if (!runner) continue;
+    await invokeBackgroundJobTerminalHandler(runner, {
+      job,
+      payload: job.payload,
+      status: "failed",
+      error: new Error(
+        job.lastError ?? "后台 worker 心跳超时，且已达到最大重试次数",
+      ),
+    });
+  }
 }
 
 async function claimNextBackgroundJob() {
@@ -494,23 +623,17 @@ async function claimNextBackgroundJob() {
   }
 }
 
-async function heartbeat(jobId: number) {
+async function heartbeat(job: AdminBackgroundJobRow) {
   await db
     .update(adminBackgroundJobs)
     .set({
       heartbeatAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(adminBackgroundJobs.id, jobId),
-        eq(adminBackgroundJobs.status, "running"),
-        eq(adminBackgroundJobs.lockedBy, WORKER_ID),
-      ),
-    );
+    .where(activeBackgroundJobLeaseWhere(job));
 }
 
-async function completeBackgroundJob(jobId: number) {
+async function completeBackgroundJob(job: AdminBackgroundJobRow) {
   const [completedJob] = await db
     .update(adminBackgroundJobs)
     .set({
@@ -522,13 +645,7 @@ async function completeBackgroundJob(jobId: number) {
       finishedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(adminBackgroundJobs.id, jobId),
-        eq(adminBackgroundJobs.status, "running"),
-        eq(adminBackgroundJobs.lockedBy, WORKER_ID),
-      ),
-    )
+    .where(activeBackgroundJobLeaseWhere(job))
     .returning({ id: adminBackgroundJobs.id });
 
   return Boolean(completedJob);
@@ -580,13 +697,7 @@ async function failOrRetryBackgroundJob(
         finishedAt: shouldRetry ? null : now,
         updatedAt: now,
       })
-      .where(
-        and(
-          eq(adminBackgroundJobs.id, job.id),
-          eq(adminBackgroundJobs.status, "running"),
-          eq(adminBackgroundJobs.lockedBy, WORKER_ID),
-        ),
-      )
+      .where(activeBackgroundJobLeaseWhere(job))
       .returning({ id: adminBackgroundJobs.id });
 
     if (!updatedJob) return "lease_lost" as const;
@@ -605,15 +716,10 @@ async function runClaimedBackgroundJob(job: AdminBackgroundJobRow) {
   const runner = jobRunners.get(job.jobKey);
   if (!runner) return;
   const context = { job, payload: job.payload };
-  let terminalContext:
-    | (BackgroundJobContext & {
-        status: "succeeded" | "failed";
-        error?: unknown;
-      })
-    | null = null;
+  let terminalContext: BackgroundJobTerminalContext | null = null;
 
   const interval = setInterval(() => {
-    void heartbeat(job.id).catch((error) => {
+    void heartbeat(job).catch((error) => {
       structuredLog("error", "background.heartbeat_failed", {
         jobId: job.id,
         jobKey: job.jobKey,
@@ -625,7 +731,7 @@ async function runClaimedBackgroundJob(job: AdminBackgroundJobRow) {
 
   try {
     await runner.run(context);
-    const completed = await completeBackgroundJob(job.id);
+    const completed = await completeBackgroundJob(job);
     if (!completed) {
       structuredLog("warn", "background.completion_lease_lost", {
         jobId: job.id,
@@ -667,17 +773,8 @@ async function runClaimedBackgroundJob(job: AdminBackgroundJobRow) {
     clearInterval(interval);
   }
 
-  if (terminalContext && runner.onTerminal) {
-    try {
-      await runner.onTerminal(terminalContext);
-    } catch (error) {
-      structuredLog("error", "background.terminal_handler_failed", {
-        jobId: job.id,
-        jobKey: job.jobKey,
-        workerId: WORKER_ID,
-        error,
-      });
-    }
+  if (terminalContext) {
+    await invokeBackgroundJobTerminalHandler(runner, terminalContext);
   }
 }
 
@@ -723,6 +820,12 @@ async function runAdminBackgroundJobWorker() {
   await scheduleNextQueuedBackgroundJob();
   await scheduleBlockedBackgroundJobRecovery();
   await scheduleRegisteredRunningBackgroundJobRecovery();
+  const prunedRunnerCount = await pruneIdleAdminBackgroundJobRunners();
+  if (prunedRunnerCount > 0) {
+    structuredLog("info", "background.idle_runners_pruned", {
+      count: prunedRunnerCount,
+    });
+  }
 }
 
 async function scheduleRegisteredRunningBackgroundJobRecovery() {

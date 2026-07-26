@@ -15,7 +15,9 @@ import {
   ImageGenerationRateLimitError,
 } from "@fwqgo/core/image-generation-endpoint";
 import { structuredLog } from "@fwqgo/core/structured-log";
+import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
+import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import { generateArticleCoverImage } from "@/server/images/generated-cover";
 import {
@@ -479,6 +481,29 @@ async function processCoverGenerationTask(
 
   signal.throwIfAborted();
   await syncImageReferencesForPost(updatedPost.id);
+
+  try {
+    revalidateSiteContent([
+      cacheTags.posts,
+      cacheTags.homepage,
+      cacheTags.homepageSlots,
+      cacheTags.post(updatedPost.id),
+      cacheTags.postSlug(updatedPost.slug),
+      cacheTags.category(updatedPost.categoryId),
+    ]);
+  } catch (error) {
+    structuredLog("warn", "cover.cache_revalidation_failed", {
+      taskId: task.id,
+      postId: updatedPost.id,
+      error,
+    });
+  }
+
+  schedulePublicWebCache("image.changed", {
+    postIds: [updatedPost.id],
+    postSlugs: [updatedPost.slug],
+    categoryIds: [updatedPost.categoryId],
+  });
   return generated;
 }
 

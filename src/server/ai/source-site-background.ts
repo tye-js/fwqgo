@@ -10,8 +10,10 @@ import { structuredLog } from "@fwqgo/core/structured-log";
 import { db } from "@fwqgo/db";
 import { adminBackgroundJobs, aiSourceSites } from "@fwqgo/db/schema";
 import {
+  type BackgroundJobContext,
   enqueueAdminBackgroundJob,
   registerAdminBackgroundJobRunner,
+  runWithActiveAdminBackgroundJobLease,
   type BackgroundJobRunnerInput,
   wakeAdminBackgroundJobWorkerForRegisteredKeys,
 } from "@/server/admin/background-jobs";
@@ -21,6 +23,33 @@ const RECOVERABLE_JOB_STATUSES = ["queued", "running"] as const;
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   return typeof error === "string" ? error : "未知错误";
+}
+
+function parseAiSourceSiteRunDetails(value: string | null) {
+  if (!value) return null;
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+
+    const details = parsed as Record<string, unknown>;
+    return {
+      state: typeof details.state === "string" ? details.state : null,
+      jobId:
+        typeof details.jobId === "number" && Number.isSafeInteger(details.jobId)
+          ? details.jobId
+          : null,
+      runGeneration:
+        typeof details.runGeneration === "number" &&
+        Number.isSafeInteger(details.runGeneration)
+          ? details.runGeneration
+          : null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function getAiSourceSiteForRun(sourceSiteId: number) {
@@ -53,64 +82,127 @@ async function recordAiSourceSiteRunFailure(
   sourceSiteId: number,
   runGeneration: number,
   error: unknown,
+  context: BackgroundJobContext,
 ) {
   const message = getErrorMessage(error);
   const runAt = new Date();
 
-  await db
-    .update(aiSourceSites)
-    .set({
-      lastRunAt: runAt,
-      lastError: message,
-      lastRunDetails: JSON.stringify({
-        runAt: runAt.toISOString(),
-        state: "failed",
-        runGeneration,
-        error: message,
-      }),
-      updatedAt: runAt,
-    })
-    .where(
-      and(
-        eq(aiSourceSites.id, sourceSiteId),
-        eq(aiSourceSites.runGeneration, runGeneration),
-      ),
-    );
+  await runWithActiveAdminBackgroundJobLease(context, async (tx) => {
+    await tx
+      .update(aiSourceSites)
+      .set({
+        lastRunAt: runAt,
+        lastError: message,
+        lastRunDetails: JSON.stringify({
+          runAt: runAt.toISOString(),
+          state: "failed",
+          runGeneration,
+          error: message,
+        }),
+        updatedAt: runAt,
+      })
+      .where(
+        and(
+          eq(aiSourceSites.id, sourceSiteId),
+          eq(aiSourceSites.runGeneration, runGeneration),
+        ),
+      );
+  });
+}
+
+async function recordAiSourceSiteTerminalFailure(
+  sourceSiteId: number,
+  jobId: number,
+  error: unknown,
+) {
+  const message = getErrorMessage(error);
+
+  await db.transaction(async (tx) => {
+    const [site] = await tx
+      .select({
+        runGeneration: aiSourceSites.runGeneration,
+        lastRunDetails: aiSourceSites.lastRunDetails,
+      })
+      .from(aiSourceSites)
+      .where(eq(aiSourceSites.id, sourceSiteId))
+      .for("update")
+      .limit(1);
+    if (!site) return;
+
+    const details = parseAiSourceSiteRunDetails(site.lastRunDetails);
+    if (
+      details?.state !== "running" ||
+      details.jobId !== jobId ||
+      details.runGeneration !== site.runGeneration
+    ) {
+      return;
+    }
+
+    const runAt = new Date();
+    await tx
+      .update(aiSourceSites)
+      .set({
+        lastRunAt: runAt,
+        lastError: message,
+        lastRunDetails: JSON.stringify({
+          runAt: runAt.toISOString(),
+          state: "failed",
+          jobId,
+          runGeneration: site.runGeneration,
+          error: message,
+        }),
+        updatedAt: runAt,
+      })
+      .where(
+        and(
+          eq(aiSourceSites.id, sourceSiteId),
+          eq(aiSourceSites.runGeneration, site.runGeneration),
+        ),
+      );
+  });
 }
 
 export async function runAiSourceSiteInBackground(
   sourceSiteId: number,
-  jobId?: number,
+  context: BackgroundJobContext,
 ) {
   let runGeneration: number | null = null;
 
   try {
     const site = await getAiSourceSiteForRun(sourceSiteId);
     if (!site) return;
-    runGeneration = site.runGeneration;
+    const claimedRunGeneration = site.runGeneration;
+    runGeneration = claimedRunGeneration;
     const startedAt = new Date();
-    const [claimedSite] = await db
-      .update(aiSourceSites)
-      .set({
-        lastRunAt: startedAt,
-        lastRunDetails: JSON.stringify({
-          runAt: startedAt.toISOString(),
-          state: "running",
-          jobId: jobId ?? null,
-          runGeneration,
-        }),
-        lastError: null,
-        updatedAt: startedAt,
-      })
-      .where(
-        and(
-          eq(aiSourceSites.id, sourceSiteId),
-          eq(aiSourceSites.enabled, true),
-          eq(aiSourceSites.runGeneration, runGeneration),
-        ),
-      )
-      .returning({ id: aiSourceSites.id });
-    if (!claimedSite) return;
+    const claimResult = await runWithActiveAdminBackgroundJobLease(
+      context,
+      async (tx) => {
+        const [claimedSite] = await tx
+          .update(aiSourceSites)
+          .set({
+            lastRunAt: startedAt,
+            lastRunDetails: JSON.stringify({
+              runAt: startedAt.toISOString(),
+              state: "running",
+              jobId: context.job.id,
+              runGeneration: claimedRunGeneration,
+            }),
+            lastError: null,
+            updatedAt: startedAt,
+          })
+          .where(
+            and(
+              eq(aiSourceSites.id, sourceSiteId),
+              eq(aiSourceSites.enabled, true),
+              eq(aiSourceSites.runGeneration, claimedRunGeneration),
+            ),
+          )
+          .returning({ id: aiSourceSites.id });
+
+        return Boolean(claimedSite);
+      },
+    );
+    if (!claimResult.active || !claimResult.value) return;
 
     const result = await pullSourceSiteToAiTasks({
       siteUrl: site.siteUrl,
@@ -118,35 +210,46 @@ export async function runAiSourceSiteInBackground(
       categoryId: site.categoryId,
       rewriteStyleId: site.rewriteStyleId,
       limit: site.limit,
+      runFence: {
+        sourceSiteId,
+        runGeneration: claimedRunGeneration,
+      },
     });
     const runAt = new Date();
 
-    await db
-      .update(aiSourceSites)
-      .set({
-        lastRunAt: runAt,
-        lastDiscoveredCount: result.discoveredCount,
-        lastCreatedCount: result.createdCount,
-        lastSkippedCount: result.skippedCount,
-        lastRunDetails: JSON.stringify({
-          runAt: runAt.toISOString(),
-          state: "succeeded",
-          runGeneration,
-          ...result,
-        }),
-        lastError: null,
-        updatedAt: runAt,
-      })
-      .where(
-        and(
-          eq(aiSourceSites.id, sourceSiteId),
-          eq(aiSourceSites.enabled, true),
-          eq(aiSourceSites.runGeneration, runGeneration),
-        ),
-      );
+    await runWithActiveAdminBackgroundJobLease(context, async (tx) => {
+      await tx
+        .update(aiSourceSites)
+        .set({
+          lastRunAt: runAt,
+          lastDiscoveredCount: result.discoveredCount,
+          lastCreatedCount: result.createdCount,
+          lastSkippedCount: result.skippedCount,
+          lastRunDetails: JSON.stringify({
+            runAt: runAt.toISOString(),
+            state: "succeeded",
+            runGeneration: claimedRunGeneration,
+            ...result,
+          }),
+          lastError: null,
+          updatedAt: runAt,
+        })
+        .where(
+          and(
+            eq(aiSourceSites.id, sourceSiteId),
+            eq(aiSourceSites.enabled, true),
+            eq(aiSourceSites.runGeneration, claimedRunGeneration),
+          ),
+        );
+    });
   } catch (error) {
     if (runGeneration !== null) {
-      await recordAiSourceSiteRunFailure(sourceSiteId, runGeneration, error);
+      await recordAiSourceSiteRunFailure(
+        sourceSiteId,
+        runGeneration,
+        error,
+        context,
+      );
     }
     throw error;
   }
@@ -159,7 +262,15 @@ function createAiSourceSiteBackgroundJobRunner(input: {
   return {
     key: getAiSourceSiteJobKey(input.sourceSiteId),
     label: input.label,
-    run: ({ job }) => runAiSourceSiteInBackground(input.sourceSiteId, job.id),
+    run: (context) => runAiSourceSiteInBackground(input.sourceSiteId, context),
+    onTerminal: async ({ status, job, error }) => {
+      if (status !== "failed") return;
+      await recordAiSourceSiteTerminalFailure(
+        input.sourceSiteId,
+        job.id,
+        error,
+      );
+    },
   };
 }
 

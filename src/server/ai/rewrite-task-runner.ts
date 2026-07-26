@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import * as cheerio from "cheerio";
 
 import RewriteArticle from "@/langchain/rewrite-article";
@@ -40,6 +40,7 @@ import { schedulePublicWebCache } from "@/server/cache/public-revalidation-clien
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import { enqueueArticleCoverGenerationTask } from "@/server/images/cover-generation-task-runner";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
+import { upsertDerivedAiTask } from "@/server/ai/derived-task";
 import {
   scrapeArticleWithOptions,
   type ArticleProcessingProgress,
@@ -504,90 +505,28 @@ async function createEnglishSeoTask(input: {
     throw new Error("英文 SEO 任务缺少改写后的中文正文");
   }
 
-  const [existing] = await db
-    .select({ id: aiRewriteTasks.id, status: aiRewriteTasks.status })
-    .from(aiRewriteTasks)
-    .where(
-      and(
-        eq(aiRewriteTasks.sourceType, "english"),
-        eq(aiRewriteTasks.sourceUrl, sourceUrl),
-        inArray(aiRewriteTasks.status, ["pending", "running", "succeeded"]),
-      ),
-    )
-    .limit(1);
-
-  if (existing) {
-    if (existing.status === "running") {
-      return existing.id;
-    }
-
-    const [reusedTask] = await db
-      .update(aiRewriteTasks)
-      .set({
-        status: "pending",
-        progress: 0,
-        currentStep: "等待翻译中文改写正文并生成英文 SEO",
-        error: null,
-        sourceTitle: input.post.title,
-        sourceContent: sourceSnapshot,
-        resultTitle: input.post.title,
-        scrapedHtml: sourceSnapshot,
-        rewriteStyleId: input.parentTask.rewriteStyleId,
-        rewriteConfigName: input.parentTask.rewriteConfigName,
-        rewriteProvider: input.parentTask.rewriteProvider,
-        rewriteModel: input.parentTask.rewriteModel,
-        rewriteMaxTokens: input.parentTask.rewriteMaxTokens,
-        imageConfigId: input.parentTask.imageConfigId,
-        imageConfigName: input.parentTask.imageConfigName,
-        imageProvider: input.parentTask.imageProvider,
-        imageModel: input.parentTask.imageModel,
-        aiInputLength: null,
-        rewriteOutputLength: null,
-        startedAt: null,
-        finishedAt: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(aiRewriteTasks.id, existing.id),
-          ne(aiRewriteTasks.status, "running"),
-        ),
-      )
-      .returning({ id: aiRewriteTasks.id });
-
-    return reusedTask?.id ?? existing.id;
-  }
-
-  const [task] = await db
-    .insert(aiRewriteTasks)
-    .values({
-      sourceMaterialId: null,
-      sourceUrl,
-      sourceType: "english",
-      sourceTitle: input.post.title,
-      sourceContent: sourceSnapshot,
-      status: "pending",
-      progress: 0,
-      currentStep: "等待翻译中文改写正文并生成英文 SEO",
-      categoryId: input.parentTask.categoryId,
-      rewriteStyleId: input.parentTask.rewriteStyleId,
-      rewriteConfigName: input.parentTask.rewriteConfigName,
-      rewriteProvider: input.parentTask.rewriteProvider,
-      rewriteModel: input.parentTask.rewriteModel,
-      rewriteMaxTokens: input.parentTask.rewriteMaxTokens,
-      imageConfigId: input.parentTask.imageConfigId,
-      imageConfigName: input.parentTask.imageConfigName,
-      imageProvider: input.parentTask.imageProvider,
-      imageModel: input.parentTask.imageModel,
-      postId: input.post.id,
-      resultTitle: input.post.title,
-      scrapedHtml: sourceSnapshot,
-    })
-    .returning({ id: aiRewriteTasks.id });
-
-  if (!task) {
-    throw new Error("英文 SEO 任务创建失败");
-  }
+  const task = await upsertDerivedAiTask({
+    sourceUrl,
+    sourceType: "english",
+    sourceTitle: input.post.title,
+    sourceContent: sourceSnapshot,
+    categoryId: input.parentTask.categoryId,
+    initialPostId: input.post.id,
+    currentStep: "等待翻译中文改写正文并生成英文 SEO",
+    rewriteConfig: {
+      id: input.parentTask.rewriteStyleId,
+      name: input.parentTask.rewriteConfigName,
+      provider: input.parentTask.rewriteProvider,
+      model: input.parentTask.rewriteModel,
+      maxTokens: input.parentTask.rewriteMaxTokens,
+    },
+    imageConfig: {
+      id: input.parentTask.imageConfigId,
+      name: input.parentTask.imageConfigName,
+      provider: input.parentTask.imageProvider,
+      model: input.parentTask.imageModel,
+    },
+  });
 
   return task.id;
 }

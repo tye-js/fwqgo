@@ -56,6 +56,7 @@ type ProviderOfferDatabase = Pick<typeof db, "select" | "insert" | "update">;
 export type ProviderMonitorRunOwnership = {
   monitorId: number;
   checkedAt: Date;
+  runGeneration: number;
 };
 
 export class ProviderMonitorRunSupersededError extends Error {
@@ -78,6 +79,7 @@ export async function assertProviderMonitorRunOwnership(
         eq(providerMonitors.enabled, true),
         eq(providerMonitors.lastStatus, "running"),
         eq(providerMonitors.lastRunAt, ownership.checkedAt),
+        eq(providerMonitors.runGeneration, ownership.runGeneration),
       ),
     )
     .for("update")

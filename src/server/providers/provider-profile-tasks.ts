@@ -5,7 +5,11 @@ import {
   affServiceProviders,
   providerProfileSnapshots,
 } from "@fwqgo/db/schema";
-import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
+import {
+  type BackgroundJobContext,
+  enqueueAdminBackgroundJob,
+  runWithActiveAdminBackgroundJobLease,
+} from "@/server/admin/background-jobs";
 import { collectProviderProfileCandidate } from "@/server/providers/provider-profile-scraper";
 
 const recoverableStatuses = ["queued", "running"] as const;
@@ -20,41 +24,52 @@ function truncateError(value: string) {
   return value.length > 5_000 ? `${value.slice(0, 5_000)}...` : value;
 }
 
-async function claimProviderProfileSnapshot(snapshotId: number) {
-  return db.transaction(async (tx) => {
-    const [snapshot] = await tx
-      .select({
-        id: providerProfileSnapshots.id,
-        providerId: providerProfileSnapshots.providerId,
-        status: providerProfileSnapshots.status,
-      })
-      .from(providerProfileSnapshots)
-      .where(eq(providerProfileSnapshots.id, snapshotId))
-      .for("update")
-      .limit(1);
+async function claimProviderProfileSnapshot(
+  snapshotId: number,
+  context: BackgroundJobContext,
+) {
+  const result = await runWithActiveAdminBackgroundJobLease(
+    context,
+    async (tx) => {
+      const [snapshot] = await tx
+        .select({
+          id: providerProfileSnapshots.id,
+          providerId: providerProfileSnapshots.providerId,
+          status: providerProfileSnapshots.status,
+        })
+        .from(providerProfileSnapshots)
+        .where(eq(providerProfileSnapshots.id, snapshotId))
+        .for("update")
+        .limit(1);
 
-    if (
-      !snapshot ||
-      (snapshot.status !== "queued" && snapshot.status !== "running")
-    ) {
-      return null;
-    }
+      if (
+        !snapshot ||
+        (snapshot.status !== "queued" && snapshot.status !== "running")
+      ) {
+        return null;
+      }
 
-    await tx
-      .update(providerProfileSnapshots)
-      .set({
-        status: "running",
-        error: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(providerProfileSnapshots.id, snapshot.id));
+      await tx
+        .update(providerProfileSnapshots)
+        .set({
+          status: "running",
+          error: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(providerProfileSnapshots.id, snapshot.id));
 
-    return snapshot;
-  });
+      return snapshot;
+    },
+  );
+
+  return result.active ? result.value : null;
 }
 
-export async function runProviderProfileSnapshot(snapshotId: number) {
-  const snapshot = await claimProviderProfileSnapshot(snapshotId);
+export async function runProviderProfileSnapshot(
+  snapshotId: number,
+  context: BackgroundJobContext,
+) {
+  const snapshot = await claimProviderProfileSnapshot(snapshotId, context);
   if (!snapshot) return;
 
   const [provider] = await db
@@ -69,49 +84,71 @@ export async function runProviderProfileSnapshot(snapshotId: number) {
 
   const candidate = await collectProviderProfileCandidate(provider.officialUrl);
   const now = new Date();
-  const [updated] = await db
-    .update(providerProfileSnapshots)
-    .set({
-      status: "pending",
-      summary: candidate.summary,
-      summarySourceUrl: candidate.summarySourceUrl,
-      refundPolicy: candidate.refundPolicy,
-      refundPolicySourceUrl: candidate.refundPolicySourceUrl,
-      prohibitedUses: candidate.prohibitedUses,
-      prohibitedUsesSourceUrl: candidate.prohibitedUsesSourceUrl,
-      discoveredUrls: candidate.discoveredUrls,
-      fetchedAt: now,
-      error:
-        candidate.warnings.length > 0
-          ? truncateError(candidate.warnings.join("\n"))
-          : null,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(providerProfileSnapshots.id, snapshot.id),
-        eq(providerProfileSnapshots.status, "running"),
-      ),
-    )
-    .returning({ id: providerProfileSnapshots.id });
+  await runWithActiveAdminBackgroundJobLease(context, async (tx) => {
+    const [updated] = await tx
+      .update(providerProfileSnapshots)
+      .set({
+        status: "pending",
+        summary: candidate.summary,
+        summarySourceUrl: candidate.summarySourceUrl,
+        refundPolicy: candidate.refundPolicy,
+        refundPolicySourceUrl: candidate.refundPolicySourceUrl,
+        prohibitedUses: candidate.prohibitedUses,
+        prohibitedUsesSourceUrl: candidate.prohibitedUsesSourceUrl,
+        discoveredUrls: candidate.discoveredUrls,
+        fetchedAt: now,
+        error:
+          candidate.warnings.length > 0
+            ? truncateError(candidate.warnings.join("\n"))
+            : null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(providerProfileSnapshots.id, snapshot.id),
+          eq(providerProfileSnapshots.status, "running"),
+        ),
+      )
+      .returning({ id: providerProfileSnapshots.id });
 
-  if (!updated) {
-    throw new Error("采集快照状态已变化，候选内容未写入");
-  }
+    if (!updated) {
+      throw new Error("采集快照状态已变化，候选内容未写入");
+    }
+  });
 }
 
 export async function enqueueProviderProfileSnapshotTask(
   snapshotId: number,
   runAfter = new Date(),
 ) {
+  const [queuedSnapshot] = await db
+    .update(providerProfileSnapshots)
+    .set({
+      status: "queued",
+      error: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(providerProfileSnapshots.id, snapshotId),
+        inArray(providerProfileSnapshots.status, [
+          "queued",
+          "running",
+          "failed",
+        ]),
+      ),
+    )
+    .returning({ id: providerProfileSnapshots.id });
+  if (!queuedSnapshot) return false;
+
   return enqueueAdminBackgroundJob({
     key: `provider-profile:${snapshotId}`,
     label: `供应商档案采集 #${snapshotId}`,
     payload: { snapshotId },
     runAfter,
     maxAttempts: 2,
-    run: async () => {
-      await runProviderProfileSnapshot(snapshotId);
+    run: async (context) => {
+      await runProviderProfileSnapshot(snapshotId, context);
     },
     onTerminal: async ({ status, error }) => {
       if (status !== "failed") return;
@@ -125,7 +162,7 @@ export async function enqueueProviderProfileSnapshotTask(
         .where(
           and(
             eq(providerProfileSnapshots.id, snapshotId),
-            inArray(providerProfileSnapshots.status, ["queued", "running"]),
+            eq(providerProfileSnapshots.status, "running"),
           ),
         );
     },

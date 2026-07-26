@@ -11,7 +11,11 @@ import {
   sql,
 } from "drizzle-orm";
 
-import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
+import {
+  enqueueAdminBackgroundJob,
+  runWithCurrentAdminBackgroundJobTerminalState,
+  type BackgroundJobContext,
+} from "@/server/admin/background-jobs";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import { fetchPublicHttpUrl } from "@fwqgo/core/network-url";
 import {
@@ -76,6 +80,7 @@ async function completeProviderMonitorRun(input: {
   monitorId: number;
   runId: number;
   checkedAt: Date;
+  runGeneration: number;
   monitorValues: Partial<typeof providerMonitors.$inferInsert>;
   runValues: Partial<typeof providerMonitorRuns.$inferInsert>;
 }) {
@@ -90,6 +95,7 @@ async function completeProviderMonitorRun(input: {
             eq(providerMonitors.enabled, true),
             eq(providerMonitors.lastStatus, "running"),
             eq(providerMonitors.lastRunAt, input.checkedAt),
+            eq(providerMonitors.runGeneration, input.runGeneration),
           ),
         )
         .returning({ id: providerMonitors.id });
@@ -216,6 +222,7 @@ export async function runProviderMonitor(
       lastModified: providerMonitors.lastModified,
       responseHash: providerMonitors.responseHash,
       lastSummary: providerMonitors.lastSummary,
+      runGeneration: providerMonitors.runGeneration,
       providerName: affServiceProviders.name,
       providerSlug: affServiceProviders.slug,
       affUrl: affServiceProviders.affUrl,
@@ -254,10 +261,17 @@ export async function runProviderMonitor(
   const resolvedSecrets = resolveProviderMonitorSecrets(parsedConfig);
   const config = resolvedSecrets.config;
   if (resolvedSecrets.needsMigration) {
-    await db
+    const [migratedMonitor] = await db
       .update(providerMonitors)
-      .set({ config: resolvedSecrets.storageConfig, updatedAt: new Date() })
-      .where(eq(providerMonitors.id, monitor.id));
+      .set({ config: resolvedSecrets.storageConfig })
+      .where(
+        and(
+          eq(providerMonitors.id, monitor.id),
+          eq(providerMonitors.runGeneration, monitor.runGeneration),
+        ),
+      )
+      .returning({ id: providerMonitors.id });
+    if (!migratedMonitor) throw new ProviderMonitorRunSupersededError();
   }
   const context: ProviderSyncContext = {
     monitorId: monitor.id,
@@ -312,6 +326,7 @@ export async function runProviderMonitor(
         and(
           eq(providerMonitors.id, monitor.id),
           eq(providerMonitors.enabled, true),
+          eq(providerMonitors.runGeneration, monitor.runGeneration),
         ),
       )
       .returning({ id: providerMonitors.id });
@@ -358,7 +373,11 @@ export async function runProviderMonitor(
       checkedAt: checkedAt.toISOString(),
     };
   }
-  const ownership = { monitorId: monitor.id, checkedAt };
+  const ownership = {
+    monitorId: monitor.id,
+    checkedAt,
+    runGeneration: monitor.runGeneration,
+  };
 
   try {
     const conditionalHeaders: Record<string, string> = {};
@@ -460,6 +479,7 @@ export async function runProviderMonitor(
         monitorId: monitor.id,
         runId: run.id,
         checkedAt,
+        runGeneration: monitor.runGeneration,
         runValues: {
           status: "succeeded",
           httpStatus: response.status,
@@ -605,6 +625,7 @@ export async function runProviderMonitor(
       monitorId: monitor.id,
       runId: run.id,
       checkedAt,
+      runGeneration: monitor.runGeneration,
       runValues: {
         status: "succeeded",
         httpStatus: response.status,
@@ -711,6 +732,7 @@ export async function runProviderMonitor(
               eq(providerMonitors.enabled, true),
               eq(providerMonitors.lastStatus, "running"),
               eq(providerMonitors.lastRunAt, checkedAt),
+              eq(providerMonitors.runGeneration, monitor.runGeneration),
             ),
           )
           .returning({ id: providerMonitors.id });
@@ -733,6 +755,98 @@ export async function runProviderMonitor(
   }
 }
 
+async function reconcileProviderMonitorTerminalFailure(input: {
+  monitorId: number;
+  job: BackgroundJobContext["job"];
+  status: "failed";
+  error: unknown;
+}) {
+  const finishedAt = new Date();
+  const message = truncate(getErrorMessage(input.error));
+  const result = await runWithCurrentAdminBackgroundJobTerminalState(
+    { job: input.job, status: input.status },
+    async (tx) => {
+      const [monitor] = await tx
+        .select({
+          enabled: providerMonitors.enabled,
+          intervalMinutes: providerMonitors.intervalMinutes,
+          lastRunAt: providerMonitors.lastRunAt,
+          nextRunAt: providerMonitors.nextRunAt,
+          lastStatus: providerMonitors.lastStatus,
+        })
+        .from(providerMonitors)
+        .where(eq(providerMonitors.id, input.monitorId))
+        .for("update")
+        .limit(1);
+      if (!monitor?.enabled) return null;
+
+      const [runningRun] = await tx
+        .select({ id: providerMonitorRuns.id })
+        .from(providerMonitorRuns)
+        .where(
+          and(
+            eq(providerMonitorRuns.monitorId, input.monitorId),
+            eq(providerMonitorRuns.status, "running"),
+          ),
+        )
+        .orderBy(
+          desc(providerMonitorRuns.startedAt),
+          desc(providerMonitorRuns.id),
+        )
+        .for("update")
+        .limit(1);
+
+      let runAfter =
+        monitor.nextRunAt ??
+        new Date(
+          (monitor.lastRunAt ?? finishedAt).getTime() +
+            monitor.intervalMinutes * 60_000,
+        );
+      if (monitor.lastStatus === "running" || runningRun) {
+        runAfter = new Date(
+          (monitor.lastRunAt ?? finishedAt).getTime() +
+            monitor.intervalMinutes * 60_000,
+        );
+        await tx
+          .update(providerMonitorRuns)
+          .set({
+            status: "failed",
+            errorTitle: "供应商采集任务中断",
+            errorDetail: message,
+            finishedAt,
+          })
+          .where(
+            and(
+              eq(providerMonitorRuns.monitorId, input.monitorId),
+              eq(providerMonitorRuns.status, "running"),
+            ),
+          );
+        await tx
+          .update(providerMonitors)
+          .set({
+            nextRunAt: runAfter,
+            lastStatus: "failed",
+            lastError: message,
+            updatedAt: finishedAt,
+          })
+          .where(
+            and(
+              eq(providerMonitors.id, input.monitorId),
+              eq(providerMonitors.enabled, true),
+            ),
+          );
+      }
+
+      return runAfter;
+    },
+  );
+
+  if (!result.active || !result.value) return false;
+  const runAfter = result.value;
+  await safelyEnqueueEnabledProviderMonitorTask(input.monitorId, runAfter);
+  return true;
+}
+
 export async function enqueueProviderMonitorTask(
   monitorId: number,
   runAfter = new Date(),
@@ -743,31 +857,17 @@ export async function enqueueProviderMonitorTask(
     payload: { monitorId },
     runAfter,
     maxAttempts: 3,
-    run: async ({ job }) => {
-      try {
-        await runProviderMonitor(monitorId);
-      } catch (error) {
-        const [monitor] = await db
-          .select({ enabled: providerMonitors.enabled })
-          .from(providerMonitors)
-          .where(eq(providerMonitors.id, monitorId))
-          .limit(1);
-        if (!monitor?.enabled) return;
-        if (job.attempts >= job.maxAttempts) {
-          const [current] = await db
-            .select({ nextRunAt: providerMonitors.nextRunAt })
-            .from(providerMonitors)
-            .where(eq(providerMonitors.id, monitorId))
-            .limit(1);
-          if (current?.nextRunAt) {
-            await safelyEnqueueEnabledProviderMonitorTask(
-              monitorId,
-              current.nextRunAt,
-            );
-          }
-        }
-        throw error;
-      }
+    run: async () => {
+      await runProviderMonitor(monitorId);
+    },
+    onTerminal: async ({ status, job, error }) => {
+      if (status !== "failed") return;
+      await reconcileProviderMonitorTerminalFailure({
+        monitorId,
+        job,
+        status,
+        error,
+      });
     },
   });
 }
@@ -930,37 +1030,46 @@ export async function updateProviderMonitor(
   input: ProviderMonitorMutationInput,
 ) {
   const { providerId, ...mutableInput } = input;
-  const [existing] = await db
-    .select({
-      providerId: providerMonitors.providerId,
-      adapter: providerMonitors.adapter,
-      config: providerMonitors.config,
-    })
-    .from(providerMonitors)
-    .where(eq(providerMonitors.id, id))
-    .limit(1);
-  if (!existing) throw new Error("供应商采集源不存在");
-  if (existing.providerId !== providerId) {
-    throw new Error("已有采集源不能更换厂商，请新建采集源");
-  }
-  const existingConfig = parseProviderMonitorConfig(
-    existing.config,
-    existing.adapter as ProviderSourceAdapter,
-  );
-
   const now = new Date();
-  const [updated] = await db
-    .update(providerMonitors)
-    .set({
-      ...mutableInput,
-      config: prepareProviderMonitorSecrets(input.config, existingConfig),
-      nextRunAt: input.enabled ? now : null,
-      lastStatus: input.enabled ? undefined : "idle",
-      lastError: input.enabled ? undefined : null,
-      updatedAt: now,
-    })
-    .where(eq(providerMonitors.id, id))
-    .returning({ id: providerMonitors.id });
+  const updated = await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({
+        providerId: providerMonitors.providerId,
+        adapter: providerMonitors.adapter,
+        config: providerMonitors.config,
+      })
+      .from(providerMonitors)
+      .where(eq(providerMonitors.id, id))
+      .for("update")
+      .limit(1);
+    if (!existing) throw new Error("供应商采集源不存在");
+    if (existing.providerId !== providerId) {
+      throw new Error("已有采集源不能更换厂商，请新建采集源");
+    }
+
+    const existingConfig = parseProviderMonitorConfig(
+      existing.config,
+      existing.adapter as ProviderSourceAdapter,
+    );
+    const preparedConfig = prepareProviderMonitorSecrets(
+      input.config,
+      existingConfig,
+    );
+    const [result] = await tx
+      .update(providerMonitors)
+      .set({
+        ...mutableInput,
+        config: preparedConfig,
+        nextRunAt: input.enabled ? now : null,
+        lastStatus: input.enabled ? undefined : "idle",
+        lastError: input.enabled ? undefined : null,
+        runGeneration: sql`${providerMonitors.runGeneration} + 1`,
+        updatedAt: now,
+      })
+      .where(eq(providerMonitors.id, id))
+      .returning({ id: providerMonitors.id });
+    return result ?? null;
+  });
 
   if (!updated) throw new Error("供应商采集源不存在");
   if (input.enabled) {

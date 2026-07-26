@@ -38,6 +38,33 @@ export function renderCoverPromptTemplate(
     .trim();
 }
 
+export function buildArticleCoverPrompt(
+  promptTemplate: string,
+  englishPromptTemplate: string,
+  input: {
+    language?: "zh" | "en";
+    description?: string | null;
+    keywords?: string | null;
+  },
+) {
+  if (input.language === "en") {
+    return [
+      renderCoverPromptTemplate(englishPromptTemplate, input),
+      getMandatoryCoverVisualRules("en"),
+    ].join("\n\n");
+  }
+
+  return [
+    renderCoverPromptTemplate(promptTemplate, input),
+    [
+      "Chinese article cover rules:",
+      "- This cover is for a Chinese article and Chinese public page.",
+      "- If readable text appears, use Simplified Chinese only, except standard technical abbreviations such as VPS, CPU, RAM, SSD, GB, and TB.",
+    ].join("\n"),
+    getMandatoryCoverVisualRules("zh"),
+  ].join("\n\n");
+}
+
 export function getMandatoryCoverVisualRules(language: "zh" | "en") {
   return language === "en"
     ? "Mandatory visual restriction: Do not depict the Taiwan flag, the Republic of China flag, or visually similar flag elements."
