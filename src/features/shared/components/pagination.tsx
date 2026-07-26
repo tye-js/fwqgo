@@ -52,11 +52,13 @@ export function PaginationComponent({
   totalPage,
   basePath,
   queryParam = "pageNo",
+  language = "zh",
 }: {
   pageNo: number;
   totalPage: number;
   basePath?: string;
   queryParam?: string;
+  language?: "zh" | "en";
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -82,11 +84,16 @@ export function PaginationComponent({
   return (
     <Pagination
       className="justify-start overflow-x-auto py-1 sm:justify-center"
-      aria-label={`分页导航，当前第 ${currentPage} 页，共 ${normalizedTotalPage} 页`}
+      aria-label={
+        language === "en"
+          ? `Pagination, page ${currentPage} of ${normalizedTotalPage}`
+          : `分页导航，当前第 ${currentPage} 页，共 ${normalizedTotalPage} 页`
+      }
     >
       <PaginationContent className="min-w-max flex-nowrap">
         <PaginationItem>
           <PaginationPrevious
+            label={language === "en" ? "Previous" : "上一页"}
             aria-disabled={currentPage === 1}
             className={cn(
               "min-w-11 px-2 sm:px-4 [&>span]:hidden sm:[&>span]:inline",
@@ -98,7 +105,9 @@ export function PaginationComponent({
         {paginationItems.map((item, index) => (
           <PaginationItem key={`${item}-${index}`}>
             {item === "ellipsis" ? (
-              <PaginationEllipsis />
+              <PaginationEllipsis
+                label={language === "en" ? "More pages" : "更多页码"}
+              />
             ) : (
               <PaginationLink
                 href={getHref(item)}
@@ -112,6 +121,7 @@ export function PaginationComponent({
         ))}
         <PaginationItem>
           <PaginationNext
+            label={language === "en" ? "Next" : "下一页"}
             aria-disabled={currentPage === normalizedTotalPage}
             className={cn(
               "min-w-11 px-2 sm:px-4 [&>span]:hidden sm:[&>span]:inline",

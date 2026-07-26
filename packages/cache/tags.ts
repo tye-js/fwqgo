@@ -141,15 +141,19 @@ export function getPublicCacheEventTargets(
     );
   } else if (event === "knowledge.changed") {
     [cacheTags.knowledge, cacheTags.sitemap].forEach((tag) => tags.add(tag));
-    ["/knowledge", "/sitemap.xml", "/sitemap-knowledge.xml"].forEach((path) =>
-      paths.add(path),
-    );
+    [
+      "/knowledge",
+      "/en/knowledge",
+      "/sitemap.xml",
+      "/sitemap-knowledge.xml",
+    ].forEach((path) => paths.add(path));
     uniquePositiveIds(payload.knowledgeArticleIds).forEach((id) =>
       tags.add(cacheTags.knowledgeArticle(id)),
     );
     uniqueSlugs(payload.knowledgeSlugs).forEach((slug) => {
       tags.add(cacheTags.knowledgeSlug(slug));
       paths.add(`/knowledge/${encodeURIComponent(slug)}`);
+      paths.add(`/en/knowledge/${encodeURIComponent(slug)}`);
     });
   }
 
@@ -210,6 +214,7 @@ function legacyPathsForTags(tags: Set<string>) {
   }
   if (tags.has(cacheTags.knowledge)) {
     paths.add("/knowledge");
+    paths.add("/en/knowledge");
     paths.add("/sitemap-knowledge.xml");
   }
   return paths;

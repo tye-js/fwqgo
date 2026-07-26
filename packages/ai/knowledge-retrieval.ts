@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 
 import {
   buildKnowledgeSearchTerms,
@@ -18,11 +18,16 @@ export type RewriteKnowledgeReference = {
 };
 
 export async function retrieveRewriteKnowledge(input: {
+  language: "zh" | "en";
   values: Array<string | null | undefined>;
   limit?: number;
 }) {
   const terms = buildKnowledgeSearchTerms(input.values);
   if (terms.length === 0) return [];
+  const categoryName =
+    input.language === "en"
+      ? knowledgeCategories.enName
+      : knowledgeCategories.name;
 
   const matches = terms.flatMap((term) => {
     const pattern = `%${term}%`;
@@ -32,7 +37,7 @@ export async function retrieveRewriteKnowledge(input: {
       ilike(knowledgeArticles.keywords, pattern),
       ilike(knowledgeArticles.aliases, pattern),
       ilike(knowledgeArticles.retrievalTerms, pattern),
-      ilike(knowledgeCategories.name, pattern),
+      ilike(categoryName, pattern),
     ];
   });
   const rows = await readDb
@@ -40,7 +45,7 @@ export async function retrieveRewriteKnowledge(input: {
       id: knowledgeArticles.id,
       title: knowledgeArticles.title,
       slug: knowledgeArticles.slug,
-      categoryName: knowledgeCategories.name,
+      categoryName: sql<string>`${categoryName}`,
       summary: knowledgeArticles.summary,
       content: knowledgeArticles.content,
       keywords: knowledgeArticles.keywords,
@@ -54,12 +59,16 @@ export async function retrieveRewriteKnowledge(input: {
     )
     .where(
       and(
+        eq(knowledgeArticles.language, input.language),
         eq(knowledgeArticles.published, true),
         eq(knowledgeArticles.allowAiReference, true),
         or(...matches),
       ),
     )
-    .orderBy(desc(knowledgeArticles.updatedAt), desc(knowledgeArticles.id))
+    .orderBy(
+      desc(knowledgeArticles.contentUpdatedAt),
+      desc(knowledgeArticles.id),
+    )
     .limit(80);
 
   return rows

@@ -35,6 +35,14 @@ function buildFallbackHref(
     return toHref("/search", params);
   }
 
+  if (pathname === "/knowledge" || pathname.startsWith("/knowledge/")) {
+    return targetLanguage === "en" ? "/en/knowledge" : "/knowledge";
+  }
+
+  if (pathname === "/en/knowledge" || pathname.startsWith("/en/knowledge/")) {
+    return targetLanguage === "zh" ? "/knowledge" : "/en/knowledge";
+  }
+
   if (targetLanguage === "en") {
     if (pathname === "/") return toHref("/en", params);
     if (pathname === "/en" || pathname.startsWith("/en/")) {

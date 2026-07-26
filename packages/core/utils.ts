@@ -5,7 +5,9 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function slugify(text: string): string {
+export function slugify(text: string, maxLength = 40): string {
+  const normalizedMaxLength =
+    Number.isSafeInteger(maxLength) && maxLength > 0 ? maxLength : 40;
   const processedText = text
     .trim()
     // 仅保留数字内部的小数点，避免 1.99 被错误转换为 199
@@ -23,7 +25,7 @@ export function slugify(text: string): string {
     // 移除首尾的连字符
     .replace(/^-+|-+$/g, "")
     // 限制长度
-    .substring(0, 40)
+    .substring(0, normalizedMaxLength)
     // 避免长度截断后留下不完整的小数点
     .replace(/\.$/, "");
 

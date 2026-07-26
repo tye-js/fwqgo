@@ -21,6 +21,20 @@ jobs:
     name: Build and deploy
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: fwqgo_knowledge_smoke
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d fwqgo_knowledge_smoke"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/var/www/fwqgo' }}
       DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
@@ -78,6 +92,17 @@ jobs:
 
       - name: Verify migration manifest
         run: bun run verify:migrations
+
+      - name: Verify bilingual knowledge boundaries
+        run: bun run verify:knowledge
+
+      - name: Verify initial bilingual knowledge content
+        run: bun run verify:knowledge-content
+
+      - name: Smoke test knowledge migrations
+        run: bun run smoke:knowledge-migration
+        env:
+          KNOWLEDGE_MIGRATION_SMOKE_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55432/fwqgo_knowledge_smoke
 
       - name: Verify security boundaries
         run: bun run verify:security

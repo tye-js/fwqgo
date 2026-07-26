@@ -1850,6 +1850,9 @@ export const knowledgeCategories = pgTable(
     name: text("name").notNull().unique(),
     slug: varchar("slug", { length: 160 }).notNull().unique(),
     description: varchar("description", { length: 800 }),
+    enName: text("enName"),
+    enSlug: varchar("enSlug", { length: 160 }).unique(),
+    enDescription: varchar("enDescription", { length: 800 }),
     sortOrder: integer("sortOrder").default(0).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
@@ -1875,6 +1878,11 @@ export const knowledgeArticles = pgTable(
     aliases: text("aliases"),
     retrievalTerms: text("retrievalTerms"),
     sourceNotes: text("sourceNotes"),
+    language: varchar("language", { length: 8 }).default("zh").notNull(),
+    translationSourceArticleId: integer("translationSourceArticleId"),
+    contentRevision: integer("contentRevision").default(1).notNull(),
+    translatedFromRevision: integer("translatedFromRevision"),
+    contentUpdatedAt: timestamp("contentUpdatedAt").defaultNow().notNull(),
     published: boolean("published").default(false).notNull(),
     allowAiReference: boolean("allowAiReference").default(false).notNull(),
     publishedAt: timestamp("publishedAt"),
@@ -1889,6 +1897,30 @@ export const knowledgeArticles = pgTable(
     publishedCategoryUpdatedIdx: index(
       "knowledge_articles_published_category_updatedAt_idx",
     ).on(table.published, table.categoryId, table.updatedAt),
+    languagePublishedCategoryContentUpdatedIdx: index(
+      "knowledge_articles_lang_pub_category_content_idx",
+    ).on(
+      table.language,
+      table.published,
+      table.categoryId,
+      table.contentUpdatedAt,
+    ),
+    languagePublishedAiContentUpdatedIdx: index(
+      "knowledge_articles_lang_pub_ai_content_idx",
+    ).on(
+      table.language,
+      table.published,
+      table.allowAiReference,
+      table.contentUpdatedAt,
+    ),
+    translationSourceIdx: index("knowledge_articles_translation_source_idx").on(
+      table.translationSourceArticleId,
+    ),
+    translationSourceLanguageUniqueIdx: uniqueIndex(
+      "knowledge_articles_translation_source_lang_uidx",
+    )
+      .on(table.translationSourceArticleId, table.language)
+      .where(sql`${table.translationSourceArticleId} is not null`),
     aiReferenceIdx: index("knowledge_articles_aiReference_idx").on(
       table.published,
       table.allowAiReference,
@@ -1900,6 +1932,11 @@ export const knowledgeArticles = pgTable(
       foreignColumns: [knowledgeCategories.id],
       name: "knowledge_articles_categoryId_knowledge_categories_id_fk",
     }).onDelete("restrict"),
+    translationSourceFk: foreignKey({
+      columns: [table.translationSourceArticleId],
+      foreignColumns: [table.id],
+      name: "knowledge_articles_translation_source_fk",
+    }).onDelete("restrict"),
     createdByFk: foreignKey({
       columns: [table.createdBy],
       foreignColumns: [users.id],
@@ -1908,6 +1945,31 @@ export const knowledgeArticles = pgTable(
     contentCheck: check(
       "knowledge_articles_content_check",
       sql`length(btrim(${table.content})) > 0`,
+    ),
+    languageCheck: check(
+      "knowledge_articles_language_check",
+      sql`${table.language} in ('zh', 'en')`,
+    ),
+    translationShapeCheck: check(
+      "knowledge_articles_translation_shape_check",
+      sql`(${table.language} = 'zh' and ${table.translationSourceArticleId} is null and ${table.translatedFromRevision} is null)
+        or (${table.language} = 'en' and ${table.translationSourceArticleId} is not null)`,
+    ),
+    contentRevisionCheck: check(
+      "knowledge_articles_contentRevision_check",
+      sql`${table.contentRevision} >= 1`,
+    ),
+    translatedFromRevisionCheck: check(
+      "knowledge_articles_translatedFromRevision_check",
+      sql`${table.translatedFromRevision} is null or ${table.translatedFromRevision} >= 1`,
+    ),
+    translationNotSelfCheck: check(
+      "knowledge_articles_translation_not_self_check",
+      sql`${table.translationSourceArticleId} is null or ${table.translationSourceArticleId} <> ${table.id}`,
+    ),
+    aiReferencePublishedCheck: check(
+      "knowledge_articles_aiReference_published_check",
+      sql`not ${table.allowAiReference} or ${table.published}`,
     ),
   }),
 );

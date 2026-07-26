@@ -130,16 +130,11 @@ export async function sitemapIndexGET() {
       .limit(1),
     readDb
       .select({
-        updatedAt: knowledgeArticles.updatedAt,
-        createdAt: knowledgeArticles.createdAt,
+        contentUpdatedAt: knowledgeArticles.contentUpdatedAt,
       })
       .from(knowledgeArticles)
       .where(eq(knowledgeArticles.published, true))
-      .orderBy(
-        desc(
-          sql`coalesce(${knowledgeArticles.updatedAt}, ${knowledgeArticles.createdAt})`,
-        ),
-      )
+      .orderBy(desc(knowledgeArticles.contentUpdatedAt))
       .limit(1),
   ]);
   const latestPostDate = getLatestDateValue([
@@ -158,10 +153,7 @@ export async function sitemapIndexGET() {
     latestTag?.updatedAt,
     latestTag?.createdAt,
   ]);
-  const latestKnowledgeDate = getLatestDateValue([
-    latestKnowledge?.updatedAt,
-    latestKnowledge?.createdAt,
-  ]);
+  const latestKnowledgeDate = latestKnowledge?.contentUpdatedAt ?? null;
 
   return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -335,32 +327,90 @@ export async function sitemapKnowledgeGET() {
   const baseUrl = getBaseUrl();
   const rows = await readDb
     .select({
+      id: knowledgeArticles.id,
       slug: knowledgeArticles.slug,
-      updatedAt: knowledgeArticles.updatedAt,
-      createdAt: knowledgeArticles.createdAt,
+      language: knowledgeArticles.language,
+      translationSourceArticleId: knowledgeArticles.translationSourceArticleId,
+      contentUpdatedAt: knowledgeArticles.contentUpdatedAt,
     })
     .from(knowledgeArticles)
     .where(eq(knowledgeArticles.published, true))
-    .orderBy(desc(knowledgeArticles.updatedAt), desc(knowledgeArticles.id));
-  const latestDate = getLatestDateValue(
-    rows.flatMap((row) => [row.updatedAt, row.createdAt]),
+    .orderBy(
+      desc(knowledgeArticles.contentUpdatedAt),
+      desc(knowledgeArticles.id),
+    );
+  const chineseRows = rows.filter((row) => row.language === "zh");
+  const englishRows = rows.filter((row) => row.language === "en");
+  const chineseById = new Map(chineseRows.map((row) => [row.id, row]));
+  const englishBySourceId = new Map(
+    englishRows.flatMap((row) =>
+      row.translationSourceArticleId
+        ? [[row.translationSourceArticleId, row] as const]
+        : [],
+    ),
   );
+  const latestChineseDate = getLatestDateValue(
+    chineseRows.map((row) => row.contentUpdatedAt),
+  );
+  const latestEnglishDate = getLatestDateValue(
+    englishRows.map((row) => row.contentUpdatedAt),
+  );
+  const indexAlternates = [
+    { hreflang: "zh-CN", href: `${baseUrl}/knowledge` },
+    { hreflang: "en", href: `${baseUrl}/en/knowledge` },
+    { hreflang: "x-default", href: `${baseUrl}/knowledge` },
+  ];
 
   return urlset([
     urlEntry({
       loc: `${baseUrl}/knowledge`,
-      lastmod: latestDate,
+      lastmod: latestChineseDate,
       changefreq: "weekly",
       priority: "0.75",
+      alternates: indexAlternates,
     }),
-    ...rows.map((article) =>
-      urlEntry({
-        loc: `${baseUrl}/knowledge/${encodeURIComponent(article.slug)}`,
-        lastmod: article.updatedAt ?? article.createdAt,
+    urlEntry({
+      loc: `${baseUrl}/en/knowledge`,
+      lastmod: latestEnglishDate,
+      changefreq: "weekly",
+      priority: "0.7",
+      alternates: indexAlternates,
+    }),
+    ...rows.map((article) => {
+      const isEnglish = article.language === "en";
+      const articleUrl = `${baseUrl}${isEnglish ? "/en" : ""}/knowledge/${encodeURIComponent(article.slug)}`;
+      const pairedArticle = isEnglish
+        ? article.translationSourceArticleId
+          ? chineseById.get(article.translationSourceArticleId)
+          : null
+        : englishBySourceId.get(article.id);
+      const chineseUrl = isEnglish
+        ? pairedArticle
+          ? `${baseUrl}/knowledge/${encodeURIComponent(pairedArticle.slug)}`
+          : null
+        : articleUrl;
+      const englishUrl = isEnglish
+        ? articleUrl
+        : pairedArticle
+          ? `${baseUrl}/en/knowledge/${encodeURIComponent(pairedArticle.slug)}`
+          : null;
+      const alternates =
+        chineseUrl && englishUrl
+          ? [
+              { hreflang: "zh-CN", href: chineseUrl },
+              { hreflang: "en", href: englishUrl },
+              { hreflang: "x-default", href: chineseUrl },
+            ]
+          : undefined;
+
+      return urlEntry({
+        loc: articleUrl,
+        lastmod: article.contentUpdatedAt,
         changefreq: "monthly",
-        priority: "0.7",
-      }),
-    ),
+        priority: isEnglish ? "0.65" : "0.7",
+        alternates,
+      });
+    }),
   ]);
 }
 

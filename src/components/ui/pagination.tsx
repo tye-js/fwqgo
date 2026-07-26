@@ -92,31 +92,33 @@ PaginationLink.displayName = "PaginationLink";
 
 const PaginationPrevious = ({
   className,
+  label = "上一页",
   ...props
-}: React.ComponentProps<typeof PaginationLink>) => (
+}: React.ComponentProps<typeof PaginationLink> & { label?: string }) => (
   <PaginationLink
-    aria-label="上一页"
+    aria-label={label}
     size="default"
     className={cn("gap-1 pl-2.5", className)}
     {...props}
   >
     <ChevronLeftIcon className="h-4 w-4" />
-    <span>上一页</span>
+    <span>{label}</span>
   </PaginationLink>
 );
 PaginationPrevious.displayName = "PaginationPrevious";
 
 const PaginationNext = ({
   className,
+  label = "下一页",
   ...props
-}: React.ComponentProps<typeof PaginationLink>) => (
+}: React.ComponentProps<typeof PaginationLink> & { label?: string }) => (
   <PaginationLink
-    aria-label="下一页"
+    aria-label={label}
     size="default"
     className={cn("gap-1 pr-2.5", className)}
     {...props}
   >
-    <span>下一页</span>
+    <span>{label}</span>
     <ChevronRightIcon className="h-4 w-4" />
   </PaginationLink>
 );
@@ -124,15 +126,19 @@ PaginationNext.displayName = "PaginationNext";
 
 const PaginationEllipsis = ({
   className,
+  label = "更多页码",
   ...props
-}: React.ComponentProps<"span">) => (
+}: React.ComponentProps<"span"> & { label?: string }) => (
   <span
     aria-hidden
-    className={cn("flex min-h-11 min-w-11 items-center justify-center", className)}
+    className={cn(
+      "flex min-h-11 min-w-11 items-center justify-center",
+      className,
+    )}
     {...props}
   >
     <DotsHorizontalIcon className="h-4 w-4" />
-    <span className="sr-only">更多页码</span>
+    <span className="sr-only">{label}</span>
   </span>
 );
 PaginationEllipsis.displayName = "PaginationEllipsis";

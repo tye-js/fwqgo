@@ -93,6 +93,8 @@ const headerCopy: Record<
     categoriesTitle: "Offer topics",
     searchHref: "/search?lang=en",
     searchLabel: "Search",
+    knowledgeHref: "/en/knowledge",
+    knowledgeLabel: "Knowledge Base",
     errorLabel: "Categories unavailable",
     errorDescription:
       "Categories failed to load. You can open server deals or refresh later.",
@@ -341,16 +343,31 @@ const HeaderContent = async ({
             </NavigationMenuList>
           </NavigationMenu>
 
-          <Button
-            asChild
-            variant="outline"
-            className="hidden shrink-0 lg:inline-flex"
+          <React.Suspense
+            fallback={
+              <Button
+                asChild
+                variant="outline"
+                className="hidden shrink-0 lg:inline-flex"
+              >
+                <Link href={language === "en" ? "/" : "/en"} prefetch>
+                  <Globe2 className="size-4" />
+                  {copy.languageLabel}
+                </Link>
+              </Button>
+            }
           >
-            <LanguageSwitchLink currentLanguage={language} prefetch>
-              <Globe2 className="size-4" />
-              {copy.languageLabel}
-            </LanguageSwitchLink>
-          </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="hidden shrink-0 lg:inline-flex"
+            >
+              <LanguageSwitchLink currentLanguage={language} prefetch>
+                <Globe2 className="size-4" />
+                {copy.languageLabel}
+              </LanguageSwitchLink>
+            </Button>
+          </React.Suspense>
 
           <Sheet>
             <SheetTrigger asChild>
@@ -400,16 +417,31 @@ const HeaderContent = async ({
                       {label}
                     </MobileNavLink>
                   ))}
-                  <SheetClose asChild>
-                    <LanguageSwitchLink
-                      currentLanguage={language}
-                      prefetch
-                      className="mt-1 flex min-h-11 items-center gap-2 rounded-md border border-border/70 px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <Globe2 className="size-4" />
-                      {copy.languageLabel}
-                    </LanguageSwitchLink>
-                  </SheetClose>
+                  <React.Suspense
+                    fallback={
+                      <SheetClose asChild>
+                        <Link
+                          href={language === "en" ? "/" : "/en"}
+                          prefetch
+                          className="mt-1 flex min-h-11 items-center gap-2 rounded-md border border-border/70 px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <Globe2 className="size-4" />
+                          {copy.languageLabel}
+                        </Link>
+                      </SheetClose>
+                    }
+                  >
+                    <SheetClose asChild>
+                      <LanguageSwitchLink
+                        currentLanguage={language}
+                        prefetch
+                        className="mt-1 flex min-h-11 items-center gap-2 rounded-md border border-border/70 px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <Globe2 className="size-4" />
+                        {copy.languageLabel}
+                      </LanguageSwitchLink>
+                    </SheetClose>
+                  </React.Suspense>
                   {copy.knowledgeHref && copy.knowledgeLabel ? (
                     <MobileNavLink
                       href={copy.knowledgeHref}

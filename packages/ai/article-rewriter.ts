@@ -1317,6 +1317,7 @@ export async function rewriteArticleWithAi(
   let providerReferences: RewriteProviderReference[] = [];
   const [knowledgeResult, providerResult] = await Promise.allSettled([
     retrieveRewriteKnowledge({
+      language: "zh",
       values: [
         factSheet.providerName,
         factSheet.articleType,

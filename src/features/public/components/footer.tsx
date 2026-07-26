@@ -170,6 +170,11 @@ const footerCopy = {
     ],
     utilities: [
       {
+        title: "Server Knowledge Base",
+        href: "/en/knowledge",
+        description: "VPS, routing, regions, IP, and operations",
+      },
+      {
         title: "Search",
         href: "/search?lang=en",
         description: "Find providers, regions, and coupons",

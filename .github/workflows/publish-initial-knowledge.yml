@@ -1,0 +1,189 @@
+name: Publish initial bilingual knowledge
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: "Publication phase"
+        required: true
+        default: "audit"
+        type: choice
+        options:
+          - audit
+          - pilots
+          - p0
+          - p1
+      confirmation:
+        description: "Exact confirmation required by the selected phase"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fwqgo-initial-knowledge-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish and audit knowledge
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/var/www/fwqgo' }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      PUBLISH_BUNDLE: .deploy/initial-knowledge-publisher.js
+
+    steps:
+      - name: Validate target and confirmation
+        shell: bash
+        env:
+          PHASE: ${{ inputs.phase }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
+            echo "::error::Initial knowledge publication is restricted to main"
+            exit 1
+          }
+          case "$PHASE" in
+            pilots) expected="PUBLISH_KNOWLEDGE_PILOTS" ;;
+            p0) expected="PUBLISH_KNOWLEDGE_P0" ;;
+            p1) expected="PUBLISH_KNOWLEDGE_P1" ;;
+            audit) expected="AUDIT_KNOWLEDGE_60" ;;
+            *) echo "::error::Unsupported phase: $PHASE"; exit 1 ;;
+          esac
+          [[ "$CONFIRMATION" == "$expected" ]] || {
+            echo "::error::Confirmation does not match the selected phase"
+            exit 1
+          }
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify source content
+        run: bun run verify:knowledge-content
+
+      - name: Bundle publication command
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$PUBLISH_BUNDLE")"
+          bun build scripts/publish-initial-bilingual-knowledge.ts \
+            --target=bun \
+            --outfile="$PUBLISH_BUNDLE"
+
+      - name: Prepare SSH
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "${DEPLOY_HOST:-}" && -n "${DEPLOY_USER:-}" && -n "${SSH_PRIVATE_KEY:-}" ]] || {
+            echo "::error::DEPLOY_HOST, DEPLOY_USER, and SSH_PRIVATE_KEY are required"
+            exit 1
+          }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/fwqgo_knowledge_key
+          chmod 600 ~/.ssh/fwqgo_knowledge_key
+          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload publication command
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          remote_publisher="/tmp/fwqgo-knowledge-publisher-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.js"
+          scp -P "$DEPLOY_PORT" -i ~/.ssh/fwqgo_knowledge_key \
+            "$PUBLISH_BUNDLE" \
+            "$DEPLOY_USER@$DEPLOY_HOST:$remote_publisher"
+          printf 'REMOTE_PUBLISHER=%s\n' "$remote_publisher" >> "$GITHUB_ENV"
+
+      - name: Publish on production server and revalidate cache
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          PHASE: ${{ inputs.phase }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          remote_script="$(mktemp)"
+          cat > "$remote_script" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          deploy_path="$1"
+          remote_publisher="$2"
+          phase="$3"
+          confirmation="$4"
+          trap 'rm -f "$remote_publisher"' EXIT
+          current_release="$(readlink -f "$deploy_path/current" 2>/dev/null || true)"
+          env_file="$deploy_path/shared/.env.production"
+          [[ -n "$current_release" && -d "$current_release" ]] || {
+            echo "Current production release is missing" >&2
+            exit 1
+          }
+          [[ -f "$env_file" ]] || {
+            echo "Production runtime environment is missing" >&2
+            exit 1
+          }
+          [[ -x "$current_release/bin/bun" ]] || {
+            echo "Current production release does not contain Bun" >&2
+            exit 1
+          }
+          [[ -s "$remote_publisher" ]] || {
+            echo "Uploaded publication command is missing" >&2
+            exit 1
+          }
+          cd "$current_release"
+          "$current_release/bin/bun" \
+            --env-file="$env_file" \
+            "$remote_publisher" \
+            "--phase=$phase" \
+            "--confirm=$confirmation"
+
+          if [[ "$phase" == "audit" ]]; then
+            exit 0
+          fi
+
+          read_env_value() {
+            local key="$1"
+            local value
+            value="$(grep -E "^${key}=" "$env_file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+            printf "%s" "$value" | sed -e "s/^[\"']//" -e "s/[\"']$//"
+          }
+
+          secret="$(read_env_value WEB_REVALIDATION_SECRET)"
+          url="$(read_env_value WEB_REVALIDATION_URL)"
+          url="${url:-http://127.0.0.1:3000/api/internal/revalidate}"
+          [[ -n "$secret" ]] || {
+            echo "WEB_REVALIDATION_SECRET is missing from production runtime" >&2
+            exit 1
+          }
+
+          response="$(curl --fail-with-body --silent --show-error \
+            --max-time 15 \
+            --request POST \
+            --header "Authorization: Bearer $secret" \
+            --header "Content-Type: application/json" \
+            --data '{"event":"knowledge.changed","payload":{}}' \
+            "$url")"
+          printf 'Knowledge cache revalidation response: %s\n' "$response"
+          REMOTE_SCRIPT
+
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/fwqgo_knowledge_key \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "bash -s -- '$DEPLOY_PATH' '$REMOTE_PUBLISHER' '$PHASE' '$CONFIRMATION'" < "$remote_script"

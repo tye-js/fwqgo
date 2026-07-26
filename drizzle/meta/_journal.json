@@ -365,6 +365,13 @@
       "when": 1785073575496,
       "tag": "0051_broken_turbo",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1785082352681,
+      "tag": "0052_charming_jackal",
+      "breakpoints": true
     }
   ]
 }
