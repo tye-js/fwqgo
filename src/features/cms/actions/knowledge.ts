@@ -36,7 +36,7 @@ const articleInputSchema = z.object({
   retrievalTerms: optionalText(2_000, "检索词"),
   sourceNotes: optionalText(10_000, "来源说明"),
   published: z.boolean().default(false),
-  allowAiReference: z.boolean().default(true),
+  allowAiReference: z.boolean().default(false),
 });
 
 const idSchema = z.object({ id: postgresIntegerIdSchema });
@@ -193,8 +193,10 @@ export const saveKnowledgeArticle = defineAdminAction({
       retrievalTerms: textOrNull(input.retrievalTerms),
       sourceNotes: textOrNull(input.sourceNotes),
       published: input.published,
-      allowAiReference: input.allowAiReference,
-      publishedAt: input.published ? (current?.publishedAt ?? now) : null,
+      allowAiReference: input.published && input.allowAiReference,
+      publishedAt: input.published
+        ? (current?.publishedAt ?? now)
+        : (current?.publishedAt ?? null),
       updatedAt: now,
     };
     const [article] = input.id

@@ -1876,7 +1876,7 @@ export const knowledgeArticles = pgTable(
     retrievalTerms: text("retrievalTerms"),
     sourceNotes: text("sourceNotes"),
     published: boolean("published").default(false).notNull(),
-    allowAiReference: boolean("allowAiReference").default(true).notNull(),
+    allowAiReference: boolean("allowAiReference").default(false).notNull(),
     publishedAt: timestamp("publishedAt"),
     createdBy: text("createdBy"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),

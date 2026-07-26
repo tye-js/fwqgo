@@ -141,7 +141,7 @@ function createArticleForm(
         retrievalTerms: "",
         sourceNotes: "",
         published: false,
-        allowAiReference: true,
+        allowAiReference: false,
       };
 }
 
@@ -699,7 +699,15 @@ export function KnowledgeManager({
                 </span>
                 <Switch
                   checked={form.published}
-                  onCheckedChange={(value) => updateForm("published", value)}
+                  onCheckedChange={(value) =>
+                    setForm((current) => ({
+                      ...current,
+                      published: value,
+                      allowAiReference: value
+                        ? current.allowAiReference
+                        : false,
+                    }))
+                  }
                 />
               </label>
               <label className="flex min-h-16 cursor-pointer items-center justify-between gap-4 bg-background px-4 py-3">
@@ -713,6 +721,7 @@ export function KnowledgeManager({
                 </span>
                 <Switch
                   checked={form.allowAiReference}
+                  disabled={!form.published}
                   onCheckedChange={(value) =>
                     updateForm("allowAiReference", value)
                   }
