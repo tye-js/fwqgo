@@ -203,7 +203,7 @@ export function validateProviderCatalogAiOutput(input: {
 export function deriveProviderCatalogScanTerminalStatus(input: {
   succeeded: number;
   failed: number;
-  candidateCount: number;
+  acceptedCount: number;
   authFailure: boolean;
 }): Extract<
   ProviderCatalogScanStatus,
@@ -212,7 +212,7 @@ export function deriveProviderCatalogScanTerminalStatus(input: {
   if (input.succeeded === 0) {
     return input.authFailure ? "needs_auth" : "failed";
   }
-  if (input.failed > 0 || input.candidateCount === 0) return "partial";
+  if (input.failed > 0 || input.acceptedCount === 0) return "partial";
   return "succeeded";
 }
 

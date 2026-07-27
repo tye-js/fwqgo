@@ -698,7 +698,15 @@ export function prepareProviderOfferCandidates(
   const seenExternalIds = new Set<string>();
   const syncableExternalIds = new Set<string>();
   const syncableCandidates: ProviderOfferCandidate[] = [];
+  const rejectionReasonCounts = new Map<string, number>();
   let skipped = 0;
+
+  const recordRejectionReason = (reason: string) => {
+    rejectionReasonCounts.set(
+      reason,
+      (rejectionReasonCounts.get(reason) ?? 0) + 1,
+    );
+  };
 
   for (const candidate of candidates) {
     const externalId = candidate.externalProductId.trim();
@@ -710,18 +718,29 @@ export function prepareProviderOfferCandidates(
     );
     if (!quality.valid) {
       skipped += 1;
+      for (const reason of quality.reasons) recordRejectionReason(reason);
       continue;
     }
 
     if (syncableExternalIds.has(externalId)) {
       skipped += 1;
+      recordRejectionReason("重复稳定产品 ID");
       continue;
     }
     syncableExternalIds.add(externalId);
     syncableCandidates.push(candidate);
   }
 
-  return { seenExternalIds, syncableCandidates, skipped };
+  return {
+    seenExternalIds,
+    syncableCandidates,
+    skipped,
+    rejectionReasons: Object.fromEntries(
+      [...rejectionReasonCounts].sort(([left], [right]) =>
+        left.localeCompare(right),
+      ),
+    ),
+  };
 }
 
 export function hashProviderMonitorSyncConfig(input: {

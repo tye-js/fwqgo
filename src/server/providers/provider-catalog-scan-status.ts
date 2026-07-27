@@ -22,6 +22,46 @@ function uniqueMessages(values: Array<string | null | undefined>) {
   ];
 }
 
+function summaryCounter(summary: Record<string, unknown> | null, key: string) {
+  const value = summary?.[key];
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+    ? value
+    : 0;
+}
+
+function summaryRejectionReasons(summary: Record<string, unknown> | null) {
+  const raw = summary?.rejectionReasons;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+  return Object.entries(raw)
+    .filter(
+      (entry): entry is [string, number] =>
+        Boolean(entry[0].trim()) &&
+        typeof entry[1] === "number" &&
+        Number.isInteger(entry[1]) &&
+        entry[1] > 0,
+    )
+    .sort(([left], [right]) => left.localeCompare(right))
+    .slice(0, 12);
+}
+
+function monitorDiagnostic(monitor: {
+  name: string;
+  lastStatus: string;
+  lastSummary: Record<string, unknown> | null;
+}) {
+  if (monitor.lastStatus !== "succeeded") return null;
+  const received = summaryCounter(monitor.lastSummary, "received");
+  const skipped = summaryCounter(monitor.lastSummary, "skipped");
+  const reasons = summaryRejectionReasons(monitor.lastSummary);
+  if (received > 0 && skipped === 0) return null;
+  const reasonText = reasons.length
+    ? `；拒绝原因：${reasons
+        .map(([reason, count]) => `${reason} x${count}`)
+        .join("、")}`
+    : "";
+  return `采集源 ${monitor.name}：接收 ${received}，跳过 ${skipped}${reasonText}`;
+}
+
 export async function refreshProviderCatalogScanStatus(
   scanId: number,
   database: ProviderCatalogStatusDatabase = db,
@@ -41,10 +81,12 @@ export async function refreshProviderCatalogScanStatus(
 
   const monitors = await database
     .select({
+      name: providerMonitors.name,
       enabled: providerMonitors.enabled,
       scheduleMode: providerMonitors.scheduleMode,
       lastStatus: providerMonitors.lastStatus,
       lastError: providerMonitors.lastError,
+      lastSummary: providerMonitors.lastSummary,
     })
     .from(providerMonitors)
     .where(eq(providerMonitors.discoveredByScanId, scanId));
@@ -75,6 +117,15 @@ export async function refreshProviderCatalogScanStatus(
   ).length;
   const succeeded = succeededOnce + convertedMonitorCount;
   const failed = onceMonitors.length - succeededOnce;
+  const acceptedCount = monitors.reduce(
+    (total, monitor) =>
+      total +
+      summaryCounter(monitor.lastSummary, "created") +
+      summaryCounter(monitor.lastSummary, "pending") +
+      summaryCounter(monitor.lastSummary, "updated") +
+      summaryCounter(monitor.lastSummary, "unchanged"),
+    0,
+  );
   const monitorErrors = uniqueMessages(
     onceMonitors
       .filter((monitor) => monitor.lastStatus === "failed")
@@ -86,7 +137,7 @@ export async function refreshProviderCatalogScanStatus(
       : deriveProviderCatalogScanTerminalStatus({
           succeeded,
           failed,
-          candidateCount: candidates.length,
+          acceptedCount,
           authFailure: monitorErrors.some((message) =>
             /(?:HTTP\s*(?:401|403)|需要登录|拒绝公开访问)/i.test(message),
           ),
@@ -95,14 +146,18 @@ export async function refreshProviderCatalogScanStatus(
   const warnings = uniqueMessages([
     ...(Array.isArray(scan.warnings) ? scan.warnings : []),
     ...monitorErrors.map((message) => `一次性采集源失败：${message}`),
+    ...monitors.map(monitorDiagnostic),
     convertedMonitorCount > 0
       ? `${convertedMonitorCount} 个一次性采集源已由管理员转为定时采集`
       : null,
     monitors.length === 0
       ? "扫描生成的采集源已被删除，扫描按部分完成收尾"
       : null,
-    succeeded > 0 && candidates.length === 0
+    succeeded > 0 && acceptedCount === 0
       ? "采集源运行成功，但没有生成可审核的套餐候选，请检查字段映射和质量门槛"
+      : null,
+    acceptedCount > 0 && candidates.length === 0
+      ? `已识别 ${acceptedCount} 个有效套餐，但均匹配已有套餐，没有新增待审核候选`
       : null,
   ]);
 

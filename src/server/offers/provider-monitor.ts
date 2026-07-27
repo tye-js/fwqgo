@@ -156,6 +156,7 @@ export type ProviderMonitorRunSummary = {
   unchanged: number;
   skipped: number;
   missing: number;
+  rejectionReasons: Record<string, number>;
   configHash: string | null;
   checkedAt: string;
 };
@@ -178,6 +179,7 @@ function createSupersededProviderMonitorRunSummary(input: {
     unchanged: 0,
     skipped: 0,
     missing: 0,
+    rejectionReasons: {},
     configHash: input.configHash,
     checkedAt: input.checkedAt.toISOString(),
   };
@@ -255,6 +257,7 @@ export async function runProviderMonitor(
       unchanged: 0,
       skipped: 0,
       missing: 0,
+      rejectionReasons: {},
       configHash: null,
       checkedAt: new Date().toISOString(),
     };
@@ -376,6 +379,7 @@ export async function runProviderMonitor(
       unchanged: 0,
       skipped: 0,
       missing: 0,
+      rejectionReasons: {},
       configHash: null,
       checkedAt: checkedAt.toISOString(),
     };
@@ -479,6 +483,7 @@ export async function runProviderMonitor(
         unchanged: refreshed.length,
         skipped: 0,
         missing: 0,
+        rejectionReasons: {},
         configHash,
         checkedAt: checkedAt.toISOString(),
       };
@@ -631,6 +636,10 @@ export async function runProviderMonitor(
       received: candidates.length,
       ...counters,
       missing,
+      rejectionReasons:
+        candidates.length === 0
+          ? { "字段映射未匹配到套餐项": 1 }
+          : preparedCandidates.rejectionReasons,
       configHash,
       checkedAt: checkedAt.toISOString(),
     };

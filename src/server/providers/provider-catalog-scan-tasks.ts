@@ -624,5 +624,19 @@ export async function getProviderCatalogScanDetail(scanId: number) {
     .from(providerCatalogScans)
     .where(eq(providerCatalogScans.id, scanId))
     .limit(1);
-  return scan ?? null;
+  if (!scan) return null;
+  const sourceDiagnostics = await db
+    .select({
+      id: providerMonitors.id,
+      name: providerMonitors.name,
+      adapter: providerMonitors.adapter,
+      endpointUrl: providerMonitors.endpointUrl,
+      status: providerMonitors.lastStatus,
+      error: providerMonitors.lastError,
+      summary: providerMonitors.lastSummary,
+    })
+    .from(providerMonitors)
+    .where(eq(providerMonitors.discoveredByScanId, scanId))
+    .orderBy(asc(providerMonitors.id));
+  return { ...scan, sourceDiagnostics };
 }

@@ -95,6 +95,35 @@ function JsonBlock({ value }: { value: unknown }) {
   );
 }
 
+function AuditJsonBlock({
+  title,
+  value,
+  onCopy,
+}: {
+  title: string;
+  value: unknown;
+  onCopy: () => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold">{title}</h4>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          title={`复制${title}`}
+          onClick={onCopy}
+        >
+          <Copy className="size-4" />
+          <span className="sr-only">复制{title}</span>
+        </Button>
+      </div>
+      <JsonBlock value={value} />
+    </div>
+  );
+}
+
 export function ProviderCatalogScanManager({
   providers,
   scans,
@@ -391,7 +420,7 @@ function ProviderCatalogScanRow({
           </div>
         </TableCell>
         <TableCell className="text-xs text-muted-foreground">
-          来源 {scan.monitorCount}/{scan.sourceCount} · 候选{" "}
+          采集源 {scan.monitorCount}/{scan.sourceCount} · 待审核候选{" "}
           {scan.candidateCount}
         </TableCell>
         <TableCell className="text-xs">{formatDate(scan.createdAt)}</TableCell>
@@ -462,13 +491,37 @@ function ProviderCatalogScanRow({
                     <span className="sr-only">刷新审计详情</span>
                   </Button>
                 </div>
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold">发现 URL</h4>
-                  <JsonBlock value={detail.discoveredUrls} />
-                </div>
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold">校验后的来源映射</h4>
-                  <JsonBlock value={detail.sourceMappings} />
+                <AuditJsonBlock
+                  title="发现 URL"
+                  value={detail.discoveredUrls}
+                  onCopy={() =>
+                    void copyText(
+                      JSON.stringify(detail.discoveredUrls, null, 2),
+                      "发现 URL",
+                    )
+                  }
+                />
+                <AuditJsonBlock
+                  title="校验后的来源映射"
+                  value={detail.sourceMappings}
+                  onCopy={() =>
+                    void copyText(
+                      JSON.stringify(detail.sourceMappings, null, 2),
+                      "来源映射",
+                    )
+                  }
+                />
+                <div className="xl:col-span-2">
+                  <AuditJsonBlock
+                    title="采集源运行诊断"
+                    value={detail.sourceDiagnostics}
+                    onCopy={() =>
+                      void copyText(
+                        JSON.stringify(detail.sourceDiagnostics, null, 2),
+                        "运行诊断",
+                      )
+                    }
+                  />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
@@ -514,7 +567,26 @@ function ProviderCatalogScanRow({
                 </div>
                 {detail.warnings.length > 0 || detail.error ? (
                   <div className="space-y-2 xl:col-span-2">
-                    <h4 className="text-xs font-semibold">错误与警告</h4>
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-semibold">错误与警告</h4>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        title="复制错误与警告"
+                        onClick={() =>
+                          void copyText(
+                            [detail.error, ...detail.warnings]
+                              .filter(Boolean)
+                              .join("\n"),
+                            "错误与警告",
+                          )
+                        }
+                      >
+                        <Copy className="size-4" />
+                        <span className="sr-only">复制错误与警告</span>
+                      </Button>
+                    </div>
                     <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs leading-5">
                       {detail.error ? (
                         <p className="break-words text-destructive">
