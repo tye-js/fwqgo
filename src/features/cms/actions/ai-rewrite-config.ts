@@ -116,6 +116,11 @@ const configSchema = z.object({
     .string()
     .trim()
     .min(1, "英文 SEO 生成风格不能为空"),
+  providerCatalogDiscoveryPrompt: promptSchema("供应商套餐源发现 Prompt", [
+    "providerName",
+    "officialUrl",
+    "pagesJson",
+  ]),
   temperature: z.coerce.number().int().min(0).max(200),
   maxTokens: z.coerce.number().int().min(1000).max(64000),
   rewriteMaxAttempts: z.coerce

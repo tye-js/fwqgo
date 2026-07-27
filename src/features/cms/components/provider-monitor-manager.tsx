@@ -211,6 +211,7 @@ function getCandidateData(row: CandidateRow) {
       currency?: string;
       billingCycle?: string;
     }>;
+    raw?: Record<string, unknown>;
   };
 }
 
@@ -293,9 +294,7 @@ function MonitorFormDialog({
       name: getFormDataText(formData, "name"),
       adapter,
       purpose: getFormDataText(formData, "purpose") as
-        | "catalog"
-        | "promotion"
-        | "stock",
+        "catalog" | "promotion" | "stock",
       endpointUrl: getFormDataText(formData, "endpointUrl"),
       configText,
       enabled,
@@ -333,7 +332,9 @@ function MonitorFormDialog({
     void mutate({
       key: previewMutationKey,
       action: async () => {
-        const result = await previewProviderMonitorAction(actionInput(formData));
+        const result = await previewProviderMonitorAction(
+          actionInput(formData),
+        );
         setPreview(result);
         return result;
       },
@@ -893,9 +894,13 @@ export function ProviderMonitorManager({
                       variant={monitor.enabled ? "secondary" : "outline"}
                       className="mt-2"
                     >
-                      {monitor.enabled
-                        ? `每 ${monitor.intervalMinutes} 分钟`
-                        : "已停用"}
+                      {monitor.scheduleMode === "once"
+                        ? monitor.enabled
+                          ? "一次性待执行"
+                          : "一次性已结束"
+                        : monitor.enabled
+                          ? `每 ${monitor.intervalMinutes} 分钟`
+                          : "已停用"}
                     </Badge>
                     <Badge variant="outline" className="ml-2 mt-2">
                       {purposeLabels[monitor.purpose] ?? monitor.purpose}
@@ -1115,6 +1120,11 @@ export function ProviderMonitorManager({
                       <p className="mt-1 text-xs text-muted-foreground">
                         {candidate.monitorName}
                       </p>
+                      {candidate.scanId ? (
+                        <Badge variant="outline" className="mt-2">
+                          扫描 #{candidate.scanId}
+                        </Badge>
+                      ) : null}
                     </TableCell>
                     <TableCell className="min-w-64">
                       <p className="font-medium">
@@ -1125,6 +1135,16 @@ export function ProviderMonitorManager({
                           .filter(Boolean)
                           .join(" · ") || "暂无配置摘要"}
                       </p>
+                      {data.raw ? (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-xs text-primary">
+                            原始提取证据
+                          </summary>
+                          <pre className="mt-2 max-h-48 max-w-md overflow-auto whitespace-pre-wrap break-all rounded-md border bg-muted/30 p-2 text-xs leading-5">
+                            {JSON.stringify(data.raw, null, 2)}
+                          </pre>
+                        </details>
+                      ) : null}
                     </TableCell>
                     <TableCell className="whitespace-nowrap tabular-nums">
                       {prices.length > 0
@@ -1285,6 +1305,11 @@ export function ProviderMonitorManager({
                     <p className="text-xs text-muted-foreground">
                       {run.monitorName}
                     </p>
+                    {run.scanId ? (
+                      <Badge variant="outline" className="mt-1">
+                        一次性 · 扫描 #{run.scanId}
+                      </Badge>
+                    ) : null}
                   </TableCell>
                   <TableCell>
                     <Badge

@@ -29,6 +29,7 @@ import { getServerOfferExchangeRateSnapshot } from "@/server/offers/exchange-rat
 
 export type ProviderSyncContext = {
   monitorId: number;
+  scanId: number | null;
   providerId: number;
   providerName: string;
   providerSlug: string | null;
@@ -452,6 +453,7 @@ async function upsertCandidateRecord(
     await database
       .update(providerOfferCandidates)
       .set({
+        scanId: input.context.scanId ?? existing.scanId,
         sourceUrl: input.candidate.sourceUrl,
         sourceHash: input.sourceHash,
         normalizedData: input.candidate,
@@ -472,6 +474,7 @@ async function upsertCandidateRecord(
     .values({
       monitorId: input.context.monitorId,
       providerId: input.context.providerId,
+      scanId: input.context.scanId,
       externalProductId: input.candidate.externalProductId,
       sourceUrl: input.candidate.sourceUrl,
       sourceHash: input.sourceHash,
@@ -712,7 +715,7 @@ async function acceptProviderOfferCandidateInTransaction(
   const now = new Date();
   const acceptedOfferId = await materializeOffer(
     {
-      context: contextRow,
+      context: { ...contextRow, scanId: row.candidate.scanId },
       candidate,
       sourceHash: row.candidate.sourceHash,
       now,

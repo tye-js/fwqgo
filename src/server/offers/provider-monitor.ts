@@ -18,6 +18,7 @@ import {
 } from "@/server/admin/background-jobs";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import { fetchPublicHttpUrl } from "@fwqgo/core/network-url";
+import { getProviderMonitorSuccessSchedule } from "@fwqgo/core/provider-catalog-discovery";
 import {
   getProviderMonitorCheckRetentionCutoff,
   parseProviderMonitorConfig,
@@ -53,6 +54,7 @@ import {
   validateProviderOfferCandidate,
 } from "@/server/offers/provider-source-parser";
 import { enrichWhmcsProductPrices } from "@/server/offers/whmcs-product-page";
+import { refreshProviderCatalogScanStatus } from "@/server/providers/provider-catalog-scan-status";
 import {
   maskProviderMonitorSecrets,
   mergeMaskedProviderMonitorSecrets,
@@ -211,6 +213,8 @@ export async function runProviderMonitor(
       name: providerMonitors.name,
       adapter: providerMonitors.adapter,
       purpose: providerMonitors.purpose,
+      scheduleMode: providerMonitors.scheduleMode,
+      discoveredByScanId: providerMonitors.discoveredByScanId,
       endpointUrl: providerMonitors.endpointUrl,
       config: providerMonitors.config,
       enabled: providerMonitors.enabled,
@@ -275,6 +279,7 @@ export async function runProviderMonitor(
   }
   const context: ProviderSyncContext = {
     monitorId: monitor.id,
+    scanId: monitor.scheduleMode === "once" ? monitor.discoveredByScanId : null,
     providerId: monitor.providerId,
     providerName: monitor.providerName,
     providerSlug: monitor.providerSlug,
@@ -350,6 +355,8 @@ export async function runProviderMonitor(
       .insert(providerMonitorRuns)
       .values({
         monitorId: monitor.id,
+        scanId: context.scanId,
+        runMode: monitor.scheduleMode,
         status: "running",
         startedAt: checkedAt,
       })
@@ -489,7 +496,7 @@ export async function runProviderMonitor(
         },
         monitorValues: {
           lastRunAt: checkedAt,
-          nextRunAt,
+          ...getProviderMonitorSuccessSchedule(monitor.scheduleMode, nextRunAt),
           lastStatus: "succeeded",
           lastError: null,
           etag: response.headers.get("etag") ?? monitor.etag,
@@ -504,7 +511,13 @@ export async function runProviderMonitor(
         await markProviderMonitorRunSuperseded(run.id, new Date());
         return summary;
       }
-      await safelyEnqueueEnabledProviderMonitorTask(monitor.id, nextRunAt);
+      if (monitor.scheduleMode === "once") {
+        if (monitor.discoveredByScanId) {
+          await refreshProviderCatalogScanStatus(monitor.discoveredByScanId);
+        }
+      } else {
+        await safelyEnqueueEnabledProviderMonitorTask(monitor.id, nextRunAt);
+      }
       return summary;
     }
 
@@ -637,7 +650,7 @@ export async function runProviderMonitor(
       },
       monitorValues: {
         lastRunAt: checkedAt,
-        nextRunAt,
+        ...getProviderMonitorSuccessSchedule(monitor.scheduleMode, nextRunAt),
         lastStatus: "succeeded",
         lastError: null,
         etag: response.headers.get("etag"),
@@ -655,7 +668,13 @@ export async function runProviderMonitor(
     if (counters.created > 0 || counters.updated > 0 || missing > 0) {
       scheduleProviderOfferChanges();
     }
-    await safelyEnqueueEnabledProviderMonitorTask(monitor.id, nextRunAt);
+    if (monitor.scheduleMode === "once") {
+      if (monitor.discoveredByScanId) {
+        await refreshProviderCatalogScanStatus(monitor.discoveredByScanId);
+      }
+    } else {
+      await safelyEnqueueEnabledProviderMonitorTask(monitor.id, nextRunAt);
+    }
     return summary;
   } catch (error) {
     const supersededSummary = createSupersededProviderMonitorRunSummary({
@@ -770,6 +789,8 @@ async function reconcileProviderMonitorTerminalFailure(input: {
         .select({
           enabled: providerMonitors.enabled,
           intervalMinutes: providerMonitors.intervalMinutes,
+          scheduleMode: providerMonitors.scheduleMode,
+          discoveredByScanId: providerMonitors.discoveredByScanId,
           lastRunAt: providerMonitors.lastRunAt,
           nextRunAt: providerMonitors.nextRunAt,
           lastStatus: providerMonitors.lastStatus,
@@ -779,6 +800,37 @@ async function reconcileProviderMonitorTerminalFailure(input: {
         .for("update")
         .limit(1);
       if (!monitor?.enabled) return null;
+
+      if (monitor.scheduleMode === "once") {
+        await tx
+          .update(providerMonitorRuns)
+          .set({
+            status: "failed",
+            errorTitle: "一次性供应商采集失败",
+            errorDetail: message,
+            finishedAt,
+          })
+          .where(
+            and(
+              eq(providerMonitorRuns.monitorId, input.monitorId),
+              eq(providerMonitorRuns.status, "running"),
+            ),
+          );
+        await tx
+          .update(providerMonitors)
+          .set({
+            enabled: false,
+            nextRunAt: null,
+            lastStatus: "failed",
+            lastError: message,
+            updatedAt: finishedAt,
+          })
+          .where(eq(providerMonitors.id, input.monitorId));
+        return {
+          runAfter: null,
+          scanId: monitor.discoveredByScanId,
+        };
+      }
 
       const [runningRun] = await tx
         .select({ id: providerMonitorRuns.id })
@@ -837,13 +889,16 @@ async function reconcileProviderMonitorTerminalFailure(input: {
           );
       }
 
-      return runAfter;
+      return { runAfter, scanId: null };
     },
   );
 
   if (!result.active || !result.value) return false;
-  const runAfter = result.value;
-  await safelyEnqueueEnabledProviderMonitorTask(input.monitorId, runAfter);
+  const { runAfter, scanId } = result.value;
+  if (scanId) await refreshProviderCatalogScanStatus(scanId);
+  if (runAfter) {
+    await safelyEnqueueEnabledProviderMonitorTask(input.monitorId, runAfter);
+  }
   return true;
 }
 
@@ -948,6 +1003,8 @@ export async function getProviderMonitorList() {
       name: providerMonitors.name,
       adapter: providerMonitors.adapter,
       purpose: providerMonitors.purpose,
+      scheduleMode: providerMonitors.scheduleMode,
+      discoveredByScanId: providerMonitors.discoveredByScanId,
       endpointUrl: providerMonitors.endpointUrl,
       config: providerMonitors.config,
       enabled: providerMonitors.enabled,
@@ -1013,6 +1070,7 @@ export async function createProviderMonitor(
     .insert(providerMonitors)
     .values({
       ...input,
+      scheduleMode: "scheduled",
       config: prepareProviderMonitorSecrets(input.config),
       nextRunAt: input.enabled ? now : null,
       createdAt: now,
@@ -1037,6 +1095,7 @@ export async function updateProviderMonitor(
         providerId: providerMonitors.providerId,
         adapter: providerMonitors.adapter,
         config: providerMonitors.config,
+        discoveredByScanId: providerMonitors.discoveredByScanId,
       })
       .from(providerMonitors)
       .where(eq(providerMonitors.id, id))
@@ -1059,6 +1118,7 @@ export async function updateProviderMonitor(
       .update(providerMonitors)
       .set({
         ...mutableInput,
+        scheduleMode: "scheduled",
         config: preparedConfig,
         nextRunAt: input.enabled ? now : null,
         lastStatus: input.enabled ? undefined : "idle",
@@ -1068,6 +1128,9 @@ export async function updateProviderMonitor(
       })
       .where(eq(providerMonitors.id, id))
       .returning({ id: providerMonitors.id });
+    if (result && existing.discoveredByScanId) {
+      await refreshProviderCatalogScanStatus(existing.discoveredByScanId, tx);
+    }
     return result ?? null;
   });
 
@@ -1101,6 +1164,17 @@ async function cancelQueuedProviderMonitorJobs(monitorId: number) {
 export async function deleteProviderMonitor(id: number) {
   return db.transaction(async (tx) => {
     const now = new Date();
+    const [existing] = await tx
+      .select({
+        id: providerMonitors.id,
+        discoveredByScanId: providerMonitors.discoveredByScanId,
+      })
+      .from(providerMonitors)
+      .where(eq(providerMonitors.id, id))
+      .for("update")
+      .limit(1);
+    if (!existing) throw new Error("供应商采集源不存在");
+
     await tx
       .update(adminBackgroundJobs)
       .set({
@@ -1145,6 +1219,9 @@ export async function deleteProviderMonitor(id: number) {
       .where(eq(providerMonitors.id, id))
       .returning({ id: providerMonitors.id });
     if (!deleted) throw new Error("供应商采集源不存在");
+    if (existing.discoveredByScanId) {
+      await refreshProviderCatalogScanStatus(existing.discoveredByScanId, tx);
+    }
     return deleted;
   });
 }
@@ -1207,6 +1284,8 @@ export async function getProviderMonitorRunHistory(
       monitorName: providerMonitors.name,
       providerName: affServiceProviders.name,
       status: providerMonitorRuns.status,
+      scanId: providerMonitorRuns.scanId,
+      runMode: providerMonitorRuns.runMode,
       httpStatus: providerMonitorRuns.httpStatus,
       received: providerMonitorRuns.received,
       created: providerMonitorRuns.created,
@@ -1240,17 +1319,14 @@ export async function getProviderMonitorRunHistory(
 
 export async function getProviderOfferCandidateList(
   status:
-    | "pending"
-    | "accepted"
-    | "rejected"
-    | "superseded"
-    | "all" = "pending",
+    "pending" | "accepted" | "rejected" | "superseded" | "all" = "pending",
   limit = 100,
 ) {
   return db
     .select({
       id: providerOfferCandidates.id,
       monitorId: providerOfferCandidates.monitorId,
+      scanId: providerOfferCandidates.scanId,
       monitorName: providerMonitors.name,
       providerName: affServiceProviders.name,
       externalProductId: providerOfferCandidates.externalProductId,

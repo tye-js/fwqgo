@@ -537,6 +537,7 @@ export const aiRewriteConfigs = pgTable(
     englishMetadataPrompt: text("englishMetadataPrompt"),
     englishStylePrompt: text("englishStylePrompt"),
     englishMetadataStylePrompt: text("englishMetadataStylePrompt"),
+    providerCatalogDiscoveryPrompt: text("providerCatalogDiscoveryPrompt"),
     temperature: integer("temperature").default(40).notNull(),
     maxTokens: integer("maxTokens").default(8192).notNull(),
     rewriteMaxAttempts: integer("rewriteMaxAttempts").default(3).notNull(),
@@ -558,6 +559,91 @@ export const aiRewriteConfigs = pgTable(
     rewriteMaxAttemptsCheck: check(
       "ai_rewrite_configs_rewrite_max_attempts_check",
       sql`${table.rewriteMaxAttempts} between 2 and 10`,
+    ),
+  }),
+);
+
+export const providerCatalogScans = pgTable(
+  "provider_catalog_scans",
+  {
+    id: serial("id").primaryKey(),
+    providerId: integer("providerId").notNull(),
+    aiConfigId: integer("aiConfigId"),
+    status: varchar("status", { length: 24 }).default("queued").notNull(),
+    progress: integer("progress").default(0).notNull(),
+    currentStep: varchar("currentStep", { length: 40 })
+      .default("queued")
+      .notNull(),
+    prompt: text("prompt"),
+    aiResponse: text("aiResponse"),
+    discoveredUrls: jsonb("discoveredUrls")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    sourceMappings: jsonb("sourceMappings")
+      .$type<Array<Record<string, unknown>>>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    warnings: jsonb("warnings")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    sourceCount: integer("sourceCount").default(0).notNull(),
+    monitorCount: integer("monitorCount").default(0).notNull(),
+    candidateCount: integer("candidateCount").default(0).notNull(),
+    error: text("error"),
+    requestedBy: text("requestedBy"),
+    startedAt: timestamp("startedAt"),
+    finishedAt: timestamp("finishedAt"),
+    capturedAt: timestamp("capturedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    providerCreatedAtIdx: index(
+      "provider_catalog_scans_providerId_createdAt_idx",
+    ).on(table.providerId, table.createdAt),
+    statusCreatedAtIdx: index("provider_catalog_scans_status_createdAt_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+    providerOpenUnique: uniqueIndex(
+      "provider_catalog_scans_providerId_open_unique",
+    )
+      .on(table.providerId)
+      .where(sql`${table.status} in ('queued', 'running')`),
+    providerFk: foreignKey({
+      columns: [table.providerId],
+      foreignColumns: [affServiceProviders.id],
+      name: "provider_catalog_scans_providerId_aff_service_providers_id_fk",
+    }).onDelete("cascade"),
+    aiConfigFk: foreignKey({
+      columns: [table.aiConfigId],
+      foreignColumns: [aiRewriteConfigs.id],
+      name: "provider_catalog_scans_aiConfigId_ai_rewrite_configs_id_fk",
+    }).onDelete("set null"),
+    requesterFk: foreignKey({
+      columns: [table.requestedBy],
+      foreignColumns: [users.id],
+      name: "provider_catalog_scans_requestedBy_users_id_fk",
+    }).onDelete("set null"),
+    statusCheck: check(
+      "provider_catalog_scans_status_check",
+      sql`${table.status} in ('queued', 'running', 'succeeded', 'partial', 'needs_auth', 'failed', 'cancelled')`,
+    ),
+    progressCheck: check(
+      "provider_catalog_scans_progress_check",
+      sql`${table.progress} between 0 and 100`,
+    ),
+    countersCheck: check(
+      "provider_catalog_scans_counters_check",
+      sql`least(${table.sourceCount}, ${table.monitorCount}, ${table.candidateCount}) >= 0`,
+    ),
+    arraysCheck: check(
+      "provider_catalog_scans_arrays_check",
+      sql`jsonb_typeof(${table.discoveredUrls}) = 'array'
+        and jsonb_typeof(${table.sourceMappings}) = 'array'
+        and jsonb_typeof(${table.warnings}) = 'array'`,
     ),
   }),
 );
@@ -1121,6 +1207,10 @@ export const providerMonitors = pgTable(
     name: text("name").notNull(),
     adapter: varchar("adapter", { length: 40 }).default("json").notNull(),
     purpose: varchar("purpose", { length: 24 }).default("catalog").notNull(),
+    scheduleMode: varchar("scheduleMode", { length: 24 })
+      .default("scheduled")
+      .notNull(),
+    discoveredByScanId: integer("discoveredByScanId"),
     endpointUrl: text("endpointUrl").notNull(),
     config: jsonb("config")
       .$type<Record<string, unknown>>()
@@ -1145,6 +1235,9 @@ export const providerMonitors = pgTable(
   },
   (table) => ({
     providerIdx: index("provider_monitors_providerId_idx").on(table.providerId),
+    scanIdx: index("provider_monitors_discoveredByScanId_idx").on(
+      table.discoveredByScanId,
+    ),
     idProviderUnique: unique("provider_monitors_id_providerId_unique").on(
       table.id,
       table.providerId,
@@ -1157,11 +1250,21 @@ export const providerMonitors = pgTable(
       table.providerId,
       table.name,
     ),
+    scanSourceUnique: unique("provider_monitors_scan_source_unique").on(
+      table.discoveredByScanId,
+      table.endpointUrl,
+      table.adapter,
+    ),
     providerFk: foreignKey({
       columns: [table.providerId],
       foreignColumns: [affServiceProviders.id],
       name: "provider_monitors_providerId_aff_service_providers_id_fk",
     }).onDelete("cascade"),
+    scanFk: foreignKey({
+      columns: [table.discoveredByScanId],
+      foreignColumns: [providerCatalogScans.id],
+      name: "provider_monitors_discoveredByScanId_provider_catalog_scans_id_fk",
+    }).onDelete("set null"),
     intervalCheck: check(
       "provider_monitors_intervalMinutes_check",
       sql`${table.intervalMinutes} between 1 and 10080`,
@@ -1177,6 +1280,10 @@ export const providerMonitors = pgTable(
     purposeCheck: check(
       "provider_monitors_purpose_check",
       sql`${table.purpose} in ('catalog', 'promotion', 'stock')`,
+    ),
+    scheduleModeCheck: check(
+      "provider_monitors_scheduleMode_check",
+      sql`${table.scheduleMode} in ('scheduled', 'once')`,
     ),
     missingThresholdCheck: check(
       "provider_monitors_missingThreshold_check",
@@ -1198,6 +1305,8 @@ export const providerMonitorRuns = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     monitorId: integer("monitorId").notNull(),
+    scanId: integer("scanId"),
+    runMode: varchar("runMode", { length: 24 }).default("scheduled").notNull(),
     status: varchar("status", { length: 24 }).default("running").notNull(),
     httpStatus: integer("httpStatus"),
     responseHash: text("responseHash"),
@@ -1218,6 +1327,7 @@ export const providerMonitorRuns = pgTable(
     monitorIdx: index("provider_monitor_runs_monitorId_idx").on(
       table.monitorId,
     ),
+    scanIdx: index("provider_monitor_runs_scanId_idx").on(table.scanId),
     statusStartedAtIdx: index("provider_monitor_runs_status_startedAt_idx").on(
       table.status,
       table.startedAt,
@@ -1230,9 +1340,18 @@ export const providerMonitorRuns = pgTable(
       foreignColumns: [providerMonitors.id],
       name: "provider_monitor_runs_monitorId_provider_monitors_id_fk",
     }).onDelete("cascade"),
+    scanFk: foreignKey({
+      columns: [table.scanId],
+      foreignColumns: [providerCatalogScans.id],
+      name: "provider_monitor_runs_scanId_provider_catalog_scans_id_fk",
+    }).onDelete("set null"),
     statusCheck: check(
       "provider_monitor_runs_status_check",
       sql`${table.status} in ('running', 'succeeded', 'failed')`,
+    ),
+    runModeCheck: check(
+      "provider_monitor_runs_runMode_check",
+      sql`${table.runMode} in ('scheduled', 'once')`,
     ),
     countersCheck: check(
       "provider_monitor_runs_counters_check",
@@ -1709,6 +1828,7 @@ export const providerOfferCandidates = pgTable(
     id: serial("id").primaryKey(),
     monitorId: integer("monitorId").notNull(),
     providerId: integer("providerId").notNull(),
+    scanId: integer("scanId"),
     externalProductId: text("externalProductId").notNull(),
     sourceUrl: text("sourceUrl").notNull(),
     sourceHash: text("sourceHash").notNull(),
@@ -1736,6 +1856,7 @@ export const providerOfferCandidates = pgTable(
     providerIdx: index("provider_offer_candidates_providerId_idx").on(
       table.providerId,
     ),
+    scanIdx: index("provider_offer_candidates_scanId_idx").on(table.scanId),
     offerIdx: index("provider_offer_candidates_offerId_idx").on(table.offerId),
     monitorFk: foreignKey({
       columns: [table.monitorId],
@@ -1747,6 +1868,11 @@ export const providerOfferCandidates = pgTable(
       foreignColumns: [affServiceProviders.id],
       name: "provider_offer_candidates_providerId_aff_service_providers_id_fk",
     }).onDelete("cascade"),
+    scanFk: foreignKey({
+      columns: [table.scanId],
+      foreignColumns: [providerCatalogScans.id],
+      name: "provider_offer_candidates_scanId_provider_catalog_scans_id_fk",
+    }).onDelete("set null"),
     offerFk: foreignKey({
       columns: [table.offerId],
       foreignColumns: [serverOffers.id],
@@ -2308,6 +2434,10 @@ export const providerMonitorsRelations = relations(
       fields: [providerMonitors.providerId],
       references: [affServiceProviders.id],
     }),
+    discoveryScan: one(providerCatalogScans, {
+      fields: [providerMonitors.discoveredByScanId],
+      references: [providerCatalogScans.id],
+    }),
     checks: many(serverOfferChecks),
     runs: many(providerMonitorRuns),
     candidates: many(providerOfferCandidates),
@@ -2322,6 +2452,31 @@ export const providerMonitorRunsRelations = relations(
       fields: [providerMonitorRuns.monitorId],
       references: [providerMonitors.id],
     }),
+    scan: one(providerCatalogScans, {
+      fields: [providerMonitorRuns.scanId],
+      references: [providerCatalogScans.id],
+    }),
+  }),
+);
+
+export const providerCatalogScansRelations = relations(
+  providerCatalogScans,
+  ({ one, many }) => ({
+    provider: one(affServiceProviders, {
+      fields: [providerCatalogScans.providerId],
+      references: [affServiceProviders.id],
+    }),
+    aiConfig: one(aiRewriteConfigs, {
+      fields: [providerCatalogScans.aiConfigId],
+      references: [aiRewriteConfigs.id],
+    }),
+    requester: one(users, {
+      fields: [providerCatalogScans.requestedBy],
+      references: [users.id],
+    }),
+    monitors: many(providerMonitors),
+    runs: many(providerMonitorRuns),
+    candidates: many(providerOfferCandidates),
   }),
 );
 
@@ -2335,6 +2490,10 @@ export const providerOfferCandidatesRelations = relations(
     provider: one(affServiceProviders, {
       fields: [providerOfferCandidates.providerId],
       references: [affServiceProviders.id],
+    }),
+    scan: one(providerCatalogScans, {
+      fields: [providerOfferCandidates.scanId],
+      references: [providerCatalogScans.id],
     }),
     offer: one(serverOffers, {
       fields: [providerOfferCandidates.offerId],

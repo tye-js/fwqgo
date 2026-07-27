@@ -7,6 +7,7 @@ import {
   AdminSectionCard,
 } from "@/features/cms/components/admin-page-shell";
 import { ProviderMonitorManager } from "@/features/cms/components/provider-monitor-manager";
+import { ProviderCatalogScanManager } from "@/features/cms/components/provider-catalog-scan-manager";
 import {
   getProviderMonitorCheckHistory,
   getProviderMonitorList,
@@ -14,17 +15,28 @@ import {
   getProviderOfferCandidateList,
   getProviderOptionsForMonitoring,
 } from "@/server/offers/provider-monitor";
+import { getProviderCatalogScanList } from "@/server/providers/provider-catalog-scan-tasks";
 
 async function loadProviderMonitorData() {
   try {
-    const [monitors, providers, runs, candidates, checks] = await Promise.all([
-      getProviderMonitorList(),
-      getProviderOptionsForMonitoring(),
-      getProviderMonitorRunHistory(undefined, 80),
-      getProviderOfferCandidateList("pending", 100),
-      getProviderMonitorCheckHistory(undefined, 80),
-    ]);
-    return { ok: true as const, monitors, providers, runs, candidates, checks };
+    const [monitors, providers, runs, candidates, checks, scans] =
+      await Promise.all([
+        getProviderMonitorList(),
+        getProviderOptionsForMonitoring(),
+        getProviderMonitorRunHistory(undefined, 80),
+        getProviderOfferCandidateList("pending", 100),
+        getProviderMonitorCheckHistory(undefined, 80),
+        getProviderCatalogScanList(100),
+      ]);
+    return {
+      ok: true as const,
+      monitors,
+      providers,
+      runs,
+      candidates,
+      checks,
+      scans,
+    };
   } catch (error) {
     console.error("供应商采集页面加载失败:", error);
     return {
@@ -57,13 +69,16 @@ async function ProviderMonitorContent() {
     );
   }
 
-  const { monitors, providers, runs, candidates, checks } = result;
+  const { monitors, providers, runs, candidates, checks, scans } = result;
 
   return (
-    <AdminPageShell
-      badge="服务器套餐"
-      title="供应商采集"
-    >
+    <AdminPageShell badge="服务器套餐" title="供应商采集">
+      <AdminSectionCard
+        title="供应商套餐自动发现"
+        description="从供应商公开官网一次性发现套餐目录，经 AI 生成并校验字段映射后，进入现有候选审核链路。"
+      >
+        <ProviderCatalogScanManager providers={providers} scans={scans} />
+      </AdminSectionCard>
       <AdminSectionCard
         title="采集源、审核与运行记录"
         description="预览不会写入数据；立即采集会进入后台独立队列，同一采集源不会并发运行。"

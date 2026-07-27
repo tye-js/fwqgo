@@ -17,6 +17,7 @@ import {
   resolveMetadataPromptTemplate,
   resolveSourceAnchoredRewriteTemplate,
 } from "@fwqgo/core/ai-rewrite-prompts";
+import { defaultProviderCatalogDiscoveryPrompt } from "@fwqgo/core/provider-catalog-discovery";
 import {
   decryptSecret,
   encryptSecret,
@@ -48,6 +49,7 @@ export type AiRewriteConfigInput = {
   englishMetadataPrompt: string;
   englishStylePrompt: string;
   englishMetadataStylePrompt: string;
+  providerCatalogDiscoveryPrompt: string;
   temperature: number;
   maxTokens: number;
   rewriteMaxAttempts: number;
@@ -75,8 +77,7 @@ function withPromptDefaults<T extends typeof aiRewriteConfigs.$inferSelect>(
     initialRewritePrompt:
       row.initialRewritePrompt ?? defaultInitialRewriteFeedbackPrompt,
     rewriteRetryPrompt: row.rewriteRetryPrompt ?? defaultRewriteRetryPrompt,
-    qualityRepairPrompt:
-      row.qualityRepairPrompt ?? defaultQualityRepairPrompt,
+    qualityRepairPrompt: row.qualityRepairPrompt ?? defaultQualityRepairPrompt,
     qualityReviewPrompt: row.qualityReviewPrompt ?? defaultQualityReviewPrompt,
     metadataPrompt: resolveMetadataPromptTemplate(row.metadataPrompt),
     metadataStylePrompt: row.metadataStylePrompt ?? defaultMetadataStylePrompt,
@@ -89,6 +90,9 @@ function withPromptDefaults<T extends typeof aiRewriteConfigs.$inferSelect>(
     englishStylePrompt: row.englishStylePrompt ?? defaultEnglishStylePrompt,
     englishMetadataStylePrompt:
       row.englishMetadataStylePrompt ?? defaultEnglishMetadataStylePrompt,
+    providerCatalogDiscoveryPrompt:
+      row.providerCatalogDiscoveryPrompt ??
+      defaultProviderCatalogDiscoveryPrompt,
   };
 }
 
@@ -143,6 +147,8 @@ export async function getAiRewriteConfigs() {
       englishMetadataPrompt: aiRewriteConfigs.englishMetadataPrompt,
       englishStylePrompt: aiRewriteConfigs.englishStylePrompt,
       englishMetadataStylePrompt: aiRewriteConfigs.englishMetadataStylePrompt,
+      providerCatalogDiscoveryPrompt:
+        aiRewriteConfigs.providerCatalogDiscoveryPrompt,
       temperature: aiRewriteConfigs.temperature,
       maxTokens: aiRewriteConfigs.maxTokens,
       rewriteMaxAttempts: aiRewriteConfigs.rewriteMaxAttempts,
@@ -280,6 +286,7 @@ export async function createAiRewriteConfig(input: AiRewriteConfigInput) {
         englishMetadataPrompt: input.englishMetadataPrompt,
         englishStylePrompt: input.englishStylePrompt,
         englishMetadataStylePrompt: input.englishMetadataStylePrompt,
+        providerCatalogDiscoveryPrompt: input.providerCatalogDiscoveryPrompt,
       })
       .returning({ id: aiRewriteConfigs.id });
 
@@ -316,6 +323,7 @@ export async function updateAiRewriteConfig(
     englishMetadataPrompt: input.englishMetadataPrompt,
     englishStylePrompt: input.englishStylePrompt,
     englishMetadataStylePrompt: input.englishMetadataStylePrompt,
+    providerCatalogDiscoveryPrompt: input.providerCatalogDiscoveryPrompt,
     temperature: input.temperature,
     maxTokens: input.maxTokens,
     rewriteMaxAttempts: input.rewriteMaxAttempts,

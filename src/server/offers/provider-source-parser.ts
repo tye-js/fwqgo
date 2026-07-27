@@ -395,7 +395,26 @@ function parseJsonCandidates(
       promoCode: nullableText(readPath(item, config.promoCodeField)),
       prices,
       sourceUrl,
-      raw: recordValue(item),
+      raw: {
+        ...recordValue(item),
+        __evidence: {
+          adapter: "json",
+          paths: {
+            externalProductId: config.externalIdField,
+            title: config.titleField,
+            cpu: config.cpuField,
+            memory: config.memoryField,
+            storage: config.storageField,
+            bandwidth: config.bandwidthField,
+            traffic: config.trafficField,
+            region: config.regionField,
+            price: config.priceField,
+            prices: config.pricesPath ?? null,
+            billingCycle: config.billingCycleField,
+            purchaseUrl: config.purchaseUrlField,
+          },
+        },
+      },
     };
   });
 }
@@ -491,7 +510,23 @@ function parseHtmlCandidates(
       promoCode: value(fields.promoCode),
       prices,
       sourceUrl,
-      raw: { text: toText(item.text()).slice(0, 2_000) },
+      raw: {
+        text: toText(item.text()).slice(0, 2_000),
+        __evidence: {
+          adapter: "html",
+          itemSelector: config.itemSelector,
+          fields: Object.fromEntries(
+            Object.entries(fields).map(([key, field]) => [
+              key,
+              {
+                selector: field?.selector ?? "",
+                attribute: field?.attribute ?? null,
+                value: htmlFieldValue(item, field),
+              },
+            ]),
+          ),
+        },
+      },
     };
   });
 }

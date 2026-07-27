@@ -70,6 +70,7 @@ import {
   defaultQualityReviewPrompt,
   defaultRewriteRetryPrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
+import { defaultProviderCatalogDiscoveryPrompt } from "@fwqgo/core/provider-catalog-discovery";
 
 type Config = Awaited<ReturnType<typeof getAiRewriteConfigs>>[number];
 
@@ -545,6 +546,25 @@ function ConfigForm({
             ]}
             description="用于英文标题、slug、摘要、关键词、标签和分类元信息。"
             className="min-h-[32rem]"
+          />
+        </div>
+      </details>
+
+      <details className="border-t pt-4">
+        <summary className="cursor-pointer text-sm font-semibold text-foreground">
+          供应商套餐源发现提示词
+        </summary>
+        <div className="mt-4">
+          <PromptTemplateField
+            name="providerCatalogDiscoveryPrompt"
+            label="公开套餐目录结构映射 Prompt"
+            value={
+              config?.providerCatalogDiscoveryPrompt ??
+              defaultProviderCatalogDiscoveryPrompt
+            }
+            variables={["providerName", "officialUrl", "pagesJson"]}
+            description="一次性扫描时发送给模型的完整用户提示词。系统不追加隐藏业务提示词；实际提示词和模型原始输出都会保留在扫描记录中。"
+            className="min-h-[34rem]"
           />
         </div>
       </details>
