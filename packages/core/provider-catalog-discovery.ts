@@ -63,9 +63,10 @@ export const defaultProviderCatalogDiscoveryPrompt = `你是服务器/VPS供应�
 4. config 必须符合对应适配器格式。请求头 headers 必须为空对象，不得输出 Cookie、Authorization、Token 或登录信息。
 5. externalProductId 必须映射网站已有的稳定 ID、PID、产品 URL 或 data 属性；不能使用价格、CPU、内存等会变化的值组成 ID。
 6. 价格只映射原始金额、币种、付款周期和各周期购买链接。不得自行换算月价、币种或折扣。
-7. HTML/WHMCS 映射必须给出 itemSelector，以及 title、externalProductId、price、purchaseUrl 和尽可能多的配置字段选择器。不得输出 pattern 正则。JSON 映射必须给出 itemsPath 和对应字段路径。
+7. HTML/WHMCS 映射必须给出 itemSelector，以及 title、externalProductId、price、purchaseUrl 和尽可能多的配置字段选择器。所有选择器必须来自对应页面的 structure 并能命中真实元素，不得照抄默认的 .product-name、.price、.stock 或 data-product-id，除非 structure 中确实存在。不得输出 pattern 正则。JSON 映射必须给出 itemsPath 和对应字段路径。
 8. 页面没有足够稳定的套餐结构、需要登录、只有客户端动态占位内容，或无法可靠取得稳定 ID 和价格时，不要输出 source，在 warnings 说明原因。
-9. 最多输出 8 个互不重复的 source，confidence 必须在 0 到 1 之间。`;
+9. 优先映射 VPS、云服务器、独立服务器、裸金属等服务器计算产品；机柜托管、域名、SSL、邮箱、虚拟主机和 VPN 只在没有更合适的服务器套餐页时考虑。
+10. 最多输出 8 个互不重复的 source，confidence 必须在 0 到 1 之间。`;
 
 const rawSourceSchema = z.object({
   name: z.string().trim().min(1).max(160),

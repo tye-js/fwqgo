@@ -48,6 +48,8 @@ export type ProviderCatalogFetchedPage = {
   structure: string;
   links: string[];
   signals: string[];
+  /** Kept in memory for deterministic mapping preflight; never serialized or stored. */
+  rawBody: string;
 };
 
 export type ProviderCatalogDiscoveryResult = {
@@ -73,12 +75,53 @@ export function serializeProviderCatalogPagesForAi(
 ) {
   return JSON.stringify(
     pages.slice(0, 8).map((page) => ({
-      ...page,
+      url: page.url,
+      contentType: page.contentType,
+      title: page.title,
       text: truncate(page.text, 6_000),
       structure: truncate(page.structure, 14_000),
       links: page.links.slice(0, 30),
+      signals: page.signals,
     })),
   );
+}
+
+function scoreCatalogPage(page: ProviderCatalogFetchedPage) {
+  const comparable = `${page.url}\n${page.title}\n${page.text.slice(0, 3_000)}`;
+  let score = page.signals.length * 4;
+  if (page.contentType === "json") score += 10;
+  if (page.signals.includes("whmcs")) score += 12;
+  if (
+    /(?:\b(?:vps|kvm|cloud|compute|dedicated|bare\s*metal|ryzen|epyc)\b|云服务器|独立服务器|裸金属)/i.test(
+      comparable,
+    )
+  ) {
+    score += 14;
+  }
+  if (
+    /(?:\b(?:pricing|plans?|products?|store|cart|order)\b|价格|套餐|产品|购买|订购)/i.test(
+      comparable,
+    )
+  ) {
+    score += 6;
+  }
+  if (
+    /(?:\b(?:colocation|domain|ssl|email|web\s*hosting|reseller|vpn)\b|域名|虚拟主机)/i.test(
+      comparable,
+    )
+  ) {
+    score -= 8;
+  }
+  return score;
+}
+
+export function rankProviderCatalogPagesForAi(
+  pages: ProviderCatalogFetchedPage[],
+) {
+  return pages
+    .map((page, index) => ({ page, index, score: scoreCatalogPage(page) }))
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .map(({ page }) => page);
 }
 
 function normalizeText(value: string) {
@@ -567,6 +610,7 @@ export async function collectProviderCatalogPages(
             structure,
             links: [],
             signals: ["json"],
+            rawBody: response.body,
           });
           continue;
         } catch (error) {
@@ -593,6 +637,7 @@ export async function collectProviderCatalogPages(
         structure: sanitized.structure,
         links: sanitized.links,
         signals: sanitized.signals,
+        rawBody: response.body,
       });
       const newlyDiscoveredLinks: string[] = [];
       for (const link of sanitized.links) {

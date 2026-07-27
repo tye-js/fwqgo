@@ -25,9 +25,16 @@ import {
 } from "@/server/providers/provider-catalog-ai";
 import {
   collectProviderCatalogPages,
+  rankProviderCatalogPagesForAi,
   ProviderCatalogFetchError,
   serializeProviderCatalogPagesForAi,
 } from "@/server/providers/provider-catalog-discovery";
+import {
+  buildProviderCatalogMappingRepairPrompt,
+  formatProviderCatalogAiAudit,
+  formatProviderCatalogPreflightFailure,
+  preflightProviderCatalogMappings,
+} from "@/server/providers/provider-catalog-mapping-preflight";
 import { refreshProviderCatalogScanStatus } from "@/server/providers/provider-catalog-scan-status";
 
 const recoverableStatuses = ["queued", "running"] as const;
@@ -51,6 +58,18 @@ function truncate(value: string, maxLength = 5_000) {
 
 function uniqueMessages(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function mergeProviderCatalogMappings(
+  primary: ProviderCatalogSourceMapping[],
+  secondary: ProviderCatalogSourceMapping[],
+) {
+  const merged = new Map<string, ProviderCatalogSourceMapping>();
+  for (const mapping of [...primary, ...secondary]) {
+    const key = `${mapping.adapter}:${mapping.endpointUrl}`;
+    if (!merged.has(key)) merged.set(key, mapping);
+  }
+  return [...merged.values()].slice(0, 8);
 }
 
 function getMonitorName(
@@ -224,7 +243,7 @@ export async function runProviderCatalogScan(
     throw error;
   }
 
-  const aiPages = discovery.pages.slice(0, 8);
+  const aiPages = rankProviderCatalogPagesForAi(discovery.pages).slice(0, 8);
   const discoveryWarnings = uniqueMessages([
     ...discovery.warnings,
     ...(discovery.pages.length > aiPages.length
@@ -334,7 +353,129 @@ export async function runProviderCatalogScan(
     }
     throw error;
   }
-  const warnings = uniqueMessages([...discoveryWarnings, ...aiResult.warnings]);
+
+  let storedPrompt = prompt;
+  let storedAiResponse = aiResult.rawResponse;
+  let warnings = uniqueMessages([...discoveryWarnings, ...aiResult.warnings]);
+  const initialPreflight = preflightProviderCatalogMappings({
+    pages: aiPages,
+    mappings: aiResult.mappings,
+  });
+  let validatedMappings = initialPreflight.acceptedMappings;
+
+  if (initialPreflight.failures.length > 0) {
+    warnings = uniqueMessages([
+      ...warnings,
+      `初次映射有 ${initialPreflight.failures.length} 个来源未通过真实页面预检，已自动纠错一次`,
+      ...initialPreflight.failures.map((failure) =>
+        formatProviderCatalogPreflightFailure(failure),
+      ),
+    ]);
+    const repairPrompt = buildProviderCatalogMappingRepairPrompt({
+      originalPrompt: prompt,
+      previousResponse: aiResult.rawResponse,
+      failures: initialPreflight.failures,
+    });
+    storedPrompt = formatProviderCatalogAiAudit({
+      initial: prompt,
+      repair: repairPrompt,
+    });
+    const repairStartedAt = new Date();
+    const repairStarted = await runWithActiveAdminBackgroundJobLease(
+      context,
+      async (tx) => {
+        await tx
+          .update(providerCatalogScans)
+          .set({
+            prompt: storedPrompt,
+            aiResponse: aiResult.rawResponse,
+            warnings,
+            progress: 58,
+            currentStep: "mapping_repair",
+            updatedAt: repairStartedAt,
+          })
+          .where(
+            and(
+              eq(providerCatalogScans.id, scan.id),
+              eq(providerCatalogScans.status, "running"),
+            ),
+          );
+      },
+    );
+    if (!repairStarted.active) return;
+
+    let repairResult: Awaited<
+      ReturnType<typeof mapProviderCatalogPagesWithAi>
+    > | null = null;
+    try {
+      repairResult = await mapProviderCatalogPagesWithAi({
+        config: aiConfig,
+        prompt: repairPrompt,
+        fetchedUrls: aiPages.map((page) => page.url),
+      });
+    } catch (error) {
+      const repairResponse =
+        error instanceof ProviderCatalogAiOutputError
+          ? error.rawResponse
+          : `纠错请求失败：${getErrorMessage(error)}`;
+      storedAiResponse = formatProviderCatalogAiAudit({
+        initial: aiResult.rawResponse,
+        repair: repairResponse,
+      });
+      warnings = uniqueMessages([
+        ...warnings,
+        `自动纠错请求失败：${getErrorMessage(error)}`,
+      ]);
+      const repairFailureStored = await runWithActiveAdminBackgroundJobLease(
+        context,
+        async (tx) => {
+          await tx
+            .update(providerCatalogScans)
+            .set({
+              prompt: storedPrompt,
+              aiResponse: storedAiResponse,
+              warnings,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(providerCatalogScans.id, scan.id),
+                eq(providerCatalogScans.status, "running"),
+              ),
+            );
+        },
+      );
+      if (!repairFailureStored.active) return;
+      if (validatedMappings.length === 0) throw error;
+    }
+
+    if (repairResult) {
+      const repairPreflight = preflightProviderCatalogMappings({
+        pages: aiPages,
+        mappings: repairResult.mappings,
+      });
+      validatedMappings = mergeProviderCatalogMappings(
+        validatedMappings,
+        repairPreflight.acceptedMappings,
+      );
+      storedAiResponse = formatProviderCatalogAiAudit({
+        initial: aiResult.rawResponse,
+        repair: repairResult.rawResponse,
+      });
+      warnings = uniqueMessages([
+        ...warnings,
+        ...repairResult.warnings,
+        ...(repairResult.mappings.length === 0
+          ? ["自动纠错未返回任何可预检的来源映射"]
+          : []),
+        ...repairPreflight.failures.map(
+          (failure) =>
+            `自动纠错后仍未通过：${formatProviderCatalogPreflightFailure(failure)}`,
+        ),
+      ]);
+    }
+  }
+
   const mappedAt = new Date();
   const mappingStored = await runWithActiveAdminBackgroundJobLease(
     context,
@@ -342,10 +483,11 @@ export async function runProviderCatalogScan(
       await tx
         .update(providerCatalogScans)
         .set({
-          aiResponse: aiResult.rawResponse,
-          sourceMappings: aiResult.mappings,
+          prompt: storedPrompt,
+          aiResponse: storedAiResponse,
+          sourceMappings: validatedMappings,
           warnings,
-          sourceCount: aiResult.mappings.length,
+          sourceCount: validatedMappings.length,
           progress: 65,
           currentStep: "mapping_validated",
           updatedAt: mappedAt,
@@ -360,7 +502,7 @@ export async function runProviderCatalogScan(
   );
   if (!mappingStored.active) return;
 
-  if (aiResult.mappings.length === 0) {
+  if (validatedMappings.length === 0) {
     const finishedAt = new Date();
     await runWithActiveAdminBackgroundJobLease(context, async (tx) => {
       await tx
@@ -371,7 +513,7 @@ export async function runProviderCatalogScan(
           currentStep: "completed",
           warnings: uniqueMessages([
             ...warnings,
-            "AI 未找到可由现有 JSON、HTML 或 WHMCS 适配器稳定采集的公开套餐源",
+            "AI 未找到能通过真实页面解析预检的 JSON、HTML 或 WHMCS 套餐源",
           ]),
           finishedAt,
           updatedAt: finishedAt,
@@ -390,7 +532,7 @@ export async function runProviderCatalogScan(
   const monitorIds = await runWithActiveAdminBackgroundJobLease(
     context,
     async (tx) => {
-      for (const [index, mapping] of aiResult.mappings.entries()) {
+      for (const [index, mapping] of validatedMappings.entries()) {
         await tx
           .insert(providerMonitors)
           .values({
