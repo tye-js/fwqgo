@@ -1,9 +1,13 @@
 "use server";
 
 import { readDb } from "@fwqgo/db";
-import { categories } from "@fwqgo/db/schema";
+import { categories, posts } from "@fwqgo/db/schema";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
-import { asc, eq, isNull, or } from "drizzle-orm";
+import {
+  publicArticleCategoryDescription,
+  publicArticleCategoryName,
+} from "@/features/shared/lib/public-article-category";
+import { asc, eq, isNull, or, sql } from "drizzle-orm";
 
 type PublicLanguage = "zh" | "en";
 
@@ -29,14 +33,18 @@ function localizeCategory<
     return {
       ...category,
       zhSlug: category.slug,
-      name: nonEmptyTrim(category.enName) ?? category.name,
+      name: publicArticleCategoryName(category, language),
       slug: nonEmptyTrim(category.enSlug) ?? category.slug,
-      description: nonEmptyTrim(category.enDescription) ?? category.description,
+      description: publicArticleCategoryDescription(category, language),
       keywords: nonEmptyTrim(category.enKeywords) ?? category.keywords,
     };
   }
 
-  return category;
+  return {
+    ...category,
+    name: publicArticleCategoryName(category, language),
+    description: publicArticleCategoryDescription(category, language),
+  };
 }
 
 export async function getCategories() {
@@ -57,6 +65,46 @@ export async function getCategories() {
     return { data: categoriesWithChildren };
   } catch (error) {
     return { error: "获取分类列表失败", message: error };
+  }
+}
+
+export async function getNavigationCategories() {
+  "use cache";
+  tagCache(cacheTags.categories, cacheTags.posts);
+
+  try {
+    const rows = await readDb
+      .select({
+        id: categories.id,
+        name: categories.name,
+        slug: categories.slug,
+        description: categories.description,
+        enName: categories.enName,
+        enSlug: categories.enSlug,
+        enDescription: categories.enDescription,
+        parentId: categories.parentId,
+        zhPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${posts.published} = true and ${posts.language} = 'zh')::int`,
+        enPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${posts.published} = true and ${posts.language} = 'en')::int`,
+      })
+      .from(categories)
+      .leftJoin(posts, eq(posts.categoryId, categories.id))
+      .groupBy(categories.id)
+      .orderBy(asc(categories.id));
+
+    const parentIds = new Set(
+      rows
+        .map((category) => category.parentId)
+        .filter((id): id is number => id !== null),
+    );
+
+    return {
+      data: rows
+        .filter((category) => !parentIds.has(category.id))
+        .map(({ parentId: _parentId, ...category }) => category),
+    };
+  } catch (error) {
+    console.error("Failed to load navigation categories:", error);
+    return { error: "获取导航分类失败" };
   }
 }
 

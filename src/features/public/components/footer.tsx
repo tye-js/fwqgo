@@ -13,24 +13,13 @@ import {
 
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { LanguageSwitchLink } from "@/features/public/components/language-switch-link";
-import { getCategories } from "@/features/shared/data/category";
+import {
+  buildArticleNavigation,
+  type ArticleNavigationSource,
+} from "@/features/public/lib/article-navigation";
+import { getNavigationCategories } from "@/features/shared/data/category";
 
 type PublicLanguage = "zh" | "en";
-
-type FooterCategory = {
-  id: number;
-  name: string;
-  slug: string;
-  enName?: string | null;
-  enSlug?: string | null;
-  children: Array<{
-    id: number;
-    name: string;
-    slug: string;
-    enName?: string | null;
-    enSlug?: string | null;
-  }>;
-};
 
 type FooterLink = {
   title: string;
@@ -57,9 +46,9 @@ const fallbackQuickCategories: Record<
   ],
   en: [
     { id: 0, name: "Hong Kong VPS", slug: "hk-vps" },
-    { id: -1, name: "Offshore servers", slug: "export-vps" },
-    { id: -2, name: "DDoS protected servers", slug: "ddos-vps" },
-    { id: -3, name: "Native IP servers", slug: "isp-vps" },
+    { id: -1, name: "Global Business Servers", slug: "export-vps" },
+    { id: -2, name: "DDoS Protected Servers", slug: "ddos-vps" },
+    { id: -3, name: "Native IP Servers", slug: "isp-vps" },
   ],
 };
 
@@ -218,14 +207,6 @@ function categoryHref(slug: string, language: PublicLanguage) {
   return `${language === "en" ? "/en" : ""}/fwq/${encodeURIComponent(slug)}/page/1`;
 }
 
-function nonEmptyTrim(value: string | null | undefined) {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  return trimmed;
-}
-
 function FooterTextLink({ link }: { link: FooterLink }) {
   return (
     <Link
@@ -275,31 +256,13 @@ function FooterView({
   categories,
 }: {
   language?: PublicLanguage;
-  categories?: FooterCategory[];
+  categories?: ArticleNavigationSource[];
 }) {
   const copy = footerCopy[language];
-  const safeCategories = (categories ?? []).map((category) => {
-    if (language === "zh") {
-      return category;
-    }
-
-    return {
-      ...category,
-      name: nonEmptyTrim(category.enName) ?? category.name,
-      slug: nonEmptyTrim(category.enSlug) ?? category.slug,
-      children: category.children.map((child) => ({
-        ...child,
-        name: nonEmptyTrim(child.enName) ?? child.name,
-        slug: nonEmptyTrim(child.enSlug) ?? child.slug,
-      })),
-    };
-  });
-
-  const quickCategories = safeCategories
-    .flatMap((category) =>
-      category.children.length > 0 ? category.children : [category],
-    )
-    .slice(0, 6);
+  const quickCategories = buildArticleNavigation(
+    categories ?? [],
+    language,
+  ).slice(0, 6);
 
   const visibleQuickCategories =
     quickCategories.length > 0
@@ -421,10 +384,10 @@ async function FooterContent({
 }: {
   language?: PublicLanguage;
 }) {
-  let categories: FooterCategory[] | undefined;
+  let categories: ArticleNavigationSource[] | undefined;
 
   try {
-    const result = await getCategories();
+    const result = await getNavigationCategories();
     categories = result.data;
   } catch {
     categories = undefined;

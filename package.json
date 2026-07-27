@@ -17,7 +17,7 @@
     "verify:deploy": "node scripts/verify-deploy-workflow.mjs",
     "verify:migrations": "node scripts/verify-migrations.mjs",
     "verify:knowledge": "node scripts/verify-knowledge-bilingual.mjs",
-    "verify:knowledge-content": "bun scripts/verify-knowledge-content.ts",
+    "verify:knowledge-content": "bun scripts/verify-knowledge-content.ts && bun scripts/verify-knowledge-revision.ts",
     "smoke:knowledge-migration": "node scripts/smoke-knowledge-migration.mjs",
     "verify:security": "tsx scripts/verify-security-boundaries.ts",
     "verify:cache": "tsx scripts/verify-public-cache-boundaries.ts",

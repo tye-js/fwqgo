@@ -1,6 +1,8 @@
 import {
+  KNOWLEDGE_CONTENT_VERSION,
   knowledgeUnits,
   knowledgeUnitsForPhase,
+  renderLegacyKnowledgeRecord,
   renderKnowledgeRecord,
   type KnowledgeUnit,
 } from "./knowledge/initial-bilingual-content";
@@ -8,9 +10,17 @@ import {
 import type { KnowledgePublicationSnapshot } from "@/server/knowledge/service";
 import type * as KnowledgeServiceModule from "@/server/knowledge/service";
 
-const PHASES = ["pilots", "p0", "p1", "audit"] as const;
+const PHASES = ["pilots", "p0", "p1", "revise-v2", "audit"] as const;
 type Phase = (typeof PHASES)[number];
+type PublicationPhase = "pilots" | "p0" | "p1";
 type KnowledgeService = typeof KnowledgeServiceModule;
+type KnowledgeRevisionService = Pick<
+  KnowledgeService,
+  | "saveKnowledgeDraft"
+  | "setKnowledgePublication"
+  | "confirmKnowledgeTranslationSync"
+  | "setKnowledgeAiReference"
+>;
 type Article = KnowledgePublicationSnapshot["articles"][number];
 type Category = KnowledgePublicationSnapshot["categories"][number];
 type ExpectedRecord = ReturnType<typeof renderKnowledgeRecord>;
@@ -19,6 +29,7 @@ const CONFIRMATIONS: Record<Phase, string> = {
   pilots: "PUBLISH_KNOWLEDGE_PILOTS",
   p0: "PUBLISH_KNOWLEDGE_P0",
   p1: "PUBLISH_KNOWLEDGE_P1",
+  "revise-v2": "REVISE_KNOWLEDGE_CONTENT_V2",
   audit: "AUDIT_KNOWLEDGE_60",
 };
 
@@ -38,12 +49,35 @@ type PublicationState = {
   articlesBySlug: Map<string, Article>;
 };
 
+type RevisionContentVersion = "v1" | "v2";
+
+type RevisionPairState = {
+  category: Category;
+  expected: ReturnType<typeof expectedPair>;
+  legacy: ReturnType<typeof legacyPair>;
+  chinese: Article;
+  english: Article;
+  chineseVersion: RevisionContentVersion;
+  englishVersion: RevisionContentVersion;
+};
+
 type OperationCounts = {
   chineseDraftsCreated: number;
   englishDraftsCreated: number;
   translationsConfirmed: number;
   chinesePublished: number;
   englishPublished: number;
+  chineseAiAuthorized: number;
+  englishAiAuthorized: number;
+};
+
+type RevisionCounts = {
+  alreadyCurrent: number;
+  englishTemporarilyUnpublished: number;
+  chineseUpdated: number;
+  englishUpdated: number;
+  translationsConfirmed: number;
+  englishRepublished: number;
   chineseAiAuthorized: number;
   englishAiAuthorized: number;
 };
@@ -74,17 +108,19 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-function targetUnits(phase: Exclude<Phase, "audit">) {
+function targetUnits(phase: PublicationPhase) {
   return knowledgeUnitsForPhase(phase);
 }
 
-function prerequisiteUnits(phase: Exclude<Phase, "audit">) {
+function prerequisiteUnits(phase: PublicationPhase) {
   if (phase === "pilots") return [];
   if (phase === "p0") return knowledgeUnitsForPhase("pilots");
   return knowledgeUnits.filter((unit) => unit.priority === "P0");
 }
 
-function buildState(snapshot: KnowledgePublicationSnapshot): PublicationState {
+export function buildState(
+  snapshot: KnowledgePublicationSnapshot,
+): PublicationState {
   const categoriesBySlug = new Map<string, Category>();
   for (const category of snapshot.categories) {
     assert(
@@ -109,6 +145,13 @@ function expectedPair(unit: KnowledgeUnit) {
   return {
     zh: renderKnowledgeRecord(unit, "zh"),
     en: renderKnowledgeRecord(unit, "en"),
+  };
+}
+
+function legacyPair(unit: KnowledgeUnit) {
+  return {
+    zh: renderLegacyKnowledgeRecord(unit, "zh"),
+    en: renderLegacyKnowledgeRecord(unit, "en"),
   };
 }
 
@@ -175,7 +218,88 @@ function preflightUnits(units: KnowledgeUnit[], state: PublicationState) {
   }
 }
 
-function auditUnits(units: KnowledgeUnit[], state: PublicationState) {
+function revisionContentVersion(
+  label: string,
+  article: Article,
+  legacy: ExpectedRecord,
+  expected: ExpectedRecord,
+): RevisionContentVersion {
+  const v2Differences = contentDifferences(article, expected);
+  if (v2Differences.length === 0) return "v2";
+
+  const v1Differences = contentDifferences(article, legacy);
+  if (v1Differences.length === 0) return "v1";
+
+  throw new Error(
+    `${label} 既不匹配 V1，也不匹配 V${KNOWLEDGE_CONTENT_VERSION}，已停止以避免覆盖人工内容；` +
+      `V1 差异：${v1Differences.join("、")}；V${KNOWLEDGE_CONTENT_VERSION} 差异：${v2Differences.join("、")}`,
+  );
+}
+
+function inspectRevisionPair(
+  unit: KnowledgeUnit,
+  state: PublicationState,
+): RevisionPairState {
+  const category = assertCategoryReady(unit, state);
+  const expected = expectedPair(unit);
+  const legacy = legacyPair(unit);
+  assert(
+    expected.zh.slug === legacy.zh.slug && expected.en.slug === legacy.en.slug,
+    `${unit.id} V1 与 V${KNOWLEDGE_CONTENT_VERSION} 的 slug 不一致，不能原地修订`,
+  );
+
+  const chinese = state.articlesBySlug.get(expected.zh.slug);
+  const english = state.articlesBySlug.get(expected.en.slug);
+  assert(chinese, `${unit.id}/zh 不存在，不能执行内容修订`);
+  assert(english, `${unit.id}/en 不存在，不能执行内容修订`);
+  assert(chinese.language === "zh", `${unit.id}/zh 的数据库语言不一致`);
+  assert(english.language === "en", `${unit.id}/en 的数据库语言不一致`);
+  assert(chinese.categoryId === category.id, `${unit.id}/zh 的数据库分类不一致`);
+  assert(english.categoryId === category.id, `${unit.id}/en 的数据库分类不一致`);
+  assert(
+    chinese.translationSourceArticleId === null,
+    `${unit.id}/zh 不应绑定翻译源`,
+  );
+  assert(
+    english.translationSourceArticleId === chinese.id,
+    `${unit.id}/en 绑定了错误的中文源稿`,
+  );
+  assert(chinese.published, `${unit.id}/zh 必须保持发布状态才能修订`);
+  assert(chinese.publishedAt, `${unit.id}/zh 缺少首次发布时间`);
+  assert(english.publishedAt, `${unit.id}/en 缺少首次发布时间`);
+
+  return {
+    category,
+    expected,
+    legacy,
+    chinese,
+    english,
+    chineseVersion: revisionContentVersion(
+      `${unit.id}/zh`,
+      chinese,
+      legacy.zh,
+      expected.zh,
+    ),
+    englishVersion: revisionContentVersion(
+      `${unit.id}/en`,
+      english,
+      legacy.en,
+      expected.en,
+    ),
+  };
+}
+
+export function preflightRevisionUnits(
+  units: KnowledgeUnit[],
+  state: PublicationState,
+) {
+  for (const unit of units) inspectRevisionPair(unit, state);
+}
+
+export function auditUnits(
+  units: KnowledgeUnit[],
+  state: PublicationState,
+) {
   preflightUnits(units, state);
   const articleIds = new Set<number>();
 
@@ -220,6 +344,19 @@ function emptyOperationCounts(): OperationCounts {
     translationsConfirmed: 0,
     chinesePublished: 0,
     englishPublished: 0,
+    chineseAiAuthorized: 0,
+    englishAiAuthorized: 0,
+  };
+}
+
+function emptyRevisionCounts(): RevisionCounts {
+  return {
+    alreadyCurrent: 0,
+    englishTemporarilyUnpublished: 0,
+    chineseUpdated: 0,
+    englishUpdated: 0,
+    translationsConfirmed: 0,
+    englishRepublished: 0,
     chineseAiAuthorized: 0,
     englishAiAuthorized: 0,
   };
@@ -315,8 +452,11 @@ async function authorizeAiLanguage(
   units: KnowledgeUnit[],
   language: "zh" | "en",
   state: PublicationState,
-  service: KnowledgeService,
-  counts: OperationCounts,
+  service: Pick<KnowledgeService, "setKnowledgeAiReference">,
+  counts: Pick<
+    OperationCounts,
+    "chineseAiAuthorized" | "englishAiAuthorized"
+  >,
 ) {
   for (const unit of units) {
     const expected = expectedPair(unit)[language];
@@ -331,6 +471,113 @@ async function authorizeAiLanguage(
     remember(state, result.article);
     if (language === "zh") counts.chineseAiAuthorized += 1;
     else counts.englishAiAuthorized += 1;
+  }
+}
+
+function revisionPairIsCurrent(pair: RevisionPairState) {
+  return (
+    pair.chineseVersion === "v2" &&
+    pair.englishVersion === "v2" &&
+    pair.chinese.published &&
+    pair.english.published &&
+    pair.chinese.allowAiReference &&
+    pair.english.allowAiReference &&
+    pair.english.translatedFromRevision === pair.chinese.contentRevision
+  );
+}
+
+export async function reviseKnowledgeContent(
+  units: KnowledgeUnit[],
+  state: PublicationState,
+  service: KnowledgeRevisionService,
+  counts: RevisionCounts,
+) {
+  for (const unit of units) {
+    let pair = inspectRevisionPair(unit, state);
+    if (revisionPairIsCurrent(pair)) {
+      counts.alreadyCurrent += 1;
+      continue;
+    }
+
+    const englishMustBeUnpublished =
+      pair.chineseVersion !== "v2" ||
+      pair.englishVersion !== "v2" ||
+      pair.english.translatedFromRevision !== pair.chinese.contentRevision;
+    if (pair.english.published && englishMustBeUnpublished) {
+      const result = await service.setKnowledgePublication({
+        id: pair.english.id,
+        expectedContentRevision: pair.english.contentRevision,
+        published: false,
+      });
+      remember(state, result.article);
+      counts.englishTemporarilyUnpublished += 1;
+      pair = inspectRevisionPair(unit, state);
+    }
+
+    if (pair.chineseVersion !== "v2") {
+      const result = await service.saveKnowledgeDraft({
+        id: pair.chinese.id,
+        language: "zh",
+        categoryId: pair.category.id,
+        expectedContentRevision: pair.chinese.contentRevision,
+        ...pair.expected.zh,
+      });
+      remember(state, result.article);
+      counts.chineseUpdated += 1;
+      pair = inspectRevisionPair(unit, state);
+    }
+
+    if (pair.englishVersion !== "v2") {
+      assert(
+        !pair.english.published,
+        `${unit.id}/en 必须先取消发布才能修订`,
+      );
+      const result = await service.saveKnowledgeDraft({
+        id: pair.english.id,
+        language: "en",
+        translationSourceArticleId: pair.chinese.id,
+        expectedContentRevision: pair.english.contentRevision,
+        ...pair.expected.en,
+      });
+      remember(state, result.article);
+      counts.englishUpdated += 1;
+      pair = inspectRevisionPair(unit, state);
+    }
+
+    if (
+      pair.english.translatedFromRevision !== pair.chinese.contentRevision
+    ) {
+      assert(
+        !pair.english.published,
+        `${unit.id}/en 必须先取消发布才能确认翻译同步`,
+      );
+      const result = await service.confirmKnowledgeTranslationSync({
+        id: pair.english.id,
+        expectedContentRevision: pair.english.contentRevision,
+      });
+      remember(state, result.article);
+      counts.translationsConfirmed += 1;
+      pair = inspectRevisionPair(unit, state);
+    }
+
+    if (!pair.english.published) {
+      const result = await service.setKnowledgePublication({
+        id: pair.english.id,
+        expectedContentRevision: pair.english.contentRevision,
+        published: true,
+      });
+      remember(state, result.article);
+      counts.englishRepublished += 1;
+    }
+
+    await authorizeAiLanguage([unit], "zh", state, service, counts);
+    await authorizeAiLanguage([unit], "en", state, service, counts);
+
+    pair = inspectRevisionPair(unit, state);
+    assert(
+      revisionPairIsCurrent(pair),
+      `${unit.id} 修订后未达到 V${KNOWLEDGE_CONTENT_VERSION} 完整状态`,
+    );
   }
 }
 
@@ -365,6 +612,20 @@ async function main() {
     return;
   }
 
+  if (phase === "revise-v2") {
+    // Validate every record before the first write so unknown or hand-edited
+    // content cannot leave the batch half revised.
+    preflightRevisionUnits(knowledgeUnits, state);
+    const counts = emptyRevisionCounts();
+    await reviseKnowledgeContent(knowledgeUnits, state, service, counts);
+    const articleCount = auditUnits(knowledgeUnits, state);
+    console.log(
+      `知识库 V${KNOWLEDGE_CONTENT_VERSION} 修订并审计通过：units=${knowledgeUnits.length}, articles=${articleCount}`,
+    );
+    console.log(JSON.stringify(counts));
+    return;
+  }
+
   const units = targetUnits(phase);
   const prerequisites = prerequisiteUnits(phase);
   if (prerequisites.length > 0) {
@@ -388,7 +649,9 @@ async function main() {
   console.log(JSON.stringify(counts));
 }
 
-main().catch((error) => {
-  console.error(`知识库发布失败：${safeErrorMessage(error)}`);
-  process.exitCode = 1;
-});
+if (import.meta.main) {
+  main().catch((error) => {
+    console.error(`知识库发布失败：${safeErrorMessage(error)}`);
+    process.exitCode = 1;
+  });
+}

@@ -1,9 +1,12 @@
 import {
+  KNOWLEDGE_CONTENT_VERSION,
   KNOWLEDGE_VERIFIED_DATE,
   knowledgeUnits,
   knowledgeUnitsForPhase,
+  renderLegacyKnowledgeRecord,
   renderKnowledgeRecord,
 } from "./knowledge/initial-bilingual-content";
+import { readerGuidance } from "./knowledge/reader-guidance";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition)
@@ -30,9 +33,14 @@ function hasValidCodeFences(content: string) {
 }
 
 assert(KNOWLEDGE_VERIFIED_DATE === "2026-07-26", "verification date drifted");
+assert(KNOWLEDGE_CONTENT_VERSION === 2, "expected content version 2");
 assert(
   knowledgeUnits.length === 30,
   `expected 30 units, found ${knowledgeUnits.length}`,
+);
+assert(
+  Object.keys(readerGuidance).length === knowledgeUnits.length,
+  "reader guidance must cover every knowledge unit exactly once",
 );
 assert(
   knowledgeUnits.filter((unit) => unit.priority === "P0").length === 12,
@@ -98,7 +106,73 @@ for (const unit of knowledgeUnits) {
   for (const language of ["zh", "en"] as const) {
     const draft = unit[language];
     const record = renderKnowledgeRecord(unit, language);
+    const legacyRecord = renderLegacyKnowledgeRecord(unit, language);
+    const guidance = readerGuidance[unit.id]?.[language];
     const label = `${unit.id}/${language}`;
+    assert(guidance, `${label} is missing reader guidance`);
+    assert(
+      guidance.profiles.length === 3,
+      `${label} needs exactly three audience profiles`,
+    );
+    assert(
+      language === "zh"
+        ? guidance.quickAnswer.length >= 40 &&
+            guidance.quickAnswer.length <= 100
+        : guidance.quickAnswer.length >= 120 &&
+            guidance.quickAnswer.length <= 280,
+      `${label} quick answer length is ${guidance.quickAnswer.length}`,
+    );
+    const sectionOrder =
+      language === "zh"
+        ? [
+            "## 先说结论",
+            "## 适合谁",
+            "## 哪些情况不要直接照做",
+            "## 关键点怎么理解",
+            "## 怎么做",
+            "## 怎么确认结果",
+            "## 常见误区与风险",
+            "## 核验日期与来源",
+            "## 接着看",
+          ]
+        : [
+            "## Quick answer",
+            "## Who this helps",
+            "## When not to follow this directly",
+            "## Key points in plain language",
+            "## What to do",
+            "## How to verify the result",
+            "## Common mistakes and limits",
+            "## Verification date and sources",
+            "## Read next",
+          ];
+    assert(
+      record.content.startsWith(`${sectionOrder[0]}\n\n> `),
+      `${label} must begin with the quick conclusion`,
+    );
+    let previousSectionIndex = -1;
+    for (const section of sectionOrder) {
+      const sectionIndex = record.content.indexOf(section);
+      assert(sectionIndex >= 0, `${label} is missing section ${section}`);
+      assert(
+        sectionIndex > previousSectionIndex,
+        `${label} has section ${section} out of order`,
+      );
+      previousSectionIndex = sectionIndex;
+    }
+    for (const [profile, reason] of guidance.profiles) {
+      assert(profile.length >= 4, `${label} has a vague audience label`);
+      assert(reason.length >= 15, `${label} has a thin audience explanation`);
+      assert(
+        record.content.includes(`**${profile}**`) &&
+          record.content.includes(reason),
+        `${label} did not render an audience profile`,
+      );
+    }
+    assert(
+      record.content !== legacyRecord.content,
+      `${label} still renders the version 1 structure`,
+    );
     assert(
       /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(record.slug),
       `${label} slug must be lowercase ASCII kebab-case`,

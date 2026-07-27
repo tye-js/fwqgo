@@ -156,6 +156,7 @@ const publicationWorkflow = requireText(
   ".github/workflows/publish-initial-knowledge.yml",
   [
     "workflow_dispatch:",
+    "revise-v2) expected=\"REVISE_KNOWLEDGE_CONTENT_V2\"",
     "bun build scripts/publish-initial-bilingual-knowledge.ts",
     '--env-file="$env_file"',
     "trap 'rm -f \"$remote_publisher\"' EXIT",
@@ -169,7 +170,11 @@ if (publicationWorkflow.includes("secrets.CMS_DATABASE_URL")) {
   );
 }
 requireText("scripts/publish-initial-bilingual-knowledge.ts", [
+  '"revise-v2": "REVISE_KNOWLEDGE_CONTENT_V2"',
   "readKnowledgePublicationSnapshot",
+  "preflightRevisionUnits(knowledgeUnits, state)",
+  "既不匹配 V1，也不匹配",
+  "await reviseKnowledgeContent(knowledgeUnits, state, service, counts)",
   "preflightUnits(units, state)",
   "await createChineseDrafts(units, state, service, counts)",
   "await createEnglishDrafts(units, state, service, counts)",

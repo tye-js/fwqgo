@@ -1,4 +1,7 @@
+import { getReaderGuidance } from "./reader-guidance";
+
 export const KNOWLEDGE_VERIFIED_DATE = "2026-07-26";
+export const KNOWLEDGE_CONTENT_VERSION = 2;
 
 type KnowledgePriority = "P0" | "P1";
 type KnowledgeLanguage = "zh" | "en";
@@ -4070,7 +4073,7 @@ function sourceNotes(unit: KnowledgeUnit, language: KnowledgeLanguage) {
     .join("\n");
 }
 
-function renderContent(unit: KnowledgeUnit, language: KnowledgeLanguage) {
+function renderLegacyContent(unit: KnowledgeUnit, language: KnowledgeLanguage) {
   const draft = localizedDraft(unit, language);
   const labels =
     language === "zh"
@@ -4182,9 +4185,133 @@ function renderContent(unit: KnowledgeUnit, language: KnowledgeLanguage) {
   ].join("\n");
 }
 
-export function renderKnowledgeRecord(
+function renderContent(unit: KnowledgeUnit, language: KnowledgeLanguage) {
+  const draft = localizedDraft(unit, language);
+  const guidance = getReaderGuidance(unit.id, language);
+  const labels =
+    language === "zh"
+      ? {
+          conclusion: "先说结论",
+          basis: "判断依据",
+          audience: "适合谁",
+          avoid: "哪些情况不要直接照做",
+          concepts: "关键点怎么理解",
+          term: "关键点",
+          explanation: "通俗解释",
+          steps: "怎么做",
+          commands: "参考命令",
+          verification: "怎么确认结果",
+          pitfalls: "常见误区与风险",
+          sources: "核验日期与来源",
+          verified: "核验日期",
+          review: "下次复核日期",
+          related: "接着看",
+        }
+      : {
+          conclusion: "Quick answer",
+          basis: "Why",
+          audience: "Who this helps",
+          avoid: "When not to follow this directly",
+          concepts: "Key points in plain language",
+          term: "Key point",
+          explanation: "Plain-language explanation",
+          steps: "What to do",
+          commands: "Reference commands",
+          verification: "How to verify the result",
+          pitfalls: "Common mistakes and limits",
+          sources: "Verification date and sources",
+          verified: "Verified",
+          review: "Next review",
+          related: "Read next",
+        };
+  const related = unit.relatedIds.map((relatedId) => {
+    const relatedUnit = knowledgeUnits.find(
+      (candidate) => candidate.id === relatedId,
+    );
+    if (!relatedUnit)
+      throw new Error(`${unit.id} references missing ${relatedId}`);
+    const relatedDraft = localizedDraft(relatedUnit, language);
+    const href = `${language === "en" ? "/en" : ""}/knowledge/${relatedDraft.slug}`;
+    return `- [${relatedDraft.title}](${href})`;
+  });
+  const sourceLines = unit.sourceKeys.map((key) => {
+    const source = sources[key];
+    const label = language === "zh" ? source.zhLabel : source.enLabel;
+    const claim = language === "zh" ? source.zhClaim : source.enClaim;
+    return `- [${label}](${source.url}): ${claim}`;
+  });
+  const profileSeparator = language === "zh" ? "：" : ": ";
+  const basisSeparator = language === "zh" ? "：" : ":";
+
+  return [
+    `## ${labels.conclusion}`,
+    "",
+    `> ${guidance.quickAnswer}`,
+    "",
+    `**${labels.basis}${basisSeparator}** ${draft.takeaway}`,
+    "",
+    `## ${labels.audience}`,
+    "",
+    draft.audience,
+    "",
+    ...guidance.profiles.map(
+      ([profile, reason]) => `- **${profile}**${profileSeparator}${reason}`,
+    ),
+    "",
+    `## ${labels.avoid}`,
+    "",
+    draft.avoid,
+    "",
+    `## ${labels.concepts}`,
+    "",
+    `| ${labels.term} | ${labels.explanation} |`,
+    "| --- | --- |",
+    ...draft.concepts.map(
+      ([term, explanation]) => `| ${term} | ${explanation} |`,
+    ),
+    "",
+    `## ${labels.steps}`,
+    "",
+    ...draft.steps.map((step, index) => `${index + 1}. ${step}`),
+    "",
+    ...(draft.commands?.length
+      ? [
+          `## ${labels.commands}`,
+          "",
+          ...draft.commands.flatMap((command) => [
+            `### ${command.label}`,
+            "",
+            `\`\`\`${command.language}`,
+            command.code,
+            "```",
+            "",
+          ]),
+        ]
+      : []),
+    `## ${labels.verification}`,
+    "",
+    ...draft.verification.map((item) => `- ${item}`),
+    "",
+    `## ${labels.pitfalls}`,
+    "",
+    ...draft.pitfalls.map((item) => `- ${item}`),
+    "",
+    `## ${labels.sources}`,
+    "",
+    `- ${labels.verified}: ${KNOWLEDGE_VERIFIED_DATE}`,
+    `- ${labels.review}: ${reviewDate(unit.reviewMonths)}`,
+    ...sourceLines,
+    "",
+    `## ${labels.related}`,
+    "",
+    ...related,
+  ].join("\n");
+}
+
+function renderRecord(
   unit: KnowledgeUnit,
   language: KnowledgeLanguage,
+  content: string,
 ) {
   const draft = localizedDraft(unit, language);
   const summary =
@@ -4195,12 +4322,26 @@ export function renderKnowledgeRecord(
     title: draft.title,
     slug: draft.slug,
     summary,
-    content: renderContent(unit, language),
+    content,
     keywords: draft.keywords.join(", "),
     aliases: draft.aliases.join(", ") || null,
     retrievalTerms: draft.retrievalTerms.join(", "),
     sourceNotes: sourceNotes(unit, language),
   };
+}
+
+export function renderKnowledgeRecord(
+  unit: KnowledgeUnit,
+  language: KnowledgeLanguage,
+) {
+  return renderRecord(unit, language, renderContent(unit, language));
+}
+
+export function renderLegacyKnowledgeRecord(
+  unit: KnowledgeUnit,
+  language: KnowledgeLanguage,
+) {
+  return renderRecord(unit, language, renderLegacyContent(unit, language));
 }
 
 export function knowledgeUnitsForPhase(phase: "pilots" | "p0" | "p1") {

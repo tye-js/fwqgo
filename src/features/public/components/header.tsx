@@ -21,7 +21,8 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { LanguageSwitchLink } from "@/features/public/components/language-switch-link";
-import { getCategories } from "@/features/shared/data/category";
+import { buildArticleNavigation } from "@/features/public/lib/article-navigation";
+import { getNavigationCategories } from "@/features/shared/data/category";
 import { cn } from "@fwqgo/core/utils";
 import { BookOpen, Globe2, Menu, Search, Server } from "lucide-react";
 
@@ -107,14 +108,6 @@ function categoryHref(slug: string, language: PublicLanguage) {
   return `${language === "en" ? "/en" : ""}/fwq/${encodeURIComponent(slug)}/page/1`;
 }
 
-function nonEmptyTrim(value: string | null | undefined) {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  return trimmed;
-}
-
 function HeaderFallback({ language }: { language: PublicLanguage }) {
   const copy = headerCopy[language];
 
@@ -178,25 +171,8 @@ const HeaderContent = async ({
   language?: PublicLanguage;
 }) => {
   const copy = headerCopy[language];
-  const { data: categories, error } = await getCategories();
-  const safeCategories = (categories ?? []).map((category) => {
-    if (language === "zh") {
-      return category;
-    }
-
-    return {
-      ...category,
-      name: nonEmptyTrim(category.enName) ?? category.name,
-      slug: nonEmptyTrim(category.enSlug) ?? category.slug,
-      description: nonEmptyTrim(category.enDescription) ?? category.description,
-      children: category.children.map((child) => ({
-        ...child,
-        name: nonEmptyTrim(child.enName) ?? child.name,
-        slug: nonEmptyTrim(child.enSlug) ?? child.slug,
-        description: nonEmptyTrim(child.enDescription) ?? child.description,
-      })),
-    };
-  });
+  const { data: categories, error } = await getNavigationCategories();
+  const safeCategories = buildArticleNavigation(categories ?? [], language);
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/95 backdrop-blur-xl">
@@ -237,51 +213,14 @@ const HeaderContent = async ({
                   </ul>
                 </NavigationMenuContent>
               </NavigationMenuItem>
-              {safeCategories.slice(0, 4).map((category) =>
-                category.children.length > 0 ? (
-                  <NavigationMenuItem key={category.id}>
-                    <NavigationMenuTrigger className="rounded-md">
-                      {category.name}
-                    </NavigationMenuTrigger>
-                    <NavigationMenuContent>
-                      <ul className="grid w-[420px] gap-3 p-4 md:w-[520px] md:grid-cols-2 lg:w-[620px]">
-                        {category.children.map((item) => (
-                          <ListItem
-                            key={item.id}
-                            title={item.name}
-                            href={categoryHref(item.slug, language)}
-                          >
-                            {item.description}
-                          </ListItem>
-                        ))}
-                      </ul>
-                    </NavigationMenuContent>
-                  </NavigationMenuItem>
-                ) : (
-                  <NavigationMenuItem key={category.id}>
-                    <NavigationMenuLink asChild>
-                      <Link
-                        href={categoryHref(category.slug, language)}
-                        prefetch
-                        className={cn(
-                          navigationMenuTriggerStyle(),
-                          "rounded-md bg-transparent",
-                        )}
-                      >
-                        {category.name}
-                      </Link>
-                    </NavigationMenuLink>
-                  </NavigationMenuItem>
-                ),
-              )}
-              {safeCategories.length > 4 ? (
+              {safeCategories.length > 0 ? (
                 <NavigationMenuItem>
                   <NavigationMenuTrigger className="rounded-md">
                     {copy.articleCategories}
                   </NavigationMenuTrigger>
                   <NavigationMenuContent>
-                    <ul className="grid w-[420px] gap-3 p-4 md:w-[520px] md:grid-cols-2">
-                      {safeCategories.slice(4).map((category) => (
+                    <ul className="grid max-h-[calc(100dvh-5rem)] w-[min(860px,calc(100vw-2rem))] gap-2 overflow-y-auto p-4 md:grid-cols-2 xl:grid-cols-3">
+                      {safeCategories.map((category) => (
                         <ListItem
                           key={category.id}
                           title={category.name}
@@ -467,29 +406,14 @@ const HeaderContent = async ({
                   </div>
                 ) : null}
                 {safeCategories.map((category) => (
-                  <div key={category.id} className="grid gap-2">
-                    <MobileNavLink
-                      href={categoryHref(category.slug, language)}
-                      prefetch
-                      className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {category.name}
-                    </MobileNavLink>
-                    {category.children.length > 0 ? (
-                      <div className="grid gap-1 border-l border-border pl-3">
-                        {category.children.map((item) => (
-                          <MobileNavLink
-                            key={item.id}
-                            href={categoryHref(item.slug, language)}
-                            prefetch
-                            className="flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            {item.name}
-                          </MobileNavLink>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
+                  <MobileNavLink
+                    key={category.id}
+                    href={categoryHref(category.slug, language)}
+                    prefetch
+                    className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {category.name}
+                  </MobileNavLink>
                 ))}
                 {error ? (
                   <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-4 text-sm leading-6 text-muted-foreground">

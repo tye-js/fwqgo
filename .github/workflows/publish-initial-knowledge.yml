@@ -10,6 +10,7 @@ on:
         type: choice
         options:
           - audit
+          - revise-v2
           - pilots
           - p0
           - p1
@@ -52,6 +53,7 @@ jobs:
             pilots) expected="PUBLISH_KNOWLEDGE_PILOTS" ;;
             p0) expected="PUBLISH_KNOWLEDGE_P0" ;;
             p1) expected="PUBLISH_KNOWLEDGE_P1" ;;
+            revise-v2) expected="REVISE_KNOWLEDGE_CONTENT_V2" ;;
             audit) expected="AUDIT_KNOWLEDGE_60" ;;
             *) echo "::error::Unsupported phase: $PHASE"; exit 1 ;;
           esac
