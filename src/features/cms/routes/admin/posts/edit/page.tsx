@@ -22,9 +22,13 @@ import {
   boundOffsetPaginationByTotal,
   normalizeOffsetPagination,
 } from "@fwqgo/core/pagination";
-import { parsePositiveInt } from "@fwqgo/core/utils";
+import {
+  firstSearchParam,
+  parsePositiveInt,
+  type SearchParamValue,
+} from "@fwqgo/core/utils";
 
-function parsePageNo(value: string | undefined) {
+function parsePageNo(value: SearchParamValue) {
   return parsePositiveInt(value) ?? 1;
 }
 
@@ -35,11 +39,11 @@ function getErrorMessage(error: unknown) {
 }
 
 type PostListSearchParams = {
-  pageNo?: string;
-  language?: string;
-  query?: string;
-  status?: string;
-  sort?: string;
+  pageNo?: SearchParamValue;
+  language?: SearchParamValue;
+  query?: SearchParamValue;
+  status?: SearchParamValue;
+  sort?: SearchParamValue;
 };
 
 function languageFilterHref(
@@ -91,7 +95,14 @@ async function PostListWrapper({
 }: {
   searchParamsPromise: Promise<PostListSearchParams>;
 }) {
-  const searchParams = await searchParamsPromise;
+  const rawSearchParams = await searchParamsPromise;
+  const searchParams = {
+    pageNo: firstSearchParam(rawSearchParams.pageNo),
+    language: firstSearchParam(rawSearchParams.language),
+    query: firstSearchParam(rawSearchParams.query),
+    status: firstSearchParam(rawSearchParams.status),
+    sort: firstSearchParam(rawSearchParams.sort),
+  };
   const requestedPageNo = parsePageNo(searchParams.pageNo);
   const language = normalizePostLanguageFilter(searchParams.language);
   const query = searchParams.query?.trim().slice(0, 160) ?? "";

@@ -28,7 +28,9 @@ const quickCategories = [
 export default function NotFound() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Suspense fallback={<div className="h-[65px] border-b border-border/60" />}>
+      <Suspense
+        fallback={<div className="h-[65px] border-b border-border/60" />}
+      >
         <Header />
       </Suspense>
       <Separator />
@@ -49,11 +51,12 @@ export default function NotFound() {
                   <p className="text-6xl font-semibold tracking-tight text-primary md:text-7xl">
                     404
                   </p>
-                  <CardTitle className="font-editorial max-w-2xl text-3xl font-semibold leading-tight md:text-4xl">
+                  <h1 className="font-editorial max-w-2xl text-3xl font-semibold leading-tight md:text-4xl">
                     你来到了一片资源荒漠，但不必从头开始找路
-                  </CardTitle>
+                  </h1>
                   <CardDescription className="max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">
-                    这个链接可能已经失效、内容被移动，或者你刚好输错了地址。下面给你几个最快能回到主内容区的入口，继续找 VPS、云服务器和独立服务器优惠。
+                    这个链接可能已经失效、内容被移动，或者你刚好输错了地址。下面给你几个最快能回到主内容区的入口，继续找
+                    VPS、云服务器和独立服务器优惠。
                   </CardDescription>
                 </div>
               </CardHeader>

@@ -15,13 +15,17 @@ import {
   boundOffsetPaginationByTotal,
   normalizeOffsetPagination,
 } from "@fwqgo/core/pagination";
-import { parsePositiveInt } from "@fwqgo/core/utils";
+import {
+  firstSearchParam,
+  parsePositiveInt,
+  type SearchParamValue,
+} from "@fwqgo/core/utils";
 import {
   AdminSectionNav,
   linkManagementNavItems,
 } from "@/features/cms/components/admin-section-nav";
 
-function parsePageNo(value: string | undefined) {
+function parsePageNo(value: SearchParamValue) {
   return parsePositiveInt(value) ?? 1;
 }
 
@@ -35,13 +39,19 @@ async function AffManList({
   searchParamsPromise,
 }: {
   searchParamsPromise: Promise<{
-    pageNo?: string;
-    query?: string;
-    filter?: string;
-    sort?: string;
+    pageNo?: SearchParamValue;
+    query?: SearchParamValue;
+    filter?: SearchParamValue;
+    sort?: SearchParamValue;
   }>;
 }) {
-  const searchParams = await searchParamsPromise;
+  const rawSearchParams = await searchParamsPromise;
+  const searchParams = {
+    pageNo: firstSearchParam(rawSearchParams.pageNo),
+    query: firstSearchParam(rawSearchParams.query),
+    filter: firstSearchParam(rawSearchParams.filter),
+    sort: firstSearchParam(rawSearchParams.sort),
+  };
   const requestedPageNo = parsePageNo(searchParams.pageNo);
   const query = searchParams.query?.trim().slice(0, 160) ?? "";
   const filter = ["all", "with-aff", "empty-aff"].includes(
@@ -157,10 +167,10 @@ async function AffManList({
 
 export default function AffManPage(props: {
   searchParams: Promise<{
-    pageNo?: string;
-    query?: string;
-    filter?: string;
-    sort?: string;
+    pageNo?: SearchParamValue;
+    query?: SearchParamValue;
+    filter?: SearchParamValue;
+    sort?: SearchParamValue;
   }>;
 }) {
   return (

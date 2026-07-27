@@ -131,6 +131,28 @@ async function checkHealth(origin, service, child, headers = {}) {
   );
 }
 
+/** @param {string} origin @param {string} service @param {import("node:child_process").ChildProcess} child @param {Record<string, string>} [headers] */
+async function checkMetadataImages(origin, service, child, headers = {}) {
+  for (const pathname of ["/icon.svg", "/favicon.ico", "/apple-icon.png"]) {
+    const response = await waitForServer(
+      `${origin}${pathname}`,
+      child,
+      headers,
+    );
+    const contentType = response.headers.get("content-type") ?? "";
+    const body = await response.arrayBuffer();
+    assert(
+      response.status === 200,
+      `${service} ${pathname} returned ${response.status}`,
+    );
+    assert(
+      contentType.toLowerCase().startsWith("image/"),
+      `${service} ${pathname} returned ${contentType || "no content type"}`,
+    );
+    assert(body.byteLength > 0, `${service} ${pathname} returned an empty body`);
+  }
+}
+
 async function run() {
   verifySharpRuntime();
 
@@ -155,6 +177,10 @@ async function run() {
   await Promise.all([
     checkHealth(webOrigin, "web", webProcess),
     checkHealth(cmsOrigin, "cms", cmsProcess, authHeaders),
+  ]);
+  await Promise.all([
+    checkMetadataImages(webOrigin, "web", webProcess),
+    checkMetadataImages(cmsOrigin, "cms", cmsProcess, authHeaders),
   ]);
 
   const webAdmin = await fetch(`${webOrigin}/login?from=smoke`, {
@@ -204,7 +230,7 @@ async function run() {
   );
 
   console.log(
-    "Built app smoke tests passed: sharp WebP, health, redirects, auth boundary, route isolation",
+    "Built app smoke tests passed: sharp WebP, health, metadata images, redirects, auth boundary, route isolation",
   );
 }
 

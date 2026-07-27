@@ -14,7 +14,11 @@ import {
   boundOffsetPaginationByTotal,
   normalizeOffsetPagination,
 } from "@fwqgo/core/pagination";
-import { parsePositiveInt } from "@fwqgo/core/utils";
+import {
+  firstSearchParam,
+  parsePositiveInt,
+  type SearchParamValue,
+} from "@fwqgo/core/utils";
 import {
   AdminSectionNav,
   linkManagementNavItems,
@@ -91,13 +95,16 @@ async function loadShortLinks({
 export default async function ShortLinksPage({
   searchParams,
 }: {
-  searchParams: Promise<{ pageNo?: string; query?: string }>;
+  searchParams: Promise<{
+    pageNo?: SearchParamValue;
+    query?: SearchParamValue;
+  }>;
 }) {
   await requireAdminSession();
 
   const params = await searchParams;
   const requestedPageNo = parsePositiveInt(params.pageNo) ?? 1;
-  const query = params.query?.trim().slice(0, 200) ?? "";
+  const query = firstSearchParam(params.query)?.trim().slice(0, 200) ?? "";
   const {
     links,
     pageNo,

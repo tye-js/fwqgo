@@ -11,22 +11,26 @@ import {
   getAdminServerOffers,
   getServerOfferRelationPostOptions,
 } from "@/server/offers/server-offers";
-import { parsePositiveInt } from "@fwqgo/core/utils";
+import {
+  firstSearchParam,
+  parsePositiveInt,
+  type SearchParamValue,
+} from "@fwqgo/core/utils";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { RadioTower } from "lucide-react";
 import { getProviderOptionsForMonitoring } from "@/server/offers/provider-monitor";
 
 type ServerOfferManageSearchParams = {
-  pageNo?: string;
-  query?: string;
-  kind?: string;
-  status?: string;
-  reviewStatus?: string;
-  visibility?: string;
+  pageNo?: SearchParamValue;
+  query?: SearchParamValue;
+  kind?: SearchParamValue;
+  status?: SearchParamValue;
+  reviewStatus?: SearchParamValue;
+  visibility?: SearchParamValue;
 };
 
-function parsePageNo(value: string | undefined) {
+function parsePageNo(value: SearchParamValue) {
   return parsePositiveInt(value) ?? 1;
 }
 
@@ -44,11 +48,11 @@ async function loadServerOfferManageData(
       getAdminServerOffers({
         page: parsePageNo(filters.pageNo),
         pageSize: 20,
-        query: filters.query,
-        kind: filters.kind,
-        status: filters.status,
-        reviewStatus: filters.reviewStatus,
-        visibility: filters.visibility,
+        query: firstSearchParam(filters.query),
+        kind: firstSearchParam(filters.kind),
+        status: firstSearchParam(filters.status),
+        reviewStatus: firstSearchParam(filters.reviewStatus),
+        visibility: firstSearchParam(filters.visibility),
       }),
       getProviderOptionsForMonitoring(),
       getServerOfferRelationPostOptions(),
@@ -64,8 +68,12 @@ async function loadServerOfferManageData(
         page: 1,
         pageSize: 20,
       },
-      providers: [] as Awaited<ReturnType<typeof getProviderOptionsForMonitoring>>,
-      relationPosts: [] as Awaited<ReturnType<typeof getServerOfferRelationPostOptions>>,
+      providers: [] as Awaited<
+        ReturnType<typeof getProviderOptionsForMonitoring>
+      >,
+      relationPosts: [] as Awaited<
+        ReturnType<typeof getServerOfferRelationPostOptions>
+      >,
       error: getErrorMessage(error),
     };
   }
@@ -78,7 +86,15 @@ async function ServerOfferManageContent({
 }) {
   await connection();
 
-  const searchParams = await searchParamsPromise;
+  const rawSearchParams = await searchParamsPromise;
+  const searchParams = {
+    pageNo: firstSearchParam(rawSearchParams.pageNo),
+    query: firstSearchParam(rawSearchParams.query),
+    kind: firstSearchParam(rawSearchParams.kind),
+    status: firstSearchParam(rawSearchParams.status),
+    reviewStatus: firstSearchParam(rawSearchParams.reviewStatus),
+    visibility: firstSearchParam(rawSearchParams.visibility),
+  };
   const {
     offerPage,
     providers,
@@ -111,8 +127,8 @@ async function ServerOfferManageContent({
         </AdminSectionCard>
       ) : null}
       <AdminSectionCard
-          title="套餐校正与文章关系"
-          description="对官网采集的结构化套餐做审核、补字段、改状态，并维护测评、提及和优惠文章的多对多关系。"
+        title="套餐校正与文章关系"
+        description="对官网采集的结构化套餐做审核、补字段、改状态，并维护测评、提及和优惠文章的多对多关系。"
       >
         <ServerOfferAdminTable
           key={`${offerPage.page}:${searchParams.query ?? ""}:${searchParams.kind ?? "all"}:${searchParams.status ?? "all"}:${searchParams.reviewStatus ?? "all"}:${searchParams.visibility ?? "all"}`}

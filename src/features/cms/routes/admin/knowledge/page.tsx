@@ -11,7 +11,11 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import { KnowledgeManager } from "@/features/cms/components/knowledge-manager";
 import type { KnowledgeLanguage } from "@/server/knowledge/service";
-import { parsePostgresIntegerId } from "@fwqgo/core/utils";
+import {
+  firstSearchParam,
+  parsePostgresIntegerId,
+  type SearchParamValue,
+} from "@fwqgo/core/utils";
 
 async function loadKnowledgeAdminData(
   query: string,
@@ -50,18 +54,19 @@ async function loadKnowledgeAdminData(
 
 export default async function KnowledgeAdminPage(props: {
   searchParams: Promise<{
-    id?: string;
-    q?: string;
-    language?: string;
-    sourceId?: string;
+    id?: SearchParamValue;
+    q?: SearchParamValue;
+    language?: SearchParamValue;
+    sourceId?: SearchParamValue;
   }>;
 }) {
   await connection();
   const searchParams = await props.searchParams;
-  const query = searchParams.q?.trim().slice(0, 120) ?? "";
+  const query = firstSearchParam(searchParams.q)?.trim().slice(0, 120) ?? "";
   const selectedId = parsePostgresIntegerId(searchParams.id);
   const sourceId = parsePostgresIntegerId(searchParams.sourceId);
-  const requestedLanguage = searchParams.language === "en" ? "en" : "zh";
+  const requestedLanguage =
+    firstSearchParam(searchParams.language) === "en" ? "en" : "zh";
   const result = await loadKnowledgeAdminData(
     query,
     selectedId,

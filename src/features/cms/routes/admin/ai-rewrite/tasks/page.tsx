@@ -16,22 +16,21 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { FileText, ListTodo, Plus, RefreshCw } from "lucide-react";
 import {
-  FileText,
-  ListTodo,
-  Plus,
-  RefreshCw,
-} from "lucide-react";
-import { parsePositiveInt } from "@fwqgo/core/utils";
+  firstSearchParam,
+  parsePositiveInt,
+  type SearchParamValue,
+} from "@fwqgo/core/utils";
 
 type AiRewriteTasksPageVariant = "production" | "task-center";
 type AiRewriteTaskSearchParams = {
-  pageNo?: string;
-  status?: string;
-  sourceType?: string;
-  language?: string;
-  query?: string;
-  type?: string;
+  pageNo?: SearchParamValue;
+  status?: SearchParamValue;
+  sourceType?: SearchParamValue;
+  language?: SearchParamValue;
+  query?: SearchParamValue;
+  type?: SearchParamValue;
 };
 
 type PageDataError = {
@@ -63,7 +62,7 @@ async function loadPageData<T>(
   }
 }
 
-function parsePageNo(value: string | undefined) {
+function parsePageNo(value: SearchParamValue) {
   return parsePositiveInt(value) ?? 1;
 }
 
@@ -74,7 +73,13 @@ export async function AiRewriteTasksPageContent({
   variant?: AiRewriteTasksPageVariant;
   searchParamsPromise?: Promise<AiRewriteTaskSearchParams>;
 }) {
-  const searchParams = (await searchParamsPromise) ?? {};
+  const rawSearchParams = (await searchParamsPromise) ?? {};
+  const searchParams = {
+    pageNo: firstSearchParam(rawSearchParams.pageNo),
+    status: firstSearchParam(rawSearchParams.status),
+    query: firstSearchParam(rawSearchParams.query),
+    type: firstSearchParam(rawSearchParams.type),
+  };
   const isTaskCenter = variant === "task-center";
   const [
     tasksResult,

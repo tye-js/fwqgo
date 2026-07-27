@@ -15,9 +15,10 @@ import {
   getHomepageSlotOptions,
   type HomepageSlotLanguage,
 } from "@/server/homepage/homepage-slots";
+import { firstSearchParam, type SearchParamValue } from "@fwqgo/core/utils";
 
-function normalizeLanguage(value?: string): HomepageSlotLanguage {
-  return value === "en" ? "en" : "zh";
+function normalizeLanguage(value?: SearchParamValue): HomepageSlotLanguage {
+  return firstSearchParam(value) === "en" ? "en" : "zh";
 }
 
 function languageHref(language: HomepageSlotLanguage) {
@@ -45,7 +46,7 @@ async function loadHomepageSlotData(language: HomepageSlotLanguage) {
 async function HomepageSlotContent({
   searchParamsPromise,
 }: {
-  searchParamsPromise: Promise<{ language?: string }>;
+  searchParamsPromise: Promise<{ language?: SearchParamValue }>;
 }) {
   await connection();
   const searchParams = await searchParamsPromise;
@@ -111,7 +112,7 @@ async function HomepageSlotContent({
 }
 
 export default function HomepageSlotPage(props: {
-  searchParams: Promise<{ language?: string }>;
+  searchParams: Promise<{ language?: SearchParamValue }>;
 }) {
   return (
     <Suspense

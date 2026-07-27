@@ -8,6 +8,7 @@ import { ImageAssetManager } from "@/features/cms/components/image-asset-manager
 import { Button } from "@/components/ui/button";
 import { ImagePlus } from "lucide-react";
 import Link from "next/link";
+import { firstSearchParam, type SearchParamValue } from "@fwqgo/core/utils";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -29,10 +30,10 @@ export default async function ImageListPage({
   searchParams,
 }: {
   searchParams: Promise<{
-    query?: string;
-    filter?: string;
-    type?: string;
-    status?: string;
+    query?: SearchParamValue;
+    filter?: SearchParamValue;
+    type?: SearchParamValue;
+    status?: SearchParamValue;
   }>;
 }) {
   await requireAdminSession();
@@ -40,6 +41,10 @@ export default async function ImageListPage({
   const { data: images, error: loadError } = await loadImageAssets();
   const imageTypes = new Set(images.map((image) => image.imageType));
   const imageStatuses = new Set(images.map((image) => image.status));
+  const query = firstSearchParam(params.query)?.trim() ?? "";
+  const requestedUsageFilter = firstSearchParam(params.filter) ?? "";
+  const requestedTypeFilter = firstSearchParam(params.type) ?? "";
+  const requestedStatusFilter = firstSearchParam(params.status) ?? "";
   const usageFilter = [
     "all",
     "used",
@@ -47,12 +52,14 @@ export default async function ImageListPage({
     "issues",
     "missing-alt",
     "duplicates",
-  ].includes(params.filter ?? "")
-    ? params.filter!
+  ].includes(requestedUsageFilter)
+    ? requestedUsageFilter
     : "all";
-  const typeFilter = imageTypes.has(params.type ?? "") ? params.type! : "all";
-  const statusFilter = imageStatuses.has(params.status ?? "")
-    ? params.status!
+  const typeFilter = imageTypes.has(requestedTypeFilter)
+    ? requestedTypeFilter
+    : "all";
+  const statusFilter = imageStatuses.has(requestedStatusFilter)
+    ? requestedStatusFilter
     : "all";
 
   return (
@@ -78,7 +85,7 @@ export default async function ImageListPage({
       ) : null}
       <ImageAssetManager
         images={images.map(serializeImageAsset)}
-        initialQuery={params.query?.trim() ?? ""}
+        initialQuery={query}
         initialUsageFilter={usageFilter}
         initialTypeFilter={typeFilter}
         initialStatusFilter={statusFilter}

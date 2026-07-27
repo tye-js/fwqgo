@@ -122,6 +122,16 @@ function assertPublicationFields(article: KnowledgeArticleRow) {
   }
 }
 
+function assertEnglishCategoryReady(category: KnowledgeCategoryRow) {
+  if (
+    !category.enName?.trim() ||
+    !category.enSlug?.trim() ||
+    !category.enDescription?.trim()
+  ) {
+    throw new Error("英文稿所属分类缺少英文名称、slug 或说明");
+  }
+}
+
 async function ensureArticleSlugAvailable(
   tx: KnowledgeTransaction,
   slug: string,
@@ -360,7 +370,17 @@ export async function saveKnowledgeDraft(
     const nextCategoryId =
       current.language === "en" ? source.categoryId : input.categoryId;
     if (!nextCategoryId) throw new Error("请选择知识分类");
-    await lockCategory(tx, nextCategoryId);
+    const categoryChanged = current.categoryId !== nextCategoryId;
+    const nextCategory = await lockCategory(tx, nextCategoryId);
+    const publishedEnglishArticle =
+      current.language === "en" && current.published
+        ? current
+        : translation?.published
+          ? translation
+          : null;
+    if (categoryChanged && publishedEnglishArticle) {
+      assertEnglishCategoryReady(nextCategory);
+    }
 
     const translationContentChanged = TRANSLATION_CONTENT_FIELDS.some(
       (field) => !sameValue(current[field], normalizedValues[field]),
@@ -368,7 +388,6 @@ export async function saveKnowledgeDraft(
     const publicContentChanged = PUBLIC_CONTENT_FIELDS.some(
       (field) => !sameValue(current[field], normalizedValues[field]),
     );
-    const categoryChanged = current.categoryId !== nextCategoryId;
 
     if (
       current.language === "en" &&
@@ -459,13 +478,7 @@ export async function setKnowledgePublication(
           throw new Error("英文稿尚未确认同步到中文源稿的当前版本");
         }
         const category = await lockCategory(tx, source.categoryId);
-        if (
-          !category.enName?.trim() ||
-          !category.enSlug?.trim() ||
-          !category.enDescription?.trim()
-        ) {
-          throw new Error("英文稿所属分类缺少英文名称、slug 或说明");
-        }
+        assertEnglishCategoryReady(category);
       }
 
       const firstPublication = article.publishedAt === null;

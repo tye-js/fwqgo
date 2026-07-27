@@ -68,12 +68,22 @@ export function normalizeDecodedSlug(value: string | null | undefined) {
   return decoded.length > 0 ? decoded : null;
 }
 
-export function parsePositiveInt(value: string | number | null | undefined) {
+export type SearchParamValue = string | string[] | undefined;
+
+export function firstSearchParam(
+  value: SearchParamValue | null,
+): string | undefined {
+  return Array.isArray(value) ? value[0] : (value ?? undefined);
+}
+
+export function parsePositiveInt(
+  value: string | string[] | number | null | undefined,
+) {
   if (typeof value === "number") {
     return Number.isSafeInteger(value) && value > 0 ? value : null;
   }
 
-  const trimmed = value?.trim();
+  const trimmed = firstSearchParam(value)?.trim();
   if (!trimmed || !/^\d+$/.test(trimmed)) return null;
 
   const parsed = Number.parseInt(trimmed, 10);
@@ -83,7 +93,7 @@ export function parsePositiveInt(value: string | number | null | undefined) {
 export const MAX_POSTGRES_INTEGER = 2_147_483_647;
 
 export function parsePostgresIntegerId(
-  value: string | number | null | undefined,
+  value: string | string[] | number | null | undefined,
 ) {
   const parsed = parsePositiveInt(value);
   return parsed !== null && parsed <= MAX_POSTGRES_INTEGER ? parsed : null;

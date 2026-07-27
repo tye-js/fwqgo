@@ -1,13 +1,8 @@
 import {
   buildKnowledgeIndexMetadata,
   KnowledgeIndexPage,
+  type KnowledgeSearchParams,
 } from "@/features/public/routes/knowledge/page";
-
-type KnowledgeSearchParams = {
-  q?: string;
-  category?: string;
-  page?: string;
-};
 
 export function generateMetadata(props: {
   searchParams: Promise<KnowledgeSearchParams>;

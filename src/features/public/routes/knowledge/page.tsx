@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { ArrowRight, BookOpen, Layers3, Search } from "lucide-react";
@@ -14,12 +15,16 @@ import {
   type PublicKnowledgeLanguage,
 } from "@/features/public/data/knowledge";
 import { PaginationComponent } from "@/features/shared/components/pagination";
-import { parsePositiveInt } from "@fwqgo/core/utils";
+import {
+  firstSearchParam,
+  parsePositiveInt,
+  type SearchParamValue,
+} from "@fwqgo/core/utils";
 
-type KnowledgeSearchParams = {
-  q?: string;
-  category?: string;
-  page?: string;
+export type KnowledgeSearchParams = {
+  q?: SearchParamValue;
+  category?: SearchParamValue;
+  page?: SearchParamValue;
 };
 
 const copy = {
@@ -169,8 +174,9 @@ async function KnowledgeIndexContent(props: {
 }) {
   await connection();
   const params = await props.searchParams;
-  const query = params.q?.trim().slice(0, 120) ?? "";
-  const category = params.category?.trim().slice(0, 160) ?? "";
+  const query = firstSearchParam(params.q)?.trim().slice(0, 120) ?? "";
+  const category =
+    firstSearchParam(params.category)?.trim().slice(0, 160) ?? "";
   const page = parsePositiveInt(params.page) ?? 1;
   const [categoryRows, result] = await Promise.all([
     getPublicKnowledgeCategories(),
@@ -181,6 +187,7 @@ async function KnowledgeIndexContent(props: {
       page,
     }),
   ]);
+  if (result.page !== page) notFound();
   const categories = localizeCategories(categoryRows, props.language);
   const selectedCategory = categories.find((item) => item.slug === category);
   const languageCopy = copy[props.language];

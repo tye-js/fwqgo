@@ -10,10 +10,11 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import { PostQualityWorkbench } from "@/features/cms/components/post-quality-workbench";
 import { getPostQualityReport } from "@/features/cms/data/post-quality";
+import { firstSearchParam, type SearchParamValue } from "@fwqgo/core/utils";
 
 type PostQualitySearchParams = {
-  language?: string;
-  issue?: string;
+  language?: SearchParamValue;
+  issue?: SearchParamValue;
 };
 
 async function PostQualityWrapper({
@@ -23,8 +24,8 @@ async function PostQualityWrapper({
 }) {
   const searchParams = await searchParamsPromise;
   const report = await getPostQualityReport({
-    language: searchParams.language,
-    issue: searchParams.issue,
+    language: firstSearchParam(searchParams.language),
+    issue: firstSearchParam(searchParams.issue),
   }).catch((error: unknown) => {
     console.error("发布质检页加载失败:", error);
     return null;

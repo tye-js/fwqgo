@@ -9,18 +9,22 @@ import {
   boundOffsetPaginationByTotal,
   normalizeOffsetPagination,
 } from "@fwqgo/core/pagination";
-import { parsePositiveInt } from "@fwqgo/core/utils";
+import {
+  firstSearchParam,
+  parsePositiveInt,
+  type SearchParamValue,
+} from "@fwqgo/core/utils";
 import {
   AdminSectionNav,
   seoManagementNavItems,
 } from "@/features/cms/components/admin-section-nav";
 
-function parsePageNo(value: string | undefined) {
+function parsePageNo(value: SearchParamValue) {
   return parsePositiveInt(value) ?? 1;
 }
 
-function normalizeQuery(value: string | undefined) {
-  return value?.trim().slice(0, 160) ?? "";
+function normalizeQuery(value: SearchParamValue) {
+  return firstSearchParam(value)?.trim().slice(0, 160) ?? "";
 }
 
 function getErrorMessage(error: unknown) {
@@ -30,7 +34,10 @@ function getErrorMessage(error: unknown) {
 }
 
 export default async function Page(props: {
-  searchParams: Promise<{ pageNo?: string; query?: string }>;
+  searchParams: Promise<{
+    pageNo?: SearchParamValue;
+    query?: SearchParamValue;
+  }>;
 }) {
   const searchParams = await props.searchParams;
   const requestedPageNo = parsePageNo(searchParams.pageNo);
