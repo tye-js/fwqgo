@@ -18,7 +18,6 @@ import {
 } from "@/server/admin/background-jobs";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import {
-  affiliateProviderDomainsMatch,
   getProviderOfferAffiliateMode,
   hasCompleteProviderOfferAffiliateConfig,
   type ProviderOfferAffiliateConfigInput,
@@ -28,6 +27,7 @@ import { getProviderMonitorSuccessSchedule } from "@fwqgo/core/provider-catalog-
 import {
   getProviderMonitorCheckRetentionCutoff,
   parseProviderMonitorConfig,
+  type ProductLinksMonitorConfig,
   type ProviderMonitorConfig,
   type ProviderSourceAdapter,
   type ProviderSourcePurpose,
@@ -59,7 +59,10 @@ import {
   type ProviderOfferCandidate,
   validateProviderOfferCandidate,
 } from "@/server/offers/provider-source-parser";
-import { enrichWhmcsProductPrices } from "@/server/offers/whmcs-product-page";
+import {
+  enrichWhmcsProductPrices,
+  fetchWhmcsProductPage,
+} from "@/server/offers/whmcs-product-page";
 import { refreshProviderCatalogScanStatus } from "@/server/providers/provider-catalog-scan-status";
 import {
   maskProviderMonitorSecrets,
@@ -82,6 +85,24 @@ function getErrorMessage(error: unknown) {
 
 function truncate(value: string, length = 5_000) {
   return value.length > length ? `${value.slice(0, length)}...` : value;
+}
+
+function getManualProductLinkCandidate(input: {
+  config: ProductLinksMonitorConfig;
+  affiliate: ProviderOfferAffiliateConfigInput;
+}) {
+  if (!input.config.productId) {
+    throw new Error("请输入要采集的商品 PID");
+  }
+  const [candidate] = parseProviderSourcePayload({
+    adapter: "product_links",
+    body: "",
+    config: input.config,
+    sourceUrl: input.affiliate.offerAffUrl,
+    affiliate: input.affiliate,
+  });
+  if (!candidate) throw new Error("无法生成返利商品采集地址");
+  return candidate;
 }
 
 async function completeProviderMonitorRun(input: {
@@ -406,49 +427,95 @@ export async function runProviderMonitor(
   };
 
   try {
-    const conditionalHeaders: Record<string, string> = {};
-    if (!readsProductDetails && configUnchanged && monitor.etag) {
-      conditionalHeaders["If-None-Match"] = monitor.etag;
-    }
-    if (!readsProductDetails && configUnchanged && monitor.lastModified) {
-      conditionalHeaders["If-Modified-Since"] = monitor.lastModified;
-    }
-    const response = await fetchPublicHttpUrl(
-      monitor.endpointUrl,
-      {
-        headers: {
-          Accept:
-            adapter === "json"
-              ? "application/json"
-              : "text/html,application/xhtml+xml",
-          ...conditionalHeaders,
-          ...config.headers,
+    let responseStatusCode: number;
+    let responseStatusText: string;
+    let responseHeaders: Headers;
+    let text: string;
+    let initialCandidates: ProviderOfferCandidate[] | null = null;
+    let prefetchedProductPage: Awaited<
+      ReturnType<typeof fetchWhmcsProductPage>
+    > | null = null;
+
+    if (adapter === "product_links") {
+      const candidate = getManualProductLinkCandidate({
+        config: config as ProductLinksMonitorConfig,
+        affiliate: {
+          offerAffUrl: monitor.offerAffUrl,
+          offerAffParam: monitor.offerAffParam,
+          offerAffValue: monitor.offerAffValue,
+          offerAffiliateMode: monitor.offerAffiliateMode,
+          offerAffiliateProductParam: monitor.offerAffiliateProductParam,
         },
-        maxRedirects: 0,
-        signal: AbortSignal.timeout(monitor.timeoutSeconds * 1_000),
-      },
-      "供应商采集地址",
-    );
-    responseStatus = response.status;
-    if (response.status === 304 && !configUnchanged) {
+      });
+      const productPage = await fetchWhmcsProductPage({
+        url: candidate.purchaseUrl,
+        headers: config.headers,
+        timeoutMs: monitor.timeoutSeconds * 1_000,
+      });
+      responseStatusCode = 200;
+      responseStatusText = "OK";
+      responseHeaders = new Headers();
+      text = productPage.body;
+      initialCandidates = [candidate];
+      prefetchedProductPage = productPage;
+    } else {
+      const conditionalHeaders: Record<string, string> = {};
+      if (!readsProductDetails && configUnchanged && monitor.etag) {
+        conditionalHeaders["If-None-Match"] = monitor.etag;
+      }
+      if (!readsProductDetails && configUnchanged && monitor.lastModified) {
+        conditionalHeaders["If-Modified-Since"] = monitor.lastModified;
+      }
+      const response = await fetchPublicHttpUrl(
+        monitor.endpointUrl,
+        {
+          headers: {
+            Accept:
+              adapter === "json"
+                ? "application/json"
+                : "text/html,application/xhtml+xml",
+            ...conditionalHeaders,
+            ...config.headers,
+          },
+          maxRedirects: 0,
+          signal: AbortSignal.timeout(monitor.timeoutSeconds * 1_000),
+        },
+        "供应商采集地址",
+      );
+      responseStatusCode = response.status;
+      responseStatusText = response.statusText;
+      responseHeaders = response.headers;
+      if (response.status === 304) {
+        text = "";
+      } else {
+        const responseText = await readResponseTextWithLimit(
+          response,
+          MAX_MONITOR_RESPONSE_BYTES,
+        );
+        if (responseText === null) {
+          throw new Error("供应商响应超过 8 MB 限制");
+        }
+        text = responseText;
+      }
+    }
+    responseStatus = responseStatusCode;
+    if (responseStatusCode === 304 && !configUnchanged) {
       throw new Error("供应商网站在采集配置变化后错误返回 304");
     }
-    if (!response.ok && response.status !== 304) {
+    if (
+      (responseStatusCode < 200 || responseStatusCode >= 300) &&
+      responseStatusCode !== 304
+    ) {
       throw new Error(
-        `供应商网站返回 HTTP ${response.status} ${response.statusText}`,
+        `供应商网站返回 HTTP ${responseStatusCode} ${responseStatusText}`,
       );
     }
-    const text =
-      response.status === 304
-        ? ""
-        : await readResponseTextWithLimit(response, MAX_MONITOR_RESPONSE_BYTES);
-    if (text === null) throw new Error("供应商响应超过 8 MB 限制");
     const responseHash = text
       ? hashProviderSourceResponse(text)
       : monitor.responseHash;
     const notModified =
       !readsProductDetails &&
-      (response.status === 304 ||
+      (responseStatusCode === 304 ||
         Boolean(
           configUnchanged &&
           responseHash &&
@@ -509,7 +576,7 @@ export async function runProviderMonitor(
         runGeneration: monitor.runGeneration,
         runValues: {
           status: "succeeded",
-          httpStatus: response.status,
+          httpStatus: responseStatusCode,
           responseHash,
           unchanged: refreshed.length,
           finishedAt: new Date(),
@@ -519,9 +586,9 @@ export async function runProviderMonitor(
           ...getProviderMonitorSuccessSchedule(monitor.scheduleMode, nextRunAt),
           lastStatus: "succeeded",
           lastError: null,
-          etag: response.headers.get("etag") ?? monitor.etag,
+          etag: responseHeaders.get("etag") ?? monitor.etag,
           lastModified:
-            response.headers.get("last-modified") ?? monitor.lastModified,
+            responseHeaders.get("last-modified") ?? monitor.lastModified,
           responseHash,
           lastSummary: summary,
           updatedAt: checkedAt,
@@ -541,13 +608,15 @@ export async function runProviderMonitor(
       return summary;
     }
 
-    let candidates = parseProviderSourcePayload({
-      adapter,
-      body: text,
-      config,
-      sourceUrl: monitor.endpointUrl,
-      affiliate: context,
-    });
+    let candidates =
+      initialCandidates ??
+      parseProviderSourcePayload({
+        adapter,
+        body: text,
+        config,
+        sourceUrl: monitor.endpointUrl,
+        affiliate: context,
+      });
     if (candidates.length > MAX_MONITOR_ITEMS) {
       throw new Error(`供应商网站一次返回超过 ${MAX_MONITOR_ITEMS} 个套餐`);
     }
@@ -570,11 +639,15 @@ export async function runProviderMonitor(
           row.normalizedData as ProviderOfferCandidate,
         ]),
       );
+      const cachedProductPage = prefetchedProductPage;
       const enrichment = await enrichWhmcsProductPrices({
         candidates,
         previousCandidates,
         headers: config.headers,
         timeoutMs: monitor.timeoutSeconds * 1_000,
+        fetchProductPage: cachedProductPage
+          ? async () => cachedProductPage
+          : undefined,
       });
       candidates = enrichment.candidates;
       for (const issue of enrichment.issues) {
@@ -666,7 +739,7 @@ export async function runProviderMonitor(
       runGeneration: monitor.runGeneration,
       runValues: {
         status: "succeeded",
-        httpStatus: response.status,
+        httpStatus: responseStatusCode,
         responseHash,
         received: candidates.length,
         ...counters,
@@ -678,8 +751,8 @@ export async function runProviderMonitor(
         ...getProviderMonitorSuccessSchedule(monitor.scheduleMode, nextRunAt),
         lastStatus: "succeeded",
         lastError: null,
-        etag: response.headers.get("etag"),
-        lastModified: response.headers.get("last-modified"),
+        etag: responseHeaders.get("etag"),
+        lastModified: responseHeaders.get("last-modified"),
         responseHash,
         lastSummary: summary,
         updatedAt: checkedAt,
@@ -1089,11 +1162,10 @@ export type ProviderMonitorMutationInput = {
 
 async function getProductLinksAffiliateConfig(
   providerId: number,
-  endpointUrl: string,
+  config: ProductLinksMonitorConfig,
 ): Promise<ProviderOfferAffiliateConfigInput> {
   const [provider] = await db
     .select({
-      officialUrl: affServiceProviders.officialUrl,
       offerAffUrl: affServiceProviders.offerAffUrl,
       offerAffParam: affServiceProviders.offerAffParam,
       offerAffValue: affServiceProviders.offerAffValue,
@@ -1105,9 +1177,7 @@ async function getProductLinksAffiliateConfig(
     .where(eq(affServiceProviders.id, providerId))
     .limit(1);
   if (!provider) throw new Error("供应商不存在");
-  if (!affiliateProviderDomainsMatch(endpointUrl, provider.officialUrl)) {
-    throw new Error("套餐集合页域名与所选供应商官网不一致");
-  }
+  if (!config.productId) throw new Error("请输入要采集的商品 PID");
   if (
     getProviderOfferAffiliateMode(provider) !== "product_param" ||
     !hasCompleteProviderOfferAffiliateConfig(provider)
@@ -1117,27 +1187,40 @@ async function getProductLinksAffiliateConfig(
   return provider;
 }
 
+async function normalizeProviderMonitorMutationInput(
+  input: ProviderMonitorMutationInput,
+) {
+  if (input.adapter !== "product_links") return input;
+  const config = input.config as ProductLinksMonitorConfig;
+  const affiliate = await getProductLinksAffiliateConfig(
+    input.providerId,
+    config,
+  );
+  const candidate = getManualProductLinkCandidate({ config, affiliate });
+  return { ...input, endpointUrl: candidate.purchaseUrl };
+}
+
 export async function createProviderMonitor(
   input: ProviderMonitorMutationInput,
 ) {
-  if (input.adapter === "product_links") {
-    await getProductLinksAffiliateConfig(input.providerId, input.endpointUrl);
-  }
+  const normalizedInput = await normalizeProviderMonitorMutationInput(input);
   const now = new Date();
   const [created] = await db
     .insert(providerMonitors)
     .values({
-      ...input,
+      ...normalizedInput,
       scheduleMode: "scheduled",
-      config: prepareProviderMonitorSecrets(input.config),
-      nextRunAt: input.enabled ? now : null,
+      config: prepareProviderMonitorSecrets(normalizedInput.config),
+      nextRunAt: normalizedInput.enabled ? now : null,
       createdAt: now,
       updatedAt: now,
     })
     .returning({ id: providerMonitors.id });
 
   if (!created) throw new Error("供应商采集源创建失败");
-  if (input.enabled) await enqueueProviderMonitorTask(created.id, now);
+  if (normalizedInput.enabled) {
+    await enqueueProviderMonitorTask(created.id, now);
+  }
   return created;
 }
 
@@ -1145,10 +1228,8 @@ export async function updateProviderMonitor(
   id: number,
   input: ProviderMonitorMutationInput,
 ) {
-  if (input.adapter === "product_links") {
-    await getProductLinksAffiliateConfig(input.providerId, input.endpointUrl);
-  }
-  const { providerId, ...mutableInput } = input;
+  const normalizedInput = await normalizeProviderMonitorMutationInput(input);
+  const { providerId, ...mutableInput } = normalizedInput;
   const now = new Date();
   const updated = await db.transaction(async (tx) => {
     const [existing] = await tx
@@ -1172,7 +1253,7 @@ export async function updateProviderMonitor(
       existing.adapter as ProviderSourceAdapter,
     );
     const preparedConfig = prepareProviderMonitorSecrets(
-      input.config,
+      normalizedInput.config,
       existingConfig,
     );
     const [result] = await tx
@@ -1455,6 +1536,10 @@ export async function getProviderOptionsForMonitoring() {
       slug: affServiceProviders.slug,
       aliases: affServiceProviders.aliases,
       officialUrl: affServiceProviders.officialUrl,
+      offerAffUrl: affServiceProviders.offerAffUrl,
+      offerAffiliateMode: affServiceProviders.offerAffiliateMode,
+      offerAffiliateProductParam:
+        affServiceProviders.offerAffiliateProductParam,
     })
     .from(affServiceProviders)
     .orderBy(asc(affServiceProviders.name));
@@ -1556,13 +1641,6 @@ export async function previewProviderMonitorSource(input: {
   config: ProviderMonitorConfig;
   timeoutSeconds: number;
 }) {
-  const affiliate =
-    input.adapter === "product_links"
-      ? await getProductLinksAffiliateConfig(
-          input.providerId,
-          input.endpointUrl,
-        )
-      : undefined;
   const [existing] = input.monitorId
     ? await db
         .select({
@@ -1584,54 +1662,83 @@ export async function previewProviderMonitorSource(input: {
     existingConfig,
   );
   const config = resolveProviderMonitorSecrets(mergedConfig).config;
-  const response = await fetchPublicHttpUrl(
-    input.endpointUrl,
-    {
-      headers: {
-        Accept:
-          input.adapter === "json"
-            ? "application/json"
-            : "text/html,application/xhtml+xml",
-        ...config.headers,
-      },
-      maxRedirects: 0,
-      signal: AbortSignal.timeout(input.timeoutSeconds * 1_000),
-    },
-    "供应商采集地址",
-  );
-  if (!response.ok) {
-    throw new Error(
-      `供应商网站返回 HTTP ${response.status} ${response.statusText}`,
+  let httpStatus: number;
+  let parsedCandidates: ProviderOfferCandidate[];
+  let prefetchedProductPage: Awaited<
+    ReturnType<typeof fetchWhmcsProductPage>
+  > | null = null;
+
+  if (input.adapter === "product_links") {
+    const productConfig = config as ProductLinksMonitorConfig;
+    const affiliate = await getProductLinksAffiliateConfig(
+      input.providerId,
+      productConfig,
     );
+    const candidate = getManualProductLinkCandidate({
+      config: productConfig,
+      affiliate,
+    });
+    prefetchedProductPage = await fetchWhmcsProductPage({
+      url: candidate.purchaseUrl,
+      headers: config.headers,
+      timeoutMs: input.timeoutSeconds * 1_000,
+    });
+    httpStatus = 200;
+    parsedCandidates = [candidate];
+  } else {
+    const response = await fetchPublicHttpUrl(
+      input.endpointUrl,
+      {
+        headers: {
+          Accept:
+            input.adapter === "json"
+              ? "application/json"
+              : "text/html,application/xhtml+xml",
+          ...config.headers,
+        },
+        maxRedirects: 0,
+        signal: AbortSignal.timeout(input.timeoutSeconds * 1_000),
+      },
+      "供应商采集地址",
+    );
+    if (!response.ok) {
+      throw new Error(
+        `供应商网站返回 HTTP ${response.status} ${response.statusText}`,
+      );
+    }
+    const body = await readResponseTextWithLimit(
+      response,
+      MAX_MONITOR_RESPONSE_BYTES,
+    );
+    if (body === null) throw new Error("供应商响应超过 8 MB 限制");
+    httpStatus = response.status;
+    parsedCandidates = parseProviderSourcePayload({
+      adapter: input.adapter,
+      body,
+      config,
+      sourceUrl: input.endpointUrl,
+    });
   }
-  const body = await readResponseTextWithLimit(
-    response,
-    MAX_MONITOR_RESPONSE_BYTES,
-  );
-  if (body === null) throw new Error("供应商响应超过 8 MB 限制");
-  const parsedCandidates = parseProviderSourcePayload({
-    adapter: input.adapter,
-    body,
-    config,
-    sourceUrl: input.endpointUrl,
-    affiliate,
-  });
   if (parsedCandidates.length > MAX_MONITOR_ITEMS) {
     throw new Error(`供应商网站一次返回超过 ${MAX_MONITOR_ITEMS} 个套餐`);
   }
   let candidates = parsedCandidates.slice(0, 20);
   let detailIssues = 0;
   if (input.adapter === "whmcs" || input.adapter === "product_links") {
+    const cachedProductPage = prefetchedProductPage;
     const enrichment = await enrichWhmcsProductPrices({
       candidates,
       headers: config.headers,
       timeoutMs: input.timeoutSeconds * 1_000,
+      fetchProductPage: cachedProductPage
+        ? async () => cachedProductPage
+        : undefined,
     });
     candidates = enrichment.candidates;
     detailIssues = enrichment.issues.length;
   }
   return {
-    httpStatus: response.status,
+    httpStatus,
     total: parsedCandidates.length,
     detailIssues,
     items: candidates.map((candidate) => {

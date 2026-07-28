@@ -566,7 +566,7 @@ function parseProductLinkCandidates(input: {
     getProviderOfferAffiliateMode(input.affiliate) !== "product_param" ||
     !hasCompleteProviderOfferAffiliateConfig(input.affiliate)
   ) {
-    throw new Error("套餐集合页要求供应商配置完整的按产品 ID 返利链接");
+    throw new Error("单商品 PID 采集要求供应商配置完整的按产品 ID 返利链接");
   }
   const affiliateConfig = normalizeProviderOfferAffiliateConfig(
     input.affiliate,
@@ -574,6 +574,62 @@ function parseProductLinkCandidates(input: {
   const productParam = affiliateConfig.offerAffiliateProductParam?.trim();
   if (!productParam) throw new Error("供应商未配置产品 ID 参数");
 
+  const configuredProductId = input.config.productId.trim();
+  if (configuredProductId) {
+    if (productParam.toLowerCase() !== "pid") {
+      throw new Error("单商品 PID 采集要求套餐采集产品 ID 参数配置为 pid");
+    }
+    const externalProductId = `${productParam.toLowerCase()}:${configuredProductId}`;
+    const affiliate = resolveProviderOfferAffiliateUrl({
+      rawUrl: affiliateConfig.offerAffUrl,
+      affiliate: affiliateConfig,
+      externalProductId,
+    });
+    if (!affiliate) throw new Error("无法生成套餐采集返利链接");
+
+    const productGroup =
+      nullableText(input.config.defaults.productGroup) ?? "Server Plan";
+    return [
+      {
+        externalProductId,
+        title: `${productGroup} PID ${configuredProductId}`,
+        productGroup,
+        productType: inferProductType(
+          productGroup,
+          input.config.defaults.productType,
+        ),
+        cpu: null,
+        memory: null,
+        storage: null,
+        bandwidth: null,
+        traffic: null,
+        region: input.config.defaults.region ?? null,
+        countryCode: input.config.defaults.countryCode ?? null,
+        city: input.config.defaults.city ?? null,
+        lineType: input.config.defaults.lineType ?? null,
+        network: input.config.defaults.network ?? null,
+        ipv4: null,
+        ipv6: null,
+        status: input.config.defaults.status,
+        purchaseUrl: affiliate.url,
+        promoCode: null,
+        prices: [],
+        sourceUrl: affiliate.url,
+        raw: {
+          affiliatePurchaseUrl: affiliate.url,
+          configuredProductId,
+          __evidence: {
+            adapter: "product_links",
+            inputMode: "manual_pid",
+            productParam: productParam.toLowerCase(),
+          },
+        },
+      } satisfies ProviderOfferCandidate,
+    ];
+  }
+
+  // Legacy parser compatibility only. Save, preview, and run paths now require
+  // an explicit productId before this parser is called.
   const $ = load(input.body);
   const pageGroup =
     nullableText(input.config.defaults.productGroup) ??

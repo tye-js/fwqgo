@@ -964,7 +964,7 @@ type AdminActionResult<T> =
 - 新发现套餐默认进入待审核，已审核套餐只同步未被人工锁定的字段。
 - 购买链接只读取 `offerAffUrl`、`offerAffParam`、`offerAffValue`、`offerAffiliateMode`、`offerAffiliateProductParam`，按追加参数、整条替换或产品 ID 参数模式处理。
 - 套餐采集不能读取或改写 AI 使用的 `affUrl`、`affParam`、`affValue`；只有套餐采集返利字段变化时才使相关采集源重新排队。
-- 同一供应商可以维护多个套餐集合页；系统从集合页购买链接提取与商家配置严格同名的 PID/GID，生成产品返利详情链接后补齐规格和多周期价格。
+- 供应商采集源人工维护单个商品 PID；系统将 PID 写入该供应商独立的套餐采集返利基础链接，并只请求生成后的返利商品链接来补齐规格和多周期价格，不再扫描集合页发现产品 ID。
 - 文章仅作为 `review`、`mention` 或 `deal` 关系关联套餐，不参与套餐识别。
 - 一次官网缺失不能停售，必须达到采集源配置的连续缺失阈值。
 - 定时采集使用持久后台队列，运行记录和失败原因进入 CMS 与任务中心。

@@ -139,6 +139,13 @@ const htmlMonitorConfigSchema = z.object({
 });
 
 const productLinksMonitorConfigSchema = z.object({
+  productId: z
+    .string()
+    .trim()
+    .max(20, "商品 PID 最多 20 位")
+    .regex(/^(?:|[1-9]\d{0,19})$/, "商品 PID 必须是正整数")
+    .default(""),
+  // Kept for parsing older saved configs. Manual PID collection does not use it.
   linkSelector: z.string().trim().min(1).max(500).default("a[href]"),
   requiredSpecCount: z.number().int().min(0).max(5).default(2),
   defaults: defaultsSchema,

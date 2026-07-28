@@ -145,6 +145,7 @@ const defaultHtmlConfig = {
 };
 
 const defaultProductLinksConfig = {
+  productId: "",
   linkSelector: "a[href]",
   requiredSpecCount: 2,
   defaults: {},
@@ -168,7 +169,7 @@ const adapterLabels: Record<string, string> = {
   json: "JSON 接口",
   html: "HTML 页面",
   whmcs: "WHMCS 页面",
-  product_links: "套餐集合页",
+  product_links: "单商品 PID",
 };
 
 const purposeLabels: Record<string, string> = {
@@ -265,6 +266,65 @@ function matchesProvider(provider: Provider, query: string) {
   ].some((value) => value?.toLocaleLowerCase().includes(normalizedQuery));
 }
 
+function getProductIdFromConfig(value: unknown) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return "";
+  }
+  const productId = (value as { productId?: unknown }).productId;
+  return typeof productId === "string" ? productId : "";
+}
+
+function getProductIdFromConfigText(value: string) {
+  try {
+    return getProductIdFromConfig(JSON.parse(value));
+  } catch {
+    return "";
+  }
+}
+
+function serializeProductLinksConfig(configText: string, productId: string) {
+  try {
+    const parsed = JSON.parse(configText) as unknown;
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return configText;
+    }
+    return JSON.stringify({ ...parsed, productId }, null, 2);
+  } catch {
+    return configText;
+  }
+}
+
+function getProductAffiliatePreview(
+  provider: Provider | undefined,
+  productId: string,
+) {
+  if (!provider || !productId.trim()) return null;
+  if (
+    provider.offerAffiliateMode !== "product_param" ||
+    !provider.offerAffUrl.trim() ||
+    !provider.offerAffiliateProductParam?.trim()
+  ) {
+    return { error: "供应商尚未配置按产品 ID 的套餐采集返利链接。" };
+  }
+  if (provider.offerAffiliateProductParam.trim().toLowerCase() !== "pid") {
+    return { error: "供应商的套餐采集产品 ID 参数必须配置为 pid。" };
+  }
+  try {
+    const url = new URL(provider.offerAffUrl);
+    url.searchParams.set(
+      provider.offerAffiliateProductParam.trim(),
+      productId.trim(),
+    );
+    return { url: url.toString() };
+  } catch {
+    return { error: "供应商的套餐采集返利链接格式不正确。" };
+  }
+}
+
 function MonitorFormDialog({
   monitor,
   providers,
@@ -298,6 +358,9 @@ function MonitorFormDialog({
       ? JSON.stringify(monitor.config, null, 2)
       : getDefaultConfigText("product_links"),
   );
+  const [productId, setProductId] = useState(
+    getProductIdFromConfig(monitor?.config),
+  );
   const [configDrafts, setConfigDrafts] = useState<
     Partial<Record<MonitorAdapter, string>>
   >({});
@@ -315,6 +378,10 @@ function MonitorFormDialog({
     !matchingProviders.some((provider) => provider.id === selectedProvider.id)
       ? [selectedProvider, ...matchingProviders]
       : matchingProviders;
+  const productAffiliatePreview = getProductAffiliatePreview(
+    selectedProvider,
+    productId,
+  );
 
   function actionInput(formData: FormData) {
     return {
@@ -325,7 +392,10 @@ function MonitorFormDialog({
       purpose: getFormDataText(formData, "purpose") as
         "catalog" | "promotion" | "stock",
       endpointUrl: getFormDataText(formData, "endpointUrl"),
-      configText,
+      configText:
+        adapter === "product_links"
+          ? serializeProductLinksConfig(configText, productId)
+          : configText,
       enabled,
       autoPublish,
       missingThreshold: Number(formData.get("missingThreshold")),
@@ -373,7 +443,8 @@ function MonitorFormDialog({
         description: "预览不会写入候选或套餐数据。",
       }),
       errorTitle: "采集预览失败",
-      errorSuggestion: "请检查供应商网址、字段映射与登录状态后重试。",
+      errorSuggestion:
+        "请检查供应商套餐采集返利配置、商品 PID、网址与字段映射后重试。",
       refresh: false,
     }).finally(() => {
       formMutationLockRef.current = false;
@@ -388,8 +459,7 @@ function MonitorFormDialog({
             {monitor ? "编辑供应商采集源" : "新增供应商采集源"}
           </DialogTitle>
           <DialogDescription>
-            维护供应商套餐集合页，或从 JSON、HTML、WHMCS
-            页面采集具体配置、价格和独立购买链接。
+            使用商品 PID 采集单个套餐，或配置 JSON、HTML、WHMCS 数据源。
           </DialogDescription>
         </DialogHeader>
         <form action={submit} className="space-y-4">
@@ -446,7 +516,7 @@ function MonitorFormDialog({
               <Input
                 id="monitor-name"
                 name="name"
-                defaultValue={monitor?.name ?? "官网套餐目录"}
+                defaultValue={monitor?.name ?? "单商品 PID 采集"}
                 required
                 className="min-h-11"
               />
@@ -467,7 +537,7 @@ function MonitorFormDialog({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="monitor-adapter">网页类型</Label>
+              <Label htmlFor="monitor-adapter">采集方式</Label>
               <Select
                 value={adapter}
                 onValueChange={(value) => {
@@ -477,10 +547,13 @@ function MonitorFormDialog({
                     [adapter]: configText,
                   }));
                   setAdapter(nextAdapter);
-                  setConfigText(
+                  const nextConfigText =
                     configDrafts[nextAdapter] ??
-                      getDefaultConfigText(nextAdapter),
-                  );
+                    getDefaultConfigText(nextAdapter);
+                  setConfigText(nextConfigText);
+                  if (nextAdapter === "product_links") {
+                    setProductId(getProductIdFromConfigText(nextConfigText));
+                  }
                   setPreview(null);
                 }}
               >
@@ -489,7 +562,7 @@ function MonitorFormDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="json">JSON 接口</SelectItem>
-                  <SelectItem value="product_links">套餐集合页</SelectItem>
+                  <SelectItem value="product_links">单商品 PID</SelectItem>
                   <SelectItem value="html">HTML 产品页</SelectItem>
                   <SelectItem value="whmcs">WHMCS 产品页</SelectItem>
                 </SelectContent>
@@ -512,18 +585,62 @@ function MonitorFormDialog({
               </Select>
             </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="monitor-endpoint">供应商网址</Label>
-            <Input
-              id="monitor-endpoint"
-              name="endpointUrl"
-              type="url"
-              defaultValue={monitor?.endpointUrl ?? ""}
-              placeholder="https://provider.example/products"
-              required
-              className="min-h-11 font-mono text-sm"
-            />
-          </div>
+          {adapter === "product_links" ? (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="monitor-product-id">商品 PID</Label>
+                <Input
+                  id="monitor-product-id"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[1-9][0-9]*"
+                  maxLength={20}
+                  value={productId}
+                  onChange={(event) => {
+                    setProductId(event.target.value);
+                    setPreview(null);
+                  }}
+                  placeholder="例如 81"
+                  required
+                  aria-describedby="monitor-product-link-preview"
+                  className="min-h-11 font-mono text-sm"
+                />
+              </div>
+              <div
+                id="monitor-product-link-preview"
+                className="rounded-md border border-border/70 bg-muted/20 px-3 py-2"
+              >
+                <p className="text-xs font-medium text-foreground">
+                  返利商品采集链接
+                </p>
+                <p
+                  aria-live="polite"
+                  className={`mt-1 break-all font-mono text-xs leading-5 ${
+                    productAffiliatePreview?.error
+                      ? "text-destructive"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {productAffiliatePreview?.url ??
+                    productAffiliatePreview?.error ??
+                    "输入 PID 后自动生成"}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="monitor-endpoint">供应商网址</Label>
+              <Input
+                id="monitor-endpoint"
+                name="endpointUrl"
+                type="url"
+                defaultValue={monitor?.endpointUrl ?? ""}
+                placeholder="https://provider.example/products"
+                required
+                className="min-h-11 font-mono text-sm"
+              />
+            </div>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="monitor-interval">执行间隔（分钟）</Label>
@@ -552,27 +669,50 @@ function MonitorFormDialog({
               />
             </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="monitor-config">
-              {adapter === "product_links" ? "高级配置 JSON" : "字段映射 JSON"}
-            </Label>
-            <Textarea
-              id="monitor-config"
-              name="configText"
-              value={configText}
-              onChange={(event) => {
-                setConfigText(event.target.value);
-                setPreview(null);
-              }}
-              className="min-h-72 font-mono text-xs leading-5"
-              spellCheck={false}
-            />
-            <p className="text-xs leading-5 text-muted-foreground">
-              {adapter === "product_links"
-                ? "系统会自动查找购买链接中的产品 ID，并使用所选供应商的返利链接读取详情；通常无需修改默认配置。"
-                : "JSON 使用字段路径；HTML/WHMCS 使用 itemSelector 和 CSS 选择器。每个套餐必须有稳定产品 ID、价格、配置和独立购买链接。"}
-            </p>
-          </div>
+          {adapter === "product_links" ? (
+            <Collapsible>
+              <CollapsibleTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="min-h-11 w-full justify-between px-2"
+                >
+                  高级配置
+                  <ChevronDown className="size-4" aria-hidden="true" />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-2 pt-2">
+                <Label htmlFor="monitor-config">高级配置 JSON</Label>
+                <Textarea
+                  id="monitor-config"
+                  value={configText}
+                  onChange={(event) => {
+                    setConfigText(event.target.value);
+                    setPreview(null);
+                  }}
+                  className="min-h-56 font-mono text-xs leading-5"
+                  spellCheck={false}
+                />
+              </CollapsibleContent>
+            </Collapsible>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="monitor-config">字段映射 JSON</Label>
+              <Textarea
+                id="monitor-config"
+                value={configText}
+                onChange={(event) => {
+                  setConfigText(event.target.value);
+                  setPreview(null);
+                }}
+                className="min-h-72 font-mono text-xs leading-5"
+                spellCheck={false}
+              />
+              <p className="text-xs leading-5 text-muted-foreground">
+                JSON 使用字段路径；HTML/WHMCS 使用 itemSelector 和 CSS 选择器。
+              </p>
+            </div>
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex min-h-16 items-center justify-between gap-4 rounded-md border border-border/70 px-3">
               <span>

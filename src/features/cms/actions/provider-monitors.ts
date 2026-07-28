@@ -39,7 +39,7 @@ const monitorInputSchema = z.object({
   name: z.string().trim().min(1, "请输入采集源名称").max(160),
   adapter: z.enum(PROVIDER_SOURCE_ADAPTERS),
   purpose: z.enum(PROVIDER_SOURCE_PURPOSES),
-  endpointUrl: z.string().trim().url("请输入完整的供应商网址"),
+  endpointUrl: z.string().trim().max(2_048, "供应商网址不能超过 2048 个字符"),
   configText: z.string().trim().max(30_000),
   enabled: z.boolean(),
   autoPublish: z.boolean(),
@@ -103,10 +103,10 @@ const saveProviderMonitorMutation = defineAdminAction({
   entityType: "provider_monitor",
   parse: (input: ProviderMonitorActionInput) => monitorInputSchema.parse(input),
   execute: async (input) => {
-    const endpointUrl = requirePublicHttpUrl(
-      input.endpointUrl,
-      "供应商采集地址",
-    ).toString();
+    const endpointUrl =
+      input.adapter === "product_links"
+        ? ""
+        : requirePublicHttpUrl(input.endpointUrl, "供应商采集地址").toString();
     const config = parseConfigText(input.configText, input.adapter);
     const mutationInput = {
       providerId: input.providerId,
@@ -130,7 +130,7 @@ const saveProviderMonitorMutation = defineAdminAction({
   successMessage: "供应商采集源已保存",
   errorTitle: "保存供应商采集源失败",
   errorSuggestion:
-    "请检查供应商、网址、适配器、字段映射 JSON、执行间隔和超时时间。",
+    "请检查供应商的套餐采集返利配置、商品 PID、网址、字段映射和执行参数。",
   entityId: (input, result) => result?.id ?? input.id,
 });
 
@@ -321,10 +321,10 @@ export async function previewProviderMonitorAction(
   try {
     await requireAdminSession();
     const input = monitorInputSchema.parse(rawInput);
-    const endpointUrl = requirePublicHttpUrl(
-      input.endpointUrl,
-      "供应商采集地址",
-    ).toString();
+    const endpointUrl =
+      input.adapter === "product_links"
+        ? ""
+        : requirePublicHttpUrl(input.endpointUrl, "供应商采集地址").toString();
     const config = parseConfigText(input.configText, input.adapter);
     const preview = await previewProviderMonitorSource({
       monitorId: input.id,
@@ -343,7 +343,8 @@ export async function previewProviderMonitorAction(
   } catch (error) {
     return adminActionFailure(error, {
       title: "采集预览失败",
-      suggestion: "请检查网址可访问性、适配器和字段选择器，不会写入套餐数据。",
+      suggestion:
+        "请检查供应商的套餐采集返利配置、商品 PID、网址和字段选择器，不会写入套餐数据。",
     });
   }
 }
