@@ -131,7 +131,7 @@ ${input.previousResponse}
 ${diagnostics}
 
 请根据上方同一批页面的 structure 重新输出完整 JSON。只修复失败来源，不要重复已经通过预检的来源。
-HTML/WHMCS 的每个 CSS 选择器必须逐字来自页面 structure，并能在对应 endpointUrl 的页面中实际命中。产品 ID 位于购买链接查询参数时，可以让 externalProductId 读取该链接的 href，将完整产品链接作为稳定 ID；不得编造根节点 data 属性。不得通过降低 requiredSpecCount 掩盖缺失字段，不得编造页面中不存在的套餐、价格、配置或链接。`;
+HTML/WHMCS 的每个 CSS 选择器必须逐字来自页面 structure，并能在对应 endpointUrl 的页面中实际命中。产品 ID 位于购买链接查询参数时，可以让 externalProductId 与 purchaseUrl 读取同一个 href，解析器会提取 PID/GID 并归一化；不要把带跟踪参数的完整购买 URL 当作稳定 ID，也不得编造根节点 data 属性。不得通过降低 requiredSpecCount 掩盖缺失字段，不得编造页面中不存在的套餐、价格、配置或链接。`;
 }
 
 export function formatProviderCatalogAiAudit(input: {

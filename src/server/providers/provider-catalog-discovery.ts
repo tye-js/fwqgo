@@ -9,7 +9,7 @@ import { isOfficialProviderUrl } from "@/server/providers/provider-profile-scrap
 
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
-const MAX_FETCHED_PAGES = 10;
+const MAX_FETCHED_PAGES = 18;
 const MAX_DISCOVERED_URLS = 100;
 const MAX_HTML_EXCERPT_LENGTH = 36_000;
 const MAX_TEXT_LENGTH = 18_000;
@@ -26,6 +26,8 @@ const browserHeaders = {
 
 const catalogKeyword =
   /(?:\b(?:vps|server|servers|cloud|hosting|host|compute|instance|instances|dedicated|pricing|price|plans?|products?|store|shop|order|cart|buy)\b|云服务器|服务器|套餐|产品|价格|购买|订购|购物车)/i;
+const preferredCatalogCategoryPattern =
+  /(?:\b(?:shared[-_\s]*hosting|kvm[-_\s]*vps|ryzen[-_\s]*vps|windows[-_\s]*vps|cloud[-_\s]*(?:vps|servers?)|dedicated[-_\s]*servers?|ryzen[-_\s]*dedicated|hybrid[-_\s]*dedicated|bare[-_\s]*metal)\b|共享主机|虚拟主机|独立服务器|裸金属)/i;
 const productSignalPatterns = [
   /(?:\bv?cpu\b|cores?|processor|处理器|核心)/i,
   /(?:\bram\b|memory|内存)/i,
@@ -91,6 +93,10 @@ function scoreCatalogPage(page: ProviderCatalogFetchedPage) {
   let score = page.signals.length * 4;
   if (page.contentType === "json") score += 10;
   if (page.signals.includes("whmcs")) score += 12;
+  if (preferredCatalogCategoryPattern.test(comparable)) score += 18;
+  if (/(?:\bshared[-_\s]*hosting\b|共享主机|虚拟主机)/i.test(comparable)) {
+    score += 22;
+  }
   if (
     /(?:\b(?:vps|kvm|cloud|compute|dedicated|bare\s*metal|ryzen|epyc)\b|云服务器|独立服务器|裸金属)/i.test(
       comparable,
@@ -106,7 +112,7 @@ function scoreCatalogPage(page: ProviderCatalogFetchedPage) {
     score += 6;
   }
   if (
-    /(?:\b(?:colocation|domain|ssl|email|web\s*hosting|reseller|vpn)\b|域名|虚拟主机)/i.test(
+    /(?:\b(?:colocation|domain|ssl|email|vpn)\b|域名|机柜托管)/i.test(
       comparable,
     )
   ) {
@@ -179,8 +185,18 @@ function normalizeOfficialUrl(
 function scoreCatalogLink(url: string, text: string) {
   const parsed = new URL(url);
   const comparable = `${parsed.pathname} ${parsed.search} ${text}`;
+  const action =
+    parsed.searchParams.get("a") ?? parsed.searchParams.get("action") ?? "";
+  const isDirectPurchase =
+    /^(?:add|order|checkout)$/i.test(action.trim()) &&
+    [...parsed.searchParams.keys()].some((key) =>
+      /^(?:pid|gid|product|product_?id|plan_?id|package_?id|id)$/i.test(key),
+    );
+  if (isDirectPurchase) return 1;
+
   let score = catalogKeyword.test(comparable) ? 8 : 0;
   if (whmcsPattern.test(comparable)) score += 12;
+  if (preferredCatalogCategoryPattern.test(comparable)) score += 16;
   if (
     /\b(?:pricing|plans?|products?|store|cart|order)\b/i.test(parsed.pathname)
   ) {
@@ -508,13 +524,19 @@ function getOfficialUrlCandidates(officialUrl: string) {
 
 function fallbackCatalogUrls(homeUrl: string, officialHost: string) {
   return [
+    "/shared-hosting",
+    "/kvm-vps",
+    "/ryzen-vps",
+    "/amd-ryzen-vps",
+    "/windows-vps",
+    "/dedicated-servers",
+    "/amd-ryzen-dedicated-servers",
+    "/hybrid-dedicated-servers",
+    "/bare-metal",
     "/cart.php",
     "/store",
     "/pricing",
-    "/plans",
-    "/products",
     "/vps",
-    "/cloud",
     "/servers",
   ]
     .map((path) => normalizeOfficialUrl(path, homeUrl, officialHost))
@@ -555,7 +577,35 @@ export async function collectProviderCatalogPages(
   let sawAuthGate = false;
   let sawDynamicOnly = false;
 
-  const queue = [homeResponse.finalUrl];
+  const fallbackUrls = fallbackCatalogUrls(homeResponse.finalUrl, officialHost);
+  const speculativeUrls = new Set(fallbackUrls);
+  let queueSequence = 0;
+  const queue = new Map<
+    string,
+    { url: string; priority: number; sequence: number }
+  >();
+  const enqueue = (url: string, priority: number) => {
+    if (fetchedUrls.has(url)) return;
+    const existing = queue.get(url);
+    if (existing) {
+      if (priority > existing.priority) existing.priority = priority;
+      return;
+    }
+    queue.set(url, { url, priority, sequence: queueSequence });
+    queueSequence += 1;
+  };
+  const dequeue = () => {
+    const next = [...queue.values()].sort(
+      (left, right) =>
+        right.priority - left.priority || left.sequence - right.sequence,
+    )[0];
+    if (next) queue.delete(next.url);
+    return next?.url ?? null;
+  };
+  enqueue(homeResponse.finalUrl, 1_000);
+  for (const url of fallbackUrls) {
+    enqueue(url, scoreCatalogLink(url, "") + 4);
+  }
   const prefetched = new Map([[homeResponse.finalUrl, homeResponse]]);
   const sitemapUrl = normalizeOfficialUrl(
     "/sitemap.xml",
@@ -575,19 +625,19 @@ export async function collectProviderCatalogPages(
         officialHost,
       )) {
         discoveredUrls.add(url);
-        queue.push(url);
+        enqueue(url, scoreCatalogLink(url, "") + 2);
       }
     } catch {
       // A missing sitemap is normal and should not make an otherwise valid scan noisy.
     }
   }
-  for (const url of fallbackCatalogUrls(homeResponse.finalUrl, officialHost)) {
+  for (const url of fallbackUrls) {
     discoveredUrls.add(url);
-    queue.push(url);
   }
 
-  while (queue.length > 0 && pages.length < MAX_FETCHED_PAGES) {
-    const url = queue.shift()!;
+  while (queue.size > 0 && pages.length < MAX_FETCHED_PAGES) {
+    const url = dequeue();
+    if (!url) break;
     if (fetchedUrls.has(url)) continue;
     fetchedUrls.add(url);
 
@@ -639,22 +689,21 @@ export async function collectProviderCatalogPages(
         signals: sanitized.signals,
         rawBody: response.body,
       });
-      const newlyDiscoveredLinks: string[] = [];
-      for (const link of sanitized.links) {
-        if (discoveredUrls.size >= MAX_DISCOVERED_URLS) break;
-        if (!discoveredUrls.has(link)) newlyDiscoveredLinks.push(link);
-        discoveredUrls.add(link);
-      }
-      if (response.finalUrl === homeResponse.finalUrl) {
-        queue.unshift(...newlyDiscoveredLinks);
-      } else {
-        queue.push(...newlyDiscoveredLinks);
+      for (const link of sanitized.links.slice(0, 50)) {
+        const linkScore = scoreCatalogLink(link, "");
+        if (linkScore <= 1) continue;
+        if (discoveredUrls.size < MAX_DISCOVERED_URLS) {
+          discoveredUrls.add(link);
+        }
+        enqueue(link, linkScore + 20);
       }
     } catch (error) {
       if (error instanceof ProviderCatalogFetchError) {
         if (error.kind === "needs_auth") sawAuthGate = true;
         if (url !== homeResponse.finalUrl) {
-          warnings.push(`${url}：${error.message}`);
+          if (!speculativeUrls.has(url)) {
+            warnings.push(`${url}：${error.message}`);
+          }
           continue;
         }
       }

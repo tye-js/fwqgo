@@ -17,6 +17,12 @@ import {
   type BackgroundJobContext,
 } from "@/server/admin/background-jobs";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
+import {
+  affiliateProviderDomainsMatch,
+  getAffiliateMode,
+  hasCompleteAffiliateConfig,
+  type AffiliateConfigInput,
+} from "@fwqgo/core/affiliate-provider";
 import { fetchPublicHttpUrl } from "@fwqgo/core/network-url";
 import { getProviderMonitorSuccessSchedule } from "@fwqgo/core/provider-catalog-discovery";
 import {
@@ -234,6 +240,8 @@ export async function runProviderMonitor(
       affUrl: affServiceProviders.affUrl,
       affParam: affServiceProviders.affParam,
       affValue: affServiceProviders.affValue,
+      affiliateMode: affServiceProviders.affiliateMode,
+      affiliateProductParam: affServiceProviders.affiliateProductParam,
       defaultPromoCode: affServiceProviders.defaultPromoCode,
     })
     .from(providerMonitors)
@@ -264,6 +272,8 @@ export async function runProviderMonitor(
   }
 
   const adapter = monitor.adapter as ProviderSourceAdapter;
+  const readsProductDetails =
+    adapter === "whmcs" || adapter === "product_links";
   const parsedConfig = parseProviderMonitorConfig(monitor.config, adapter);
   const resolvedSecrets = resolveProviderMonitorSecrets(parsedConfig);
   const config = resolvedSecrets.config;
@@ -292,6 +302,8 @@ export async function runProviderMonitor(
     affUrl: monitor.affUrl,
     affParam: monitor.affParam,
     affValue: monitor.affValue,
+    affiliateMode: monitor.affiliateMode,
+    affiliateProductParam: monitor.affiliateProductParam,
     defaultPromoCode: monitor.defaultPromoCode,
   };
   const configHash = hashProviderMonitorSyncConfig({
@@ -301,6 +313,8 @@ export async function runProviderMonitor(
       affUrl: monitor.affUrl,
       affParam: monitor.affParam,
       affValue: monitor.affValue,
+      affiliateMode: monitor.affiliateMode,
+      affiliateProductParam: monitor.affiliateProductParam,
     },
     behavior: {
       purpose: monitor.purpose,
@@ -392,10 +406,10 @@ export async function runProviderMonitor(
 
   try {
     const conditionalHeaders: Record<string, string> = {};
-    if (adapter !== "whmcs" && configUnchanged && monitor.etag) {
+    if (!readsProductDetails && configUnchanged && monitor.etag) {
       conditionalHeaders["If-None-Match"] = monitor.etag;
     }
-    if (adapter !== "whmcs" && configUnchanged && monitor.lastModified) {
+    if (!readsProductDetails && configUnchanged && monitor.lastModified) {
       conditionalHeaders["If-Modified-Since"] = monitor.lastModified;
     }
     const response = await fetchPublicHttpUrl(
@@ -432,7 +446,7 @@ export async function runProviderMonitor(
       ? hashProviderSourceResponse(text)
       : monitor.responseHash;
     const notModified =
-      adapter !== "whmcs" &&
+      !readsProductDetails &&
       (response.status === 304 ||
         Boolean(
           configUnchanged &&
@@ -531,11 +545,12 @@ export async function runProviderMonitor(
       body: text,
       config,
       sourceUrl: monitor.endpointUrl,
+      affiliate: context,
     });
     if (candidates.length > MAX_MONITOR_ITEMS) {
       throw new Error(`供应商网站一次返回超过 ${MAX_MONITOR_ITEMS} 个套餐`);
     }
-    if (adapter === "whmcs") {
+    if (readsProductDetails) {
       if (candidates.length > MAX_WHMCS_PRODUCT_DETAILS) {
         throw new Error(
           `WHMCS 采集源一次最多读取 ${MAX_WHMCS_PRODUCT_DETAILS} 个产品配置页`,
@@ -638,7 +653,7 @@ export async function runProviderMonitor(
       missing,
       rejectionReasons:
         candidates.length === 0
-          ? { "字段映射未匹配到套餐项": 1 }
+          ? { 字段映射未匹配到套餐项: 1 }
           : preparedCandidates.rejectionReasons,
       configHash,
       checkedAt: checkedAt.toISOString(),
@@ -1071,9 +1086,41 @@ export type ProviderMonitorMutationInput = {
   timeoutSeconds: number;
 };
 
+async function getProductLinksAffiliateConfig(
+  providerId: number,
+  endpointUrl: string,
+): Promise<AffiliateConfigInput> {
+  const [provider] = await db
+    .select({
+      officialUrl: affServiceProviders.officialUrl,
+      affUrl: affServiceProviders.affUrl,
+      affParam: affServiceProviders.affParam,
+      affValue: affServiceProviders.affValue,
+      affiliateMode: affServiceProviders.affiliateMode,
+      affiliateProductParam: affServiceProviders.affiliateProductParam,
+    })
+    .from(affServiceProviders)
+    .where(eq(affServiceProviders.id, providerId))
+    .limit(1);
+  if (!provider) throw new Error("供应商不存在");
+  if (!affiliateProviderDomainsMatch(endpointUrl, provider.officialUrl)) {
+    throw new Error("套餐集合页域名与所选供应商官网不一致");
+  }
+  if (
+    getAffiliateMode(provider) !== "product_param" ||
+    !hasCompleteAffiliateConfig(provider)
+  ) {
+    throw new Error("请先为供应商配置完整的按产品 ID 返利链接");
+  }
+  return provider;
+}
+
 export async function createProviderMonitor(
   input: ProviderMonitorMutationInput,
 ) {
+  if (input.adapter === "product_links") {
+    await getProductLinksAffiliateConfig(input.providerId, input.endpointUrl);
+  }
   const now = new Date();
   const [created] = await db
     .insert(providerMonitors)
@@ -1096,6 +1143,9 @@ export async function updateProviderMonitor(
   id: number,
   input: ProviderMonitorMutationInput,
 ) {
+  if (input.adapter === "product_links") {
+    await getProductLinksAffiliateConfig(input.providerId, input.endpointUrl);
+  }
   const { providerId, ...mutableInput } = input;
   const now = new Date();
   const updated = await db.transaction(async (tx) => {
@@ -1372,11 +1422,19 @@ export async function getProviderOfferCandidateList(
 
 export async function previewProviderMonitorSource(input: {
   monitorId?: number;
+  providerId: number;
   adapter: ProviderSourceAdapter;
   endpointUrl: string;
   config: ProviderMonitorConfig;
   timeoutSeconds: number;
 }) {
+  const affiliate =
+    input.adapter === "product_links"
+      ? await getProductLinksAffiliateConfig(
+          input.providerId,
+          input.endpointUrl,
+        )
+      : undefined;
   const [existing] = input.monitorId
     ? await db
         .select({
@@ -1428,13 +1486,14 @@ export async function previewProviderMonitorSource(input: {
     body,
     config,
     sourceUrl: input.endpointUrl,
+    affiliate,
   });
   if (parsedCandidates.length > MAX_MONITOR_ITEMS) {
     throw new Error(`供应商网站一次返回超过 ${MAX_MONITOR_ITEMS} 个套餐`);
   }
   let candidates = parsedCandidates.slice(0, 20);
   let detailIssues = 0;
-  if (input.adapter === "whmcs") {
+  if (input.adapter === "whmcs" || input.adapter === "product_links") {
     const enrichment = await enrichWhmcsProductPrices({
       candidates,
       headers: config.headers,

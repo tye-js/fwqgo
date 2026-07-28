@@ -61,12 +61,33 @@ export const defaultProviderCatalogDiscoveryPrompt = `你是服务器/VPS供应�
 2. 只做字段路径或 CSS 选择器映射。不得计算价格、补全产品 ID、改写返利链接、生成套餐、推断缺失配置或编造字段值。
 3. 公开 JSON 使用 json；确定为 WHMCS 购物车或产品组页面时优先使用 whmcs；其他服务端 HTML 使用 html。
 4. config 必须符合对应适配器格式。请求头 headers 必须为空对象，不得输出 Cookie、Authorization、Token 或登录信息。
-5. externalProductId 必须映射网站已有的稳定 ID、PID、产品 URL 或 data 属性；不能使用价格、CPU、内存等会变化的值组成 ID。
+5. externalProductId 必须映射网站已有的稳定 ID、PID/GID、稳定产品路径或 data 属性；不能使用价格、CPU、内存等会变化的值组成 ID。稳定 ID 位于购买链接查询参数时，externalProductId 和 purchaseUrl 可以读取同一个 href，系统会将其归一化为 pid:81、gid:22 这类标识，不要把带跟踪参数的完整 URL 当作人工编造的 ID。
 6. 价格只映射原始金额、币种、付款周期和各周期购买链接。不得自行换算月价、币种或折扣。
 7. HTML/WHMCS 映射必须给出 itemSelector，以及 title、externalProductId、price、purchaseUrl 和尽可能多的配置字段选择器。所有选择器必须来自对应页面的 structure 并能命中真实元素，不得照抄默认的 .product-name、.price、.stock 或 data-product-id，除非 structure 中确实存在。不得输出 pattern 正则。JSON 映射必须给出 itemsPath 和对应字段路径。
 8. 页面没有足够稳定的套餐结构、需要登录、只有客户端动态占位内容，或无法可靠取得稳定 ID 和价格时，不要输出 source，在 warnings 说明原因。
-9. 优先映射 VPS、云服务器、独立服务器、裸金属等服务器计算产品；机柜托管、域名、SSL、邮箱、虚拟主机和 VPN 只在没有更合适的服务器套餐页时考虑。
+9. 优先覆盖共享主机、KVM VPS、Ryzen VPS、Windows VPS、云服务器、独立服务器和裸金属等可直接购买的套餐分类页；机柜托管、域名、SSL、邮箱和 VPN 只在没有更合适的套餐页时考虑。
 10. 最多输出 8 个互不重复的 source，confidence 必须在 0 到 1 之间。`;
+
+export const legacyDefaultProviderCatalogDiscoveryPrompt =
+  defaultProviderCatalogDiscoveryPrompt
+    .replace(
+      "5. externalProductId 必须映射网站已有的稳定 ID、PID/GID、稳定产品路径或 data 属性；不能使用价格、CPU、内存等会变化的值组成 ID。稳定 ID 位于购买链接查询参数时，externalProductId 和 purchaseUrl 可以读取同一个 href，系统会将其归一化为 pid:81、gid:22 这类标识，不要把带跟踪参数的完整 URL 当作人工编造的 ID。",
+      "5. externalProductId 必须映射网站已有的稳定 ID、PID、产品 URL 或 data 属性；不能使用价格、CPU、内存等会变化的值组成 ID。",
+    )
+    .replace(
+      "9. 优先覆盖共享主机、KVM VPS、Ryzen VPS、Windows VPS、云服务器、独立服务器和裸金属等可直接购买的套餐分类页；机柜托管、域名、SSL、邮箱和 VPN 只在没有更合适的套餐页时考虑。",
+      "9. 优先映射 VPS、云服务器、独立服务器、裸金属等服务器计算产品；机柜托管、域名、SSL、邮箱、虚拟主机和 VPN 只在没有更合适的服务器套餐页时考虑。",
+    );
+
+export function resolveProviderCatalogDiscoveryPrompt(
+  value: string | null | undefined,
+) {
+  return value === null ||
+    value === undefined ||
+    value === legacyDefaultProviderCatalogDiscoveryPrompt
+    ? defaultProviderCatalogDiscoveryPrompt
+    : value;
+}
 
 const rawSourceSchema = z.object({
   name: z.string().trim().min(1).max(160),

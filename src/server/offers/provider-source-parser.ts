@@ -8,9 +8,17 @@ import type {
   HtmlFieldConfig,
   HtmlMonitorConfig,
   JsonMonitorConfig,
+  ProductLinksMonitorConfig,
   ProviderMonitorConfig,
   ProviderSourceAdapter,
 } from "@fwqgo/core/provider-monitor-config";
+import {
+  extractProductIdReference,
+  getAffiliateMode,
+  hasCompleteAffiliateConfig,
+  resolveAffiliateUrl,
+  type AffiliateConfigInput,
+} from "@fwqgo/core/affiliate-provider";
 import {
   isPersistableServerOfferAmount,
   isSupportedServerOfferCurrency,
@@ -258,19 +266,399 @@ function resolveUrl(value: unknown, baseUrl: string) {
   }
 }
 
-function inferExternalProductId(explicitId: string, purchaseUrl: string) {
-  if (explicitId) return explicitId;
+function externalProductIdFromUrl(value: string) {
+  const reference = extractProductIdReference(value);
+  if (reference) return `${reference.parameter}:${reference.value}`;
+
   try {
-    const url = new URL(purchaseUrl);
-    for (const key of ["pid", "product", "productId", "id"]) {
-      const value = url.searchParams.get(key)?.trim();
-      if (value) return `${key}:${value}`;
-    }
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
     const path = url.pathname.replace(/\/+$/, "");
-    return path && path !== "/" ? path : "";
+    if (!path || path === "/" || /\/(?:cart|order)(?:\.php)?$/i.test(path)) {
+      return "";
+    }
+    return path;
   } catch {
     return "";
   }
+}
+
+function inferExternalProductId(explicitId: string, purchaseUrl: string) {
+  if (explicitId) {
+    const normalizedUrlId = externalProductIdFromUrl(explicitId);
+    if (normalizedUrlId) return normalizedUrlId;
+    if (!/[/?#=&]/.test(explicitId)) return explicitId;
+  }
+  return externalProductIdFromUrl(purchaseUrl);
+}
+
+const productPricePattern =
+  /(?:HK\$|US\$|C\$|A\$|USD|EUR|GBP|CNY|RMB|HKD|JPY|CAD|AUD|[$€£¥￥])\s*\d|\d(?:[.,]\d+)?\s*(?:USD|EUR|GBP|CNY|RMB|HKD|JPY|CAD|AUD)\b/i;
+
+function structuredHtmlLines(item: Cheerio<AnyNode>) {
+  const html = item.html() ?? item.text();
+  const text = load(
+    `<div>${html
+      .replace(/<br\s*\/?\s*>/gi, "\n")
+      .replace(
+        /<\/(?:address|article|dd|div|dl|dt|figcaption|h[1-6]|li|p|section|td|th|tr)>/gi,
+        "$&\n",
+      )}</div>`,
+  )("div").text();
+  return text
+    .replace(/\u00a0/g, " ")
+    .split(/\n+/)
+    .map((line) => toText(line))
+    .filter(Boolean);
+}
+
+function firstMatchingLine(lines: string[], pattern: RegExp) {
+  return lines.find((line) => pattern.test(line)) ?? null;
+}
+
+function extractBandwidth(value: string | null) {
+  if (!value) return null;
+  return (
+    /\b\d+(?:\.\d+)?\s*(?:G|M|K)bps\b/i.exec(value)?.[0] ??
+    (/\bunmetered\s+(?:port|bandwidth)\b/i.test(value) ? value : null)
+  );
+}
+
+function extractTraffic(value: string | null) {
+  if (!value) return null;
+  if (/\bunmetered\b/i.test(value)) return value;
+  return /\b\d+(?:\.\d+)?\s*(?:TB|GB|MB)\b/i.exec(value)?.[0] ?? null;
+}
+
+function tableFieldMap(item: Cheerio<AnyNode>) {
+  const fields = new Map<string, string>();
+  if (!item.is("tr")) return fields;
+  const table = item.closest("table");
+  const headerNodes = table.find("tr:has(th)").first().find("th");
+  const headers = headerNodes
+    .toArray()
+    .map((_, index) => toText(headerNodes.eq(index).text()).toLowerCase());
+  const cellNodes = item.find("td");
+  const cells = cellNodes
+    .toArray()
+    .map((_, index) => toText(cellNodes.eq(index).text()));
+  headers.forEach((header, index) => {
+    const value = cells[index];
+    if (header && value) fields.set(header, value);
+  });
+  return fields;
+}
+
+function mappedTableValue(fields: Map<string, string>, pattern: RegExp) {
+  for (const [key, value] of fields) {
+    if (pattern.test(key)) return value;
+  }
+  return null;
+}
+
+function inferProductType(value: string, fallback: string) {
+  if (fallback.trim() && fallback !== "vps") return fallback;
+  if (/shared\s+hosting|web\s+hosting|虚拟主机/i.test(value)) {
+    return "shared-hosting";
+  }
+  if (/dedicated|bare\s*metal|独立服务器|裸金属/i.test(value)) {
+    return "dedicated-server";
+  }
+  if (/windows[\s/_-]*vps|vps[^\n]{0,40}windows/i.test(value)) {
+    return "windows-vps";
+  }
+  return fallback.trim() || "vps";
+}
+
+function extractProductFields(input: {
+  item: Cheerio<AnyNode>;
+  pageGroup: string;
+  productId: string;
+}) {
+  const lines = structuredHtmlLines(input.item);
+  const tableFields = tableFieldMap(input.item);
+  const combined = lines.join("\n");
+  const tablePlan = mappedTableValue(tableFields, /plan|package|套餐/);
+  const headingNodes = input.item.find(
+    "h1, h2, h3, h4, h5, h6, .product-title, .plan-title, .title",
+  );
+  const heading = headingNodes
+    .toArray()
+    .map((_, index) => toText(headingNodes.eq(index).text()))
+    .find(
+      (value) =>
+        value &&
+        value.length <= 180 &&
+        !productPricePattern.test(value) &&
+        !/^(?:order|buy|pricing|price)$/i.test(value),
+    );
+  const memory =
+    mappedTableValue(tableFields, /\bram\b|memory|plan/) ??
+    firstMatchingLine(
+      lines,
+      /(?:\b\d+(?:\.\d+)?\s*(?:MB|GB|TB)\s*(?:RAM|Memory)\b|\b(?:RAM|Memory)\b.*\d)/i,
+    );
+  const cpu =
+    mappedTableValue(tableFields, /cpu|processor|core/) ??
+    firstMatchingLine(
+      lines,
+      /(?:\b\d+(?:\.\d+)?x?\s*(?:vCPU|CPU|v?Cores?|Threads?)\b|\b(?:Intel|AMD|Ryzen|EPYC|Xeon)\b)/i,
+    );
+  const storage =
+    mappedTableValue(tableFields, /storage|disk|ssd|nvme|hdd/) ??
+    firstMatchingLine(
+      lines,
+      /(?:\b\d+(?:\.\d+)?\s*(?:TB|GB|MB)\b.*\b(?:NVMe|SSD|HDD|Storage|Disk)\b|\b(?:NVMe|SSD|HDD|Storage|Disk)\b.*\d)/i,
+    );
+  const rawNetwork =
+    mappedTableValue(tableFields, /bandwidth|traffic|transfer|network|port/) ??
+    firstMatchingLine(lines, /\b\d+(?:\.\d+)?\s*(?:G|M|K)bps\b/i) ??
+    firstMatchingLine(
+      lines,
+      /\b(?:Bandwidth|Traffic|Transfer|Network Port|Port Speed|Unmetered)\b/i,
+    );
+  const rawTraffic =
+    mappedTableValue(tableFields, /traffic|transfer|bandwidth/) ??
+    firstMatchingLine(
+      lines,
+      /(?:\b(?:Bandwidth|Traffic|Transfer)\b.*\b(?:TB|GB|MB)\b|\b\d+(?:\.\d+)?\s*(?:TB|GB|MB)\b.*\b(?:Bandwidth|Traffic|Transfer|@)\b|\bUnmetered\b)/i,
+    );
+  const ipv4 =
+    mappedTableValue(tableFields, /ipv?4|ip address/) ??
+    firstMatchingLine(lines, /\b(?:IPv4|Dedicated IP|Free IP)\b/i);
+  const ipv6 =
+    mappedTableValue(tableFields, /ipv?6/) ??
+    firstMatchingLine(lines, /\bIPv6\b/i);
+  const region = firstMatchingLine(
+    lines,
+    /^(?:available\s+in|locations?|region|机房|地区)\s*[:：]/i,
+  );
+  const priceLines = [
+    ...new Set([
+      mappedTableValue(tableFields, /pricing|price|cost/),
+      ...lines.filter((line) => productPricePattern.test(line)),
+    ]),
+  ].filter((value): value is string => Boolean(value));
+  const prices = priceLines.flatMap<ProviderOfferPriceCandidate>((line) => {
+    const amount = normalizeAmount(line);
+    if (!amount) return [];
+    return [
+      {
+        amount,
+        originalAmount: null,
+        currency: inferCurrency(line, "USD"),
+        billingCycle: normalizeServerOfferBillingCycle(line),
+        purchaseUrl: null,
+      },
+    ];
+  });
+  const titleBase = heading ?? tablePlan ?? memory;
+  const title = titleBase
+    ? titleBase.toLowerCase().includes(input.pageGroup.toLowerCase())
+      ? titleBase
+      : `${input.pageGroup} ${titleBase}`.trim()
+    : `${input.pageGroup} ${input.productId}`.trim();
+
+  return {
+    title,
+    cpu,
+    memory,
+    storage,
+    bandwidth: extractBandwidth(rawNetwork),
+    traffic: extractTraffic(rawTraffic),
+    region,
+    ipv4,
+    ipv6,
+    prices,
+    text: combined.slice(0, 2_000),
+  };
+}
+
+function getProductPageGroup($: ReturnType<typeof load>, sourceUrl: string) {
+  const heading = toText($("main h1, h1").first().text());
+  const visualHeading = $("#page .service-header .title").first().clone();
+  visualHeading.find("small").remove();
+  const visualTitle = toText(visualHeading.text()).replace(
+    /\s+deployed\b.*$/i,
+    "",
+  );
+  const title = toText($("title").first().text()).split(/\s[-|]\s/, 1)[0] ?? "";
+  if (heading && heading.length <= 180) return heading;
+  if (visualTitle && visualTitle.length <= 180) return visualTitle;
+  if (title && title.length <= 180) return title;
+  const pathPart = new URL(sourceUrl).pathname
+    .split("/")
+    .filter(Boolean)
+    .at(-1);
+  return pathPart?.replace(/[-_]+/g, " ") ?? "Server Plan";
+}
+
+function countProductLinks(input: {
+  item: Cheerio<AnyNode>;
+  sourceUrl: string;
+  productParam: string;
+}) {
+  const links = input.item.find("a[href]");
+  return links.toArray().filter((_, index) => {
+    const href = links.eq(index).attr("href");
+    if (!href) return false;
+    const resolved = resolveUrl(href, input.sourceUrl);
+    return Boolean(
+      resolved &&
+      extractProductIdReference(resolved, input.productParam, {
+        strictPreferred: true,
+      }),
+    );
+  }).length;
+}
+
+function findProductLinkContainer(input: {
+  anchor: Cheerio<AnyNode>;
+  sourceUrl: string;
+  productParam: string;
+}) {
+  let current = input.anchor.parent();
+  let best = current;
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (let depth = 0; depth < 8 && current.length > 0; depth += 1) {
+    if (current.is("body, html")) break;
+    const text = toText(current.text());
+    const linkCount = countProductLinks({ ...input, item: current });
+    if (linkCount === 1 && text.length <= 8_000) {
+      let score = 20 - depth;
+      if (current.is("tr, article, li, section")) score += 6;
+      if (
+        /(?:product|plan|package|pricing|server|shared|vps|dedicated|box|card)/i.test(
+          current.attr("class") ?? "",
+        )
+      ) {
+        score += 8;
+      }
+      if (productPricePattern.test(text)) score += 6;
+      if (
+        /RAM|Memory|CPU|Core|SSD|NVMe|HDD|Storage|Bandwidth|Transfer/i.test(
+          text,
+        )
+      ) {
+        score += 6;
+      }
+      if (text.length >= 20) score += 4;
+      if (score > bestScore) {
+        best = current;
+        bestScore = score;
+      }
+    }
+    current = current.parent();
+  }
+  return best;
+}
+
+function parseProductLinkCandidates(input: {
+  body: string;
+  config: ProductLinksMonitorConfig;
+  sourceUrl: string;
+  affiliate?: AffiliateConfigInput;
+}) {
+  if (
+    !input.affiliate ||
+    getAffiliateMode(input.affiliate) !== "product_param" ||
+    !hasCompleteAffiliateConfig(input.affiliate)
+  ) {
+    throw new Error("套餐集合页要求供应商配置完整的按产品 ID 返利链接");
+  }
+  const productParam = input.affiliate.affiliateProductParam?.trim();
+  if (!productParam) throw new Error("供应商未配置产品 ID 参数");
+
+  const $ = load(input.body);
+  const pageGroup =
+    nullableText(input.config.defaults.productGroup) ??
+    getProductPageGroup($, input.sourceUrl);
+  const candidates = new Map<string, ProviderOfferCandidate>();
+
+  $(input.config.linkSelector).each((_, element) => {
+    const anchor = $(element);
+    const originalPurchaseUrl = resolveUrl(
+      anchor.attr("href"),
+      input.sourceUrl,
+    );
+    if (!originalPurchaseUrl) return;
+    const reference = extractProductIdReference(
+      originalPurchaseUrl,
+      productParam,
+      { strictPreferred: true },
+    );
+    if (!reference) return;
+    const externalProductId = `${productParam.toLowerCase()}:${reference.value}`;
+    const affiliate = resolveAffiliateUrl({
+      rawUrl: originalPurchaseUrl,
+      affiliate: input.affiliate!,
+      externalProductId,
+    });
+    if (!affiliate) return;
+
+    const item = findProductLinkContainer({
+      anchor,
+      sourceUrl: input.sourceUrl,
+      productParam,
+    });
+    const fields = extractProductFields({
+      item,
+      pageGroup,
+      productId: reference.value,
+    });
+    const candidate: ProviderOfferCandidate = {
+      externalProductId,
+      title: fields.title,
+      productGroup: pageGroup,
+      productType: inferProductType(
+        `${input.sourceUrl}\n${pageGroup}\n${fields.text}`,
+        input.config.defaults.productType,
+      ),
+      cpu: fields.cpu,
+      memory: fields.memory,
+      storage: fields.storage,
+      bandwidth: fields.bandwidth,
+      traffic: fields.traffic,
+      region: fields.region ?? input.config.defaults.region ?? null,
+      countryCode: input.config.defaults.countryCode ?? null,
+      city: input.config.defaults.city ?? null,
+      lineType: input.config.defaults.lineType ?? null,
+      network: input.config.defaults.network ?? null,
+      ipv4: fields.ipv4,
+      ipv6: fields.ipv6,
+      status: /out\s+of\s+stock|sold\s+out|缺货/i.test(fields.text)
+        ? "out_of_stock"
+        : input.config.defaults.status,
+      purchaseUrl: affiliate.url,
+      promoCode: null,
+      prices: fields.prices.map((price) => ({
+        ...price,
+        currency: price.currency || input.config.defaults.currency,
+        purchaseUrl: affiliate.url,
+      })),
+      sourceUrl: input.sourceUrl,
+      raw: {
+        text: fields.text,
+        originalPurchaseUrl,
+        affiliatePurchaseUrl: affiliate.url,
+        __evidence: {
+          adapter: "product_links",
+          linkSelector: input.config.linkSelector,
+          productParam: productParam.toLowerCase(),
+        },
+      },
+    };
+
+    const current = candidates.get(externalProductId);
+    const currentText =
+      typeof current?.raw.text === "string" ? current.raw.text : "";
+    if (!current || fields.text.length > currentText.length) {
+      candidates.set(externalProductId, candidate);
+    }
+  });
+
+  return [...candidates.values()];
 }
 
 function recordValue(value: unknown) {
@@ -591,23 +979,109 @@ export function parseWhmcsBillingCyclePrices(input: {
   return [...unique.values()];
 }
 
+function selectedWhmcsLocation($: ReturnType<typeof load>) {
+  const labels = $("label").toArray();
+  for (const [index] of labels.entries()) {
+    const label = $(labels[index]);
+    if (!/\blocation\b|机房|地区/i.test(toText(label.text()))) continue;
+    const field = label.closest(".form-group, .field-container, div");
+    const targetId = label.attr("for");
+    const select = targetId
+      ? $("select")
+          .filter((_, element) => $(element).attr("id") === targetId)
+          .first()
+      : field.find("select").first().length > 0
+        ? field.find("select").first()
+        : label.nextAll("select, div").first().find("select").first();
+    const option = select.find("option:selected, option[selected]").first();
+    const value = toText(option.text()).replace(/\s*\(Test IP:[^)]+\)\s*/i, "");
+    if (value) return value;
+  }
+  return null;
+}
+
+export function mergeWhmcsProductPageDetails(input: {
+  body: string;
+  candidate: ProviderOfferCandidate;
+  finalUrl: string;
+}) {
+  const $ = load(input.body);
+  const productInfo = $(".product-info").first();
+  const prices = parseWhmcsBillingCyclePrices({
+    body: input.body,
+    purchaseUrl: input.candidate.purchaseUrl,
+    fallbackCurrency: input.candidate.prices[0]?.currency ?? "USD",
+  });
+  if (productInfo.length === 0) {
+    return {
+      ...input.candidate,
+      prices: prices.length > 0 ? prices : input.candidate.prices,
+    };
+  }
+
+  const detailTitle = toText(productInfo.find(".product-title").first().text());
+  const details = extractProductFields({
+    item: productInfo,
+    pageGroup:
+      input.candidate.productGroup ??
+      input.candidate.productType ??
+      "Server Plan",
+    productId: input.candidate.externalProductId,
+  });
+  const location = selectedWhmcsLocation($);
+  return {
+    ...input.candidate,
+    title: detailTitle || input.candidate.title || details.title,
+    productType: inferProductType(
+      `${detailTitle}\n${details.text}`,
+      input.candidate.productType,
+    ),
+    cpu: details.cpu ?? input.candidate.cpu,
+    memory: details.memory ?? input.candidate.memory,
+    storage: details.storage ?? input.candidate.storage,
+    bandwidth: details.bandwidth ?? input.candidate.bandwidth,
+    traffic: details.traffic ?? input.candidate.traffic,
+    region: location ?? details.region ?? input.candidate.region,
+    ipv4: details.ipv4 ?? input.candidate.ipv4,
+    ipv6: details.ipv6 ?? input.candidate.ipv6,
+    prices: prices.length > 0 ? prices : input.candidate.prices,
+    raw: {
+      ...input.candidate.raw,
+      detail: {
+        sourceUrl: input.finalUrl,
+        text: details.text,
+      },
+    },
+  } satisfies ProviderOfferCandidate;
+}
+
 export function parseProviderSourcePayload(input: {
   adapter: ProviderSourceAdapter;
   body: string;
   config: ProviderMonitorConfig;
   sourceUrl: string;
+  affiliate?: AffiliateConfigInput;
 }) {
-  return input.adapter === "json"
-    ? parseJsonCandidates(
-        input.body,
-        input.config as JsonMonitorConfig,
-        input.sourceUrl,
-      )
-    : parseHtmlCandidates(
-        input.body,
-        input.config as HtmlMonitorConfig,
-        input.sourceUrl,
-      );
+  if (input.adapter === "json") {
+    return parseJsonCandidates(
+      input.body,
+      input.config as JsonMonitorConfig,
+      input.sourceUrl,
+    );
+  }
+  if (input.adapter === "product_links") {
+    return parseProductLinkCandidates({
+      body: input.body,
+      config: input.config as ProductLinksMonitorConfig,
+      sourceUrl: input.sourceUrl,
+      affiliate: input.affiliate,
+    });
+  }
+  return parseHtmlCandidates(
+    input.body,
+    input.config as HtmlMonitorConfig,
+    input.sourceUrl,
+  );
 }
 
 export function validateProviderOfferCandidate(
@@ -667,6 +1141,8 @@ export function hashProviderOfferSyncState(
     affUrl: string;
     affParam: string;
     affValue: string;
+    affiliateMode?: string | null;
+    affiliateProductParam?: string | null;
     purpose: string;
     defaultPromoCode: string | null;
   },
@@ -680,6 +1156,8 @@ export function hashProviderOfferSyncState(
             affUrl: provider.affUrl,
             affParam: provider.affParam,
             affValue: provider.affValue,
+            affiliateMode: provider.affiliateMode ?? null,
+            affiliateProductParam: provider.affiliateProductParam ?? null,
           },
           behavior: {
             purpose: provider.purpose,
@@ -746,7 +1224,7 @@ export function prepareProviderOfferCandidates(
 export function hashProviderMonitorSyncConfig(input: {
   adapter: ProviderSourceAdapter;
   config: ProviderMonitorConfig;
-  affiliate: { affUrl: string; affParam: string; affValue: string };
+  affiliate: AffiliateConfigInput;
   behavior: {
     purpose: string;
     autoPublish: boolean;
@@ -765,18 +1243,11 @@ export function hashProviderSourceResponse(body: string) {
 
 export function applyProviderAffiliateUrl(
   rawUrl: string,
-  provider: { affUrl: string; affParam: string; affValue: string },
+  provider: AffiliateConfigInput,
+  externalProductId?: string | null,
 ) {
-  if (provider.affParam === "href") return provider.affUrl;
-  const affParam = provider.affParam.trim();
-  if (!affParam) throw new Error("返利参数不能为空");
-  if (!provider.affValue.trim()) throw new Error("返利值不能为空");
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    throw new Error("供应商购买链接不是有效的 http/https URL");
-  }
-  url.searchParams.set(affParam, provider.affValue.trim());
-  return url.toString();
+  return (
+    resolveAffiliateUrl({ rawUrl, affiliate: provider, externalProductId })
+      ?.url ?? rawUrl
+  );
 }

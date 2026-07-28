@@ -1,0 +1,2 @@
+ALTER TABLE "provider_monitors" DROP CONSTRAINT "provider_monitors_adapter_check";--> statement-breakpoint
+ALTER TABLE "provider_monitors" ADD CONSTRAINT "provider_monitors_adapter_check" CHECK ("provider_monitors"."adapter" in ('json', 'html', 'whmcs', 'product_links'));

@@ -531,8 +531,14 @@ function AffiliateDiagnosticsSummary({
   const matchedProviders = [
     ...new Set(report.matchedLinks.map((item) => item.providerName)),
   ];
+  const missingProductLinks = report.unmatchedLinks.filter(
+    (item) => item.reason === "missing-product-id",
+  );
+  const unmatchedProviderLinks = report.unmatchedLinks.filter(
+    (item) => item.reason !== "missing-product-id",
+  );
   const unmatchedHosts = [
-    ...new Set(report.unmatchedLinks.map((item) => item.host).filter(Boolean)),
+    ...new Set(unmatchedProviderLinks.map((item) => item.host).filter(Boolean)),
   ];
 
   return (
@@ -566,9 +572,9 @@ function AffiliateDiagnosticsSummary({
             </p>
           </div>
           <div className="rounded-md border border-border/70 p-2">
-            <p className="text-muted-foreground">未命中</p>
+            <p className="text-muted-foreground">保留原链</p>
             <p className="mt-1 font-medium text-foreground">
-              {report.unmatchedLinks.length}
+              {unmatchedProviderLinks.length} / {missingProductLinks.length}
             </p>
           </div>
           <div className="rounded-md border border-border/70 p-2">
@@ -659,7 +665,9 @@ function AffiliateDiagnosticsSummary({
           </div>
         ) : null}
 
-        {report.matchedLinks.length > 0 || unmatchedHosts.length > 0 ? (
+        {report.matchedLinks.length > 0 ||
+        unmatchedHosts.length > 0 ||
+        missingProductLinks.length > 0 ? (
           <CollapsibleTrigger asChild>
             <Button
               type="button"
@@ -685,14 +693,22 @@ function AffiliateDiagnosticsSummary({
                       <Badge>{item.providerName}</Badge>
                       <Badge variant="outline">{item.matchedDomain}</Badge>
                       <Badge variant="secondary">
-                        {item.mode === "replace" ? "替换链接" : "追加参数"}
+                        {item.mode === "replace"
+                          ? "替换链接"
+                          : item.mode === "product-param"
+                            ? "按产品 ID 生成"
+                            : "追加参数"}
                       </Badge>
                       <Badge variant="outline">
-                        {item.affParam
-                          ? item.affValue
-                            ? `${item.affParam}=${item.affValue}`
-                            : item.affParam
-                          : "-"}
+                        {item.mode === "product-param"
+                          ? item.productId
+                            ? `${item.productParam ?? "产品 ID"}=${item.productId}`
+                            : (item.productParam ?? "产品 ID")
+                          : item.affParam
+                            ? item.affValue
+                              ? `${item.affParam}=${item.affValue}`
+                              : item.affParam
+                            : "-"}
                       </Badge>
                     </div>
                     <p className="break-all text-muted-foreground">
@@ -727,6 +743,17 @@ function AffiliateDiagnosticsSummary({
                   <Badge variant="outline">+{unmatchedHosts.length - 12}</Badge>
                 ) : null}
               </div>
+            </div>
+          ) : null}
+
+          {missingProductLinks.length > 0 ? (
+            <div className="space-y-1">
+              <p className="font-medium text-foreground">
+                缺产品 ID：{missingProductLinks.length}
+              </p>
+              <p className="text-muted-foreground">
+                已匹配供应商，但链接没有可用 PID/GID，已保留原 URL。
+              </p>
             </div>
           ) : null}
         </CollapsibleContent>

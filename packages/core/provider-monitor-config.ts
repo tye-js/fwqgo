@@ -10,7 +10,12 @@ export const PROVIDER_AVAILABILITY_STATUSES = [
   "preorder",
 ] as const;
 
-export const PROVIDER_SOURCE_ADAPTERS = ["json", "html", "whmcs"] as const;
+export const PROVIDER_SOURCE_ADAPTERS = [
+  "json",
+  "html",
+  "whmcs",
+  "product_links",
+] as const;
 export type ProviderSourceAdapter = (typeof PROVIDER_SOURCE_ADAPTERS)[number];
 
 export const PROVIDER_SOURCE_PURPOSES = [
@@ -133,9 +138,21 @@ const htmlMonitorConfigSchema = z.object({
   statusMap: statusMapSchema,
 });
 
+const productLinksMonitorConfigSchema = z.object({
+  linkSelector: z.string().trim().min(1).max(500).default("a[href]"),
+  requiredSpecCount: z.number().int().min(0).max(5).default(2),
+  defaults: defaultsSchema,
+  headers: headersSchema,
+  statusMap: statusMapSchema,
+});
+
 export type JsonMonitorConfig = z.infer<typeof jsonMonitorConfigSchema>;
 export type HtmlMonitorConfig = z.infer<typeof htmlMonitorConfigSchema>;
-export type ProviderMonitorConfig = JsonMonitorConfig | HtmlMonitorConfig;
+export type ProductLinksMonitorConfig = z.infer<
+  typeof productLinksMonitorConfigSchema
+>;
+export type ProviderMonitorConfig =
+  JsonMonitorConfig | HtmlMonitorConfig | ProductLinksMonitorConfig;
 
 export const PROVIDER_MONITOR_CHECK_RETENTION_DAYS = 30;
 
@@ -186,6 +203,10 @@ export function parseProviderMonitorConfig(
 ): HtmlMonitorConfig;
 export function parseProviderMonitorConfig(
   value: unknown,
+  adapter: "product_links",
+): ProductLinksMonitorConfig;
+export function parseProviderMonitorConfig(
+  value: unknown,
   adapter: ProviderSourceAdapter,
 ): ProviderMonitorConfig;
 export function parseProviderMonitorConfig(
@@ -195,7 +216,9 @@ export function parseProviderMonitorConfig(
   const parsed =
     adapter === "json"
       ? jsonMonitorConfigSchema.parse(value)
-      : htmlMonitorConfigSchema.parse(value);
+      : adapter === "product_links"
+        ? productLinksMonitorConfigSchema.parse(value)
+        : htmlMonitorConfigSchema.parse(value);
   assertSafeHeaders(parsed.headers);
   return parsed;
 }

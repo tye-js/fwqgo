@@ -1,5 +1,5 @@
 <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <title>服务器GO</title>
+  <title>服务器GO mark</title>
   <rect x="4" y="4" width="56" height="56" rx="17" fill="#0F172A"/>
   <rect x="4.75" y="4.75" width="54.5" height="54.5" rx="16.25" stroke="#1E293B" stroke-width="1.5"/>
   <path d="M16 16.5H43C45.2091 16.5 47 18.2909 47 20.5V21.5C47 23.7091 45.2091 25.5 43 25.5H16C13.7909 25.5 12 23.7091 12 21.5V20.5C12 18.2909 13.7909 16.5 16 16.5Z" fill="#F8FAFC"/>

@@ -17,7 +17,7 @@ import {
   resolveMetadataPromptTemplate,
   resolveSourceAnchoredRewriteTemplate,
 } from "@fwqgo/core/ai-rewrite-prompts";
-import { defaultProviderCatalogDiscoveryPrompt } from "@fwqgo/core/provider-catalog-discovery";
+import { resolveProviderCatalogDiscoveryPrompt } from "@fwqgo/core/provider-catalog-discovery";
 import {
   decryptSecret,
   encryptSecret,
@@ -90,9 +90,9 @@ function withPromptDefaults<T extends typeof aiRewriteConfigs.$inferSelect>(
     englishStylePrompt: row.englishStylePrompt ?? defaultEnglishStylePrompt,
     englishMetadataStylePrompt:
       row.englishMetadataStylePrompt ?? defaultEnglishMetadataStylePrompt,
-    providerCatalogDiscoveryPrompt:
-      row.providerCatalogDiscoveryPrompt ??
-      defaultProviderCatalogDiscoveryPrompt,
+    providerCatalogDiscoveryPrompt: resolveProviderCatalogDiscoveryPrompt(
+      row.providerCatalogDiscoveryPrompt,
+    ),
   };
 }
 

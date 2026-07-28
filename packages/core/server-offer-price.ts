@@ -158,12 +158,46 @@ export function normalizeServerOfferBillingCycle(
     "36month": "triennial",
     三年付: "triennial",
   };
-  return (
+  const exact =
     aliases[compact] ??
     (SERVER_OFFER_BILLING_CYCLES.includes(normalized as ServerOfferBillingCycle)
       ? (normalized as ServerOfferBillingCycle)
-      : "monthly")
-  );
+      : null);
+  if (exact) return exact;
+  if (!normalized) return "monthly";
+
+  const descriptions: Array<
+    [RegExp, Exclude<ServerOfferBillingCycle, "monthly">]
+  > = [
+    [
+      /\b(?:triennial(?:ly)?|3[\s_-]*(?:years?|yrs?)|36[\s_-]*months?)\b|三年/i,
+      "triennial",
+    ],
+    [
+      /\b(?:biennial(?:ly)?|2[\s_-]*(?:years?|yrs?)|24[\s_-]*months?)\b|两年|二年/i,
+      "biennial",
+    ],
+    [
+      /\b(?:annual(?:ly)?|yearly|1[\s_-]*(?:year|yr)|12[\s_-]*months?)\b|\/(?:\s*)year\b|\bper\s+year\b|年付|每年/i,
+      "yearly",
+    ],
+    [
+      /\b(?:semi[\s_-]*annual(?:ly)?|half[\s_-]*year|6[\s_-]*months?)\b|半年/i,
+      "semiannual",
+    ],
+    [/\b(?:quarter(?:ly)?|3[\s_-]*months?)\b|季付|每季/i, "quarterly"],
+  ];
+  for (const [pattern, cycle] of descriptions) {
+    if (pattern.test(normalized)) return cycle;
+  }
+  if (
+    /\b(?:monthly|1[\s_-]*month)\b|\/(?:\s*)(?:mo|month)\b|\bper\s+month\b|月付|每月/i.test(
+      normalized,
+    )
+  ) {
+    return "monthly";
+  }
+  return "monthly";
 }
 
 export function getServerOfferTermMonths(value: string | null | undefined) {

@@ -249,6 +249,7 @@ export async function previewProviderMonitorAction(
     const config = parseConfigText(input.configText, input.adapter);
     const preview = await previewProviderMonitorSource({
       monitorId: input.id,
+      providerId: input.providerId,
       adapter: input.adapter,
       endpointUrl,
       config,

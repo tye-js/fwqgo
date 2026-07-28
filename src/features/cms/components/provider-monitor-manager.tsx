@@ -82,7 +82,7 @@ type RunRow = Awaited<ReturnType<typeof getProviderMonitorRunHistory>>[number];
 type CandidateRow = Awaited<
   ReturnType<typeof getProviderOfferCandidateList>
 >[number];
-type MonitorAdapter = "json" | "html" | "whmcs";
+type MonitorAdapter = "json" | "html" | "whmcs" | "product_links";
 
 function formatCheckPrice(check: CheckRow) {
   if (
@@ -133,9 +133,21 @@ const defaultHtmlConfig = {
   headers: {},
 };
 
+const defaultProductLinksConfig = {
+  linkSelector: "a[href]",
+  requiredSpecCount: 2,
+  defaults: {},
+  statusMap: {},
+  headers: {},
+};
+
 function getDefaultConfigText(adapter: MonitorAdapter) {
   return JSON.stringify(
-    adapter === "json" ? defaultJsonConfig : defaultHtmlConfig,
+    adapter === "json"
+      ? defaultJsonConfig
+      : adapter === "product_links"
+        ? defaultProductLinksConfig
+        : defaultHtmlConfig,
     null,
     2,
   );
@@ -145,6 +157,7 @@ const adapterLabels: Record<string, string> = {
   json: "JSON 接口",
   html: "HTML 页面",
   whmcs: "WHMCS 页面",
+  product_links: "套餐集合页",
 };
 
 const purposeLabels: Record<string, string> = {
@@ -258,7 +271,7 @@ function MonitorFormDialog({
   const [enabled, setEnabled] = useState(monitor?.enabled ?? false);
   const [autoPublish, setAutoPublish] = useState(monitor?.autoPublish ?? false);
   const [adapter, setAdapter] = useState<MonitorAdapter>(
-    (monitor?.adapter as MonitorAdapter | undefined) ?? "json",
+    (monitor?.adapter as MonitorAdapter | undefined) ?? "product_links",
   );
   const [providerId, setProviderId] = useState(
     String(monitor?.providerId ?? ""),
@@ -267,7 +280,7 @@ function MonitorFormDialog({
   const [configText, setConfigText] = useState(
     monitor?.config
       ? JSON.stringify(monitor.config, null, 2)
-      : getDefaultConfigText("json"),
+      : getDefaultConfigText("product_links"),
   );
   const [configDrafts, setConfigDrafts] = useState<
     Partial<Record<MonitorAdapter, string>>
@@ -359,8 +372,8 @@ function MonitorFormDialog({
             {monitor ? "编辑供应商采集源" : "新增供应商采集源"}
           </DialogTitle>
           <DialogDescription>
-            从供应商 JSON、HTML 或 WHMCS
-            产品页采集具体配置、价格和独立购买链接。
+            维护供应商套餐集合页，或从 JSON、HTML、WHMCS
+            页面采集具体配置、价格和独立购买链接。
           </DialogDescription>
         </DialogHeader>
         <form action={submit} className="space-y-4">
@@ -460,6 +473,7 @@ function MonitorFormDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="json">JSON 接口</SelectItem>
+                  <SelectItem value="product_links">套餐集合页</SelectItem>
                   <SelectItem value="html">HTML 产品页</SelectItem>
                   <SelectItem value="whmcs">WHMCS 产品页</SelectItem>
                 </SelectContent>
@@ -523,7 +537,9 @@ function MonitorFormDialog({
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="monitor-config">字段映射 JSON</Label>
+            <Label htmlFor="monitor-config">
+              {adapter === "product_links" ? "高级配置 JSON" : "字段映射 JSON"}
+            </Label>
             <Textarea
               id="monitor-config"
               name="configText"
@@ -536,8 +552,9 @@ function MonitorFormDialog({
               spellCheck={false}
             />
             <p className="text-xs leading-5 text-muted-foreground">
-              JSON 使用字段路径；HTML/WHMCS 使用 itemSelector 和 CSS
-              选择器。每个套餐必须有稳定产品 ID、价格、配置和独立购买链接。
+              {adapter === "product_links"
+                ? "系统会自动查找购买链接中的产品 ID，并使用所选供应商的返利链接读取详情；通常无需修改默认配置。"
+                : "JSON 使用字段路径；HTML/WHMCS 使用 itemSelector 和 CSS 选择器。每个套餐必须有稳定产品 ID、价格、配置和独立购买链接。"}
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">

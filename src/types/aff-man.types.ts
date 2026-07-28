@@ -4,16 +4,18 @@ type AffServiceProvider = typeof affServiceProviders.$inferSelect;
 
 export type AffManData = Pick<
   AffServiceProvider,
-  "id" | "name" | "affUrl" | "affParam" | "affValue" | "officialUrl"
+  | "id"
+  | "name"
+  | "affUrl"
+  | "affParam"
+  | "affValue"
+  | "affiliateMode"
+  | "affiliateProductParam"
+  | "officialUrl"
 >;
 
 export type ProviderProfileSnapshotStatus =
-  | "queued"
-  | "running"
-  | "pending"
-  | "applied"
-  | "rejected"
-  | "failed";
+  "queued" | "running" | "pending" | "applied" | "rejected" | "failed";
 
 export type ProviderPromoCodeData = {
   id: number;

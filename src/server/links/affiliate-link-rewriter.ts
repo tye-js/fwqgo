@@ -1,7 +1,11 @@
 import type * as cheerio from "cheerio";
 import { db } from "@fwqgo/db";
 import { affServiceProviders } from "@fwqgo/db/schema";
-import { hasCompleteAffiliateConfig } from "@fwqgo/core/affiliate-provider";
+import {
+  extractAffiliateProductId,
+  hasCompleteAffiliateConfig,
+  resolveAffiliateUrl,
+} from "@fwqgo/core/affiliate-provider";
 
 export type AffiliateRewriteMatch = {
   originalHref: string;
@@ -11,13 +15,15 @@ export type AffiliateRewriteMatch = {
   providerName: string;
   affParam: string;
   affValue: string;
-  mode: "param" | "replace";
+  productParam?: string | null;
+  productId?: string | null;
+  mode: "param" | "replace" | "product-param";
 };
 
 export type AffiliateRewriteMiss = {
   href: string;
   host: string | null;
-  reason: "invalid-url" | "internal" | "no-provider";
+  reason: "invalid-url" | "internal" | "no-provider" | "missing-product-id";
 };
 
 export type AffiliateRewriteReport = {
@@ -73,6 +79,13 @@ function normalizeProviderDomain(value: string) {
       value.replace(/^https?:\/\//, "").split("/")[0] ?? value,
     );
   }
+}
+
+function providerMatchesHostname(provider: Provider, hostname: string) {
+  const hostDomains = candidateDomains(hostname);
+  return [provider.officialUrl, provider.affUrl]
+    .map(normalizeProviderDomain)
+    .some((domain) => hostDomains.includes(domain));
 }
 
 function isGenericMarkdownLinkLabel(label: string) {
@@ -137,14 +150,25 @@ function findProvider(
   return null;
 }
 
-function rewriteHref(href: string, provider: Provider) {
-  if (provider.affParam === "href") {
-    return { href: provider.affUrl, mode: "replace" as const };
-  }
-
-  const url = new URL(href);
-  url.searchParams.set(provider.affParam, provider.affValue);
-  return { href: url.toString(), mode: "param" as const };
+function rewriteHref(href: string, provider: Provider, originalHref?: string) {
+  const productId = originalHref
+    ? extractAffiliateProductId({
+        purchaseUrl: originalHref,
+        productParam: provider.affiliateProductParam,
+      })
+    : null;
+  const resolved = resolveAffiliateUrl({
+    rawUrl: href,
+    affiliate: provider,
+    externalProductId: productId,
+  });
+  return resolved
+    ? {
+        href: resolved.url,
+        mode: resolved.mode,
+        productId: resolved.productId,
+      }
+    : null;
 }
 
 function isLikelyAffiliateRedirectPath(pathname: string) {
@@ -186,6 +210,7 @@ export async function rewriteAffiliateLinks(input: {
   const links: Array<{
     element: (typeof elements)[number];
     href: string;
+    originalUrl: URL;
     finalUrl: URL;
     isInternal: boolean;
   }> = [];
@@ -226,6 +251,7 @@ export async function rewriteAffiliateLinks(input: {
     links.push({
       element,
       href,
+      originalUrl: parsedUrl,
       finalUrl,
       isInternal:
         finalHost === sourceHost || finalHost.endsWith(`.${sourceHost}`),
@@ -286,7 +312,22 @@ export async function rewriteAffiliateLinks(input: {
     const rewritten = rewriteHref(
       link.finalUrl.toString(),
       articleProvider.provider,
+      providerMatchesHostname(
+        articleProvider.provider,
+        link.originalUrl.hostname,
+      )
+        ? link.originalUrl.toString()
+        : undefined,
     );
+    if (!rewritten) {
+      report.unmatchedLinks.push({
+        href: link.finalUrl.toString(),
+        host: normalizeHost(link.finalUrl.hostname),
+        reason: "missing-product-id",
+      });
+      $link.attr("href", link.finalUrl.toString());
+      continue;
+    }
     $link.attr("href", rewritten.href);
     report.matchedLinks.push({
       originalHref: link.href,
@@ -296,6 +337,8 @@ export async function rewriteAffiliateLinks(input: {
       providerName: articleProvider.provider.name,
       affParam: articleProvider.provider.affParam,
       affValue: articleProvider.provider.affValue,
+      productParam: articleProvider.provider.affiliateProductParam,
+      productId: rewritten.productId,
       mode: rewritten.mode,
     });
   }

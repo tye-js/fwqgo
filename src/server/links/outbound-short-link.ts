@@ -3,7 +3,10 @@ import { eq } from "drizzle-orm";
 
 import { db, readDb } from "@fwqgo/db";
 import { affServiceProviders, outboundLinks } from "@fwqgo/db/schema";
-import { hasCompleteAffiliateConfig } from "@fwqgo/core/affiliate-provider";
+import {
+  hasCompleteAffiliateConfig,
+  resolveAffiliateUrl,
+} from "@fwqgo/core/affiliate-provider";
 
 const siteBaseUrl = "https://fwqgo.com";
 const slugAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -97,16 +100,12 @@ async function getAffiliateTargetUrl(url: URL) {
     return null;
   }
 
-  if (matchedProvider.affParam === "href") {
-    return matchedProvider.affUrl;
-  }
-
-  const affiliateUrl = new URL(url.toString());
-  affiliateUrl.searchParams.set(
-    matchedProvider.affParam,
-    matchedProvider.affValue,
+  return (
+    resolveAffiliateUrl({
+      rawUrl: url.toString(),
+      affiliate: matchedProvider,
+    })?.url ?? null
   );
-  return affiliateUrl.toString();
 }
 
 function isGenericMarkdownLinkLabel(label: string) {

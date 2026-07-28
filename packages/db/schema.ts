@@ -297,6 +297,10 @@ export const affServiceProviders = pgTable(
     affUrl: text("affUrl").notNull(),
     affParam: text("affParam").notNull(),
     affValue: text("affValue").notNull(),
+    affiliateMode: varchar("affiliateMode", { length: 24 })
+      .default("query_param")
+      .notNull(),
+    affiliateProductParam: text("affiliateProductParam"),
     officialUrl: text("officialUrl").notNull(),
     summary: text("summary"),
     summarySourceUrl: text("summarySourceUrl"),
@@ -312,6 +316,10 @@ export const affServiceProviders = pgTable(
   (table) => ({
     officialUrlIdx: index("aff_service_providers_officialUrl_idx").on(
       table.officialUrl,
+    ),
+    affiliateModeCheck: check(
+      "aff_service_providers_affiliateMode_check",
+      sql`${table.affiliateMode} in ('query_param', 'full_replace', 'product_param')`,
     ),
   }),
 );
@@ -1275,7 +1283,7 @@ export const providerMonitors = pgTable(
     ),
     adapterCheck: check(
       "provider_monitors_adapter_check",
-      sql`${table.adapter} in ('json', 'html', 'whmcs')`,
+      sql`${table.adapter} in ('json', 'html', 'whmcs', 'product_links')`,
     ),
     purposeCheck: check(
       "provider_monitors_purpose_check",

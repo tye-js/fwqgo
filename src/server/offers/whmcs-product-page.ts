@@ -5,7 +5,10 @@ import {
 } from "@fwqgo/core/network-url";
 import { normalizeServerOfferBillingCycle } from "@fwqgo/core/server-offer-price";
 import type { ProviderOfferCandidate } from "@/server/offers/provider-source-parser";
-import { parseWhmcsBillingCyclePrices } from "@/server/offers/provider-source-parser";
+import {
+  mergeWhmcsProductPageDetails,
+  parseWhmcsBillingCyclePrices,
+} from "@/server/offers/provider-source-parser";
 
 const redirectStatuses = new Set([301, 302, 303, 307, 308]);
 const MAX_WHMCS_PRODUCT_PAGE_BYTES = 2 * 1024 * 1024;
@@ -46,7 +49,6 @@ export async function fetchWhmcsProductPage(input: {
       ? Promise.resolve(requirePublicHttpUrl(value, label))
       : assertPublicHttpUrl(value, label);
   const initialUrl = await validateUrl(input.url, "WHMCS 产品配置地址");
-  const initialOrigin = initialUrl.origin;
   const cookieJar = new Map<string, string>();
   const maxRedirects = input.maxRedirects ?? 3;
   const signal = AbortSignal.timeout(input.timeoutMs ?? 30_000);
@@ -79,7 +81,7 @@ export async function fetchWhmcsProductPage(input: {
         new URL(location, currentUrl),
         "WHMCS 产品配置跳转地址",
       );
-      if (nextUrl.origin !== initialOrigin) {
+      if (!isSameProviderHost(nextUrl.hostname, initialUrl.hostname)) {
         await response.body?.cancel();
         throw new Error("WHMCS 产品配置页跳转到了不同站点，已停止请求");
       }
@@ -105,19 +107,42 @@ export async function fetchWhmcsProductPage(input: {
 }
 
 function externalProductIdValue(externalProductId: string) {
-  return externalProductId.replace(/^pid:/i, "").trim();
+  const normalized = externalProductId.trim();
+  const prefixed = /^pid:(.+)$/i.exec(normalized)?.[1]?.trim();
+  if (prefixed) return prefixed;
+  return /^[A-Za-z0-9._~-]{1,160}$/.test(normalized) ? normalized : "";
+}
+
+function normalizedProviderHost(hostname: string) {
+  return hostname
+    .trim()
+    .toLowerCase()
+    .replace(/\.$/, "")
+    .replace(/^www\./, "");
+}
+
+function isSameProviderHost(left: string, right: string) {
+  const leftHost = normalizedProviderHost(left);
+  const rightHost = normalizedProviderHost(right);
+  return (
+    leftHost === rightHost ||
+    leftHost.endsWith(`.${rightHost}`) ||
+    rightHost.endsWith(`.${leftHost}`)
+  );
 }
 
 export function getWhmcsProductPageUrl(candidate: ProviderOfferCandidate) {
   const sourceUrl = new URL(candidate.sourceUrl);
   const raw = candidate.raw as {
+    affiliatePurchaseUrl?: unknown;
     originalPurchaseUrl?: unknown;
     product?: { originalPurchaseUrl?: unknown };
   };
   const possibleUrls = [
+    candidate.purchaseUrl,
+    raw.affiliatePurchaseUrl,
     raw.product?.originalPurchaseUrl,
     raw.originalPurchaseUrl,
-    candidate.purchaseUrl,
   ];
 
   for (const value of possibleUrls) {
@@ -125,7 +150,7 @@ export function getWhmcsProductPageUrl(candidate: ProviderOfferCandidate) {
     try {
       const url = new URL(value, sourceUrl);
       if (
-        url.origin === sourceUrl.origin &&
+        isSameProviderHost(url.hostname, sourceUrl.hostname) &&
         (url.searchParams.has("pid") || url.searchParams.get("a") === "add")
       ) {
         return url.toString();
@@ -220,6 +245,11 @@ export async function enrichWhmcsProductPrices(input: {
           purchaseUrl: candidate.purchaseUrl,
           fallbackCurrency: candidate.prices[0]?.currency ?? "USD",
         });
+        const enrichedCandidate = mergeWhmcsProductPageDetails({
+          body: page.body,
+          candidate,
+          finalUrl: page.finalUrl,
+        });
         if (prices.length === 0) {
           issues.push({
             externalProductId: candidate.externalProductId,
@@ -228,7 +258,7 @@ export async function enrichWhmcsProductPrices(input: {
             message: "产品配置页没有可用付款周期",
           });
           return {
-            ...candidate,
+            ...enrichedCandidate,
             prices: mergeFallbackPrices(
               candidate.prices,
               input.previousCandidates?.get(candidate.externalProductId)
@@ -237,7 +267,7 @@ export async function enrichWhmcsProductPrices(input: {
           };
         }
         return {
-          ...candidate,
+          ...enrichedCandidate,
           prices,
           raw: {
             ...candidate.raw,

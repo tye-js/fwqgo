@@ -39,6 +39,8 @@ export type ProviderSyncContext = {
   affUrl: string;
   affParam: string;
   affValue: string;
+  affiliateMode: string | null;
+  affiliateProductParam: string | null;
   defaultPromoCode: string | null;
 };
 
@@ -138,7 +140,11 @@ function normalizedPrices(
         termMonths: getServerOfferTermMonths(billingCycle),
         monthlyPriceUsd,
         purchaseUrl: rawPurchaseUrl
-          ? applyProviderAffiliateUrl(rawPurchaseUrl, context)
+          ? applyProviderAffiliateUrl(
+              rawPurchaseUrl,
+              context,
+              candidate.externalProductId,
+            )
           : null,
       };
     })
@@ -292,7 +298,11 @@ async function materializeOffer(
   );
   if (prices.length === 0) throw new Error("套餐价格无法折算为美元月价");
   const primaryPrice = prices[0]!;
-  const purchaseUrl = applyProviderAffiliateUrl(candidate.purchaseUrl, context);
+  const purchaseUrl = applyProviderAffiliateUrl(
+    candidate.purchaseUrl,
+    context,
+    candidate.externalProductId,
+  );
   const [existing] = input.existingOfferId
     ? await database
         .select()
@@ -689,6 +699,8 @@ async function acceptProviderOfferCandidateInTransaction(
       affUrl: affServiceProviders.affUrl,
       affParam: affServiceProviders.affParam,
       affValue: affServiceProviders.affValue,
+      affiliateMode: affServiceProviders.affiliateMode,
+      affiliateProductParam: affServiceProviders.affiliateProductParam,
       defaultPromoCode: affServiceProviders.defaultPromoCode,
     })
     .from(providerMonitors)

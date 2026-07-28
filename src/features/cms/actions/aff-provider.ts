@@ -11,7 +11,9 @@ import {
 import { and, asc, count, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import {
+  getAffiliateMode,
   getAffiliateConfigState,
+  isAffiliateParameterName,
   normalizeAffiliateProviderDomain,
 } from "@fwqgo/core/affiliate-provider";
 import { normalizeOffsetPagination } from "@fwqgo/core/pagination";
@@ -25,8 +27,7 @@ type AffProviderActionResult =
   | { error: string; message: string };
 
 type AffProviderDeleteActionResult =
-  | { data: number }
-  | { error: string; message: string };
+  { data: number } | { error: string; message: string };
 
 const MAX_TEXT_LENGTH = 500;
 const MAX_NAME_LENGTH = 80;
@@ -36,10 +37,7 @@ type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export type AffProviderFilter = "all" | "with-aff" | "empty-aff";
 export type AffProviderSort =
-  | "id-desc"
-  | "id-asc"
-  | "name-asc"
-  | "officialUrl-asc";
+  "id-desc" | "id-asc" | "name-asc" | "officialUrl-asc";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -62,6 +60,28 @@ function normalizeText(value: string) {
 
 function normalizeAffUrl(value: string) {
   return normalizeText(value);
+}
+
+function hasCompleteAffiliateConfigCondition() {
+  const hasAffiliateUrl = sql`btrim(${affServiceProviders.affUrl}) <> ''`;
+  const hasAffiliateParam = sql`btrim(${affServiceProviders.affParam}) <> ''`;
+  const hasAffiliateValue = sql`btrim(${affServiceProviders.affValue}) <> ''`;
+  const hasProductParam = sql`coalesce(btrim(${affServiceProviders.affiliateProductParam}), '') <> ''`;
+
+  return or(
+    and(
+      eq(affServiceProviders.affiliateMode, "query_param"),
+      hasAffiliateUrl,
+      hasAffiliateParam,
+      hasAffiliateValue,
+    ),
+    and(eq(affServiceProviders.affiliateMode, "full_replace"), hasAffiliateUrl),
+    and(
+      eq(affServiceProviders.affiliateMode, "product_param"),
+      hasAffiliateUrl,
+      hasProductParam,
+    ),
+  );
 }
 
 function normalizeAffProviderFilter(value: string): AffProviderFilter {
@@ -102,16 +122,28 @@ function getAffProviderWhereCondition({
     : undefined;
   const filterCondition =
     filter === "with-aff"
-      ? and(
-          sql`btrim(${affServiceProviders.affUrl}) <> ''`,
-          sql`btrim(${affServiceProviders.affParam}) <> ''`,
-          sql`btrim(${affServiceProviders.affValue}) <> ''`,
-        )
+      ? hasCompleteAffiliateConfigCondition()
       : filter === "empty-aff"
         ? or(
-            sql`btrim(${affServiceProviders.affUrl}) = ''`,
-            sql`btrim(${affServiceProviders.affParam}) = ''`,
-            sql`btrim(${affServiceProviders.affValue}) = ''`,
+            and(
+              eq(affServiceProviders.affiliateMode, "query_param"),
+              or(
+                sql`btrim(${affServiceProviders.affUrl}) = ''`,
+                sql`btrim(${affServiceProviders.affParam}) = ''`,
+                sql`btrim(${affServiceProviders.affValue}) = ''`,
+              ),
+            ),
+            and(
+              eq(affServiceProviders.affiliateMode, "full_replace"),
+              sql`btrim(${affServiceProviders.affUrl}) = ''`,
+            ),
+            and(
+              eq(affServiceProviders.affiliateMode, "product_param"),
+              or(
+                sql`btrim(${affServiceProviders.affUrl}) = ''`,
+                sql`coalesce(btrim(${affServiceProviders.affiliateProductParam}), '') = ''`,
+              ),
+            ),
           )
         : undefined;
 
@@ -119,11 +151,23 @@ function getAffProviderWhereCondition({
 }
 
 function validateAffProviderInput(data: Omit<AffManData, "id">) {
+  const affiliateMode = getAffiliateMode(data);
   const normalizedData = {
     name: normalizeText(data.name),
     affUrl: normalizeAffUrl(data.affUrl),
-    affParam: normalizeText(data.affParam),
-    affValue: normalizeText(data.affValue),
+    affParam:
+      affiliateMode === "query_param"
+        ? normalizeText(data.affParam)
+        : affiliateMode === "full_replace"
+          ? "href"
+          : "",
+    affValue:
+      affiliateMode === "query_param" ? normalizeText(data.affValue) : "",
+    affiliateMode,
+    affiliateProductParam:
+      affiliateMode === "product_param"
+        ? normalizeText(data.affiliateProductParam ?? "")
+        : null,
     officialUrl: normalizeAffiliateProviderDomain(data.officialUrl) ?? "",
   };
 
@@ -134,7 +178,12 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
   const affiliateConfigState = getAffiliateConfigState(normalizedData);
   if (affiliateConfigState === "partial") {
     return {
-      error: "返利链接、返利参数和返利值需全部填写，或全部留空",
+      error:
+        normalizedData.affiliateMode === "product_param"
+          ? "产品 ID 参数模式需要填写返利链接和产品 ID 参数，或全部留空"
+          : normalizedData.affiliateMode === "full_replace"
+            ? "整条替换模式需要填写返利链接，或全部留空"
+            : "返利链接、返利参数和返利值需全部填写，或全部留空",
       data: normalizedData,
     };
   }
@@ -164,6 +213,13 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
     };
   }
 
+  if ((normalizedData.affiliateProductParam?.length ?? 0) > MAX_PARAM_LENGTH) {
+    return {
+      error: `产品 ID 参数不能超过 ${MAX_PARAM_LENGTH} 个字符`,
+      data: normalizedData,
+    };
+  }
+
   if (affiliateConfigState === "complete") {
     try {
       const parsedUrl = new URL(normalizedData.affUrl);
@@ -174,11 +230,30 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
           data: normalizedData,
         };
       }
+      if (parsedUrl.username || parsedUrl.password) {
+        return {
+          error: "返利链接不能包含用户名或密码",
+          data: normalizedData,
+        };
+      }
     } catch {
       return {
         error: "返利链接格式不正确，请填写完整 URL",
         data: normalizedData,
       };
+    }
+
+    if (
+      normalizedData.affiliateMode === "query_param" &&
+      !isAffiliateParameterName(normalizedData.affParam)
+    ) {
+      return { error: "返利参数格式不正确", data: normalizedData };
+    }
+    if (
+      normalizedData.affiliateMode === "product_param" &&
+      !isAffiliateParameterName(normalizedData.affiliateProductParam ?? "")
+    ) {
+      return { error: "产品 ID 参数格式不正确", data: normalizedData };
     }
   }
 
@@ -263,9 +338,7 @@ export async function getAffValueByHref(hostname: string) {
       .where(
         and(
           inArray(affServiceProviders.officialUrl, possibleDomains),
-          sql`btrim(${affServiceProviders.affUrl}) <> ''`,
-          sql`btrim(${affServiceProviders.affParam}) <> ''`,
-          sql`btrim(${affServiceProviders.affValue}) <> ''`,
+          hasCompleteAffiliateConfigCondition(),
         ),
       );
     const matchesByDomain = new Map(

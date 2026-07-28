@@ -118,6 +118,8 @@ async function AffManList({
     affUrl: provider.affUrl,
     affParam: provider.affParam,
     affValue: provider.affValue,
+    affiliateMode: provider.affiliateMode,
+    affiliateProductParam: provider.affiliateProductParam,
     officialUrl: provider.officialUrl,
     summary: provider.summary,
     summarySourceUrl: provider.summarySourceUrl,

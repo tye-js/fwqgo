@@ -1,4 +1,5 @@
 import { getAffValueByHref } from "@/features/cms/actions/aff-provider";
+import { resolveAffiliateUrl } from "@fwqgo/core/affiliate-provider";
 
 export async function handleAffUrl(href: string) {
   try {
@@ -7,15 +8,11 @@ export async function handleAffUrl(href: string) {
       newUrl.hostname,
     );
     if (affServiceProvider?.id) {
-      if (affServiceProvider.affParam != "href") {
-        newUrl.searchParams.set(
-          affServiceProvider.affParam,
-          affServiceProvider.affValue,
-        );
-      } else {
-        // 替换为新的链接
-        newUrl.href = affServiceProvider.affUrl;
-      }
+      const resolved = resolveAffiliateUrl({
+        rawUrl: newUrl.toString(),
+        affiliate: affServiceProvider,
+      });
+      if (resolved) newUrl.href = resolved.url;
     }
     return newUrl.href;
   } catch (error) {
