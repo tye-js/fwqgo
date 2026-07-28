@@ -5,17 +5,15 @@ import type { AnyNode } from "domhandler";
 
 import type {
   PROVIDER_AVAILABILITY_STATUSES,
+  AffiliateLinkMonitorConfig,
   HtmlFieldConfig,
   HtmlMonitorConfig,
   JsonMonitorConfig,
-  ProductLinksMonitorConfig,
   ProviderMonitorConfig,
   ProviderSourceAdapter,
 } from "@fwqgo/core/provider-monitor-config";
 import {
   extractProductIdReference,
-  getProviderOfferAffiliateMode,
-  hasCompleteProviderOfferAffiliateConfig,
   normalizeProviderOfferAffiliateConfig,
   resolveProviderOfferAffiliateUrl,
   type ProviderOfferAffiliateConfigLike,
@@ -475,250 +473,49 @@ function extractProductFields(input: {
   };
 }
 
-function getProductPageGroup($: ReturnType<typeof load>, sourceUrl: string) {
-  const heading = toText($("main h1, h1").first().text());
-  const visualHeading = $("#page .service-header .title").first().clone();
-  visualHeading.find("small").remove();
-  const visualTitle = toText(visualHeading.text()).replace(
-    /\s+deployed\b.*$/i,
-    "",
-  );
-  const title = toText($("title").first().text()).split(/\s[-|]\s/, 1)[0] ?? "";
-  if (heading && heading.length <= 180) return heading;
-  if (visualTitle && visualTitle.length <= 180) return visualTitle;
-  if (title && title.length <= 180) return title;
-  const pathPart = new URL(sourceUrl).pathname
-    .split("/")
-    .filter(Boolean)
-    .at(-1);
-  return pathPart?.replace(/[-_]+/g, " ") ?? "Server Plan";
-}
-
-function countProductLinks(input: {
-  item: Cheerio<AnyNode>;
+export function buildAffiliateLinkCandidate(input: {
+  externalProductId: string;
+  affiliateTargetUrl: string;
+  purchaseUrl: string;
   sourceUrl: string;
-  productParam: string;
+  config: AffiliateLinkMonitorConfig;
 }) {
-  const links = input.item.find("a[href]");
-  return links.toArray().filter((_, index) => {
-    const href = links.eq(index).attr("href");
-    if (!href) return false;
-    const resolved = resolveUrl(href, input.sourceUrl);
-    return Boolean(
-      resolved &&
-      extractProductIdReference(resolved, input.productParam, {
-        strictPreferred: true,
-      }),
-    );
-  }).length;
-}
-
-function findProductLinkContainer(input: {
-  anchor: Cheerio<AnyNode>;
-  sourceUrl: string;
-  productParam: string;
-}) {
-  let current = input.anchor.parent();
-  let best = current;
-  let bestScore = Number.NEGATIVE_INFINITY;
-
-  for (let depth = 0; depth < 8 && current.length > 0; depth += 1) {
-    if (current.is("body, html")) break;
-    const text = toText(current.text());
-    const linkCount = countProductLinks({ ...input, item: current });
-    if (linkCount === 1 && text.length <= 8_000) {
-      let score = 20 - depth;
-      if (current.is("tr, article, li, section")) score += 6;
-      if (
-        /(?:product|plan|package|pricing|server|shared|vps|dedicated|box|card)/i.test(
-          current.attr("class") ?? "",
-        )
-      ) {
-        score += 8;
-      }
-      if (productPricePattern.test(text)) score += 6;
-      if (
-        /RAM|Memory|CPU|Core|SSD|NVMe|HDD|Storage|Bandwidth|Transfer/i.test(
-          text,
-        )
-      ) {
-        score += 6;
-      }
-      if (text.length >= 20) score += 4;
-      if (score > bestScore) {
-        best = current;
-        bestScore = score;
-      }
-    }
-    current = current.parent();
-  }
-  return best;
-}
-
-function parseProductLinkCandidates(input: {
-  body: string;
-  config: ProductLinksMonitorConfig;
-  sourceUrl: string;
-  affiliate?: ProviderOfferAffiliateConfigLike;
-}) {
-  if (
-    !input.affiliate ||
-    getProviderOfferAffiliateMode(input.affiliate) !== "product_param" ||
-    !hasCompleteProviderOfferAffiliateConfig(input.affiliate)
-  ) {
-    throw new Error("单商品 PID 采集要求供应商配置完整的按产品 ID 返利链接");
-  }
-  const affiliateConfig = normalizeProviderOfferAffiliateConfig(
-    input.affiliate,
-  );
-  const productParam = affiliateConfig.offerAffiliateProductParam?.trim();
-  if (!productParam) throw new Error("供应商未配置产品 ID 参数");
-
-  const configuredProductId = input.config.productId.trim();
-  if (configuredProductId) {
-    if (productParam.toLowerCase() !== "pid") {
-      throw new Error("单商品 PID 采集要求套餐采集产品 ID 参数配置为 pid");
-    }
-    const externalProductId = `${productParam.toLowerCase()}:${configuredProductId}`;
-    const affiliate = resolveProviderOfferAffiliateUrl({
-      rawUrl: affiliateConfig.offerAffUrl,
-      affiliate: affiliateConfig,
-      externalProductId,
-    });
-    if (!affiliate) throw new Error("无法生成套餐采集返利链接");
-
-    const productGroup =
-      nullableText(input.config.defaults.productGroup) ?? "Server Plan";
-    return [
-      {
-        externalProductId,
-        title: `${productGroup} PID ${configuredProductId}`,
-        productGroup,
-        productType: inferProductType(
-          productGroup,
-          input.config.defaults.productType,
-        ),
-        cpu: null,
-        memory: null,
-        storage: null,
-        bandwidth: null,
-        traffic: null,
-        region: input.config.defaults.region ?? null,
-        countryCode: input.config.defaults.countryCode ?? null,
-        city: input.config.defaults.city ?? null,
-        lineType: input.config.defaults.lineType ?? null,
-        network: input.config.defaults.network ?? null,
-        ipv4: null,
-        ipv6: null,
-        status: input.config.defaults.status,
-        purchaseUrl: affiliate.url,
-        promoCode: null,
-        prices: [],
-        sourceUrl: affiliate.url,
-        raw: {
-          affiliatePurchaseUrl: affiliate.url,
-          configuredProductId,
-          __evidence: {
-            adapter: "product_links",
-            inputMode: "manual_pid",
-            productParam: productParam.toLowerCase(),
-          },
-        },
-      } satisfies ProviderOfferCandidate,
-    ];
-  }
-
-  // Legacy parser compatibility only. Save, preview, and run paths now require
-  // an explicit productId before this parser is called.
-  const $ = load(input.body);
-  const pageGroup =
-    nullableText(input.config.defaults.productGroup) ??
-    getProductPageGroup($, input.sourceUrl);
-  const candidates = new Map<string, ProviderOfferCandidate>();
-
-  $(input.config.linkSelector).each((_, element) => {
-    const anchor = $(element);
-    const originalPurchaseUrl = resolveUrl(
-      anchor.attr("href"),
-      input.sourceUrl,
-    );
-    if (!originalPurchaseUrl) return;
-    const reference = extractProductIdReference(
-      originalPurchaseUrl,
-      productParam,
-      { strictPreferred: true },
-    );
-    if (!reference) return;
-    const externalProductId = `${productParam.toLowerCase()}:${reference.value}`;
-    const affiliate = resolveProviderOfferAffiliateUrl({
-      rawUrl: originalPurchaseUrl,
-      affiliate: affiliateConfig,
-      externalProductId,
-    });
-    if (!affiliate) return;
-
-    const item = findProductLinkContainer({
-      anchor,
-      sourceUrl: input.sourceUrl,
-      productParam,
-    });
-    const fields = extractProductFields({
-      item,
-      pageGroup,
-      productId: reference.value,
-    });
-    const candidate: ProviderOfferCandidate = {
-      externalProductId,
-      title: fields.title,
-      productGroup: pageGroup,
-      productType: inferProductType(
-        `${input.sourceUrl}\n${pageGroup}\n${fields.text}`,
-        input.config.defaults.productType,
-      ),
-      cpu: fields.cpu,
-      memory: fields.memory,
-      storage: fields.storage,
-      bandwidth: fields.bandwidth,
-      traffic: fields.traffic,
-      region: fields.region ?? input.config.defaults.region ?? null,
-      countryCode: input.config.defaults.countryCode ?? null,
-      city: input.config.defaults.city ?? null,
-      lineType: input.config.defaults.lineType ?? null,
-      network: input.config.defaults.network ?? null,
-      ipv4: fields.ipv4,
-      ipv6: fields.ipv6,
-      status: /out\s+of\s+stock|sold\s+out|缺货/i.test(fields.text)
-        ? "out_of_stock"
-        : input.config.defaults.status,
-      purchaseUrl: affiliate.url,
-      promoCode: null,
-      prices: fields.prices.map((price) => ({
-        ...price,
-        currency: price.currency || input.config.defaults.currency,
-        purchaseUrl: affiliate.url,
-      })),
-      sourceUrl: input.sourceUrl,
-      raw: {
-        text: fields.text,
-        originalPurchaseUrl,
-        affiliatePurchaseUrl: affiliate.url,
-        __evidence: {
-          adapter: "product_links",
-          linkSelector: input.config.linkSelector,
-          productParam: productParam.toLowerCase(),
-        },
+  const productGroup =
+    nullableText(input.config.defaults.productGroup) ?? "Server Plan";
+  return {
+    externalProductId: input.externalProductId,
+    title: `${productGroup} ${input.externalProductId}`,
+    productGroup,
+    productType: inferProductType(
+      productGroup,
+      input.config.defaults.productType,
+    ),
+    cpu: null,
+    memory: null,
+    storage: null,
+    bandwidth: null,
+    traffic: null,
+    region: input.config.defaults.region ?? null,
+    countryCode: input.config.defaults.countryCode ?? null,
+    city: input.config.defaults.city ?? null,
+    lineType: input.config.defaults.lineType ?? null,
+    network: input.config.defaults.network ?? null,
+    ipv4: null,
+    ipv6: null,
+    status: input.config.defaults.status,
+    purchaseUrl: input.purchaseUrl,
+    promoCode: null,
+    prices: [],
+    sourceUrl: input.sourceUrl,
+    raw: {
+      affiliateTargetUrl: input.affiliateTargetUrl,
+      collectionUrl: input.sourceUrl,
+      __evidence: {
+        adapter: "affiliate_link",
+        inputMode: "manual_complete_url",
       },
-    };
-
-    const current = candidates.get(externalProductId);
-    const currentText =
-      typeof current?.raw.text === "string" ? current.raw.text : "";
-    if (!current || fields.text.length > currentText.length) {
-      candidates.set(externalProductId, candidate);
-    }
-  });
-
-  return [...candidates.values()];
+    },
+  } satisfies ProviderOfferCandidate;
 }
 
 function recordValue(value: unknown) {
@@ -1022,10 +819,9 @@ export function parseWhmcsBillingCyclePrices(input: {
     const billingCycle = normalizeServerOfferBillingCycle(rawCycle);
     const key = `${billingCycle}:${currency}`;
     if (unique.has(key)) return;
-    const resolvedPurchaseUrl = resolveUrl(
-      input.purchaseUrl,
-      input.purchaseUrl,
-    );
+    const resolvedPurchaseUrl = /^\/go\/[a-z0-9-]+$/i.test(input.purchaseUrl)
+      ? input.purchaseUrl
+      : resolveUrl(input.purchaseUrl, input.purchaseUrl);
 
     unique.set(key, {
       amount,
@@ -1089,9 +885,18 @@ export function mergeWhmcsProductPageDetails(input: {
     productId: input.candidate.externalProductId,
   });
   const location = selectedWhmcsLocation($);
+  const evidence = input.candidate.raw.__evidence;
+  const isAffiliateLinkCandidate =
+    typeof evidence === "object" &&
+    evidence !== null &&
+    (evidence as { adapter?: unknown }).adapter === "affiliate_link";
   return {
     ...input.candidate,
-    title: detailTitle || input.candidate.title || details.title,
+    title:
+      detailTitle ||
+      (isAffiliateLinkCandidate
+        ? details.title || input.candidate.title
+        : input.candidate.title || details.title),
     productType: inferProductType(
       `${detailTitle}\n${details.text}`,
       input.candidate.productType,
@@ -1120,7 +925,6 @@ export function parseProviderSourcePayload(input: {
   body: string;
   config: ProviderMonitorConfig;
   sourceUrl: string;
-  affiliate?: ProviderOfferAffiliateConfigLike;
 }) {
   if (input.adapter === "json") {
     return parseJsonCandidates(
@@ -1129,13 +933,8 @@ export function parseProviderSourcePayload(input: {
       input.sourceUrl,
     );
   }
-  if (input.adapter === "product_links") {
-    return parseProductLinkCandidates({
-      body: input.body,
-      config: input.config as ProductLinksMonitorConfig,
-      sourceUrl: input.sourceUrl,
-      affiliate: input.affiliate,
-    });
+  if (input.adapter === "affiliate_link") {
+    throw new Error("完整返利链接采集必须由已保存的链接记录创建候选套餐");
   }
   return parseHtmlCandidates(
     input.body,
@@ -1200,6 +999,7 @@ export function hashProviderOfferSyncState(
   provider: ProviderOfferAffiliateConfigLike & {
     purpose: string;
     defaultPromoCode: string | null;
+    preservePurchaseUrl?: boolean;
   },
 ) {
   const affiliate = normalizeProviderOfferAffiliateConfig(provider);
@@ -1208,14 +1008,16 @@ export function hashProviderOfferSyncState(
       JSON.stringify(
         stableValue({
           candidate,
-          affiliate: {
-            offerAffUrl: affiliate.offerAffUrl,
-            offerAffParam: affiliate.offerAffParam,
-            offerAffValue: affiliate.offerAffValue,
-            offerAffiliateMode: affiliate.offerAffiliateMode ?? null,
-            offerAffiliateProductParam:
-              affiliate.offerAffiliateProductParam ?? null,
-          },
+          affiliate: provider.preservePurchaseUrl
+            ? null
+            : {
+                offerAffUrl: affiliate.offerAffUrl,
+                offerAffParam: affiliate.offerAffParam,
+                offerAffValue: affiliate.offerAffValue,
+                offerAffiliateMode: affiliate.offerAffiliateMode ?? null,
+                offerAffiliateProductParam:
+                  affiliate.offerAffiliateProductParam ?? null,
+              },
           behavior: {
             purpose: provider.purpose,
             defaultPromoCode: provider.defaultPromoCode,
@@ -1287,6 +1089,7 @@ export function hashProviderMonitorSyncConfig(input: {
     autoPublish: boolean;
     missingThreshold: number;
     defaultPromoCode: string | null;
+    preservePurchaseUrl?: boolean;
   };
 }) {
   return createHash("sha256")
@@ -1294,7 +1097,9 @@ export function hashProviderMonitorSyncConfig(input: {
       JSON.stringify(
         stableValue({
           ...input,
-          affiliate: normalizeProviderOfferAffiliateConfig(input.affiliate),
+          affiliate: input.behavior.preservePurchaseUrl
+            ? null
+            : normalizeProviderOfferAffiliateConfig(input.affiliate),
         }),
       ),
     )

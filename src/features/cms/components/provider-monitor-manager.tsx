@@ -93,7 +93,7 @@ type RunRow = Awaited<ReturnType<typeof getProviderMonitorRunHistory>>[number];
 type CandidateRow = Awaited<
   ReturnType<typeof getProviderOfferCandidateList>
 >[number];
-type MonitorAdapter = "json" | "html" | "whmcs" | "product_links";
+type MonitorAdapter = "json" | "html" | "whmcs" | "affiliate_link";
 
 function formatCheckPrice(check: CheckRow) {
   if (
@@ -144,9 +144,7 @@ const defaultHtmlConfig = {
   headers: {},
 };
 
-const defaultProductLinksConfig = {
-  productId: "",
-  linkSelector: "a[href]",
+const defaultAffiliateLinkConfig = {
   requiredSpecCount: 2,
   defaults: {},
   statusMap: {},
@@ -157,8 +155,8 @@ function getDefaultConfigText(adapter: MonitorAdapter) {
   return JSON.stringify(
     adapter === "json"
       ? defaultJsonConfig
-      : adapter === "product_links"
-        ? defaultProductLinksConfig
+      : adapter === "affiliate_link"
+        ? defaultAffiliateLinkConfig
         : defaultHtmlConfig,
     null,
     2,
@@ -169,7 +167,7 @@ const adapterLabels: Record<string, string> = {
   json: "JSON 接口",
   html: "HTML 页面",
   whmcs: "WHMCS 页面",
-  product_links: "单商品 PID",
+  affiliate_link: "完整返利链接",
 };
 
 const purposeLabels: Record<string, string> = {
@@ -266,65 +264,6 @@ function matchesProvider(provider: Provider, query: string) {
   ].some((value) => value?.toLocaleLowerCase().includes(normalizedQuery));
 }
 
-function getProductIdFromConfig(value: unknown) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return "";
-  }
-  const productId = (value as { productId?: unknown }).productId;
-  return typeof productId === "string" ? productId : "";
-}
-
-function getProductIdFromConfigText(value: string) {
-  try {
-    return getProductIdFromConfig(JSON.parse(value));
-  } catch {
-    return "";
-  }
-}
-
-function serializeProductLinksConfig(configText: string, productId: string) {
-  try {
-    const parsed = JSON.parse(configText) as unknown;
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      Array.isArray(parsed)
-    ) {
-      return configText;
-    }
-    return JSON.stringify({ ...parsed, productId }, null, 2);
-  } catch {
-    return configText;
-  }
-}
-
-function getProductAffiliatePreview(
-  provider: Provider | undefined,
-  productId: string,
-) {
-  if (!provider || !productId.trim()) return null;
-  if (
-    provider.offerAffiliateMode !== "product_param" ||
-    !provider.offerAffUrl.trim() ||
-    !provider.offerAffiliateProductParam?.trim()
-  ) {
-    return { error: "供应商尚未配置按产品 ID 的套餐采集返利链接。" };
-  }
-  if (provider.offerAffiliateProductParam.trim().toLowerCase() !== "pid") {
-    return { error: "供应商的套餐采集产品 ID 参数必须配置为 pid。" };
-  }
-  try {
-    const url = new URL(provider.offerAffUrl);
-    url.searchParams.set(
-      provider.offerAffiliateProductParam.trim(),
-      productId.trim(),
-    );
-    return { url: url.toString() };
-  } catch {
-    return { error: "供应商的套餐采集返利链接格式不正确。" };
-  }
-}
-
 function MonitorFormDialog({
   monitor,
   providers,
@@ -347,7 +286,7 @@ function MonitorFormDialog({
   const [enabled, setEnabled] = useState(monitor?.enabled ?? false);
   const [autoPublish, setAutoPublish] = useState(monitor?.autoPublish ?? false);
   const [adapter, setAdapter] = useState<MonitorAdapter>(
-    (monitor?.adapter as MonitorAdapter | undefined) ?? "product_links",
+    (monitor?.adapter as MonitorAdapter | undefined) ?? "affiliate_link",
   );
   const [providerId, setProviderId] = useState(
     String(monitor?.providerId ?? ""),
@@ -356,11 +295,16 @@ function MonitorFormDialog({
   const [configText, setConfigText] = useState(
     monitor?.config
       ? JSON.stringify(monitor.config, null, 2)
-      : getDefaultConfigText("product_links"),
+      : getDefaultConfigText("affiliate_link"),
   );
-  const [productId, setProductId] = useState(
-    getProductIdFromConfig(monitor?.config),
+  const [externalProductId, setExternalProductId] = useState(
+    monitor?.externalProductId ?? "",
   );
+  const [affiliateTargetUrl, setAffiliateTargetUrl] = useState(
+    monitor?.affiliateTargetUrl ?? "",
+  );
+  const [sourceUrl, setSourceUrl] = useState(monitor?.affiliateSourceUrl ?? "");
+  const [notes, setNotes] = useState(monitor?.affiliateNotes ?? "");
   const [configDrafts, setConfigDrafts] = useState<
     Partial<Record<MonitorAdapter, string>>
   >({});
@@ -378,10 +322,12 @@ function MonitorFormDialog({
     !matchingProviders.some((provider) => provider.id === selectedProvider.id)
       ? [selectedProvider, ...matchingProviders]
       : matchingProviders;
-  const productAffiliatePreview = getProductAffiliatePreview(
-    selectedProvider,
-    productId,
-  );
+  const shortPathDisplay =
+    monitor?.shortPath && affiliateTargetUrl === monitor.affiliateTargetUrl
+      ? monitor.shortPath
+      : monitor
+        ? "保存后重新生成"
+        : "保存时自动生成";
 
   function actionInput(formData: FormData) {
     return {
@@ -392,10 +338,11 @@ function MonitorFormDialog({
       purpose: getFormDataText(formData, "purpose") as
         "catalog" | "promotion" | "stock",
       endpointUrl: getFormDataText(formData, "endpointUrl"),
-      configText:
-        adapter === "product_links"
-          ? serializeProductLinksConfig(configText, productId)
-          : configText,
+      externalProductId,
+      affiliateTargetUrl,
+      sourceUrl,
+      notes,
+      configText,
       enabled,
       autoPublish,
       missingThreshold: Number(formData.get("missingThreshold")),
@@ -444,7 +391,7 @@ function MonitorFormDialog({
       }),
       errorTitle: "采集预览失败",
       errorSuggestion:
-        "请检查供应商套餐采集返利配置、商品 PID、网址与字段映射后重试。",
+        "请检查商品稳定键、完整返利链接、独立采集地址与字段映射后重试。",
       refresh: false,
     }).finally(() => {
       formMutationLockRef.current = false;
@@ -459,7 +406,7 @@ function MonitorFormDialog({
             {monitor ? "编辑供应商采集源" : "新增供应商采集源"}
           </DialogTitle>
           <DialogDescription>
-            使用商品 PID 采集单个套餐，或配置 JSON、HTML、WHMCS 数据源。
+            录入套餐的完整返利链接，或配置 JSON、HTML、WHMCS 数据源。
           </DialogDescription>
         </DialogHeader>
         <form action={submit} className="space-y-4">
@@ -516,7 +463,7 @@ function MonitorFormDialog({
               <Input
                 id="monitor-name"
                 name="name"
-                defaultValue={monitor?.name ?? "单商品 PID 采集"}
+                defaultValue={monitor?.name ?? "完整返利链接采集"}
                 required
                 className="min-h-11"
               />
@@ -551,9 +498,6 @@ function MonitorFormDialog({
                     configDrafts[nextAdapter] ??
                     getDefaultConfigText(nextAdapter);
                   setConfigText(nextConfigText);
-                  if (nextAdapter === "product_links") {
-                    setProductId(getProductIdFromConfigText(nextConfigText));
-                  }
                   setPreview(null);
                 }}
               >
@@ -562,7 +506,7 @@ function MonitorFormDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="json">JSON 接口</SelectItem>
-                  <SelectItem value="product_links">单商品 PID</SelectItem>
+                  <SelectItem value="affiliate_link">完整返利链接</SelectItem>
                   <SelectItem value="html">HTML 产品页</SelectItem>
                   <SelectItem value="whmcs">WHMCS 产品页</SelectItem>
                 </SelectContent>
@@ -585,46 +529,79 @@ function MonitorFormDialog({
               </Select>
             </div>
           </div>
-          {adapter === "product_links" ? (
-            <div className="space-y-3">
+          {adapter === "affiliate_link" ? (
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="monitor-external-product-id">
+                    商品稳定键
+                  </Label>
+                  <Input
+                    id="monitor-external-product-id"
+                    type="text"
+                    maxLength={160}
+                    value={externalProductId}
+                    onChange={(event) => {
+                      setExternalProductId(event.target.value);
+                      setPreview(null);
+                    }}
+                    placeholder="例如 racknerd-kvm-1gb-2026"
+                    required
+                    className="min-h-11 font-mono text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="monitor-short-path">站内短链</Label>
+                  <Input
+                    id="monitor-short-path"
+                    value={shortPathDisplay}
+                    readOnly
+                    className="min-h-11 font-mono text-sm text-muted-foreground"
+                  />
+                </div>
+              </div>
               <div className="space-y-2">
-                <Label htmlFor="monitor-product-id">商品 PID</Label>
+                <Label htmlFor="monitor-affiliate-target-url">
+                  完整返利链接
+                </Label>
                 <Input
-                  id="monitor-product-id"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[1-9][0-9]*"
-                  maxLength={20}
-                  value={productId}
+                  id="monitor-affiliate-target-url"
+                  type="url"
+                  maxLength={4096}
+                  value={affiliateTargetUrl}
                   onChange={(event) => {
-                    setProductId(event.target.value);
+                    setAffiliateTargetUrl(event.target.value);
                     setPreview(null);
                   }}
-                  placeholder="例如 81"
+                  placeholder="https://provider.example/affiliate/product"
                   required
-                  aria-describedby="monitor-product-link-preview"
                   className="min-h-11 font-mono text-sm"
                 />
               </div>
-              <div
-                id="monitor-product-link-preview"
-                className="rounded-md border border-border/70 bg-muted/20 px-3 py-2"
-              >
-                <p className="text-xs font-medium text-foreground">
-                  返利商品采集链接
-                </p>
-                <p
-                  aria-live="polite"
-                  className={`mt-1 break-all font-mono text-xs leading-5 ${
-                    productAffiliatePreview?.error
-                      ? "text-destructive"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  {productAffiliatePreview?.url ??
-                    productAffiliatePreview?.error ??
-                    "输入 PID 后自动生成"}
-                </p>
+              <div className="space-y-2">
+                <Label htmlFor="monitor-source-url">独立采集地址（可选）</Label>
+                <Input
+                  id="monitor-source-url"
+                  type="url"
+                  maxLength={4096}
+                  value={sourceUrl}
+                  onChange={(event) => {
+                    setSourceUrl(event.target.value);
+                    setPreview(null);
+                  }}
+                  placeholder="https://provider.example/cart/product"
+                  className="min-h-11 font-mono text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="monitor-affiliate-notes">备注（可选）</Label>
+                <Textarea
+                  id="monitor-affiliate-notes"
+                  maxLength={2000}
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  className="min-h-24 text-sm leading-5"
+                />
               </div>
             </div>
           ) : (
@@ -669,7 +646,7 @@ function MonitorFormDialog({
               />
             </div>
           </div>
-          {adapter === "product_links" ? (
+          {adapter === "affiliate_link" ? (
             <Collapsible>
               <CollapsibleTrigger asChild>
                 <Button
@@ -1205,7 +1182,7 @@ export function ProviderMonitorManager({
       </div>
 
       <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-        <Table className="min-w-[1040px]">
+        <Table className="min-w-[1120px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-12 p-0">
@@ -1289,12 +1266,37 @@ export function ProviderMonitorManager({
                     </Badge>
                   </TableCell>
                   <TableCell className="max-w-80">
-                    <p
-                      className="truncate font-mono text-xs"
-                      title={monitor.endpointUrl}
-                    >
-                      {monitor.endpointUrl}
-                    </p>
+                    {monitor.adapter === "affiliate_link" ? (
+                      <div className="space-y-1 font-mono text-xs">
+                        <p className="font-medium text-foreground">
+                          {monitor.externalProductId ?? "未补录商品稳定键"}
+                        </p>
+                        <p
+                          className="truncate text-muted-foreground"
+                          title={monitor.affiliateTargetUrl ?? undefined}
+                        >
+                          返利：{monitor.affiliateTargetUrl ?? "未补录"}
+                        </p>
+                        {monitor.affiliateSourceUrl ? (
+                          <p
+                            className="truncate text-muted-foreground"
+                            title={monitor.affiliateSourceUrl}
+                          >
+                            采集：{monitor.affiliateSourceUrl}
+                          </p>
+                        ) : null}
+                        <p className="text-muted-foreground">
+                          短链：{monitor.shortPath ?? "未生成"}
+                        </p>
+                      </div>
+                    ) : (
+                      <p
+                        className="truncate font-mono text-xs"
+                        title={monitor.endpointUrl}
+                      >
+                        {monitor.endpointUrl}
+                      </p>
+                    )}
                     <p className="mt-1 text-xs text-muted-foreground">
                       超时 {monitor.timeoutSeconds} 秒 ·{" "}
                       {adapterLabels[monitor.adapter] ?? monitor.adapter}

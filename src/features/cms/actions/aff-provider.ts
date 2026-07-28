@@ -588,6 +588,7 @@ export async function updateAffProvider(
               and(
                 eq(providerMonitors.providerId, providerId),
                 eq(providerMonitors.enabled, true),
+                ne(providerMonitors.adapter, "affiliate_link"),
               ),
             )
             .returning({ id: providerMonitors.id })

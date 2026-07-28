@@ -112,16 +112,16 @@ WHMCS 是 HTML 适配器的预设，提供常见产品卡片、PID 和购物车�
 - 供应商主题不同时允许覆盖默认选择器。
 - 产品地区或变体需要进入稳定键，避免不同机房被合并。
 
-### 5.4 单商品 PID
+### 5.4 完整返利链接
 
-适用于管理员已经知道供应商商品 PID、需要直接采集该商品详情的场景。
+适用于管理员已经取得某个套餐的最终返利链接，需要直接采集该商品详情的场景。
 
-- 管理员在采集源中人工输入一个 PID，不再从套餐集合页扫描或猜测产品 ID。
-- 系统读取供应商独立的套餐采集返利配置，并要求 `offerAffiliateProductParam=pid`。例如基础链接为 `aff.php?aff=7577`、输入为 `81` 时，生成 `aff.php?aff=7577&pid=81`。
-- 生成后的返利商品链接既是保存的采集地址，也是预览和定时任务的实际请求地址；采集任务不会请求旧集合页。
-- 稳定键保存为 `pid:81` 一类参数和值；`providerId + externalProductId` 负责幂等去重。
-- 商品详情页用于补充标题、配置、地区和多周期价格。请求失败时本轮采集失败，不用空候选覆盖历史套餐。
-- PID 位于采集源配置中，套餐采集继续只读取 `offerAff*` 字段，不读取 AI 改写使用的 `affUrl`、`affParam`、`affValue`。
+- 管理员人工输入稳定商品键和完整返利链接；系统不再按供应商规则拼接 PID/GID，也不扫描集合页发现商品链接。
+- 可额外输入独立采集地址。预览和定时任务请求 `sourceUrl ?? affiliateTargetUrl`，绝不请求站内 `/go/{slug}`。
+- 保存时为完整返利链接创建或复用 `/go/{slug}`；候选套餐、套餐主购买链接和多周期价格购买链接都保存该站内短链。
+- `affiliateTargetUrl` 是用户确认过的最终跳转目标，`sourceUrl` 是数据采集入口，`/go/{slug}` 是前台购买入口，三者职责互不替代。
+- `providerId + externalProductId` 负责幂等去重。商品详情页用于补充标题、配置、地区和多周期价格；请求失败时不以空候选覆盖历史套餐。
+- 该适配器不读取或执行供应商档案的 AI 返利替换规则；AI 改写和供应商套餐采集是完全独立的业务。
 
 ### 5.5 Browser
 
@@ -232,7 +232,7 @@ pending -> superseded（同一产品更新候选版本）
 
 ## 10. 返利链接
 
-购买链接在标准化后、写入前处理：
+JSON、HTML 和 WHMCS 来源的购买链接在标准化后、写入前按供应商套餐采集配置处理：
 
 - 按当前采集源所属供应商直接使用套餐采集返利配置，不再次跨供应商查询。
 - 套餐采集只读取 `offerAffUrl`、`offerAffParam`、`offerAffValue`、`offerAffiliateMode`、`offerAffiliateProductParam`；AI 改写使用的 `affUrl`、`affParam`、`affValue` 不参与采集。
@@ -243,13 +243,15 @@ pending -> superseded（同一产品更新候选版本）
 - 产品链接发生跳转时必须先保留原链接中的 PID/GID；最终落地 URL 丢失参数时仍能区分套餐。无法取得产品 ID 时保留原购买链接，不猜测套餐。
 - 多周期价格各自的购买链接分别处理，不能统一成同一个普通参数链接。
 - 同时保留官网原始来源 URL 用于审计，不把返利链接当作来源 URL。
+- `affiliate_link` 来源是例外：完整返利目标由管理员直接确认，写入时固定保留 `/go/{slug}`，不再应用上述任一供应商级替换模式。
 
 ## 11. 数据模型
 
 ### provider_monitors 扩展
 
 - `purpose`: `catalog | promotion | stock`
-- `adapter`: `json | html | whmcs`
+- `adapter`: `json | html | whmcs | affiliate_link`
+- `affiliateLinkId`: 完整返利链接采集源关联的套餐级返利记录
 - `autoPublish`: boolean，默认 false
 - `missingThreshold`: integer，默认 3
 - `etag`、`lastModified`、`responseHash`
@@ -260,6 +262,12 @@ pending -> superseded（同一产品更新候选版本）
 - 运行状态、开始/结束时间、响应哈希和 HTTP 信息。
 - received、created、updated、unchanged、skipped、missing 统计。
 - 错误标题、错误详情。
+
+### affiliate_links
+
+- 保存 providerId、externalProductId、affiliateTargetUrl 和可选 sourceUrl。
+- 关联通用 `outbound_links`，由后者提供 `/go/{slug}` 跳转能力。
+- 同一供应商下稳定商品键唯一，同一供应商不能重复绑定同一个短链。
 
 ### provider_offer_candidates
 

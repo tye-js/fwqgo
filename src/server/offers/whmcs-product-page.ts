@@ -49,13 +49,18 @@ export async function fetchWhmcsProductPage(input: {
       ? Promise.resolve(requirePublicHttpUrl(value, label))
       : assertPublicHttpUrl(value, label);
   const initialUrl = await validateUrl(input.url, "WHMCS 产品配置地址");
-  const cookieJar = new Map<string, string>();
+  const cookieJars = new Map<string, Map<string, string>>();
   const maxRedirects = input.maxRedirects ?? 3;
   const signal = AbortSignal.timeout(input.timeoutMs ?? 30_000);
   let currentUrl = initialUrl;
 
   for (let redirectCount = 0; ; redirectCount += 1) {
-    const headers = new Headers(input.headers);
+    const hostname = currentUrl.hostname.toLowerCase();
+    const cookieJar = cookieJars.get(hostname) ?? new Map<string, string>();
+    cookieJars.set(hostname, cookieJar);
+    const headers = new Headers(
+      currentUrl.origin === initialUrl.origin ? input.headers : undefined,
+    );
     headers.set("Accept", "text/html,application/xhtml+xml");
     const cookies = cookieHeader(cookieJar);
     if (cookies) headers.set("Cookie", cookies);
@@ -81,10 +86,6 @@ export async function fetchWhmcsProductPage(input: {
         new URL(location, currentUrl),
         "WHMCS 产品配置跳转地址",
       );
-      if (!isSameProviderHost(nextUrl.hostname, initialUrl.hostname)) {
-        await response.body?.cancel();
-        throw new Error("WHMCS 产品配置页跳转到了不同站点，已停止请求");
-      }
       await response.body?.cancel();
       currentUrl = nextUrl;
       continue;
@@ -220,6 +221,7 @@ export async function enrichWhmcsProductPrices(input: {
   concurrency?: number;
   allowInterceptedDns?: boolean;
   fetchProductPage?: typeof fetchWhmcsProductPage;
+  detailUrlForCandidate?: (candidate: ProviderOfferCandidate) => string;
 }) {
   const fetchProductPage = input.fetchProductPage ?? fetchWhmcsProductPage;
   const concurrency = Math.min(
@@ -233,7 +235,9 @@ export async function enrichWhmcsProductPrices(input: {
     async (candidate) => {
       let detailUrl: string | null = null;
       try {
-        detailUrl = getWhmcsProductPageUrl(candidate);
+        detailUrl = input.detailUrlForCandidate
+          ? input.detailUrlForCandidate(candidate)
+          : getWhmcsProductPageUrl(candidate);
         const page = await fetchProductPage({
           url: detailUrl,
           headers: input.headers,

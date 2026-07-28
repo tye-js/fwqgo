@@ -17,6 +17,7 @@ import {
   adminActionSuccess,
 } from "@/lib/admin-action-result";
 import { defineAdminAction } from "@/features/cms/lib/define-admin-action";
+import { getOrCreateOutboundShortLink } from "@/server/links/outbound-short-link";
 import {
   createProviderMonitor,
   deleteProviderMonitor,
@@ -40,6 +41,22 @@ const monitorInputSchema = z.object({
   adapter: z.enum(PROVIDER_SOURCE_ADAPTERS),
   purpose: z.enum(PROVIDER_SOURCE_PURPOSES),
   endpointUrl: z.string().trim().max(2_048, "供应商网址不能超过 2048 个字符"),
+  externalProductId: z
+    .string()
+    .trim()
+    .max(160, "商品稳定键不能超过 160 个字符")
+    .default(""),
+  affiliateTargetUrl: z
+    .string()
+    .trim()
+    .max(4_096, "完整返利链接不能超过 4096 个字符")
+    .default(""),
+  sourceUrl: z
+    .string()
+    .trim()
+    .max(4_096, "独立采集地址不能超过 4096 个字符")
+    .default(""),
+  notes: z.string().trim().max(2_000, "备注不能超过 2000 个字符").default(""),
   configText: z.string().trim().max(30_000),
   enabled: z.boolean(),
   autoPublish: z.boolean(),
@@ -91,6 +108,37 @@ function parseConfigText(value: string, adapter: ProviderSourceAdapter) {
   return parseProviderMonitorConfig(config, adapter);
 }
 
+function parseAffiliateLinkInput(input: {
+  adapter: ProviderSourceAdapter;
+  externalProductId: string;
+  affiliateTargetUrl: string;
+  sourceUrl: string;
+  notes: string;
+}) {
+  if (input.adapter !== "affiliate_link") return null;
+  if (!input.externalProductId) throw new Error("请输入商品稳定键");
+  if (!input.affiliateTargetUrl) throw new Error("请输入完整返利链接");
+  const affiliateTarget = requirePublicHttpUrl(
+    input.affiliateTargetUrl,
+    "完整返利链接",
+  );
+  if (affiliateTarget.username || affiliateTarget.password) {
+    throw new Error("完整返利链接不能包含用户名或密码");
+  }
+  const source = input.sourceUrl
+    ? requirePublicHttpUrl(input.sourceUrl, "独立采集地址")
+    : null;
+  if (source?.username || source?.password) {
+    throw new Error("独立采集地址不能包含用户名或密码");
+  }
+  return {
+    externalProductId: input.externalProductId,
+    affiliateTargetUrl: affiliateTarget.toString(),
+    sourceUrl: source?.toString() ?? null,
+    notes: input.notes || null,
+  };
+}
+
 const providerMonitorIdSchema = postgresIntegerIdSchema;
 const providerMonitorRunIdSchema = z
   .number()
@@ -103,11 +151,19 @@ const saveProviderMonitorMutation = defineAdminAction({
   entityType: "provider_monitor",
   parse: (input: ProviderMonitorActionInput) => monitorInputSchema.parse(input),
   execute: async (input) => {
-    const endpointUrl =
-      input.adapter === "product_links"
-        ? ""
-        : requirePublicHttpUrl(input.endpointUrl, "供应商采集地址").toString();
+    const affiliateLinkInput = parseAffiliateLinkInput(input);
+    const endpointUrl = affiliateLinkInput
+      ? (affiliateLinkInput.sourceUrl ?? affiliateLinkInput.affiliateTargetUrl)
+      : requirePublicHttpUrl(input.endpointUrl, "供应商采集地址").toString();
     const config = parseConfigText(input.configText, input.adapter);
+    const shortLink = affiliateLinkInput
+      ? await getOrCreateOutboundShortLink(
+          affiliateLinkInput.affiliateTargetUrl,
+        )
+      : null;
+    if (affiliateLinkInput && !shortLink) {
+      throw new Error("完整返利链接无法生成站内短链");
+    }
     const mutationInput = {
       providerId: input.providerId,
       name: input.name,
@@ -120,6 +176,10 @@ const saveProviderMonitorMutation = defineAdminAction({
       missingThreshold: input.missingThreshold,
       intervalMinutes: input.intervalMinutes,
       timeoutSeconds: input.timeoutSeconds,
+      affiliateLink:
+        affiliateLinkInput && shortLink
+          ? { ...affiliateLinkInput, outboundLinkId: shortLink.id }
+          : null,
     };
     const result = input.id
       ? await updateProviderMonitor(input.id, mutationInput)
@@ -130,7 +190,7 @@ const saveProviderMonitorMutation = defineAdminAction({
   successMessage: "供应商采集源已保存",
   errorTitle: "保存供应商采集源失败",
   errorSuggestion:
-    "请检查供应商的套餐采集返利配置、商品 PID、网址、字段映射和执行参数。",
+    "请检查商品稳定键、完整返利链接、独立采集地址、字段映射和执行参数。",
   entityId: (input, result) => result?.id ?? input.id,
 });
 
@@ -321,10 +381,10 @@ export async function previewProviderMonitorAction(
   try {
     await requireAdminSession();
     const input = monitorInputSchema.parse(rawInput);
-    const endpointUrl =
-      input.adapter === "product_links"
-        ? ""
-        : requirePublicHttpUrl(input.endpointUrl, "供应商采集地址").toString();
+    const affiliateLink = parseAffiliateLinkInput(input);
+    const endpointUrl = affiliateLink
+      ? (affiliateLink.sourceUrl ?? affiliateLink.affiliateTargetUrl)
+      : requirePublicHttpUrl(input.endpointUrl, "供应商采集地址").toString();
     const config = parseConfigText(input.configText, input.adapter);
     const preview = await previewProviderMonitorSource({
       monitorId: input.id,
@@ -333,6 +393,13 @@ export async function previewProviderMonitorAction(
       endpointUrl,
       config,
       timeoutSeconds: input.timeoutSeconds,
+      affiliateLink: affiliateLink
+        ? {
+            externalProductId: affiliateLink.externalProductId,
+            affiliateTargetUrl: affiliateLink.affiliateTargetUrl,
+            sourceUrl: affiliateLink.sourceUrl,
+          }
+        : undefined,
     });
     return adminActionSuccess(
       preview,
@@ -344,7 +411,7 @@ export async function previewProviderMonitorAction(
     return adminActionFailure(error, {
       title: "采集预览失败",
       suggestion:
-        "请检查供应商的套餐采集返利配置、商品 PID、网址和字段选择器，不会写入套餐数据。",
+        "请检查商品稳定键、完整返利链接、独立采集地址和字段选择器，不会写入套餐数据。",
     });
   }
 }

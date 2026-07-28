@@ -14,7 +14,7 @@ export const PROVIDER_SOURCE_ADAPTERS = [
   "json",
   "html",
   "whmcs",
-  "product_links",
+  "affiliate_link",
 ] as const;
 export type ProviderSourceAdapter = (typeof PROVIDER_SOURCE_ADAPTERS)[number];
 
@@ -138,15 +138,7 @@ const htmlMonitorConfigSchema = z.object({
   statusMap: statusMapSchema,
 });
 
-const productLinksMonitorConfigSchema = z.object({
-  productId: z
-    .string()
-    .trim()
-    .max(20, "商品 PID 最多 20 位")
-    .regex(/^(?:|[1-9]\d{0,19})$/, "商品 PID 必须是正整数")
-    .default(""),
-  // Kept for parsing older saved configs. Manual PID collection does not use it.
-  linkSelector: z.string().trim().min(1).max(500).default("a[href]"),
+const affiliateLinkMonitorConfigSchema = z.object({
   requiredSpecCount: z.number().int().min(0).max(5).default(2),
   defaults: defaultsSchema,
   headers: headersSchema,
@@ -155,11 +147,11 @@ const productLinksMonitorConfigSchema = z.object({
 
 export type JsonMonitorConfig = z.infer<typeof jsonMonitorConfigSchema>;
 export type HtmlMonitorConfig = z.infer<typeof htmlMonitorConfigSchema>;
-export type ProductLinksMonitorConfig = z.infer<
-  typeof productLinksMonitorConfigSchema
+export type AffiliateLinkMonitorConfig = z.infer<
+  typeof affiliateLinkMonitorConfigSchema
 >;
 export type ProviderMonitorConfig =
-  JsonMonitorConfig | HtmlMonitorConfig | ProductLinksMonitorConfig;
+  JsonMonitorConfig | HtmlMonitorConfig | AffiliateLinkMonitorConfig;
 
 export const PROVIDER_MONITOR_CHECK_RETENTION_DAYS = 30;
 
@@ -210,8 +202,8 @@ export function parseProviderMonitorConfig(
 ): HtmlMonitorConfig;
 export function parseProviderMonitorConfig(
   value: unknown,
-  adapter: "product_links",
-): ProductLinksMonitorConfig;
+  adapter: "affiliate_link",
+): AffiliateLinkMonitorConfig;
 export function parseProviderMonitorConfig(
   value: unknown,
   adapter: ProviderSourceAdapter,
@@ -223,8 +215,8 @@ export function parseProviderMonitorConfig(
   const parsed =
     adapter === "json"
       ? jsonMonitorConfigSchema.parse(value)
-      : adapter === "product_links"
-        ? productLinksMonitorConfigSchema.parse(value)
+      : adapter === "affiliate_link"
+        ? affiliateLinkMonitorConfigSchema.parse(value)
         : htmlMonitorConfigSchema.parse(value);
   assertSafeHeaders(parsed.headers);
   return parsed;

@@ -7,6 +7,7 @@ import {
   isNull,
   lt,
   lte,
+  ne,
   or,
   sql,
 } from "drizzle-orm";
@@ -17,17 +18,11 @@ import {
   type BackgroundJobContext,
 } from "@/server/admin/background-jobs";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
-import {
-  getProviderOfferAffiliateMode,
-  hasCompleteProviderOfferAffiliateConfig,
-  type ProviderOfferAffiliateConfigInput,
-} from "@fwqgo/core/affiliate-provider";
 import { fetchPublicHttpUrl } from "@fwqgo/core/network-url";
 import { getProviderMonitorSuccessSchedule } from "@fwqgo/core/provider-catalog-discovery";
 import {
   getProviderMonitorCheckRetentionCutoff,
   parseProviderMonitorConfig,
-  type ProductLinksMonitorConfig,
   type ProviderMonitorConfig,
   type ProviderSourceAdapter,
   type ProviderSourcePurpose,
@@ -36,6 +31,8 @@ import { db } from "@fwqgo/db";
 import {
   adminBackgroundJobs,
   affServiceProviders,
+  affiliateLinks,
+  outboundLinks,
   providerOfferCandidates,
   providerMonitorRuns,
   providerMonitors,
@@ -53,6 +50,7 @@ import {
 import {
   hashProviderMonitorSyncConfig,
   hashProviderOfferSyncState,
+  buildAffiliateLinkCandidate,
   hashProviderSourceResponse,
   parseProviderSourcePayload,
   prepareProviderOfferCandidates,
@@ -85,24 +83,6 @@ function getErrorMessage(error: unknown) {
 
 function truncate(value: string, length = 5_000) {
   return value.length > length ? `${value.slice(0, length)}...` : value;
-}
-
-function getManualProductLinkCandidate(input: {
-  config: ProductLinksMonitorConfig;
-  affiliate: ProviderOfferAffiliateConfigInput;
-}) {
-  if (!input.config.productId) {
-    throw new Error("请输入要采集的商品 PID");
-  }
-  const [candidate] = parseProviderSourcePayload({
-    adapter: "product_links",
-    body: "",
-    config: input.config,
-    sourceUrl: input.affiliate.offerAffUrl,
-    affiliate: input.affiliate,
-  });
-  if (!candidate) throw new Error("无法生成返利商品采集地址");
-  return candidate;
 }
 
 async function completeProviderMonitorRun(input: {
@@ -244,6 +224,7 @@ export async function runProviderMonitor(
       purpose: providerMonitors.purpose,
       scheduleMode: providerMonitors.scheduleMode,
       discoveredByScanId: providerMonitors.discoveredByScanId,
+      affiliateLinkId: providerMonitors.affiliateLinkId,
       endpointUrl: providerMonitors.endpointUrl,
       config: providerMonitors.config,
       enabled: providerMonitors.enabled,
@@ -265,11 +246,24 @@ export async function runProviderMonitor(
       offerAffiliateProductParam:
         affServiceProviders.offerAffiliateProductParam,
       defaultPromoCode: affServiceProviders.defaultPromoCode,
+      affiliateExternalProductId: affiliateLinks.externalProductId,
+      affiliateTargetUrl: affiliateLinks.affiliateTargetUrl,
+      affiliateSourceUrl: affiliateLinks.sourceUrl,
+      affiliateEnabled: affiliateLinks.enabled,
+      outboundSlug: outboundLinks.slug,
     })
     .from(providerMonitors)
     .innerJoin(
       affServiceProviders,
       eq(providerMonitors.providerId, affServiceProviders.id),
+    )
+    .leftJoin(
+      affiliateLinks,
+      eq(providerMonitors.affiliateLinkId, affiliateLinks.id),
+    )
+    .leftJoin(
+      outboundLinks,
+      eq(affiliateLinks.outboundLinkId, outboundLinks.id),
     )
     .where(eq(providerMonitors.id, monitorId))
     .limit(1);
@@ -295,7 +289,7 @@ export async function runProviderMonitor(
 
   const adapter = monitor.adapter as ProviderSourceAdapter;
   const readsProductDetails =
-    adapter === "whmcs" || adapter === "product_links";
+    adapter === "whmcs" || adapter === "affiliate_link";
   const parsedConfig = parseProviderMonitorConfig(monitor.config, adapter);
   const resolvedSecrets = resolveProviderMonitorSecrets(parsedConfig);
   const config = resolvedSecrets.config;
@@ -327,6 +321,7 @@ export async function runProviderMonitor(
     offerAffiliateMode: monitor.offerAffiliateMode,
     offerAffiliateProductParam: monitor.offerAffiliateProductParam,
     defaultPromoCode: monitor.defaultPromoCode,
+    preservePurchaseUrl: adapter === "affiliate_link",
   };
   const configHash = hashProviderMonitorSyncConfig({
     adapter,
@@ -343,6 +338,7 @@ export async function runProviderMonitor(
       autoPublish: monitor.autoPublish,
       missingThreshold: monitor.missingThreshold,
       defaultPromoCode: monitor.defaultPromoCode,
+      preservePurchaseUrl: adapter === "affiliate_link",
     },
   });
   const previousConfigHash =
@@ -435,20 +431,29 @@ export async function runProviderMonitor(
     let prefetchedProductPage: Awaited<
       ReturnType<typeof fetchWhmcsProductPage>
     > | null = null;
+    let affiliateCollectionUrl: string | null = null;
 
-    if (adapter === "product_links") {
-      const candidate = getManualProductLinkCandidate({
-        config: config as ProductLinksMonitorConfig,
-        affiliate: {
-          offerAffUrl: monitor.offerAffUrl,
-          offerAffParam: monitor.offerAffParam,
-          offerAffValue: monitor.offerAffValue,
-          offerAffiliateMode: monitor.offerAffiliateMode,
-          offerAffiliateProductParam: monitor.offerAffiliateProductParam,
-        },
+    if (adapter === "affiliate_link") {
+      if (
+        !monitor.affiliateLinkId ||
+        !monitor.affiliateEnabled ||
+        !monitor.affiliateExternalProductId ||
+        !monitor.affiliateTargetUrl ||
+        !monitor.outboundSlug
+      ) {
+        throw new Error("完整返利链接采集源缺少有效的套餐返利链接记录");
+      }
+      affiliateCollectionUrl =
+        monitor.affiliateSourceUrl ?? monitor.affiliateTargetUrl;
+      const candidate = buildAffiliateLinkCandidate({
+        externalProductId: monitor.affiliateExternalProductId,
+        affiliateTargetUrl: monitor.affiliateTargetUrl,
+        purchaseUrl: `/go/${monitor.outboundSlug}`,
+        sourceUrl: affiliateCollectionUrl,
+        config,
       });
       const productPage = await fetchWhmcsProductPage({
-        url: candidate.purchaseUrl,
+        url: affiliateCollectionUrl,
         headers: config.headers,
         timeoutMs: monitor.timeoutSeconds * 1_000,
       });
@@ -615,7 +620,6 @@ export async function runProviderMonitor(
         body: text,
         config,
         sourceUrl: monitor.endpointUrl,
-        affiliate: context,
       });
     if (candidates.length > MAX_MONITOR_ITEMS) {
       throw new Error(`供应商网站一次返回超过 ${MAX_MONITOR_ITEMS} 个套餐`);
@@ -648,6 +652,10 @@ export async function runProviderMonitor(
         fetchProductPage: cachedProductPage
           ? async () => cachedProductPage
           : undefined,
+        detailUrlForCandidate:
+          adapter === "affiliate_link" && affiliateCollectionUrl
+            ? () => affiliateCollectionUrl
+            : undefined,
       });
       candidates = enrichment.candidates;
       for (const issue of enrichment.issues) {
@@ -761,6 +769,20 @@ export async function runProviderMonitor(
     if (!completed) {
       await markProviderMonitorRunSuperseded(run.id, new Date());
       return summary;
+    }
+    if (adapter === "affiliate_link" && monitor.affiliateLinkId) {
+      await db
+        .update(affiliateLinks)
+        .set({ verifiedAt: checkedAt, updatedAt: checkedAt })
+        .where(
+          and(
+            eq(affiliateLinks.id, monitor.affiliateLinkId),
+            eq(
+              affiliateLinks.affiliateTargetUrl,
+              monitor.affiliateTargetUrl ?? "",
+            ),
+          ),
+        );
     }
     await safelyPruneProviderMonitorCheckHistory(checkedAt);
     if (counters.created > 0 || counters.updated > 0 || missing > 0) {
@@ -1103,6 +1125,7 @@ export async function getProviderMonitorList() {
       purpose: providerMonitors.purpose,
       scheduleMode: providerMonitors.scheduleMode,
       discoveredByScanId: providerMonitors.discoveredByScanId,
+      affiliateLinkId: providerMonitors.affiliateLinkId,
       endpointUrl: providerMonitors.endpointUrl,
       config: providerMonitors.config,
       enabled: providerMonitors.enabled,
@@ -1116,6 +1139,11 @@ export async function getProviderMonitorList() {
       lastError: providerMonitors.lastError,
       lastSummary: providerMonitors.lastSummary,
       updatedAt: providerMonitors.updatedAt,
+      externalProductId: affiliateLinks.externalProductId,
+      affiliateTargetUrl: affiliateLinks.affiliateTargetUrl,
+      affiliateSourceUrl: affiliateLinks.sourceUrl,
+      affiliateNotes: affiliateLinks.notes,
+      outboundSlug: outboundLinks.slug,
       mappedOfferCount: sql<number>`(
         select count(*)::int
         from "server_offers" mapped_offers
@@ -1133,10 +1161,19 @@ export async function getProviderMonitorList() {
       affServiceProviders,
       eq(providerMonitors.providerId, affServiceProviders.id),
     )
+    .leftJoin(
+      affiliateLinks,
+      eq(providerMonitors.affiliateLinkId, affiliateLinks.id),
+    )
+    .leftJoin(
+      outboundLinks,
+      eq(affiliateLinks.outboundLinkId, outboundLinks.id),
+    )
     .orderBy(desc(providerMonitors.enabled), asc(affServiceProviders.name));
 
   return rows.map((row) => ({
     ...row,
+    shortPath: row.outboundSlug ? `/go/${row.outboundSlug}` : null,
     config: maskProviderMonitorSecrets(
       parseProviderMonitorConfig(
         row.config,
@@ -1158,67 +1195,74 @@ export type ProviderMonitorMutationInput = {
   missingThreshold: number;
   intervalMinutes: number;
   timeoutSeconds: number;
+  affiliateLink: {
+    externalProductId: string;
+    affiliateTargetUrl: string;
+    sourceUrl: string | null;
+    outboundLinkId: number;
+    notes: string | null;
+  } | null;
 };
-
-async function getProductLinksAffiliateConfig(
-  providerId: number,
-  config: ProductLinksMonitorConfig,
-): Promise<ProviderOfferAffiliateConfigInput> {
-  const [provider] = await db
-    .select({
-      offerAffUrl: affServiceProviders.offerAffUrl,
-      offerAffParam: affServiceProviders.offerAffParam,
-      offerAffValue: affServiceProviders.offerAffValue,
-      offerAffiliateMode: affServiceProviders.offerAffiliateMode,
-      offerAffiliateProductParam:
-        affServiceProviders.offerAffiliateProductParam,
-    })
-    .from(affServiceProviders)
-    .where(eq(affServiceProviders.id, providerId))
-    .limit(1);
-  if (!provider) throw new Error("供应商不存在");
-  if (!config.productId) throw new Error("请输入要采集的商品 PID");
-  if (
-    getProviderOfferAffiliateMode(provider) !== "product_param" ||
-    !hasCompleteProviderOfferAffiliateConfig(provider)
-  ) {
-    throw new Error("请先为供应商配置完整的按产品 ID 返利链接");
-  }
-  return provider;
-}
-
-async function normalizeProviderMonitorMutationInput(
-  input: ProviderMonitorMutationInput,
-) {
-  if (input.adapter !== "product_links") return input;
-  const config = input.config as ProductLinksMonitorConfig;
-  const affiliate = await getProductLinksAffiliateConfig(
-    input.providerId,
-    config,
-  );
-  const candidate = getManualProductLinkCandidate({ config, affiliate });
-  return { ...input, endpointUrl: candidate.purchaseUrl };
-}
 
 export async function createProviderMonitor(
   input: ProviderMonitorMutationInput,
 ) {
-  const normalizedInput = await normalizeProviderMonitorMutationInput(input);
   const now = new Date();
-  const [created] = await db
-    .insert(providerMonitors)
-    .values({
-      ...normalizedInput,
-      scheduleMode: "scheduled",
-      config: prepareProviderMonitorSecrets(normalizedInput.config),
-      nextRunAt: normalizedInput.enabled ? now : null,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning({ id: providerMonitors.id });
+  const created = await db.transaction(async (tx) => {
+    const { affiliateLink, ...monitorInput } = input;
+    let affiliateLinkId: number | null = null;
+    if (input.adapter === "affiliate_link") {
+      if (!affiliateLink) throw new Error("请填写完整返利链接");
+      const [savedLink] = await tx
+        .insert(affiliateLinks)
+        .values({
+          providerId: input.providerId,
+          ...affiliateLink,
+          enabled: true,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [affiliateLinks.providerId, affiliateLinks.externalProductId],
+          set: {
+            affiliateTargetUrl: affiliateLink.affiliateTargetUrl,
+            sourceUrl: affiliateLink.sourceUrl,
+            outboundLinkId: affiliateLink.outboundLinkId,
+            enabled: true,
+            notes: affiliateLink.notes,
+            updatedAt: now,
+          },
+        })
+        .returning({ id: affiliateLinks.id });
+      if (!savedLink) throw new Error("套餐返利链接保存失败");
+      affiliateLinkId = savedLink.id;
+      const [existingOwner] = await tx
+        .select({ id: providerMonitors.id })
+        .from(providerMonitors)
+        .where(eq(providerMonitors.affiliateLinkId, affiliateLinkId))
+        .limit(1);
+      if (existingOwner) {
+        throw new Error("该返利链接已绑定其他采集源，请编辑原采集源");
+      }
+    }
+
+    const [createdMonitor] = await tx
+      .insert(providerMonitors)
+      .values({
+        ...monitorInput,
+        affiliateLinkId,
+        scheduleMode: "scheduled",
+        config: prepareProviderMonitorSecrets(monitorInput.config),
+        nextRunAt: monitorInput.enabled ? now : null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning({ id: providerMonitors.id });
+    return createdMonitor ?? null;
+  });
 
   if (!created) throw new Error("供应商采集源创建失败");
-  if (normalizedInput.enabled) {
+  if (input.enabled) {
     await enqueueProviderMonitorTask(created.id, now);
   }
   return created;
@@ -1228,14 +1272,14 @@ export async function updateProviderMonitor(
   id: number,
   input: ProviderMonitorMutationInput,
 ) {
-  const normalizedInput = await normalizeProviderMonitorMutationInput(input);
-  const { providerId, ...mutableInput } = normalizedInput;
+  const { providerId, affiliateLink, ...mutableInput } = input;
   const now = new Date();
   const updated = await db.transaction(async (tx) => {
     const [existing] = await tx
       .select({
         providerId: providerMonitors.providerId,
         adapter: providerMonitors.adapter,
+        affiliateLinkId: providerMonitors.affiliateLinkId,
         config: providerMonitors.config,
         discoveredByScanId: providerMonitors.discoveredByScanId,
       })
@@ -1253,13 +1297,80 @@ export async function updateProviderMonitor(
       existing.adapter as ProviderSourceAdapter,
     );
     const preparedConfig = prepareProviderMonitorSecrets(
-      normalizedInput.config,
+      input.config,
       existingConfig,
     );
+    let affiliateLinkId: number | null = null;
+    if (input.adapter === "affiliate_link") {
+      if (!affiliateLink) throw new Error("请填写完整返利链接");
+      if (existing.affiliateLinkId) {
+        const [savedLink] = await tx
+          .update(affiliateLinks)
+          .set({
+            externalProductId: affiliateLink.externalProductId,
+            affiliateTargetUrl: affiliateLink.affiliateTargetUrl,
+            sourceUrl: affiliateLink.sourceUrl,
+            outboundLinkId: affiliateLink.outboundLinkId,
+            enabled: true,
+            notes: affiliateLink.notes,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(affiliateLinks.id, existing.affiliateLinkId),
+              eq(affiliateLinks.providerId, providerId),
+            ),
+          )
+          .returning({ id: affiliateLinks.id });
+        if (!savedLink) throw new Error("套餐返利链接不存在");
+        affiliateLinkId = savedLink.id;
+      } else {
+        const [savedLink] = await tx
+          .insert(affiliateLinks)
+          .values({
+            providerId,
+            ...affiliateLink,
+            enabled: true,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [
+              affiliateLinks.providerId,
+              affiliateLinks.externalProductId,
+            ],
+            set: {
+              affiliateTargetUrl: affiliateLink.affiliateTargetUrl,
+              sourceUrl: affiliateLink.sourceUrl,
+              outboundLinkId: affiliateLink.outboundLinkId,
+              enabled: true,
+              notes: affiliateLink.notes,
+              updatedAt: now,
+            },
+          })
+          .returning({ id: affiliateLinks.id });
+        if (!savedLink) throw new Error("套餐返利链接保存失败");
+        affiliateLinkId = savedLink.id;
+      }
+      const [existingOwner] = await tx
+        .select({ id: providerMonitors.id })
+        .from(providerMonitors)
+        .where(
+          and(
+            eq(providerMonitors.affiliateLinkId, affiliateLinkId),
+            ne(providerMonitors.id, id),
+          ),
+        )
+        .limit(1);
+      if (existingOwner) {
+        throw new Error("该返利链接已绑定其他采集源，请编辑原采集源");
+      }
+    }
     const [result] = await tx
       .update(providerMonitors)
       .set({
         ...mutableInput,
+        affiliateLinkId,
         scheduleMode: "scheduled",
         config: preparedConfig,
         nextRunAt: input.enabled ? now : null,
@@ -1294,6 +1405,8 @@ async function getExistingProviderMonitorRows(ids: number[]) {
     .select({
       id: providerMonitors.id,
       enabled: providerMonitors.enabled,
+      adapter: providerMonitors.adapter,
+      affiliateLinkId: providerMonitors.affiliateLinkId,
     })
     .from(providerMonitors)
     .where(inArray(providerMonitors.id, ids));
@@ -1312,6 +1425,15 @@ export async function enqueueProviderMonitorTasks(ids: number[]) {
   const enabledIds = rows
     .filter((monitor) => monitor.enabled)
     .map((monitor) => monitor.id);
+  const incompleteAffiliateLink = rows.find(
+    (monitor) =>
+      monitor.enabled &&
+      monitor.adapter === "affiliate_link" &&
+      !monitor.affiliateLinkId,
+  );
+  if (incompleteAffiliateLink) {
+    throw new Error("完整返利链接采集源尚未补录链接，请先编辑后再采集");
+  }
   if (enabledIds.length === 0) {
     throw new Error("选中的供应商采集源均已停用，请先启用后再采集");
   }
@@ -1341,12 +1463,23 @@ export async function updateProviderMonitorsEnabled(
       .select({
         id: providerMonitors.id,
         enabled: providerMonitors.enabled,
+        adapter: providerMonitors.adapter,
+        affiliateLinkId: providerMonitors.affiliateLinkId,
       })
       .from(providerMonitors)
       .where(inArray(providerMonitors.id, monitorIds))
       .for("update");
     if (rows.length !== monitorIds.length) {
       throw new Error("部分供应商采集源不存在，请刷新页面后重试");
+    }
+    if (
+      enabled &&
+      rows.some(
+        (monitor) =>
+          monitor.adapter === "affiliate_link" && !monitor.affiliateLinkId,
+      )
+    ) {
+      throw new Error("完整返利链接采集源尚未补录链接，请先编辑后再启用");
     }
 
     const changed = rows
@@ -1536,10 +1669,6 @@ export async function getProviderOptionsForMonitoring() {
       slug: affServiceProviders.slug,
       aliases: affServiceProviders.aliases,
       officialUrl: affServiceProviders.officialUrl,
-      offerAffUrl: affServiceProviders.offerAffUrl,
-      offerAffiliateMode: affServiceProviders.offerAffiliateMode,
-      offerAffiliateProductParam:
-        affServiceProviders.offerAffiliateProductParam,
     })
     .from(affServiceProviders)
     .orderBy(asc(affServiceProviders.name));
@@ -1640,6 +1769,11 @@ export async function previewProviderMonitorSource(input: {
   endpointUrl: string;
   config: ProviderMonitorConfig;
   timeoutSeconds: number;
+  affiliateLink?: {
+    externalProductId: string;
+    affiliateTargetUrl: string;
+    sourceUrl: string | null;
+  };
 }) {
   const [existing] = input.monitorId
     ? await db
@@ -1668,18 +1802,20 @@ export async function previewProviderMonitorSource(input: {
     ReturnType<typeof fetchWhmcsProductPage>
   > | null = null;
 
-  if (input.adapter === "product_links") {
-    const productConfig = config as ProductLinksMonitorConfig;
-    const affiliate = await getProductLinksAffiliateConfig(
-      input.providerId,
-      productConfig,
-    );
-    const candidate = getManualProductLinkCandidate({
-      config: productConfig,
-      affiliate,
+  let affiliateCollectionUrl: string | null = null;
+  if (input.adapter === "affiliate_link") {
+    if (!input.affiliateLink) throw new Error("请填写完整返利链接");
+    affiliateCollectionUrl =
+      input.affiliateLink.sourceUrl ?? input.affiliateLink.affiliateTargetUrl;
+    const candidate = buildAffiliateLinkCandidate({
+      externalProductId: input.affiliateLink.externalProductId,
+      affiliateTargetUrl: input.affiliateLink.affiliateTargetUrl,
+      purchaseUrl: input.affiliateLink.affiliateTargetUrl,
+      sourceUrl: affiliateCollectionUrl,
+      config,
     });
     prefetchedProductPage = await fetchWhmcsProductPage({
-      url: candidate.purchaseUrl,
+      url: affiliateCollectionUrl,
       headers: config.headers,
       timeoutMs: input.timeoutSeconds * 1_000,
     });
@@ -1724,7 +1860,7 @@ export async function previewProviderMonitorSource(input: {
   }
   let candidates = parsedCandidates.slice(0, 20);
   let detailIssues = 0;
-  if (input.adapter === "whmcs" || input.adapter === "product_links") {
+  if (input.adapter === "whmcs" || input.adapter === "affiliate_link") {
     const cachedProductPage = prefetchedProductPage;
     const enrichment = await enrichWhmcsProductPrices({
       candidates,
@@ -1733,6 +1869,10 @@ export async function previewProviderMonitorSource(input: {
       fetchProductPage: cachedProductPage
         ? async () => cachedProductPage
         : undefined,
+      detailUrlForCandidate:
+        input.adapter === "affiliate_link" && affiliateCollectionUrl
+          ? () => affiliateCollectionUrl
+          : undefined,
     });
     candidates = enrichment.candidates;
     detailIssues = enrichment.issues.length;

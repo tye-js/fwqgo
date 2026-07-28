@@ -1149,6 +1149,46 @@ export const outboundLinks = pgTable("outbound_links", {
   updatedAt: timestamp("updatedAt"),
 });
 
+export const affiliateLinks = pgTable(
+  "affiliate_links",
+  {
+    id: serial("id").primaryKey(),
+    providerId: integer("providerId").notNull(),
+    externalProductId: varchar("externalProductId", { length: 160 }).notNull(),
+    affiliateTargetUrl: text("affiliateTargetUrl").notNull(),
+    sourceUrl: text("sourceUrl"),
+    outboundLinkId: integer("outboundLinkId").notNull(),
+    enabled: boolean("enabled").default(true).notNull(),
+    verifiedAt: timestamp("verifiedAt"),
+    notes: text("notes"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    providerExternalProductUnique: unique(
+      "affiliate_links_providerId_externalProductId_unique",
+    ).on(table.providerId, table.externalProductId),
+    providerOutboundLinkUnique: unique(
+      "affiliate_links_providerId_outboundLinkId_unique",
+    ).on(table.providerId, table.outboundLinkId),
+    providerIdx: index("affiliate_links_providerId_idx").on(table.providerId),
+    providerFk: foreignKey({
+      columns: [table.providerId],
+      foreignColumns: [affServiceProviders.id],
+      name: "affiliate_links_providerId_aff_service_providers_id_fk",
+    }).onDelete("cascade"),
+    outboundLinkFk: foreignKey({
+      columns: [table.outboundLinkId],
+      foreignColumns: [outboundLinks.id],
+      name: "affiliate_links_outboundLinkId_outbound_links_id_fk",
+    }).onDelete("restrict"),
+    externalProductIdCheck: check(
+      "affiliate_links_externalProductId_check",
+      sql`length(trim(${table.externalProductId})) > 0`,
+    ),
+  }),
+);
+
 export const serverRegions = pgTable(
   "server_regions",
   {
@@ -1230,6 +1270,7 @@ export const providerMonitors = pgTable(
       .default("scheduled")
       .notNull(),
     discoveredByScanId: integer("discoveredByScanId"),
+    affiliateLinkId: integer("affiliateLinkId"),
     endpointUrl: text("endpointUrl").notNull(),
     config: jsonb("config")
       .$type<Record<string, unknown>>()
@@ -1257,6 +1298,9 @@ export const providerMonitors = pgTable(
     scanIdx: index("provider_monitors_discoveredByScanId_idx").on(
       table.discoveredByScanId,
     ),
+    affiliateLinkUnique: unique(
+      "provider_monitors_affiliateLinkId_unique",
+    ).on(table.affiliateLinkId),
     idProviderUnique: unique("provider_monitors_id_providerId_unique").on(
       table.id,
       table.providerId,
@@ -1284,6 +1328,11 @@ export const providerMonitors = pgTable(
       foreignColumns: [providerCatalogScans.id],
       name: "provider_monitors_discoveredByScanId_provider_catalog_scans_id_fk",
     }).onDelete("set null"),
+    affiliateLinkFk: foreignKey({
+      columns: [table.affiliateLinkId],
+      foreignColumns: [affiliateLinks.id],
+      name: "provider_monitors_affiliateLinkId_affiliate_links_id_fk",
+    }).onDelete("restrict"),
     intervalCheck: check(
       "provider_monitors_intervalMinutes_check",
       sql`${table.intervalMinutes} between 1 and 10080`,
@@ -1294,7 +1343,7 @@ export const providerMonitors = pgTable(
     ),
     adapterCheck: check(
       "provider_monitors_adapter_check",
-      sql`${table.adapter} in ('json', 'html', 'whmcs', 'product_links')`,
+      sql`${table.adapter} in ('json', 'html', 'whmcs', 'affiliate_link')`,
     ),
     purposeCheck: check(
       "provider_monitors_purpose_check",
@@ -2194,6 +2243,22 @@ export const affServiceProvidersRelations = relations(
   ({ many }) => ({
     promoCodes: many(providerPromoCodes),
     profileSnapshots: many(providerProfileSnapshots),
+    affiliateLinks: many(affiliateLinks),
+  }),
+);
+
+export const affiliateLinksRelations = relations(
+  affiliateLinks,
+  ({ one, many }) => ({
+    provider: one(affServiceProviders, {
+      fields: [affiliateLinks.providerId],
+      references: [affServiceProviders.id],
+    }),
+    outboundLink: one(outboundLinks, {
+      fields: [affiliateLinks.outboundLinkId],
+      references: [outboundLinks.id],
+    }),
+    monitors: many(providerMonitors),
   }),
 );
 
@@ -2456,6 +2521,10 @@ export const providerMonitorsRelations = relations(
     discoveryScan: one(providerCatalogScans, {
       fields: [providerMonitors.discoveredByScanId],
       references: [providerCatalogScans.id],
+    }),
+    affiliateLink: one(affiliateLinks, {
+      fields: [providerMonitors.affiliateLinkId],
+      references: [affiliateLinks.id],
     }),
     checks: many(serverOfferChecks),
     runs: many(providerMonitorRuns),

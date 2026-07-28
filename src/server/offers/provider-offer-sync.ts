@@ -42,6 +42,7 @@ export type ProviderSyncContext = {
   offerAffiliateMode: string | null;
   offerAffiliateProductParam: string | null;
   defaultPromoCode: string | null;
+  preservePurchaseUrl?: boolean;
 };
 
 type StoredPrice = {
@@ -140,11 +141,13 @@ function normalizedPrices(
         termMonths: getServerOfferTermMonths(billingCycle),
         monthlyPriceUsd,
         purchaseUrl: rawPurchaseUrl
-          ? applyProviderAffiliateUrl(
-              rawPurchaseUrl,
-              context,
-              candidate.externalProductId,
-            )
+          ? context.preservePurchaseUrl
+            ? rawPurchaseUrl
+            : applyProviderAffiliateUrl(
+                rawPurchaseUrl,
+                context,
+                candidate.externalProductId,
+              )
           : null,
       };
     })
@@ -298,11 +301,13 @@ async function materializeOffer(
   );
   if (prices.length === 0) throw new Error("套餐价格无法折算为美元月价");
   const primaryPrice = prices[0]!;
-  const purchaseUrl = applyProviderAffiliateUrl(
-    candidate.purchaseUrl,
-    context,
-    candidate.externalProductId,
-  );
+  const purchaseUrl = context.preservePurchaseUrl
+    ? candidate.purchaseUrl
+    : applyProviderAffiliateUrl(
+        candidate.purchaseUrl,
+        context,
+        candidate.externalProductId,
+      );
   const [existing] = input.existingOfferId
     ? await database
         .select()
@@ -690,6 +695,7 @@ async function acceptProviderOfferCandidateInTransaction(
   const [contextRow] = await database
     .select({
       monitorId: providerMonitors.id,
+      adapter: providerMonitors.adapter,
       providerId: providerMonitors.providerId,
       purpose: providerMonitors.purpose,
       autoPublish: providerMonitors.autoPublish,
@@ -728,7 +734,11 @@ async function acceptProviderOfferCandidateInTransaction(
   const now = new Date();
   const acceptedOfferId = await materializeOffer(
     {
-      context: { ...contextRow, scanId: row.candidate.scanId },
+      context: {
+        ...contextRow,
+        scanId: row.candidate.scanId,
+        preservePurchaseUrl: contextRow.adapter === "affiliate_link",
+      },
       candidate,
       sourceHash: row.candidate.sourceHash,
       now,

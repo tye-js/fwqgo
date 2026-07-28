@@ -144,13 +144,14 @@ export async function getOrCreateOutboundShortLink(targetUrl: string) {
   }
 
   const [existing] = await db
-    .select({ slug: outboundLinks.slug })
+    .select({ id: outboundLinks.id, slug: outboundLinks.slug })
     .from(outboundLinks)
     .where(eq(outboundLinks.targetUrl, normalizedTargetUrl))
     .limit(1);
 
   if (existing) {
     return {
+      id: existing.id,
       slug: existing.slug,
       path: `/go/${existing.slug}`,
       targetUrl: normalizedTargetUrl,
@@ -165,26 +166,28 @@ export async function getOrCreateOutboundShortLink(targetUrl: string) {
       const [created] = await db
         .insert(outboundLinks)
         .values({ slug, targetUrl: normalizedTargetUrl })
-        .returning({ slug: outboundLinks.slug });
+        .returning({ id: outboundLinks.id, slug: outboundLinks.slug });
 
       if (!created) {
         continue;
       }
 
       return {
+        id: created.id,
         slug: created.slug,
         path: `/go/${created.slug}`,
         targetUrl: normalizedTargetUrl,
       };
     } catch {
       const [raceExisting] = await db
-        .select({ slug: outboundLinks.slug })
+        .select({ id: outboundLinks.id, slug: outboundLinks.slug })
         .from(outboundLinks)
         .where(eq(outboundLinks.targetUrl, normalizedTargetUrl))
         .limit(1);
 
       if (raceExisting) {
         return {
+          id: raceExisting.id,
           slug: raceExisting.slug,
           path: `/go/${raceExisting.slug}`,
           targetUrl: normalizedTargetUrl,
