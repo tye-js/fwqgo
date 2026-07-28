@@ -1202,6 +1202,110 @@ export async function updateProviderMonitor(
   return updated;
 }
 
+function normalizeProviderMonitorIds(ids: number[]) {
+  return [...new Set(ids)];
+}
+
+async function getExistingProviderMonitorRows(ids: number[]) {
+  const rows = await db
+    .select({
+      id: providerMonitors.id,
+      enabled: providerMonitors.enabled,
+    })
+    .from(providerMonitors)
+    .where(inArray(providerMonitors.id, ids));
+
+  if (rows.length !== ids.length) {
+    throw new Error("部分供应商采集源不存在，请刷新页面后重试");
+  }
+  return rows;
+}
+
+export async function enqueueProviderMonitorTasks(ids: number[]) {
+  const monitorIds = normalizeProviderMonitorIds(ids);
+  if (monitorIds.length === 0) throw new Error("请至少选择一个供应商采集源");
+
+  const rows = await getExistingProviderMonitorRows(monitorIds);
+  const enabledIds = rows
+    .filter((monitor) => monitor.enabled)
+    .map((monitor) => monitor.id);
+  if (enabledIds.length === 0) {
+    throw new Error("选中的供应商采集源均已停用，请先启用后再采集");
+  }
+
+  const runAfter = new Date();
+  await Promise.all(
+    enabledIds.map((monitorId) =>
+      enqueueProviderMonitorTask(monitorId, runAfter),
+    ),
+  );
+  return {
+    queued: enabledIds.length,
+    skipped: monitorIds.length - enabledIds.length,
+  };
+}
+
+export async function updateProviderMonitorsEnabled(
+  ids: number[],
+  enabled: boolean,
+) {
+  const monitorIds = normalizeProviderMonitorIds(ids);
+  if (monitorIds.length === 0) throw new Error("请至少选择一个供应商采集源");
+
+  const now = new Date();
+  const changedIds = await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: providerMonitors.id,
+        enabled: providerMonitors.enabled,
+      })
+      .from(providerMonitors)
+      .where(inArray(providerMonitors.id, monitorIds))
+      .for("update");
+    if (rows.length !== monitorIds.length) {
+      throw new Error("部分供应商采集源不存在，请刷新页面后重试");
+    }
+
+    const changed = rows
+      .filter((monitor) => monitor.enabled !== enabled)
+      .map((monitor) => monitor.id);
+    if (changed.length === 0) return changed;
+
+    const updated = await tx
+      .update(providerMonitors)
+      .set({
+        enabled,
+        nextRunAt: enabled ? now : null,
+        ...(enabled ? {} : { lastStatus: "idle" as const, lastError: null }),
+        runGeneration: sql`${providerMonitors.runGeneration} + 1`,
+        updatedAt: now,
+      })
+      .where(inArray(providerMonitors.id, changed))
+      .returning({ id: providerMonitors.id });
+    if (updated.length !== changed.length) {
+      throw new Error("部分供应商采集源状态更新失败，请刷新页面后重试");
+    }
+    return changed;
+  });
+  if (changedIds.length === 0) {
+    return { updated: 0, unchanged: monitorIds.length, enabled };
+  }
+
+  if (enabled) {
+    await Promise.all(
+      changedIds.map((monitorId) => enqueueProviderMonitorTask(monitorId, now)),
+    );
+  } else {
+    await Promise.all(changedIds.map(cancelQueuedProviderMonitorJobs));
+  }
+
+  return {
+    updated: changedIds.length,
+    unchanged: monitorIds.length - changedIds.length,
+    enabled,
+  };
+}
+
 async function cancelQueuedProviderMonitorJobs(monitorId: number) {
   const now = new Date();
   await db
@@ -1220,19 +1324,25 @@ async function cancelQueuedProviderMonitorJobs(monitorId: number) {
     );
 }
 
-export async function deleteProviderMonitor(id: number) {
+export async function deleteProviderMonitors(ids: number[]) {
+  const monitorIds = normalizeProviderMonitorIds(ids);
+  if (monitorIds.length === 0) throw new Error("请至少选择一个供应商采集源");
+
   return db.transaction(async (tx) => {
     const now = new Date();
-    const [existing] = await tx
+    const existing = await tx
       .select({
         id: providerMonitors.id,
         discoveredByScanId: providerMonitors.discoveredByScanId,
       })
       .from(providerMonitors)
-      .where(eq(providerMonitors.id, id))
-      .for("update")
-      .limit(1);
-    if (!existing) throw new Error("供应商采集源不存在");
+      .where(inArray(providerMonitors.id, monitorIds))
+      .for("update");
+    if (existing.length !== monitorIds.length) {
+      throw new Error("部分供应商采集源不存在，请刷新页面后重试");
+    }
+
+    const jobKeys = monitorIds.map((id) => `provider-monitor:${id}`);
 
     await tx
       .update(adminBackgroundJobs)
@@ -1244,7 +1354,7 @@ export async function deleteProviderMonitor(id: number) {
       })
       .where(
         and(
-          eq(adminBackgroundJobs.jobKey, `provider-monitor:${id}`),
+          inArray(adminBackgroundJobs.jobKey, jobKeys),
           eq(adminBackgroundJobs.status, "queued"),
         ),
       );
@@ -1254,7 +1364,7 @@ export async function deleteProviderMonitor(id: number) {
       .from(adminBackgroundJobs)
       .where(
         and(
-          eq(adminBackgroundJobs.jobKey, `provider-monitor:${id}`),
+          inArray(adminBackgroundJobs.jobKey, jobKeys),
           eq(adminBackgroundJobs.status, "running"),
         ),
       )
@@ -1264,7 +1374,7 @@ export async function deleteProviderMonitor(id: number) {
       .from(providerMonitorRuns)
       .where(
         and(
-          eq(providerMonitorRuns.monitorId, id),
+          inArray(providerMonitorRuns.monitorId, monitorIds),
           eq(providerMonitorRuns.status, "running"),
         ),
       )
@@ -1273,16 +1383,32 @@ export async function deleteProviderMonitor(id: number) {
       throw new Error("采集正在执行，请等待本次执行结束后再删除");
     }
 
-    const [deleted] = await tx
+    const deleted = await tx
       .delete(providerMonitors)
-      .where(eq(providerMonitors.id, id))
+      .where(inArray(providerMonitors.id, monitorIds))
       .returning({ id: providerMonitors.id });
-    if (!deleted) throw new Error("供应商采集源不存在");
-    if (existing.discoveredByScanId) {
-      await refreshProviderCatalogScanStatus(existing.discoveredByScanId, tx);
+    if (deleted.length !== monitorIds.length) {
+      throw new Error("部分供应商采集源删除失败，请刷新页面后重试");
     }
-    return deleted;
+    const scanIds = [
+      ...new Set(
+        existing.flatMap((monitor) =>
+          monitor.discoveredByScanId ? [monitor.discoveredByScanId] : [],
+        ),
+      ),
+    ];
+    for (const scanId of scanIds) {
+      await refreshProviderCatalogScanStatus(scanId, tx);
+    }
+    return { deleted: deleted.length, ids: deleted.map((row) => row.id) };
   });
+}
+
+export async function deleteProviderMonitor(id: number) {
+  const result = await deleteProviderMonitors([id]);
+  const deletedId = result.ids[0];
+  if (!deletedId) throw new Error("供应商采集源不存在");
+  return { id: deletedId };
 }
 
 export async function getProviderMonitorCheckHistory(

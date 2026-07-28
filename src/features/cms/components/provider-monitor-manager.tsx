@@ -4,27 +4,38 @@ import { useOptimistic, useRef, useState } from "react";
 import {
   Check,
   CheckCheck,
+  ChevronDown,
   Eye,
   LoaderCircle,
   Pencil,
   Play,
   Plus,
+  Power,
+  PowerOff,
   Search,
   Trash2,
   X,
 } from "lucide-react";
 import {
+  deleteProviderMonitorsAction,
   deleteProviderMonitorAction,
   previewProviderMonitorAction,
   reviewProviderOfferCandidateAction,
   reviewProviderOfferCandidatesAction,
   runProviderMonitorNowAction,
+  runProviderMonitorsNowAction,
   saveProviderMonitorAction,
+  updateProviderMonitorsEnabledAction,
 } from "@/features/cms/actions/provider-monitors";
 import { useAdminMutation } from "@/features/cms/hooks/use-admin-mutation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -186,6 +197,11 @@ const tableCheckboxClassName =
   "relative flex size-11 items-center justify-center rounded-md border-0 shadow-none before:absolute before:left-1/2 before:top-1/2 before:size-4 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-sm before:border before:border-primary data-[state=checked]:bg-transparent data-[state=indeterminate]:bg-transparent data-[state=checked]:before:bg-primary data-[state=indeterminate]:before:bg-primary [&_svg]:relative [&_svg]:z-10";
 
 const providerCandidateBatchMutationKey = "provider-candidates:batch-review";
+const providerMonitorBatchMutationKey = "provider-monitors:batch";
+
+type OptimisticMonitorAction =
+  | { type: "remove"; ids: number[] }
+  | { type: "toggle"; ids: number[]; enabled: boolean };
 
 function getProviderMonitorMutationKey(monitorId: number) {
   return `provider-monitor:${monitorId}`;
@@ -673,7 +689,10 @@ export function ProviderMonitorManager({
   const [editing, setEditing] = useState<Monitor | null>(null);
   const [editorVersion, setEditorVersion] = useState(0);
   const [deleting, setDeleting] = useState<Monitor | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState<Monitor[] | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [recordsOpen, setRecordsOpen] = useState(false);
+  const [selectedMonitorIds, setSelectedMonitorIds] = useState<number[]>([]);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<number[]>(
     [],
   );
@@ -681,10 +700,19 @@ export function ProviderMonitorManager({
     "accept" | "reject" | null
   >(null);
   const candidateReviewLockRef = useRef(false);
-  const [visibleMonitors, removeOptimisticMonitor] = useOptimistic(
+  const [visibleMonitors, updateOptimisticMonitors] = useOptimistic(
     monitors,
-    (current, monitorId: number) =>
-      current.filter((monitor) => monitor.id !== monitorId),
+    (current, action: OptimisticMonitorAction) => {
+      const affectedIds = new Set(action.ids);
+      if (action.type === "remove") {
+        return current.filter((monitor) => !affectedIds.has(monitor.id));
+      }
+      return current.map((monitor) =>
+        affectedIds.has(monitor.id)
+          ? { ...monitor, enabled: action.enabled }
+          : monitor,
+      );
+    },
   );
   const [visibleCandidates, removeOptimisticCandidates] = useOptimistic(
     candidates,
@@ -694,6 +722,16 @@ export function ProviderMonitorManager({
     },
   );
   const { mutate, isPending } = useAdminMutation();
+  const visibleMonitorIdSet = new Set(
+    visibleMonitors.map((monitor) => monitor.id),
+  );
+  const visibleSelectedMonitorIds = selectedMonitorIds.filter((monitorId) =>
+    visibleMonitorIdSet.has(monitorId),
+  );
+  const selectedMonitorIdSet = new Set(visibleSelectedMonitorIds);
+  const allMonitorsSelected =
+    visibleMonitors.length > 0 &&
+    visibleMonitors.every((monitor) => selectedMonitorIdSet.has(monitor.id));
   const visibleCandidateIdSet = new Set(
     visibleCandidates.map((candidate) => candidate.id),
   );
@@ -724,6 +762,10 @@ export function ProviderMonitorManager({
   const individualCandidateReviewPending = candidates.some((candidate) =>
     isPending(getProviderCandidateMutationKey(candidate.id)),
   );
+  const batchMonitorPending = isPending(providerMonitorBatchMutationKey);
+  const individualMonitorPending = monitors.some((monitor) =>
+    isPending(getProviderMonitorMutationKey(monitor.id)),
+  );
   const deletingPending = deleting
     ? isPending(getProviderMonitorMutationKey(deleting.id))
     : false;
@@ -732,6 +774,81 @@ export function ProviderMonitorManager({
     setEditing(monitor);
     setEditorVersion((current) => current + 1);
     setDialogOpen(true);
+  }
+
+  function toggleMonitor(monitorId: number, checked: boolean) {
+    setSelectedMonitorIds((current) => {
+      if (checked) {
+        return current.includes(monitorId) ? current : [...current, monitorId];
+      }
+      return current.filter((id) => id !== monitorId);
+    });
+  }
+
+  function toggleAllMonitors(checked: boolean) {
+    setSelectedMonitorIds(
+      checked ? visibleMonitors.map((monitor) => monitor.id) : [],
+    );
+  }
+
+  function runSelectedMonitors() {
+    const monitorIds = visibleSelectedMonitorIds;
+    if (monitorIds.length === 0) return;
+    void mutate({
+      key: providerMonitorBatchMutationKey,
+      action: () => runProviderMonitorsNowAction(monitorIds),
+      pendingMessage: `正在加入 ${monitorIds.length} 个采集任务...`,
+      successMessage: (result) => result.message ?? "批量采集任务已排队",
+      errorTitle: "批量启动供应商采集失败",
+      errorSuggestion: "请刷新页面确认采集源状态，启用后再重新执行。",
+      onSuccess: () => setSelectedMonitorIds([]),
+    });
+  }
+
+  function setSelectedMonitorsEnabled(enabled: boolean) {
+    const monitorIds = visibleSelectedMonitorIds;
+    if (monitorIds.length === 0) return;
+    void mutate({
+      key: providerMonitorBatchMutationKey,
+      action: () =>
+        updateProviderMonitorsEnabledAction({ ids: monitorIds, enabled }),
+      pendingMessage: `正在${enabled ? "启用" : "停用"} ${monitorIds.length} 个采集源...`,
+      successMessage: (result) =>
+        result.message ?? `供应商采集源已批量${enabled ? "启用" : "停用"}`,
+      errorTitle: `批量${enabled ? "启用" : "停用"}供应商采集源失败`,
+      errorSuggestion: "请刷新页面确认采集源状态后重试。",
+      optimistic: {
+        apply: () =>
+          updateOptimisticMonitors({
+            type: "toggle",
+            ids: monitorIds,
+            enabled,
+          }),
+      },
+      onSuccess: () => setSelectedMonitorIds([]),
+    });
+  }
+
+  function removeSelectedMonitors() {
+    if (!bulkDeleting || bulkDeleting.length === 0) return;
+    const monitorIds = bulkDeleting.map((monitor) => monitor.id);
+    void mutate({
+      key: providerMonitorBatchMutationKey,
+      action: () => deleteProviderMonitorsAction(monitorIds),
+      pendingMessage: `正在删除 ${monitorIds.length} 个采集源...`,
+      successMessage: (result) =>
+        result.message ?? `已删除 ${monitorIds.length} 个供应商采集源`,
+      errorTitle: "批量删除供应商采集源失败",
+      errorSuggestion: "正在运行的采集需要等待本次执行结束后再删除。",
+      optimistic: {
+        apply: () =>
+          updateOptimisticMonitors({ type: "remove", ids: monitorIds }),
+      },
+      onSuccess: () => {
+        setSelectedMonitorIds([]);
+        setBulkDeleting(null);
+      },
+    });
   }
 
   function runNow(monitor: Monitor) {
@@ -763,9 +880,15 @@ export function ProviderMonitorManager({
       errorTitle: "删除供应商采集源失败",
       errorSuggestion: "正在运行的采集需要等待本次执行结束后再删除。",
       optimistic: {
-        apply: () => removeOptimisticMonitor(monitor.id),
+        apply: () =>
+          updateOptimisticMonitors({ type: "remove", ids: [monitor.id] }),
       },
-      onSuccess: () => setDeleting(null),
+      onSuccess: () => {
+        setSelectedMonitorIds((current) =>
+          current.filter((monitorId) => monitorId !== monitor.id),
+        );
+        setDeleting(null);
+      },
     });
   }
 
@@ -864,17 +987,108 @@ export function ProviderMonitorManager({
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
-        <Button type="button" size="sm" onClick={() => openEditor(null)}>
-          <Plus className="size-4" />
-          新增采集源
-        </Button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">采集源</h3>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            选择采集源后可批量采集、启停或删除；已停用的来源不会加入采集队列。
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          {visibleSelectedMonitorIds.length > 0 ? (
+            <>
+              <Badge variant="secondary">
+                已选择 {visibleSelectedMonitorIds.length} 个
+              </Badge>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={batchMonitorPending || individualMonitorPending}
+                onClick={runSelectedMonitors}
+              >
+                {batchMonitorPending ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <Play />
+                )}
+                立即采集
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={batchMonitorPending || individualMonitorPending}
+                onClick={() => setSelectedMonitorsEnabled(true)}
+              >
+                <Power />
+                启用
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={batchMonitorPending || individualMonitorPending}
+                onClick={() => setSelectedMonitorsEnabled(false)}
+              >
+                <PowerOff />
+                停用
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={batchMonitorPending || individualMonitorPending}
+                onClick={() =>
+                  setBulkDeleting(
+                    visibleMonitors.filter((monitor) =>
+                      selectedMonitorIdSet.has(monitor.id),
+                    ),
+                  )
+                }
+              >
+                <Trash2 className="text-destructive" />
+                删除
+              </Button>
+            </>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            disabled={batchMonitorPending}
+            onClick={() => openEditor(null)}
+          >
+            <Plus className="size-4" />
+            新增采集源
+          </Button>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-        <Table className="min-w-[980px]">
+        <Table className="min-w-[1040px]">
           <TableHeader>
             <TableRow>
+              <TableHead className="w-12 p-0">
+                <Checkbox
+                  className={tableCheckboxClassName}
+                  checked={
+                    allMonitorsSelected
+                      ? true
+                      : visibleSelectedMonitorIds.length > 0
+                        ? "indeterminate"
+                        : false
+                  }
+                  disabled={
+                    batchMonitorPending ||
+                    individualMonitorPending ||
+                    visibleMonitors.length === 0
+                  }
+                  onCheckedChange={(checked) =>
+                    toggleAllMonitors(checked === true)
+                  }
+                  aria-label="全选供应商采集源"
+                />
+              </TableHead>
               <TableHead>供应商 / 采集源</TableHead>
               <TableHead>来源</TableHead>
               <TableHead>套餐 / 待审核</TableHead>
@@ -887,7 +1101,7 @@ export function ProviderMonitorManager({
             {visibleMonitors.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
                   还没有供应商采集源。
@@ -895,11 +1109,22 @@ export function ProviderMonitorManager({
               </TableRow>
             ) : null}
             {visibleMonitors.map((monitor) => {
-              const monitorPending = isPending(
-                getProviderMonitorMutationKey(monitor.id),
-              );
+              const monitorPending =
+                batchMonitorPending ||
+                isPending(getProviderMonitorMutationKey(monitor.id));
               return (
                 <TableRow key={monitor.id} className="align-top">
+                  <TableCell className="w-12 p-0 align-top">
+                    <Checkbox
+                      className={tableCheckboxClassName}
+                      checked={selectedMonitorIdSet.has(monitor.id)}
+                      disabled={monitorPending || batchMonitorPending}
+                      onCheckedChange={(checked) =>
+                        toggleMonitor(monitor.id, checked === true)
+                      }
+                      aria-label={`选择 ${monitor.providerName} · ${monitor.name}`}
+                    />
+                  </TableCell>
                   <TableCell className="min-w-48">
                     <p className="font-medium text-foreground">
                       {monitor.providerName}
@@ -1278,189 +1503,216 @@ export function ProviderMonitorManager({
         </AlertDialog>
       </div>
 
-      <div>
-        <div className="mb-3">
-          <h3 className="text-sm font-semibold text-foreground">
-            采集运行历史
-          </h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            每次抓取独立记录响应状态、入库结果、跳过原因数量和失败详情。
-          </p>
-        </div>
-        <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-          <Table className="min-w-[940px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>开始时间</TableHead>
-                <TableHead>供应商 / 采集源</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>接收</TableHead>
-                <TableHead>新增 / 待审核</TableHead>
-                <TableHead>更新 / 未变化</TableHead>
-                <TableHead>跳过 / 缺失</TableHead>
-                <TableHead>错误</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {runs.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={8}
-                    className="py-8 text-center text-sm text-muted-foreground"
-                  >
-                    暂无采集运行记录。
-                  </TableCell>
-                </TableRow>
-              ) : null}
-              {runs.map((run) => (
-                <TableRow key={run.id} className="align-top">
-                  <TableCell className="whitespace-nowrap text-xs">
-                    {formatDate(run.startedAt)}
-                  </TableCell>
-                  <TableCell>
-                    <p className="text-sm font-medium">{run.providerName}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {run.monitorName}
-                    </p>
-                    {run.scanId ? (
-                      <Badge variant="outline" className="mt-1">
-                        一次性 · 扫描 #{run.scanId}
-                      </Badge>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        run.status === "failed"
-                          ? "destructive"
-                          : run.status === "running"
-                            ? "secondary"
-                            : "outline"
-                      }
-                    >
-                      {run.status === "succeeded"
-                        ? "成功"
-                        : run.status === "running"
-                          ? "运行中"
-                          : "失败"}
-                    </Badge>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      HTTP {run.httpStatus ?? "-"}
-                    </p>
-                  </TableCell>
-                  <TableCell className="tabular-nums">{run.received}</TableCell>
-                  <TableCell className="tabular-nums">
-                    {run.created} / {run.pending}
-                  </TableCell>
-                  <TableCell className="tabular-nums">
-                    {run.updated} / {run.unchanged}
-                  </TableCell>
-                  <TableCell className="tabular-nums">
-                    {run.skipped} / {run.missing}
-                  </TableCell>
-                  <TableCell className="max-w-72">
-                    {run.errorDetail ? (
-                      <p
-                        className="line-clamp-3 text-xs leading-5 text-destructive"
-                        title={run.errorDetail}
+      <Collapsible open={recordsOpen} onOpenChange={setRecordsOpen}>
+        <CollapsibleTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full justify-between px-3 text-left"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <span>运行与套餐检查记录</span>
+              <Badge variant="outline" className="hidden sm:inline-flex">
+                {runs.length} 次运行 · {checks.length} 条检查
+              </Badge>
+            </span>
+            <ChevronDown
+              className={`transition-transform duration-200 ${recordsOpen ? "rotate-180" : ""}`}
+            />
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-6 pt-3">
+          <div>
+            <div className="mb-3">
+              <h3 className="text-sm font-semibold text-foreground">
+                采集运行历史
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                每次抓取独立记录响应状态、入库结果、跳过原因数量和失败详情。
+              </p>
+            </div>
+            <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
+              <Table className="min-w-[940px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>开始时间</TableHead>
+                    <TableHead>供应商 / 采集源</TableHead>
+                    <TableHead>状态</TableHead>
+                    <TableHead>接收</TableHead>
+                    <TableHead>新增 / 待审核</TableHead>
+                    <TableHead>更新 / 未变化</TableHead>
+                    <TableHead>跳过 / 缺失</TableHead>
+                    <TableHead>错误</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {runs.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={8}
+                        className="py-8 text-center text-sm text-muted-foreground"
                       >
-                        {run.errorTitle ? `${run.errorTitle}：` : ""}
-                        {run.errorDetail}
-                      </p>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+                        暂无采集运行记录。
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                  {runs.map((run) => (
+                    <TableRow key={run.id} className="align-top">
+                      <TableCell className="whitespace-nowrap text-xs">
+                        {formatDate(run.startedAt)}
+                      </TableCell>
+                      <TableCell>
+                        <p className="text-sm font-medium">
+                          {run.providerName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {run.monitorName}
+                        </p>
+                        {run.scanId ? (
+                          <Badge variant="outline" className="mt-1">
+                            一次性 · 扫描 #{run.scanId}
+                          </Badge>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            run.status === "failed"
+                              ? "destructive"
+                              : run.status === "running"
+                                ? "secondary"
+                                : "outline"
+                          }
+                        >
+                          {run.status === "succeeded"
+                            ? "成功"
+                            : run.status === "running"
+                              ? "运行中"
+                              : "失败"}
+                        </Badge>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          HTTP {run.httpStatus ?? "-"}
+                        </p>
+                      </TableCell>
+                      <TableCell className="tabular-nums">
+                        {run.received}
+                      </TableCell>
+                      <TableCell className="tabular-nums">
+                        {run.created} / {run.pending}
+                      </TableCell>
+                      <TableCell className="tabular-nums">
+                        {run.updated} / {run.unchanged}
+                      </TableCell>
+                      <TableCell className="tabular-nums">
+                        {run.skipped} / {run.missing}
+                      </TableCell>
+                      <TableCell className="max-w-72">
+                        {run.errorDetail ? (
+                          <p
+                            className="line-clamp-3 text-xs leading-5 text-destructive"
+                            title={run.errorDetail}
+                          >
+                            {run.errorTitle ? `${run.errorTitle}：` : ""}
+                            {run.errorDetail}
+                          </p>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            -
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
 
-      <div>
-        <div className="mb-3">
-          <h3 className="text-sm font-semibold text-foreground">
-            套餐级检查记录
-          </h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            保留已入库套餐的库存、价格与响应耗时，用于定位单个产品异常。
-          </p>
-        </div>
-        <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-          <Table className="min-w-[760px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>时间</TableHead>
-                <TableHead>厂商 / 套餐</TableHead>
-                <TableHead>库存</TableHead>
-                <TableHead>价格</TableHead>
-                <TableHead>耗时</TableHead>
-                <TableHead>结果</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {checks.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="py-8 text-center text-sm text-muted-foreground"
-                  >
-                    暂无检测记录。
-                  </TableCell>
-                </TableRow>
-              ) : null}
-              {checks.map((check) => (
-                <TableRow key={check.id}>
-                  <TableCell className="whitespace-nowrap text-xs">
-                    {formatDate(check.checkedAt)}
-                  </TableCell>
-                  <TableCell className="max-w-80">
-                    <p className="truncate text-sm font-medium">
-                      {check.offerTitle}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {check.providerName ?? "未知厂商"}
-                    </p>
-                  </TableCell>
-                  <TableCell>
-                    {check.available === null
-                      ? "未知"
-                      : check.available
-                        ? "有货"
-                        : "无货"}
-                  </TableCell>
-                  <TableCell className="tabular-nums">
-                    {formatCheckPrice(check)}
-                  </TableCell>
-                  <TableCell className="tabular-nums">
-                    {check.responseTimeMs === null
-                      ? "-"
-                      : `${check.responseTimeMs} ms`}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        check.status === "ok" ? "outline" : "destructive"
-                      }
-                    >
-                      {check.status === "ok" ? "正常" : check.status}
-                    </Badge>
-                    {check.error ? (
-                      <p
-                        className="mt-1 max-w-72 truncate text-xs text-destructive"
-                        title={check.error}
+          <div>
+            <div className="mb-3">
+              <h3 className="text-sm font-semibold text-foreground">
+                套餐级检查记录
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                保留已入库套餐的库存、价格与响应耗时，用于定位单个产品异常。
+              </p>
+            </div>
+            <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
+              <Table className="min-w-[760px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>时间</TableHead>
+                    <TableHead>厂商 / 套餐</TableHead>
+                    <TableHead>库存</TableHead>
+                    <TableHead>价格</TableHead>
+                    <TableHead>耗时</TableHead>
+                    <TableHead>结果</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {checks.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        className="py-8 text-center text-sm text-muted-foreground"
                       >
-                        {check.error}
-                      </p>
-                    ) : null}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+                        暂无检测记录。
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                  {checks.map((check) => (
+                    <TableRow key={check.id}>
+                      <TableCell className="whitespace-nowrap text-xs">
+                        {formatDate(check.checkedAt)}
+                      </TableCell>
+                      <TableCell className="max-w-80">
+                        <p className="truncate text-sm font-medium">
+                          {check.offerTitle}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {check.providerName ?? "未知厂商"}
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        {check.available === null
+                          ? "未知"
+                          : check.available
+                            ? "有货"
+                            : "无货"}
+                      </TableCell>
+                      <TableCell className="tabular-nums">
+                        {formatCheckPrice(check)}
+                      </TableCell>
+                      <TableCell className="tabular-nums">
+                        {check.responseTimeMs === null
+                          ? "-"
+                          : `${check.responseTimeMs} ms`}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            check.status === "ok" ? "outline" : "destructive"
+                          }
+                        >
+                          {check.status === "ok" ? "正常" : check.status}
+                        </Badge>
+                        {check.error ? (
+                          <p
+                            className="mt-1 max-w-72 truncate text-xs text-destructive"
+                            title={check.error}
+                          >
+                            {check.error}
+                          </p>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
 
       {dialogOpen ? (
         <MonitorFormDialog
@@ -1471,6 +1723,36 @@ export function ProviderMonitorManager({
           onOpenChange={setDialogOpen}
         />
       ) : null}
+      <AlertDialog
+        open={Boolean(bulkDeleting)}
+        onOpenChange={(open) => {
+          if (!open && !batchMonitorPending) setBulkDeleting(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>批量删除供应商采集源？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将删除选中的 {bulkDeleting?.length ?? 0}
+              个采集源及其运行历史和待审核候选，已有套餐不会被删除。此操作无法恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={batchMonitorPending}>
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={batchMonitorPending || !bulkDeleting?.length}
+              onClick={(event) => {
+                event.preventDefault();
+                removeSelectedMonitors();
+              }}
+            >
+              {batchMonitorPending ? "删除中..." : "确认批量删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={Boolean(deleting)}
         onOpenChange={(open) => {

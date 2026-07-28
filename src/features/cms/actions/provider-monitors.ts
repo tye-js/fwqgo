@@ -20,11 +20,12 @@ import { defineAdminAction } from "@/features/cms/lib/define-admin-action";
 import {
   createProviderMonitor,
   deleteProviderMonitor,
-  enqueueProviderMonitorTask,
-  getProviderMonitorList,
+  deleteProviderMonitors,
+  enqueueProviderMonitorTasks,
   previewProviderMonitorSource,
   retryProviderMonitorRun,
   updateProviderMonitor,
+  updateProviderMonitorsEnabled,
 } from "@/server/offers/provider-monitor";
 import {
   acceptProviderOfferCandidate,
@@ -60,6 +61,17 @@ const candidateBatchReviewSchema = z.object({
     .max(100, "一次最多审核 100 个候选套餐"),
   decision: z.enum(["accept", "reject"]),
   reason: z.string().trim().max(500, "拒绝原因不能超过 500 个字符").optional(),
+});
+
+const providerMonitorIdsSchema = z
+  .array(postgresIntegerIdSchema)
+  .min(1, "请至少选择一个供应商采集源")
+  .max(100, "一次最多处理 100 个供应商采集源")
+  .transform((ids) => [...new Set(ids)]);
+
+const providerMonitorBatchToggleSchema = z.object({
+  ids: providerMonitorIdsSchema,
+  enabled: z.boolean(),
 });
 
 export type ProviderMonitorActionInput = z.input<typeof monitorInputSchema>;
@@ -127,12 +139,7 @@ const runProviderMonitorNowMutation = defineAdminAction({
   entityType: "provider_monitor",
   parse: (id: number) => providerMonitorIdSchema.parse(id),
   execute: async (id) => {
-    const monitor = (await getProviderMonitorList()).find(
-      (item) => item.id === id,
-    );
-    if (!monitor) throw new Error("供应商采集源不存在");
-    if (!monitor.enabled) throw new Error("请先启用采集源再立即运行");
-    await enqueueProviderMonitorTask(id, new Date());
+    await enqueueProviderMonitorTasks([id]);
     revalidatePath("/servers/monitor");
     return { id };
   },
@@ -140,6 +147,48 @@ const runProviderMonitorNowMutation = defineAdminAction({
   errorTitle: "启动供应商采集失败",
   errorSuggestion: "请确认采集源仍然存在且已启用，然后重新执行。",
   entityId: (id) => id,
+});
+
+const runProviderMonitorsNowMutation = defineAdminAction({
+  action: "provider_monitor.bulk_enqueue",
+  entityType: "provider_monitor",
+  parse: (ids: number[]) => providerMonitorIdsSchema.parse(ids),
+  execute: async (ids) => {
+    const result = await enqueueProviderMonitorTasks(ids);
+    revalidatePath("/servers/monitor");
+    return result;
+  },
+  successMessage: (result) =>
+    result.skipped > 0
+      ? `已加入 ${result.queued} 个采集任务，跳过 ${result.skipped} 个已停用采集源`
+      : `已加入 ${result.queued} 个供应商采集任务`,
+  errorTitle: "批量启动供应商采集失败",
+  errorSuggestion: "请刷新页面确认采集源状态，启用后再重新执行。",
+  entityId: (ids) => `batch:${ids.length}`,
+});
+
+const updateProviderMonitorsEnabledMutation = defineAdminAction({
+  action: "provider_monitor.bulk_toggle",
+  entityType: "provider_monitor",
+  parse: (input: { ids: number[]; enabled: boolean }) =>
+    providerMonitorBatchToggleSchema.parse(input),
+  execute: async (input) => {
+    const result = await updateProviderMonitorsEnabled(
+      input.ids,
+      input.enabled,
+    );
+    revalidatePath("/servers/monitor");
+    return result;
+  },
+  successMessage: (result) => {
+    const action = result.enabled ? "启用" : "停用";
+    return result.unchanged > 0
+      ? `已${action} ${result.updated} 个采集源，${result.unchanged} 个状态未变`
+      : `已${action} ${result.updated} 个供应商采集源`;
+  },
+  errorTitle: "批量更新供应商采集源失败",
+  errorSuggestion: "请刷新页面确认采集源状态后重试。",
+  entityId: (input) => `batch:${input.ids.length}`,
 });
 
 const deleteProviderMonitorMutation = defineAdminAction({
@@ -155,6 +204,21 @@ const deleteProviderMonitorMutation = defineAdminAction({
   errorTitle: "删除供应商采集源失败",
   errorSuggestion: "正在运行的采集需要等待本次执行结束后再删除。",
   entityId: (id) => id,
+});
+
+const deleteProviderMonitorsMutation = defineAdminAction({
+  action: "provider_monitor.bulk_delete",
+  entityType: "provider_monitor",
+  parse: (ids: number[]) => providerMonitorIdsSchema.parse(ids),
+  execute: async (ids) => {
+    const result = await deleteProviderMonitors(ids);
+    revalidatePath("/servers/monitor");
+    return result;
+  },
+  successMessage: (result) => `已删除 ${result.deleted} 个供应商采集源`,
+  errorTitle: "批量删除供应商采集源失败",
+  errorSuggestion: "正在运行的采集需要等待本次执行结束后再删除。",
+  entityId: (ids) => `batch:${ids.length}`,
 });
 
 const reviewProviderOfferCandidateMutation = defineAdminAction({
@@ -232,8 +296,23 @@ export async function runProviderMonitorNowAction(id: number) {
   return runProviderMonitorNowMutation(id);
 }
 
+export async function runProviderMonitorsNowAction(ids: number[]) {
+  return runProviderMonitorsNowMutation(ids);
+}
+
+export async function updateProviderMonitorsEnabledAction(input: {
+  ids: number[];
+  enabled: boolean;
+}) {
+  return updateProviderMonitorsEnabledMutation(input);
+}
+
 export async function deleteProviderMonitorAction(id: number) {
   return deleteProviderMonitorMutation(id);
+}
+
+export async function deleteProviderMonitorsAction(ids: number[]) {
+  return deleteProviderMonitorsMutation(ids);
 }
 
 export async function previewProviderMonitorAction(

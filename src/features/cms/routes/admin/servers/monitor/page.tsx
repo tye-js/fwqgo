@@ -70,18 +70,19 @@ async function ProviderMonitorContent() {
   }
 
   const { monitors, providers, runs, candidates, checks, scans } = result;
+  const activeScanCount = scans.filter(
+    (scan) => scan.status === "queued" || scan.status === "running",
+  ).length;
 
   return (
-    <AdminPageShell badge="服务器套餐" title="供应商采集">
+    <AdminPageShell
+      badge="服务器套餐"
+      title="供应商采集"
+      description="管理供应商采集源与待审核套餐；自动发现和运行明细可按需展开。"
+    >
       <AdminSectionCard
-        title="供应商套餐自动发现"
-        description="从供应商公开官网一次性发现套餐目录，经 AI 生成并校验字段映射后，进入现有候选审核链路。"
-      >
-        <ProviderCatalogScanManager providers={providers} scans={scans} />
-      </AdminSectionCard>
-      <AdminSectionCard
-        title="采集源、审核与运行记录"
-        description="预览不会写入数据；立即采集会进入后台独立队列，同一采集源不会并发运行。"
+        title="采集源与套餐审核"
+        description="立即采集会进入后台独立队列，同一采集源不会并发运行。"
       >
         <ProviderMonitorManager
           monitors={monitors}
@@ -90,6 +91,36 @@ async function ProviderMonitorContent() {
           candidates={candidates}
           checks={checks}
         />
+      </AdminSectionCard>
+      <AdminSectionCard>
+        <details
+          className="group"
+          open={activeScanCount > 0 ? true : undefined}
+        >
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-foreground">
+                供应商套餐自动发现
+              </span>
+              <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                从供应商公开官网发现套餐目录，并生成可复用的采集源。
+              </span>
+            </span>
+            <span className="shrink-0 text-xs font-medium text-primary">
+              {activeScanCount > 0 ? (
+                `${activeScanCount} 个任务进行中`
+              ) : (
+                <>
+                  <span className="group-open:hidden">展开</span>
+                  <span className="hidden group-open:inline">收起</span>
+                </>
+              )}
+            </span>
+          </summary>
+          <div className="mt-3 border-t border-border/60 pt-3">
+            <ProviderCatalogScanManager providers={providers} scans={scans} />
+          </div>
+        </details>
       </AdminSectionCard>
     </AdminPageShell>
   );
