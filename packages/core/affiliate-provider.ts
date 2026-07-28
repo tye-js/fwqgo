@@ -1,12 +1,32 @@
-export const AFFILIATE_MODES = [
+export const PROVIDER_OFFER_AFFILIATE_MODES = [
   "query_param",
   "full_replace",
   "product_param",
 ] as const;
 
-export type AffiliateMode = (typeof AFFILIATE_MODES)[number];
+export type ProviderOfferAffiliateMode =
+  (typeof PROVIDER_OFFER_AFFILIATE_MODES)[number];
 
-export type AffiliateConfigInput = {
+export type ArticleAffiliateConfigInput = {
+  affUrl: string;
+  affParam: string;
+  affValue: string;
+};
+
+export type ProviderOfferAffiliateConfigInput = {
+  offerAffUrl: string;
+  offerAffParam: string;
+  offerAffValue: string;
+  offerAffiliateMode?: string | null;
+  offerAffiliateProductParam?: string | null;
+};
+
+/**
+ * Compatibility shape for callers created before provider-offer affiliate
+ * settings received dedicated database fields. Production business code must
+ * use ProviderOfferAffiliateConfigInput or ArticleAffiliateConfigInput.
+ */
+export type LegacyAffiliateConfigInput = {
   affUrl: string;
   affParam: string;
   affValue: string;
@@ -14,7 +34,15 @@ export type AffiliateConfigInput = {
   affiliateProductParam?: string | null;
 };
 
-export type AffiliateUrlResolution = {
+export type ProviderOfferAffiliateConfigLike =
+  ProviderOfferAffiliateConfigInput | LegacyAffiliateConfigInput;
+
+export type ArticleAffiliateUrlResolution = {
+  url: string;
+  mode: "param" | "replace";
+};
+
+export type ProviderOfferAffiliateUrlResolution = {
   url: string;
   mode: "param" | "replace" | "product-param";
   productId: string | null;
@@ -40,8 +68,11 @@ function normalizedValue(value: string | null | undefined) {
   return value?.trim() ?? "";
 }
 
-export function getAffiliateMode(input: AffiliateConfigInput): AffiliateMode {
-  const configured = normalizedValue(input.affiliateMode);
+export function getProviderOfferAffiliateMode(
+  input: ProviderOfferAffiliateConfigLike,
+): ProviderOfferAffiliateMode {
+  const config = normalizeProviderOfferAffiliateConfig(input);
+  const configured = normalizedValue(config.offerAffiliateMode);
   if (
     configured === "query_param" ||
     configured === "full_replace" ||
@@ -49,23 +80,58 @@ export function getAffiliateMode(input: AffiliateConfigInput): AffiliateMode {
   ) {
     return configured;
   }
-  return normalizedValue(input.affParam) === "href"
-    ? "full_replace"
-    : "query_param";
+  return "query_param";
+}
+
+export function normalizeProviderOfferAffiliateConfig(
+  input: ProviderOfferAffiliateConfigLike,
+): ProviderOfferAffiliateConfigInput {
+  if ("offerAffUrl" in input) return input;
+
+  return {
+    offerAffUrl: input.affUrl,
+    offerAffParam: input.affParam,
+    offerAffValue: input.affValue,
+    offerAffiliateMode:
+      input.affiliateMode ??
+      (normalizedValue(input.affParam) === "href"
+        ? "full_replace"
+        : "query_param"),
+    offerAffiliateProductParam: input.affiliateProductParam,
+  };
 }
 
 export function isAffiliateParameterName(value: string) {
   return affiliateParameterPattern.test(value.trim());
 }
 
-export function getAffiliateConfigState(
-  input: AffiliateConfigInput,
+export function getArticleAffiliateConfigState(
+  input: ArticleAffiliateConfigInput,
 ): "empty" | "partial" | "complete" {
   const affUrl = normalizedValue(input.affUrl);
   const affParam = normalizedValue(input.affParam);
   const affValue = normalizedValue(input.affValue);
-  const productParam = normalizedValue(input.affiliateProductParam);
-  const mode = getAffiliateMode(input);
+
+  if (!affUrl && !affParam && !affValue) return "empty";
+  if (affParam === "href") return affUrl ? "complete" : "partial";
+  return affUrl && affParam && affValue ? "complete" : "partial";
+}
+
+export function hasCompleteArticleAffiliateConfig(
+  input: ArticleAffiliateConfigInput,
+) {
+  return getArticleAffiliateConfigState(input) === "complete";
+}
+
+export function getProviderOfferAffiliateConfigState(
+  input: ProviderOfferAffiliateConfigLike,
+): "empty" | "partial" | "complete" {
+  const config = normalizeProviderOfferAffiliateConfig(input);
+  const affUrl = normalizedValue(config.offerAffUrl);
+  const affParam = normalizedValue(config.offerAffParam);
+  const affValue = normalizedValue(config.offerAffValue);
+  const productParam = normalizedValue(config.offerAffiliateProductParam);
+  const mode = getProviderOfferAffiliateMode(config);
 
   if (mode === "full_replace") {
     return affUrl ? "complete" : "empty";
@@ -78,8 +144,10 @@ export function getAffiliateConfigState(
   return affUrl && affParam && affValue ? "complete" : "partial";
 }
 
-export function hasCompleteAffiliateConfig(input: AffiliateConfigInput) {
-  return getAffiliateConfigState(input) === "complete";
+export function hasCompleteProviderOfferAffiliateConfig(
+  input: ProviderOfferAffiliateConfigLike,
+) {
+  return getProviderOfferAffiliateConfigState(input) === "complete";
 }
 
 function normalizedProductId(value: string | null | undefined) {
@@ -170,25 +238,50 @@ function parseHttpUrl(value: string, label: string) {
   return url;
 }
 
-export function resolveAffiliateUrl(input: {
+export function resolveArticleAffiliateUrl(input: {
   rawUrl: string;
-  affiliate: AffiliateConfigInput;
-  externalProductId?: string | null;
-}): AffiliateUrlResolution | null {
-  if (!hasCompleteAffiliateConfig(input.affiliate)) return null;
+  affiliate: ArticleAffiliateConfigInput;
+}): ArticleAffiliateUrlResolution | null {
+  if (!hasCompleteArticleAffiliateConfig(input.affiliate)) return null;
 
-  const mode = getAffiliateMode(input.affiliate);
   const affUrl = normalizedValue(input.affiliate.affUrl);
-  if (mode === "full_replace") {
+  const affParam = normalizedValue(input.affiliate.affParam);
+  if (affParam === "href") {
     return {
       url: parseHttpUrl(affUrl, "返利链接").toString(),
+      mode: "replace",
+    };
+  }
+
+  const affValue = normalizedValue(input.affiliate.affValue);
+  if (!isAffiliateParameterName(affParam)) {
+    throw new Error("返利参数格式不正确");
+  }
+  const url = parseHttpUrl(input.rawUrl, "供应商购买链接");
+  url.searchParams.set(affParam, affValue);
+  return { url: url.toString(), mode: "param" };
+}
+
+export function resolveProviderOfferAffiliateUrl(input: {
+  rawUrl: string;
+  affiliate: ProviderOfferAffiliateConfigLike;
+  externalProductId?: string | null;
+}): ProviderOfferAffiliateUrlResolution | null {
+  if (!hasCompleteProviderOfferAffiliateConfig(input.affiliate)) return null;
+
+  const affiliate = normalizeProviderOfferAffiliateConfig(input.affiliate);
+  const mode = getProviderOfferAffiliateMode(affiliate);
+  const affUrl = normalizedValue(affiliate.offerAffUrl);
+  if (mode === "full_replace") {
+    return {
+      url: parseHttpUrl(affUrl, "套餐采集返利链接").toString(),
       mode: "replace",
       productId: null,
     };
   }
 
   if (mode === "product_param") {
-    const productParam = normalizedValue(input.affiliate.affiliateProductParam);
+    const productParam = normalizedValue(affiliate.offerAffiliateProductParam);
     if (!isAffiliateParameterName(productParam)) {
       throw new Error("产品 ID 参数格式不正确");
     }
@@ -198,19 +291,43 @@ export function resolveAffiliateUrl(input: {
       productParam,
     });
     if (!productId) return null;
-    const url = parseHttpUrl(affUrl, "返利链接");
+    const url = parseHttpUrl(affUrl, "套餐采集返利链接");
     url.searchParams.set(productParam, productId);
     return { url: url.toString(), mode: "product-param", productId };
   }
 
-  const affParam = normalizedValue(input.affiliate.affParam);
-  const affValue = normalizedValue(input.affiliate.affValue);
+  const affParam = normalizedValue(affiliate.offerAffParam);
+  const affValue = normalizedValue(affiliate.offerAffValue);
   if (!isAffiliateParameterName(affParam)) {
     throw new Error("返利参数格式不正确");
   }
   const url = parseHttpUrl(input.rawUrl, "供应商购买链接");
   url.searchParams.set(affParam, affValue);
   return { url: url.toString(), mode: "param", productId: null };
+}
+
+/** @deprecated Use the business-specific article or provider-offer helper. */
+export function getAffiliateMode(input: LegacyAffiliateConfigInput) {
+  return getProviderOfferAffiliateMode(input);
+}
+
+/** @deprecated Use getArticleAffiliateConfigState or getProviderOfferAffiliateConfigState. */
+export function getAffiliateConfigState(input: LegacyAffiliateConfigInput) {
+  return getProviderOfferAffiliateConfigState(input);
+}
+
+/** @deprecated Use the business-specific completeness helper. */
+export function hasCompleteAffiliateConfig(input: LegacyAffiliateConfigInput) {
+  return hasCompleteProviderOfferAffiliateConfig(input);
+}
+
+/** @deprecated Use resolveArticleAffiliateUrl or resolveProviderOfferAffiliateUrl. */
+export function resolveAffiliateUrl(input: {
+  rawUrl: string;
+  affiliate: LegacyAffiliateConfigInput;
+  externalProductId?: string | null;
+}) {
+  return resolveProviderOfferAffiliateUrl(input);
 }
 
 export function normalizeAffiliateProviderDomain(value: string) {

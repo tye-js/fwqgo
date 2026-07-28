@@ -116,12 +116,7 @@ function normalizeAffiliateReport(
       providerName: stringValue(match.providerName, "未知商家"),
       affParam: stringValue(match.affParam),
       affValue: stringValue(match.affValue),
-      productParam: stringValue(match.productParam) || null,
-      productId: stringValue(match.productId) || null,
-      mode:
-        match.mode === "replace" || match.mode === "product-param"
-          ? match.mode
-          : "param",
+      mode: match.mode === "replace" ? "replace" : "param",
     };
   };
   const normalizeMiss = (
@@ -135,8 +130,7 @@ function normalizeAffiliateReport(
       reason:
         reason === "invalid-url" ||
         reason === "internal" ||
-        reason === "no-provider" ||
-        reason === "missing-product-id"
+        reason === "no-provider"
           ? reason
           : "no-provider",
     };

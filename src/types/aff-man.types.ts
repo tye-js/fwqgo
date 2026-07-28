@@ -9,8 +9,11 @@ export type AffManData = Pick<
   | "affUrl"
   | "affParam"
   | "affValue"
-  | "affiliateMode"
-  | "affiliateProductParam"
+  | "offerAffUrl"
+  | "offerAffParam"
+  | "offerAffValue"
+  | "offerAffiliateMode"
+  | "offerAffiliateProductParam"
   | "officialUrl"
 >;
 

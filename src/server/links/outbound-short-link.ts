@@ -4,8 +4,8 @@ import { eq } from "drizzle-orm";
 import { db, readDb } from "@fwqgo/db";
 import { affServiceProviders, outboundLinks } from "@fwqgo/db/schema";
 import {
-  hasCompleteAffiliateConfig,
-  resolveAffiliateUrl,
+  hasCompleteArticleAffiliateConfig,
+  resolveArticleAffiliateUrl,
 } from "@fwqgo/core/affiliate-provider";
 
 const siteBaseUrl = "https://fwqgo.com";
@@ -25,7 +25,7 @@ function getAffiliateProviders() {
     const request = db
       .select()
       .from(affServiceProviders)
-      .then((providers) => providers.filter(hasCompleteAffiliateConfig));
+      .then((providers) => providers.filter(hasCompleteArticleAffiliateConfig));
     providerCache = request;
     void request.catch(() => {
       if (providerCache === request) {
@@ -101,7 +101,7 @@ async function getAffiliateTargetUrl(url: URL) {
   }
 
   return (
-    resolveAffiliateUrl({
+    resolveArticleAffiliateUrl({
       rawUrl: url.toString(),
       affiliate: matchedProvider,
     })?.url ?? null

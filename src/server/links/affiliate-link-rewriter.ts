@@ -2,9 +2,8 @@ import type * as cheerio from "cheerio";
 import { db } from "@fwqgo/db";
 import { affServiceProviders } from "@fwqgo/db/schema";
 import {
-  extractAffiliateProductId,
-  hasCompleteAffiliateConfig,
-  resolveAffiliateUrl,
+  hasCompleteArticleAffiliateConfig,
+  resolveArticleAffiliateUrl,
 } from "@fwqgo/core/affiliate-provider";
 
 export type AffiliateRewriteMatch = {
@@ -15,15 +14,13 @@ export type AffiliateRewriteMatch = {
   providerName: string;
   affParam: string;
   affValue: string;
-  productParam?: string | null;
-  productId?: string | null;
-  mode: "param" | "replace" | "product-param";
+  mode: "param" | "replace";
 };
 
 export type AffiliateRewriteMiss = {
   href: string;
   host: string | null;
-  reason: "invalid-url" | "internal" | "no-provider" | "missing-product-id";
+  reason: "invalid-url" | "internal" | "no-provider";
 };
 
 export type AffiliateRewriteReport = {
@@ -81,13 +78,6 @@ function normalizeProviderDomain(value: string) {
   }
 }
 
-function providerMatchesHostname(provider: Provider, hostname: string) {
-  const hostDomains = candidateDomains(hostname);
-  return [provider.officialUrl, provider.affUrl]
-    .map(normalizeProviderDomain)
-    .some((domain) => hostDomains.includes(domain));
-}
-
 function isGenericMarkdownLinkLabel(label: string) {
   return [
     "链接",
@@ -117,7 +107,7 @@ async function loadProvidersForHosts(hostnames: string[]) {
   const domainSet = new Set(domains);
   const providerByDomain = new Map<string, Provider>();
   for (const provider of rows) {
-    if (!hasCompleteAffiliateConfig(provider)) continue;
+    if (!hasCompleteArticleAffiliateConfig(provider)) continue;
 
     const providerDomains = [
       normalizeProviderDomain(provider.officialUrl),
@@ -150,25 +140,11 @@ function findProvider(
   return null;
 }
 
-function rewriteHref(href: string, provider: Provider, originalHref?: string) {
-  const productId = originalHref
-    ? extractAffiliateProductId({
-        purchaseUrl: originalHref,
-        productParam: provider.affiliateProductParam,
-      })
-    : null;
-  const resolved = resolveAffiliateUrl({
+function rewriteHref(href: string, provider: Provider) {
+  return resolveArticleAffiliateUrl({
     rawUrl: href,
     affiliate: provider,
-    externalProductId: productId,
   });
-  return resolved
-    ? {
-        href: resolved.url,
-        mode: resolved.mode,
-        productId: resolved.productId,
-      }
-    : null;
 }
 
 function isLikelyAffiliateRedirectPath(pathname: string) {
@@ -210,7 +186,6 @@ export async function rewriteAffiliateLinks(input: {
   const links: Array<{
     element: (typeof elements)[number];
     href: string;
-    originalUrl: URL;
     finalUrl: URL;
     isInternal: boolean;
   }> = [];
@@ -251,7 +226,6 @@ export async function rewriteAffiliateLinks(input: {
     links.push({
       element,
       href,
-      originalUrl: parsedUrl,
       finalUrl,
       isInternal:
         finalHost === sourceHost || finalHost.endsWith(`.${sourceHost}`),
@@ -312,33 +286,25 @@ export async function rewriteAffiliateLinks(input: {
     const rewritten = rewriteHref(
       link.finalUrl.toString(),
       articleProvider.provider,
-      providerMatchesHostname(
-        articleProvider.provider,
-        link.originalUrl.hostname,
-      )
-        ? link.originalUrl.toString()
-        : undefined,
     );
     if (!rewritten) {
       report.unmatchedLinks.push({
         href: link.finalUrl.toString(),
         host: normalizeHost(link.finalUrl.hostname),
-        reason: "missing-product-id",
+        reason: "no-provider",
       });
       $link.attr("href", link.finalUrl.toString());
       continue;
     }
-    $link.attr("href", rewritten.href);
+    $link.attr("href", rewritten.url);
     report.matchedLinks.push({
       originalHref: link.href,
       resolvedHref: link.finalUrl.toString(),
-      finalHref: rewritten.href,
+      finalHref: rewritten.url,
       matchedDomain: articleProvider.matchedDomain,
       providerName: articleProvider.provider.name,
       affParam: articleProvider.provider.affParam,
       affValue: articleProvider.provider.affValue,
-      productParam: articleProvider.provider.affiliateProductParam,
-      productId: rewritten.productId,
       mode: rewritten.mode,
     });
   }

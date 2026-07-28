@@ -115,9 +115,12 @@ async function main() {
       providerId: affServiceProviders.id,
       providerName: affServiceProviders.name,
       providerSlug: affServiceProviders.slug,
-      affUrl: affServiceProviders.affUrl,
-      affParam: affServiceProviders.affParam,
-      affValue: affServiceProviders.affValue,
+      offerAffUrl: affServiceProviders.offerAffUrl,
+      offerAffParam: affServiceProviders.offerAffParam,
+      offerAffValue: affServiceProviders.offerAffValue,
+      offerAffiliateMode: affServiceProviders.offerAffiliateMode,
+      offerAffiliateProductParam:
+        affServiceProviders.offerAffiliateProductParam,
       defaultPromoCode: affServiceProviders.defaultPromoCode,
     })
     .from(providerMonitors)
@@ -141,9 +144,11 @@ async function main() {
     purpose: monitor.purpose,
     autoPublish: monitor.autoPublish,
     missingThreshold: monitor.missingThreshold,
-    affUrl: monitor.affUrl,
-    affParam: monitor.affParam,
-    affValue: monitor.affValue,
+    offerAffUrl: monitor.offerAffUrl,
+    offerAffParam: monitor.offerAffParam,
+    offerAffValue: monitor.offerAffValue,
+    offerAffiliateMode: monitor.offerAffiliateMode,
+    offerAffiliateProductParam: monitor.offerAffiliateProductParam,
     defaultPromoCode: monitor.defaultPromoCode,
   };
   const rows = await db

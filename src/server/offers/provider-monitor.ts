@@ -19,9 +19,9 @@ import {
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import {
   affiliateProviderDomainsMatch,
-  getAffiliateMode,
-  hasCompleteAffiliateConfig,
-  type AffiliateConfigInput,
+  getProviderOfferAffiliateMode,
+  hasCompleteProviderOfferAffiliateConfig,
+  type ProviderOfferAffiliateConfigInput,
 } from "@fwqgo/core/affiliate-provider";
 import { fetchPublicHttpUrl } from "@fwqgo/core/network-url";
 import { getProviderMonitorSuccessSchedule } from "@fwqgo/core/provider-catalog-discovery";
@@ -237,11 +237,12 @@ export async function runProviderMonitor(
       runGeneration: providerMonitors.runGeneration,
       providerName: affServiceProviders.name,
       providerSlug: affServiceProviders.slug,
-      affUrl: affServiceProviders.affUrl,
-      affParam: affServiceProviders.affParam,
-      affValue: affServiceProviders.affValue,
-      affiliateMode: affServiceProviders.affiliateMode,
-      affiliateProductParam: affServiceProviders.affiliateProductParam,
+      offerAffUrl: affServiceProviders.offerAffUrl,
+      offerAffParam: affServiceProviders.offerAffParam,
+      offerAffValue: affServiceProviders.offerAffValue,
+      offerAffiliateMode: affServiceProviders.offerAffiliateMode,
+      offerAffiliateProductParam:
+        affServiceProviders.offerAffiliateProductParam,
       defaultPromoCode: affServiceProviders.defaultPromoCode,
     })
     .from(providerMonitors)
@@ -299,22 +300,22 @@ export async function runProviderMonitor(
     purpose: monitor.purpose,
     autoPublish: monitor.autoPublish,
     missingThreshold: monitor.missingThreshold,
-    affUrl: monitor.affUrl,
-    affParam: monitor.affParam,
-    affValue: monitor.affValue,
-    affiliateMode: monitor.affiliateMode,
-    affiliateProductParam: monitor.affiliateProductParam,
+    offerAffUrl: monitor.offerAffUrl,
+    offerAffParam: monitor.offerAffParam,
+    offerAffValue: monitor.offerAffValue,
+    offerAffiliateMode: monitor.offerAffiliateMode,
+    offerAffiliateProductParam: monitor.offerAffiliateProductParam,
     defaultPromoCode: monitor.defaultPromoCode,
   };
   const configHash = hashProviderMonitorSyncConfig({
     adapter,
     config,
     affiliate: {
-      affUrl: monitor.affUrl,
-      affParam: monitor.affParam,
-      affValue: monitor.affValue,
-      affiliateMode: monitor.affiliateMode,
-      affiliateProductParam: monitor.affiliateProductParam,
+      offerAffUrl: monitor.offerAffUrl,
+      offerAffParam: monitor.offerAffParam,
+      offerAffValue: monitor.offerAffValue,
+      offerAffiliateMode: monitor.offerAffiliateMode,
+      offerAffiliateProductParam: monitor.offerAffiliateProductParam,
     },
     behavior: {
       purpose: monitor.purpose,
@@ -1089,15 +1090,16 @@ export type ProviderMonitorMutationInput = {
 async function getProductLinksAffiliateConfig(
   providerId: number,
   endpointUrl: string,
-): Promise<AffiliateConfigInput> {
+): Promise<ProviderOfferAffiliateConfigInput> {
   const [provider] = await db
     .select({
       officialUrl: affServiceProviders.officialUrl,
-      affUrl: affServiceProviders.affUrl,
-      affParam: affServiceProviders.affParam,
-      affValue: affServiceProviders.affValue,
-      affiliateMode: affServiceProviders.affiliateMode,
-      affiliateProductParam: affServiceProviders.affiliateProductParam,
+      offerAffUrl: affServiceProviders.offerAffUrl,
+      offerAffParam: affServiceProviders.offerAffParam,
+      offerAffValue: affServiceProviders.offerAffValue,
+      offerAffiliateMode: affServiceProviders.offerAffiliateMode,
+      offerAffiliateProductParam:
+        affServiceProviders.offerAffiliateProductParam,
     })
     .from(affServiceProviders)
     .where(eq(affServiceProviders.id, providerId))
@@ -1107,8 +1109,8 @@ async function getProductLinksAffiliateConfig(
     throw new Error("套餐集合页域名与所选供应商官网不一致");
   }
   if (
-    getAffiliateMode(provider) !== "product_param" ||
-    !hasCompleteAffiliateConfig(provider)
+    getProviderOfferAffiliateMode(provider) !== "product_param" ||
+    !hasCompleteProviderOfferAffiliateConfig(provider)
   ) {
     throw new Error("请先为供应商配置完整的按产品 ID 返利链接");
   }

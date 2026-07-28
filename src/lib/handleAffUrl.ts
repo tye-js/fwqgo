@@ -1,5 +1,5 @@
 import { getAffValueByHref } from "@/features/cms/actions/aff-provider";
-import { resolveAffiliateUrl } from "@fwqgo/core/affiliate-provider";
+import { resolveArticleAffiliateUrl } from "@fwqgo/core/affiliate-provider";
 
 export async function handleAffUrl(href: string) {
   try {
@@ -8,7 +8,7 @@ export async function handleAffUrl(href: string) {
       newUrl.hostname,
     );
     if (affServiceProvider?.id) {
-      const resolved = resolveAffiliateUrl({
+      const resolved = resolveArticleAffiliateUrl({
         rawUrl: newUrl.toString(),
         affiliate: affServiceProvider,
       });

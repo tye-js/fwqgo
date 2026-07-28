@@ -14,10 +14,11 @@ import type {
 } from "@fwqgo/core/provider-monitor-config";
 import {
   extractProductIdReference,
-  getAffiliateMode,
-  hasCompleteAffiliateConfig,
-  resolveAffiliateUrl,
-  type AffiliateConfigInput,
+  getProviderOfferAffiliateMode,
+  hasCompleteProviderOfferAffiliateConfig,
+  normalizeProviderOfferAffiliateConfig,
+  resolveProviderOfferAffiliateUrl,
+  type ProviderOfferAffiliateConfigLike,
 } from "@fwqgo/core/affiliate-provider";
 import {
   isPersistableServerOfferAmount,
@@ -558,16 +559,19 @@ function parseProductLinkCandidates(input: {
   body: string;
   config: ProductLinksMonitorConfig;
   sourceUrl: string;
-  affiliate?: AffiliateConfigInput;
+  affiliate?: ProviderOfferAffiliateConfigLike;
 }) {
   if (
     !input.affiliate ||
-    getAffiliateMode(input.affiliate) !== "product_param" ||
-    !hasCompleteAffiliateConfig(input.affiliate)
+    getProviderOfferAffiliateMode(input.affiliate) !== "product_param" ||
+    !hasCompleteProviderOfferAffiliateConfig(input.affiliate)
   ) {
     throw new Error("套餐集合页要求供应商配置完整的按产品 ID 返利链接");
   }
-  const productParam = input.affiliate.affiliateProductParam?.trim();
+  const affiliateConfig = normalizeProviderOfferAffiliateConfig(
+    input.affiliate,
+  );
+  const productParam = affiliateConfig.offerAffiliateProductParam?.trim();
   if (!productParam) throw new Error("供应商未配置产品 ID 参数");
 
   const $ = load(input.body);
@@ -590,9 +594,9 @@ function parseProductLinkCandidates(input: {
     );
     if (!reference) return;
     const externalProductId = `${productParam.toLowerCase()}:${reference.value}`;
-    const affiliate = resolveAffiliateUrl({
+    const affiliate = resolveProviderOfferAffiliateUrl({
       rawUrl: originalPurchaseUrl,
-      affiliate: input.affiliate!,
+      affiliate: affiliateConfig,
       externalProductId,
     });
     if (!affiliate) return;
@@ -1060,7 +1064,7 @@ export function parseProviderSourcePayload(input: {
   body: string;
   config: ProviderMonitorConfig;
   sourceUrl: string;
-  affiliate?: AffiliateConfigInput;
+  affiliate?: ProviderOfferAffiliateConfigLike;
 }) {
   if (input.adapter === "json") {
     return parseJsonCandidates(
@@ -1137,27 +1141,24 @@ export function hashProviderOfferCandidate(candidate: ProviderOfferCandidate) {
 
 export function hashProviderOfferSyncState(
   candidate: ProviderOfferCandidate,
-  provider: {
-    affUrl: string;
-    affParam: string;
-    affValue: string;
-    affiliateMode?: string | null;
-    affiliateProductParam?: string | null;
+  provider: ProviderOfferAffiliateConfigLike & {
     purpose: string;
     defaultPromoCode: string | null;
   },
 ) {
+  const affiliate = normalizeProviderOfferAffiliateConfig(provider);
   return createHash("sha256")
     .update(
       JSON.stringify(
         stableValue({
           candidate,
           affiliate: {
-            affUrl: provider.affUrl,
-            affParam: provider.affParam,
-            affValue: provider.affValue,
-            affiliateMode: provider.affiliateMode ?? null,
-            affiliateProductParam: provider.affiliateProductParam ?? null,
+            offerAffUrl: affiliate.offerAffUrl,
+            offerAffParam: affiliate.offerAffParam,
+            offerAffValue: affiliate.offerAffValue,
+            offerAffiliateMode: affiliate.offerAffiliateMode ?? null,
+            offerAffiliateProductParam:
+              affiliate.offerAffiliateProductParam ?? null,
           },
           behavior: {
             purpose: provider.purpose,
@@ -1224,7 +1225,7 @@ export function prepareProviderOfferCandidates(
 export function hashProviderMonitorSyncConfig(input: {
   adapter: ProviderSourceAdapter;
   config: ProviderMonitorConfig;
-  affiliate: AffiliateConfigInput;
+  affiliate: ProviderOfferAffiliateConfigLike;
   behavior: {
     purpose: string;
     autoPublish: boolean;
@@ -1233,7 +1234,14 @@ export function hashProviderMonitorSyncConfig(input: {
   };
 }) {
   return createHash("sha256")
-    .update(JSON.stringify(stableValue(input)))
+    .update(
+      JSON.stringify(
+        stableValue({
+          ...input,
+          affiliate: normalizeProviderOfferAffiliateConfig(input.affiliate),
+        }),
+      ),
+    )
     .digest("hex");
 }
 
@@ -1243,11 +1251,14 @@ export function hashProviderSourceResponse(body: string) {
 
 export function applyProviderAffiliateUrl(
   rawUrl: string,
-  provider: AffiliateConfigInput,
+  provider: ProviderOfferAffiliateConfigLike,
   externalProductId?: string | null,
 ) {
   return (
-    resolveAffiliateUrl({ rawUrl, affiliate: provider, externalProductId })
-      ?.url ?? rawUrl
+    resolveProviderOfferAffiliateUrl({
+      rawUrl,
+      affiliate: provider,
+      externalProductId,
+    })?.url ?? rawUrl
   );
 }

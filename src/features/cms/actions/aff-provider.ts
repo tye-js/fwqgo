@@ -8,11 +8,23 @@ import {
   providerMonitors,
   serverOffers,
 } from "@fwqgo/db/schema";
-import { and, asc, count, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  inArray,
+  ne,
+  not,
+  or,
+  sql,
+} from "drizzle-orm";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import {
-  getAffiliateMode,
-  getAffiliateConfigState,
+  getArticleAffiliateConfigState,
+  getProviderOfferAffiliateConfigState,
+  getProviderOfferAffiliateMode,
   isAffiliateParameterName,
   normalizeAffiliateProviderDomain,
 } from "@fwqgo/core/affiliate-provider";
@@ -62,26 +74,52 @@ function normalizeAffUrl(value: string) {
   return normalizeText(value);
 }
 
-function hasCompleteAffiliateConfigCondition() {
+function hasCompleteArticleAffiliateConfigCondition() {
   const hasAffiliateUrl = sql`btrim(${affServiceProviders.affUrl}) <> ''`;
   const hasAffiliateParam = sql`btrim(${affServiceProviders.affParam}) <> ''`;
   const hasAffiliateValue = sql`btrim(${affServiceProviders.affValue}) <> ''`;
-  const hasProductParam = sql`coalesce(btrim(${affServiceProviders.affiliateProductParam}), '') <> ''`;
 
   return or(
     and(
-      eq(affServiceProviders.affiliateMode, "query_param"),
+      sql`btrim(${affServiceProviders.affParam}) <> 'href'`,
       hasAffiliateUrl,
       hasAffiliateParam,
       hasAffiliateValue,
     ),
-    and(eq(affServiceProviders.affiliateMode, "full_replace"), hasAffiliateUrl),
+    and(sql`btrim(${affServiceProviders.affParam}) = 'href'`, hasAffiliateUrl),
+  )!;
+}
+
+function hasCompleteProviderOfferAffiliateConfigCondition() {
+  const hasAffiliateUrl = sql`btrim(${affServiceProviders.offerAffUrl}) <> ''`;
+  const hasAffiliateParam = sql`btrim(${affServiceProviders.offerAffParam}) <> ''`;
+  const hasAffiliateValue = sql`btrim(${affServiceProviders.offerAffValue}) <> ''`;
+  const hasProductParam = sql`coalesce(btrim(${affServiceProviders.offerAffiliateProductParam}), '') <> ''`;
+
+  return or(
     and(
-      eq(affServiceProviders.affiliateMode, "product_param"),
+      eq(affServiceProviders.offerAffiliateMode, "query_param"),
+      hasAffiliateUrl,
+      hasAffiliateParam,
+      hasAffiliateValue,
+    ),
+    and(
+      eq(affServiceProviders.offerAffiliateMode, "full_replace"),
+      hasAffiliateUrl,
+    ),
+    and(
+      eq(affServiceProviders.offerAffiliateMode, "product_param"),
       hasAffiliateUrl,
       hasProductParam,
     ),
-  );
+  )!;
+}
+
+function hasAnyCompleteAffiliateConfigCondition() {
+  return or(
+    hasCompleteArticleAffiliateConfigCondition(),
+    hasCompleteProviderOfferAffiliateConfigCondition(),
+  )!;
 }
 
 function normalizeAffProviderFilter(value: string): AffProviderFilter {
@@ -118,55 +156,42 @@ function getAffProviderWhereCondition({
         ilikeContains(affServiceProviders.name, query),
         ilikeContains(affServiceProviders.officialUrl, query),
         ilikeContains(affServiceProviders.affUrl, query),
+        ilikeContains(affServiceProviders.offerAffUrl, query),
       )
     : undefined;
   const filterCondition =
     filter === "with-aff"
-      ? hasCompleteAffiliateConfigCondition()
+      ? hasAnyCompleteAffiliateConfigCondition()
       : filter === "empty-aff"
-        ? or(
-            and(
-              eq(affServiceProviders.affiliateMode, "query_param"),
-              or(
-                sql`btrim(${affServiceProviders.affUrl}) = ''`,
-                sql`btrim(${affServiceProviders.affParam}) = ''`,
-                sql`btrim(${affServiceProviders.affValue}) = ''`,
-              ),
-            ),
-            and(
-              eq(affServiceProviders.affiliateMode, "full_replace"),
-              sql`btrim(${affServiceProviders.affUrl}) = ''`,
-            ),
-            and(
-              eq(affServiceProviders.affiliateMode, "product_param"),
-              or(
-                sql`btrim(${affServiceProviders.affUrl}) = ''`,
-                sql`coalesce(btrim(${affServiceProviders.affiliateProductParam}), '') = ''`,
-              ),
-            ),
-          )
+        ? not(hasAnyCompleteAffiliateConfigCondition())
         : undefined;
 
   return and(searchCondition, filterCondition);
 }
 
 function validateAffProviderInput(data: Omit<AffManData, "id">) {
-  const affiliateMode = getAffiliateMode(data);
+  const articleAffParam = normalizeText(data.affParam);
+  const offerAffiliateMode = getProviderOfferAffiliateMode(data);
   const normalizedData = {
     name: normalizeText(data.name),
     affUrl: normalizeAffUrl(data.affUrl),
-    affParam:
-      affiliateMode === "query_param"
-        ? normalizeText(data.affParam)
-        : affiliateMode === "full_replace"
+    affParam: articleAffParam,
+    affValue: articleAffParam === "href" ? "" : normalizeText(data.affValue),
+    offerAffUrl: normalizeAffUrl(data.offerAffUrl),
+    offerAffParam:
+      offerAffiliateMode === "query_param"
+        ? normalizeText(data.offerAffParam)
+        : offerAffiliateMode === "full_replace"
           ? "href"
           : "",
-    affValue:
-      affiliateMode === "query_param" ? normalizeText(data.affValue) : "",
-    affiliateMode,
-    affiliateProductParam:
-      affiliateMode === "product_param"
-        ? normalizeText(data.affiliateProductParam ?? "")
+    offerAffValue:
+      offerAffiliateMode === "query_param"
+        ? normalizeText(data.offerAffValue)
+        : "",
+    offerAffiliateMode,
+    offerAffiliateProductParam:
+      offerAffiliateMode === "product_param"
+        ? normalizeText(data.offerAffiliateProductParam ?? "")
         : null,
     officialUrl: normalizeAffiliateProviderDomain(data.officialUrl) ?? "",
   };
@@ -175,15 +200,26 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
     return { error: "请填写商家名和官网域名", data: normalizedData };
   }
 
-  const affiliateConfigState = getAffiliateConfigState(normalizedData);
-  if (affiliateConfigState === "partial") {
+  const articleAffiliateConfigState =
+    getArticleAffiliateConfigState(normalizedData);
+  if (articleAffiliateConfigState === "partial") {
     return {
       error:
-        normalizedData.affiliateMode === "product_param"
-          ? "产品 ID 参数模式需要填写返利链接和产品 ID 参数，或全部留空"
-          : normalizedData.affiliateMode === "full_replace"
-            ? "整条替换模式需要填写返利链接，或全部留空"
-            : "返利链接、返利参数和返利值需全部填写，或全部留空",
+        normalizedData.affParam === "href"
+          ? "AI 改写整条替换需要填写返利链接，或清空该组配置"
+          : "AI 改写返利链接、返利参数和返利值需全部填写，或全部留空",
+      data: normalizedData,
+    };
+  }
+
+  const offerAffiliateConfigState =
+    getProviderOfferAffiliateConfigState(normalizedData);
+  if (offerAffiliateConfigState === "partial") {
+    return {
+      error:
+        normalizedData.offerAffiliateMode === "product_param"
+          ? "套餐采集按产品 ID 模式需要填写返利链接和产品 ID 参数，或全部留空"
+          : "套餐采集返利链接、返利参数和返利值需全部填写，或全部留空",
       data: normalizedData,
     };
   }
@@ -198,6 +234,8 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
   if (
     normalizedData.affUrl.length > MAX_TEXT_LENGTH ||
     normalizedData.affValue.length > MAX_TEXT_LENGTH ||
+    normalizedData.offerAffUrl.length > MAX_TEXT_LENGTH ||
+    normalizedData.offerAffValue.length > MAX_TEXT_LENGTH ||
     normalizedData.officialUrl.length > MAX_TEXT_LENGTH
   ) {
     return {
@@ -206,54 +244,76 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
     };
   }
 
-  if (normalizedData.affParam.length > MAX_PARAM_LENGTH) {
+  if (
+    normalizedData.affParam.length > MAX_PARAM_LENGTH ||
+    normalizedData.offerAffParam.length > MAX_PARAM_LENGTH
+  ) {
     return {
       error: `返利参数不能超过 ${MAX_PARAM_LENGTH} 个字符`,
       data: normalizedData,
     };
   }
 
-  if ((normalizedData.affiliateProductParam?.length ?? 0) > MAX_PARAM_LENGTH) {
+  if (
+    (normalizedData.offerAffiliateProductParam?.length ?? 0) > MAX_PARAM_LENGTH
+  ) {
     return {
       error: `产品 ID 参数不能超过 ${MAX_PARAM_LENGTH} 个字符`,
       data: normalizedData,
     };
   }
 
-  if (affiliateConfigState === "complete") {
+  for (const [configState, affUrl, label] of [
+    [articleAffiliateConfigState, normalizedData.affUrl, "AI 改写返利链接"],
+    [offerAffiliateConfigState, normalizedData.offerAffUrl, "套餐采集返利链接"],
+  ] as const) {
+    if (configState !== "complete") continue;
     try {
-      const parsedUrl = new URL(normalizedData.affUrl);
+      const parsedUrl = new URL(affUrl);
 
       if (!["http:", "https:"].includes(parsedUrl.protocol)) {
         return {
-          error: "返利链接只支持 http 或 https",
+          error: `${label}只支持 http 或 https`,
           data: normalizedData,
         };
       }
       if (parsedUrl.username || parsedUrl.password) {
         return {
-          error: "返利链接不能包含用户名或密码",
+          error: `${label}不能包含用户名或密码`,
           data: normalizedData,
         };
       }
     } catch {
       return {
-        error: "返利链接格式不正确，请填写完整 URL",
+        error: `${label}格式不正确，请填写完整 URL`,
         data: normalizedData,
       };
     }
+  }
 
+  if (articleAffiliateConfigState === "complete") {
     if (
-      normalizedData.affiliateMode === "query_param" &&
+      normalizedData.affParam !== "href" &&
       !isAffiliateParameterName(normalizedData.affParam)
     ) {
-      return { error: "返利参数格式不正确", data: normalizedData };
+      return { error: "AI 改写返利参数格式不正确", data: normalizedData };
+    }
+  }
+  if (offerAffiliateConfigState === "complete") {
+    if (
+      normalizedData.offerAffiliateMode === "query_param" &&
+      !isAffiliateParameterName(normalizedData.offerAffParam)
+    ) {
+      return { error: "套餐采集返利参数格式不正确", data: normalizedData };
     }
     if (
-      normalizedData.affiliateMode === "product_param" &&
-      !isAffiliateParameterName(normalizedData.affiliateProductParam ?? "")
+      normalizedData.offerAffiliateMode === "product_param" &&
+      !isAffiliateParameterName(normalizedData.offerAffiliateProductParam ?? "")
     ) {
-      return { error: "产品 ID 参数格式不正确", data: normalizedData };
+      return {
+        error: "套餐采集产品 ID 参数格式不正确",
+        data: normalizedData,
+      };
     }
   }
 
@@ -338,7 +398,7 @@ export async function getAffValueByHref(hostname: string) {
       .where(
         and(
           inArray(affServiceProviders.officialUrl, possibleDomains),
-          hasCompleteAffiliateConfigCondition(),
+          hasCompleteArticleAffiliateConfigCondition(),
         ),
       );
     const matchesByDomain = new Map(
@@ -442,8 +502,30 @@ export async function updateAffProvider(
     }
 
     const normalizedData = validation.data;
-    const monitorsInvalidatedAt = new Date();
+    const updatedAt = new Date();
     const mutation = await db.transaction(async (tx) => {
+      const [currentProvider] = await tx
+        .select({
+          offerAffUrl: affServiceProviders.offerAffUrl,
+          offerAffParam: affServiceProviders.offerAffParam,
+          offerAffValue: affServiceProviders.offerAffValue,
+          offerAffiliateMode: affServiceProviders.offerAffiliateMode,
+          offerAffiliateProductParam:
+            affServiceProviders.offerAffiliateProductParam,
+        })
+        .from(affServiceProviders)
+        .where(eq(affServiceProviders.id, providerId))
+        .for("update")
+        .limit(1);
+      if (!currentProvider) {
+        return {
+          existingProvider: null,
+          result: null,
+          monitors: [],
+          offerAffiliateChanged: false,
+        };
+      }
+
       const [existingProvider] = await tx
         .select({
           id: affServiceProviders.id,
@@ -463,34 +545,60 @@ export async function updateAffProvider(
         .limit(1);
 
       if (existingProvider) {
-        return { existingProvider, result: null, monitors: [] };
+        return {
+          existingProvider,
+          result: null,
+          monitors: [],
+          offerAffiliateChanged: false,
+        };
       }
+
+      const offerAffiliateChanged =
+        currentProvider.offerAffUrl !== normalizedData.offerAffUrl ||
+        currentProvider.offerAffParam !== normalizedData.offerAffParam ||
+        currentProvider.offerAffValue !== normalizedData.offerAffValue ||
+        currentProvider.offerAffiliateMode !==
+          normalizedData.offerAffiliateMode ||
+        currentProvider.offerAffiliateProductParam !==
+          normalizedData.offerAffiliateProductParam;
 
       const [result] = await tx
         .update(affServiceProviders)
-        .set({ ...normalizedData, updatedAt: monitorsInvalidatedAt })
+        .set({ ...normalizedData, updatedAt })
         .where(eq(affServiceProviders.id, providerId))
         .returning();
       if (!result) {
-        return { existingProvider: null, result: null, monitors: [] };
+        return {
+          existingProvider: null,
+          result: null,
+          monitors: [],
+          offerAffiliateChanged,
+        };
       }
 
-      const monitors = await tx
-        .update(providerMonitors)
-        .set({
-          runGeneration: sql`${providerMonitors.runGeneration} + 1`,
-          nextRunAt: monitorsInvalidatedAt,
-          updatedAt: monitorsInvalidatedAt,
-        })
-        .where(
-          and(
-            eq(providerMonitors.providerId, providerId),
-            eq(providerMonitors.enabled, true),
-          ),
-        )
-        .returning({ id: providerMonitors.id });
+      const monitors = offerAffiliateChanged
+        ? await tx
+            .update(providerMonitors)
+            .set({
+              runGeneration: sql`${providerMonitors.runGeneration} + 1`,
+              nextRunAt: updatedAt,
+              updatedAt,
+            })
+            .where(
+              and(
+                eq(providerMonitors.providerId, providerId),
+                eq(providerMonitors.enabled, true),
+              ),
+            )
+            .returning({ id: providerMonitors.id })
+        : [];
 
-      return { existingProvider: null, result, monitors };
+      return {
+        existingProvider: null,
+        result,
+        monitors,
+        offerAffiliateChanged,
+      };
     });
 
     if (mutation.existingProvider) {
@@ -513,11 +621,13 @@ export async function updateAffProvider(
     }
 
     for (const monitor of mutation.monitors) {
-      await enqueueProviderMonitorTask(monitor.id, monitorsInvalidatedAt);
+      await enqueueProviderMonitorTask(monitor.id, updatedAt);
     }
     clearOutboundAffiliateProviderCache();
     revalidatePath("/collect/aff-man");
-    revalidatePath("/servers/monitor");
+    if (mutation.offerAffiliateChanged) {
+      revalidatePath("/servers/monitor");
+    }
     return { data: mutation.result };
   } catch (error) {
     console.error("更新返利商家失败:", error);

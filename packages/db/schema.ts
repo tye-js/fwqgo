@@ -297,10 +297,17 @@ export const affServiceProviders = pgTable(
     affUrl: text("affUrl").notNull(),
     affParam: text("affParam").notNull(),
     affValue: text("affValue").notNull(),
-    affiliateMode: varchar("affiliateMode", { length: 24 })
+    legacyAffiliateMode: varchar("affiliateMode", { length: 24 })
       .default("query_param")
       .notNull(),
-    affiliateProductParam: text("affiliateProductParam"),
+    legacyAffiliateProductParam: text("affiliateProductParam"),
+    offerAffUrl: text("offerAffUrl").default("").notNull(),
+    offerAffParam: text("offerAffParam").default("").notNull(),
+    offerAffValue: text("offerAffValue").default("").notNull(),
+    offerAffiliateMode: varchar("offerAffiliateMode", { length: 24 })
+      .default("query_param")
+      .notNull(),
+    offerAffiliateProductParam: text("offerAffiliateProductParam"),
     officialUrl: text("officialUrl").notNull(),
     summary: text("summary"),
     summarySourceUrl: text("summarySourceUrl"),
@@ -317,9 +324,13 @@ export const affServiceProviders = pgTable(
     officialUrlIdx: index("aff_service_providers_officialUrl_idx").on(
       table.officialUrl,
     ),
-    affiliateModeCheck: check(
+    legacyAffiliateModeCheck: check(
       "aff_service_providers_affiliateMode_check",
-      sql`${table.affiliateMode} in ('query_param', 'full_replace', 'product_param')`,
+      sql`${table.legacyAffiliateMode} in ('query_param', 'full_replace', 'product_param')`,
+    ),
+    offerAffiliateModeCheck: check(
+      "aff_service_providers_offerAffiliateMode_check",
+      sql`${table.offerAffiliateMode} in ('query_param', 'full_replace', 'product_param')`,
     ),
   }),
 );

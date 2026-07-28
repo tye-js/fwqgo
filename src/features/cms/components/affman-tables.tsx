@@ -55,11 +55,12 @@ import { type AffManData, type AffProviderTableData } from "@/types";
 import { useUrlQueryUpdater } from "@/features/cms/hooks/use-url-query-updater";
 import { ProviderProfileSheet } from "@/features/cms/components/provider-profile-sheet";
 import {
-  getAffiliateMode,
-  getAffiliateConfigState,
+  getArticleAffiliateConfigState,
+  getProviderOfferAffiliateConfigState,
+  getProviderOfferAffiliateMode,
   isAffiliateParameterName,
   normalizeAffiliateProviderDomain,
-  type AffiliateMode,
+  type ProviderOfferAffiliateMode,
 } from "@fwqgo/core/affiliate-provider";
 
 type ActionErrorResult = {
@@ -68,6 +69,7 @@ type ActionErrorResult = {
 };
 
 const ACTION_TIMEOUT_MS = 15_000;
+type ArticleAffiliateMode = "query_param" | "full_replace";
 
 function isActionError(result: unknown): result is ActionErrorResult {
   return (
@@ -124,23 +126,36 @@ function getCollectionStatusVariant(provider: AffProviderTableData) {
 }
 
 function validateAffProviderForm(input: Omit<AffManData, "id">) {
-  const affiliateMode = getAffiliateMode(input);
+  const articleAffiliateMode: ArticleAffiliateMode =
+    normalizeText(input.affParam) === "href" ? "full_replace" : "query_param";
+  const offerAffiliateMode = getProviderOfferAffiliateMode(input);
   const normalizedInput = {
     name: normalizeText(input.name),
     affUrl: normalizeText(input.affUrl),
     affParam:
-      affiliateMode === "query_param"
+      articleAffiliateMode === "query_param"
         ? normalizeText(input.affParam)
-        : affiliateMode === "full_replace"
+        : "href",
+    affValue:
+      articleAffiliateMode === "query_param"
+        ? normalizeText(input.affValue)
+        : "",
+    offerAffUrl: normalizeText(input.offerAffUrl),
+    offerAffParam:
+      offerAffiliateMode === "query_param"
+        ? normalizeText(input.offerAffParam)
+        : offerAffiliateMode === "full_replace"
           ? "href"
           : "",
-    affValue:
-      affiliateMode === "query_param" ? normalizeText(input.affValue) : "",
-    affiliateMode,
-    affiliateProductParam:
-      affiliateMode === "product_param"
-        ? normalizeText(input.affiliateProductParam ?? "")
+    offerAffValue:
+      offerAffiliateMode === "query_param"
+        ? normalizeText(input.offerAffValue)
         : "",
+    offerAffiliateMode,
+    offerAffiliateProductParam:
+      offerAffiliateMode === "product_param"
+        ? normalizeText(input.offerAffiliateProductParam ?? "")
+        : null,
     officialUrl: normalizeAffiliateProviderDomain(input.officialUrl) ?? "",
   };
 
@@ -148,53 +163,82 @@ function validateAffProviderForm(input: Omit<AffManData, "id">) {
     return { error: "请填写商家名和官网域名", data: normalizedInput };
   }
 
-  const affiliateConfigState = getAffiliateConfigState(normalizedInput);
-  if (affiliateConfigState === "partial") {
+  const articleConfigState = getArticleAffiliateConfigState(normalizedInput);
+  if (articleConfigState === "partial") {
     return {
       error:
-        normalizedInput.affiliateMode === "product_param"
-          ? "请同时填写返利链接和产品 ID 参数，或全部留空"
-          : normalizedInput.affiliateMode === "full_replace"
-            ? "请填写需要整条替换的返利链接，或留空"
-            : "返利链接、返利参数和返利值需全部填写，或全部留空",
+        normalizedInput.affParam === "href"
+          ? "AI 改写整条替换需要填写返利链接，或清空该组配置"
+          : "AI 改写返利链接、返利参数和返利值需全部填写，或全部留空",
       data: normalizedInput,
     };
   }
 
-  if (affiliateConfigState === "complete") {
+  const offerConfigState =
+    getProviderOfferAffiliateConfigState(normalizedInput);
+  if (offerConfigState === "partial") {
+    return {
+      error:
+        normalizedInput.offerAffiliateMode === "product_param"
+          ? "套餐采集按产品 ID 模式需要填写返利链接和产品 ID 参数，或全部留空"
+          : "套餐采集返利链接、返利参数和返利值需全部填写，或全部留空",
+      data: normalizedInput,
+    };
+  }
+
+  for (const [configState, affUrl, label] of [
+    [articleConfigState, normalizedInput.affUrl, "AI 改写返利链接"],
+    [offerConfigState, normalizedInput.offerAffUrl, "套餐采集返利链接"],
+  ] as const) {
+    if (configState !== "complete") continue;
     try {
-      const parsedUrl = new URL(normalizedInput.affUrl);
+      const parsedUrl = new URL(affUrl);
 
       if (!["http:", "https:"].includes(parsedUrl.protocol)) {
         return {
-          error: "返利链接只支持 http 或 https",
+          error: `${label}只支持 http 或 https`,
           data: normalizedInput,
         };
       }
       if (parsedUrl.username || parsedUrl.password) {
         return {
-          error: "返利链接不能包含用户名或密码",
+          error: `${label}不能包含用户名或密码`,
           data: normalizedInput,
         };
       }
     } catch {
       return {
-        error: "返利链接格式不正确，请填写完整 URL",
+        error: `${label}格式不正确，请填写完整 URL`,
         data: normalizedInput,
       };
     }
+  }
 
+  if (articleConfigState === "complete") {
     if (
-      normalizedInput.affiliateMode === "query_param" &&
+      normalizedInput.affParam !== "href" &&
       !isAffiliateParameterName(normalizedInput.affParam)
     ) {
-      return { error: "返利参数格式不正确", data: normalizedInput };
+      return { error: "AI 改写返利参数格式不正确", data: normalizedInput };
+    }
+  }
+  if (offerConfigState === "complete") {
+    if (
+      normalizedInput.offerAffiliateMode === "query_param" &&
+      !isAffiliateParameterName(normalizedInput.offerAffParam)
+    ) {
+      return { error: "套餐采集返利参数格式不正确", data: normalizedInput };
     }
     if (
-      normalizedInput.affiliateMode === "product_param" &&
-      !isAffiliateParameterName(normalizedInput.affiliateProductParam)
+      normalizedInput.offerAffiliateMode === "product_param" &&
+      !isAffiliateParameterName(
+        normalizedInput.offerAffiliateProductParam ?? "",
+      )
     ) {
-      return { error: "产品 ID 参数格式不正确", data: normalizedInput };
+      return {
+        error: "套餐采集产品 ID 参数格式不正确",
+        data: normalizedInput,
+      };
     }
   }
 
@@ -211,21 +255,235 @@ function validateAffProviderForm(input: Omit<AffManData, "id">) {
   return { data: normalizedInput };
 }
 
-function getAffiliateConfigSummary(input: Omit<AffManData, "id">) {
-  if (getAffiliateConfigState(input) !== "complete") return "未配置返利";
-  const mode = getAffiliateMode(input);
-  if (mode === "full_replace") return "整条替换";
-  if (mode === "product_param") {
-    return `按产品 ID：${input.affiliateProductParam}`;
+function getArticleAffiliateConfigSummary(input: Omit<AffManData, "id">) {
+  if (getArticleAffiliateConfigState(input) !== "complete") {
+    return "AI 改写未配置";
   }
+  if (input.affParam.trim() === "href") return "AI 改写：整条替换";
   return `${input.affParam}=${input.affValue}`;
 }
 
-function getAffiliateModeLabel(input: AffManData) {
-  const mode = getAffiliateMode(input);
+function getProviderOfferAffiliateConfigSummary(input: Omit<AffManData, "id">) {
+  if (getProviderOfferAffiliateConfigState(input) !== "complete") {
+    return "套餐采集未配置";
+  }
+  const mode = getProviderOfferAffiliateMode(input);
+  if (mode === "full_replace") return "整条替换";
+  if (mode === "product_param") {
+    return `按产品 ID：${input.offerAffiliateProductParam}`;
+  }
+  return `${input.offerAffParam}=${input.offerAffValue}`;
+}
+
+function getProviderOfferAffiliateModeLabel(input: AffManData) {
+  const mode = getProviderOfferAffiliateMode(input);
   if (mode === "full_replace") return "整条替换";
   if (mode === "product_param") return "产品 ID 参数";
   return "追加参数";
+}
+
+function AffiliateConfigurationFields({
+  idPrefix,
+  articleAffiliateMode,
+  setArticleAffiliateMode,
+  affUrl,
+  setAffUrl,
+  affParam,
+  setAffParam,
+  affValue,
+  setAffValue,
+  offerAffiliateMode,
+  setOfferAffiliateMode,
+  offerAffUrl,
+  setOfferAffUrl,
+  offerAffParam,
+  setOfferAffParam,
+  offerAffValue,
+  setOfferAffValue,
+  offerAffiliateProductParam,
+  setOfferAffiliateProductParam,
+}: {
+  idPrefix: string;
+  articleAffiliateMode: ArticleAffiliateMode;
+  setArticleAffiliateMode: (value: ArticleAffiliateMode) => void;
+  affUrl: string;
+  setAffUrl: (value: string) => void;
+  affParam: string;
+  setAffParam: (value: string) => void;
+  affValue: string;
+  setAffValue: (value: string) => void;
+  offerAffiliateMode: ProviderOfferAffiliateMode;
+  setOfferAffiliateMode: (value: ProviderOfferAffiliateMode) => void;
+  offerAffUrl: string;
+  setOfferAffUrl: (value: string) => void;
+  offerAffParam: string;
+  setOfferAffParam: (value: string) => void;
+  offerAffValue: string;
+  setOfferAffValue: (value: string) => void;
+  offerAffiliateProductParam: string;
+  setOfferAffiliateProductParam: (value: string) => void;
+}) {
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <fieldset className="min-w-0 rounded-md border border-border/70 bg-background p-4">
+        <legend className="px-1 text-sm font-semibold text-foreground">
+          AI 改写返利配置
+        </legend>
+        <p className="mb-4 text-sm leading-6 text-muted-foreground">
+          仅用于 AI 改写、正文链接替换和文章短链，不影响套餐采集。
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor={`${idPrefix}-article-mode`}>替换方式</Label>
+            <Select
+              value={articleAffiliateMode}
+              onValueChange={(value) =>
+                setArticleAffiliateMode(value as ArticleAffiliateMode)
+              }
+            >
+              <SelectTrigger
+                id={`${idPrefix}-article-mode`}
+                className="min-h-11"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="query_param">原链接设置返利参数</SelectItem>
+                <SelectItem value="full_replace">整条替换为固定链接</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor={`${idPrefix}-article-url`}>返利链接（可选）</Label>
+            <Input
+              id={`${idPrefix}-article-url`}
+              className="min-h-11"
+              value={affUrl}
+              onChange={(event) => setAffUrl(event.target.value)}
+              placeholder="https://..."
+            />
+          </div>
+          {articleAffiliateMode === "query_param" ? (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor={`${idPrefix}-article-param`}>
+                  返利参数（可选）
+                </Label>
+                <Input
+                  id={`${idPrefix}-article-param`}
+                  className="min-h-11"
+                  value={affParam}
+                  onChange={(event) => setAffParam(event.target.value)}
+                  placeholder="affid"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor={`${idPrefix}-article-value`}>
+                  返利值（可选）
+                </Label>
+                <Input
+                  id={`${idPrefix}-article-value`}
+                  className="min-h-11"
+                  value={affValue}
+                  onChange={(event) => setAffValue(event.target.value)}
+                  placeholder="123"
+                />
+              </div>
+            </>
+          ) : null}
+        </div>
+      </fieldset>
+
+      <fieldset className="min-w-0 rounded-md border border-border/70 bg-background p-4">
+        <legend className="px-1 text-sm font-semibold text-foreground">
+          套餐采集返利配置
+        </legend>
+        <p className="mb-4 text-sm leading-6 text-muted-foreground">
+          仅用于采集生成套餐购买链接；修改本组配置才会重新排队相关采集源。
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor={`${idPrefix}-offer-mode`}>返利模式</Label>
+            <Select
+              value={offerAffiliateMode}
+              onValueChange={(value) =>
+                setOfferAffiliateMode(value as ProviderOfferAffiliateMode)
+              }
+            >
+              <SelectTrigger id={`${idPrefix}-offer-mode`} className="min-h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="query_param">原链接追加参数</SelectItem>
+                <SelectItem value="full_replace">整条链接替换</SelectItem>
+                <SelectItem value="product_param">
+                  返利链接追加产品 ID
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor={`${idPrefix}-offer-url`}>
+              {offerAffiliateMode === "product_param"
+                ? "返利基础链接（可选）"
+                : "返利链接（可选）"}
+            </Label>
+            <Input
+              id={`${idPrefix}-offer-url`}
+              className="min-h-11"
+              value={offerAffUrl}
+              onChange={(event) => setOfferAffUrl(event.target.value)}
+              placeholder="https://..."
+            />
+          </div>
+          {offerAffiliateMode === "query_param" ? (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor={`${idPrefix}-offer-param`}>
+                  返利参数（可选）
+                </Label>
+                <Input
+                  id={`${idPrefix}-offer-param`}
+                  className="min-h-11"
+                  value={offerAffParam}
+                  onChange={(event) => setOfferAffParam(event.target.value)}
+                  placeholder="affid"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor={`${idPrefix}-offer-value`}>
+                  返利值（可选）
+                </Label>
+                <Input
+                  id={`${idPrefix}-offer-value`}
+                  className="min-h-11"
+                  value={offerAffValue}
+                  onChange={(event) => setOfferAffValue(event.target.value)}
+                  placeholder="123"
+                />
+              </div>
+            </>
+          ) : null}
+          {offerAffiliateMode === "product_param" ? (
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor={`${idPrefix}-offer-product-param`}>
+                产品 ID 参数
+              </Label>
+              <Input
+                id={`${idPrefix}-offer-product-param`}
+                className="min-h-11"
+                value={offerAffiliateProductParam}
+                onChange={(event) =>
+                  setOfferAffiliateProductParam(event.target.value)
+                }
+                placeholder="pid"
+              />
+            </div>
+          ) : null}
+        </div>
+      </fieldset>
+    </div>
+  );
 }
 
 function withTimeout<T>(promise: Promise<T>, message: string) {
@@ -265,9 +523,15 @@ export default function AffManTable({
   const [affUrl, setAffUrl] = useState("");
   const [affParam, setAffParam] = useState("");
   const [affValue, setAffValue] = useState("");
-  const [affiliateMode, setAffiliateMode] =
-    useState<AffiliateMode>("query_param");
-  const [affiliateProductParam, setAffiliateProductParam] = useState("");
+  const [articleAffiliateMode, setArticleAffiliateMode] =
+    useState<ArticleAffiliateMode>("query_param");
+  const [offerAffUrl, setOfferAffUrl] = useState("");
+  const [offerAffParam, setOfferAffParam] = useState("");
+  const [offerAffValue, setOfferAffValue] = useState("");
+  const [offerAffiliateMode, setOfferAffiliateMode] =
+    useState<ProviderOfferAffiliateMode>("query_param");
+  const [offerAffiliateProductParam, setOfferAffiliateProductParam] =
+    useState("");
   const [officialUrl, setOfficialUrl] = useState("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [isSave, setIsSave] = useState(false);
@@ -281,8 +545,12 @@ export default function AffManTable({
     setAffUrl("");
     setAffParam("");
     setAffValue("");
-    setAffiliateMode("query_param");
-    setAffiliateProductParam("");
+    setArticleAffiliateMode("query_param");
+    setOfferAffUrl("");
+    setOfferAffParam("");
+    setOfferAffValue("");
+    setOfferAffiliateMode("query_param");
+    setOfferAffiliateProductParam("");
     setOfficialUrl("");
   }
 
@@ -304,8 +572,14 @@ export default function AffManTable({
     setAffUrl(provider.affUrl);
     setAffParam(provider.affParam);
     setAffValue(provider.affValue);
-    setAffiliateMode(getAffiliateMode(provider));
-    setAffiliateProductParam(provider.affiliateProductParam ?? "");
+    setArticleAffiliateMode(
+      provider.affParam.trim() === "href" ? "full_replace" : "query_param",
+    );
+    setOfferAffUrl(provider.offerAffUrl);
+    setOfferAffParam(provider.offerAffParam);
+    setOfferAffValue(provider.offerAffValue);
+    setOfferAffiliateMode(getProviderOfferAffiliateMode(provider));
+    setOfferAffiliateProductParam(provider.offerAffiliateProductParam ?? "");
     setOfficialUrl(provider.officialUrl);
   }
 
@@ -349,10 +623,18 @@ export default function AffManTable({
     const validation = validateAffProviderForm({
       name,
       affUrl,
-      affParam,
-      affValue,
-      affiliateMode,
-      affiliateProductParam,
+      affParam:
+        articleAffiliateMode === "full_replace"
+          ? affUrl.trim()
+            ? "href"
+            : ""
+          : affParam,
+      affValue: articleAffiliateMode === "full_replace" ? "" : affValue,
+      offerAffUrl,
+      offerAffParam,
+      offerAffValue,
+      offerAffiliateMode,
+      offerAffiliateProductParam,
       officialUrl,
     });
 
@@ -395,7 +677,8 @@ export default function AffManTable({
         description: describeAdminResult([
           validation.data.name,
           validation.data.officialUrl,
-          getAffiliateConfigSummary(validation.data),
+          getArticleAffiliateConfigSummary(validation.data),
+          getProviderOfferAffiliateConfigSummary(validation.data),
         ]),
       });
       router.refresh();
@@ -505,10 +788,18 @@ export default function AffManTable({
     const validation = validateAffProviderForm({
       name,
       affUrl,
-      affParam,
-      affValue,
-      affiliateMode,
-      affiliateProductParam,
+      affParam:
+        articleAffiliateMode === "full_replace"
+          ? affUrl.trim()
+            ? "href"
+            : ""
+          : affParam,
+      affValue: articleAffiliateMode === "full_replace" ? "" : affValue,
+      offerAffUrl,
+      offerAffParam,
+      offerAffValue,
+      offerAffiliateMode,
+      offerAffiliateProductParam,
       officialUrl,
     });
 
@@ -577,10 +868,8 @@ export default function AffManTable({
         description: describeAdminResult([
           validation.data.name,
           validation.data.officialUrl,
-          getAffiliateConfigSummary(validation.data),
-          validation.data.affUrl
-            ? "采集和草稿编辑时可命中替换"
-            : "已创建供应商档案",
+          getArticleAffiliateConfigSummary(validation.data),
+          getProviderOfferAffiliateConfigSummary(validation.data),
         ]),
       });
       router.refresh();
@@ -677,99 +966,54 @@ export default function AffManTable({
       <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
         <p className="text-sm font-medium text-foreground">添加商家</p>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          返利配置为可选；参数模式按当前字段组合生成最终链接。
+          两套返利配置均为可选，分别保存和生效，不会互相读取或覆盖。
         </p>
         {isAdd ? (
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="new-aff-provider-name">商家名</Label>
-              <Input
-                id="new-aff-provider-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="例如 RackNerd"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="new-aff-provider-mode">返利模式</Label>
-              <Select
-                value={affiliateMode}
-                onValueChange={(value) =>
-                  setAffiliateMode(value as AffiliateMode)
-                }
-              >
-                <SelectTrigger id="new-aff-provider-mode" className="min-h-11">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="query_param">原链接追加参数</SelectItem>
-                  <SelectItem value="full_replace">整条链接替换</SelectItem>
-                  <SelectItem value="product_param">
-                    返利链接追加产品 ID
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="new-aff-provider-url">
-                {affiliateMode === "product_param"
-                  ? "返利基础链接（可选）"
-                  : "返利链接（可选）"}
-              </Label>
-              <Input
-                id="new-aff-provider-url"
-                value={affUrl}
-                onChange={(e) => setAffUrl(e.target.value)}
-                placeholder="https://..."
-              />
-            </div>
-            {affiliateMode === "query_param" ? (
-              <>
-                <div className="space-y-1.5">
-                  <Label htmlFor="new-aff-provider-param">
-                    返利参数（可选）
-                  </Label>
-                  <Input
-                    id="new-aff-provider-param"
-                    value={affParam}
-                    onChange={(e) => setAffParam(e.target.value)}
-                    placeholder="affid"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="new-aff-provider-value">返利值（可选）</Label>
-                  <Input
-                    id="new-aff-provider-value"
-                    value={affValue}
-                    onChange={(e) => setAffValue(e.target.value)}
-                    placeholder="123"
-                  />
-                </div>
-              </>
-            ) : null}
-            {affiliateMode === "product_param" ? (
+          <div className="mt-4 space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="new-aff-provider-product-param">
-                  产品 ID 参数
-                </Label>
+                <Label htmlFor="new-aff-provider-name">商家名</Label>
                 <Input
-                  id="new-aff-provider-product-param"
-                  value={affiliateProductParam}
-                  onChange={(e) => setAffiliateProductParam(e.target.value)}
-                  placeholder="pid"
+                  id="new-aff-provider-name"
+                  className="min-h-11"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="例如 RackNerd"
                 />
               </div>
-            ) : null}
-            <div className="space-y-1.5">
-              <Label htmlFor="new-aff-provider-domain">官网域名</Label>
-              <Input
-                id="new-aff-provider-domain"
-                value={officialUrl}
-                onChange={(e) => setOfficialUrl(e.target.value)}
-                placeholder="example.com"
-              />
+              <div className="space-y-1.5">
+                <Label htmlFor="new-aff-provider-domain">官网域名</Label>
+                <Input
+                  id="new-aff-provider-domain"
+                  className="min-h-11"
+                  value={officialUrl}
+                  onChange={(event) => setOfficialUrl(event.target.value)}
+                  placeholder="example.com"
+                />
+              </div>
             </div>
-            <div className="flex flex-col gap-2 self-end sm:flex-row xl:justify-end">
+            <AffiliateConfigurationFields
+              idPrefix="new-aff-provider"
+              articleAffiliateMode={articleAffiliateMode}
+              setArticleAffiliateMode={setArticleAffiliateMode}
+              affUrl={affUrl}
+              setAffUrl={setAffUrl}
+              affParam={affParam}
+              setAffParam={setAffParam}
+              affValue={affValue}
+              setAffValue={setAffValue}
+              offerAffiliateMode={offerAffiliateMode}
+              setOfferAffiliateMode={setOfferAffiliateMode}
+              offerAffUrl={offerAffUrl}
+              setOfferAffUrl={setOfferAffUrl}
+              offerAffParam={offerAffParam}
+              setOfferAffParam={setOfferAffParam}
+              offerAffValue={offerAffValue}
+              setOfferAffValue={setOfferAffValue}
+              offerAffiliateProductParam={offerAffiliateProductParam}
+              setOfferAffiliateProductParam={setOfferAffiliateProductParam}
+            />
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <Button
                 variant="secondary"
                 onClick={closeAddForm}
@@ -788,7 +1032,11 @@ export default function AffManTable({
           </div>
         ) : (
           <div className="mt-4">
-            <Button variant="outline" onClick={openAddForm}>
+            <Button
+              variant="outline"
+              className="min-h-11"
+              onClick={openAddForm}
+            >
               添加新商家
             </Button>
           </div>
@@ -802,7 +1050,7 @@ export default function AffManTable({
         />
       ) : (
         <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-          <Table className="min-w-[1520px]">
+          <Table className="min-w-[1420px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[44px]">
@@ -820,11 +1068,8 @@ export default function AffManTable({
                 </TableHead>
                 <TableHead>ID</TableHead>
                 <TableHead className="text-nowrap">商家名</TableHead>
-                <TableHead className="text-nowrap">返利模式</TableHead>
-                <TableHead className="text-nowrap">返利链接</TableHead>
-                <TableHead className="text-nowrap">返利参数</TableHead>
-                <TableHead className="text-nowrap">返利值</TableHead>
-                <TableHead className="text-nowrap">产品 ID 参数</TableHead>
+                <TableHead className="text-nowrap">AI 改写返利</TableHead>
+                <TableHead className="text-nowrap">套餐采集返利</TableHead>
                 <TableHead>商家官网</TableHead>
                 <TableHead className="text-nowrap">档案</TableHead>
                 <TableHead className="text-nowrap">优惠码</TableHead>
@@ -856,62 +1101,34 @@ export default function AffManTable({
                           className="min-h-11 min-w-[140px]"
                           value={name}
                           onChange={(e) => setName(e.target.value)}
+                          aria-label="商家名"
                         />
                       </TableCell>
-                      <TableCell>
-                        <Select
-                          value={affiliateMode}
-                          onValueChange={(value) =>
-                            setAffiliateMode(value as AffiliateMode)
+                      <TableCell colSpan={2} className="min-w-[720px] py-4">
+                        <AffiliateConfigurationFields
+                          idPrefix={`edit-aff-provider-${item.id}`}
+                          articleAffiliateMode={articleAffiliateMode}
+                          setArticleAffiliateMode={setArticleAffiliateMode}
+                          affUrl={affUrl}
+                          setAffUrl={setAffUrl}
+                          affParam={affParam}
+                          setAffParam={setAffParam}
+                          affValue={affValue}
+                          setAffValue={setAffValue}
+                          offerAffiliateMode={offerAffiliateMode}
+                          setOfferAffiliateMode={setOfferAffiliateMode}
+                          offerAffUrl={offerAffUrl}
+                          setOfferAffUrl={setOfferAffUrl}
+                          offerAffParam={offerAffParam}
+                          setOfferAffParam={setOfferAffParam}
+                          offerAffValue={offerAffValue}
+                          setOfferAffValue={setOfferAffValue}
+                          offerAffiliateProductParam={
+                            offerAffiliateProductParam
                           }
-                        >
-                          <SelectTrigger className="min-h-11 min-w-[150px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="query_param">
-                              追加参数
-                            </SelectItem>
-                            <SelectItem value="full_replace">
-                              整条替换
-                            </SelectItem>
-                            <SelectItem value="product_param">
-                              产品 ID 参数
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          className="min-h-11 min-w-[240px]"
-                          value={affUrl}
-                          onChange={(e) => setAffUrl(e.target.value)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          className="min-h-11 min-w-[120px]"
-                          value={affParam}
-                          onChange={(e) => setAffParam(e.target.value)}
-                          disabled={affiliateMode !== "query_param"}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          className="min-h-11 min-w-[120px]"
-                          value={affValue}
-                          onChange={(e) => setAffValue(e.target.value)}
-                          disabled={affiliateMode !== "query_param"}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          className="min-h-11 min-w-[120px]"
-                          value={affiliateProductParam}
-                          onChange={(e) =>
-                            setAffiliateProductParam(e.target.value)
+                          setOfferAffiliateProductParam={
+                            setOfferAffiliateProductParam
                           }
-                          disabled={affiliateMode !== "product_param"}
                         />
                       </TableCell>
                       <TableCell>
@@ -919,6 +1136,7 @@ export default function AffManTable({
                           className="min-h-11 min-w-[200px]"
                           value={officialUrl}
                           onChange={(e) => setOfficialUrl(e.target.value)}
+                          aria-label="商家官网域名"
                         />
                       </TableCell>
                       <TableCell>
@@ -942,14 +1160,14 @@ export default function AffManTable({
                         <div className="flex justify-center gap-2">
                           <Button
                             variant="secondary"
-                            size="sm"
+                            className="min-h-11"
                             onClick={closeEditForm}
                           >
                             取消
                           </Button>
                           <Button
                             disabled={isSave}
-                            size="sm"
+                            className="min-h-11"
                             onClick={handleSave}
                           >
                             {isSave ? "保存中..." : "保存"}
@@ -961,21 +1179,40 @@ export default function AffManTable({
                     <>
                       <TableCell>{item.id}</TableCell>
                       <TableCell>{item.name}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">
-                          {getAffiliateModeLabel(item)}
-                        </Badge>
+                      <TableCell className="max-w-[300px] align-top">
+                        <div className="space-y-1.5">
+                          <Badge variant="outline">
+                            {item.affParam.trim() === "href"
+                              ? "整条替换"
+                              : "设置参数"}
+                          </Badge>
+                          <p className="text-sm text-foreground">
+                            {getArticleAffiliateConfigSummary(item)}
+                          </p>
+                          <p
+                            className="truncate text-xs text-muted-foreground"
+                            title={item.affUrl || undefined}
+                          >
+                            {item.affUrl || "未配置链接"}
+                          </p>
+                        </div>
                       </TableCell>
-                      <TableCell className="max-w-[220px]">
-                        <span
-                          className={`block truncate ${item.affUrl ? "" : "text-muted-foreground"}`}
-                        >
-                          {item.affUrl || "未配置"}
-                        </span>
+                      <TableCell className="max-w-[300px] align-top">
+                        <div className="space-y-1.5">
+                          <Badge variant="outline">
+                            {getProviderOfferAffiliateModeLabel(item)}
+                          </Badge>
+                          <p className="text-sm text-foreground">
+                            {getProviderOfferAffiliateConfigSummary(item)}
+                          </p>
+                          <p
+                            className="truncate text-xs text-muted-foreground"
+                            title={item.offerAffUrl || undefined}
+                          >
+                            {item.offerAffUrl || "未配置链接"}
+                          </p>
+                        </div>
                       </TableCell>
-                      <TableCell>{item.affParam || "-"}</TableCell>
-                      <TableCell>{item.affValue || "-"}</TableCell>
-                      <TableCell>{item.affiliateProductParam ?? "-"}</TableCell>
                       <TableCell className="max-w-[220px]">
                         <span className="block truncate text-muted-foreground">
                           {item.officialUrl}
@@ -1013,6 +1250,7 @@ export default function AffManTable({
                           <Button
                             variant="outline"
                             size="sm"
+                            className="min-h-11"
                             onClick={() => setActiveProviderId(item.id)}
                           >
                             <FileText className="size-4" />
@@ -1021,6 +1259,7 @@ export default function AffManTable({
                           <Button
                             variant="outline"
                             size="sm"
+                            className="min-h-11"
                             onClick={() => openEditForm(item)}
                           >
                             <Pencil className="size-4" />
@@ -1031,6 +1270,7 @@ export default function AffManTable({
                               <Button
                                 variant="destructive"
                                 size="sm"
+                                className="min-h-11"
                                 disabled={deletingId !== null}
                               >
                                 <Trash2 className="size-4" />

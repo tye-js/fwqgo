@@ -28,7 +28,7 @@
 
 继续使用：
 
-- `aff_service_providers`：供应商、官网和返利配置。
+- `aff_service_providers`：供应商、官网、AI 改写返利配置和独立的套餐采集返利配置。
 - `provider_monitors`：扩展为供应商采集源，保留现有定时调度能力。
 - `server_offers`：套餐主记录。
 - `server_offer_prices`：多周期价格。
@@ -117,9 +117,9 @@ WHMCS 是 HTML 适配器的预设，提供常见产品卡片、PID 和购物车�
 适用于官网分类页已经给出独立购买链接，但不值得为每个页面维护 CSS 字段映射的供应商。同一供应商可以维护共享主机、KVM VPS、Ryzen VPS、Windows VPS、独服等多个集合页。
 
 - 集合页显式绑定供应商，并校验 URL 与供应商官网属于同一主域或子域。
-- 系统只提取供应商返利配置指定的产品参数。例如商家配置 `affiliateProductParam=pid` 时，只接受购买链接里的 `pid`，不得把 `gid` 误拼成 `pid`。
+- 系统只提取套餐采集返利配置指定的产品参数。例如商家配置 `offerAffiliateProductParam=pid` 时，只接受购买链接里的 `pid`，不得把 `gid` 误拼成 `pid`。
 - 稳定键保存为 `pid:81` 一类参数和值；`providerId + externalProductId` 负责跨集合页幂等去重。
-- 系统以供应商 `affUrl` 为基础生成 `aff.php?aff=7577&pid=81` 一类产品返利详情链接，再从详情页补充标题、配置、地区和多周期价格。
+- 系统以供应商 `offerAffUrl` 为基础生成 `aff.php?aff=7577&pid=81` 一类产品返利详情链接，再从详情页补充标题、配置、地区和多周期价格。
 - 详情页临时失败时保留集合页和历史数据，本轮不因详情失败误判套餐停售。
 - 集合页不需要 AI 生成产品 ID，也不需要默认 CSS 字段映射；可用 `linkSelector` 限定购买链接范围。
 
@@ -234,10 +234,12 @@ pending -> superseded（同一产品更新候选版本）
 
 购买链接在标准化后、写入前处理：
 
-- 按当前采集源所属供应商直接使用返利配置，不再次跨供应商查询。
-- `query_param`：在原购买链接上只更新 `affParam=affValue`，保留路径和其他参数。
-- `full_replace`：整条替换为数据库 `affUrl`；旧数据的 `affParam === "href"` 会迁移到此模式，行为保持不变。
-- `product_param`：只提取与 `affiliateProductParam` 同名的稳定产品 ID，以数据库 `affUrl` 为基础追加该参数。例如 `pid:81` 生成 `aff.php?aff=7577&pid=81`；配置为 `pid` 时不会把 `gid:22` 转成 `pid=22`。
+- 按当前采集源所属供应商直接使用套餐采集返利配置，不再次跨供应商查询。
+- 套餐采集只读取 `offerAffUrl`、`offerAffParam`、`offerAffValue`、`offerAffiliateMode`、`offerAffiliateProductParam`；AI 改写使用的 `affUrl`、`affParam`、`affValue` 不参与采集。
+- `query_param`：在原购买链接上只更新 `offerAffParam=offerAffValue`，保留路径和其他参数。
+- `full_replace`：整条替换为数据库 `offerAffUrl`。
+- `product_param`：只提取与 `offerAffiliateProductParam` 同名的稳定产品 ID，以数据库 `offerAffUrl` 为基础追加该参数。例如 `pid:81` 生成 `aff.php?aff=7577&pid=81`；配置为 `pid` 时不会把 `gid:22` 转成 `pid=22`。
+- 从旧共享配置迁移时会复制现值到套餐采集专属字段；迁移完成后两套配置独立保存，修改 AI 配置不能触发采集，修改套餐采集配置也不能改变 AI 改写结果。
 - 产品链接发生跳转时必须先保留原链接中的 PID/GID；最终落地 URL 丢失参数时仍能区分套餐。无法取得产品 ID 时保留原购买链接，不猜测套餐。
 - 多周期价格各自的购买链接分别处理，不能统一成同一个普通参数链接。
 - 同时保留官网原始来源 URL 用于审计，不把返利链接当作来源 URL。
@@ -324,7 +326,7 @@ AI 任务中心：
 1. AI 改写和 CMS 均不能再创建文章套餐提取任务。
 2. 套餐集合页、JSON、HTML 和 WHMCS fixture 均可提取配置、价格和购买链接。
 3. 同一采集源连续执行两次，不产生重复套餐或重复候选。
-4. 不同购买链接保持独立；返利参数模式只改目标参数；`href` 模式整条替换。
+4. 不同购买链接保持独立；套餐采集返利参数模式只改目标参数，整条替换模式使用固定链接，产品参数模式只接受配置的产品 ID 参数。
 5. 新套餐默认待审核且不可见，审核通过后进入套餐库。
 6. 已有套餐价格和库存可以自动更新，锁定字段不被覆盖。
 7. 成功采集中连续缺失达到阈值后停售；失败采集不增加缺失次数。
@@ -336,3 +338,4 @@ AI 任务中心：
 13. 登录、403 和纯客户端动态页面进入人工处理，不尝试绕过访问限制。
 14. 一次性采集源终止后自动停用，新套餐只进入待审核候选，不自动发布。
 15. CMS 扫描列表不预载大段 Prompt；审计详情按需读取，并支持复制 Prompt 和 AI 原始输出。
+16. AI 改写与套餐采集使用独立字段和解析器；任一侧配置变化都不能改变另一侧结果，AI 配置变化不能重新排队采集源。

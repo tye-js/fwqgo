@@ -36,11 +36,11 @@ export type ProviderSyncContext = {
   purpose: string;
   autoPublish: boolean;
   missingThreshold: number;
-  affUrl: string;
-  affParam: string;
-  affValue: string;
-  affiliateMode: string | null;
-  affiliateProductParam: string | null;
+  offerAffUrl: string;
+  offerAffParam: string;
+  offerAffValue: string;
+  offerAffiliateMode: string | null;
+  offerAffiliateProductParam: string | null;
   defaultPromoCode: string | null;
 };
 
@@ -696,11 +696,12 @@ async function acceptProviderOfferCandidateInTransaction(
       missingThreshold: providerMonitors.missingThreshold,
       providerName: affServiceProviders.name,
       providerSlug: affServiceProviders.slug,
-      affUrl: affServiceProviders.affUrl,
-      affParam: affServiceProviders.affParam,
-      affValue: affServiceProviders.affValue,
-      affiliateMode: affServiceProviders.affiliateMode,
-      affiliateProductParam: affServiceProviders.affiliateProductParam,
+      offerAffUrl: affServiceProviders.offerAffUrl,
+      offerAffParam: affServiceProviders.offerAffParam,
+      offerAffValue: affServiceProviders.offerAffValue,
+      offerAffiliateMode: affServiceProviders.offerAffiliateMode,
+      offerAffiliateProductParam:
+        affServiceProviders.offerAffiliateProductParam,
       defaultPromoCode: affServiceProviders.defaultPromoCode,
     })
     .from(providerMonitors)

@@ -20,14 +20,7 @@ function shortHref(value: string) {
 function affiliateParamLabel(input: {
   affParam?: string | null;
   affValue?: string | null;
-  productParam?: string | null;
-  productId?: string | null;
-  mode?: AffiliateRewriteReport["matchedLinks"][number]["mode"];
 }) {
-  if (input.mode === "product-param") {
-    const name = input.productParam ?? "产品 ID";
-    return input.productId ? `${name}=${input.productId}` : name;
-  }
   if (!input.affParam) {
     return "-";
   }
@@ -45,14 +38,8 @@ export function AffiliateRewriteAudit({
   limit?: number;
 }) {
   const matchedLinks = report.matchedLinks.slice(0, limit);
-  const missingProductLinks = report.unmatchedLinks.filter(
-    (item) => item.reason === "missing-product-id",
-  );
-  const unmatchedProviderLinks = report.unmatchedLinks.filter(
-    (item) => item.reason !== "missing-product-id",
-  );
   const unmatchedHosts = [
-    ...new Set(unmatchedProviderLinks.map((item) => item.host).filter(Boolean)),
+    ...new Set(report.unmatchedLinks.map((item) => item.host).filter(Boolean)),
   ];
 
   return (
@@ -61,14 +48,9 @@ export function AffiliateRewriteAudit({
         <Badge variant="outline">总链接 {report.totalLinks}</Badge>
         <Badge variant="secondary">命中 {report.matchedLinks.length}</Badge>
         <Badge
-          variant={unmatchedProviderLinks.length > 0 ? "secondary" : "outline"}
+          variant={report.unmatchedLinks.length > 0 ? "secondary" : "outline"}
         >
-          无商家 {unmatchedProviderLinks.length}（保留原链）
-        </Badge>
-        <Badge
-          variant={missingProductLinks.length > 0 ? "secondary" : "outline"}
-        >
-          缺产品 ID {missingProductLinks.length}
+          无商家 {report.unmatchedLinks.length}（保留原链）
         </Badge>
         <Badge
           variant={report.invalidLinks.length > 0 ? "destructive" : "outline"}
@@ -111,9 +93,7 @@ export function AffiliateRewriteAudit({
                       <p className="text-xs text-muted-foreground">
                         {item.mode === "replace"
                           ? "href 整条替换"
-                          : item.mode === "product-param"
-                            ? "按产品 ID 生成"
-                            : "只替换返利参数"}
+                          : "只替换返利参数"}
                       </p>
                     </div>
                   </TableCell>
@@ -161,28 +141,6 @@ export function AffiliateRewriteAudit({
               <Badge key={host} variant="outline">
                 {host}
               </Badge>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {missingProductLinks.length > 0 ? (
-        <div className="space-y-2">
-          <div>
-            <p className="text-sm font-medium">缺少产品 ID</p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              已匹配供应商，但原链接和跳转目标都没有 PID/GID。系统保留原
-              URL，避免生成指向错误套餐的返利链接。
-            </p>
-          </div>
-          <div className="space-y-1">
-            {missingProductLinks.slice(0, limit).map((item, index) => (
-              <p
-                key={`${item.href}-${index}`}
-                className="break-all text-xs text-muted-foreground"
-              >
-                {shortHref(item.href)}
-              </p>
             ))}
           </div>
         </div>
