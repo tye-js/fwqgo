@@ -113,7 +113,7 @@ async function getOrCreateTagByName(
 
   const [insertedTag] = await tx
     .insert(tags)
-    .values({ name: input.name, slug: input.slug })
+    .values({ name: input.name, slug: input.slug, indexable: false })
     .onConflictDoNothing()
     .returning({ id: tags.id, name: tags.name });
 

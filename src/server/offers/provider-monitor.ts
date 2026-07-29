@@ -1669,6 +1669,7 @@ export async function getProviderOptionsForMonitoring() {
       slug: affServiceProviders.slug,
       aliases: affServiceProviders.aliases,
       officialUrl: affServiceProviders.officialUrl,
+      offerAffUrl: affServiceProviders.offerAffUrl,
     })
     .from(affServiceProviders)
     .orderBy(asc(affServiceProviders.name));

@@ -1,0 +1,1 @@
+ALTER TABLE "tags" ALTER COLUMN "indexable" SET DEFAULT false;

@@ -94,6 +94,25 @@ type CandidateRow = Awaited<
   ReturnType<typeof getProviderOfferCandidateList>
 >[number];
 type MonitorAdapter = "json" | "html" | "whmcs" | "affiliate_link";
+type MonitorPurpose = "catalog" | "promotion" | "stock";
+
+type NewMonitorDraft = {
+  providerId: number;
+  name: string;
+  adapter: MonitorAdapter;
+  purpose: MonitorPurpose;
+  endpointUrl: string;
+  externalProductId: string;
+  affiliateTargetUrl: string;
+  sourceUrl: string;
+  notes: string;
+  configText: string;
+  enabled: boolean;
+  autoPublish: boolean;
+  missingThreshold: number;
+  intervalMinutes: number;
+  timeoutSeconds: number;
+};
 
 function formatCheckPrice(check: CheckRow) {
   if (
@@ -197,6 +216,7 @@ const tableCheckboxClassName =
 
 const providerCandidateBatchMutationKey = "provider-candidates:batch-review";
 const providerMonitorBatchMutationKey = "provider-monitors:batch";
+const newMonitorDraftStorageKey = "fwqgo:provider-monitor:new-draft:v1";
 
 type OptimisticMonitorAction =
   | { type: "remove"; ids: number[] }
@@ -208,6 +228,59 @@ function getProviderMonitorMutationKey(monitorId: number) {
 
 function getProviderCandidateMutationKey(candidateId: number) {
   return `provider-candidate:${candidateId}`;
+}
+
+function isNewMonitorDraft(value: unknown): value is NewMonitorDraft {
+  if (!value || typeof value !== "object") return false;
+
+  const draft = value as Record<string, unknown>;
+  return (
+    typeof draft.providerId === "number" &&
+    Number.isInteger(draft.providerId) &&
+    draft.providerId > 0 &&
+    typeof draft.name === "string" &&
+    ["json", "html", "whmcs", "affiliate_link"].includes(
+      String(draft.adapter),
+    ) &&
+    ["catalog", "promotion", "stock"].includes(String(draft.purpose)) &&
+    typeof draft.endpointUrl === "string" &&
+    typeof draft.externalProductId === "string" &&
+    typeof draft.affiliateTargetUrl === "string" &&
+    typeof draft.sourceUrl === "string" &&
+    typeof draft.notes === "string" &&
+    typeof draft.configText === "string" &&
+    typeof draft.enabled === "boolean" &&
+    typeof draft.autoPublish === "boolean" &&
+    typeof draft.missingThreshold === "number" &&
+    Number.isFinite(draft.missingThreshold) &&
+    typeof draft.intervalMinutes === "number" &&
+    Number.isFinite(draft.intervalMinutes) &&
+    typeof draft.timeoutSeconds === "number" &&
+    Number.isFinite(draft.timeoutSeconds)
+  );
+}
+
+function readNewMonitorDraft() {
+  try {
+    const value = window.localStorage.getItem(newMonitorDraftStorageKey);
+    if (!value) return null;
+
+    const draft: unknown = JSON.parse(value);
+    return isNewMonitorDraft(draft) ? draft : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeNewMonitorDraft(draft: NewMonitorDraft) {
+  try {
+    window.localStorage.setItem(
+      newMonitorDraftStorageKey,
+      JSON.stringify(draft),
+    );
+  } catch {
+    // Browser storage is an optional convenience and must not block saving.
+  }
 }
 
 function formatDate(value: Date | null) {
@@ -267,14 +340,19 @@ function matchesProvider(provider: Provider, query: string) {
 function MonitorFormDialog({
   monitor,
   providers,
+  newMonitorDraft,
   open,
   onOpenChange,
+  onNewMonitorSaved,
 }: {
   monitor: Monitor | null;
   providers: Provider[];
+  newMonitorDraft: NewMonitorDraft | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onNewMonitorSaved: (draft: NewMonitorDraft) => void;
 }) {
+  const draft = monitor ? null : newMonitorDraft;
   const { mutate, isPending } = useAdminMutation();
   const formMutationLockRef = useRef(false);
   const mutationKeyPrefix = `provider-monitor-form:${monitor?.id ?? "new"}`;
@@ -283,28 +361,39 @@ function MonitorFormDialog({
   const savePending = isPending(saveMutationKey);
   const previewPending = isPending(previewMutationKey);
   const formPending = savePending || previewPending;
-  const [enabled, setEnabled] = useState(monitor?.enabled ?? false);
-  const [autoPublish, setAutoPublish] = useState(monitor?.autoPublish ?? false);
+  const [enabled, setEnabled] = useState(
+    monitor?.enabled ?? draft?.enabled ?? false,
+  );
+  const [autoPublish, setAutoPublish] = useState(
+    monitor?.autoPublish ?? draft?.autoPublish ?? false,
+  );
   const [adapter, setAdapter] = useState<MonitorAdapter>(
-    (monitor?.adapter as MonitorAdapter | undefined) ?? "affiliate_link",
+    (monitor?.adapter as MonitorAdapter | undefined) ??
+      draft?.adapter ??
+      "affiliate_link",
   );
   const [providerId, setProviderId] = useState(
-    String(monitor?.providerId ?? ""),
+    String(monitor?.providerId ?? draft?.providerId ?? ""),
   );
   const [providerQuery, setProviderQuery] = useState("");
   const [configText, setConfigText] = useState(
     monitor?.config
       ? JSON.stringify(monitor.config, null, 2)
-      : getDefaultConfigText("affiliate_link"),
+      : (draft?.configText ??
+          getDefaultConfigText(draft?.adapter ?? "affiliate_link")),
   );
   const [externalProductId, setExternalProductId] = useState(
-    monitor?.externalProductId ?? "",
+    monitor?.externalProductId ?? draft?.externalProductId ?? "",
   );
   const [affiliateTargetUrl, setAffiliateTargetUrl] = useState(
-    monitor?.affiliateTargetUrl ?? "",
+    monitor?.affiliateTargetUrl ?? draft?.affiliateTargetUrl ?? "",
   );
-  const [sourceUrl, setSourceUrl] = useState(monitor?.affiliateSourceUrl ?? "");
-  const [notes, setNotes] = useState(monitor?.affiliateNotes ?? "");
+  const [sourceUrl, setSourceUrl] = useState(
+    monitor?.affiliateSourceUrl ?? draft?.sourceUrl ?? "",
+  );
+  const [notes, setNotes] = useState(
+    monitor?.affiliateNotes ?? draft?.notes ?? "",
+  );
   const [configDrafts, setConfigDrafts] = useState<
     Partial<Record<MonitorAdapter, string>>
   >({});
@@ -335,8 +424,7 @@ function MonitorFormDialog({
       providerId: Number(formData.get("providerId")),
       name: getFormDataText(formData, "name"),
       adapter,
-      purpose: getFormDataText(formData, "purpose") as
-        "catalog" | "promotion" | "stock",
+      purpose: getFormDataText(formData, "purpose") as MonitorPurpose,
       endpointUrl: getFormDataText(formData, "endpointUrl"),
       externalProductId,
       affiliateTargetUrl,
@@ -354,9 +442,10 @@ function MonitorFormDialog({
   function submit(formData: FormData) {
     if (formMutationLockRef.current) return;
     formMutationLockRef.current = true;
+    const input = actionInput(formData);
     void mutate({
       key: saveMutationKey,
-      action: () => saveProviderMonitorAction(actionInput(formData)),
+      action: () => saveProviderMonitorAction(input),
       pendingMessage: "正在保存供应商采集源...",
       successMessage: (result) => ({
         title: result.message ?? "供应商采集源已保存",
@@ -366,7 +455,10 @@ function MonitorFormDialog({
       }),
       errorTitle: "保存供应商采集源失败",
       errorSuggestion: "请检查配置与网络状态后重试。",
-      onSuccess: () => onOpenChange(false),
+      onSuccess: () => {
+        if (!monitor) onNewMonitorSaved(input);
+        onOpenChange(false);
+      },
     }).finally(() => {
       formMutationLockRef.current = false;
     });
@@ -438,6 +530,11 @@ function MonitorFormDialog({
                 onValueChange={(value) => {
                   setProviderId(value);
                   setProviderQuery("");
+                  const provider = providers.find(
+                    (item) => String(item.id) === value,
+                  );
+                  setAffiliateTargetUrl(provider?.offerAffUrl ?? "");
+                  setPreview(null);
                 }}
               >
                 <SelectTrigger id="monitor-provider" className="min-h-11">
@@ -463,7 +560,9 @@ function MonitorFormDialog({
               <Input
                 id="monitor-name"
                 name="name"
-                defaultValue={monitor?.name ?? "完整返利链接采集"}
+                defaultValue={
+                  monitor?.name ?? draft?.name ?? "完整返利链接采集"
+                }
                 required
                 className="min-h-11"
               />
@@ -476,7 +575,9 @@ function MonitorFormDialog({
                 type="number"
                 min="1"
                 max="20"
-                defaultValue={monitor?.missingThreshold ?? 3}
+                defaultValue={
+                  monitor?.missingThreshold ?? draft?.missingThreshold ?? 3
+                }
                 required
                 className="min-h-11"
               />
@@ -516,7 +617,7 @@ function MonitorFormDialog({
               <Label htmlFor="monitor-purpose">采集目的</Label>
               <Select
                 name="purpose"
-                defaultValue={monitor?.purpose ?? "catalog"}
+                defaultValue={monitor?.purpose ?? draft?.purpose ?? "catalog"}
               >
                 <SelectTrigger id="monitor-purpose" className="min-h-11">
                   <SelectValue />
@@ -611,7 +712,7 @@ function MonitorFormDialog({
                 id="monitor-endpoint"
                 name="endpointUrl"
                 type="url"
-                defaultValue={monitor?.endpointUrl ?? ""}
+                defaultValue={monitor?.endpointUrl ?? draft?.endpointUrl ?? ""}
                 placeholder="https://provider.example/products"
                 required
                 className="min-h-11 font-mono text-sm"
@@ -627,7 +728,9 @@ function MonitorFormDialog({
                 type="number"
                 min="1"
                 max="10080"
-                defaultValue={monitor?.intervalMinutes ?? 30}
+                defaultValue={
+                  monitor?.intervalMinutes ?? draft?.intervalMinutes ?? 30
+                }
                 required
                 className="min-h-11"
               />
@@ -640,7 +743,9 @@ function MonitorFormDialog({
                 type="number"
                 min="1"
                 max="300"
-                defaultValue={monitor?.timeoutSeconds ?? 30}
+                defaultValue={
+                  monitor?.timeoutSeconds ?? draft?.timeoutSeconds ?? 30
+                }
                 required
                 className="min-h-11"
               />
@@ -805,6 +910,8 @@ export function ProviderMonitorManager({
 }) {
   const [editing, setEditing] = useState<Monitor | null>(null);
   const [editorVersion, setEditorVersion] = useState(0);
+  const [newMonitorDraft, setNewMonitorDraft] =
+    useState<NewMonitorDraft | null>(null);
   const [deleting, setDeleting] = useState<Monitor | null>(null);
   const [bulkDeleting, setBulkDeleting] = useState<Monitor[] | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -888,6 +995,10 @@ export function ProviderMonitorManager({
     : false;
 
   function openEditor(monitor: Monitor | null) {
+    if (!monitor) {
+      const storedDraft = readNewMonitorDraft();
+      if (storedDraft) setNewMonitorDraft(storedDraft);
+    }
     setEditing(monitor);
     setEditorVersion((current) => current + 1);
     setDialogOpen(true);
@@ -1861,8 +1972,13 @@ export function ProviderMonitorManager({
           key={`${editing?.id ?? "new"}-${editorVersion}`}
           monitor={editing}
           providers={providers}
+          newMonitorDraft={newMonitorDraft}
           open={dialogOpen}
           onOpenChange={setDialogOpen}
+          onNewMonitorSaved={(draft) => {
+            setNewMonitorDraft(draft);
+            writeNewMonitorDraft(draft);
+          }}
         />
       ) : null}
       <AlertDialog

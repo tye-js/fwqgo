@@ -172,6 +172,7 @@ async function ensureEnglishTagRows(input: EnglishTaxonomyTag[]) {
         slug: tag.slug,
         enName: tag.name,
         enSlug: tag.slug,
+        indexable: false,
       })
       .onConflictDoNothing()
       .returning({ id: tags.id });

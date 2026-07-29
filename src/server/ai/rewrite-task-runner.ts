@@ -595,7 +595,7 @@ async function ensureTagRowsByName(tagNames: string[]) {
 
     const [insertedTag] = await db
       .insert(tags)
-      .values({ name: tag.name, slug: tag.slug })
+      .values({ name: tag.name, slug: tag.slug, indexable: false })
       .onConflictDoNothing()
       .returning({ id: tags.id, name: tags.name, slug: tags.slug });
 

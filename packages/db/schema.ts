@@ -178,7 +178,7 @@ export const tags = pgTable(
     enDescription: varchar("enDescription", { length: 800 }),
     slug: text("slug").notNull().unique(),
     enSlug: text("enSlug"),
-    indexable: boolean("indexable").default(true).notNull(),
+    indexable: boolean("indexable").default(false).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
   },

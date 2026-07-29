@@ -180,7 +180,7 @@ async function createTagRecord(
 
   const [tag] = await db
     .insert(tags)
-    .values({ name: result.name, slug })
+    .values({ name: result.name, slug, indexable: false })
     .onConflictDoNothing({ target: tags.slug })
     .returning({ id: tags.id });
 

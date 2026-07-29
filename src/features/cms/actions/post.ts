@@ -1447,8 +1447,8 @@ export async function updatePostTags({
           .insert(tags)
           .values(
             isEnglishPost
-              ? { name, slug, enName: name, enSlug: slug }
-              : { name, slug },
+              ? { name, slug, enName: name, enSlug: slug, indexable: false }
+              : { name, slug, indexable: false },
           )
           .onConflictDoNothing()
           .returning({ id: tags.id });
