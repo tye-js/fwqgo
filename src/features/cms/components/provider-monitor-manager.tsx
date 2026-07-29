@@ -364,11 +364,9 @@ function MonitorFormDialog({
   const savePending = isPending(saveMutationKey);
   const previewPending = isPending(previewMutationKey);
   const formPending = savePending || previewPending;
-  const [enabled, setEnabled] = useState(
-    monitor?.enabled ?? draft?.enabled ?? false,
-  );
+  const [enabled, setEnabled] = useState(monitor?.enabled ?? false);
   const [autoPublish, setAutoPublish] = useState(
-    monitor?.autoPublish ?? draft?.autoPublish ?? false,
+    monitor?.autoPublish ?? false,
   );
   const [adapter, setAdapter] = useState<MonitorAdapter>(
     (monitor?.adapter as MonitorAdapter | undefined) ??
@@ -1984,8 +1982,13 @@ export function ProviderMonitorManager({
           open={dialogOpen}
           onOpenChange={setDialogOpen}
           onNewMonitorSaved={(draft) => {
-            setNewMonitorDraft(draft);
-            writeNewMonitorDraft(draft);
+            const disabledDraft = {
+              ...draft,
+              enabled: false,
+              autoPublish: false,
+            };
+            setNewMonitorDraft(disabledDraft);
+            writeNewMonitorDraft(disabledDraft);
           }}
         />
       ) : null}
