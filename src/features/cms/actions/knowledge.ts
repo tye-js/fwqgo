@@ -55,6 +55,15 @@ const articleInputSchema = z
     title: z.string().trim().min(4, "标题至少 4 个字符").max(240),
     slug: optionalText(320, "slug"),
     summary: optionalText(1_200, "摘要"),
+    definition: optionalText(600, "卡片定义"),
+    highlights: z
+      .array(
+        z.string().trim().min(1, "核心要点不能为空").max(320, "单条核心要点不能超过 320 个字符"),
+      )
+      .max(3, "核心要点不能超过 3 条")
+      .nullable()
+      .optional(),
+    quickTip: optionalText(600, "卡片速查"),
     content: z.string().trim().min(40, "正文至少 40 个字符").max(200_000),
     keywords: optionalText(2_000, "关键词"),
     aliases: optionalText(2_000, "别名"),
@@ -85,6 +94,13 @@ const articleInputSchema = z
         code: "custom",
         path: ["translationSourceArticleId"],
         message: "创建英文稿必须指定中文源稿",
+      });
+    }
+    if (input.highlights?.length === 1) {
+      context.addIssue({
+        code: "custom",
+        path: ["highlights"],
+        message: "核心要点需填写 2 到 3 条",
       });
     }
   });
@@ -372,6 +388,12 @@ export async function getKnowledgeAdminOverview(
       ? or(
           ilikeContains(knowledgeArticles.title, normalizedQuery),
           ilikeContains(knowledgeArticles.summary, normalizedQuery),
+          ilikeContains(knowledgeArticles.definition, normalizedQuery),
+          ilikeContains(
+            sql`${knowledgeArticles.highlights}::text`,
+            normalizedQuery,
+          ),
+          ilikeContains(knowledgeArticles.quickTip, normalizedQuery),
           ilikeContains(knowledgeArticles.keywords, normalizedQuery),
           ilikeContains(knowledgeArticles.aliases, normalizedQuery),
         )
@@ -412,6 +434,7 @@ export async function getKnowledgeAdminOverview(
         title: knowledgeArticles.title,
         slug: knowledgeArticles.slug,
         summary: knowledgeArticles.summary,
+        definition: knowledgeArticles.definition,
         language: knowledgeArticles.language,
         categoryName: knowledgeCategories.name,
         categoryEnName: knowledgeCategories.enName,

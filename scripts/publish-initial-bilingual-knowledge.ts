@@ -1,4 +1,5 @@
 import {
+  KNOWLEDGE_CARD_VERSION,
   KNOWLEDGE_CONTENT_VERSION,
   knowledgeUnits,
   knowledgeUnitsForPhase,
@@ -10,7 +11,14 @@ import {
 import type { KnowledgePublicationSnapshot } from "@/server/knowledge/service";
 import type * as KnowledgeServiceModule from "@/server/knowledge/service";
 
-const PHASES = ["pilots", "p0", "p1", "revise-v2", "audit"] as const;
+const PHASES = [
+  "pilots",
+  "p0",
+  "p1",
+  "revise-v2",
+  "cards-v1",
+  "audit",
+] as const;
 type Phase = (typeof PHASES)[number];
 type PublicationPhase = "pilots" | "p0" | "p1";
 type KnowledgeService = typeof KnowledgeServiceModule;
@@ -30,10 +38,11 @@ const CONFIRMATIONS: Record<Phase, string> = {
   p0: "PUBLISH_KNOWLEDGE_P0",
   p1: "PUBLISH_KNOWLEDGE_P1",
   "revise-v2": "REVISE_KNOWLEDGE_CONTENT_V2",
+  "cards-v1": "REVISE_KNOWLEDGE_CARDS_V1",
   audit: "AUDIT_KNOWLEDGE_60",
 };
 
-const CONTENT_FIELDS = [
+const BASE_CONTENT_FIELDS = [
   "title",
   "slug",
   "summary",
@@ -44,12 +53,24 @@ const CONTENT_FIELDS = [
   "sourceNotes",
 ] as const satisfies ReadonlyArray<keyof ExpectedRecord>;
 
+const CARD_FIELDS = [
+  "definition",
+  "highlights",
+  "quickTip",
+] as const satisfies ReadonlyArray<keyof ExpectedRecord>;
+
+const CONTENT_FIELDS = [
+  ...BASE_CONTENT_FIELDS,
+  ...CARD_FIELDS,
+] as const satisfies ReadonlyArray<keyof ExpectedRecord>;
+
 type PublicationState = {
   categoriesBySlug: Map<string, Category>;
   articlesBySlug: Map<string, Article>;
 };
 
 type RevisionContentVersion = "v1" | "v2";
+type CardContentVersion = "v0" | "v1";
 
 type RevisionPairState = {
   category: Category;
@@ -59,6 +80,8 @@ type RevisionPairState = {
   english: Article;
   chineseVersion: RevisionContentVersion;
   englishVersion: RevisionContentVersion;
+  chineseCardVersion: CardContentVersion;
+  englishCardVersion: CardContentVersion;
 };
 
 type OperationCounts = {
@@ -167,8 +190,26 @@ function assertCategoryReady(unit: KnowledgeUnit, state: PublicationState) {
   return category;
 }
 
-function contentDifferences(article: Article, expected: ExpectedRecord) {
-  return CONTENT_FIELDS.filter((field) => article[field] !== expected[field]);
+function fieldValuesEqual(left: unknown, right: unknown) {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => value === right[index])
+    );
+  }
+  return left === right;
+}
+
+function contentDifferences(
+  article: Article,
+  expected: ExpectedRecord,
+  fields: ReadonlyArray<keyof ExpectedRecord> = CONTENT_FIELDS,
+) {
+  return fields.filter(
+    (field) => !fieldValuesEqual(article[field], expected[field]),
+  );
 }
 
 function assertExistingRecord(
@@ -224,15 +265,37 @@ function revisionContentVersion(
   legacy: ExpectedRecord,
   expected: ExpectedRecord,
 ): RevisionContentVersion {
-  const v2Differences = contentDifferences(article, expected);
+  const v2Differences = contentDifferences(
+    article,
+    expected,
+    BASE_CONTENT_FIELDS,
+  );
   if (v2Differences.length === 0) return "v2";
 
-  const v1Differences = contentDifferences(article, legacy);
+  const v1Differences = contentDifferences(
+    article,
+    legacy,
+    BASE_CONTENT_FIELDS,
+  );
   if (v1Differences.length === 0) return "v1";
 
   throw new Error(
     `${label} 既不匹配 V1，也不匹配 V${KNOWLEDGE_CONTENT_VERSION}，已停止以避免覆盖人工内容；` +
       `V1 差异：${v1Differences.join("、")}；V${KNOWLEDGE_CONTENT_VERSION} 差异：${v2Differences.join("、")}`,
+  );
+}
+
+function cardContentVersion(
+  label: string,
+  article: Article,
+  expected: ExpectedRecord,
+): CardContentVersion {
+  const differences = contentDifferences(article, expected, CARD_FIELDS);
+  if (differences.length === 0) return "v1";
+  if (CARD_FIELDS.every((field) => article[field] === null)) return "v0";
+  throw new Error(
+    `${label} 的知识卡片既不是空白 V0，也不匹配 V${KNOWLEDGE_CARD_VERSION}；` +
+      `已停止以避免覆盖人工内容：${differences.join("、")}`,
   );
 }
 
@@ -286,6 +349,16 @@ function inspectRevisionPair(
       legacy.en,
       expected.en,
     ),
+    chineseCardVersion: cardContentVersion(
+      `${unit.id}/zh`,
+      chinese,
+      expected.zh,
+    ),
+    englishCardVersion: cardContentVersion(
+      `${unit.id}/en`,
+      english,
+      expected.en,
+    ),
   };
 }
 
@@ -294,6 +367,19 @@ export function preflightRevisionUnits(
   state: PublicationState,
 ) {
   for (const unit of units) inspectRevisionPair(unit, state);
+}
+
+export function preflightCardUpgradeUnits(
+  units: KnowledgeUnit[],
+  state: PublicationState,
+) {
+  for (const unit of units) {
+    const pair = inspectRevisionPair(unit, state);
+    assert(
+      pair.chineseVersion === "v2" && pair.englishVersion === "v2",
+      `${unit.id} 正文不是 V${KNOWLEDGE_CONTENT_VERSION}，请先执行 revise-v2`,
+    );
+  }
 }
 
 export function auditUnits(
@@ -478,6 +564,8 @@ function revisionPairIsCurrent(pair: RevisionPairState) {
   return (
     pair.chineseVersion === "v2" &&
     pair.englishVersion === "v2" &&
+    pair.chineseCardVersion === "v1" &&
+    pair.englishCardVersion === "v1" &&
     pair.chinese.published &&
     pair.english.published &&
     pair.chinese.allowAiReference &&
@@ -502,6 +590,8 @@ export async function reviseKnowledgeContent(
     const englishMustBeUnpublished =
       pair.chineseVersion !== "v2" ||
       pair.englishVersion !== "v2" ||
+      pair.chineseCardVersion !== "v1" ||
+      pair.englishCardVersion !== "v1" ||
       pair.english.translatedFromRevision !== pair.chinese.contentRevision;
     if (pair.english.published && englishMustBeUnpublished) {
       const result = await service.setKnowledgePublication({
@@ -514,7 +604,10 @@ export async function reviseKnowledgeContent(
       pair = inspectRevisionPair(unit, state);
     }
 
-    if (pair.chineseVersion !== "v2") {
+    if (
+      pair.chineseVersion !== "v2" ||
+      pair.chineseCardVersion !== "v1"
+    ) {
       const result = await service.saveKnowledgeDraft({
         id: pair.chinese.id,
         language: "zh",
@@ -527,7 +620,10 @@ export async function reviseKnowledgeContent(
       pair = inspectRevisionPair(unit, state);
     }
 
-    if (pair.englishVersion !== "v2") {
+    if (
+      pair.englishVersion !== "v2" ||
+      pair.englishCardVersion !== "v1"
+    ) {
       assert(
         !pair.english.published,
         `${unit.id}/en 必须先取消发布才能修订`,
@@ -621,6 +717,20 @@ async function main() {
     const articleCount = auditUnits(knowledgeUnits, state);
     console.log(
       `知识库 V${KNOWLEDGE_CONTENT_VERSION} 修订并审计通过：units=${knowledgeUnits.length}, articles=${articleCount}`,
+    );
+    console.log(JSON.stringify(counts));
+    return;
+  }
+
+  if (phase === "cards-v1") {
+    // Only V2 body content with either blank or exact V1 cards is eligible.
+    // This protects hand-edited card copy from batch overwrite.
+    preflightCardUpgradeUnits(knowledgeUnits, state);
+    const counts = emptyRevisionCounts();
+    await reviseKnowledgeContent(knowledgeUnits, state, service, counts);
+    const articleCount = auditUnits(knowledgeUnits, state);
+    console.log(
+      `知识库卡片 V${KNOWLEDGE_CARD_VERSION} 修订并审计通过：units=${knowledgeUnits.length}, articles=${articleCount}`,
     );
     console.log(JSON.stringify(counts));
     return;

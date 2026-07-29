@@ -2,6 +2,9 @@ export type KnowledgeRankCandidate = {
   title: string;
   categoryName: string;
   summary: string | null;
+  definition?: string | null;
+  highlights?: string[] | null;
+  quickTip?: string | null;
   keywords: string | null;
   aliases: string | null;
   retrievalTerms: string | null;
@@ -108,6 +111,16 @@ export function rankKnowledgeCandidate(
     if (keywords.includes(term)) score += 16;
     else if (keywords.some((item) => item.includes(term))) score += 8;
     if (textIncludes(candidate.categoryName, term)) score += 10;
+    if (textIncludes(candidate.definition ?? null, term)) score += 8;
+    if (
+      textIncludes(
+        candidate.highlights?.filter(Boolean).join("\n") ?? null,
+        term,
+      )
+    ) {
+      score += 6;
+    }
+    if (textIncludes(candidate.quickTip ?? null, term)) score += 4;
     if (textIncludes(candidate.summary, term)) score += 6;
     if (textIncludes(candidate.content, term)) score += 2;
   }

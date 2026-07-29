@@ -13,6 +13,9 @@ export type RewriteKnowledgeReference = {
   slug: string;
   categoryName: string;
   summary: string | null;
+  definition: string | null;
+  highlights: string[] | null;
+  quickTip: string | null;
   content: string;
   score: number;
 };
@@ -34,6 +37,9 @@ export async function retrieveRewriteKnowledge(input: {
     return [
       ilike(knowledgeArticles.title, pattern),
       ilike(knowledgeArticles.summary, pattern),
+      ilike(knowledgeArticles.definition, pattern),
+      ilike(sql`${knowledgeArticles.highlights}::text`, pattern),
+      ilike(knowledgeArticles.quickTip, pattern),
       ilike(knowledgeArticles.keywords, pattern),
       ilike(knowledgeArticles.aliases, pattern),
       ilike(knowledgeArticles.retrievalTerms, pattern),
@@ -47,6 +53,9 @@ export async function retrieveRewriteKnowledge(input: {
       slug: knowledgeArticles.slug,
       categoryName: sql<string>`${categoryName}`,
       summary: knowledgeArticles.summary,
+      definition: knowledgeArticles.definition,
+      highlights: knowledgeArticles.highlights,
+      quickTip: knowledgeArticles.quickTip,
       content: knowledgeArticles.content,
       keywords: knowledgeArticles.keywords,
       aliases: knowledgeArticles.aliases,
@@ -96,7 +105,14 @@ export function formatRewriteKnowledgeContext(
   const sections: string[] = [];
   for (const reference of references) {
     const heading = `[KB:${reference.id}] ${reference.title}（${reference.categoryName}）`;
-    const body = [reference.summary, reference.content]
+    const cardOverview = [
+      reference.definition,
+      ...(reference.highlights ?? []),
+      reference.quickTip,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const body = [cardOverview, reference.summary, reference.content]
       .filter(Boolean)
       .join("\n\n")
       .trim();

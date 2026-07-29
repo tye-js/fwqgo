@@ -2067,6 +2067,9 @@ export const knowledgeArticles = pgTable(
     title: text("title").notNull(),
     slug: varchar("slug", { length: 320 }).notNull().unique(),
     summary: varchar("summary", { length: 1_200 }),
+    definition: text("definition"),
+    highlights: jsonb("highlights").$type<string[]>(),
+    quickTip: text("quickTip"),
     content: text("content").notNull(),
     keywords: text("keywords"),
     aliases: text("aliases"),
@@ -2139,6 +2142,10 @@ export const knowledgeArticles = pgTable(
     contentCheck: check(
       "knowledge_articles_content_check",
       sql`length(btrim(${table.content})) > 0`,
+    ),
+    highlightsCheck: check(
+      "knowledge_articles_highlights_check",
+      sql`${table.highlights} is null or (jsonb_typeof(${table.highlights}) = 'array' and jsonb_array_length(${table.highlights}) between 2 and 3)`,
     ),
     languageCheck: check(
       "knowledge_articles_language_check",

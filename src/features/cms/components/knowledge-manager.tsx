@@ -86,6 +86,7 @@ type KnowledgeArticleListRow = {
   title: string;
   slug: string;
   summary: string | null;
+  definition: string | null;
   language: string;
   categoryName: string;
   categoryEnName: string | null;
@@ -120,6 +121,9 @@ type KnowledgeArticleEditorRow = {
   title: string;
   slug: string;
   summary: string | null;
+  definition: string | null;
+  highlights: string[] | null;
+  quickTip: string | null;
   content: string;
   keywords: string | null;
   aliases: string | null;
@@ -155,6 +159,9 @@ type ArticleFormState = {
   title: string;
   slug: string;
   summary: string;
+  definition: string;
+  highlights: string;
+  quickTip: string;
   content: string;
   keywords: string;
   aliases: string;
@@ -189,6 +196,9 @@ function createArticleForm(
       title: article.title,
       slug: article.slug,
       summary: article.summary ?? "",
+      definition: article.definition ?? "",
+      highlights: (article.highlights ?? []).join("\n"),
+      quickTip: article.quickTip ?? "",
       content: article.content,
       keywords: article.keywords ?? "",
       aliases: article.aliases ?? "",
@@ -206,6 +216,9 @@ function createArticleForm(
     title: "",
     slug: "",
     summary: "",
+    definition: "",
+    highlights: "",
+    quickTip: "",
     content: "",
     keywords: "",
     aliases: "",
@@ -244,6 +257,9 @@ function articleFormsEqual(left: ArticleFormState, right: ArticleFormState) {
     left.title === right.title &&
     left.slug === right.slug &&
     left.summary === right.summary &&
+    left.definition === right.definition &&
+    left.highlights === right.highlights &&
+    left.quickTip === right.quickTip &&
     left.content === right.content &&
     left.keywords === right.keywords &&
     left.aliases === right.aliases &&
@@ -274,6 +290,13 @@ function FormField({
       {children}
     </div>
   );
+}
+
+function parseHighlightLines(value: string) {
+  return value
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function knowledgeAdminHref(input: {
@@ -345,6 +368,10 @@ export function KnowledgeManager({
     status.translatedFromRevision === status.sourceContentRevision;
   const publicationFieldsReady = Boolean(
     form.summary.trim() &&
+    form.definition.trim() &&
+    parseHighlightLines(form.highlights).length >= 2 &&
+    parseHighlightLines(form.highlights).length <= 3 &&
+    form.quickTip.trim() &&
     form.keywords.trim() &&
     form.retrievalTerms.trim() &&
     form.sourceNotes.trim(),
@@ -443,6 +470,9 @@ export function KnowledgeManager({
           title: form.title,
           slug: form.slug,
           summary: form.summary,
+          definition: form.definition,
+          highlights: parseHighlightLines(form.highlights),
+          quickTip: form.quickTip,
           content: form.content,
           keywords: form.keywords,
           aliases: form.aliases,
@@ -692,7 +722,7 @@ export function KnowledgeManager({
               name="q"
               defaultValue={query}
               className="pl-9"
-              placeholder="搜索标题、摘要、关键词或别名"
+              placeholder="搜索标题、定义、要点、摘要或关键词"
             />
           </div>
           <Button type="submit" variant="outline" disabled={savingArticle}>
@@ -790,9 +820,9 @@ export function KnowledgeManager({
                         ? " · 已有英文稿"
                         : " · 未创建英文稿"}
                   </p>
-                  {article.summary ? (
+                  {article.definition ? (
                     <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                      {article.summary}
+                      {article.definition}
                     </p>
                   ) : null}
                 </Link>
@@ -1101,6 +1131,74 @@ export function KnowledgeManager({
                   rows={3}
                 />
               </FormField>
+
+              <div className="space-y-4 rounded-md border border-border/70 bg-muted/20 p-4">
+                <div>
+                  <h3 className="text-sm font-semibold">知识卡片</h3>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    中英文稿分别维护；前台卡片只展示定义、核心要点和速查，摘要继续用于 SEO 与详情内容。
+                  </p>
+                </div>
+                <FormField
+                  id="knowledge-definition"
+                  label="一句话定义"
+                  hint="发布必填，建议 1 句"
+                >
+                  <Textarea
+                    id="knowledge-definition"
+                    value={form.definition}
+                    onChange={(event) =>
+                      updateForm("definition", event.target.value)
+                    }
+                    rows={2}
+                    maxLength={600}
+                    placeholder={
+                      form.language === "en"
+                        ? "Define the topic in one concise sentence."
+                        : "用一句话说明这个知识点解决什么问题。"
+                    }
+                  />
+                </FormField>
+                <FormField
+                  id="knowledge-highlights"
+                  label="核心要点"
+                  hint="发布必填，每行 1 条，共 2–3 条"
+                >
+                  <Textarea
+                    id="knowledge-highlights"
+                    value={form.highlights}
+                    onChange={(event) =>
+                      updateForm("highlights", event.target.value)
+                    }
+                    rows={5}
+                    placeholder={
+                      form.language === "en"
+                        ? "**Key term**: concise explanation"
+                        : "**重点词**：简短解释"
+                    }
+                  />
+                </FormField>
+                <FormField
+                  id="knowledge-quick-tip"
+                  label="速查 / 避坑"
+                  hint="发布必填，给出可执行检查"
+                >
+                  <Textarea
+                    id="knowledge-quick-tip"
+                    value={form.quickTip}
+                    onChange={(event) =>
+                      updateForm("quickTip", event.target.value)
+                    }
+                    rows={2}
+                    maxLength={600}
+                    placeholder={
+                      form.language === "en"
+                        ? "State one practical check or pitfall."
+                        : "写一条可验证的检查方法或避坑建议。"
+                    }
+                  />
+                </FormField>
+              </div>
 
               <FormField id="knowledge-content" label="正文" hint="Markdown">
                 <MarkdownEditor

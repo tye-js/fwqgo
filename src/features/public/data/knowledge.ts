@@ -67,6 +67,9 @@ export async function listPublishedKnowledgeArticles(input: {
       or(
         ilikeContains(knowledgeArticles.title, query),
         ilikeContains(knowledgeArticles.summary, query),
+        ilikeContains(knowledgeArticles.definition, query),
+        ilikeContains(sql`${knowledgeArticles.highlights}::text`, query),
+        ilikeContains(knowledgeArticles.quickTip, query),
         ilikeContains(knowledgeArticles.keywords, query),
         ilikeContains(knowledgeArticles.aliases, query),
         ilikeContains(knowledgeArticles.retrievalTerms, query),
@@ -94,6 +97,9 @@ export async function listPublishedKnowledgeArticles(input: {
       title: knowledgeArticles.title,
       slug: knowledgeArticles.slug,
       summary: knowledgeArticles.summary,
+      definition: knowledgeArticles.definition,
+      highlights: knowledgeArticles.highlights,
+      quickTip: knowledgeArticles.quickTip,
       keywords: knowledgeArticles.keywords,
       categoryName: knowledgeCategories.name,
       categorySlug: knowledgeCategories.slug,
@@ -133,6 +139,9 @@ export async function getPublishedKnowledgeArticleBySlug(
       title: knowledgeArticles.title,
       slug: knowledgeArticles.slug,
       summary: knowledgeArticles.summary,
+      definition: knowledgeArticles.definition,
+      highlights: knowledgeArticles.highlights,
+      quickTip: knowledgeArticles.quickTip,
       content: knowledgeArticles.content,
       keywords: knowledgeArticles.keywords,
       language: knowledgeArticles.language,
@@ -213,6 +222,7 @@ export async function getRelatedKnowledgeArticles(input: {
       title: knowledgeArticles.title,
       slug: knowledgeArticles.slug,
       summary: knowledgeArticles.summary,
+      definition: knowledgeArticles.definition,
     })
     .from(knowledgeArticles)
     .where(

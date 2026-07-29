@@ -1,4 +1,5 @@
 import {
+  KNOWLEDGE_CARD_VERSION,
   KNOWLEDGE_CONTENT_VERSION,
   KNOWLEDGE_VERIFIED_DATE,
   knowledgeUnits,
@@ -34,6 +35,7 @@ function hasValidCodeFences(content: string) {
 
 assert(KNOWLEDGE_VERIFIED_DATE === "2026-07-26", "verification date drifted");
 assert(KNOWLEDGE_CONTENT_VERSION === 2, "expected content version 2");
+assert(KNOWLEDGE_CARD_VERSION === 1, "expected card version 1");
 assert(
   knowledgeUnits.length === 30,
   `expected 30 units, found ${knowledgeUnits.length}`,
@@ -190,6 +192,34 @@ for (const unit of knowledgeUnits) {
       `${label} summary length is ${record.summary.length}`,
     );
     assert(
+      language === "zh"
+        ? record.definition.length >= 8 && record.definition.length <= 100
+        : record.definition.length >= 30 && record.definition.length <= 220,
+      `${label} card definition length is ${record.definition.length}`,
+    );
+    assert(
+      record.highlights.length >= 2 && record.highlights.length <= 3,
+      `${label} needs 2-3 card highlights`,
+    );
+    assert(
+      record.highlights.every(
+        (highlight) =>
+          highlight.length <= 320 &&
+          /^\*\*[^*]+\*\*\s*[：:]\s*\S/.test(highlight),
+      ),
+      `${label} card highlights must use a safe bold label and concise text`,
+    );
+    assert(
+      new Set(record.highlights).size === record.highlights.length,
+      `${label} card highlights must be unique`,
+    );
+    assert(
+      language === "zh"
+        ? record.quickTip.length >= 8 && record.quickTip.length <= 180
+        : record.quickTip.length >= 30 && record.quickTip.length <= 260,
+      `${label} card quick tip length is ${record.quickTip.length}`,
+    );
+    assert(
       draft.keywords.length >= 5 && draft.keywords.length <= 8,
       `${label} needs 5-8 keywords`,
     );
@@ -237,6 +267,16 @@ for (const unit of knowledgeUnits) {
     );
   }
 }
+
+const ipLabelUnit = knowledgeUnits.find((unit) => unit.id === "KB-017");
+assert(ipLabelUnit, "KB-017 is missing");
+const ipLabelCard = renderKnowledgeRecord(ipLabelUnit, "zh");
+assert(
+  !ipLabelCard.highlights.some(
+    (highlight) => highlight.includes("极低风控") || highlight.includes("必然低风控"),
+  ),
+  "KB-017 must not make absolute risk-control claims",
+);
 
 assert(slugs.size === 60, `expected 60 unique slugs, found ${slugs.size}`);
 assert(

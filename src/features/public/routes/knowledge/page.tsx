@@ -3,12 +3,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { ArrowRight, BookOpen, Layers3, Search } from "lucide-react";
+import { ArrowRight, BookOpen, Search } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
+import { KnowledgeCard } from "@/features/public/components/knowledge-card";
+import { KnowledgeCategoryQuickReference } from "@/features/public/components/knowledge-category-quick-reference";
 import {
   getPublicKnowledgeCategories,
   listPublishedKnowledgeArticles,
@@ -40,6 +42,10 @@ const copy = {
     searchPlaceholder: "搜索 CN2 GIA、BGP、原生 IP、CPU、内存等",
     searchButton: "搜索",
     categoryNav: "知识分类",
+    categoryQuickTitle: "分类速查",
+    categoryQuickDescription:
+      "按配置、线路、机房、IP、运维与安全场景快速进入对应知识。",
+    categoryCount: (count: number) => `${count} 条知识`,
     allKnowledge: "全部知识",
     queryResult: (query: string) => `“${query}”的查询结果`,
     total: (total: number) => `共 ${total} 条内容`,
@@ -62,6 +68,11 @@ const copy = {
     searchPlaceholder: "Search BGP, IPv6, DNS, CPU, memory, or MTR",
     searchButton: "Search",
     categoryNav: "Knowledge categories",
+    categoryQuickTitle: "Browse by category",
+    categoryQuickDescription:
+      "Jump directly to server configuration, routing, regions, IP, operations, or security topics.",
+    categoryCount: (count: number) =>
+      `${count} article${count === 1 ? "" : "s"}`,
     allKnowledge: "All knowledge",
     queryResult: (query: string) => `Results for “${query}”`,
     total: (total: number) => `${total} article${total === 1 ? "" : "s"}`,
@@ -74,22 +85,6 @@ const copy = {
     loading: "Loading the knowledge base...",
   },
 } as const;
-
-function splitKeywords(value: string | null) {
-  return (value ?? "")
-    .split(/[,，、;；\n]+/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 3);
-}
-
-function formatKnowledgeDate(value: Date, language: PublicKnowledgeLanguage) {
-  return new Intl.DateTimeFormat(language === "en" ? "en-US" : "zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(value);
-}
 
 function knowledgeHref(
   language: PublicKnowledgeLanguage,
@@ -239,9 +234,27 @@ async function KnowledgeIndexContent(props: {
       </section>
 
       <section className="container mx-auto px-4 py-8 md:py-10">
+        {!query && !category ? (
+          <KnowledgeCategoryQuickReference
+            title={languageCopy.categoryQuickTitle}
+            description={languageCopy.categoryQuickDescription}
+            countLabel={languageCopy.categoryCount}
+            categories={categories.map((item) => ({
+              id: item.id,
+              name: item.name,
+              description: item.description,
+              articleCount: item.articleCount,
+              href: knowledgeHref(props.language, {
+                query: "",
+                category: item.slug,
+              }),
+            }))}
+          />
+        ) : null}
+
         <nav
           aria-label={languageCopy.categoryNav}
-          className="flex flex-wrap gap-2"
+          className={`${!query && !category ? "mt-8" : ""} flex flex-wrap gap-2`}
         >
           <Link
             href={knowledgeHref(props.language, { query, category: "" })}
@@ -302,60 +315,23 @@ async function KnowledgeIndexContent(props: {
         {result.items.length > 0 ? (
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {result.items.map((article) => {
-              const keywords = splitKeywords(article.keywords);
               const categoryName =
                 props.language === "en"
-                  ? article.categoryEnName
+                  ? (article.categoryEnName ?? article.categoryName)
                   : article.categoryName;
               const articleHref = `${indexHref}/${encodeURIComponent(article.slug)}`;
               return (
-                <article
+                <KnowledgeCard
                   key={article.id}
-                  className="flex min-h-56 flex-col rounded-md border border-border/70 bg-background p-5 shadow-sm transition-colors hover:border-primary/35"
-                >
-                  <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1.5 font-medium text-primary">
-                      <Layers3 className="size-3.5" />
-                      {categoryName}
-                    </span>
-                    <time dateTime={article.contentUpdatedAt.toISOString()}>
-                      {formatKnowledgeDate(
-                        article.contentUpdatedAt,
-                        props.language,
-                      )}
-                    </time>
-                  </div>
-                  <h3 className="mt-3 text-lg font-semibold leading-7 tracking-normal">
-                    <Link
-                      href={articleHref}
-                      className="rounded-sm outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {article.title}
-                    </Link>
-                  </h3>
-                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">
-                    {article.summary ?? languageCopy.fallbackSummary}
-                  </p>
-                  <div className="mt-auto flex flex-wrap items-end justify-between gap-3 pt-5">
-                    <div className="flex flex-wrap gap-1.5">
-                      {keywords.map((keyword) => (
-                        <span
-                          key={keyword}
-                          className="rounded-sm bg-muted px-2 py-1 text-xs text-muted-foreground"
-                        >
-                          {keyword}
-                        </span>
-                      ))}
-                    </div>
-                    <Link
-                      href={articleHref}
-                      className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-primary hover:underline"
-                    >
-                      {languageCopy.view}
-                      <ArrowRight className="size-4" />
-                    </Link>
-                  </div>
-                </article>
+                  item={{
+                    ...article,
+                    categoryName,
+                  }}
+                  language={props.language}
+                  href={articleHref}
+                  fallbackDefinition={languageCopy.fallbackSummary}
+                  viewLabel={languageCopy.view}
+                />
               );
             })}
           </div>

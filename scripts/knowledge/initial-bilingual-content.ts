@@ -2,6 +2,7 @@ import { getReaderGuidance } from "./reader-guidance";
 
 export const KNOWLEDGE_VERIFIED_DATE = "2026-07-26";
 export const KNOWLEDGE_CONTENT_VERSION = 2;
+export const KNOWLEDGE_CARD_VERSION = 1;
 
 type KnowledgePriority = "P0" | "P1";
 type KnowledgeLanguage = "zh" | "en";
@@ -25,6 +26,12 @@ type LocalizedKnowledgeDraft = {
   }>;
   verification: string[];
   pitfalls: string[];
+};
+
+type KnowledgeCardCopy = {
+  definition: string;
+  highlights: string[];
+  quickTip: string;
 };
 
 type KnowledgeSource = {
@@ -4073,6 +4080,109 @@ function sourceNotes(unit: KnowledgeUnit, language: KnowledgeLanguage) {
     .join("\n");
 }
 
+function conciseSentence(value: string, language: KnowledgeLanguage) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  const separators = language === "zh" ? /[。！？；]/ : /[.!?;]/;
+  const separatorIndex = normalized.search(separators);
+  const sentence = (
+    separatorIndex >= 0 ? normalized.slice(0, separatorIndex) : normalized
+  ).trim();
+  return language === "zh" ? `${sentence}。` : `${sentence.replace(/[,:]$/, "")}.`;
+}
+
+const knowledgeCardOverrides: Partial<
+  Record<KnowledgeUnit["id"], Record<KnowledgeLanguage, KnowledgeCardCopy>>
+> = {
+  "KB-017": {
+    zh: {
+      definition: "区分 IP 注册信息、路由宣告与接入网络属性的常见市场标签。",
+      highlights: [
+        "**原生 IP**：通常指注册信息与使用地区较一致，仍需按目标服务实测。",
+        "**广播 IP**：通过跨区域路由宣告使用，地理库结果可能不一致。",
+        "**住宅 IP**：通常来自面向家庭用户的接入网络，仍需按目标服务规则实测风控表现。",
+      ],
+      quickTip:
+        "同时核对 RDAP、ASN、路由和目标服务识别结果，单一数据库不能定论。",
+    },
+    en: {
+      definition:
+        "Common market labels that describe IP registration, route announcements, and access-network attributes.",
+      highlights: [
+        "**Native IP**: Usually means registration and usage regions broadly align, but the target service still needs testing.",
+        "**Announced IP**: Used through cross-region route announcements, so geolocation databases may disagree.",
+        "**Residential IP**: Usually originates from a consumer access network and does not guarantee low risk scoring.",
+      ],
+      quickTip:
+        "Cross-check RDAP, ASN, routing, and the target service; one geolocation database is not conclusive.",
+    },
+  },
+  "KB-024": {
+    zh: {
+      definition: "基于 Nginx 实现请求转发与 TLS 加密入口的核心配置。",
+      highlights: [
+        "**反向代理**：统一接入请求转发、上游选择与请求头处理。",
+        "**HTTPS 部署**：配置证书、续期流程与 HTTP 到 HTTPS 重定向。",
+        "**变更控制**：先校验配置，再平滑重载并保留可用回滚版本。",
+      ],
+      quickTip: "修改后先执行 `nginx -t`，确认通过再重载，并保留独立回滚通道。",
+    },
+    en: {
+      definition:
+        "Core Nginx configuration for request proxying and a TLS-encrypted ingress.",
+      highlights: [
+        "**Reverse proxy**: Centralizes request forwarding, upstream selection, and header handling.",
+        "**HTTPS deployment**: Covers certificates, renewal, and HTTP-to-HTTPS redirects.",
+        "**Change control**: Validate first, reload gracefully, and retain a working rollback version.",
+      ],
+      quickTip:
+        "Run `nginx -t` before reloading and keep an independent rollback path available.",
+    },
+  },
+  "KB-030": {
+    zh: {
+      definition: "根据业务交互类型、可靠性目标与风险边界选择服务器的参考框架。",
+      highlights: [
+        "**个人 / 展示型**：优先维护成本、基础缓存与可恢复备份。",
+        "**企业 / 跨境电商**：重点核验可用性、数据保护、线路与 IP 适配性。",
+        "**API / 高并发**：关注尾延迟、单核性能、依赖容量与高可用目标。",
+      ],
+      quickTip: "不包含随时间变化的商业报价，先把负载、RPO、RTO 与团队能力量化。",
+    },
+    en: {
+      definition:
+        "A server-selection framework based on workload interaction, reliability goals, and risk boundaries.",
+      highlights: [
+        "**Personal or brochure site**: Prioritize maintainability, basic caching, and recoverable backups.",
+        "**Corporate or cross-border commerce**: Verify availability, data protection, routing, and IP suitability.",
+        "**API or high concurrency**: Focus on tail latency, single-core performance, dependency capacity, and availability targets.",
+      ],
+      quickTip:
+        "This excludes time-sensitive offers; quantify workload, RPO, RTO, and team capability first.",
+    },
+  },
+};
+
+function knowledgeCardCopy(
+  unit: KnowledgeUnit,
+  language: KnowledgeLanguage,
+): KnowledgeCardCopy {
+  const override = knowledgeCardOverrides[unit.id]?.[language];
+  if (override) return override;
+  const draft = localizedDraft(unit, language);
+  const separator = language === "zh" ? "：" : ": ";
+  return {
+    definition: conciseSentence(draft.takeaway, language),
+    highlights: draft.concepts.slice(0, 3).map(
+      ([term, explanation]) =>
+        `**${term}**${separator}${conciseSentence(explanation, language)}`,
+    ),
+    quickTip: conciseSentence(
+      draft.verification[0] ?? draft.pitfalls[0] ?? draft.takeaway,
+      language,
+    ),
+  };
+}
+
 function renderLegacyContent(unit: KnowledgeUnit, language: KnowledgeLanguage) {
   const draft = localizedDraft(unit, language);
   const labels =
@@ -4318,10 +4428,14 @@ function renderRecord(
     language === "zh" && draft.summary.length < 80
       ? `${draft.summary}内容以可重复验证和明确风险边界为准，不涉及随时间变化的商业条件。`
       : draft.summary;
+  const card = knowledgeCardCopy(unit, language);
   return {
     title: draft.title,
     slug: draft.slug,
     summary,
+    definition: card.definition,
+    highlights: card.highlights,
+    quickTip: card.quickTip,
     content,
     keywords: draft.keywords.join(", "),
     aliases: draft.aliases.join(", ") || null,

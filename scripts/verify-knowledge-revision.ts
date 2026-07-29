@@ -14,6 +14,7 @@ import {
 import {
   auditUnits,
   buildState,
+  preflightCardUpgradeUnits,
   preflightRevisionUnits,
   reviseKnowledgeContent,
 } from "./publish-initial-bilingual-knowledge";
@@ -25,6 +26,9 @@ const MUTABLE_CONTENT_FIELDS = [
   "title",
   "slug",
   "summary",
+  "definition",
+  "highlights",
+  "quickTip",
   "content",
   "keywords",
   "aliases",
@@ -40,6 +44,23 @@ function textOrNull(value: string | null | undefined) {
   const trimmed = value?.trim();
   if (!trimmed) return null;
   return trimmed;
+}
+
+function stringArrayOrNull(value: string[] | null | undefined) {
+  const normalized = value?.map((item) => item.trim()).filter(Boolean);
+  return normalized?.length ? normalized : null;
+}
+
+function fieldValuesEqual(left: unknown, right: unknown) {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => value === right[index])
+    );
+  }
+  return left === right;
 }
 
 function revisionCounts() {
@@ -77,6 +98,9 @@ function fixtureSnapshot(): KnowledgePublicationSnapshot {
     id: 101,
     categoryId: category.id,
     ...chineseRecord,
+    definition: null,
+    highlights: null,
+    quickTip: null,
     language: "zh",
     translationSourceArticleId: null,
     contentRevision: 1,
@@ -93,6 +117,9 @@ function fixtureSnapshot(): KnowledgePublicationSnapshot {
     id: 102,
     categoryId: category.id,
     ...englishRecord,
+    definition: null,
+    highlights: null,
+    quickTip: null,
     language: "en",
     translationSourceArticleId: chinese.id,
     contentRevision: 1,
@@ -168,6 +195,9 @@ class MockRevisionService {
       title: input.title.trim(),
       slug: textOrNull(input.slug) ?? current.slug,
       summary: textOrNull(input.summary),
+      definition: textOrNull(input.definition),
+      highlights: stringArrayOrNull(input.highlights),
+      quickTip: textOrNull(input.quickTip),
       content: input.content.trim(),
       keywords: textOrNull(input.keywords),
       aliases: textOrNull(input.aliases),
@@ -175,7 +205,7 @@ class MockRevisionService {
       sourceNotes: textOrNull(input.sourceNotes),
     };
     const contentChanged = MUTABLE_CONTENT_FIELDS.some(
-      (field) => current[field] !== normalized[field],
+      (field) => !fieldValuesEqual(current[field], normalized[field]),
     );
     const updated: Article = {
       ...current,
@@ -314,6 +344,34 @@ try {
 }
 assert(unknownRejected, "unknown content was not rejected before revision");
 
+const cardOnlySnapshot = fixtureSnapshot();
+for (const article of cardOnlySnapshot.articles) {
+  const expected = renderKnowledgeRecord(
+    unit,
+    article.language === "en" ? "en" : "zh",
+  );
+  Object.assign(article, expected, {
+    definition: null,
+    highlights: null,
+    quickTip: null,
+    contentRevision: 2,
+    translatedFromRevision: article.language === "en" ? 2 : null,
+  });
+}
+preflightCardUpgradeUnits([unit], buildState(cardOnlySnapshot));
+
+const unknownCard = cardOnlySnapshot.articles[0];
+assert(unknownCard, "unknown-card fixture is missing Chinese content");
+unknownCard.definition = "人工填写但未完成的卡片";
+let unknownCardRejected = false;
+try {
+  preflightCardUpgradeUnits([unit], buildState(cardOnlySnapshot));
+} catch (error) {
+  unknownCardRejected =
+    error instanceof Error && error.message.includes("避免覆盖人工内容");
+}
+assert(unknownCardRejected, "partially edited card content was not rejected");
+
 console.log(
-  `Knowledge revision verified: resumedWrites=${interruptedService.writes}, unknownContentRejected=true`,
+  `Knowledge revision verified: resumedWrites=${interruptedService.writes}, unknownContentRejected=true, unknownCardRejected=true`,
 );

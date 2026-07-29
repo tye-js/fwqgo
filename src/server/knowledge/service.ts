@@ -19,6 +19,9 @@ export type SaveKnowledgeDraftInput = {
   title: string;
   slug?: string | null;
   summary?: string | null;
+  definition?: string | null;
+  highlights?: string[] | null;
+  quickTip?: string | null;
   content: string;
   keywords?: string | null;
   aliases?: string | null;
@@ -53,6 +56,9 @@ export type KnowledgePublicationSnapshot = {
 const TRANSLATION_CONTENT_FIELDS = [
   "title",
   "summary",
+  "definition",
+  "highlights",
+  "quickTip",
   "content",
   "keywords",
   "aliases",
@@ -63,6 +69,9 @@ const TRANSLATION_CONTENT_FIELDS = [
 const PUBLIC_CONTENT_FIELDS = [
   "title",
   "summary",
+  "definition",
+  "highlights",
+  "quickTip",
   "content",
   "keywords",
 ] as const;
@@ -70,6 +79,19 @@ const PUBLIC_CONTENT_FIELDS = [
 function textOrNull(value: string | null | undefined) {
   const normalized = value?.trim();
   if (!normalized) return null;
+  return normalized;
+}
+
+function normalizeHighlights(value: string[] | null | undefined) {
+  if (!value) return null;
+  const normalized = value.map((item) => item.trim()).filter(Boolean);
+  if (normalized.length === 0) return null;
+  if (normalized.length < 2 || normalized.length > 3) {
+    throw new Error("卡片核心要点必须为 2 到 3 条");
+  }
+  if (normalized.some((item) => item.length > 320)) {
+    throw new Error("每条卡片核心要点不能超过 320 个字符");
+  }
   return normalized;
 }
 
@@ -83,6 +105,30 @@ function normalizeSlug(value: string | null | undefined, fallback: string) {
 
 function sameValue(left: string | null, right: string | null) {
   return left === right;
+}
+
+function sameStringArray(left: string[] | null, right: string[] | null) {
+  return (
+    left === right ||
+    (left !== null &&
+      right !== null &&
+      left.length === right.length &&
+      left.every((value, index) => value === right[index]))
+  );
+}
+
+function contentFieldChanged(
+  field: (typeof TRANSLATION_CONTENT_FIELDS)[number],
+  current: KnowledgeArticleRow,
+  next: Pick<
+    KnowledgeArticleRow,
+    (typeof TRANSLATION_CONTENT_FIELDS)[number]
+  >,
+) {
+  if (field === "highlights") {
+    return !sameStringArray(current.highlights, next.highlights);
+  }
+  return !sameValue(current[field], next[field]);
 }
 
 function uniqueKeys(values: string[], limit: number) {
@@ -114,6 +160,11 @@ function assertExpectedRevision(
 function assertPublicationFields(article: KnowledgeArticleRow) {
   const missing: string[] = [];
   if (!article.summary?.trim()) missing.push("摘要");
+  if (!article.definition?.trim()) missing.push("卡片定义");
+  if (!article.highlights || article.highlights.length < 2) {
+    missing.push("卡片核心要点");
+  }
+  if (!article.quickTip?.trim()) missing.push("卡片速查");
   if (!article.keywords?.trim()) missing.push("关键词");
   if (!article.retrievalTerms?.trim()) missing.push("AI 检索词");
   if (!article.sourceNotes?.trim()) missing.push("来源说明");
@@ -272,6 +323,9 @@ export async function saveKnowledgeDraft(
       title,
       slug,
       summary: textOrNull(input.summary),
+      definition: textOrNull(input.definition),
+      highlights: normalizeHighlights(input.highlights),
+      quickTip: textOrNull(input.quickTip),
       content,
       keywords: textOrNull(input.keywords),
       aliases: textOrNull(input.aliases),
@@ -383,10 +437,10 @@ export async function saveKnowledgeDraft(
     }
 
     const translationContentChanged = TRANSLATION_CONTENT_FIELDS.some(
-      (field) => !sameValue(current[field], normalizedValues[field]),
+      (field) => contentFieldChanged(field, current, normalizedValues),
     );
     const publicContentChanged = PUBLIC_CONTENT_FIELDS.some(
-      (field) => !sameValue(current[field], normalizedValues[field]),
+      (field) => contentFieldChanged(field, current, normalizedValues),
     );
 
     if (
