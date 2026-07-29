@@ -129,6 +129,20 @@ const htmlFieldsSchema = z.object({
   promoCode: htmlFieldSchema.optional(),
 });
 
+const affiliateLinkCollectionSchema = z
+  .discriminatedUnion("type", [
+    z.object({
+      type: z.literal("whmcs_product"),
+    }),
+    z.object({
+      type: z.literal("html_listing"),
+      itemSelector: z.string().trim().min(1),
+      matchExternalProductId: z.string().trim().min(1).max(160),
+      fields: htmlFieldsSchema.prefault({}),
+    }),
+  ])
+  .prefault({ type: "whmcs_product" });
+
 const htmlMonitorConfigSchema = z.object({
   itemSelector: z.string().trim().min(1).default(".product"),
   fields: htmlFieldsSchema.prefault({}),
@@ -143,10 +157,14 @@ const affiliateLinkMonitorConfigSchema = z.object({
   defaults: defaultsSchema,
   headers: headersSchema,
   statusMap: statusMapSchema,
+  collection: affiliateLinkCollectionSchema,
 });
 
 export type JsonMonitorConfig = z.infer<typeof jsonMonitorConfigSchema>;
 export type HtmlMonitorConfig = z.infer<typeof htmlMonitorConfigSchema>;
+export type AffiliateLinkCollectionConfig = z.infer<
+  typeof affiliateLinkCollectionSchema
+>;
 export type AffiliateLinkMonitorConfig = z.infer<
   typeof affiliateLinkMonitorConfigSchema
 >;

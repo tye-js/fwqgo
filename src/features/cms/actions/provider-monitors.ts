@@ -10,6 +10,7 @@ import {
   parseProviderMonitorConfig,
   PROVIDER_SOURCE_ADAPTERS,
   PROVIDER_SOURCE_PURPOSES,
+  type ProviderMonitorConfig,
   type ProviderSourceAdapter,
 } from "@fwqgo/core/provider-monitor-config";
 import {
@@ -139,6 +140,20 @@ function parseAffiliateLinkInput(input: {
   };
 }
 
+function assertAffiliateCollectionSource(
+  affiliateLink: ReturnType<typeof parseAffiliateLinkInput>,
+  config: ProviderMonitorConfig,
+) {
+  if (
+    affiliateLink &&
+    "collection" in config &&
+    config.collection.type === "html_listing" &&
+    !affiliateLink.sourceUrl
+  ) {
+    throw new Error("HTML 套餐列表模式必须填写独立采集地址");
+  }
+}
+
 const providerMonitorIdSchema = postgresIntegerIdSchema;
 const providerMonitorRunIdSchema = z
   .number()
@@ -156,6 +171,7 @@ const saveProviderMonitorMutation = defineAdminAction({
       ? (affiliateLinkInput.sourceUrl ?? affiliateLinkInput.affiliateTargetUrl)
       : requirePublicHttpUrl(input.endpointUrl, "供应商采集地址").toString();
     const config = parseConfigText(input.configText, input.adapter);
+    assertAffiliateCollectionSource(affiliateLinkInput, config);
     const shortLink = affiliateLinkInput
       ? await getOrCreateOutboundShortLink(
           affiliateLinkInput.affiliateTargetUrl,
@@ -386,6 +402,7 @@ export async function previewProviderMonitorAction(
       ? (affiliateLink.sourceUrl ?? affiliateLink.affiliateTargetUrl)
       : requirePublicHttpUrl(input.endpointUrl, "供应商采集地址").toString();
     const config = parseConfigText(input.configText, input.adapter);
+    assertAffiliateCollectionSource(affiliateLink, config);
     const preview = await previewProviderMonitorSource({
       monitorId: input.id,
       providerId: input.providerId,

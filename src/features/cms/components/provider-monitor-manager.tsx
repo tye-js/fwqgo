@@ -164,6 +164,9 @@ const defaultHtmlConfig = {
 };
 
 const defaultAffiliateLinkConfig = {
+  collection: {
+    type: "whmcs_product",
+  },
   requiredSpecCount: 2,
   defaults: {},
   statusMap: {},
@@ -775,6 +778,11 @@ function MonitorFormDialog({
                   className="min-h-56 font-mono text-xs leading-5"
                   spellCheck={false}
                 />
+                <p className="text-xs leading-5 text-muted-foreground">
+                  默认读取 WHMCS 单品页；若单品页拒绝服务器请求，可将
+                  collection.type 设为 html_listing，并用 matchExternalProductId
+                  从公开列表页精确匹配当前商品。
+                </p>
               </CollapsibleContent>
             </Collapsible>
           ) : (

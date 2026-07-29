@@ -776,6 +776,73 @@ function parseHtmlCandidates(
   });
 }
 
+export function parseAffiliateLinkListingCandidate(input: {
+  body: string;
+  sourceUrl: string;
+  affiliateTargetUrl: string;
+  externalProductId: string;
+  purchaseUrl: string;
+  config: AffiliateLinkMonitorConfig;
+}) {
+  const collection = input.config.collection;
+  if (collection.type !== "html_listing") {
+    throw new Error("完整返利链接采集未配置 HTML 套餐列表模式");
+  }
+
+  const candidates = parseHtmlCandidates(
+    input.body,
+    {
+      itemSelector: collection.itemSelector,
+      fields: collection.fields,
+      requiredSpecCount: input.config.requiredSpecCount,
+      defaults: input.config.defaults,
+      headers: input.config.headers,
+      statusMap: input.config.statusMap,
+    },
+    input.sourceUrl,
+  );
+  const matchedCandidates = candidates.filter(
+    (candidate) =>
+      candidate.externalProductId === collection.matchExternalProductId,
+  );
+  const matchLabel = `产品 ${collection.matchExternalProductId}`;
+
+  if (matchedCandidates.length === 0) {
+    throw new Error(`HTML 套餐列表未匹配到${matchLabel}`);
+  }
+  if (matchedCandidates.length > 1) {
+    throw new Error(
+      `HTML 套餐列表的${matchLabel}匹配到 ${matchedCandidates.length} 项，必须恰好匹配一项`,
+    );
+  }
+
+  const candidate = matchedCandidates[0]!;
+  const listingEvidence = candidate.raw.__evidence;
+  return {
+    ...candidate,
+    externalProductId: input.externalProductId,
+    purchaseUrl: input.purchaseUrl,
+    prices: candidate.prices.map((price) => ({
+      ...price,
+      purchaseUrl: input.purchaseUrl,
+    })),
+    sourceUrl: input.sourceUrl,
+    raw: {
+      ...candidate.raw,
+      affiliateTargetUrl: input.affiliateTargetUrl,
+      collectionUrl: input.sourceUrl,
+      listingPurchaseUrl: candidate.purchaseUrl,
+      __evidence: {
+        adapter: "affiliate_link",
+        inputMode: "manual_complete_url",
+        collectionType: "html_listing",
+        matchExternalProductId: collection.matchExternalProductId,
+        listing: listingEvidence,
+      },
+    },
+  } satisfies ProviderOfferCandidate;
+}
+
 export function parseWhmcsBillingCyclePrices(input: {
   body: string;
   purchaseUrl: string;

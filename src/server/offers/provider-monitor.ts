@@ -23,6 +23,7 @@ import { getProviderMonitorSuccessSchedule } from "@fwqgo/core/provider-catalog-
 import {
   getProviderMonitorCheckRetentionCutoff,
   parseProviderMonitorConfig,
+  type AffiliateLinkMonitorConfig,
   type ProviderMonitorConfig,
   type ProviderSourceAdapter,
   type ProviderSourcePurpose,
@@ -52,6 +53,7 @@ import {
   hashProviderOfferSyncState,
   buildAffiliateLinkCandidate,
   hashProviderSourceResponse,
+  parseAffiliateLinkListingCandidate,
   parseProviderSourcePayload,
   prepareProviderOfferCandidates,
   type ProviderOfferCandidate,
@@ -83,6 +85,12 @@ function getErrorMessage(error: unknown) {
 
 function truncate(value: string, length = 5_000) {
   return value.length > length ? `${value.slice(0, length)}...` : value;
+}
+
+function isAffiliateHtmlListingConfig(
+  config: ProviderMonitorConfig,
+): config is AffiliateLinkMonitorConfig {
+  return "collection" in config && config.collection.type === "html_listing";
 }
 
 async function completeProviderMonitorRun(input: {
@@ -288,11 +296,16 @@ export async function runProviderMonitor(
   }
 
   const adapter = monitor.adapter as ProviderSourceAdapter;
-  const readsProductDetails =
-    adapter === "whmcs" || adapter === "affiliate_link";
   const parsedConfig = parseProviderMonitorConfig(monitor.config, adapter);
   const resolvedSecrets = resolveProviderMonitorSecrets(parsedConfig);
   const config = resolvedSecrets.config;
+  const affiliateHtmlListing =
+    adapter === "affiliate_link" && isAffiliateHtmlListingConfig(config);
+  const bypassesResponseCache =
+    adapter === "whmcs" || adapter === "affiliate_link";
+  const enrichesWhmcsProductDetails =
+    adapter === "whmcs" ||
+    (adapter === "affiliate_link" && !affiliateHtmlListing);
   if (resolvedSecrets.needsMigration) {
     const [migratedMonitor] = await db
       .update(providerMonitors)
@@ -443,32 +456,63 @@ export async function runProviderMonitor(
       ) {
         throw new Error("完整返利链接采集源缺少有效的套餐返利链接记录");
       }
-      affiliateCollectionUrl =
-        monitor.affiliateSourceUrl ?? monitor.affiliateTargetUrl;
-      const candidate = buildAffiliateLinkCandidate({
-        externalProductId: monitor.affiliateExternalProductId,
-        affiliateTargetUrl: monitor.affiliateTargetUrl,
-        purchaseUrl: `/go/${monitor.outboundSlug}`,
-        sourceUrl: affiliateCollectionUrl,
-        config,
-      });
-      const productPage = await fetchWhmcsProductPage({
-        url: affiliateCollectionUrl,
-        headers: config.headers,
-        timeoutMs: monitor.timeoutSeconds * 1_000,
-      });
-      responseStatusCode = 200;
-      responseStatusText = "OK";
-      responseHeaders = new Headers();
-      text = productPage.body;
-      initialCandidates = [candidate];
-      prefetchedProductPage = productPage;
+      const affiliateConfig = config as AffiliateLinkMonitorConfig;
+      if (affiliateHtmlListing) {
+        if (!monitor.affiliateSourceUrl) {
+          throw new Error("HTML 套餐列表模式必须填写独立采集地址");
+        }
+        affiliateCollectionUrl = monitor.affiliateSourceUrl;
+        const response = await fetchPublicHttpUrl(
+          affiliateCollectionUrl,
+          {
+            headers: {
+              Accept: "text/html,application/xhtml+xml",
+              ...affiliateConfig.headers,
+            },
+            maxRedirects: 0,
+            signal: AbortSignal.timeout(monitor.timeoutSeconds * 1_000),
+          },
+          "供应商公开采集地址",
+        );
+        responseStatusCode = response.status;
+        responseStatusText = response.statusText;
+        responseHeaders = response.headers;
+        const responseText = await readResponseTextWithLimit(
+          response,
+          MAX_MONITOR_RESPONSE_BYTES,
+        );
+        if (responseText === null) {
+          throw new Error("供应商响应超过 8 MB 限制");
+        }
+        text = responseText;
+      } else {
+        affiliateCollectionUrl =
+          monitor.affiliateSourceUrl ?? monitor.affiliateTargetUrl;
+        const candidate = buildAffiliateLinkCandidate({
+          externalProductId: monitor.affiliateExternalProductId,
+          affiliateTargetUrl: monitor.affiliateTargetUrl,
+          purchaseUrl: `/go/${monitor.outboundSlug}`,
+          sourceUrl: affiliateCollectionUrl,
+          config: affiliateConfig,
+        });
+        const productPage = await fetchWhmcsProductPage({
+          url: affiliateCollectionUrl,
+          headers: affiliateConfig.headers,
+          timeoutMs: monitor.timeoutSeconds * 1_000,
+        });
+        responseStatusCode = 200;
+        responseStatusText = "OK";
+        responseHeaders = new Headers();
+        text = productPage.body;
+        initialCandidates = [candidate];
+        prefetchedProductPage = productPage;
+      }
     } else {
       const conditionalHeaders: Record<string, string> = {};
-      if (!readsProductDetails && configUnchanged && monitor.etag) {
+      if (!bypassesResponseCache && configUnchanged && monitor.etag) {
         conditionalHeaders["If-None-Match"] = monitor.etag;
       }
-      if (!readsProductDetails && configUnchanged && monitor.lastModified) {
+      if (!bypassesResponseCache && configUnchanged && monitor.lastModified) {
         conditionalHeaders["If-Modified-Since"] = monitor.lastModified;
       }
       const response = await fetchPublicHttpUrl(
@@ -515,11 +559,29 @@ export async function runProviderMonitor(
         `供应商网站返回 HTTP ${responseStatusCode} ${responseStatusText}`,
       );
     }
+    if (
+      affiliateHtmlListing &&
+      affiliateCollectionUrl &&
+      monitor.affiliateExternalProductId &&
+      monitor.affiliateTargetUrl &&
+      monitor.outboundSlug
+    ) {
+      initialCandidates = [
+        parseAffiliateLinkListingCandidate({
+          body: text,
+          sourceUrl: affiliateCollectionUrl,
+          affiliateTargetUrl: monitor.affiliateTargetUrl,
+          externalProductId: monitor.affiliateExternalProductId,
+          purchaseUrl: `/go/${monitor.outboundSlug}`,
+          config,
+        }),
+      ];
+    }
     const responseHash = text
       ? hashProviderSourceResponse(text)
       : monitor.responseHash;
     const notModified =
-      !readsProductDetails &&
+      !bypassesResponseCache &&
       (responseStatusCode === 304 ||
         Boolean(
           configUnchanged &&
@@ -624,7 +686,7 @@ export async function runProviderMonitor(
     if (candidates.length > MAX_MONITOR_ITEMS) {
       throw new Error(`供应商网站一次返回超过 ${MAX_MONITOR_ITEMS} 个套餐`);
     }
-    if (readsProductDetails) {
+    if (enrichesWhmcsProductDetails) {
       if (candidates.length > MAX_WHMCS_PRODUCT_DETAILS) {
         throw new Error(
           `WHMCS 采集源一次最多读取 ${MAX_WHMCS_PRODUCT_DETAILS} 个产品配置页`,
@@ -1797,6 +1859,8 @@ export async function previewProviderMonitorSource(input: {
     existingConfig,
   );
   const config = resolveProviderMonitorSecrets(mergedConfig).config;
+  const affiliateHtmlListing =
+    input.adapter === "affiliate_link" && isAffiliateHtmlListingConfig(config);
   let httpStatus: number;
   let parsedCandidates: ProviderOfferCandidate[];
   let prefetchedProductPage: Awaited<
@@ -1806,22 +1870,63 @@ export async function previewProviderMonitorSource(input: {
   let affiliateCollectionUrl: string | null = null;
   if (input.adapter === "affiliate_link") {
     if (!input.affiliateLink) throw new Error("请填写完整返利链接");
-    affiliateCollectionUrl =
-      input.affiliateLink.sourceUrl ?? input.affiliateLink.affiliateTargetUrl;
-    const candidate = buildAffiliateLinkCandidate({
-      externalProductId: input.affiliateLink.externalProductId,
-      affiliateTargetUrl: input.affiliateLink.affiliateTargetUrl,
-      purchaseUrl: input.affiliateLink.affiliateTargetUrl,
-      sourceUrl: affiliateCollectionUrl,
-      config,
-    });
-    prefetchedProductPage = await fetchWhmcsProductPage({
-      url: affiliateCollectionUrl,
-      headers: config.headers,
-      timeoutMs: input.timeoutSeconds * 1_000,
-    });
-    httpStatus = 200;
-    parsedCandidates = [candidate];
+    const affiliateConfig = config as AffiliateLinkMonitorConfig;
+    if (affiliateHtmlListing) {
+      if (!input.affiliateLink.sourceUrl) {
+        throw new Error("HTML 套餐列表模式必须填写独立采集地址");
+      }
+      affiliateCollectionUrl = input.affiliateLink.sourceUrl;
+      const response = await fetchPublicHttpUrl(
+        affiliateCollectionUrl,
+        {
+          headers: {
+            Accept: "text/html,application/xhtml+xml",
+            ...affiliateConfig.headers,
+          },
+          maxRedirects: 0,
+          signal: AbortSignal.timeout(input.timeoutSeconds * 1_000),
+        },
+        "供应商公开采集地址",
+      );
+      if (!response.ok) {
+        throw new Error(
+          `供应商网站返回 HTTP ${response.status} ${response.statusText}`,
+        );
+      }
+      const body = await readResponseTextWithLimit(
+        response,
+        MAX_MONITOR_RESPONSE_BYTES,
+      );
+      if (body === null) throw new Error("供应商响应超过 8 MB 限制");
+      httpStatus = response.status;
+      parsedCandidates = [
+        parseAffiliateLinkListingCandidate({
+          body,
+          sourceUrl: affiliateCollectionUrl,
+          affiliateTargetUrl: input.affiliateLink.affiliateTargetUrl,
+          externalProductId: input.affiliateLink.externalProductId,
+          purchaseUrl: input.affiliateLink.affiliateTargetUrl,
+          config: affiliateConfig,
+        }),
+      ];
+    } else {
+      affiliateCollectionUrl =
+        input.affiliateLink.sourceUrl ?? input.affiliateLink.affiliateTargetUrl;
+      const candidate = buildAffiliateLinkCandidate({
+        externalProductId: input.affiliateLink.externalProductId,
+        affiliateTargetUrl: input.affiliateLink.affiliateTargetUrl,
+        purchaseUrl: input.affiliateLink.affiliateTargetUrl,
+        sourceUrl: affiliateCollectionUrl,
+        config: affiliateConfig,
+      });
+      prefetchedProductPage = await fetchWhmcsProductPage({
+        url: affiliateCollectionUrl,
+        headers: affiliateConfig.headers,
+        timeoutMs: input.timeoutSeconds * 1_000,
+      });
+      httpStatus = 200;
+      parsedCandidates = [candidate];
+    }
   } else {
     const response = await fetchPublicHttpUrl(
       input.endpointUrl,
@@ -1861,7 +1966,10 @@ export async function previewProviderMonitorSource(input: {
   }
   let candidates = parsedCandidates.slice(0, 20);
   let detailIssues = 0;
-  if (input.adapter === "whmcs" || input.adapter === "affiliate_link") {
+  if (
+    input.adapter === "whmcs" ||
+    (input.adapter === "affiliate_link" && !affiliateHtmlListing)
+  ) {
     const cachedProductPage = prefetchedProductPage;
     const enrichment = await enrichWhmcsProductPrices({
       candidates,
