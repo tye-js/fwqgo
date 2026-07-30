@@ -29,7 +29,7 @@ type AdminBackgroundJobStatus =
   "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
 type AdminBackgroundJobRow = typeof adminBackgroundJobs.$inferSelect;
-type AdminBackgroundJobTransaction = Parameters<
+export type AdminBackgroundJobTransaction = Parameters<
   Parameters<typeof db.transaction>[0]
 >[0];
 
@@ -50,7 +50,7 @@ export type BackgroundJobRunnerInput = {
   onTerminal?: (context: BackgroundJobTerminalContext) => Promise<void>;
 };
 
-type BackgroundJobInput = BackgroundJobRunnerInput & {
+export type BackgroundJobInput = BackgroundJobRunnerInput & {
   payload?: unknown;
   maxAttempts?: number;
   runAfter?: Date;
@@ -904,19 +904,85 @@ async function scheduleBlockedBackgroundJobRecovery() {
 }
 
 async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {
+  await resetStaleBackgroundJobs();
+
+  const enqueueResult = await db.transaction((tx) =>
+    enqueueAdminBackgroundJobWithTransaction(input, tx),
+  );
+
+  scheduleAdminBackgroundJobWorker(enqueueResult.runAfter);
+  return enqueueResult.created;
+}
+
+export async function acquireAdminBackgroundJobCoordinationLock(
+  tx: AdminBackgroundJobTransaction,
+) {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(${BACKGROUND_JOB_COORDINATION_LOCK_ID})`,
+  );
+}
+
+async function enqueueAdminBackgroundJobWithTransaction(
+  input: BackgroundJobInput,
+  tx: AdminBackgroundJobTransaction,
+) {
   const now = new Date();
   const requestedRunAfter = input.runAfter ?? now;
   const payload = serializePayload(input.payload);
   const maxAttempts = normalizeBackgroundJobMaxAttempts(input.maxAttempts);
 
-  await resetStaleBackgroundJobs();
+  await acquireAdminBackgroundJobCoordinationLock(tx);
 
-  const enqueueResult = await db.transaction(async (tx) => {
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(${BACKGROUND_JOB_COORDINATION_LOCK_ID})`,
-    );
+  const [existingJob] = await tx
+    .select({
+      id: adminBackgroundJobs.id,
+      runAfter: adminBackgroundJobs.runAfter,
+    })
+    .from(adminBackgroundJobs)
+    .where(
+      and(
+        eq(adminBackgroundJobs.jobKey, input.key),
+        eq(adminBackgroundJobs.status, "queued"),
+      ),
+    )
+    .for("update")
+    .limit(1);
 
-    const [existingJob] = await tx
+  if (existingJob) {
+    const effectiveRunAfter =
+      existingJob.runAfter.getTime() <= requestedRunAfter.getTime()
+        ? existingJob.runAfter
+        : requestedRunAfter;
+
+    await tx
+      .update(adminBackgroundJobs)
+      .set({
+        label: input.label,
+        payload,
+        maxAttempts,
+        runAfter: effectiveRunAfter,
+        updatedAt: now,
+      })
+      .where(eq(adminBackgroundJobs.id, existingJob.id));
+    return { created: false, runAfter: effectiveRunAfter };
+  }
+
+  const [job] = await tx
+    .insert(adminBackgroundJobs)
+    .values({
+      jobKey: input.key,
+      label: input.label,
+      status: "queued",
+      payload,
+      maxAttempts,
+      runAfter: requestedRunAfter,
+      updatedAt: now,
+    })
+    .onConflictDoNothing()
+    .returning({ id: adminBackgroundJobs.id });
+
+  if (!job) {
+    const [concurrentJob] = await tx
       .select({
         id: adminBackgroundJobs.id,
         runAfter: adminBackgroundJobs.runAfter,
@@ -931,81 +997,44 @@ async function enqueueAdminBackgroundJobInternal(input: BackgroundJobInput) {
       .for("update")
       .limit(1);
 
-    if (existingJob) {
-      const effectiveRunAfter =
-        existingJob.runAfter.getTime() <= requestedRunAfter.getTime()
-          ? existingJob.runAfter
-          : requestedRunAfter;
-
-      await tx
-        .update(adminBackgroundJobs)
-        .set({
-          label: input.label,
-          payload,
-          maxAttempts,
-          runAfter: effectiveRunAfter,
-          updatedAt: now,
-        })
-        .where(eq(adminBackgroundJobs.id, existingJob.id));
-      return { created: false, runAfter: effectiveRunAfter };
+    if (!concurrentJob) {
+      throw new Error(`后台任务 ${input.key} 入队冲突后未找到排队记录`);
     }
 
-    const [job] = await tx
-      .insert(adminBackgroundJobs)
-      .values({
-        jobKey: input.key,
+    const effectiveRunAfter =
+      concurrentJob.runAfter.getTime() <= requestedRunAfter.getTime()
+        ? concurrentJob.runAfter
+        : requestedRunAfter;
+    await tx
+      .update(adminBackgroundJobs)
+      .set({
         label: input.label,
-        status: "queued",
         payload,
         maxAttempts,
-        runAfter: requestedRunAfter,
+        runAfter: effectiveRunAfter,
         updatedAt: now,
       })
-      .onConflictDoNothing()
-      .returning({ id: adminBackgroundJobs.id });
+      .where(eq(adminBackgroundJobs.id, concurrentJob.id));
+    return { created: false, runAfter: effectiveRunAfter };
+  }
 
-    if (!job) {
-      const [concurrentJob] = await tx
-        .select({
-          id: adminBackgroundJobs.id,
-          runAfter: adminBackgroundJobs.runAfter,
-        })
-        .from(adminBackgroundJobs)
-        .where(
-          and(
-            eq(adminBackgroundJobs.jobKey, input.key),
-            eq(adminBackgroundJobs.status, "queued"),
-          ),
-        )
-        .for("update")
-        .limit(1);
+  return { created: true, runAfter: requestedRunAfter };
+}
 
-      if (!concurrentJob) {
-        throw new Error(`后台任务 ${input.key} 入队冲突后未找到排队记录`);
-      }
-
-      const effectiveRunAfter =
-        concurrentJob.runAfter.getTime() <= requestedRunAfter.getTime()
-          ? concurrentJob.runAfter
-          : requestedRunAfter;
-      await tx
-        .update(adminBackgroundJobs)
-        .set({
-          label: input.label,
-          payload,
-          maxAttempts,
-          runAfter: effectiveRunAfter,
-          updatedAt: now,
-        })
-        .where(eq(adminBackgroundJobs.id, concurrentJob.id));
-      return { created: false, runAfter: effectiveRunAfter };
-    }
-
-    return { created: true, runAfter: requestedRunAfter };
-  });
-
-  scheduleAdminBackgroundJobWorker(enqueueResult.runAfter);
-  return enqueueResult.created;
+export async function enqueueAdminBackgroundJobInTransaction(
+  input: BackgroundJobInput,
+  tx: AdminBackgroundJobTransaction,
+) {
+  registerAdminBackgroundJobRunner(input);
+  try {
+    return await enqueueAdminBackgroundJobWithTransaction(input, tx);
+  } catch (error) {
+    structuredLog("error", "background.enqueue_failed", {
+      jobKey: input.key,
+      error,
+    });
+    throw error;
+  }
 }
 
 export async function enqueueAdminBackgroundJob(input: BackgroundJobInput) {

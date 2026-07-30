@@ -92,6 +92,14 @@ const providerMonitorBatchToggleSchema = z.object({
   enabled: z.boolean(),
 });
 
+const enableProviderMonitorsSchema = providerMonitorBatchToggleSchema.extend({
+  enabled: z.literal(true),
+});
+
+const disableProviderMonitorsSchema = providerMonitorBatchToggleSchema.extend({
+  enabled: z.literal(false),
+});
+
 export type ProviderMonitorActionInput = z.input<typeof monitorInputSchema>;
 
 function parseConfigText(value: string, adapter: ProviderSourceAdapter) {
@@ -154,6 +162,63 @@ function assertAffiliateCollectionSource(
   }
 }
 
+function getSchedulingFeedback(result: unknown) {
+  if (!result || typeof result !== "object") {
+    return { failed: 0, skipped: 0 };
+  }
+  const failed =
+    "schedulingFailed" in result &&
+    typeof result.schedulingFailed === "number" &&
+    Number.isSafeInteger(result.schedulingFailed) &&
+    result.schedulingFailed > 0
+      ? result.schedulingFailed
+      : 0;
+  const skipped =
+    "schedulingSkipped" in result &&
+    typeof result.schedulingSkipped === "number" &&
+    Number.isSafeInteger(result.schedulingSkipped) &&
+    result.schedulingSkipped > 0
+      ? result.schedulingSkipped
+      : 0;
+  return { failed, skipped };
+}
+
+function getProviderMonitorToggleSuccessMessage(result: {
+  enabled: boolean;
+  updated: number;
+  unchanged: number;
+}) {
+  const action = result.enabled ? "启用" : "停用";
+  const messages = [];
+  const scheduling = getSchedulingFeedback(result);
+  if (result.updated > 0) {
+    messages.push(
+      scheduling.failed > 0 || scheduling.skipped > 0
+        ? `已${action} ${result.updated} 个供应商采集源`
+        : result.enabled
+          ? `已启用 ${result.updated} 个供应商采集源，后台采集任务已安排`
+          : `已停用 ${result.updated} 个供应商采集源，排队任务已取消`,
+    );
+  }
+  if (result.unchanged > 0) {
+    messages.push(`${result.unchanged} 个已处于${action}状态`);
+  }
+
+  if (scheduling.skipped > 0) {
+    messages.push(
+      `${scheduling.skipped} 个源状态已被其他操作变更，请刷新页面确认`,
+    );
+  }
+  if (scheduling.failed > 0) {
+    messages.push(
+      result.enabled
+        ? `${scheduling.failed} 个后台任务未排队，请选择对应采集源后执行“立即采集”`
+        : `${scheduling.failed} 个排队任务未取消，请到任务中心确认并手动取消`,
+    );
+  }
+  return messages.join("，");
+}
+
 const providerMonitorIdSchema = postgresIntegerIdSchema;
 const providerMonitorRunIdSchema = z
   .number()
@@ -203,7 +268,16 @@ const saveProviderMonitorMutation = defineAdminAction({
     revalidatePath("/servers/monitor");
     return result;
   },
-  successMessage: "供应商采集源已保存",
+  successMessage: (result) => {
+    const scheduling = getSchedulingFeedback(result);
+    if (scheduling.failed > 0) {
+      return "采集源已保存，但后台任务调度失败，请稍后重试立即采集";
+    }
+    if (scheduling.skipped > 0) {
+      return "采集源已保存，但状态已被其他操作变更，请刷新确认";
+    }
+    return "供应商采集源已保存";
+  },
   errorTitle: "保存供应商采集源失败",
   errorSuggestion:
     "请检查商品稳定键、完整返利链接、独立采集地址、字段映射和执行参数。",
@@ -215,11 +289,12 @@ const runProviderMonitorNowMutation = defineAdminAction({
   entityType: "provider_monitor",
   parse: (id: number) => providerMonitorIdSchema.parse(id),
   execute: async (id) => {
-    await enqueueProviderMonitorTasks([id]);
+    const result = await enqueueProviderMonitorTasks([id]);
     revalidatePath("/servers/monitor");
-    return { id };
+    return { id, ...result };
   },
-  successMessage: "供应商采集任务已加入后台队列",
+  successMessage: (result) =>
+    result.merged > 0 ? "复用已有排队任务" : "供应商采集任务已加入后台队列",
   errorTitle: "启动供应商采集失败",
   errorSuggestion: "请确认采集源仍然存在且已启用，然后重新执行。",
   entityId: (id) => id,
@@ -234,36 +309,56 @@ const runProviderMonitorsNowMutation = defineAdminAction({
     revalidatePath("/servers/monitor");
     return result;
   },
-  successMessage: (result) =>
-    result.skipped > 0
-      ? `已加入 ${result.queued} 个采集任务，跳过 ${result.skipped} 个已停用采集源`
-      : `已加入 ${result.queued} 个供应商采集任务`,
+  successMessage: (result) => {
+    const messages = [];
+    if (result.queued > 0) messages.push(`新建 ${result.queued} 个采集任务`);
+    if (result.merged > 0) {
+      messages.push(`合并 ${result.merged} 个已有排队任务`);
+    }
+    if (result.skipped > 0) {
+      messages.push(`跳过 ${result.skipped} 个已停用采集源`);
+    }
+    if (result.failed > 0) {
+      messages.push(`${result.failed} 个任务入队失败`);
+    }
+    return messages.join("，");
+  },
   errorTitle: "批量启动供应商采集失败",
   errorSuggestion: "请刷新页面确认采集源状态，启用后再重新执行。",
   entityId: (ids) => `batch:${ids.length}`,
 });
 
-const updateProviderMonitorsEnabledMutation = defineAdminAction({
+const enableProviderMonitorsMutation = defineAdminAction({
   action: "provider_monitor.bulk_toggle",
   entityType: "provider_monitor",
-  parse: (input: { ids: number[]; enabled: boolean }) =>
-    providerMonitorBatchToggleSchema.parse(input),
+  parse: (input: { ids: number[]; enabled: true }) =>
+    enableProviderMonitorsSchema.parse(input),
   execute: async (input) => {
-    const result = await updateProviderMonitorsEnabled(
-      input.ids,
-      input.enabled,
-    );
+    const result = await updateProviderMonitorsEnabled(input.ids, true);
     revalidatePath("/servers/monitor");
     return result;
   },
-  successMessage: (result) => {
-    const action = result.enabled ? "启用" : "停用";
-    return result.unchanged > 0
-      ? `已${action} ${result.updated} 个采集源，${result.unchanged} 个状态未变`
-      : `已${action} ${result.updated} 个供应商采集源`;
+  successMessage: getProviderMonitorToggleSuccessMessage,
+  errorTitle: "批量启用供应商采集源失败",
+  errorSuggestion:
+    "请先补全缺失的完整返利链接，再刷新页面确认采集源状态后重试。",
+  entityId: (input) => `batch:${input.ids.length}`,
+});
+
+const disableProviderMonitorsMutation = defineAdminAction({
+  action: "provider_monitor.bulk_toggle",
+  entityType: "provider_monitor",
+  parse: (input: { ids: number[]; enabled: false }) =>
+    disableProviderMonitorsSchema.parse(input),
+  execute: async (input) => {
+    const result = await updateProviderMonitorsEnabled(input.ids, false);
+    revalidatePath("/servers/monitor");
+    return result;
   },
-  errorTitle: "批量更新供应商采集源失败",
-  errorSuggestion: "请刷新页面确认采集源状态后重试。",
+  successMessage: getProviderMonitorToggleSuccessMessage,
+  errorTitle: "批量停用供应商采集源失败",
+  errorSuggestion:
+    "请刷新页面确认采集源仍然存在后重试；若仍失败，请到任务中心确认相关任务状态。",
   entityId: (input) => `batch:${input.ids.length}`,
 });
 
@@ -356,7 +451,8 @@ const retryProviderMonitorRunMutation = defineAdminAction({
     revalidatePath("/servers/monitor");
     return result;
   },
-  successMessage: "供应商采集已重新加入后台队列",
+  successMessage: (result) =>
+    result.merged ? "复用已有排队任务" : "供应商采集已重新加入后台队列",
   errorTitle: "重试供应商采集失败",
   errorSuggestion: "请确认采集源已启用，并刷新任务中心确认最新状态。",
   entityId: (runId) => runId,
@@ -380,7 +476,9 @@ export async function updateProviderMonitorsEnabledAction(input: {
   ids: number[];
   enabled: boolean;
 }) {
-  return updateProviderMonitorsEnabledMutation(input);
+  return input.enabled
+    ? enableProviderMonitorsMutation({ ...input, enabled: true })
+    : disableProviderMonitorsMutation({ ...input, enabled: false });
 }
 
 export async function deleteProviderMonitorAction(id: number) {

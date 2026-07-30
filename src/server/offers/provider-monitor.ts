@@ -13,12 +13,20 @@ import {
 } from "drizzle-orm";
 
 import {
-  enqueueAdminBackgroundJob,
+  acquireAdminBackgroundJobCoordinationLock,
+  enqueueAdminBackgroundJobInTransaction,
   runWithCurrentAdminBackgroundJobTerminalState,
+  wakeAdminBackgroundJobWorkerForRegisteredKeys,
+  type AdminBackgroundJobTransaction,
   type BackgroundJobContext,
+  type BackgroundJobInput,
 } from "@/server/admin/background-jobs";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import { fetchPublicHttpUrl } from "@fwqgo/core/network-url";
+import {
+  boundOffsetPaginationByTotal,
+  normalizeOffsetPagination,
+} from "@fwqgo/core/pagination";
 import { getProviderMonitorSuccessSchedule } from "@fwqgo/core/provider-catalog-discovery";
 import {
   getProviderMonitorCheckRetentionCutoff,
@@ -1088,7 +1096,14 @@ export async function enqueueProviderMonitorTask(
   monitorId: number,
   runAfter = new Date(),
 ) {
-  return enqueueAdminBackgroundJob({
+  return enqueueEnabledProviderMonitorTask(monitorId, runAfter);
+}
+
+function getProviderMonitorBackgroundJobInput(
+  monitorId: number,
+  runAfter: Date,
+): BackgroundJobInput {
+  return {
     key: `provider-monitor:${monitorId}`,
     label: `供应商采集 #${monitorId}`,
     payload: { monitorId },
@@ -1106,25 +1121,47 @@ export async function enqueueProviderMonitorTask(
         error,
       });
     },
-  });
+  };
+}
+
+function enqueueProviderMonitorTaskInTransaction(
+  monitorId: number,
+  runAfter: Date,
+  tx: AdminBackgroundJobTransaction,
+) {
+  return enqueueAdminBackgroundJobInTransaction(
+    getProviderMonitorBackgroundJobInput(monitorId, runAfter),
+    tx,
+  );
+}
+
+function wakeProviderMonitorTask(monitorId: number) {
+  wakeAdminBackgroundJobWorkerForRegisteredKeys([
+    `provider-monitor:${monitorId}`,
+  ]);
 }
 
 async function enqueueEnabledProviderMonitorTask(
   monitorId: number,
   runAfter: Date,
 ) {
-  const [monitor] = await db
-    .select({ id: providerMonitors.id })
-    .from(providerMonitors)
-    .where(
-      and(
-        eq(providerMonitors.id, monitorId),
-        eq(providerMonitors.enabled, true),
-      ),
-    )
-    .limit(1);
-  if (!monitor) return null;
-  return enqueueProviderMonitorTask(monitorId, runAfter);
+  const result = await db.transaction(async (tx) => {
+    await acquireAdminBackgroundJobCoordinationLock(tx);
+    const [monitor] = await tx
+      .select({
+        id: providerMonitors.id,
+        enabled: providerMonitors.enabled,
+      })
+      .from(providerMonitors)
+      .where(eq(providerMonitors.id, monitorId))
+      .for("update")
+      .limit(1);
+    if (!monitor?.enabled) return null;
+    return enqueueProviderMonitorTaskInTransaction(monitorId, runAfter, tx);
+  });
+  if (!result) return null;
+  wakeProviderMonitorTask(monitorId);
+  return result.created;
 }
 
 async function safelyEnqueueEnabledProviderMonitorTask(
@@ -1144,20 +1181,25 @@ export async function retryProviderMonitorRun(runId: number) {
     .select({
       monitorId: providerMonitorRuns.monitorId,
       status: providerMonitorRuns.status,
-      enabled: providerMonitors.enabled,
     })
     .from(providerMonitorRuns)
-    .innerJoin(
-      providerMonitors,
-      eq(providerMonitorRuns.monitorId, providerMonitors.id),
-    )
     .where(eq(providerMonitorRuns.id, runId))
     .limit(1);
   if (!run) throw new Error("供应商采集运行记录不存在");
   if (run.status !== "failed") throw new Error("只有失败的采集运行可以重试");
-  if (!run.enabled) throw new Error("采集源已停用，请先在供应商采集页面启用");
-  await enqueueProviderMonitorTask(run.monitorId, new Date());
-  return { runId, monitorId: run.monitorId };
+  const enqueued = await enqueueEnabledProviderMonitorTask(
+    run.monitorId,
+    new Date(),
+  );
+  if (enqueued === null) {
+    throw new Error("采集源已停用，请先在供应商采集页面启用");
+  }
+  return {
+    runId,
+    monitorId: run.monitorId,
+    queued: enqueued,
+    merged: !enqueued,
+  };
 }
 
 export async function ensureProviderMonitorWorkers() {
@@ -1172,7 +1214,10 @@ export async function ensureProviderMonitorWorkers() {
 
   const now = new Date();
   for (const monitor of monitors) {
-    await enqueueProviderMonitorTask(monitor.id, monitor.nextRunAt ?? now);
+    await enqueueEnabledProviderMonitorTask(
+      monitor.id,
+      monitor.nextRunAt ?? now,
+    );
   }
 }
 
@@ -1271,6 +1316,9 @@ export async function createProviderMonitor(
 ) {
   const now = new Date();
   const created = await db.transaction(async (tx) => {
+    if (input.enabled) {
+      await acquireAdminBackgroundJobCoordinationLock(tx);
+    }
     const { affiliateLink, ...monitorInput } = input;
     let affiliateLinkId: number | null = null;
     if (input.adapter === "affiliate_link") {
@@ -1320,14 +1368,16 @@ export async function createProviderMonitor(
         updatedAt: now,
       })
       .returning({ id: providerMonitors.id });
-    return createdMonitor ?? null;
+    if (!createdMonitor) return null;
+    if (monitorInput.enabled) {
+      await enqueueProviderMonitorTaskInTransaction(createdMonitor.id, now, tx);
+    }
+    return createdMonitor;
   });
 
   if (!created) throw new Error("供应商采集源创建失败");
-  if (input.enabled) {
-    await enqueueProviderMonitorTask(created.id, now);
-  }
-  return created;
+  if (input.enabled) wakeProviderMonitorTask(created.id);
+  return { ...created, schedulingFailed: 0, schedulingSkipped: 0 };
 }
 
 export async function updateProviderMonitor(
@@ -1337,6 +1387,7 @@ export async function updateProviderMonitor(
   const { providerId, affiliateLink, ...mutableInput } = input;
   const now = new Date();
   const updated = await db.transaction(async (tx) => {
+    await acquireAdminBackgroundJobCoordinationLock(tx);
     const [existing] = await tx
       .select({
         providerId: providerMonitors.providerId,
@@ -1446,16 +1497,18 @@ export async function updateProviderMonitor(
     if (result && existing.discoveredByScanId) {
       await refreshProviderCatalogScanStatus(existing.discoveredByScanId, tx);
     }
-    return result ?? null;
+    if (!result) return null;
+    if (input.enabled) {
+      await enqueueProviderMonitorTaskInTransaction(id, now, tx);
+    } else {
+      await cancelQueuedProviderMonitorJobs([id], tx);
+    }
+    return result;
   });
 
   if (!updated) throw new Error("供应商采集源不存在");
-  if (input.enabled) {
-    await enqueueProviderMonitorTask(id, now);
-  } else {
-    await cancelQueuedProviderMonitorJobs(id);
-  }
-  return updated;
+  if (input.enabled) wakeProviderMonitorTask(id);
+  return { ...updated, schedulingFailed: 0, schedulingSkipped: 0 };
 }
 
 function normalizeProviderMonitorIds(ids: number[]) {
@@ -1479,6 +1532,41 @@ async function getExistingProviderMonitorRows(ids: number[]) {
   return rows;
 }
 
+async function enqueueEnabledProviderMonitorTasks(
+  monitorIds: number[],
+  runAfter: Date,
+) {
+  const results = await Promise.allSettled(
+    monitorIds.map((monitorId) =>
+      enqueueEnabledProviderMonitorTask(monitorId, runAfter),
+    ),
+  );
+  let created = 0;
+  let merged = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  results.forEach((result, index) => {
+    if (result.status === "rejected") {
+      failed += 1;
+      console.error("供应商采集任务批量入队失败:", {
+        monitorId: monitorIds[index],
+        error: getErrorMessage(result.reason),
+      });
+      return;
+    }
+    if (result.value === null) {
+      skipped += 1;
+    } else if (result.value) {
+      created += 1;
+    } else {
+      merged += 1;
+    }
+  });
+
+  return { created, merged, skipped, failed };
+}
+
 export async function enqueueProviderMonitorTasks(ids: number[]) {
   const monitorIds = normalizeProviderMonitorIds(ids);
   if (monitorIds.length === 0) throw new Error("请至少选择一个供应商采集源");
@@ -1500,15 +1588,22 @@ export async function enqueueProviderMonitorTasks(ids: number[]) {
     throw new Error("选中的供应商采集源均已停用，请先启用后再采集");
   }
 
-  const runAfter = new Date();
-  await Promise.all(
-    enabledIds.map((monitorId) =>
-      enqueueProviderMonitorTask(monitorId, runAfter),
-    ),
+  const result = await enqueueEnabledProviderMonitorTasks(
+    enabledIds,
+    new Date(),
   );
+  const scheduled = result.created + result.merged;
+  if (scheduled === 0 && result.failed > 0) {
+    throw new Error("选中的采集任务均未能加入队列，请稍后重试");
+  }
+  if (scheduled === 0) {
+    throw new Error("选中的供应商采集源均已停用，请先启用后再采集");
+  }
   return {
-    queued: enabledIds.length,
-    skipped: monitorIds.length - enabledIds.length,
+    queued: result.created,
+    merged: result.merged,
+    skipped: monitorIds.length - enabledIds.length + result.skipped,
+    failed: result.failed,
   };
 }
 
@@ -1521,6 +1616,7 @@ export async function updateProviderMonitorsEnabled(
 
   const now = new Date();
   const changedIds = await db.transaction(async (tx) => {
+    await acquireAdminBackgroundJobCoordinationLock(tx);
     const rows = await tx
       .select({
         id: providerMonitors.id,
@@ -1547,46 +1643,67 @@ export async function updateProviderMonitorsEnabled(
     const changed = rows
       .filter((monitor) => monitor.enabled !== enabled)
       .map((monitor) => monitor.id);
-    if (changed.length === 0) return changed;
+    if (changed.length > 0) {
+      const updated = await tx
+        .update(providerMonitors)
+        .set({
+          enabled,
+          nextRunAt: enabled ? now : null,
+          ...(enabled ? {} : { lastStatus: "idle" as const, lastError: null }),
+          runGeneration: sql`${providerMonitors.runGeneration} + 1`,
+          updatedAt: now,
+        })
+        .where(inArray(providerMonitors.id, changed))
+        .returning({ id: providerMonitors.id });
+      if (updated.length !== changed.length) {
+        throw new Error("部分供应商采集源状态更新失败，请刷新页面后重试");
+      }
+    }
 
-    const updated = await tx
-      .update(providerMonitors)
-      .set({
-        enabled,
-        nextRunAt: enabled ? now : null,
-        ...(enabled ? {} : { lastStatus: "idle" as const, lastError: null }),
-        runGeneration: sql`${providerMonitors.runGeneration} + 1`,
-        updatedAt: now,
-      })
-      .where(inArray(providerMonitors.id, changed))
-      .returning({ id: providerMonitors.id });
-    if (updated.length !== changed.length) {
-      throw new Error("部分供应商采集源状态更新失败，请刷新页面后重试");
+    if (enabled) {
+      for (const monitorId of changed) {
+        await enqueueProviderMonitorTaskInTransaction(monitorId, now, tx);
+      }
+    } else {
+      await cancelQueuedProviderMonitorJobs(monitorIds, tx);
     }
     return changed;
   });
   if (changedIds.length === 0) {
-    return { updated: 0, unchanged: monitorIds.length, enabled };
+    return {
+      updated: 0,
+      unchanged: monitorIds.length,
+      enabled,
+      schedulingFailed: 0,
+      schedulingSkipped: 0,
+    };
   }
 
   if (enabled) {
-    await Promise.all(
-      changedIds.map((monitorId) => enqueueProviderMonitorTask(monitorId, now)),
+    wakeAdminBackgroundJobWorkerForRegisteredKeys(
+      changedIds.map((monitorId) => `provider-monitor:${monitorId}`),
     );
-  } else {
-    await Promise.all(changedIds.map(cancelQueuedProviderMonitorJobs));
   }
 
   return {
     updated: changedIds.length,
     unchanged: monitorIds.length - changedIds.length,
     enabled,
+    schedulingFailed: 0,
+    schedulingSkipped: 0,
   };
 }
 
-async function cancelQueuedProviderMonitorJobs(monitorId: number) {
+async function cancelQueuedProviderMonitorJobs(
+  monitorIds: number[],
+  tx: AdminBackgroundJobTransaction,
+) {
+  if (monitorIds.length === 0) return;
   const now = new Date();
-  await db
+  const jobKeys = monitorIds.map(
+    (monitorId) => `provider-monitor:${monitorId}`,
+  );
+  await tx
     .update(adminBackgroundJobs)
     .set({
       status: "cancelled",
@@ -1596,7 +1713,7 @@ async function cancelQueuedProviderMonitorJobs(monitorId: number) {
     })
     .where(
       and(
-        eq(adminBackgroundJobs.jobKey, `provider-monitor:${monitorId}`),
+        inArray(adminBackgroundJobs.jobKey, jobKeys),
         eq(adminBackgroundJobs.status, "queued"),
       ),
     );
@@ -1781,12 +1898,24 @@ export async function getProviderMonitorRunHistory(
     .limit(Math.min(Math.max(limit, 1), 200));
 }
 
+type ProviderOfferCandidateStatus =
+  "pending" | "accepted" | "rejected" | "superseded" | "all";
+
+type ProviderMonitorQueryExecutor = typeof db | AdminBackgroundJobTransaction;
+
 export async function getProviderOfferCandidateList(
-  status:
-    "pending" | "accepted" | "rejected" | "superseded" | "all" = "pending",
+  status: ProviderOfferCandidateStatus = "pending",
   limit = 100,
+  offset = 0,
+  executor: ProviderMonitorQueryExecutor = db,
 ) {
-  return db
+  const normalizedLimit = Number.isSafeInteger(limit)
+    ? Math.min(Math.max(limit, 1), 200)
+    : 100;
+  const normalizedOffset =
+    Number.isSafeInteger(offset) && offset > 0 ? offset : 0;
+
+  return executor
     .select({
       id: providerOfferCandidates.id,
       monitorId: providerOfferCandidates.monitorId,
@@ -1822,7 +1951,61 @@ export async function getProviderOfferCandidateList(
       desc(providerOfferCandidates.lastSeenAt),
       desc(providerOfferCandidates.id),
     )
-    .limit(Math.min(Math.max(limit, 1), 200));
+    .limit(normalizedLimit)
+    .offset(normalizedOffset);
+}
+
+export async function getProviderOfferCandidateCount(
+  status: ProviderOfferCandidateStatus = "pending",
+  executor: ProviderMonitorQueryExecutor = db,
+) {
+  const [result] = await executor
+    .select({ count: sql<number>`count(*)::int` })
+    .from(providerOfferCandidates)
+    .innerJoin(
+      providerMonitors,
+      eq(providerOfferCandidates.monitorId, providerMonitors.id),
+    )
+    .innerJoin(
+      affServiceProviders,
+      eq(providerOfferCandidates.providerId, affServiceProviders.id),
+    )
+    .where(
+      status === "all" ? undefined : eq(providerOfferCandidates.status, status),
+    );
+
+  return result?.count ?? 0;
+}
+
+export async function getProviderOfferCandidatePage(
+  status: ProviderOfferCandidateStatus = "pending",
+  pageNo = 1,
+  pageSize = 50,
+) {
+  const requestedPagination = normalizeOffsetPagination({
+    pageNo,
+    pageSize,
+    maxPageSize: 200,
+  });
+
+  return db.transaction(
+    async (tx) => {
+      const totalCount = await getProviderOfferCandidateCount(status, tx);
+      const pagination = boundOffsetPaginationByTotal(
+        requestedPagination,
+        totalCount,
+      );
+      const candidates = await getProviderOfferCandidateList(
+        status,
+        pagination.pageSize,
+        pagination.offset,
+        tx,
+      );
+
+      return { candidates, pagination };
+    },
+    { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
 }
 
 export async function previewProviderMonitorSource(input: {

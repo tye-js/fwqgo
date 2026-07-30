@@ -21,6 +21,11 @@ type AdminMutationToastResolver<TResult> =
   | AdminMutationToast
   | ((result: TResult) => string | AdminMutationToast);
 
+export type AdminMutationSuccessTone = "success" | "warning";
+
+type AdminMutationSuccessToneResolver<TResult> =
+  AdminMutationSuccessTone | ((result: TResult) => AdminMutationSuccessTone);
+
 type AdminMutationOptimisticUpdate = {
   apply: () => void;
   rollback?: () => void;
@@ -32,6 +37,7 @@ export type AdminMutationOptions<TResult> = {
   action: () => Promise<TResult>;
   pendingMessage?: string | AdminMutationToast;
   successMessage?: AdminMutationToastResolver<TResult>;
+  successTone?: AdminMutationSuccessToneResolver<TResult>;
   errorTitle?: string;
   errorSuggestion?: string;
   optimistic?: AdminMutationOptimisticUpdate;
@@ -66,6 +72,13 @@ function resolveSuccessMessage<TResult>(
 ) {
   const resolved = typeof message === "function" ? message(result) : message;
   return asToastMessage(resolved ?? getResultMessage(result) ?? "操作已完成");
+}
+
+function resolveSuccessTone<TResult>(
+  tone: AdminMutationSuccessToneResolver<TResult> | undefined,
+  result: TResult,
+) {
+  return typeof tone === "function" ? tone(result) : (tone ?? "success");
 }
 
 async function runCallbackSafely<TValue>(
@@ -182,7 +195,10 @@ export function useAdminMutation() {
               options.successMessage,
               result,
             );
-            toast.success(successMessage.title, {
+            const successTone = resolveSuccessTone(options.successTone, result);
+            const showSuccessToast =
+              successTone === "warning" ? toast.warning : toast.success;
+            showSuccessToast(successMessage.title, {
               id: toastId,
               description: successMessage.description,
             });

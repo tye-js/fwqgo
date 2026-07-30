@@ -1,10 +1,19 @@
 "use client";
 
-import { useOptimistic, useRef, useState } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  useOptimistic,
+  useRef,
+  useState,
+} from "react";
 import {
   Check,
   CheckCheck,
   ChevronDown,
+  ChevronRight,
+  ChevronsDown,
+  ChevronsUp,
   Eye,
   LoaderCircle,
   Pencil,
@@ -28,6 +37,11 @@ import {
   updateProviderMonitorsEnabledAction,
 } from "@/features/cms/actions/provider-monitors";
 import { useAdminMutation } from "@/features/cms/hooks/use-admin-mutation";
+import {
+  AdminTableEmpty,
+  AdminTableWorkbench,
+} from "@/features/cms/components/admin-table-workbench";
+import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -205,6 +219,31 @@ const monitorStatusLabels: Record<string, string> = {
   failed: "失败",
 };
 
+const productTypeLabels: Record<string, string> = {
+  vps: "VPS",
+  "windows-vps": "Windows VPS",
+  "shared-hosting": "虚拟主机",
+  "reseller-hosting": "分销主机",
+  "dedicated-server": "独立服务器",
+  cloud: "云服务器",
+};
+
+const productTypeAliases: Record<string, string> = {
+  hosting: "shared-hosting",
+  dedicated: "dedicated-server",
+};
+
+type MonitorStatusFilter =
+  "all" | "enabled" | "disabled" | "failed" | "pending";
+
+type MonitorGroup = {
+  key: string;
+  providerId: number;
+  providerName: string;
+  productType: string;
+  monitors: Monitor[];
+};
+
 const billingCycleLabels: Record<string, string> = {
   monthly: "月付",
   quarterly: "季付",
@@ -220,6 +259,61 @@ const tableCheckboxClassName =
 const providerCandidateBatchMutationKey = "provider-candidates:batch-review";
 const providerMonitorBatchMutationKey = "provider-monitors:batch";
 const newMonitorDraftStorageKey = "fwqgo:provider-monitor:new-draft:v1";
+const maxProviderMonitorBatchSize = 100;
+const autoExpandMonitorResultLimit = 20;
+
+type CandidateDecision = "accept" | "reject";
+
+type CandidatePageSelectionRenderProps = {
+  selectedCandidateIds: number[];
+  batchDecision: CandidateDecision | null;
+  setBatchDecision: (decision: CandidateDecision | null) => void;
+  toggleCandidate: (candidateId: number, checked: boolean) => void;
+  toggleAllCandidates: (candidateIds: number[], checked: boolean) => void;
+  removeCandidateSelection: (candidateId: number) => void;
+  clearCandidateSelection: () => void;
+};
+
+function CandidatePageSelection({
+  children,
+}: {
+  children: (state: CandidatePageSelectionRenderProps) => ReactNode;
+}) {
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<number[]>(
+    [],
+  );
+  const [batchDecision, setBatchDecision] = useState<CandidateDecision | null>(
+    null,
+  );
+
+  return children({
+    selectedCandidateIds,
+    batchDecision,
+    setBatchDecision,
+    toggleCandidate: (candidateId, checked) => {
+      setSelectedCandidateIds((current) => {
+        if (checked) {
+          return current.includes(candidateId)
+            ? current
+            : [...current, candidateId];
+        }
+        return current.filter((id) => id !== candidateId);
+      });
+    },
+    toggleAllCandidates: (candidateIds, checked) => {
+      setSelectedCandidateIds(checked ? candidateIds : []);
+    },
+    removeCandidateSelection: (candidateId) => {
+      setSelectedCandidateIds((current) =>
+        current.filter((id) => id !== candidateId),
+      );
+    },
+    clearCandidateSelection: () => {
+      setSelectedCandidateIds([]);
+      setBatchDecision(null);
+    },
+  });
+}
 
 type OptimisticMonitorAction =
   | { type: "remove"; ids: number[] }
@@ -340,6 +434,82 @@ function matchesProvider(provider: Provider, query: string) {
   ].some((value) => value?.toLocaleLowerCase().includes(normalizedQuery));
 }
 
+function normalizeProductType(productType: string) {
+  const normalized = productType.trim().toLocaleLowerCase() || "vps";
+  return productTypeAliases[normalized] ?? normalized;
+}
+
+function getMonitorProductType(monitor: Monitor) {
+  return normalizeProductType(monitor.config.defaults.productType);
+}
+
+function getProductTypeLabel(productType: string) {
+  const normalized = normalizeProductType(productType);
+  return productTypeLabels[normalized] ?? normalized;
+}
+
+function matchesMonitorQuery(monitor: Monitor, query: string) {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return true;
+
+  const productType = getMonitorProductType(monitor);
+  return [
+    monitor.providerName,
+    monitor.name,
+    monitor.externalProductId,
+    monitor.affiliateTargetUrl,
+    monitor.affiliateSourceUrl,
+    monitor.endpointUrl,
+    monitor.shortPath,
+    monitor.affiliateNotes,
+    monitor.config.defaults.productGroup,
+    productType,
+    getProductTypeLabel(productType),
+    adapterLabels[monitor.adapter],
+    purposeLabels[monitor.purpose],
+    monitorStatusLabels[monitor.lastStatus],
+  ].some((value) => value?.toLocaleLowerCase().includes(normalizedQuery));
+}
+
+function groupProviderMonitors(monitors: Monitor[]) {
+  const groups = new Map<string, MonitorGroup>();
+
+  for (const monitor of monitors) {
+    const productType = getMonitorProductType(monitor);
+    const key = `${monitor.providerId}:${productType}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.monitors.push(monitor);
+      continue;
+    }
+    groups.set(key, {
+      key,
+      providerId: monitor.providerId,
+      providerName: monitor.providerName,
+      productType,
+      monitors: [monitor],
+    });
+  }
+
+  const sortedGroups: MonitorGroup[] = [...groups.values()].map((group) => ({
+    ...group,
+    monitors: [...group.monitors].sort(
+      (left, right) =>
+        Number(right.enabled) - Number(left.enabled) ||
+        left.name.localeCompare(right.name, "zh-CN"),
+    ),
+  }));
+
+  return sortedGroups.sort(
+    (left, right) =>
+      left.providerName.localeCompare(right.providerName, "zh-CN") ||
+      getProductTypeLabel(left.productType).localeCompare(
+        getProductTypeLabel(right.productType),
+        "zh-CN",
+      ),
+  );
+}
+
 function MonitorFormDialog({
   monitor,
   providers,
@@ -365,9 +535,7 @@ function MonitorFormDialog({
   const previewPending = isPending(previewMutationKey);
   const formPending = savePending || previewPending;
   const [enabled, setEnabled] = useState(monitor?.enabled ?? false);
-  const [autoPublish, setAutoPublish] = useState(
-    monitor?.autoPublish ?? false,
-  );
+  const [autoPublish, setAutoPublish] = useState(monitor?.autoPublish ?? false);
   const [adapter, setAdapter] = useState<MonitorAdapter>(
     (monitor?.adapter as MonitorAdapter | undefined) ??
       draft?.adapter ??
@@ -451,7 +619,7 @@ function MonitorFormDialog({
       successMessage: (result) => ({
         title: result.message ?? "供应商采集源已保存",
         description: enabled
-          ? "配置已启用，后台会按执行间隔采集供应商套餐。"
+          ? "配置已启用，可继续通过立即采集检查本次配置。"
           : "配置已保存为停用状态。",
       }),
       errorTitle: "保存供应商采集源失败",
@@ -482,6 +650,8 @@ function MonitorFormDialog({
         title: result.message ?? "采集预览完成",
         description: "预览不会写入候选或套餐数据。",
       }),
+      successTone: (result) =>
+        result.success && result.data.detailIssues > 0 ? "warning" : "success",
       errorTitle: "采集预览失败",
       errorSuggestion:
         "请检查商品稳定键、完整返利链接、独立采集地址与字段映射后重试。",
@@ -906,12 +1076,20 @@ export function ProviderMonitorManager({
   providers,
   runs,
   candidates,
+  candidatePage,
+  candidatePageSize,
+  candidateTotalCount,
+  candidateTotalPages,
   checks,
 }: {
   monitors: Monitor[];
   providers: Provider[];
   runs: RunRow[];
   candidates: CandidateRow[];
+  candidatePage: number;
+  candidatePageSize: number;
+  candidateTotalCount: number;
+  candidateTotalPages: number;
   checks: CheckRow[];
 }) {
   const [editing, setEditing] = useState<Monitor | null>(null);
@@ -922,13 +1100,16 @@ export function ProviderMonitorManager({
   const [bulkDeleting, setBulkDeleting] = useState<Monitor[] | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [recordsOpen, setRecordsOpen] = useState(false);
+  const [monitorQuery, setMonitorQuery] = useState("");
+  const [monitorProviderFilter, setMonitorProviderFilter] = useState("all");
+  const [monitorProductTypeFilter, setMonitorProductTypeFilter] =
+    useState("all");
+  const [monitorStatusFilter, setMonitorStatusFilter] =
+    useState<MonitorStatusFilter>("all");
+  const [expandedMonitorGroupKeys, setExpandedMonitorGroupKeys] = useState<
+    string[]
+  >([]);
   const [selectedMonitorIds, setSelectedMonitorIds] = useState<number[]>([]);
-  const [selectedCandidateIds, setSelectedCandidateIds] = useState<number[]>(
-    [],
-  );
-  const [batchDecision, setBatchDecision] = useState<
-    "accept" | "reject" | null
-  >(null);
   const candidateReviewLockRef = useRef(false);
   const [visibleMonitors, updateOptimisticMonitors] = useOptimistic(
     monitors,
@@ -952,42 +1133,102 @@ export function ProviderMonitorManager({
     },
   );
   const { mutate, isPending } = useAdminMutation();
-  const visibleMonitorIdSet = new Set(
-    visibleMonitors.map((monitor) => monitor.id),
+  const monitorProviderOptions = [
+    ...new Map(
+      visibleMonitors.map((monitor) => [
+        monitor.providerId,
+        { id: monitor.providerId, name: monitor.providerName },
+      ]),
+    ).values(),
+  ].sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));
+  const monitorProductTypeOptions = [
+    ...new Map(
+      visibleMonitors.map((monitor) => {
+        const productType = getMonitorProductType(monitor);
+        return [productType, productType] as const;
+      }),
+    ).entries(),
+  ].sort((left, right) =>
+    getProductTypeLabel(left[1]).localeCompare(
+      getProductTypeLabel(right[1]),
+      "zh-CN",
+    ),
+  );
+  const filteredMonitors = visibleMonitors.filter((monitor) => {
+    if (!matchesMonitorQuery(monitor, monitorQuery)) return false;
+    if (
+      monitorProviderFilter !== "all" &&
+      String(monitor.providerId) !== monitorProviderFilter
+    ) {
+      return false;
+    }
+    if (
+      monitorProductTypeFilter !== "all" &&
+      getMonitorProductType(monitor) !== monitorProductTypeFilter
+    ) {
+      return false;
+    }
+    if (monitorStatusFilter === "enabled") return monitor.enabled;
+    if (monitorStatusFilter === "disabled") return !monitor.enabled;
+    if (monitorStatusFilter === "failed") {
+      return monitor.lastStatus === "failed";
+    }
+    if (monitorStatusFilter === "pending") {
+      return monitor.pendingCandidateCount > 0;
+    }
+    return true;
+  });
+  const filteredMonitorGroups = groupProviderMonitors(filteredMonitors);
+  const selectableFilteredMonitors = filteredMonitorGroups
+    .flatMap((group) => group.monitors)
+    .slice(0, maxProviderMonitorBatchSize);
+  const expandedMonitorGroupKeySet = new Set(expandedMonitorGroupKeys);
+  const hasActiveMonitorFilters =
+    Boolean(monitorQuery.trim()) ||
+    monitorProviderFilter !== "all" ||
+    monitorProductTypeFilter !== "all" ||
+    monitorStatusFilter !== "all";
+  const autoExpandFilteredMonitorGroups =
+    hasActiveMonitorFilters &&
+    filteredMonitors.length <= autoExpandMonitorResultLimit;
+  const filteredMonitorIdSet = new Set(
+    filteredMonitors.map((monitor) => monitor.id),
   );
   const visibleSelectedMonitorIds = selectedMonitorIds.filter((monitorId) =>
-    visibleMonitorIdSet.has(monitorId),
+    filteredMonitorIdSet.has(monitorId),
   );
   const selectedMonitorIdSet = new Set(visibleSelectedMonitorIds);
   const allMonitorsSelected =
-    visibleMonitors.length > 0 &&
-    visibleMonitors.every((monitor) => selectedMonitorIdSet.has(monitor.id));
-  const visibleCandidateIdSet = new Set(
-    visibleCandidates.map((candidate) => candidate.id),
-  );
-  const visibleSelectedCandidateIds = selectedCandidateIds.filter(
-    (candidateId) => visibleCandidateIdSet.has(candidateId),
-  );
-  const selectedCandidateIdSet = new Set(visibleSelectedCandidateIds);
-  const allCandidatesSelected =
-    visibleCandidates.length > 0 &&
-    visibleCandidates.every((candidate) =>
-      selectedCandidateIdSet.has(candidate.id),
+    selectableFilteredMonitors.length > 0 &&
+    selectableFilteredMonitors.every((monitor) =>
+      selectedMonitorIdSet.has(monitor.id),
     );
+  const selectedEnabledMonitorCount = filteredMonitors.reduce(
+    (total, monitor) =>
+      total + Number(monitor.enabled && selectedMonitorIdSet.has(monitor.id)),
+    0,
+  );
   const optimisticallyReviewedCandidateCount = Math.max(
     0,
     candidates.length - visibleCandidates.length,
   );
   const totalPendingCandidates = Math.max(
-    visibleCandidates.length,
-    Math.max(
-      0,
-      monitors.reduce(
-        (total, monitor) => total + monitor.pendingCandidateCount,
-        0,
-      ) - optimisticallyReviewedCandidateCount,
-    ),
+    0,
+    candidateTotalCount - optimisticallyReviewedCandidateCount,
   );
+  const candidatePageOffset = (candidatePage - 1) * candidatePageSize;
+  const hasCandidatePageRange =
+    visibleCandidates.length > 0 &&
+    totalPendingCandidates > candidatePageOffset;
+  const candidatePageStart = hasCandidatePageRange
+    ? candidatePageOffset + 1
+    : 0;
+  const candidatePageEnd = hasCandidatePageRange
+    ? Math.min(
+        candidatePageOffset + visibleCandidates.length,
+        totalPendingCandidates,
+      )
+    : 0;
   const batchReviewPending = isPending(providerCandidateBatchMutationKey);
   const individualCandidateReviewPending = candidates.some((candidate) =>
     isPending(getProviderCandidateMutationKey(candidate.id)),
@@ -1010,10 +1251,24 @@ export function ProviderMonitorManager({
     setDialogOpen(true);
   }
 
+  function resetMonitorFilters() {
+    setMonitorQuery("");
+    setMonitorProviderFilter("all");
+    setMonitorProductTypeFilter("all");
+    setMonitorStatusFilter("all");
+    setSelectedMonitorIds([]);
+  }
+
   function toggleMonitor(monitorId: number, checked: boolean) {
     setSelectedMonitorIds((current) => {
       if (checked) {
-        return current.includes(monitorId) ? current : [...current, monitorId];
+        if (
+          current.includes(monitorId) ||
+          current.length >= maxProviderMonitorBatchSize
+        ) {
+          return current;
+        }
+        return [...current, monitorId];
       }
       return current.filter((id) => id !== monitorId);
     });
@@ -1021,7 +1276,44 @@ export function ProviderMonitorManager({
 
   function toggleAllMonitors(checked: boolean) {
     setSelectedMonitorIds(
-      checked ? visibleMonitors.map((monitor) => monitor.id) : [],
+      checked ? selectableFilteredMonitors.map((monitor) => monitor.id) : [],
+    );
+  }
+
+  function toggleMonitorGroup(group: MonitorGroup, checked: boolean) {
+    const groupIds = new Set(group.monitors.map((monitor) => monitor.id));
+    setSelectedMonitorIds((current) => {
+      if (!checked) return current.filter((id) => !groupIds.has(id));
+      return [...new Set([...current, ...groupIds])].slice(
+        0,
+        maxProviderMonitorBatchSize,
+      );
+    });
+  }
+
+  function toggleMonitorGroupExpanded(groupKey: string) {
+    setExpandedMonitorGroupKeys((current) =>
+      current.includes(groupKey)
+        ? current.filter((key) => key !== groupKey)
+        : [...current, groupKey],
+    );
+  }
+
+  function expandAllMonitorGroups() {
+    setExpandedMonitorGroupKeys((current) => [
+      ...new Set([
+        ...current,
+        ...filteredMonitorGroups.map((group) => group.key),
+      ]),
+    ]);
+  }
+
+  function collapseAllMonitorGroups() {
+    const filteredGroupKeys = new Set(
+      filteredMonitorGroups.map((group) => group.key),
+    );
+    setExpandedMonitorGroupKeys((current) =>
+      current.filter((key) => !filteredGroupKeys.has(key)),
     );
   }
 
@@ -1033,6 +1325,8 @@ export function ProviderMonitorManager({
       action: () => runProviderMonitorsNowAction(monitorIds),
       pendingMessage: `正在加入 ${monitorIds.length} 个采集任务...`,
       successMessage: (result) => result.message ?? "批量采集任务已排队",
+      successTone: (result) =>
+        result.success && result.data.failed > 0 ? "warning" : "success",
       errorTitle: "批量启动供应商采集失败",
       errorSuggestion: "请刷新页面确认采集源状态，启用后再重新执行。",
       onSuccess: () => setSelectedMonitorIds([]),
@@ -1126,9 +1420,10 @@ export function ProviderMonitorManager({
     });
   }
 
-  function reviewCandidate(
+  function submitCandidateReview(
     candidate: CandidateRow,
-    decision: "accept" | "reject",
+    decision: CandidateDecision,
+    onSuccess: () => void,
   ) {
     if (candidateReviewLockRef.current) return;
     candidateReviewLockRef.current = true;
@@ -1153,41 +1448,19 @@ export function ProviderMonitorManager({
       optimistic: {
         apply: () => removeOptimisticCandidates([candidate.id]),
       },
-      onSuccess: () =>
-        setSelectedCandidateIds((current) =>
-          current.filter((candidateId) => candidateId !== candidate.id),
-        ),
+      onSuccess,
     }).finally(() => {
       candidateReviewLockRef.current = false;
     });
   }
 
-  function toggleCandidate(candidateId: number, checked: boolean) {
-    setSelectedCandidateIds((current) => {
-      if (checked)
-        return current.includes(candidateId)
-          ? current
-          : [...current, candidateId];
-      return current.filter((id) => id !== candidateId);
-    });
-  }
-
-  function toggleAllCandidates(checked: boolean) {
-    setSelectedCandidateIds(
-      checked ? visibleCandidates.map((candidate) => candidate.id) : [],
-    );
-  }
-
-  function reviewSelectedCandidates() {
-    if (
-      !batchDecision ||
-      visibleSelectedCandidateIds.length === 0 ||
-      candidateReviewLockRef.current
-    )
-      return;
+  function submitCandidateBatchReview(
+    candidateIds: number[],
+    decision: CandidateDecision,
+    onSuccess: () => void,
+  ) {
+    if (candidateIds.length === 0 || candidateReviewLockRef.current) return;
     candidateReviewLockRef.current = true;
-    const decision = batchDecision;
-    const candidateIds = visibleSelectedCandidateIds;
     void mutate({
       key: providerCandidateBatchMutationKey,
       action: () =>
@@ -1210,557 +1483,958 @@ export function ProviderMonitorManager({
       optimistic: {
         apply: () => removeOptimisticCandidates(candidateIds),
       },
-      onSuccess: () => {
-        setSelectedCandidateIds([]);
-        setBatchDecision(null);
-      },
+      onSuccess,
     }).finally(() => {
       candidateReviewLockRef.current = false;
     });
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">采集源</h3>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            选择采集源后可批量采集、启停或删除；已停用的来源不会加入采集队列。
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          {visibleSelectedMonitorIds.length > 0 ? (
-            <>
-              <Badge variant="secondary">
-                已选择 {visibleSelectedMonitorIds.length} 个
-              </Badge>
+    <div className="min-w-0 space-y-6">
+      <AdminTableWorkbench
+        title="采集源管理"
+        description="采集源按供应商和产品类型归类；批量操作只作用于当前筛选结果。"
+        searchValue={monitorQuery}
+        onSearchChange={(value) => {
+          setMonitorQuery(value);
+          setSelectedMonitorIds([]);
+        }}
+        searchPlaceholder="搜索供应商、采集源、商品键、产品组或链接"
+        searchMaxLength={200}
+        selectionCount={visibleSelectedMonitorIds.length}
+        filterSlot={
+          <>
+            <Select
+              value={monitorProviderFilter}
+              onValueChange={(value) => {
+                setMonitorProviderFilter(value);
+                setSelectedMonitorIds([]);
+              }}
+            >
+              <SelectTrigger
+                className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[160px] sm:border-0 sm:bg-transparent sm:px-0"
+                aria-label="按供应商筛选采集源"
+              >
+                <SelectValue placeholder="供应商" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部供应商</SelectItem>
+                {monitorProviderOptions.map((provider) => (
+                  <SelectItem key={provider.id} value={String(provider.id)}>
+                    {provider.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={monitorProductTypeFilter}
+              onValueChange={(value) => {
+                setMonitorProductTypeFilter(value);
+                setSelectedMonitorIds([]);
+              }}
+            >
+              <SelectTrigger
+                className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[150px] sm:border-0 sm:bg-transparent sm:px-0"
+                aria-label="按产品类型筛选采集源"
+              >
+                <SelectValue placeholder="产品类型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部产品类型</SelectItem>
+                {monitorProductTypeOptions.map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {getProductTypeLabel(label)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={monitorStatusFilter}
+              onValueChange={(value: MonitorStatusFilter) => {
+                setMonitorStatusFilter(value);
+                setSelectedMonitorIds([]);
+              }}
+            >
+              <SelectTrigger
+                className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[130px] sm:border-0 sm:bg-transparent sm:px-0"
+                aria-label="按运行状态筛选采集源"
+              >
+                <SelectValue placeholder="运行状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部状态</SelectItem>
+                <SelectItem value="enabled">已启用</SelectItem>
+                <SelectItem value="disabled">已停用</SelectItem>
+                <SelectItem value="failed">执行失败</SelectItem>
+                <SelectItem value="pending">有待审核</SelectItem>
+              </SelectContent>
+            </Select>
+            {hasActiveMonitorFilters ? (
               <Button
                 type="button"
                 size="sm"
-                variant="outline"
-                disabled={batchMonitorPending || individualMonitorPending}
-                onClick={runSelectedMonitors}
+                variant="ghost"
+                className="min-h-11"
+                onClick={resetMonitorFilters}
               >
-                {batchMonitorPending ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : (
-                  <Play />
-                )}
-                立即采集
+                <X className="size-4" />
+                清除筛选
               </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={batchMonitorPending || individualMonitorPending}
-                onClick={() => setSelectedMonitorsEnabled(true)}
-              >
-                <Power />
-                启用
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={batchMonitorPending || individualMonitorPending}
-                onClick={() => setSelectedMonitorsEnabled(false)}
-              >
-                <PowerOff />
-                停用
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={batchMonitorPending || individualMonitorPending}
-                onClick={() =>
-                  setBulkDeleting(
-                    visibleMonitors.filter((monitor) =>
-                      selectedMonitorIdSet.has(monitor.id),
-                    ),
-                  )
-                }
-              >
-                <Trash2 className="text-destructive" />
-                删除
-              </Button>
-            </>
-          ) : null}
-          <Button
-            type="button"
-            size="sm"
-            disabled={batchMonitorPending}
-            onClick={() => openEditor(null)}
-          >
-            <Plus className="size-4" />
-            新增采集源
-          </Button>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-        <Table className="min-w-[1120px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-12 p-0">
-                <Checkbox
-                  className={tableCheckboxClassName}
-                  checked={
-                    allMonitorsSelected
-                      ? true
-                      : visibleSelectedMonitorIds.length > 0
-                        ? "indeterminate"
-                        : false
-                  }
-                  disabled={
-                    batchMonitorPending ||
-                    individualMonitorPending ||
-                    visibleMonitors.length === 0
-                  }
-                  onCheckedChange={(checked) =>
-                    toggleAllMonitors(checked === true)
-                  }
-                  aria-label="全选供应商采集源"
-                />
-              </TableHead>
-              <TableHead>供应商 / 采集源</TableHead>
-              <TableHead>来源</TableHead>
-              <TableHead>套餐 / 待审核</TableHead>
-              <TableHead>状态</TableHead>
-              <TableHead>执行时间</TableHead>
-              <TableHead className="text-right">操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {visibleMonitors.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className="py-10 text-center text-sm text-muted-foreground"
-                >
-                  还没有供应商采集源。
-                </TableCell>
-              </TableRow>
             ) : null}
-            {visibleMonitors.map((monitor) => {
-              const monitorPending =
-                batchMonitorPending ||
-                isPending(getProviderMonitorMutationKey(monitor.id));
-              return (
-                <TableRow key={monitor.id} className="align-top">
-                  <TableCell className="w-12 p-0 align-top">
-                    <Checkbox
-                      className={tableCheckboxClassName}
-                      checked={selectedMonitorIdSet.has(monitor.id)}
-                      disabled={monitorPending || batchMonitorPending}
-                      onCheckedChange={(checked) =>
-                        toggleMonitor(monitor.id, checked === true)
-                      }
-                      aria-label={`选择 ${monitor.providerName} · ${monitor.name}`}
-                    />
-                  </TableCell>
-                  <TableCell className="min-w-48">
-                    <p className="font-medium text-foreground">
-                      {monitor.providerName}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {monitor.name}
-                    </p>
-                    <Badge
-                      variant={monitor.enabled ? "secondary" : "outline"}
-                      className="mt-2"
-                    >
-                      {monitor.scheduleMode === "once"
-                        ? monitor.enabled
-                          ? "一次性待执行"
-                          : "一次性已结束"
-                        : monitor.enabled
-                          ? `每 ${monitor.intervalMinutes} 分钟`
-                          : "已停用"}
-                    </Badge>
-                    <Badge variant="outline" className="ml-2 mt-2">
-                      {purposeLabels[monitor.purpose] ?? monitor.purpose}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="max-w-80">
-                    {monitor.adapter === "affiliate_link" ? (
-                      <div className="space-y-1 font-mono text-xs">
-                        <p className="font-medium text-foreground">
-                          {monitor.externalProductId ?? "未补录商品稳定键"}
-                        </p>
-                        <p
-                          className="truncate text-muted-foreground"
-                          title={monitor.affiliateTargetUrl ?? undefined}
-                        >
-                          返利：{monitor.affiliateTargetUrl ?? "未补录"}
-                        </p>
-                        {monitor.affiliateSourceUrl ? (
-                          <p
-                            className="truncate text-muted-foreground"
-                            title={monitor.affiliateSourceUrl}
-                          >
-                            采集：{monitor.affiliateSourceUrl}
-                          </p>
-                        ) : null}
-                        <p className="text-muted-foreground">
-                          短链：{monitor.shortPath ?? "未生成"}
-                        </p>
-                      </div>
-                    ) : (
-                      <p
-                        className="truncate font-mono text-xs"
-                        title={monitor.endpointUrl}
-                      >
-                        {monitor.endpointUrl}
-                      </p>
-                    )}
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      超时 {monitor.timeoutSeconds} 秒 ·{" "}
-                      {adapterLabels[monitor.adapter] ?? monitor.adapter}
-                    </p>
-                  </TableCell>
-                  <TableCell className="tabular-nums">
-                    <p>{monitor.mappedOfferCount} 个套餐</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {monitor.pendingCandidateCount} 个待审核
-                    </p>
-                  </TableCell>
-                  <TableCell className="min-w-56">
-                    <Badge
-                      variant={
-                        monitor.lastStatus === "failed"
-                          ? "destructive"
-                          : "outline"
-                      }
-                    >
-                      {monitorStatusLabels[monitor.lastStatus] ??
-                        monitor.lastStatus}
-                    </Badge>
-                    {monitor.lastError ? (
-                      <p
-                        className="mt-2 line-clamp-3 text-xs leading-5 text-destructive"
-                        title={monitor.lastError}
-                      >
-                        {monitor.lastError}
-                      </p>
-                    ) : null}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                    <p>上次：{formatDate(monitor.lastRunAt)}</p>
-                    <p className="mt-1">
-                      下次：{formatDate(monitor.nextRunAt)}
-                    </p>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="outline"
-                        title="立即采集"
-                        aria-label={`立即采集 ${monitor.name}`}
-                        disabled={monitorPending || !monitor.enabled}
-                        onClick={() => runNow(monitor)}
-                      >
-                        {monitorPending ? (
-                          <LoaderCircle className="size-4 animate-spin" />
-                        ) : (
-                          <Play className="size-4" />
-                        )}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="outline"
-                        title="编辑采集源"
-                        aria-label={`编辑 ${monitor.name}`}
-                        disabled={monitorPending}
-                        onClick={() => openEditor(monitor)}
-                      >
-                        <Pencil className="size-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="outline"
-                        title="删除采集源"
-                        aria-label={`删除 ${monitor.name}`}
-                        disabled={monitorPending}
-                        onClick={() => setDeleting(monitor)}
-                      >
-                        <Trash2 className="size-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </div>
-
-      <div>
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">
-              待审核套餐
-            </h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              新识别套餐默认不会发布；确认配置、价格和购买链接后再接受。
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {visibleSelectedCandidateIds.length > 0 ? (
+          </>
+        }
+        actionSlot={
+          <>
+            {visibleSelectedMonitorIds.length > 0 ? (
               <>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={
-                    batchReviewPending || individualCandidateReviewPending
+                  title={
+                    selectedEnabledMonitorCount > 0
+                      ? "停用的采集源会自动跳过"
+                      : "选中的采集源均已停用"
                   }
-                  onClick={() => setBatchDecision("reject")}
+                  aria-label={
+                    selectedEnabledMonitorCount > 0
+                      ? `立即采集选中的 ${selectedEnabledMonitorCount} 个已启用采集源`
+                      : "选中的采集源均已停用，无法立即采集"
+                  }
+                  disabled={
+                    batchMonitorPending ||
+                    individualMonitorPending ||
+                    selectedEnabledMonitorCount === 0
+                  }
+                  onClick={runSelectedMonitors}
                 >
-                  <X className="size-4 text-destructive" />
-                  批量拒绝（{visibleSelectedCandidateIds.length}）
+                  {batchMonitorPending ? (
+                    <LoaderCircle className="animate-spin" />
+                  ) : (
+                    <Play />
+                  )}
+                  立即采集（{selectedEnabledMonitorCount}）
                 </Button>
                 <Button
                   type="button"
                   size="sm"
-                  disabled={
-                    batchReviewPending || individualCandidateReviewPending
-                  }
-                  onClick={() => setBatchDecision("accept")}
+                  variant="outline"
+                  disabled={batchMonitorPending || individualMonitorPending}
+                  onClick={() => setSelectedMonitorsEnabled(true)}
                 >
-                  <CheckCheck className="size-4" />
-                  批量接受（{visibleSelectedCandidateIds.length}）
+                  <Power />
+                  启用
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={batchMonitorPending || individualMonitorPending}
+                  onClick={() => setSelectedMonitorsEnabled(false)}
+                >
+                  <PowerOff />
+                  停用
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={batchMonitorPending || individualMonitorPending}
+                  onClick={() =>
+                    setBulkDeleting(
+                      filteredMonitors.filter((monitor) =>
+                        selectedMonitorIdSet.has(monitor.id),
+                      ),
+                    )
+                  }
+                >
+                  <Trash2 className="text-destructive" />
+                  删除
                 </Button>
               </>
             ) : null}
-            <Badge
-              variant={visibleCandidates.length > 0 ? "secondary" : "outline"}
+            <Button
+              type="button"
+              size="sm"
+              disabled={batchMonitorPending}
+              onClick={() => openEditor(null)}
             >
-              {visibleCandidates.length < totalPendingCandidates
-                ? `显示 ${visibleCandidates.length} / 共 ${totalPendingCandidates} 个待处理`
-                : `${totalPendingCandidates} 个待处理`}
-            </Badge>
-          </div>
-        </div>
-        <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-          <Table className="min-w-[980px]">
-            <TableHeader>
+              <Plus className="size-4" />
+              新增采集源
+            </Button>
+          </>
+        }
+      />
+
+      <div className="flex min-w-0 flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <p aria-live="polite">
+          {hasActiveMonitorFilters
+            ? `当前 ${filteredMonitors.length} / 共 ${visibleMonitors.length} 个采集源`
+            : `共 ${visibleMonitors.length} 个采集源`}
+          {filteredMonitorGroups.length > 0
+            ? `，分为 ${filteredMonitorGroups.length} 组`
+            : ""}
+          {filteredMonitors.length > maxProviderMonitorBatchSize
+            ? `；批量操作每次最多 ${maxProviderMonitorBatchSize} 个`
+            : ""}
+        </p>
+        {filteredMonitorGroups.length > 0 ? (
+          autoExpandFilteredMonitorGroups ? (
+            <span>筛选结果较少，已自动展开</span>
+          ) : (
+            <div className="flex flex-wrap gap-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={expandAllMonitorGroups}
+              >
+                <ChevronsDown className="size-4" />
+                全部展开
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={collapseAllMonitorGroups}
+              >
+                <ChevronsUp className="size-4" />
+                全部收起
+              </Button>
+            </div>
+          )
+        ) : null}
+      </div>
+
+      {filteredMonitorGroups.length === 0 ? (
+        <AdminTableEmpty
+          title={
+            visibleMonitors.length === 0
+              ? "还没有供应商采集源"
+              : "没有匹配的采集源"
+          }
+          description={
+            visibleMonitors.length === 0
+              ? "新增采集源后会在这里按供应商和产品类型归类。"
+              : "请调整关键词或筛选条件。"
+          }
+          actionSlot={
+            visibleMonitors.length === 0 ? (
+              <Button type="button" size="sm" onClick={() => openEditor(null)}>
+                <Plus className="size-4" />
+                新增采集源
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={resetMonitorFilters}
+              >
+                <X className="size-4" />
+                清除筛选
+              </Button>
+            )
+          }
+        />
+      ) : (
+        <div className="overflow-hidden rounded-md border border-border/70 bg-background [&>div]:max-h-[70dvh]">
+          <Table className="min-w-[1120px]">
+            <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
               <TableRow>
-                <TableHead className="w-12 p-0">
+                <TableHead className="sticky left-0 z-30 w-12 bg-background p-0">
                   <Checkbox
                     className={tableCheckboxClassName}
                     checked={
-                      allCandidatesSelected
+                      allMonitorsSelected
                         ? true
-                        : visibleSelectedCandidateIds.length > 0
+                        : visibleSelectedMonitorIds.length > 0
                           ? "indeterminate"
                           : false
                     }
                     disabled={
-                      batchReviewPending ||
-                      individualCandidateReviewPending ||
-                      visibleCandidates.length === 0
+                      batchMonitorPending ||
+                      individualMonitorPending ||
+                      filteredMonitors.length === 0
                     }
                     onCheckedChange={(checked) =>
-                      toggleAllCandidates(checked === true)
+                      toggleAllMonitors(checked === true)
                     }
-                    aria-label="全选待审核套餐"
+                    aria-label={`选择当前筛选结果中的前 ${maxProviderMonitorBatchSize} 个供应商采集源`}
                   />
                 </TableHead>
-                <TableHead>供应商 / 产品 ID</TableHead>
-                <TableHead>套餐配置</TableHead>
-                <TableHead>价格</TableHead>
-                <TableHead>购买链接</TableHead>
-                <TableHead>发现时间</TableHead>
-                <TableHead className="text-right">审核</TableHead>
+                <TableHead>供应商 / 采集源</TableHead>
+                <TableHead>来源</TableHead>
+                <TableHead>套餐 / 待审核</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead>执行时间</TableHead>
+                <TableHead className="sticky right-0 z-30 bg-background text-right">
+                  操作
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visibleCandidates.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="py-8 text-center text-sm text-muted-foreground"
-                  >
-                    当前没有待审核套餐。
-                  </TableCell>
-                </TableRow>
-              ) : null}
-              {visibleCandidates.map((candidate) => {
-                const data = getCandidateData(candidate);
-                const prices = data.prices ?? [];
-                const candidatePending = isPending(
-                  getProviderCandidateMutationKey(candidate.id),
+              {filteredMonitorGroups.map((group) => {
+                const groupMonitorIds = new Set(
+                  group.monitors.map((monitor) => monitor.id),
                 );
+                const selectedInGroup = visibleSelectedMonitorIds.filter((id) =>
+                  groupMonitorIds.has(id),
+                ).length;
+                const allInGroupSelected =
+                  group.monitors.length > 0 &&
+                  selectedInGroup === group.monitors.length;
+                const groupExpanded =
+                  autoExpandFilteredMonitorGroups ||
+                  expandedMonitorGroupKeySet.has(group.key);
+                const groupPending =
+                  batchMonitorPending ||
+                  group.monitors.some((monitor) =>
+                    isPending(getProviderMonitorMutationKey(monitor.id)),
+                  );
+                const enabledCount = group.monitors.filter(
+                  (monitor) => monitor.enabled,
+                ).length;
+                const failedCount = group.monitors.filter(
+                  (monitor) => monitor.lastStatus === "failed",
+                ).length;
+                const pendingCount = group.monitors.reduce(
+                  (total, monitor) => total + monitor.pendingCandidateCount,
+                  0,
+                );
+
                 return (
-                  <TableRow key={candidate.id} className="align-top">
-                    <TableCell className="w-12 p-0 align-top">
-                      <Checkbox
-                        className={tableCheckboxClassName}
-                        checked={selectedCandidateIdSet.has(candidate.id)}
-                        disabled={
-                          candidatePending ||
-                          batchReviewPending ||
-                          individualCandidateReviewPending
-                        }
-                        onCheckedChange={(checked) =>
-                          toggleCandidate(candidate.id, checked === true)
-                        }
-                        aria-label={`选择 ${data.title ?? candidate.externalProductId}`}
-                      />
-                    </TableCell>
-                    <TableCell className="min-w-48">
-                      <p className="font-medium">{candidate.providerName}</p>
-                      <p className="mt-1 font-mono text-xs text-muted-foreground">
-                        {candidate.externalProductId}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {candidate.monitorName}
-                      </p>
-                      {candidate.scanId ? (
-                        <Badge variant="outline" className="mt-2">
-                          扫描 #{candidate.scanId}
-                        </Badge>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="min-w-64">
-                      <p className="font-medium">
-                        {data.title ?? "未命名套餐"}
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        {[data.cpu, data.memory, data.storage, data.region]
-                          .filter(Boolean)
-                          .join(" · ") || "暂无配置摘要"}
-                      </p>
-                      {data.raw ? (
-                        <details className="mt-2">
-                          <summary className="cursor-pointer text-xs text-primary">
-                            原始提取证据
-                          </summary>
-                          <pre className="mt-2 max-h-48 max-w-md overflow-auto whitespace-pre-wrap break-all rounded-md border bg-muted/30 p-2 text-xs leading-5">
-                            {JSON.stringify(data.raw, null, 2)}
-                          </pre>
-                        </details>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap tabular-nums">
-                      {prices.length > 0
-                        ? prices.map((price, priceIndex) => (
-                            <p
-                              key={`${price.billingCycle}-${price.currency}-${priceIndex}`}
-                              className={priceIndex > 0 ? "mt-1" : undefined}
+                  <Fragment key={group.key}>
+                    <TableRow className="bg-muted/45 hover:bg-muted/60">
+                      <TableCell className="sticky left-0 z-10 w-12 bg-muted p-0">
+                        <Checkbox
+                          className={tableCheckboxClassName}
+                          checked={
+                            allInGroupSelected
+                              ? true
+                              : selectedInGroup > 0
+                                ? "indeterminate"
+                                : false
+                          }
+                          disabled={
+                            groupPending ||
+                            (visibleSelectedMonitorIds.length >=
+                              maxProviderMonitorBatchSize &&
+                              selectedInGroup === 0)
+                          }
+                          onCheckedChange={(checked) =>
+                            toggleMonitorGroup(group, checked === true)
+                          }
+                          aria-label={`选择 ${group.providerName} 的 ${getProductTypeLabel(group.productType)} 采集源`}
+                        />
+                      </TableCell>
+                      <TableCell colSpan={6} className="py-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="shrink-0"
+                            disabled={autoExpandFilteredMonitorGroups}
+                            title={
+                              autoExpandFilteredMonitorGroups
+                                ? "筛选结果较少，已自动展开"
+                                : groupExpanded
+                                  ? "收起分组"
+                                  : "展开分组"
+                            }
+                            aria-expanded={groupExpanded}
+                            aria-label={`${groupExpanded ? "收起" : "展开"} ${group.providerName} 的 ${getProductTypeLabel(group.productType)} 采集源`}
+                            onClick={() =>
+                              toggleMonitorGroupExpanded(group.key)
+                            }
+                          >
+                            {groupExpanded ? (
+                              <ChevronDown className="size-4" />
+                            ) : (
+                              <ChevronRight className="size-4" />
+                            )}
+                          </Button>
+                          <span className="font-medium text-foreground">
+                            {group.providerName}
+                          </span>
+                          <Badge variant="outline">
+                            {getProductTypeLabel(group.productType)}
+                          </Badge>
+                          <span>{group.monitors.length} 个采集源</span>
+                          <Badge
+                            variant={enabledCount > 0 ? "secondary" : "outline"}
+                          >
+                            {enabledCount} 个启用
+                          </Badge>
+                          {failedCount > 0 ? (
+                            <Badge variant="destructive">
+                              {failedCount} 个失败
+                            </Badge>
+                          ) : null}
+                          {pendingCount > 0 ? (
+                            <Badge variant="secondary">
+                              {pendingCount} 个待审核
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {groupExpanded
+                      ? group.monitors.map((monitor) => {
+                          const monitorPending =
+                            batchMonitorPending ||
+                            isPending(
+                              getProviderMonitorMutationKey(monitor.id),
+                            );
+                          const selected = selectedMonitorIdSet.has(monitor.id);
+                          return (
+                            <TableRow
+                              key={monitor.id}
+                              className="group align-top"
+                              data-state={selected ? "selected" : undefined}
                             >
-                              {billingCycleLabels[
-                                price.billingCycle ?? "monthly"
-                              ] ??
-                                price.billingCycle ??
-                                "月付"}
-                              ：{price.currency ?? "USD"} {price.amount ?? "-"}
-                            </p>
-                          ))
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="max-w-72">
-                      {data.purchaseUrl ? (
-                        <a
-                          href={data.purchaseUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="block truncate font-mono text-xs text-primary underline-offset-4 hover:underline"
-                          title={data.purchaseUrl}
-                        >
-                          {data.purchaseUrl}
-                        </a>
-                      ) : (
-                        "-"
-                      )}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                      {formatDate(candidate.firstSeenAt)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="outline"
-                          title="拒绝候选"
-                          aria-label={`拒绝 ${data.title ?? candidate.externalProductId}`}
-                          disabled={
-                            candidatePending ||
-                            batchReviewPending ||
-                            individualCandidateReviewPending
-                          }
-                          onClick={() => reviewCandidate(candidate, "reject")}
-                        >
-                          <X className="size-4 text-destructive" />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="icon"
-                          title="接受并创建套餐"
-                          aria-label={`接受 ${data.title ?? candidate.externalProductId}`}
-                          disabled={
-                            candidatePending ||
-                            batchReviewPending ||
-                            individualCandidateReviewPending
-                          }
-                          onClick={() => reviewCandidate(candidate, "accept")}
-                        >
-                          <Check className="size-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                              <TableCell className="sticky left-0 z-10 w-12 bg-background p-0 align-top group-data-[state=selected]:bg-muted">
+                                <Checkbox
+                                  className={tableCheckboxClassName}
+                                  checked={selected}
+                                  disabled={
+                                    monitorPending ||
+                                    (visibleSelectedMonitorIds.length >=
+                                      maxProviderMonitorBatchSize &&
+                                      !selected)
+                                  }
+                                  onCheckedChange={(checked) =>
+                                    toggleMonitor(monitor.id, checked === true)
+                                  }
+                                  aria-label={`选择 ${monitor.providerName} · ${monitor.name}`}
+                                />
+                              </TableCell>
+                              <TableCell className="min-w-48">
+                                <p className="font-medium text-foreground">
+                                  {monitor.providerName}
+                                </p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {monitor.name}
+                                </p>
+                                <Badge
+                                  variant={
+                                    monitor.enabled ? "secondary" : "outline"
+                                  }
+                                  className="mt-2"
+                                >
+                                  {monitor.scheduleMode === "once"
+                                    ? monitor.enabled
+                                      ? "一次性待执行"
+                                      : "一次性已结束"
+                                    : monitor.enabled
+                                      ? `每 ${monitor.intervalMinutes} 分钟`
+                                      : "已停用"}
+                                </Badge>
+                                <Badge variant="outline" className="ml-2 mt-2">
+                                  {purposeLabels[monitor.purpose] ??
+                                    monitor.purpose}
+                                </Badge>
+                                {monitor.config.defaults.productGroup ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="ml-2 mt-2 max-w-44 truncate align-bottom"
+                                    title={monitor.config.defaults.productGroup}
+                                  >
+                                    {monitor.config.defaults.productGroup}
+                                  </Badge>
+                                ) : null}
+                              </TableCell>
+                              <TableCell className="max-w-80">
+                                {monitor.adapter === "affiliate_link" ? (
+                                  <div className="space-y-1 font-mono text-xs">
+                                    <p className="font-medium text-foreground">
+                                      {monitor.externalProductId ??
+                                        "未补录商品稳定键"}
+                                    </p>
+                                    <p
+                                      className="truncate text-muted-foreground"
+                                      title={
+                                        monitor.affiliateTargetUrl ?? undefined
+                                      }
+                                    >
+                                      返利：
+                                      {monitor.affiliateTargetUrl ?? "未补录"}
+                                    </p>
+                                    {monitor.affiliateSourceUrl ? (
+                                      <p
+                                        className="truncate text-muted-foreground"
+                                        title={monitor.affiliateSourceUrl}
+                                      >
+                                        采集：{monitor.affiliateSourceUrl}
+                                      </p>
+                                    ) : null}
+                                    <p className="text-muted-foreground">
+                                      短链：{monitor.shortPath ?? "未生成"}
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <p
+                                    className="truncate font-mono text-xs"
+                                    title={monitor.endpointUrl}
+                                  >
+                                    {monitor.endpointUrl}
+                                  </p>
+                                )}
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  超时 {monitor.timeoutSeconds} 秒 ·{" "}
+                                  {adapterLabels[monitor.adapter] ??
+                                    monitor.adapter}
+                                </p>
+                              </TableCell>
+                              <TableCell className="tabular-nums">
+                                <p>{monitor.mappedOfferCount} 个套餐</p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {monitor.pendingCandidateCount} 个待审核
+                                </p>
+                              </TableCell>
+                              <TableCell className="min-w-56">
+                                <Badge
+                                  variant={
+                                    monitor.lastStatus === "failed"
+                                      ? "destructive"
+                                      : "outline"
+                                  }
+                                >
+                                  {monitorStatusLabels[monitor.lastStatus] ??
+                                    monitor.lastStatus}
+                                </Badge>
+                                {monitor.lastError ? (
+                                  <p
+                                    className="mt-2 line-clamp-3 text-xs leading-5 text-destructive"
+                                    title={monitor.lastError}
+                                  >
+                                    {monitor.lastError}
+                                  </p>
+                                ) : null}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                                <p>上次：{formatDate(monitor.lastRunAt)}</p>
+                                <p className="mt-1">
+                                  下次：{formatDate(monitor.nextRunAt)}
+                                </p>
+                              </TableCell>
+                              <TableCell className="sticky right-0 z-10 bg-background group-data-[state=selected]:bg-muted">
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    title={
+                                      monitor.enabled
+                                        ? "立即采集"
+                                        : "采集源已停用"
+                                    }
+                                    aria-label={
+                                      monitor.enabled
+                                        ? `立即采集 ${monitor.name}`
+                                        : `${monitor.name} 已停用，无法立即采集`
+                                    }
+                                    disabled={
+                                      monitorPending || !monitor.enabled
+                                    }
+                                    onClick={() => runNow(monitor)}
+                                  >
+                                    {monitorPending ? (
+                                      <LoaderCircle className="size-4 animate-spin" />
+                                    ) : (
+                                      <Play className="size-4" />
+                                    )}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    title="编辑采集源"
+                                    aria-label={`编辑 ${monitor.name}`}
+                                    disabled={monitorPending}
+                                    onClick={() => openEditor(monitor)}
+                                  >
+                                    <Pencil className="size-4" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    title="删除采集源"
+                                    aria-label={`删除 ${monitor.name}`}
+                                    disabled={monitorPending}
+                                    onClick={() => setDeleting(monitor)}
+                                  >
+                                    <Trash2 className="size-4 text-destructive" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      : null}
+                  </Fragment>
                 );
               })}
             </TableBody>
           </Table>
         </div>
+      )}
 
-        <AlertDialog
-          open={batchDecision !== null}
-          onOpenChange={(open) => {
-            if (!open && !batchReviewPending) setBatchDecision(null);
-          }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                {batchDecision === "accept"
-                  ? "批量接受候选套餐？"
-                  : "批量拒绝候选套餐？"}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {batchDecision === "accept"
-                  ? `将处理选中的 ${visibleSelectedCandidateIds.length} 个套餐，并创建或更新前台套餐。`
-                  : `将拒绝选中的 ${visibleSelectedCandidateIds.length} 个套餐，后续不会自动发布。`}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={batchReviewPending}>
-                取消
-              </AlertDialogCancel>
-              <AlertDialogAction
-                disabled={
-                  batchReviewPending || individualCandidateReviewPending
-                }
-                onClick={reviewSelectedCandidates}
+      <CandidatePageSelection key={candidatePage}>
+        {({
+          selectedCandidateIds,
+          batchDecision,
+          setBatchDecision,
+          toggleCandidate,
+          toggleAllCandidates,
+          removeCandidateSelection,
+          clearCandidateSelection,
+        }) => {
+          const visibleCandidateIdSet = new Set(
+            visibleCandidates.map((candidate) => candidate.id),
+          );
+          const visibleSelectedCandidateIds = selectedCandidateIds.filter(
+            (candidateId) => visibleCandidateIdSet.has(candidateId),
+          );
+          const selectedCandidateIdSet = new Set(visibleSelectedCandidateIds);
+          const allCandidatesSelected =
+            visibleCandidates.length > 0 &&
+            visibleCandidates.every((candidate) =>
+              selectedCandidateIdSet.has(candidate.id),
+            );
+          const reviewCandidate = (
+            candidate: CandidateRow,
+            decision: CandidateDecision,
+          ) =>
+            submitCandidateReview(candidate, decision, () =>
+              removeCandidateSelection(candidate.id),
+            );
+          const reviewSelectedCandidates = () => {
+            if (!batchDecision) return;
+            submitCandidateBatchReview(
+              visibleSelectedCandidateIds,
+              batchDecision,
+              clearCandidateSelection,
+            );
+          };
+
+          return (
+            <div>
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">
+                    待审核套餐
+                  </h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    新识别套餐默认不会发布；确认配置、价格和购买链接后再接受。
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {visibleSelectedCandidateIds.length > 0 ? (
+                    <>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                          batchReviewPending || individualCandidateReviewPending
+                        }
+                        onClick={() => setBatchDecision("reject")}
+                      >
+                        <X className="size-4 text-destructive" />
+                        批量拒绝（{visibleSelectedCandidateIds.length}）
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={
+                          batchReviewPending || individualCandidateReviewPending
+                        }
+                        onClick={() => setBatchDecision("accept")}
+                      >
+                        <CheckCheck className="size-4" />
+                        批量接受（{visibleSelectedCandidateIds.length}）
+                      </Button>
+                    </>
+                  ) : null}
+                  <Badge
+                    variant={hasCandidatePageRange ? "secondary" : "outline"}
+                  >
+                    {totalPendingCandidates > 0
+                      ? hasCandidatePageRange
+                        ? `${candidatePageStart}-${candidatePageEnd} / 共 ${totalPendingCandidates} 个待处理`
+                        : `共 ${totalPendingCandidates} 个待处理`
+                      : "0 个待处理"}
+                  </Badge>
+                </div>
+              </div>
+              <div className="overflow-hidden rounded-md border border-border/70 bg-background [&>div]:max-h-[70dvh]">
+                <Table className="min-w-[980px]">
+                  <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
+                    <TableRow>
+                      <TableHead className="sticky left-0 z-30 w-12 bg-background p-0">
+                        <Checkbox
+                          className={tableCheckboxClassName}
+                          checked={
+                            allCandidatesSelected
+                              ? true
+                              : visibleSelectedCandidateIds.length > 0
+                                ? "indeterminate"
+                                : false
+                          }
+                          disabled={
+                            batchReviewPending ||
+                            individualCandidateReviewPending ||
+                            visibleCandidates.length === 0
+                          }
+                          onCheckedChange={(checked) =>
+                            toggleAllCandidates(
+                              visibleCandidates.map(
+                                (candidate) => candidate.id,
+                              ),
+                              checked === true,
+                            )
+                          }
+                          aria-label="全选当前页待审核套餐"
+                        />
+                      </TableHead>
+                      <TableHead>供应商 / 产品 ID</TableHead>
+                      <TableHead>套餐配置</TableHead>
+                      <TableHead>价格</TableHead>
+                      <TableHead>购买链接</TableHead>
+                      <TableHead>发现时间</TableHead>
+                      <TableHead className="sticky right-0 z-30 bg-background text-right">
+                        审核
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleCandidates.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={7}
+                          className="py-8 text-center text-sm text-muted-foreground"
+                        >
+                          {totalPendingCandidates > 0
+                            ? "当前页没有待审核套餐，请切换其他页。"
+                            : "当前没有待审核套餐。"}
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                    {visibleCandidates.map((candidate) => {
+                      const data = getCandidateData(candidate);
+                      const prices = data.prices ?? [];
+                      const candidatePending = isPending(
+                        getProviderCandidateMutationKey(candidate.id),
+                      );
+                      const candidateSelected = selectedCandidateIdSet.has(
+                        candidate.id,
+                      );
+                      return (
+                        <TableRow
+                          key={candidate.id}
+                          className="group align-top"
+                          data-state={
+                            candidateSelected ? "selected" : undefined
+                          }
+                        >
+                          <TableCell className="sticky left-0 z-10 w-12 bg-background p-0 align-top group-data-[state=selected]:bg-muted">
+                            <Checkbox
+                              className={tableCheckboxClassName}
+                              checked={candidateSelected}
+                              disabled={
+                                candidatePending ||
+                                batchReviewPending ||
+                                individualCandidateReviewPending
+                              }
+                              onCheckedChange={(checked) =>
+                                toggleCandidate(candidate.id, checked === true)
+                              }
+                              aria-label={`选择 ${data.title ?? candidate.externalProductId}`}
+                            />
+                          </TableCell>
+                          <TableCell className="min-w-48">
+                            <p className="font-medium">
+                              {candidate.providerName}
+                            </p>
+                            <p className="mt-1 font-mono text-xs text-muted-foreground">
+                              {candidate.externalProductId}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {candidate.monitorName}
+                            </p>
+                            {candidate.scanId ? (
+                              <Badge variant="outline" className="mt-2">
+                                扫描 #{candidate.scanId}
+                              </Badge>
+                            ) : null}
+                          </TableCell>
+                          <TableCell className="min-w-64">
+                            <p className="font-medium">
+                              {data.title ?? "未命名套餐"}
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                              {[
+                                data.cpu,
+                                data.memory,
+                                data.storage,
+                                data.region,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ") || "暂无配置摘要"}
+                            </p>
+                            {data.raw ? (
+                              <details className="mt-2">
+                                <summary className="cursor-pointer text-xs text-primary">
+                                  原始提取证据
+                                </summary>
+                                <pre className="mt-2 max-h-48 max-w-md overflow-auto whitespace-pre-wrap break-all rounded-md border bg-muted/30 p-2 text-xs leading-5">
+                                  {JSON.stringify(data.raw, null, 2)}
+                                </pre>
+                              </details>
+                            ) : null}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap tabular-nums">
+                            {prices.length > 0
+                              ? prices.map((price, priceIndex) => (
+                                  <p
+                                    key={`${price.billingCycle}-${price.currency}-${priceIndex}`}
+                                    className={
+                                      priceIndex > 0 ? "mt-1" : undefined
+                                    }
+                                  >
+                                    {billingCycleLabels[
+                                      price.billingCycle ?? "monthly"
+                                    ] ??
+                                      price.billingCycle ??
+                                      "月付"}
+                                    ：{price.currency ?? "USD"}{" "}
+                                    {price.amount ?? "-"}
+                                  </p>
+                                ))
+                              : "-"}
+                          </TableCell>
+                          <TableCell className="max-w-72">
+                            {data.purchaseUrl ? (
+                              <a
+                                href={data.purchaseUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block truncate font-mono text-xs text-primary underline-offset-4 hover:underline"
+                                title={data.purchaseUrl}
+                              >
+                                {data.purchaseUrl}
+                              </a>
+                            ) : (
+                              "-"
+                            )}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                            {formatDate(candidate.firstSeenAt)}
+                          </TableCell>
+                          <TableCell className="sticky right-0 z-10 bg-background group-data-[state=selected]:bg-muted">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="outline"
+                                title="拒绝候选"
+                                aria-label={`拒绝 ${data.title ?? candidate.externalProductId}`}
+                                disabled={
+                                  candidatePending ||
+                                  batchReviewPending ||
+                                  individualCandidateReviewPending
+                                }
+                                onClick={() =>
+                                  reviewCandidate(candidate, "reject")
+                                }
+                              >
+                                <X className="size-4 text-destructive" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="icon"
+                                title="接受并创建套餐"
+                                aria-label={`接受 ${data.title ?? candidate.externalProductId}`}
+                                disabled={
+                                  candidatePending ||
+                                  batchReviewPending ||
+                                  individualCandidateReviewPending
+                                }
+                                onClick={() =>
+                                  reviewCandidate(candidate, "accept")
+                                }
+                              >
+                                <Check className="size-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              {candidateTotalPages > 1 ? (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    第 {candidatePage} / {candidateTotalPages} 页，每页最多{" "}
+                    {candidatePageSize} 条
+                  </p>
+                  <PaginationComponent
+                    pageNo={candidatePage}
+                    totalPage={candidateTotalPages}
+                    queryParam="candidatePage"
+                  />
+                </div>
+              ) : null}
+
+              <AlertDialog
+                open={batchDecision !== null}
+                onOpenChange={(open) => {
+                  if (!open && !batchReviewPending) setBatchDecision(null);
+                }}
               >
-                {batchReviewPending
-                  ? "处理中..."
-                  : batchDecision === "accept"
-                    ? "确认接受"
-                    : "确认拒绝"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      {batchDecision === "accept"
+                        ? "批量接受候选套餐？"
+                        : "批量拒绝候选套餐？"}
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {batchDecision === "accept"
+                        ? `将处理选中的 ${visibleSelectedCandidateIds.length} 个套餐，并创建或更新前台套餐。`
+                        : `将拒绝选中的 ${visibleSelectedCandidateIds.length} 个套餐，后续不会自动发布。`}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={batchReviewPending}>
+                      取消
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      disabled={
+                        batchReviewPending ||
+                        individualCandidateReviewPending ||
+                        visibleSelectedCandidateIds.length === 0
+                      }
+                      onClick={reviewSelectedCandidates}
+                    >
+                      {batchReviewPending
+                        ? "处理中..."
+                        : batchDecision === "accept"
+                          ? "确认接受"
+                          : "确认拒绝"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          );
+        }}
+      </CandidatePageSelection>
 
       <Collapsible open={recordsOpen} onOpenChange={setRecordsOpen}>
         <CollapsibleTrigger asChild>
@@ -1790,7 +2464,7 @@ export function ProviderMonitorManager({
                 每次抓取独立记录响应状态、入库结果、跳过原因数量和失败详情。
               </p>
             </div>
-            <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
+            <div className="overflow-hidden rounded-md border border-border/70 bg-background">
               <Table className="min-w-[940px]">
                 <TableHeader>
                   <TableRow>
@@ -1896,7 +2570,7 @@ export function ProviderMonitorManager({
                 保留已入库套餐的库存、价格与响应耗时，用于定位单个产品异常。
               </p>
             </div>
-            <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
+            <div className="overflow-hidden rounded-md border border-border/70 bg-background">
               <Table className="min-w-[760px]">
                 <TableHeader>
                   <TableRow>
@@ -2004,6 +2678,29 @@ export function ProviderMonitorManager({
             <AlertDialogDescription>
               将删除选中的 {bulkDeleting?.length ?? 0}
               个采集源及其运行历史和待审核候选，已有套餐不会被删除。此操作无法恢复。
+              {bulkDeleting?.length ? (
+                <span className="mt-3 block space-y-1 rounded-md border border-border/70 bg-muted/30 p-3 text-left text-xs leading-5">
+                  <span className="block">
+                    供应商 / 类型：
+                    {groupProviderMonitors(bulkDeleting)
+                      .map(
+                        (group) =>
+                          `${group.providerName} · ${getProductTypeLabel(group.productType)}`,
+                      )
+                      .join("、")}
+                  </span>
+                  <span className="block">
+                    采集源：
+                    {bulkDeleting
+                      .slice(0, 5)
+                      .map((monitor) => monitor.name)
+                      .join("、")}
+                    {bulkDeleting.length > 5
+                      ? ` 等 ${bulkDeleting.length} 个`
+                      : ""}
+                  </span>
+                </span>
+              ) : null}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

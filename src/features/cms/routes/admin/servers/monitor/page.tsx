@@ -8,32 +8,45 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import { ProviderMonitorManager } from "@/features/cms/components/provider-monitor-manager";
 import { ProviderCatalogScanManager } from "@/features/cms/components/provider-catalog-scan-manager";
+import { parsePositiveInt, type SearchParamValue } from "@fwqgo/core/utils";
 import {
   getProviderMonitorCheckHistory,
   getProviderMonitorList,
   getProviderMonitorRunHistory,
-  getProviderOfferCandidateList,
+  getProviderOfferCandidatePage,
   getProviderOptionsForMonitoring,
 } from "@/server/offers/provider-monitor";
 import { getProviderCatalogScanList } from "@/server/providers/provider-catalog-scan-tasks";
 
-async function loadProviderMonitorData() {
+const CANDIDATE_PAGE_SIZE = 50;
+
+type ProviderMonitorSearchParams = {
+  candidatePage?: SearchParamValue;
+};
+
+async function loadProviderMonitorData(requestedCandidatePage: number) {
   try {
-    const [monitors, providers, runs, candidates, checks, scans] =
+    const [monitors, providers, runs, candidatePage, checks, scans] =
       await Promise.all([
         getProviderMonitorList(),
         getProviderOptionsForMonitoring(),
         getProviderMonitorRunHistory(undefined, 80),
-        getProviderOfferCandidateList("pending", 100),
+        getProviderOfferCandidatePage(
+          "pending",
+          requestedCandidatePage,
+          CANDIDATE_PAGE_SIZE,
+        ),
         getProviderMonitorCheckHistory(undefined, 80),
         getProviderCatalogScanList(100),
       ]);
+
     return {
       ok: true as const,
       monitors,
       providers,
       runs,
-      candidates,
+      candidates: candidatePage.candidates,
+      candidatePagination: candidatePage.pagination,
       checks,
       scans,
     };
@@ -46,9 +59,16 @@ async function loadProviderMonitorData() {
   }
 }
 
-async function ProviderMonitorContent() {
+async function ProviderMonitorContent({
+  searchParamsPromise,
+}: {
+  searchParamsPromise: Promise<ProviderMonitorSearchParams>;
+}) {
   await connection();
-  const result = await loadProviderMonitorData();
+  const searchParams = await searchParamsPromise;
+  const requestedCandidatePage =
+    parsePositiveInt(searchParams.candidatePage) ?? 1;
+  const result = await loadProviderMonitorData(requestedCandidatePage);
 
   if (!result.ok) {
     return (
@@ -69,7 +89,15 @@ async function ProviderMonitorContent() {
     );
   }
 
-  const { monitors, providers, runs, candidates, checks, scans } = result;
+  const {
+    monitors,
+    providers,
+    runs,
+    candidates,
+    candidatePagination,
+    checks,
+    scans,
+  } = result;
   const activeScanCount = scans.filter(
     (scan) => scan.status === "queued" || scan.status === "running",
   ).length;
@@ -89,6 +117,10 @@ async function ProviderMonitorContent() {
           providers={providers}
           runs={runs}
           candidates={candidates}
+          candidatePage={candidatePagination.pageNo}
+          candidatePageSize={candidatePagination.pageSize}
+          candidateTotalCount={candidatePagination.totalCount}
+          candidateTotalPages={candidatePagination.totalPage}
           checks={checks}
         />
       </AdminSectionCard>
@@ -126,7 +158,9 @@ async function ProviderMonitorContent() {
   );
 }
 
-export default function ProviderMonitorPage() {
+export default function ProviderMonitorPage(props: {
+  searchParams: Promise<ProviderMonitorSearchParams>;
+}) {
   return (
     <Suspense
       fallback={
@@ -137,7 +171,7 @@ export default function ProviderMonitorPage() {
         />
       }
     >
-      <ProviderMonitorContent />
+      <ProviderMonitorContent searchParamsPromise={props.searchParams} />
     </Suspense>
   );
 }
