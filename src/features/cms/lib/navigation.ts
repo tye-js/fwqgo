@@ -131,7 +131,7 @@ export const cmsBreadcrumbSegmentTitles: Record<string, string> = {
   knowledge: "服务器知识库",
   sources: "来源工作台",
   "server-sizing": "配置规则工作台",
-  "network-lines": "线路工作台",
+  "network-lines": "线路经验工作台",
   tasks: "AI 生产台",
   collect: "运营",
   "aff-man": "供应商档案",

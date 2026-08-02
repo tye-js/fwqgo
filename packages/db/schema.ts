@@ -2371,7 +2371,7 @@ export const knowledgeArticleModules = pgTable(
     }).onDelete("restrict"),
     moduleTypeCheck: check(
       "knowledge_article_modules_moduleType_check",
-      sql`${table.moduleType} in ('network_line_selector', 'server_sizing')`,
+      sql`${table.moduleType} in ('network_experience', 'server_sizing')`,
     ),
   }),
 );
@@ -2466,7 +2466,118 @@ export const serverSizingRuleSources = pgTable(
   }),
 );
 
-/** Stable identities and immutable revisions for network assessment data. */
+export const networkExperienceRuleSets = pgTable(
+  "network_experience_rule_sets",
+  {
+    id: serial("id").primaryKey(),
+    versionLabel: varchar("versionLabel", { length: 80 }).notNull(),
+    engineVersion: varchar("engineVersion", { length: 120 }).notNull(),
+    schemaVersion: integer("schemaVersion").notNull(),
+    status: varchar("status", { length: 16 }).default("draft").notNull(),
+    snapshotJson: jsonb("snapshotJson").$type<Record<string, unknown>>().notNull(),
+    checksum: varchar("checksum", { length: 128 }).notNull(),
+    revision: integer("revision").default(1).notNull(),
+    changeSummary: text("changeSummary"),
+    enChangeSummary: text("enChangeSummary"),
+    reviewDueAt: timestamp("reviewDueAt"),
+    validUntil: timestamp("validUntil"),
+    createdBy: text("createdBy"),
+    reviewedBy: text("reviewedBy"),
+    publishedBy: text("publishedBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    reviewedAt: timestamp("reviewedAt"),
+    publishedAt: timestamp("publishedAt"),
+    retiredAt: timestamp("retiredAt"),
+  },
+  (table) => ({
+    versionLabelUnique: unique("network_experience_rule_sets_versionLabel_unique").on(table.versionLabel),
+    publishedUnique: uniqueIndex("network_experience_rule_sets_published_unique")
+      .on(table.status)
+      .where(sql`${table.status} = 'published'`),
+    statusIdx: index("network_experience_rule_sets_status_createdAt_idx").on(table.status, table.createdAt),
+    statusCheck: check("network_experience_rule_sets_status_check", sql`${table.status} in ('draft', 'published', 'retired')`),
+    schemaVersionCheck: check("network_experience_rule_sets_schemaVersion_check", sql`${table.schemaVersion} >= 1`),
+    revisionCheck: check("network_experience_rule_sets_revision_check", sql`${table.revision} >= 1`),
+    createdByFk: foreignKey({ columns: [table.createdBy], foreignColumns: [users.id], name: "network_experience_rule_sets_createdBy_users_id_fk" }).onDelete("set null"),
+    reviewedByFk: foreignKey({ columns: [table.reviewedBy], foreignColumns: [users.id], name: "network_experience_rule_sets_reviewedBy_users_id_fk" }).onDelete("set null"),
+    publishedByFk: foreignKey({ columns: [table.publishedBy], foreignColumns: [users.id], name: "network_experience_rule_sets_publishedBy_users_id_fk" }).onDelete("set null"),
+  }),
+);
+
+export const networkExperienceRules = pgTable(
+  "network_experience_rules",
+  {
+    id: serial("id").primaryKey(),
+    ruleSetId: integer("ruleSetId").notNull(),
+    ruleKey: varchar("ruleKey", { length: 160 }).notNull(),
+    networkLineId: integer("networkLineId").notNull(),
+    userRegion: varchar("userRegion", { length: 40 }).notNull(),
+    carrier: varchar("carrier", { length: 16 }).notNull(),
+    accessType: varchar("accessType", { length: 20 }).notNull(),
+    destinationRegion: varchar("destinationRegion", { length: 24 }).notNull(),
+    workload: varchar("workload", { length: 20 }).notNull(),
+    fit: varchar("fit", { length: 32 }).notNull(),
+    basisStrength: varchar("basisStrength", { length: 16 }).notNull(),
+    priority: integer("priority").default(0).notNull(),
+    conditionCodes: jsonb("conditionCodes").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+    advantageCodes: jsonb("advantageCodes").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+    riskCodes: jsonb("riskCodes").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+    verificationCodes: jsonb("verificationCodes").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+    sortOrder: integer("sortOrder").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    ruleKeyUnique: unique("network_experience_rules_ruleSetId_ruleKey_unique").on(table.ruleSetId, table.ruleKey),
+    ruleSetIdx: index("network_experience_rules_ruleSetId_idx").on(table.ruleSetId, table.sortOrder),
+    lineIdx: index("network_experience_rules_networkLineId_idx").on(table.networkLineId),
+    ruleSetFk: foreignKey({ columns: [table.ruleSetId], foreignColumns: [networkExperienceRuleSets.id], name: "network_experience_rules_ruleSetId_network_experience_rule_sets_id_fk" }).onDelete("restrict"),
+    lineFk: foreignKey({ columns: [table.networkLineId], foreignColumns: [serverNetworkLines.id], name: "network_experience_rules_networkLineId_server_network_lines_id_fk" }).onDelete("restrict"),
+    carrierCheck: check("network_experience_rules_carrier_check", sql`${table.carrier} in ('telecom', 'unicom', 'mobile')`),
+    fitCheck: check("network_experience_rules_fit_check", sql`${table.fit} in ('usually_preferred', 'situational', 'usually_not_preferred', 'unknown')`),
+    basisCheck: check("network_experience_rules_basisStrength_check", sql`${table.basisStrength} in ('established', 'common', 'limited')`),
+    priorityCheck: check("network_experience_rules_priority_check", sql`${table.priority} between -100000 and 100000`),
+  }),
+);
+
+export const networkExperienceRuleSources = pgTable(
+  "network_experience_rule_sources",
+  {
+    ruleId: integer("ruleId").notNull(),
+    sourceRevisionId: integer("sourceRevisionId").notNull(),
+    claimScope: text("claimScope").notNull(),
+    experienceAuthor: text("experienceAuthor").notNull(),
+    experienceReviewedBy: text("experienceReviewedBy"),
+    experienceReviewedAt: timestamp("experienceReviewedAt"),
+    notes: text("notes"),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.ruleId, table.sourceRevisionId] }),
+    ruleFk: foreignKey({ columns: [table.ruleId], foreignColumns: [networkExperienceRules.id], name: "network_experience_rule_sources_ruleId_network_experience_rules_id_fk" }).onDelete("restrict"),
+    sourceFk: foreignKey({ columns: [table.sourceRevisionId], foreignColumns: [knowledgeSourceRevisions.id], name: "network_experience_rule_sources_sourceRevisionId_knowledge_source_revisions_id_fk" }).onDelete("restrict"),
+  }),
+);
+
+export const networkExperienceRuleArticles = pgTable(
+  "network_experience_rule_articles",
+  {
+    ruleId: integer("ruleId").notNull(),
+    sourceArticleId: integer("sourceArticleId").notNull(),
+    sortOrder: integer("sortOrder").default(0).notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.ruleId, table.sourceArticleId] }),
+    ruleIdx: index("network_experience_rule_articles_ruleId_idx").on(table.ruleId, table.sortOrder),
+    ruleFk: foreignKey({ columns: [table.ruleId], foreignColumns: [networkExperienceRules.id], name: "network_experience_rule_articles_ruleId_network_experience_rules_id_fk" }).onDelete("restrict"),
+    articleFk: foreignKey({ columns: [table.sourceArticleId], foreignColumns: [knowledgeArticles.id], name: "network_experience_rule_articles_sourceArticleId_knowledge_articles_id_fk" }).onDelete("restrict"),
+  }),
+);
+
+/**
+ * Legacy measurement tables retained for production migration compatibility.
+ * The runtime no longer reads or writes these tables; new route guidance uses
+ * the networkExperienceRuleSets tables above.
+ */
 export const networkLineCandidates = pgTable(
   "network_line_candidates",
   {

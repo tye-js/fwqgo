@@ -22,8 +22,8 @@ const required: Record<string, { zh: RegExp[]; en: RegExp[] }> = {
     en: [/Mobile/i, /Unicom/i, /bidirectional/i, /region/i],
   },
   "KB-009": {
-    zh: [/MTR/, /Traceroute/i, /回程/, /七天|高峰/],
-    en: [/MTR/i, /Traceroute/i, /return path/i, /seven-day|busy hours/i],
+    zh: [/MTR/, /Traceroute/i, /回程/, /24-72|高峰/],
+    en: [/MTR/i, /Traceroute/i, /return path/i, /24-72|busy hours/i],
   },
   "KB-011": {
     zh: [/香港/, /日本/, /新加坡/, /美西/, /电信/, /移动/, /联通/, /矩阵/],

@@ -428,6 +428,13 @@
       "when": 1785629415496,
       "tag": "0060_slimy_ultragirl",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1785686400000,
+      "tag": "0061_network_experience_rules",
+      "breakpoints": true
     }
   ]
 }

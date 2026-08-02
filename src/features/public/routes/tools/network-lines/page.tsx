@@ -3,19 +3,20 @@ import type { Metadata } from "next";
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
 import { NetworkLineSelector } from "@/features/public/components/network-line-selector";
+import { getPublishedNetworkExperienceRuleSnapshot } from "@/features/public/data/network-experience";
 import type { PublicKnowledgeLanguage } from "@/features/public/data/knowledge";
 
 const copy = {
   zh: {
-    title: "运营商线路评估：按地区和业务查看 IPv4 线路证据",
+    title: "运营商线路经验：按地区和业务了解线路选择",
     description:
-      "根据用户地区、运营商权重、目标机房和业务类型，查看已发布的双向线路评估；没有足够证据时不输出伪推荐。",
+      "根据用户地区、运营商、目标地区和业务类型查看定性线路经验；不采集实时线路数据，不输出质量评分或商家排名。",
   },
   en: {
     title:
-      "Carrier route assessment: compare IPv4 evidence by region and workload",
+      "Carrier route experience: understand route choices by region and workload",
     description:
-      "Compare published bidirectional route assessments by user region, carrier weights, destination, and workload without inventing a recommendation when evidence is missing.",
+      "Review qualitative carrier route experience by user region, carrier, destination, and workload without live measurement or provider ranking.",
   },
 } as const;
 
@@ -51,11 +52,12 @@ export function generateMetadata(): Metadata {
   return buildNetworkLinesMetadata("zh");
 }
 
-export default function NetworkLinesPage() {
+export default async function NetworkLinesPage() {
+  const ruleSet = await getPublishedNetworkExperienceRuleSnapshot();
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Header language="zh" />
-      <NetworkLineSelector language="zh" />
+      <NetworkLineSelector language="zh" ruleSet={ruleSet} />
       <Footer language="zh" />
     </div>
   );

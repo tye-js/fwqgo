@@ -4,7 +4,7 @@
 - 基线：`fc0a1eeeb8d6`
 - 日期：2026-07-26
 - 范围：公开知识库、CMS、数据库、SEO、缓存、AI 知识检索与首批内容生产
-- 延伸方案：[服务器知识库决策平台完整实施方案](./server-knowledge-decision-platform-implementation-plan.md)
+- 延伸方案：[服务器知识库与经验选型完整实施方案](./server-knowledge-decision-platform-implementation-plan.md)
 
 ## 1. 结论
 

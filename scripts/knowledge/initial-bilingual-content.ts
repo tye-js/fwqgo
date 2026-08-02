@@ -1190,7 +1190,7 @@ export const knowledgeUnits: KnowledgeUnit[] = [
         ],
       ],
       steps: [
-        "Choose representative China Mobile, China Unicom, and other probes from the expected user distribution.",
+        "Choose representative China Mobile, China Unicom, and other user access networks from the expected user distribution.",
         "Record outbound path, return path, autonomous-system changes, and destination quality separately.",
         "Repeat real application requests across time windows and alert on material route changes.",
       ],
@@ -1252,7 +1252,7 @@ export const knowledgeUnits: KnowledgeUnit[] = [
         "在维护窗口模拟单路故障并记录可达性、收敛时间和应用影响。",
       ],
       verification: [
-        "从多个外部 Looking Glass 或探针核对前缀、AS_PATH 和可见性。",
+        "从多个公开 Looking Glass 核对前缀、AS_PATH 和可见性，再结合自己的网络验证实际业务。",
         "将 BGP 事件时间与端到端探测和应用错误关联。",
       ],
       pitfalls: [
@@ -1308,8 +1308,8 @@ export const knowledgeUnits: KnowledgeUnit[] = [
         "During a maintenance window, simulate one path failure and record reachability, convergence, and application impact.",
       ],
       verification: [
-        "Use external looking glasses or probes to verify prefix visibility and AS_PATH from multiple networks.",
-        "Correlate BGP event timestamps with endpoint probes and application errors.",
+        "Use public looking glasses to verify prefix visibility and AS_PATH from multiple networks.",
+        "Correlate BGP event timestamps with user-side route checks and application errors.",
       ],
       pitfalls: [
         "Multiple links do not guarantee that every user receives the preferred path.",
@@ -1359,8 +1359,8 @@ export const knowledgeUnits: KnowledgeUnit[] = [
           "BGP 策略常使两个方向不同，因此一侧结果不能代表另一侧。",
         ],
         [
-          "七天基线",
-          "首轮评估至少连续覆盖七天、五个有效自然日和晚高峰；缺少完整时间窗只能作为线索，不能公开推荐。",
+          "单服务器观察窗口",
+          "购买前后应覆盖工作时段、晚高峰和至少 24-72 小时的实际观察；单次结果只能作为线索，不能代替对具体服务器的验收。",
         ],
       ],
       steps: [
@@ -1402,7 +1402,7 @@ export const knowledgeUnits: KnowledgeUnit[] = [
       audience:
         "Users investigating cross-network latency, loss, or route changes who control at least one client and the server endpoint.",
       avoid:
-        "Do not probe unauthorized targets or publish one intermediate timeout as a fault conclusion. Testing must comply with network and service terms.",
+        "Do not test unauthorized targets or publish one intermediate timeout as a fault conclusion. Testing must comply with network and service terms.",
       takeaway:
         "Measure the outbound path from client to server and the return path from server to a controlled client. MTR adds repeated samples, but destination and application behavior remain the decision evidence.",
       concepts: [
@@ -1419,14 +1419,14 @@ export const knowledgeUnits: KnowledgeUnit[] = [
           "BGP policy commonly produces different paths in each direction, so one side cannot establish the other.",
         ],
         [
-          "Seven-day baseline",
-          "The first assessment should cover seven days, at least five valid calendar days, and busy hours; incomplete windows remain a lead rather than a public recommendation.",
+          "Exact-server observation window",
+          "Before and after purchase, cover working hours, peak hours, and at least 24-72 hours of observation; a single result is only a lead, not an acceptance decision for the exact server.",
         ],
       ],
       steps: [
         "Record source network, destination IP, UTC time, probe protocol, count, and DNS-resolution setting.",
         "Run report-mode MTR from the client to the server, then from the server to a controlled client for the return path.",
-        "Repeat during busy and quiet periods while running an HTTPS or TCP application probe.",
+        "Repeat during busy and quiet periods while running an HTTPS or TCP request.",
       ],
       verification: [
         "Treat loss as a path signal only when it persists from a hop through the destination.",
@@ -1971,7 +1971,7 @@ export const knowledgeUnits: KnowledgeUnit[] = [
         "按业务权重评分，并为第二地区定义数据复制和切换方法。",
       ],
       verification: [
-        "从每个主要用户组至少一个受控探针复测高峰与非高峰。",
+        "从每个主要用户组的真实网络分别复测高峰与非高峰，不上传测试结果到知识库。",
         "演练主地区不可用时的 DNS、流量和数据恢复。",
       ],
       pitfalls: [
@@ -2027,7 +2027,7 @@ export const knowledgeUnits: KnowledgeUnit[] = [
         "Score results by business weight and define data replication and switching for the secondary region.",
       ],
       verification: [
-        "Repeat during busy and quiet periods from at least one controlled probe in each major user group.",
+        "Repeat during busy and quiet periods from at least one real access network in each major user group.",
         "Exercise DNS, traffic, and data recovery when the primary region is unavailable.",
       ],
       pitfalls: [
@@ -2148,7 +2148,7 @@ export const knowledgeUnits: KnowledgeUnit[] = [
         "Evaluate whether a CDN, read replica, or second region reduces long-distance exchanges while meeting recovery goals.",
       ],
       verification: [
-        "Collect application latency and routes from representative North American, European, and Asia-Pacific probes.",
+        "Collect application latency and routes from representative North American, European, and Asia-Pacific user access networks.",
         "Measure cross-region replication delay and exercise primary-region failure.",
       ],
       pitfalls: [
@@ -2642,7 +2642,7 @@ export const knowledgeUnits: KnowledgeUnit[] = [
       title: "IP 被封、端口不通、DNS 解析失败：VPS 网络问题排查",
       slug: "vps-ip-port-dns-troubleshooting",
       summary:
-        "用分层方法区分 DNS、路由、主机防火墙、应用监听和上游策略问题，提供从本机到外部探针的命令顺序，避免把所有连接失败都归因于 IP 被封。",
+        "用分层方法区分 DNS、路由、主机防火墙、应用监听和上游策略问题，提供从本机到外部网络的命令顺序，避免把所有连接失败都归因于 IP 被封。",
       keywords: [
         "VPS 网络排查",
         "端口不通",
@@ -3871,7 +3871,7 @@ export const knowledgeUnits: KnowledgeUnit[] = [
       concepts: [
         [
           "用户视角",
-          "外部探针和真实请求能发现 DNS、TLS、网络和应用全链路故障。",
+          "外部可用性检查和真实请求能发现 DNS、TLS、网络和应用全链路故障。",
         ],
         [
           "饱和度",
@@ -3935,7 +3935,7 @@ export const knowledgeUnits: KnowledgeUnit[] = [
       concepts: [
         [
           "User perspective",
-          "External probes and real requests cover DNS, TLS, network, and application failures end to end.",
+          "External availability checks and real requests cover DNS, TLS, network, and application failures end to end.",
         ],
         [
           "Saturation",
