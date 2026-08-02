@@ -36,6 +36,7 @@ export type KnowledgeVersionCommand = {
 
 export type KnowledgePublicationCommand = KnowledgeVersionCommand & {
   published: boolean;
+  allowAiReference: boolean;
 };
 
 export type KnowledgeAiReferenceCommand = KnowledgeVersionCommand & {
@@ -540,6 +541,7 @@ export async function setKnowledgePublication(
         .update(knowledgeArticles)
         .set({
           published: true,
+          allowAiReference: input.published && input.allowAiReference,
           publishedAt: firstPublication ? now : article.publishedAt,
           contentUpdatedAt: firstPublication
             ? latestDate(article.contentUpdatedAt, now)

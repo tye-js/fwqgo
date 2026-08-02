@@ -4,6 +4,7 @@ import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { readDb } from "@fwqgo/db";
 import { knowledgeArticles, knowledgeCategories } from "@fwqgo/db/schema";
 import { ilikeContains } from "@/server/db/search";
+import { listPublishedKnowledgeSources } from "@/server/knowledge/source-service";
 
 export type PublicKnowledgeLanguage = "zh" | "en";
 
@@ -207,7 +208,8 @@ export async function getPublishedKnowledgeArticleBySlug(
             .limit(1)
         : [];
 
-  return { ...article, pairedArticle: pairedArticle ?? null };
+  const sources = await listPublishedKnowledgeSources(article.id);
+  return { ...article, pairedArticle: pairedArticle ?? null, sources };
 }
 
 export async function getRelatedKnowledgeArticles(input: {

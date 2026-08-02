@@ -421,6 +421,13 @@
       "when": 1785317888405,
       "tag": "0059_curious_silvermane",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1785629415496,
+      "tag": "0060_slimy_ultragirl",
+      "breakpoints": true
     }
   ]
 }

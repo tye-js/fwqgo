@@ -527,6 +527,7 @@ async function publishLanguage(
       id: article.id,
       expectedContentRevision: article.contentRevision,
       published: true,
+      allowAiReference: false,
     });
     remember(state, result.article);
     if (language === "zh") counts.chinesePublished += 1;
@@ -598,6 +599,7 @@ export async function reviseKnowledgeContent(
         id: pair.english.id,
         expectedContentRevision: pair.english.contentRevision,
         published: false,
+        allowAiReference: false,
       });
       remember(state, result.article);
       counts.englishTemporarilyUnpublished += 1;
@@ -661,6 +663,7 @@ export async function reviseKnowledgeContent(
         id: pair.english.id,
         expectedContentRevision: pair.english.contentRevision,
         published: true,
+        allowAiReference: false,
       });
       remember(state, result.article);
       counts.englishRepublished += 1;

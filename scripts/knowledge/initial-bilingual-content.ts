@@ -517,6 +517,14 @@ export const knowledgeUnits: KnowledgeUnit[] = [
           "存储约束",
           "容量只是一项指标，数据库和队列还要观察随机 I/O 延迟、IOPS 与持久化语义。",
         ],
+        [
+          "估算公式",
+          "峰值源站 RPS = 峰值总 RPS × [动态比例 + (1 - 动态比例) × (1 - 边缘缓存命中率)]；CPU 需求还要结合每请求 CPU 毫秒、目标利用率和后台余量。",
+        ],
+        [
+          "网络需求",
+          "出口 Mbps 由源站 RPS、平均响应体字节和网络利用率共同决定；上传、下载、备份和数据库复制应分开估算。",
+        ],
       ],
       steps: [
         "列出 Web、后台任务、数据库、缓存和日志保留各自的资源需求。",
@@ -572,6 +580,14 @@ export const knowledgeUnits: KnowledgeUnit[] = [
         [
           "Storage constraints",
           "Capacity is only one dimension. Databases and queues also depend on random I/O latency, IOPS, and persistence behavior.",
+        ],
+        [
+          "Sizing formulas",
+          "Peak origin RPS = peak total RPS × [dynamic ratio + (1 - dynamic ratio) × (1 - edge-cache hit ratio)]; CPU sizing also needs CPU milliseconds per request, target utilization, and background reserve.",
+        ],
+        [
+          "Network demand",
+          "Egress Mbps follows origin RPS, average response bytes, and the target network utilization; uploads, downloads, backups, and database replication should be estimated separately.",
         ],
       ],
       steps: [
@@ -995,6 +1011,10 @@ export const knowledgeUnits: KnowledgeUnit[] = [
           "路径与质量",
           "出现某个骨干节点只能说明观测路径的一部分，延迟、丢包和拥塞仍需持续测量。",
         ],
+        [
+          "ASN 边界",
+          "AS4134、AS4809 等 ASN 可帮助标记观测到的自治系统，但 ASN 本身不能证明 CN2 GIA、CN2 GT 或某个售卖实例的产品归属。",
+        ],
       ],
       steps: [
         "准备目标实例或测试 IP，并记录供应商声称的方向、地区和运营商范围。",
@@ -1050,6 +1070,10 @@ export const knowledgeUnits: KnowledgeUnit[] = [
         [
           "Path versus quality",
           "Seeing a particular backbone segment describes only an observed path; latency, loss, and congestion still require repeated measurement.",
+        ],
+        [
+          "ASN boundary",
+          "AS4134 and AS4809 can label an observed autonomous system, but an ASN alone cannot prove a CN2 GIA, CN2 GT, or a specific sold instance.",
         ],
       ],
       steps: [
@@ -1334,6 +1358,10 @@ export const knowledgeUnits: KnowledgeUnit[] = [
           "非对称路由",
           "BGP 策略常使两个方向不同，因此一侧结果不能代表另一侧。",
         ],
+        [
+          "七天基线",
+          "首轮评估至少连续覆盖七天、五个有效自然日和晚高峰；缺少完整时间窗只能作为线索，不能公开推荐。",
+        ],
       ],
       steps: [
         "记录源 IP 所属网络、目标 IP、UTC 时间、协议、包数和解析设置。",
@@ -1389,6 +1417,10 @@ export const knowledgeUnits: KnowledgeUnit[] = [
         [
           "Asymmetric routing",
           "BGP policy commonly produces different paths in each direction, so one side cannot establish the other.",
+        ],
+        [
+          "Seven-day baseline",
+          "The first assessment should cover seven days, at least five valid calendar days, and busy hours; incomplete windows remain a lead rather than a public recommendation.",
         ],
       ],
       steps: [
@@ -1570,6 +1602,10 @@ export const knowledgeUnits: KnowledgeUnit[] = [
           "电信、移动、联通及不同省份可能使用不同国际出口，地区排名不会对所有用户一致。",
         ],
         [
+          "三网矩阵",
+          "按地区 × 电信/联通/移动 × 目标机房 × 业务类型记录覆盖和质量；缺失单元格不按零分或剩余指标重新归一化。",
+        ],
+        [
           "容灾与边界",
           "数据驻留、备案、供应链和单地区故障需要独立评估，最低延迟不是唯一目标。",
         ],
@@ -1624,6 +1660,10 @@ export const knowledgeUnits: KnowledgeUnit[] = [
         [
           "Access network",
           "Carriers and provinces can use different international exits, so one region will not rank identically for every user.",
+        ],
+        [
+          "Three-carrier matrix",
+          "Track coverage and quality by region × Telecom/Unicom/Mobile × destination × workload; missing cells must not be treated as zero or silently renormalized.",
         ],
         [
           "Recovery and boundaries",
@@ -3983,6 +4023,7 @@ export const knowledgeUnits: KnowledgeUnit[] = [
         "为可用性、RPO/RTO、性能和支持写出可测指标。",
         "选择地区、VPS/云/独服、网络和备份候选，并进行小规模验证。",
         "记录扩容、迁移、故障和退出供应商的触发条件。",
+        "将项目规模映射为：个人/展示站优先单实例与可恢复备份；企业站优先可用性与托管边界；电商优先交易依赖、数据库与故障备用；API 优先峰值 RPS、尾延迟和限流。",
       ],
       verification: [
         "用代表性数据和用户路径压测，而不是只跑空页面基准。",
@@ -4040,6 +4081,7 @@ export const knowledgeUnits: KnowledgeUnit[] = [
         "Write measurable availability, RPO, RTO, performance, and support objectives.",
         "Select region, VPS or cloud or dedicated platform, network, and backup candidates and validate at small scale.",
         "Document triggers for scaling, migration, failure response, and provider exit.",
+        "Map the scale to a topology: personal or brochure sites favor one instance and recoverable backups; corporate sites favor availability and managed boundaries; commerce favors transaction dependencies, database capacity, and failure spare; APIs favor peak RPS, tail latency, and rate limits.",
       ],
       verification: [
         "Load test representative data and user journeys instead of an empty-page benchmark.",
@@ -4087,7 +4129,9 @@ function conciseSentence(value: string, language: KnowledgeLanguage) {
   const sentence = (
     separatorIndex >= 0 ? normalized.slice(0, separatorIndex) : normalized
   ).trim();
-  return language === "zh" ? `${sentence}。` : `${sentence.replace(/[,:]$/, "")}.`;
+  return language === "zh"
+    ? `${sentence}。`
+    : `${sentence.replace(/[,:]$/, "")}.`;
 }
 
 const knowledgeCardOverrides: Partial<
@@ -4140,13 +4184,15 @@ const knowledgeCardOverrides: Partial<
   },
   "KB-030": {
     zh: {
-      definition: "根据业务交互类型、可靠性目标与风险边界选择服务器的参考框架。",
+      definition:
+        "根据业务交互类型、可靠性目标与风险边界选择服务器的参考框架。",
       highlights: [
         "**个人 / 展示型**：优先维护成本、基础缓存与可恢复备份。",
         "**企业 / 跨境电商**：重点核验可用性、数据保护、线路与 IP 适配性。",
         "**API / 高并发**：关注尾延迟、单核性能、依赖容量与高可用目标。",
       ],
-      quickTip: "不包含随时间变化的商业报价，先把负载、RPO、RTO 与团队能力量化。",
+      quickTip:
+        "不包含随时间变化的商业报价，先把负载、RPO、RTO 与团队能力量化。",
     },
     en: {
       definition:
@@ -4172,10 +4218,12 @@ function knowledgeCardCopy(
   const separator = language === "zh" ? "：" : ": ";
   return {
     definition: conciseSentence(draft.takeaway, language),
-    highlights: draft.concepts.slice(0, 3).map(
-      ([term, explanation]) =>
-        `**${term}**${separator}${conciseSentence(explanation, language)}`,
-    ),
+    highlights: draft.concepts
+      .slice(0, 3)
+      .map(
+        ([term, explanation]) =>
+          `**${term}**${separator}${conciseSentence(explanation, language)}`,
+      ),
     quickTip: conciseSentence(
       draft.verification[0] ?? draft.pitfalls[0] ?? draft.takeaway,
       language,

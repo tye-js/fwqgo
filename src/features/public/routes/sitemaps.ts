@@ -182,8 +182,55 @@ ${[
     loc: `${baseUrl}/sitemap-knowledge.xml`,
     lastmod: latestKnowledgeDate,
   }),
+  sitemapEntry({
+    loc: `${baseUrl}/sitemap-tools.xml`,
+  }),
 ].join("")}
 </sitemapindex>`);
+}
+
+export async function sitemapToolsGET() {
+  const baseUrl = getBaseUrl();
+  const zhSizing = `${baseUrl}/tools/server-sizing`;
+  const enSizing = `${baseUrl}/en/tools/server-sizing`;
+  const zhLines = `${baseUrl}/tools/network-lines`;
+  const enLines = `${baseUrl}/en/tools/network-lines`;
+  const sizingAlternates = [
+    { hreflang: "zh-CN", href: zhSizing },
+    { hreflang: "en", href: enSizing },
+    { hreflang: "x-default", href: zhSizing },
+  ];
+  const linesAlternates = [
+    { hreflang: "zh-CN", href: zhLines },
+    { hreflang: "en", href: enLines },
+    { hreflang: "x-default", href: zhLines },
+  ];
+  return urlset([
+    urlEntry({
+      loc: zhSizing,
+      changefreq: "monthly",
+      priority: "0.65",
+      alternates: sizingAlternates,
+    }),
+    urlEntry({
+      loc: enSizing,
+      changefreq: "monthly",
+      priority: "0.6",
+      alternates: sizingAlternates,
+    }),
+    urlEntry({
+      loc: zhLines,
+      changefreq: "weekly",
+      priority: "0.65",
+      alternates: linesAlternates,
+    }),
+    urlEntry({
+      loc: enLines,
+      changefreq: "weekly",
+      priority: "0.6",
+      alternates: linesAlternates,
+    }),
+  ]);
 }
 
 export async function sitemapPostsGET() {

@@ -9,6 +9,7 @@ import { ensureProviderMonitorWorkers } from "@/server/offers/provider-monitor";
 import { ensureProviderProfileWorkers } from "@/server/providers/provider-profile-tasks";
 import { ensureProviderCatalogScanWorkers } from "@/server/providers/provider-catalog-scan-tasks";
 import { enqueueOperationalRetention } from "@/server/admin/operational-retention";
+import { ensureNetworkAssessmentWorkers } from "@/server/network-assessment/workers";
 
 const recoverableTaskStatuses = ["pending", "running"] as const;
 
@@ -47,6 +48,7 @@ export async function ensureCmsBackgroundWorkersForRecoverableTasks() {
     ensureProviderMonitorWorkers(),
     ensureProviderCatalogScanWorkers(),
     ensureProviderProfileWorkers(),
+    ensureNetworkAssessmentWorkers(),
     enqueueOperationalRetention(),
   ]);
 }

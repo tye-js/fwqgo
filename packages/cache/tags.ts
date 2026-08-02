@@ -11,6 +11,8 @@ export const cacheTags = {
   siteSeo: "site-seo",
   serverOffers: "server-offers",
   knowledge: "knowledge",
+  networkAssessment: "network-assessment",
+  serverSizing: "server-sizing",
   category: (id: number) => `category:${id}`,
   categorySlug: (slug: string) => `category-slug:${slug}`,
   tag: (id: number) => `tag:${id}`,
@@ -20,6 +22,7 @@ export const cacheTags = {
   serverOfferTopic: (slug: string) => `server-offer-topic:${slug}`,
   knowledgeArticle: (id: number) => `knowledge-article:${id}`,
   knowledgeSlug: (slug: string) => `knowledge-slug:${slug}`,
+  networkCandidate: (slug: string) => `network-candidate:${slug}`,
 };
 
 export const publicCacheEvents = [
@@ -30,6 +33,8 @@ export const publicCacheEvents = [
   "taxonomy.changed",
   "image.changed",
   "knowledge.changed",
+  "network-assessment.changed",
+  "server-sizing.changed",
 ] as const;
 
 export type PublicCacheEvent = (typeof publicCacheEvents)[number];
@@ -41,6 +46,7 @@ export type PublicCacheEventPayload = {
   topicSlugs?: string[];
   knowledgeArticleIds?: number[];
   knowledgeSlugs?: string[];
+  networkCandidateSlugs?: string[];
 };
 
 export function tagCache(...tags: string[]) {
@@ -155,6 +161,27 @@ export function getPublicCacheEventTargets(
       paths.add(`/knowledge/${encodeURIComponent(slug)}`);
       paths.add(`/en/knowledge/${encodeURIComponent(slug)}`);
     });
+  } else if (event === "network-assessment.changed") {
+    [cacheTags.networkAssessment, cacheTags.sitemap].forEach((tag) =>
+      tags.add(tag),
+    );
+    [
+      "/tools/network-lines",
+      "/en/tools/network-lines",
+      "/sitemap.xml",
+      "/sitemap-tools.xml",
+    ].forEach((path) => paths.add(path));
+    uniqueSlugs(payload.networkCandidateSlugs).forEach((slug) =>
+      tags.add(cacheTags.networkCandidate(slug)),
+    );
+  } else if (event === "server-sizing.changed") {
+    [cacheTags.serverSizing, cacheTags.sitemap].forEach((tag) => tags.add(tag));
+    [
+      "/tools/server-sizing",
+      "/en/tools/server-sizing",
+      "/sitemap.xml",
+      "/sitemap-tools.xml",
+    ].forEach((path) => paths.add(path));
   }
 
   return { tags: [...tags], paths: [...paths] };
@@ -216,6 +243,12 @@ function legacyPathsForTags(tags: Set<string>) {
     paths.add("/knowledge");
     paths.add("/en/knowledge");
     paths.add("/sitemap-knowledge.xml");
+  }
+  if (
+    tags.has(cacheTags.networkAssessment) ||
+    tags.has(cacheTags.serverSizing)
+  ) {
+    paths.add("/sitemap-tools.xml");
   }
   return paths;
 }

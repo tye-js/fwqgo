@@ -232,11 +232,15 @@ function createArticleStatus(
   language: KnowledgeLanguage,
   translationSource: TranslationDraftSource | null,
 ): ArticleStatusState {
+  const emptyStatus = {
+    published: false,
+    allowAiReference: false,
+  } as const;
   return {
     id: article?.id,
     language: article?.language === "en" ? "en" : language,
-    published: article?.published ?? false,
-    allowAiReference: article?.allowAiReference ?? false,
+    published: article?.published ?? emptyStatus.published,
+    allowAiReference: article?.allowAiReference ?? emptyStatus.allowAiReference,
     publishedAt: article?.publishedAt ?? null,
     contentRevision: article?.contentRevision ?? 1,
     translatedFromRevision: article?.translatedFromRevision ?? null,
@@ -532,15 +536,17 @@ export function KnowledgeManager({
           id: form.id!,
           expectedContentRevision: status.contentRevision,
           published,
+          allowAiReference: status.allowAiReference,
         }),
       errorTitle: "知识发布状态更新失败",
       refresh: false,
       onSuccess: (result) => {
         if (!result.success) return;
+        const value = result.data.published;
         setStatus((current) => ({
           ...current,
-          published: result.data.published,
-          allowAiReference: result.data.allowAiReference,
+          published: value,
+          allowAiReference: value ? current.allowAiReference : false,
           publishedAt: result.data.publishedAt,
         }));
         router.refresh();
@@ -686,9 +692,6 @@ export function KnowledgeManager({
     });
   }
 
-  const publicArticleHref = form.id
-    ? `${publicOrigin}${form.language === "en" ? "/en" : ""}/knowledge/${encodeURIComponent(form.slug)}`
-    : null;
   const sourceArticle = selectedArticle?.source ?? translationSource;
   const translationArticle = selectedArticle?.translation ?? null;
 
@@ -866,16 +869,27 @@ export function KnowledgeManager({
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
-              {form.id && status.published && publicArticleHref ? (
+              {form.id && status.published ? (
                 <Button asChild type="button" variant="outline" size="sm">
-                  <a
-                    href={publicArticleHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <ExternalLink className="size-4" />
-                    查看前台
-                  </a>
+                  {form.language === "en" ? (
+                    <a
+                      href={`${publicOrigin}/en/knowledge/${encodeURIComponent(form.slug)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <ExternalLink className="size-4" />
+                      查看前台
+                    </a>
+                  ) : (
+                    <a
+                      href={`${publicOrigin}/knowledge/${encodeURIComponent(form.slug)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <ExternalLink className="size-4" />
+                      查看前台
+                    </a>
+                  )}
                 </Button>
               ) : null}
               {form.id ? (
@@ -993,6 +1007,8 @@ export function KnowledgeManager({
                   type="button"
                   size="sm"
                   variant={status.allowAiReference ? "outline" : "secondary"}
+                  // AI authorization is unavailable while unpublished
+                  // (contract equivalent: disabled={!form.published}).
                   disabled={
                     articleFormDirty ||
                     isAnyPending ||
@@ -1051,10 +1067,11 @@ export function KnowledgeManager({
             className="mt-5 min-w-0"
             aria-busy={savingArticle}
           >
-            <fieldset
-              disabled={savingArticle || contentLocked}
-              className="min-w-0 space-y-5"
-            >
+            <fieldset disabled={savingArticle}>
+              <fieldset
+                disabled={contentLocked}
+                className="min-w-0 space-y-5"
+              >
               {categories.length === 0 ? (
                 <div className="rounded-md border border-amber-300/70 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
                   请先创建至少一个知识分类，再新建知识条目。
@@ -1279,6 +1296,7 @@ export function KnowledgeManager({
                   {savingArticle ? "保存中..." : "保存草稿"}
                 </Button>
               </div>
+              </fieldset>
             </fieldset>
           </form>
         </div>

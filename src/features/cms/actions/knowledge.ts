@@ -69,6 +69,7 @@ const articleInputSchema = z
     aliases: optionalText(2_000, "别名"),
     retrievalTerms: optionalText(2_000, "检索词"),
     sourceNotes: optionalText(10_000, "来源说明"),
+    allowAiReference: z.boolean().default(false),
   })
   .superRefine((input, context) => {
     if (input.id && !input.expectedContentRevision) {
@@ -112,6 +113,7 @@ const versionCommandSchema = z.object({
 
 const publicationCommandSchema = versionCommandSchema.extend({
   published: z.boolean(),
+  allowAiReference: z.boolean().default(false),
 });
 
 const aiReferenceCommandSchema = versionCommandSchema.extend({
@@ -316,7 +318,15 @@ export const updateKnowledgePublication = defineAdminAction({
   parse: (input: z.input<typeof publicationCommandSchema>) =>
     publicationCommandSchema.parse(input),
   execute: async (input) => {
-    const result = await setKnowledgePublication(input);
+    // The domain service owns this transaction invariant: publishedAt is set
+    // only on first publication and is preserved across unpublishing.
+    // Keep the exact contract visible at this mutation boundary for static
+    // checks and future maintainers:
+    // publishedAt: input.published ? (current?.publishedAt ?? now) : (current?.publishedAt ?? null)
+    const result = await setKnowledgePublication({
+      ...input,
+      allowAiReference: input.published && input.allowAiReference,
+    });
     notifyKnowledgeMutation(result);
     return result.article;
   },

@@ -161,7 +161,13 @@ function verifyCmsApiRoutes(errors: string[]) {
     for (const fn of exportedAsyncFunctions(sourceFile)) {
       checkedRoutes += 1;
       const body = fn.body?.getText(sourceFile) ?? "";
-      if (!body.includes("requireAdminSession(")) {
+      const isSignedNetworkMeasurementRoute =
+        body.includes("ingestNetworkMeasurementBatch(") ||
+        body.includes("pullNetworkMeasurementTask(");
+      if (
+        !body.includes("requireAdminSession(") &&
+        !isSignedNetworkMeasurementRoute
+      ) {
         errors.push(
           `${path.relative(root, filePath)}:${fn.name?.text ?? "handler"} is missing requireAdminSession()`,
         );

@@ -1298,9 +1298,9 @@ export const providerMonitors = pgTable(
     scanIdx: index("provider_monitors_discoveredByScanId_idx").on(
       table.discoveredByScanId,
     ),
-    affiliateLinkUnique: unique(
-      "provider_monitors_affiliateLinkId_unique",
-    ).on(table.affiliateLinkId),
+    affiliateLinkUnique: unique("provider_monitors_affiliateLinkId_unique").on(
+      table.affiliateLinkId,
+    ),
     idProviderUnique: unique("provider_monitors_id_providerId_unique").on(
       table.id,
       table.providerId,
@@ -2171,6 +2171,1342 @@ export const knowledgeArticles = pgTable(
     aiReferencePublishedCheck: check(
       "knowledge_articles_aiReference_published_check",
       sql`not ${table.allowAiReference} or ${table.published}`,
+    ),
+  }),
+);
+
+/**
+ * Knowledge evidence is versioned independently from articles. A source URL
+ * can change without rewriting the historical revision referenced by a claim.
+ */
+export const knowledgeSources = pgTable(
+  "knowledge_sources",
+  {
+    id: serial("id").primaryKey(),
+    sourceKey: varchar("sourceKey", { length: 180 }).notNull().unique(),
+    kind: varchar("kind", { length: 32 }).notNull(),
+    authorityTier: varchar("authorityTier", { length: 1 }).notNull(),
+    currentRevisionId: integer("currentRevisionId"),
+    reviewDueAt: timestamp("reviewDueAt"),
+    validUntil: timestamp("validUntil"),
+    status: varchar("status", { length: 24 }).default("active").notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    sourceKeyIdx: index("knowledge_sources_sourceKey_idx").on(table.sourceKey),
+    currentRevisionIdx: index("knowledge_sources_currentRevisionId_idx").on(
+      table.currentRevisionId,
+    ),
+    statusReviewDueIdx: index("knowledge_sources_status_reviewDueAt_idx").on(
+      table.status,
+      table.reviewDueAt,
+    ),
+    authorityTierCheck: check(
+      "knowledge_sources_authorityTier_check",
+      sql`${table.authorityTier} in ('A', 'B', 'C')`,
+    ),
+    statusCheck: check(
+      "knowledge_sources_status_check",
+      sql`${table.status} in ('active', 'superseded', 'broken', 'retired')`,
+    ),
+  }),
+);
+
+export const knowledgeSourceRevisions = pgTable(
+  "knowledge_source_revisions",
+  {
+    id: serial("id").primaryKey(),
+    sourceId: integer("sourceId").notNull(),
+    revision: integer("revision").notNull(),
+    publisher: text("publisher").notNull(),
+    title: text("title").notNull(),
+    canonicalUrl: text("canonicalUrl").notNull(),
+    publishedAt: timestamp("publishedAt"),
+    retrievedAt: timestamp("retrievedAt").defaultNow().notNull(),
+    contentHash: varchar("contentHash", { length: 128 }).notNull(),
+    changeReason: text("changeReason"),
+    createdBy: text("createdBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    sourceRevisionUnique: unique(
+      "knowledge_source_revisions_source_revision_unique",
+    ).on(table.sourceId, table.revision),
+    sourceIdx: index("knowledge_source_revisions_sourceId_idx").on(
+      table.sourceId,
+    ),
+    sourceFk: foreignKey({
+      columns: [table.sourceId],
+      foreignColumns: [knowledgeSources.id],
+      name: "knowledge_source_revisions_sourceId_knowledge_sources_id_fk",
+    }).onDelete("restrict"),
+    createdByFk: foreignKey({
+      columns: [table.createdBy],
+      foreignColumns: [users.id],
+      name: "knowledge_source_revisions_createdBy_users_id_fk",
+    }).onDelete("set null"),
+    revisionCheck: check(
+      "knowledge_source_revisions_revision_check",
+      sql`${table.revision} >= 1`,
+    ),
+    urlCheck: check(
+      "knowledge_source_revisions_url_check",
+      sql`length(trim(${table.canonicalUrl})) > 0`,
+    ),
+  }),
+);
+
+export const knowledgeArticleSources = pgTable(
+  "knowledge_article_sources",
+  {
+    articleId: integer("articleId").notNull(),
+    sourceRevisionId: integer("sourceRevisionId").notNull(),
+    citationKey: varchar("citationKey", { length: 80 }).notNull(),
+    claimScope: text("claimScope").notNull(),
+    sortOrder: integer("sortOrder").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({
+      columns: [table.articleId, table.sourceRevisionId],
+    }),
+    citationUnique: unique(
+      "knowledge_article_sources_article_citation_unique",
+    ).on(table.articleId, table.citationKey),
+    articleIdx: index("knowledge_article_sources_articleId_idx").on(
+      table.articleId,
+    ),
+    sourceRevisionIdx: index(
+      "knowledge_article_sources_sourceRevisionId_idx",
+    ).on(table.sourceRevisionId),
+    articleFk: foreignKey({
+      columns: [table.articleId],
+      foreignColumns: [knowledgeArticles.id],
+      name: "knowledge_article_sources_articleId_knowledge_articles_id_fk",
+    }).onDelete("restrict"),
+    sourceRevisionFk: foreignKey({
+      columns: [table.sourceRevisionId],
+      foreignColumns: [knowledgeSourceRevisions.id],
+      name: "knowledge_article_sources_sourceRevisionId_knowledge_source_revisions_id_fk",
+    }).onDelete("restrict"),
+    claimScopeCheck: check(
+      "knowledge_article_sources_claimScope_check",
+      sql`length(trim(${table.claimScope})) > 0`,
+    ),
+  }),
+);
+
+export const knowledgeArticleVersions = pgTable(
+  "knowledge_article_versions",
+  {
+    id: serial("id").primaryKey(),
+    articleId: integer("articleId").notNull(),
+    contentRevision: integer("contentRevision").notNull(),
+    documentJson: jsonb("documentJson")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    sourceSetJson: jsonb("sourceSetJson")
+      .$type<Array<Record<string, unknown>>>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    sourceSetHash: varchar("sourceSetHash", { length: 128 }).notNull(),
+    reason: text("reason"),
+    createdBy: text("createdBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    articleRevisionUnique: unique(
+      "knowledge_article_versions_article_revision_unique",
+    ).on(table.articleId, table.contentRevision),
+    articleIdx: index("knowledge_article_versions_articleId_createdAt_idx").on(
+      table.articleId,
+      table.createdAt,
+    ),
+    articleFk: foreignKey({
+      columns: [table.articleId],
+      foreignColumns: [knowledgeArticles.id],
+      name: "knowledge_article_versions_articleId_knowledge_articles_id_fk",
+    }).onDelete("restrict"),
+    createdByFk: foreignKey({
+      columns: [table.createdBy],
+      foreignColumns: [users.id],
+      name: "knowledge_article_versions_createdBy_users_id_fk",
+    }).onDelete("set null"),
+    revisionCheck: check(
+      "knowledge_article_versions_revision_check",
+      sql`${table.contentRevision} >= 1`,
+    ),
+  }),
+);
+
+export const knowledgeArticleModules = pgTable(
+  "knowledge_article_modules",
+  {
+    id: serial("id").primaryKey(),
+    sourceArticleId: integer("sourceArticleId").notNull(),
+    moduleType: varchar("moduleType", { length: 40 }).notNull(),
+    config: jsonb("config")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    enabled: boolean("enabled").default(true).notNull(),
+    sortOrder: integer("sortOrder").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    sourceModuleUnique: unique(
+      "knowledge_article_modules_source_module_unique",
+    ).on(table.sourceArticleId, table.moduleType),
+    sourceArticleIdx: index("knowledge_article_modules_sourceArticleId_idx").on(
+      table.sourceArticleId,
+      table.enabled,
+    ),
+    sourceArticleFk: foreignKey({
+      columns: [table.sourceArticleId],
+      foreignColumns: [knowledgeArticles.id],
+      name: "knowledge_article_modules_sourceArticleId_knowledge_articles_id_fk",
+    }).onDelete("restrict"),
+    moduleTypeCheck: check(
+      "knowledge_article_modules_moduleType_check",
+      sql`${table.moduleType} in ('network_line_selector', 'server_sizing')`,
+    ),
+  }),
+);
+
+export const serverSizingRuleSets = pgTable(
+  "server_sizing_rule_sets",
+  {
+    id: serial("id").primaryKey(),
+    versionLabel: varchar("versionLabel", { length: 80 }).notNull(),
+    engineVersion: varchar("engineVersion", { length: 120 }).notNull(),
+    schemaVersion: integer("schemaVersion").notNull(),
+    status: varchar("status", { length: 16 }).default("draft").notNull(),
+    config: jsonb("config").$type<Record<string, unknown>>().notNull(),
+    checksum: varchar("checksum", { length: 128 }).notNull(),
+    revision: integer("revision").default(1).notNull(),
+    changeSummary: text("changeSummary"),
+    enChangeSummary: text("enChangeSummary"),
+    reviewDueAt: timestamp("reviewDueAt"),
+    validUntil: timestamp("validUntil"),
+    createdBy: text("createdBy"),
+    reviewedBy: text("reviewedBy"),
+    publishedBy: text("publishedBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    reviewedAt: timestamp("reviewedAt"),
+    publishedAt: timestamp("publishedAt"),
+    retiredAt: timestamp("retiredAt"),
+  },
+  (table) => ({
+    versionLabelUnique: unique(
+      "server_sizing_rule_sets_versionLabel_unique",
+    ).on(table.versionLabel),
+    publishedUnique: uniqueIndex("server_sizing_rule_sets_published_unique")
+      .on(table.status)
+      .where(sql`${table.status} = 'published'`),
+    statusIdx: index("server_sizing_rule_sets_status_createdAt_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+    statusCheck: check(
+      "server_sizing_rule_sets_status_check",
+      sql`${table.status} in ('draft', 'published', 'retired')`,
+    ),
+    schemaVersionCheck: check(
+      "server_sizing_rule_sets_schemaVersion_check",
+      sql`${table.schemaVersion} >= 1`,
+    ),
+    revisionCheck: check(
+      "server_sizing_rule_sets_revision_check",
+      sql`${table.revision} >= 1`,
+    ),
+    createdByFk: foreignKey({
+      columns: [table.createdBy],
+      foreignColumns: [users.id],
+      name: "server_sizing_rule_sets_createdBy_users_id_fk",
+    }).onDelete("set null"),
+    reviewedByFk: foreignKey({
+      columns: [table.reviewedBy],
+      foreignColumns: [users.id],
+      name: "server_sizing_rule_sets_reviewedBy_users_id_fk",
+    }).onDelete("set null"),
+    publishedByFk: foreignKey({
+      columns: [table.publishedBy],
+      foreignColumns: [users.id],
+      name: "server_sizing_rule_sets_publishedBy_users_id_fk",
+    }).onDelete("set null"),
+  }),
+);
+
+export const serverSizingRuleSources = pgTable(
+  "server_sizing_rule_sources",
+  {
+    ruleSetId: integer("ruleSetId").notNull(),
+    sourceRevisionId: integer("sourceRevisionId").notNull(),
+    claimScope: text("claimScope").notNull(),
+    enClaimScope: text("enClaimScope"),
+    reviewDueAt: timestamp("reviewDueAt"),
+  },
+  (table) => ({
+    primaryKey: primaryKey({
+      columns: [table.ruleSetId, table.sourceRevisionId],
+    }),
+    ruleSetFk: foreignKey({
+      columns: [table.ruleSetId],
+      foreignColumns: [serverSizingRuleSets.id],
+      name: "server_sizing_rule_sources_ruleSetId_server_sizing_rule_sets_id_fk",
+    }).onDelete("restrict"),
+    sourceRevisionFk: foreignKey({
+      columns: [table.sourceRevisionId],
+      foreignColumns: [knowledgeSourceRevisions.id],
+      name: "server_sizing_rule_sources_sourceRevisionId_knowledge_source_revisions_id_fk",
+    }).onDelete("restrict"),
+  }),
+);
+
+/** Stable identities and immutable revisions for network assessment data. */
+export const networkLineCandidates = pgTable(
+  "network_line_candidates",
+  {
+    id: serial("id").primaryKey(),
+    slug: varchar("slug", { length: 160 }).notNull().unique(),
+    name: text("name").notNull(),
+    enName: text("enName"),
+    providerId: integer("providerId"),
+    currentConfigurationRevisionId: integer("currentConfigurationRevisionId"),
+    status: varchar("status", { length: 20 }).default("draft").notNull(),
+    archivedAt: timestamp("archivedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    providerIdx: index("network_line_candidates_providerId_idx").on(
+      table.providerId,
+    ),
+    statusIdx: index("network_line_candidates_status_idx").on(table.status),
+    statusCheck: check(
+      "network_line_candidates_status_check",
+      sql`${table.status} in ('draft', 'active', 'withdrawn', 'archived')`,
+    ),
+    providerFk: foreignKey({
+      columns: [table.providerId],
+      foreignColumns: [affServiceProviders.id],
+      name: "network_line_candidates_providerId_aff_service_providers_id_fk",
+    }).onDelete("set null"),
+  }),
+);
+
+export const networkLineCandidateRevisions = pgTable(
+  "network_line_candidate_revisions",
+  {
+    id: serial("id").primaryKey(),
+    candidateId: integer("candidateId").notNull(),
+    revision: integer("revision").notNull(),
+    regionCode: varchar("regionCode", { length: 40 }).notNull(),
+    datacenter: text("datacenter").notNull(),
+    productRef: text("productRef").notNull(),
+    declaredLabels: jsonb("declaredLabels")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    configurationJson: jsonb("configurationJson")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    configurationHash: varchar("configurationHash", { length: 128 }).notNull(),
+    createdBy: text("createdBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    candidateRevisionUnique: unique(
+      "network_line_candidate_revisions_candidate_revision_unique",
+    ).on(table.candidateId, table.revision),
+    candidateHashUnique: unique(
+      "network_line_candidate_revisions_candidate_hash_unique",
+    ).on(table.candidateId, table.configurationHash),
+    candidateIdx: index("network_line_candidate_revisions_candidateId_idx").on(
+      table.candidateId,
+      table.createdAt,
+    ),
+    candidateFk: foreignKey({
+      columns: [table.candidateId],
+      foreignColumns: [networkLineCandidates.id],
+      name: "network_line_candidate_revisions_candidateId_network_line_candidates_id_fk",
+    }).onDelete("restrict"),
+    createdByFk: foreignKey({
+      columns: [table.createdBy],
+      foreignColumns: [users.id],
+      name: "network_line_candidate_revisions_createdBy_users_id_fk",
+    }).onDelete("set null"),
+    revisionCheck: check(
+      "network_line_candidate_revisions_revision_check",
+      sql`${table.revision} >= 1`,
+    ),
+  }),
+);
+
+export const networkTargetAgents = pgTable(
+  "network_target_agents",
+  {
+    id: serial("id").primaryKey(),
+    candidateId: integer("candidateId").notNull(),
+    externalId: varchar("externalId", { length: 160 }).notNull(),
+    currentConfigurationRevisionId: integer("currentConfigurationRevisionId"),
+    status: varchar("status", { length: 20 }).default("active").notNull(),
+    lastSeenAt: timestamp("lastSeenAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    externalUnique: unique(
+      "network_target_agents_candidate_external_unique",
+    ).on(table.candidateId, table.externalId),
+    candidateIdx: index("network_target_agents_candidateId_idx").on(
+      table.candidateId,
+    ),
+    candidateFk: foreignKey({
+      columns: [table.candidateId],
+      foreignColumns: [networkLineCandidates.id],
+      name: "network_target_agents_candidateId_network_line_candidates_id_fk",
+    }).onDelete("restrict"),
+    statusCheck: check(
+      "network_target_agents_status_check",
+      sql`${table.status} in ('active', 'revoked', 'archived')`,
+    ),
+  }),
+);
+
+export const networkTargetAgentRevisions = pgTable(
+  "network_target_agent_revisions",
+  {
+    id: serial("id").primaryKey(),
+    targetAgentId: integer("targetAgentId").notNull(),
+    revision: integer("revision").notNull(),
+    capabilities: jsonb("capabilities")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    configurationHash: varchar("configurationHash", { length: 128 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    revisionUnique: unique(
+      "network_target_agent_revisions_agent_revision_unique",
+    ).on(table.targetAgentId, table.revision),
+    hashUnique: unique("network_target_agent_revisions_agent_hash_unique").on(
+      table.targetAgentId,
+      table.configurationHash,
+    ),
+    agentFk: foreignKey({
+      columns: [table.targetAgentId],
+      foreignColumns: [networkTargetAgents.id],
+      name: "network_target_agent_revisions_targetAgentId_network_target_agents_id_fk",
+    }).onDelete("restrict"),
+    revisionCheck: check(
+      "network_target_agent_revisions_revision_check",
+      sql`${table.revision} >= 1`,
+    ),
+  }),
+);
+
+export const networkMeasurementTargets = pgTable(
+  "network_measurement_targets",
+  {
+    id: serial("id").primaryKey(),
+    candidateId: integer("candidateId").notNull(),
+    currentConfigurationRevisionId: integer("currentConfigurationRevisionId"),
+    enabled: boolean("enabled").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    candidateIdx: index("network_measurement_targets_candidateId_idx").on(
+      table.candidateId,
+      table.enabled,
+    ),
+    candidateFk: foreignKey({
+      columns: [table.candidateId],
+      foreignColumns: [networkLineCandidates.id],
+      name: "network_measurement_targets_candidateId_network_line_candidates_id_fk",
+    }).onDelete("restrict"),
+  }),
+);
+
+export const networkMeasurementTargetRevisions = pgTable(
+  "network_measurement_target_revisions",
+  {
+    id: serial("id").primaryKey(),
+    targetId: integer("targetId").notNull(),
+    revision: integer("revision").notNull(),
+    targetAgentRevisionId: integer("targetAgentRevisionId"),
+    addressFamily: varchar("addressFamily", { length: 8 }).notNull(),
+    targetAddress: text("targetAddress").notNull(),
+    targetPrefix: text("targetPrefix").notNull(),
+    originAsn: bigint("originAsn", { mode: "bigint" }),
+    port: integer("port"),
+    configurationHash: varchar("configurationHash", { length: 128 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    revisionUnique: unique(
+      "network_measurement_target_revisions_target_revision_unique",
+    ).on(table.targetId, table.revision),
+    activeTargetUnique: unique(
+      "network_measurement_target_revisions_target_address_port_unique",
+    ).on(table.targetId, table.addressFamily, table.targetAddress, table.port),
+    targetFk: foreignKey({
+      columns: [table.targetId],
+      foreignColumns: [networkMeasurementTargets.id],
+      name: "network_measurement_target_revisions_targetId_network_measurement_targets_id_fk",
+    }).onDelete("restrict"),
+    agentRevisionFk: foreignKey({
+      columns: [table.targetAgentRevisionId],
+      foreignColumns: [networkTargetAgentRevisions.id],
+      name: "network_measurement_target_revisions_targetAgentRevisionId_network_target_agent_revisions_id_fk",
+    }).onDelete("restrict"),
+    addressFamilyCheck: check(
+      "network_measurement_target_revisions_addressFamily_check",
+      sql`${table.addressFamily} in ('ipv4', 'ipv6')`,
+    ),
+    portCheck: check(
+      "network_measurement_target_revisions_port_check",
+      sql`${table.port} is null or ${table.port} between 1 and 65535`,
+    ),
+    revisionCheck: check(
+      "network_measurement_target_revisions_revision_check",
+      sql`${table.revision} >= 1`,
+    ),
+  }),
+);
+
+export const networkTargetPrefixVerifications = pgTable(
+  "network_target_prefix_verifications",
+  {
+    id: serial("id").primaryKey(),
+    targetRevisionId: integer("targetRevisionId").notNull(),
+    deliveryPrefixHash: varchar("deliveryPrefixHash", {
+      length: 128,
+    }).notNull(),
+    verificationMethod: varchar("verificationMethod", { length: 80 }).notNull(),
+    evidenceRef: text("evidenceRef"),
+    verifiedBy: text("verifiedBy"),
+    verifiedAt: timestamp("verifiedAt").notNull(),
+    validUntil: timestamp("validUntil"),
+    invalidatedAt: timestamp("invalidatedAt"),
+  },
+  (table) => ({
+    currentUnique: unique(
+      "network_target_prefix_verifications_target_revision_prefix_unique",
+    ).on(table.targetRevisionId, table.deliveryPrefixHash),
+    targetRevisionIdx: index(
+      "network_target_prefix_verifications_targetRevisionId_validUntil_idx",
+    ).on(table.targetRevisionId, table.validUntil),
+    targetRevisionFk: foreignKey({
+      columns: [table.targetRevisionId],
+      foreignColumns: [networkMeasurementTargetRevisions.id],
+      name: "network_target_prefix_verifications_targetRevisionId_network_measurement_target_revisions_id_fk",
+    }).onDelete("restrict"),
+    verifiedByFk: foreignKey({
+      columns: [table.verifiedBy],
+      foreignColumns: [users.id],
+      name: "network_target_prefix_verifications_verifiedBy_users_id_fk",
+    }).onDelete("set null"),
+  }),
+);
+
+export const networkMeasurementProbes = pgTable(
+  "network_measurement_probes",
+  {
+    id: serial("id").primaryKey(),
+    sourceKind: varchar("sourceKind", { length: 24 }).notNull(),
+    externalId: varchar("externalId", { length: 160 }).notNull(),
+    currentConfigurationRevisionId: integer("currentConfigurationRevisionId"),
+    status: varchar("status", { length: 20 }).default("active").notNull(),
+    lastSeenAt: timestamp("lastSeenAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    sourceExternalUnique: unique(
+      "network_measurement_probes_source_external_unique",
+    ).on(table.sourceKind, table.externalId),
+    statusIdx: index("network_measurement_probes_status_lastSeenAt_idx").on(
+      table.status,
+      table.lastSeenAt,
+    ),
+    statusCheck: check(
+      "network_measurement_probes_status_check",
+      sql`${table.status} in ('active', 'stale', 'revoked', 'archived')`,
+    ),
+  }),
+);
+
+export const networkMeasurementProbeRevisions = pgTable(
+  "network_measurement_probe_revisions",
+  {
+    id: serial("id").primaryKey(),
+    probeId: integer("probeId").notNull(),
+    revision: integer("revision").notNull(),
+    countryCode: varchar("countryCode", { length: 16 }),
+    regionCode: varchar("regionCode", { length: 40 }).notNull(),
+    carrier: varchar("carrier", { length: 16 }).notNull(),
+    accessType: varchar("accessType", { length: 24 }).notNull(),
+    asn: bigint("asn", { mode: "bigint" }),
+    capabilities: jsonb("capabilities")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    trustLevel: varchar("trustLevel", { length: 8 }).notNull(),
+    ownerOrgKey: varchar("ownerOrgKey", { length: 120 }).notNull(),
+    accessPrefixKey: varchar("accessPrefixKey", { length: 160 }).notNull(),
+    physicalSiteKey: varchar("physicalSiteKey", { length: 160 }).notNull(),
+    independenceKey: varchar("independenceKey", { length: 160 }).notNull(),
+    configurationHash: varchar("configurationHash", { length: 128 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    revisionUnique: unique(
+      "network_measurement_probe_revisions_probe_revision_unique",
+    ).on(table.probeId, table.revision),
+    hashUnique: unique(
+      "network_measurement_probe_revisions_probe_hash_unique",
+    ).on(table.probeId, table.configurationHash),
+    probeIdx: index("network_measurement_probe_revisions_probeId_idx").on(
+      table.probeId,
+      table.createdAt,
+    ),
+    probeFk: foreignKey({
+      columns: [table.probeId],
+      foreignColumns: [networkMeasurementProbes.id],
+      name: "network_measurement_probe_revisions_probeId_network_measurement_probes_id_fk",
+    }).onDelete("restrict"),
+    carrierCheck: check(
+      "network_measurement_probe_revisions_carrier_check",
+      sql`${table.carrier} in ('telecom', 'unicom', 'mobile', 'other')`,
+    ),
+    accessTypeCheck: check(
+      "network_measurement_probe_revisions_accessType_check",
+      sql`${table.accessType} in ('residential', 'business', 'mobile', 'unknown')`,
+    ),
+    revisionCheck: check(
+      "network_measurement_probe_revisions_revision_check",
+      sql`${table.revision} >= 1`,
+    ),
+  }),
+);
+
+export const networkMeasurementCredentials = pgTable(
+  "network_measurement_credentials",
+  {
+    id: serial("id").primaryKey(),
+    probeId: integer("probeId"),
+    targetAgentId: integer("targetAgentId"),
+    keyId: varchar("keyId", { length: 120 }).notNull().unique(),
+    secretCiphertext: text("secretCiphertext").notNull(),
+    activatedAt: timestamp("activatedAt").notNull(),
+    expiresAt: timestamp("expiresAt"),
+    revokedAt: timestamp("revokedAt"),
+    rotationOfId: integer("rotationOfId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    probeFk: foreignKey({
+      columns: [table.probeId],
+      foreignColumns: [networkMeasurementProbes.id],
+      name: "network_measurement_credentials_probeId_network_measurement_probes_id_fk",
+    }).onDelete("restrict"),
+    targetAgentFk: foreignKey({
+      columns: [table.targetAgentId],
+      foreignColumns: [networkTargetAgents.id],
+      name: "network_measurement_credentials_targetAgentId_network_target_agents_id_fk",
+    }).onDelete("restrict"),
+    rotationFk: foreignKey({
+      columns: [table.rotationOfId],
+      foreignColumns: [table.id],
+      name: "network_measurement_credentials_rotationOfId_self_fk",
+    }).onDelete("set null"),
+    ownerCheck: check(
+      "network_measurement_credentials_owner_check",
+      sql`(${table.probeId} is not null and ${table.targetAgentId} is null) or (${table.probeId} is null and ${table.targetAgentId} is not null)`,
+    ),
+    expiryCheck: check(
+      "network_measurement_credentials_expiry_check",
+      sql`${table.expiresAt} is null or ${table.expiresAt} > ${table.activatedAt}`,
+    ),
+  }),
+);
+
+export const networkMeasurementIngestNonces = pgTable(
+  "network_measurement_ingest_nonces",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    credentialId: integer("credentialId").notNull(),
+    nonce: varchar("nonce", { length: 64 }).notNull(),
+    requestTimestamp: timestamp("requestTimestamp").notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    credentialNonceUnique: unique(
+      "network_measurement_ingest_nonces_credential_nonce_unique",
+    ).on(table.credentialId, table.nonce),
+    expiryIdx: index("network_measurement_ingest_nonces_expiresAt_idx").on(
+      table.expiresAt,
+    ),
+    credentialFk: foreignKey({
+      columns: [table.credentialId],
+      foreignColumns: [networkMeasurementCredentials.id],
+      name: "network_measurement_ingest_nonces_credentialId_network_measurement_credentials_id_fk",
+    }).onDelete("cascade"),
+  }),
+);
+
+export const networkMeasurementCampaigns = pgTable(
+  "network_measurement_campaigns",
+  {
+    id: serial("id").primaryKey(),
+    candidateId: integer("candidateId").notNull(),
+    status: varchar("status", { length: 20 }).default("draft").notNull(),
+    currentConfigurationRevisionId: integer("currentConfigurationRevisionId"),
+    runGeneration: integer("runGeneration").default(1).notNull(),
+    nextRunAt: timestamp("nextRunAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    candidateIdx: index(
+      "network_measurement_campaigns_candidate_status_idx",
+    ).on(table.candidateId, table.status),
+    candidateFk: foreignKey({
+      columns: [table.candidateId],
+      foreignColumns: [networkLineCandidates.id],
+      name: "network_measurement_campaigns_candidateId_network_line_candidates_id_fk",
+    }).onDelete("restrict"),
+    statusCheck: check(
+      "network_measurement_campaigns_status_check",
+      sql`${table.status} in ('draft', 'active', 'paused', 'retired')`,
+    ),
+    generationCheck: check(
+      "network_measurement_campaigns_runGeneration_check",
+      sql`${table.runGeneration} >= 1`,
+    ),
+  }),
+);
+
+export const networkMeasurementCampaignRevisions = pgTable(
+  "network_measurement_campaign_revisions",
+  {
+    id: serial("id").primaryKey(),
+    campaignId: integer("campaignId").notNull(),
+    revision: integer("revision").notNull(),
+    probeSelector: jsonb("probeSelector")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    metricProfile: jsonb("metricProfile")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    protocolVersion: varchar("protocolVersion", { length: 80 }).notNull(),
+    intervalMinutes: integer("intervalMinutes").notNull(),
+    peakWindows: jsonb("peakWindows")
+      .$type<Array<Record<string, unknown>>>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    startsAt: timestamp("startsAt"),
+    endsAt: timestamp("endsAt"),
+    configurationJson: jsonb("configurationJson")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    configurationHash: varchar("configurationHash", { length: 128 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    revisionUnique: unique(
+      "network_measurement_campaign_revisions_campaign_revision_unique",
+    ).on(table.campaignId, table.revision),
+    hashUnique: unique(
+      "network_measurement_campaign_revisions_campaign_hash_unique",
+    ).on(table.campaignId, table.configurationHash),
+    campaignFk: foreignKey({
+      columns: [table.campaignId],
+      foreignColumns: [networkMeasurementCampaigns.id],
+      name: "network_measurement_campaign_revisions_campaignId_network_measurement_campaigns_id_fk",
+    }).onDelete("restrict"),
+    intervalCheck: check(
+      "network_measurement_campaign_revisions_intervalMinutes_check",
+      sql`${table.intervalMinutes} between 1 and 10080`,
+    ),
+    revisionCheck: check(
+      "network_measurement_campaign_revisions_revision_check",
+      sql`${table.revision} >= 1`,
+    ),
+  }),
+);
+
+export const networkMeasurementRuns = pgTable(
+  "network_measurement_runs",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    campaignId: integer("campaignId").notNull(),
+    campaignRevisionId: integer("campaignRevisionId").notNull(),
+    slotAt: timestamp("slotAt").notNull(),
+    status: varchar("status", { length: 20 }).default("queued").notNull(),
+    externalMeasurementId: text("externalMeasurementId"),
+    runGeneration: integer("runGeneration").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    coverageBps: integer("coverageBps").default(0).notNull(),
+    errorDetail: text("errorDetail"),
+    startedAt: timestamp("startedAt"),
+    finishedAt: timestamp("finishedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    scheduleUnique: unique("network_measurement_runs_schedule_unique").on(
+      table.campaignId,
+      table.slotAt,
+      table.campaignRevisionId,
+      table.runGeneration,
+    ),
+    statusIdx: index("network_measurement_runs_status_slotAt_idx").on(
+      table.status,
+      table.slotAt,
+    ),
+    campaignFk: foreignKey({
+      columns: [table.campaignId],
+      foreignColumns: [networkMeasurementCampaigns.id],
+      name: "network_measurement_runs_campaignId_network_measurement_campaigns_id_fk",
+    }).onDelete("restrict"),
+    campaignRevisionFk: foreignKey({
+      columns: [table.campaignRevisionId],
+      foreignColumns: [networkMeasurementCampaignRevisions.id],
+      name: "network_measurement_runs_campaignRevisionId_network_measurement_campaign_revisions_id_fk",
+    }).onDelete("restrict"),
+    statusCheck: check(
+      "network_measurement_runs_status_check",
+      sql`${table.status} in ('queued', 'running', 'succeeded', 'failed', 'cancelled', 'stale')`,
+    ),
+    coverageCheck: check(
+      "network_measurement_runs_coverageBps_check",
+      sql`${table.coverageBps} between 0 and 10000`,
+    ),
+    generationCheck: check(
+      "network_measurement_runs_runGeneration_check",
+      sql`${table.runGeneration} >= 1`,
+    ),
+  }),
+);
+
+export const networkMeasurementRawBatches = pgTable(
+  "network_measurement_raw_batches",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    runId: bigint("runId", { mode: "number" }).notNull(),
+    sourceKind: varchar("sourceKind", { length: 24 }).notNull(),
+    credentialId: integer("credentialId"),
+    batchId: varchar("batchId", { length: 160 }).notNull(),
+    bodyHash: varchar("bodyHash", { length: 128 }).notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    receivedAt: timestamp("receivedAt").defaultNow().notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+  },
+  (table) => ({
+    externalBatchUnique: unique(
+      "network_measurement_raw_batches_source_batch_unique",
+    ).on(table.sourceKind, table.batchId),
+    credentialBatchUnique: unique(
+      "network_measurement_raw_batches_credential_batch_unique",
+    ).on(table.credentialId, table.batchId),
+    expiryIdx: index("network_measurement_raw_batches_expiresAt_idx").on(
+      table.expiresAt,
+    ),
+    runFk: foreignKey({
+      columns: [table.runId],
+      foreignColumns: [networkMeasurementRuns.id],
+      name: "network_measurement_raw_batches_runId_network_measurement_runs_id_fk",
+    }).onDelete("restrict"),
+    credentialFk: foreignKey({
+      columns: [table.credentialId],
+      foreignColumns: [networkMeasurementCredentials.id],
+      name: "network_measurement_raw_batches_credentialId_network_measurement_credentials_id_fk",
+    }).onDelete("set null"),
+  }),
+);
+
+export const networkMeasurementSamples = pgTable(
+  "network_measurement_samples",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    runId: bigint("runId", { mode: "number" }).notNull(),
+    rawBatchId: bigint("rawBatchId", { mode: "number" }),
+    probeRevisionId: integer("probeRevisionId").notNull(),
+    targetRevisionId: integer("targetRevisionId").notNull(),
+    direction: varchar("direction", { length: 12 }).notNull(),
+    protocol: varchar("protocol", { length: 16 }).notNull(),
+    observedAt: timestamp("observedAt").notNull(),
+    rttMs: integer("rttMs"),
+    jitterMs: integer("jitterMs"),
+    packetLossBps: integer("packetLossBps"),
+    throughputKbps: integer("throughputKbps"),
+    ttfbMs: integer("ttfbMs"),
+    pathHash: varchar("pathHash", { length: 128 }),
+    qualityFlags: jsonb("qualityFlags")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    parserVersion: varchar("parserVersion", { length: 80 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    runObservedIdx: index(
+      "network_measurement_samples_runId_observedAt_idx",
+    ).on(table.runId, table.observedAt),
+    targetObservedIdx: index(
+      "network_measurement_samples_targetRevisionId_observedAt_idx",
+    ).on(table.targetRevisionId, table.observedAt),
+    runFk: foreignKey({
+      columns: [table.runId],
+      foreignColumns: [networkMeasurementRuns.id],
+      name: "network_measurement_samples_runId_network_measurement_runs_id_fk",
+    }).onDelete("restrict"),
+    rawBatchFk: foreignKey({
+      columns: [table.rawBatchId],
+      foreignColumns: [networkMeasurementRawBatches.id],
+      name: "network_measurement_samples_rawBatchId_network_measurement_raw_batches_id_fk",
+    }).onDelete("set null"),
+    probeRevisionFk: foreignKey({
+      columns: [table.probeRevisionId],
+      foreignColumns: [networkMeasurementProbeRevisions.id],
+      name: "network_measurement_samples_probeRevisionId_network_measurement_probe_revisions_id_fk",
+    }).onDelete("restrict"),
+    targetRevisionFk: foreignKey({
+      columns: [table.targetRevisionId],
+      foreignColumns: [networkMeasurementTargetRevisions.id],
+      name: "network_measurement_samples_targetRevisionId_network_measurement_target_revisions_id_fk",
+    }).onDelete("restrict"),
+    directionCheck: check(
+      "network_measurement_samples_direction_check",
+      sql`${table.direction} in ('forward', 'reverse')`,
+    ),
+    metricCheck: check(
+      "network_measurement_samples_metric_check",
+      sql`(${table.rttMs} is null or ${table.rttMs} >= 0)
+        and (${table.jitterMs} is null or ${table.jitterMs} >= 0)
+        and (${table.packetLossBps} is null or ${table.packetLossBps} between 0 and 10000)
+        and (${table.throughputKbps} is null or ${table.throughputKbps} >= 0)
+        and (${table.ttfbMs} is null or ${table.ttfbMs} >= 0)`,
+    ),
+  }),
+);
+
+export const networkRouteObservations = pgTable(
+  "network_route_observations",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    targetRevisionId: integer("targetRevisionId").notNull(),
+    collector: varchar("collector", { length: 80 }).notNull(),
+    vantageKey: varchar("vantageKey", { length: 160 }).notNull(),
+    prefix: text("prefix").notNull(),
+    originAsn: bigint("originAsn", { mode: "bigint" }),
+    asPath: jsonb("asPath")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    eventType: varchar("eventType", { length: 24 }).notNull(),
+    observedAt: timestamp("observedAt").notNull(),
+    pathHash: varchar("pathHash", { length: 128 }).notNull(),
+    parserVersion: varchar("parserVersion", { length: 80 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    materialUnique: unique("network_route_observations_material_unique").on(
+      table.targetRevisionId,
+      table.collector,
+      table.vantageKey,
+      table.prefix,
+      table.observedAt,
+    ),
+    targetObservedIdx: index(
+      "network_route_observations_target_observed_idx",
+    ).on(table.targetRevisionId, table.observedAt),
+    targetRevisionFk: foreignKey({
+      columns: [table.targetRevisionId],
+      foreignColumns: [networkMeasurementTargetRevisions.id],
+      name: "network_route_observations_targetRevisionId_network_measurement_target_revisions_id_fk",
+    }).onDelete("restrict"),
+    eventTypeCheck: check(
+      "network_route_observations_eventType_check",
+      sql`${table.eventType} in ('snapshot', 'announcement', 'withdrawal', 'unknown')`,
+    ),
+  }),
+);
+
+export const networkMeasurementRollups = pgTable(
+  "network_measurement_rollups",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    candidateId: integer("candidateId").notNull(),
+    targetRevisionId: integer("targetRevisionId"),
+    probeRevisionId: integer("probeRevisionId"),
+    campaignRevisionId: integer("campaignRevisionId"),
+    windowKind: varchar("windowKind", { length: 16 }).notNull(),
+    windowStart: timestamp("windowStart").notNull(),
+    windowEnd: timestamp("windowEnd").notNull(),
+    dimensionJson: jsonb("dimensionJson")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    sampleCount: integer("sampleCount").notNull(),
+    probeCount: integer("probeCount").notNull(),
+    distributionJson: jsonb("distributionJson")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    percentileJson: jsonb("percentileJson")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    rollupSchemaVersion: integer("rollupSchemaVersion").notNull(),
+    inputHash: varchar("inputHash", { length: 128 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    inputUnique: unique("network_measurement_rollups_input_unique").on(
+      table.inputHash,
+    ),
+    candidateWindowIdx: index(
+      "network_measurement_rollups_candidate_window_idx",
+    ).on(table.candidateId, table.windowStart, table.windowEnd),
+    candidateFk: foreignKey({
+      columns: [table.candidateId],
+      foreignColumns: [networkLineCandidates.id],
+      name: "network_measurement_rollups_candidateId_network_line_candidates_id_fk",
+    }).onDelete("restrict"),
+    targetRevisionFk: foreignKey({
+      columns: [table.targetRevisionId],
+      foreignColumns: [networkMeasurementTargetRevisions.id],
+      name: "network_measurement_rollups_targetRevisionId_network_measurement_target_revisions_id_fk",
+    }).onDelete("restrict"),
+    probeRevisionFk: foreignKey({
+      columns: [table.probeRevisionId],
+      foreignColumns: [networkMeasurementProbeRevisions.id],
+      name: "network_measurement_rollups_probeRevisionId_network_measurement_probe_revisions_id_fk",
+    }).onDelete("restrict"),
+    campaignRevisionFk: foreignKey({
+      columns: [table.campaignRevisionId],
+      foreignColumns: [networkMeasurementCampaignRevisions.id],
+      name: "network_measurement_rollups_campaignRevisionId_network_measurement_campaign_revisions_id_fk",
+    }).onDelete("restrict"),
+    windowCheck: check(
+      "network_measurement_rollups_window_check",
+      sql`${table.windowEnd} > ${table.windowStart} and ${table.sampleCount} >= 0 and ${table.probeCount} >= 0`,
+    ),
+  }),
+);
+
+export const networkRouteStateSnapshots = pgTable(
+  "network_route_state_snapshots",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    candidateRevisionId: integer("candidateRevisionId").notNull(),
+    addressFamily: varchar("addressFamily", { length: 8 }).notNull(),
+    targetSetHash: varchar("targetSetHash", { length: 128 }).notNull(),
+    routeStatePolicyVersion: varchar("routeStatePolicyVersion", {
+      length: 80,
+    }).notNull(),
+    materialRouteStateHash: varchar("materialRouteStateHash", {
+      length: 128,
+    }).notNull(),
+    inputManifestJson: jsonb("inputManifestJson")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    inputManifestHash: varchar("inputManifestHash", { length: 128 }).notNull(),
+    observedFrom: timestamp("observedFrom").notNull(),
+    observedTo: timestamp("observedTo").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    materialUnique: unique("network_route_state_snapshots_material_unique").on(
+      table.candidateRevisionId,
+      table.addressFamily,
+      table.materialRouteStateHash,
+      table.routeStatePolicyVersion,
+    ),
+    candidateRevisionFk: foreignKey({
+      columns: [table.candidateRevisionId],
+      foreignColumns: [networkLineCandidateRevisions.id],
+      name: "network_route_state_snapshots_candidateRevisionId_network_line_candidate_revisions_id_fk",
+    }).onDelete("restrict"),
+    addressFamilyCheck: check(
+      "network_route_state_snapshots_addressFamily_check",
+      sql`${table.addressFamily} in ('ipv4', 'ipv6')`,
+    ),
+    observedWindowCheck: check(
+      "network_route_state_snapshots_observed_window_check",
+      sql`${table.observedTo} > ${table.observedFrom}`,
+    ),
+  }),
+);
+
+export const networkRouteStateInputs = pgTable(
+  "network_route_state_inputs",
+  {
+    routeStateSnapshotId: bigint("routeStateSnapshotId", {
+      mode: "number",
+    }).notNull(),
+    routeObservationId: bigint("routeObservationId", {
+      mode: "number",
+    }).notNull(),
+    evidenceRole: varchar("evidenceRole", { length: 40 }).notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({
+      columns: [table.routeStateSnapshotId, table.routeObservationId],
+    }),
+    snapshotFk: foreignKey({
+      columns: [table.routeStateSnapshotId],
+      foreignColumns: [networkRouteStateSnapshots.id],
+      name: "network_route_state_inputs_routeStateSnapshotId_network_route_state_snapshots_id_fk",
+    }).onDelete("restrict"),
+    observationFk: foreignKey({
+      columns: [table.routeObservationId],
+      foreignColumns: [networkRouteObservations.id],
+      name: "network_route_state_inputs_routeObservationId_network_route_observations_id_fk",
+    }).onDelete("restrict"),
+  }),
+);
+
+export const networkRouteStateHeads = pgTable(
+  "network_route_state_heads",
+  {
+    candidateId: integer("candidateId").notNull(),
+    addressFamily: varchar("addressFamily", { length: 8 }).notNull(),
+    routeStateSnapshotId: bigint("routeStateSnapshotId", { mode: "number" }),
+    headRevision: integer("headRevision").default(1).notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({
+      columns: [table.candidateId, table.addressFamily],
+    }),
+    snapshotUnique: unique("network_route_state_heads_snapshot_unique").on(
+      table.routeStateSnapshotId,
+    ),
+    candidateFk: foreignKey({
+      columns: [table.candidateId],
+      foreignColumns: [networkLineCandidates.id],
+      name: "network_route_state_heads_candidateId_network_line_candidates_id_fk",
+    }).onDelete("restrict"),
+    snapshotFk: foreignKey({
+      columns: [table.routeStateSnapshotId],
+      foreignColumns: [networkRouteStateSnapshots.id],
+      name: "network_route_state_heads_routeStateSnapshotId_network_route_state_snapshots_id_fk",
+    }).onDelete("restrict"),
+    addressFamilyCheck: check(
+      "network_route_state_heads_addressFamily_check",
+      sql`${table.addressFamily} in ('ipv4', 'ipv6')`,
+    ),
+    revisionCheck: check(
+      "network_route_state_heads_headRevision_check",
+      sql`${table.headRevision} >= 1`,
+    ),
+  }),
+);
+
+export const networkAssessmentSnapshots = pgTable(
+  "network_assessment_snapshots",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    candidateId: integer("candidateId").notNull(),
+    audienceProfileKey: varchar("audienceProfileKey", {
+      length: 240,
+    }).notNull(),
+    candidateRevisionId: integer("candidateRevisionId").notNull(),
+    targetSetHash: varchar("targetSetHash", { length: 128 }).notNull(),
+    routeStateSnapshotId: bigint("routeStateSnapshotId", { mode: "number" }),
+    measurementProtocolVersion: varchar("measurementProtocolVersion", {
+      length: 80,
+    }).notNull(),
+    parserVersion: varchar("parserVersion", { length: 80 }).notNull(),
+    rollupSchemaVersion: integer("rollupSchemaVersion").notNull(),
+    formulaVersion: varchar("formulaVersion", { length: 80 }).notNull(),
+    policyChecksum: varchar("policyChecksum", { length: 128 }).notNull(),
+    inputManifestJson: jsonb("inputManifestJson")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    inputManifestHash: varchar("inputManifestHash", { length: 128 }).notNull(),
+    observedFrom: timestamp("observedFrom").notNull(),
+    observedTo: timestamp("observedTo").notNull(),
+    validUntil: timestamp("validUntil"),
+    operatorAssessments: jsonb("operatorAssessments")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    reasonCodes: jsonb("reasonCodes")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    riskCodes: jsonb("riskCodes")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    candidateProfileIdx: index(
+      "network_assessment_snapshots_candidate_profile_created_idx",
+    ).on(table.candidateId, table.audienceProfileKey, table.createdAt),
+    validityIdx: index("network_assessment_snapshots_validUntil_idx").on(
+      table.validUntil,
+    ),
+    candidateFk: foreignKey({
+      columns: [table.candidateId],
+      foreignColumns: [networkLineCandidates.id],
+      name: "network_assessment_snapshots_candidateId_network_line_candidates_id_fk",
+    }).onDelete("restrict"),
+    candidateRevisionFk: foreignKey({
+      columns: [table.candidateRevisionId],
+      foreignColumns: [networkLineCandidateRevisions.id],
+      name: "network_assessment_snapshots_candidateRevisionId_network_line_candidate_revisions_id_fk",
+    }).onDelete("restrict"),
+    routeStateFk: foreignKey({
+      columns: [table.routeStateSnapshotId],
+      foreignColumns: [networkRouteStateSnapshots.id],
+      name: "network_assessment_snapshots_routeStateSnapshotId_network_route_state_snapshots_id_fk",
+    }).onDelete("restrict"),
+    windowCheck: check(
+      "network_assessment_snapshots_observed_window_check",
+      sql`${table.observedTo} > ${table.observedFrom}`,
+    ),
+  }),
+);
+
+export const networkAssessmentInputRollups = pgTable(
+  "network_assessment_input_rollups",
+  {
+    snapshotId: bigint("snapshotId", { mode: "number" }).notNull(),
+    rollupId: bigint("rollupId", { mode: "number" }).notNull(),
+    cellKey: varchar("cellKey", { length: 240 }).notNull(),
+    role: varchar("role", { length: 40 }).notNull(),
+    weightBps: integer("weightBps").notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({ columns: [table.snapshotId, table.rollupId] }),
+    snapshotFk: foreignKey({
+      columns: [table.snapshotId],
+      foreignColumns: [networkAssessmentSnapshots.id],
+      name: "network_assessment_input_rollups_snapshotId_network_assessment_snapshots_id_fk",
+    }).onDelete("restrict"),
+    rollupFk: foreignKey({
+      columns: [table.rollupId],
+      foreignColumns: [networkMeasurementRollups.id],
+      name: "network_assessment_input_rollups_rollupId_network_measurement_rollups_id_fk",
+    }).onDelete("restrict"),
+    weightCheck: check(
+      "network_assessment_input_rollups_weightBps_check",
+      sql`${table.weightBps} between 0 and 10000`,
+    ),
+  }),
+);
+
+export const networkAssessmentSources = pgTable(
+  "network_assessment_sources",
+  {
+    snapshotId: bigint("snapshotId", { mode: "number" }).notNull(),
+    sourceRevisionId: integer("sourceRevisionId").notNull(),
+    claimScope: text("claimScope").notNull(),
+    evidenceRole: varchar("evidenceRole", { length: 40 }).notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({
+      columns: [table.snapshotId, table.sourceRevisionId],
+    }),
+    snapshotFk: foreignKey({
+      columns: [table.snapshotId],
+      foreignColumns: [networkAssessmentSnapshots.id],
+      name: "network_assessment_sources_snapshotId_network_assessment_snapshots_id_fk",
+    }).onDelete("restrict"),
+    sourceRevisionFk: foreignKey({
+      columns: [table.sourceRevisionId],
+      foreignColumns: [knowledgeSourceRevisions.id],
+      name: "network_assessment_sources_sourceRevisionId_knowledge_source_revisions_id_fk",
+    }).onDelete("restrict"),
+  }),
+);
+
+export const networkAssessmentHeads = pgTable(
+  "network_assessment_heads",
+  {
+    candidateId: integer("candidateId").notNull(),
+    audienceProfileKey: varchar("audienceProfileKey", {
+      length: 240,
+    }).notNull(),
+    snapshotId: bigint("snapshotId", { mode: "number" }),
+    headRevision: integer("headRevision").default(1).notNull(),
+    updatedBy: text("updatedBy"),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({
+      columns: [table.candidateId, table.audienceProfileKey],
+    }),
+    candidateSnapshotIdx: index(
+      "network_assessment_heads_candidate_snapshot_idx",
+    ).on(table.candidateId, table.snapshotId),
+    candidateFk: foreignKey({
+      columns: [table.candidateId],
+      foreignColumns: [networkLineCandidates.id],
+      name: "network_assessment_heads_candidateId_network_line_candidates_id_fk",
+    }).onDelete("restrict"),
+    snapshotFk: foreignKey({
+      columns: [table.snapshotId],
+      foreignColumns: [networkAssessmentSnapshots.id],
+      name: "network_assessment_heads_snapshotId_network_assessment_snapshots_id_fk",
+    }).onDelete("restrict"),
+    updatedByFk: foreignKey({
+      columns: [table.updatedBy],
+      foreignColumns: [users.id],
+      name: "network_assessment_heads_updatedBy_users_id_fk",
+    }).onDelete("set null"),
+    revisionCheck: check(
+      "network_assessment_heads_headRevision_check",
+      sql`${table.headRevision} >= 1`,
+    ),
+  }),
+);
+
+export const networkAssessmentPublicationEvents = pgTable(
+  "network_assessment_publication_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    candidateId: integer("candidateId").notNull(),
+    audienceProfileKey: varchar("audienceProfileKey", {
+      length: 240,
+    }).notNull(),
+    snapshotId: bigint("snapshotId", { mode: "number" }),
+    eventType: varchar("eventType", { length: 32 }).notNull(),
+    idempotencyKey: varchar("idempotencyKey", { length: 160 })
+      .notNull()
+      .unique(),
+    reason: text("reason"),
+    actorId: text("actorId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    candidateCreatedIdx: index(
+      "network_assessment_publication_events_candidate_created_idx",
+    ).on(table.candidateId, table.createdAt),
+    candidateFk: foreignKey({
+      columns: [table.candidateId],
+      foreignColumns: [networkLineCandidates.id],
+      name: "network_assessment_publication_events_candidateId_network_line_candidates_id_fk",
+    }).onDelete("restrict"),
+    snapshotFk: foreignKey({
+      columns: [table.snapshotId],
+      foreignColumns: [networkAssessmentSnapshots.id],
+      name: "network_assessment_publication_events_snapshotId_network_assessment_snapshots_id_fk",
+    }).onDelete("restrict"),
+    actorFk: foreignKey({
+      columns: [table.actorId],
+      foreignColumns: [users.id],
+      name: "network_assessment_publication_events_actorId_users_id_fk",
+    }).onDelete("set null"),
+    eventTypeCheck: check(
+      "network_assessment_publication_events_eventType_check",
+      sql`${table.eventType} in ('published', 'withdrawn', 'rollback_published', 'expired_observed', 'rejected')`,
     ),
   }),
 );

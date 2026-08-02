@@ -1,0 +1,35 @@
+[Unit]
+Description=fwqgo controlled network measurement agent (%i)
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/fwqgo/network-agent/%i.env
+ConditionPathExists=/opt/fwqgo/network-agent/%i/bin/fwqgo-network-agent
+
+[Service]
+Type=simple
+User=fwqgo-agent
+Group=fwqgo-agent
+WorkingDirectory=/opt/fwqgo/network-agent/%i
+EnvironmentFile=/etc/fwqgo/network-agent/%i.env
+ExecStart=/opt/fwqgo/network-agent/%i/bin/fwqgo-network-agent
+Restart=on-failure
+RestartSec=15s
+TimeoutStartSec=30s
+TimeoutStopSec=15s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_INET6
+ReadWritePaths=/var/lib/fwqgo/network-agent/%i
+CapabilityBoundingSet=CAP_NET_RAW
+AmbientCapabilities=CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target

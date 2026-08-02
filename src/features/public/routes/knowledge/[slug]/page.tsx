@@ -31,6 +31,7 @@ const copy = {
     topics: "相关主题",
     related: "同分类知识",
     continueReading: "继续阅读",
+    sources: "来源与核验",
     breadcrumb: "面包屑",
     loading: "正在加载知识详情...",
     inLanguage: "zh-CN",
@@ -45,6 +46,7 @@ const copy = {
     topics: "Related topics",
     related: "More in this category",
     continueReading: "Continue reading",
+    sources: "Sources and verification",
     breadcrumb: "Breadcrumb",
     loading: "Loading this knowledge article...",
     inLanguage: "en",
@@ -260,6 +262,26 @@ async function KnowledgeArticleContent(props: {
           className={`${ARTICLE_PROSE_CLASS_NAME} mx-auto mt-8 max-w-3xl`}
           dangerouslySetInnerHTML={{ __html: contentHtml }}
         />
+
+        {article.sources.length > 0 ? (
+          <section className="mx-auto mt-10 max-w-3xl border-t border-border/70 pt-6">
+            <h2 className="text-lg font-semibold">{languageCopy.sources}</h2>
+            <ol className="mt-4 space-y-3 text-sm leading-6 text-muted-foreground">
+              {article.sources.map((source) => (
+                <li key={source.citationKey} className="rounded-md border border-border/70 p-3">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span className="font-medium text-foreground">[{source.citationKey}] {source.title}</span>
+                    <span className="text-xs">{source.authorityTier} · {source.publisher}</span>
+                  </div>
+                  <p className="mt-1">{source.claimScope}</p>
+                  <a className="mt-1 inline-block break-all text-primary hover:underline" href={source.canonicalUrl} rel="noreferrer" target="_blank">
+                    {source.canonicalUrl}
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </section>
+        ) : null}
 
         {keywords.length > 0 ? (
           <section className="mx-auto mt-10 max-w-3xl border-t border-border/70 pt-5">
