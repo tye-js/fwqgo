@@ -15,6 +15,8 @@ import {
   defaultQualityReviewPrompt,
   defaultRewriteRetryPrompt,
   resolveMetadataPromptTemplate,
+  resolveQualityRepairTemplate,
+  resolveQualityReviewTemplate,
   resolveSourceAnchoredRewriteTemplate,
 } from "@fwqgo/core/ai-rewrite-prompts";
 import { resolveProviderCatalogDiscoveryPrompt } from "@fwqgo/core/provider-catalog-discovery";
@@ -77,8 +79,12 @@ function withPromptDefaults<T extends typeof aiRewriteConfigs.$inferSelect>(
     initialRewritePrompt:
       row.initialRewritePrompt ?? defaultInitialRewriteFeedbackPrompt,
     rewriteRetryPrompt: row.rewriteRetryPrompt ?? defaultRewriteRetryPrompt,
-    qualityRepairPrompt: row.qualityRepairPrompt ?? defaultQualityRepairPrompt,
-    qualityReviewPrompt: row.qualityReviewPrompt ?? defaultQualityReviewPrompt,
+    qualityRepairPrompt: resolveQualityRepairTemplate(
+      row.qualityRepairPrompt ?? defaultQualityRepairPrompt,
+    ),
+    qualityReviewPrompt: resolveQualityReviewTemplate(
+      row.qualityReviewPrompt ?? defaultQualityReviewPrompt,
+    ),
     metadataPrompt: resolveMetadataPromptTemplate(row.metadataPrompt),
     metadataStylePrompt: row.metadataStylePrompt ?? defaultMetadataStylePrompt,
     englishContentPrompt:

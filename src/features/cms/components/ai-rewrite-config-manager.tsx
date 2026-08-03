@@ -360,7 +360,7 @@ function ConfigForm({
           </p>
         </div>
         <div className="space-y-2">
-          <Label>最多改写 / 修订轮数</Label>
+          <Label>最多自动修订次数</Label>
           <Input
             name="rewriteMaxAttempts"
             type="number"
@@ -372,7 +372,7 @@ function ConfigForm({
             required
           />
           <p className="text-xs leading-5 text-muted-foreground">
-            首轮生成后按审查问题直接修订并复审，达到上限仍未通过才停止。
+            初稿单独审查；每次审查未通过都会自动修订并复审。该数值只限制修订次数，不包含初稿。
           </p>
         </div>
       </div>

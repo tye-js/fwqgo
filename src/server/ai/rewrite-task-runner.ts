@@ -2080,6 +2080,8 @@ export async function runAiRewriteTask(taskId: number) {
         status: event.ai.status,
         attempt: event.ai.attempt ?? null,
         maxAttempts: event.ai.maxAttempts ?? null,
+        repairAttempt: event.ai.repairAttempt ?? null,
+        maxRepairAttempts: event.ai.maxRepairAttempts ?? null,
         maxTokens: event.ai.maxTokens,
         inputLength: event.ai.inputLength ?? null,
         outputLength: event.ai.outputLength ?? null,

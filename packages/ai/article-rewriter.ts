@@ -79,6 +79,8 @@ export interface ArticleRewriteProgress {
   maxTokens: number;
   attempt?: number;
   maxAttempts?: number;
+  repairAttempt?: number;
+  maxRepairAttempts?: number;
   inputLength?: number;
   outputLength?: number;
 }
@@ -222,14 +224,28 @@ type ArticleQualityReviewRaw = Partial<{
   missingFacts: unknown;
   unsupportedClaims: unknown;
   distortedFacts: unknown;
+  issues: unknown;
   verdict: string;
 }>;
+
+type ArticleQualityIssueKind =
+  | "missing_fact"
+  | "unsupported_claim"
+  | "distorted_fact";
+
+type ArticleQualityIssue = {
+  kind: ArticleQualityIssueKind;
+  candidateText: string;
+  sourceText: string;
+  reason: string;
+};
 
 type ArticleQualityReview = {
   factualScore: number;
   missingFacts: string[];
   unsupportedClaims: string[];
   distortedFacts: string[];
+  issues: ArticleQualityIssue[];
   passed: boolean;
 };
 
@@ -474,17 +490,114 @@ function buildQualityRepairPrompt(input: {
   });
 }
 
+function normalizeQualityIssueKind(value: unknown): ArticleQualityIssueKind | null {
+  const normalized = normalizeFactText(value, 40).toLowerCase();
+  if (
+    normalized === "missing_fact" ||
+    normalized === "missingfacts" ||
+    normalized === "遗漏事实"
+  ) {
+    return "missing_fact";
+  }
+  if (
+    normalized === "unsupported_claim" ||
+    normalized === "unsupportedclaims" ||
+    normalized === "无依据表述"
+  ) {
+    return "unsupported_claim";
+  }
+  if (
+    normalized === "distorted_fact" ||
+    normalized === "distortedfacts" ||
+    normalized === "事实失真"
+  ) {
+    return "distorted_fact";
+  }
+  return null;
+}
+
+function normalizeQualityIssues(raw: ArticleQualityReviewRaw) {
+  const normalizedIssues: ArticleQualityIssue[] = [];
+  if (Array.isArray(raw.issues)) {
+    for (const item of raw.issues) {
+      if (!item || typeof item !== "object") continue;
+      const record = item as Record<string, unknown>;
+      const kind = normalizeQualityIssueKind(
+        record.type ?? record.kind ?? record.category,
+      );
+      if (!kind) continue;
+      normalizedIssues.push({
+        kind,
+        candidateText: normalizeFactText(
+          record.candidateText ?? record.exactText ?? record.claim,
+          1_200,
+        ),
+        sourceText: normalizeFactText(
+          record.sourceText ?? record.correction,
+          1_200,
+        ),
+        reason: normalizeFactText(record.reason, 600),
+      });
+    }
+  }
+
+  const legacyIssues: Array<{
+    kind: ArticleQualityIssueKind;
+    value: unknown;
+  }> = [
+    ...(normalizeStringArray(raw.missingFacts).map((value) => ({
+      kind: "missing_fact" as const,
+      value,
+    })) ?? []),
+    ...(normalizeStringArray(raw.unsupportedClaims).map((value) => ({
+      kind: "unsupported_claim" as const,
+      value,
+    })) ?? []),
+    ...(normalizeStringArray(raw.distortedFacts).map((value) => ({
+      kind: "distorted_fact" as const,
+      value,
+    })) ?? []),
+  ];
+  for (const item of legacyIssues) {
+    if (
+      normalizedIssues.some(
+        (issue) => issue.kind === item.kind && issue.candidateText === item.value,
+      )
+    ) {
+      continue;
+    }
+    normalizedIssues.push({
+      kind: item.kind,
+      candidateText:
+        item.kind === "missing_fact" ? "" : String(item.value).trim(),
+      sourceText: item.kind === "missing_fact" ? String(item.value).trim() : "",
+      reason: "",
+    });
+  }
+  return normalizedIssues.slice(0, 30);
+}
+
 function normalizeQualityReview(raw: ArticleQualityReviewRaw) {
   const factualScoreValue = Number(raw.factualScore);
   const factualScore = Number.isFinite(factualScoreValue)
     ? Math.max(0, Math.min(100, Math.round(factualScoreValue)))
     : 0;
-  const missingFacts = normalizeStringArray(raw.missingFacts).slice(0, 20);
-  const unsupportedClaims = normalizeStringArray(raw.unsupportedClaims).slice(
-    0,
-    20,
-  );
-  const distortedFacts = normalizeStringArray(raw.distortedFacts).slice(0, 20);
+  const issues = normalizeQualityIssues(raw);
+  const missingFacts = issues
+    .filter((issue) => issue.kind === "missing_fact")
+    .map((issue) => issue.sourceText || issue.candidateText)
+    .filter(Boolean)
+    .slice(0, 20);
+  const unsupportedClaims = issues
+    .filter((issue) => issue.kind === "unsupported_claim")
+    .map((issue) => issue.candidateText || issue.reason)
+    .filter(Boolean)
+    .slice(0, 20);
+  const distortedFacts = issues
+    .filter((issue) => issue.kind === "distorted_fact")
+    .map((issue) => issue.candidateText || issue.reason)
+    .filter(Boolean)
+    .slice(0, 20);
   const verdict = normalizeFactText(raw.verdict, 20).toLowerCase();
   const verdictPassed = verdict === "pass" || verdict === "通过";
 
@@ -493,6 +606,7 @@ function normalizeQualityReview(raw: ArticleQualityReviewRaw) {
     missingFacts,
     unsupportedClaims,
     distortedFacts,
+    issues,
     passed:
       verdictPassed &&
       factualScore >= 85 &&
@@ -508,8 +622,10 @@ function buildRewriteRetryFeedback(input: {
   review?: ArticleQualityReview;
   placeholderIssues?: string[];
   outputIssue?: string;
+  previousIssues?: string[];
 }) {
   const issues = [
+    ...(input.previousIssues ?? []),
     input.outputIssue,
     ...(input.placeholderIssues?.length
       ? [`缺失或重复占位符：${input.placeholderIssues.join("、")}`]
@@ -524,10 +640,22 @@ function buildRewriteRetryFeedback(input: {
     ...(input.review?.distortedFacts.length
       ? [`事实失真：${input.review.distortedFacts.join("；")}`]
       : []),
+    ...(input.review?.issues.map((issue) => {
+      const label =
+        issue.kind === "missing_fact"
+          ? "需补回来源事实"
+          : issue.kind === "unsupported_claim"
+            ? "必须删除无依据原句"
+            : "必须修正错误原句";
+      const exactText = issue.candidateText || issue.sourceText;
+      return `${label}：${exactText}${issue.reason ? `（${issue.reason}）` : ""}`;
+    }) ?? []),
   ].filter((item): item is string => Boolean(item));
 
   const issueList = (
-    issues.length > 0 ? issues : ["质量审查未通过，但审查器没有返回具体问题"]
+    [...new Set(issues)].length > 0
+      ? [...new Set(issues)]
+      : ["质量审查未通过，但审查器没有返回具体问题"]
   )
     .slice(0, 12)
     .map((item) => `- ${item}`)
@@ -1358,10 +1486,13 @@ export async function rewriteArticleWithAi(
   )
     ? Math.trunc(config.rewriteMaxAttempts)
     : DEFAULT_AI_REWRITE_MAX_ATTEMPTS;
-  const maxRewriteAttempts = Math.max(
+  const maxRepairAttempts = Math.max(
     MIN_AI_REWRITE_MAX_ATTEMPTS,
     Math.min(MAX_AI_REWRITE_MAX_ATTEMPTS, configuredRewriteMaxAttempts),
   );
+  // The initial draft is always reviewed once. The configured value is the
+  // number of repair opportunities that follow a failed review.
+  const maxGenerationAttempts = maxRepairAttempts + 1;
   const rewriteOutline =
     factSheet.outline.length > 0
       ? factSheet.outline.map((item) => `- ${item}`).join("\n")
@@ -1372,10 +1503,12 @@ export async function rewriteArticleWithAi(
   let acceptedMetrics: RewriteQualityMetrics | null = null;
   let acceptedReview: ArticleQualityReview | null = null;
   let attempts = 0;
+  let retryIssues: string[] = [];
 
-  for (let attempt = 1; attempt <= maxRewriteAttempts; attempt += 1) {
+  for (let attempt = 1; attempt <= maxGenerationAttempts; attempt += 1) {
     attempts = attempt;
-    const isRepairAttempt = repairCandidate.trim().length > 0;
+    const isRepairAttempt = attempt > 1;
+    const repairAttempt = isRepairAttempt ? attempt - 1 : 0;
     const candidatePrompt = isRepairAttempt
       ? buildQualityRepairPrompt({
           template: config.qualityRepairPrompt,
@@ -1401,17 +1534,19 @@ export async function rewriteArticleWithAi(
           retryFeedback,
         });
     const candidateStepName = isRepairAttempt
-      ? `审查反馈直接修订（第 ${attempt} 轮）`
-      : `原文锚定正文扩写（第 ${attempt} 轮）`;
+      ? `审查反馈直接修订（第 ${repairAttempt}/${maxRepairAttempts} 次）`
+      : "原文锚定正文扩写（初稿）";
     await reportRewriteProgress(options, {
       stage: "content_generation",
       status: "running",
       message: isRepairAttempt
-        ? `正在按审查问题直接修订第 ${attempt} 轮候选正文`
-        : `正在生成第 ${attempt} 轮候选正文`,
+        ? `正在按审查问题直接修订（第 ${repairAttempt}/${maxRepairAttempts} 次）`
+        : "正在生成初稿",
       maxTokens: config.maxTokens,
       attempt,
-      maxAttempts: maxRewriteAttempts,
+      maxAttempts: maxGenerationAttempts,
+      repairAttempt,
+      maxRepairAttempts,
       inputLength: candidatePrompt.length,
     });
     const candidateResult = await requestAuditedChatCompletion({
@@ -1432,11 +1567,13 @@ export async function rewriteArticleWithAi(
       stage: "content_generation",
       status: "success",
       message: isRepairAttempt
-        ? `第 ${attempt} 轮候选正文修订完成`
-        : `第 ${attempt} 轮候选正文生成完成`,
+        ? `自动修订 ${repairAttempt}/${maxRepairAttempts} 完成`
+        : "初稿生成完成",
       maxTokens: config.maxTokens,
       attempt,
-      maxAttempts: maxRewriteAttempts,
+      maxAttempts: maxGenerationAttempts,
+      repairAttempt,
+      maxRepairAttempts,
       inputLength: candidatePrompt.length,
       outputLength: candidate.length,
     });
@@ -1447,10 +1584,9 @@ export async function rewriteArticleWithAi(
         outputIssue: candidate
           ? `正文只有 ${candidate.length} 个字符，内容不完整`
           : "模型返回空正文",
+        previousIssues: retryIssues,
       });
-      if (candidate) {
-        repairCandidate = candidate;
-      }
+      repairCandidate = candidate || repairCandidate;
       await updateRewriteAudit(options, config, {
         stage: "content_generation",
         stageName: candidateStepName,
@@ -1466,7 +1602,8 @@ export async function rewriteArticleWithAi(
         metadata: {
           accepted: false,
           generationMode: isRepairAttempt ? "repair" : "initial",
-          maxAttempts: maxRewriteAttempts,
+          maxAttempts: maxGenerationAttempts,
+          maxRepairAttempts,
           retryFeedback,
           outputIssue: candidate
             ? `正文只有 ${candidate.length} 个字符，内容不完整`
@@ -1506,7 +1643,9 @@ export async function rewriteArticleWithAi(
       metadata: {
         accepted: null,
         generationMode: isRepairAttempt ? "repair" : "initial",
-        maxAttempts: maxRewriteAttempts,
+        maxAttempts: maxGenerationAttempts,
+        repairAttempt,
+        maxRepairAttempts,
         reviewStatus: "pending",
         deterministicMetrics: metrics,
         missingPlaceholders: restored.missingPlaceholders,
@@ -1528,7 +1667,9 @@ export async function rewriteArticleWithAi(
       message: `正在执行第 ${attempt} 轮事实质量审查`,
       maxTokens: config.maxTokens,
       attempt,
-      maxAttempts: maxRewriteAttempts,
+      maxAttempts: maxGenerationAttempts,
+      repairAttempt,
+      maxRepairAttempts,
       inputLength: reviewPrompt.length,
       outputLength: restored.markdown.length,
     });
@@ -1565,7 +1706,8 @@ export async function rewriteArticleWithAi(
         metadata: {
           accepted: false,
           generationMode: isRepairAttempt ? "repair" : "initial",
-          maxAttempts: maxRewriteAttempts,
+          maxAttempts: maxGenerationAttempts,
+          maxRepairAttempts,
           reviewStatus: "failed",
           deterministicMetrics: metrics,
           missingPlaceholders: restored.missingPlaceholders,
@@ -1600,7 +1742,8 @@ export async function rewriteArticleWithAi(
         metadata: {
           accepted: false,
           generationMode: isRepairAttempt ? "repair" : "initial",
-          maxAttempts: maxRewriteAttempts,
+          maxAttempts: maxGenerationAttempts,
+          maxRepairAttempts,
           reviewStatus: "failed",
           deterministicMetrics: metrics,
           missingPlaceholders: restored.missingPlaceholders,
@@ -1631,7 +1774,9 @@ export async function rewriteArticleWithAi(
         message: `第 ${attempt} 轮事实质量审查通过`,
         maxTokens: config.maxTokens,
         attempt,
-        maxAttempts: maxRewriteAttempts,
+        maxAttempts: maxGenerationAttempts,
+        repairAttempt,
+        maxRepairAttempts,
         inputLength: reviewPrompt.length,
         outputLength: reviewText.length,
       });
@@ -1653,7 +1798,8 @@ export async function rewriteArticleWithAi(
         metadata: {
           accepted: true,
           generationMode: isRepairAttempt ? "repair" : "initial",
-          maxAttempts: maxRewriteAttempts,
+          maxAttempts: maxGenerationAttempts,
+          maxRepairAttempts,
           deterministicMetrics: metrics,
           missingPlaceholders: restored.missingPlaceholders,
         },
@@ -1675,11 +1821,30 @@ export async function rewriteArticleWithAi(
       break;
     }
 
+    retryIssues = [
+      ...new Set([
+        ...review.missingFacts.map((item) => `遗漏事实：${item}`),
+        ...review.unsupportedClaims.map((item) => `无依据表述：${item}`),
+        ...review.distortedFacts.map((item) => `事实失真：${item}`),
+        ...review.issues.map((issue) => {
+          const label =
+            issue.kind === "missing_fact"
+              ? "需补回来源事实"
+              : issue.kind === "unsupported_claim"
+                ? "必须删除无依据原句"
+                : "必须修正错误原句";
+          const exactText = issue.candidateText || issue.sourceText;
+          return `${label}：${exactText}${issue.reason ? `（${issue.reason}）` : ""}`;
+        }),
+        ...retryIssues,
+      ]),
+    ].slice(0, 24);
     retryFeedback = buildRewriteRetryFeedback({
       template: config.rewriteRetryPrompt,
       metrics,
       review,
       placeholderIssues: restored.missingPlaceholders,
+      previousIssues: retryIssues,
     });
     repairCandidate = candidate;
     await updateRewriteAudit(options, config, {
@@ -1697,7 +1862,8 @@ export async function rewriteArticleWithAi(
       metadata: {
         accepted: false,
         generationMode: isRepairAttempt ? "repair" : "initial",
-        maxAttempts: maxRewriteAttempts,
+        maxAttempts: maxGenerationAttempts,
+        maxRepairAttempts,
         deterministicMetrics: metrics,
         missingPlaceholders: restored.missingPlaceholders,
         retryFeedback,
@@ -1726,12 +1892,14 @@ export async function rewriteArticleWithAi(
       stage: "quality_review",
       status: "retry",
       message:
-        attempt < maxRewriteAttempts
-          ? `第 ${attempt} 轮质量审查未通过，准备按问题直接修订`
-          : `第 ${attempt} 轮质量审查未通过，已达到配置的最大轮数`,
+        attempt < maxGenerationAttempts
+          ? `第 ${attempt} 轮质量审查未通过，准备执行自动修订 ${repairAttempt + 1}/${maxRepairAttempts}`
+          : `初稿加 ${maxRepairAttempts} 次自动修订后的最终复审仍未通过`,
       maxTokens: config.maxTokens,
       attempt,
-      maxAttempts: maxRewriteAttempts,
+      maxAttempts: maxGenerationAttempts,
+      repairAttempt,
+      maxRepairAttempts,
       inputLength: reviewPrompt.length,
       outputLength: reviewText.length,
     });
@@ -1739,7 +1907,7 @@ export async function rewriteArticleWithAi(
 
   if (!acceptedMarkdown || !acceptedMetrics || !acceptedReview) {
     throw createReadableError(
-      `正文改写质量审查未通过（已尝试 ${attempts}/${maxRewriteAttempts} 轮）`,
+      `正文改写质量审查未通过（初稿加 ${maxRepairAttempts} 次自动修订后仍未通过）`,
       retryFeedback.replace(/\n+/g, " ").slice(0, 1_200),
     );
   }

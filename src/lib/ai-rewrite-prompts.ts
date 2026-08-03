@@ -13,5 +13,7 @@ export {
   defaultQualityReviewPrompt,
   defaultRewriteRetryPrompt,
   resolveMetadataPromptTemplate,
+  resolveQualityRepairTemplate,
+  resolveQualityReviewTemplate,
   resolveSourceAnchoredRewriteTemplate,
 } from "@fwqgo/core/ai-rewrite-prompts";

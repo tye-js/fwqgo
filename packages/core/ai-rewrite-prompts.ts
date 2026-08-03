@@ -104,11 +104,12 @@ export const defaultQualityRepairPrompt = `你是服务器/VPS 文章的事实�
 
 修订要求：
 1. 只输出修订后的完整 Markdown 正文，不要输出标题、JSON、代码块围栏、修改说明或审查过程。
-2. 逐项解决审查问题；删除无依据内容，恢复被扭曲的主体、运营商、数字、条件和关系，补回影响决策的来源事实。
+2. 逐项解决审查问题。对于“必须删除无依据原句”，先在候选正文中定位对应原句并完整删除；不要把同一个判断换成同义词，也不要用“据此可见”“具有竞争力”“适合”等新句式保留同一结论。对于事实失真，按完整来源原文恢复主体、运营商、数字、条件和关系；对于遗漏事实，只补回来源明确支持且影响决策的内容。
 3. 保留上一版中已正确的结构、段落和表达，不要因为局部问题重新改写整篇文章。
 4. 所有事实必须能由完整来源原文、受保护原始内容或明确带来源的供应商资料支持。知识库只能解释原文已经出现的通用概念。
 5. 每个受保护占位符必须原样出现且只出现一次；不要重写占位符代表的套餐表格和链接。
-6. 不得新增价格、配置、线路、运营商、库存、测试、用户反馈、社区反馈、退款承诺或其他来源没有的结论。`;
+6. 不得新增价格、配置、线路、运营商、库存、测试、用户反馈、社区反馈、退款承诺或其他来源没有的结论。
+7. 输出前逐项自检 issues：每个 candidateText 被要求删除或修正的原句都不能继续出现在正文中；尤其是 type=unsupported_claim 的原句必须删除；不要为了保持篇幅而补写未经来源支持的评价性句子。`;
 
 export const defaultQualityReviewPrompt = `你是独立的事实审查员。请审查候选文章是否忠于允许使用的事实，只输出 JSON。
 
@@ -118,14 +119,24 @@ export const defaultQualityReviewPrompt = `你是独立的事实审查员。请�
 3. 知识库只能解释来源原文已经出现的通用概念，不能引入新的 ASN、线路名、运营商、地区、数据或商家结论。
 4. 必须逐项核对主体与对象、运营商、肯定或否定、比较关系、适用条件、不确定性及信息归属。把联通换成移动、把“可能”写成“确定”、把编辑推断写成官方或社区反馈，都属于事实失真或无依据表述。
 
-只输出紧凑 JSON：
+只输出紧凑 JSON。数组中的旧字段仍需保留；同时请填写 issues，便于系统直接执行修订：
 {
   "factualScore": 0到100的整数,
   "missingFacts": ["遗漏且影响读者决策的来源事实"],
   "unsupportedClaims": ["无依据的新事实或商家结论"],
   "distortedFacts": ["被改错的数字、名称、条件或关系"],
+  "issues": [
+    {
+      "type": "missing_fact | unsupported_claim | distorted_fact",
+      "candidateText": "候选正文中的完整错误原句；遗漏事实留空",
+      "sourceText": "来源原文中应补回或替换的完整事实；无依据表述留空",
+      "reason": "一句话说明为什么不符合来源"
+    }
+  ],
   "verdict": "pass 或 fail"
 }
+
+issues 的 candidateText 必须尽量逐字复制候选正文中的完整句子。unsupported_claim 必须明确标出需要删除的原句，不能只写抽象结论；distorted_fact 必须标出错误原句；missing_fact 必须标出来源中应补回的事实。候选正文通过前，所有 issues 都必须解决。
 
 完整来源原文：
 {sourceContent}
@@ -144,6 +155,32 @@ export const defaultQualityReviewPrompt = `你是独立的事实审查员。请�
 
 候选 Markdown：
 {markdownContent}`;
+
+const qualityReviewActionabilitySupplement = `
+
+审查结果必须可直接用于自动修订：旧版字段 missingFacts、unsupportedClaims、distortedFacts 继续输出；同时必须输出 issues 数组。issues 中每项使用 {"type":"missing_fact | unsupported_claim | distorted_fact","candidateText":"候选正文中的完整原句；遗漏事实留空","sourceText":"来源中应补回或替换的完整事实；无依据表述留空","reason":"具体原因"}。candidateText 必须逐字复制候选正文中的完整句子；unsupported_claim 必须标出需要删除的原句，不要只写抽象判断。`;
+
+const qualityRepairActionabilitySupplement = `
+
+自动修订附加要求：issues 中标记为 unsupported_claim 的 candidateText 必须从完整正文中删除，不能改写成同义评价或换一种归因；distorted_fact 必须恢复为完整来源原文支持的事实；missing_fact 只能补回来源明确提供的事实。输出前逐项搜索 candidateText，确认要求删除或修正的原句不再出现。`;
+
+export function resolveQualityReviewTemplate(value?: string | null) {
+  const custom = value?.trim();
+  if (!custom) return defaultQualityReviewPrompt;
+  if (custom.includes('"issues"') && custom.includes("candidateText")) {
+    return custom;
+  }
+  return `${custom}${qualityReviewActionabilitySupplement}`;
+}
+
+export function resolveQualityRepairTemplate(value?: string | null) {
+  const custom = value?.trim();
+  if (!custom) return defaultQualityRepairPrompt;
+  if (custom.includes("candidateText") && custom.includes("unsupported_claim")) {
+    return custom;
+  }
+  return `${custom}${qualityRepairActionabilitySupplement}`;
+}
 
 export type SourceAnchoredRewritePromptInput = {
   configuredPrompt?: string | null;
