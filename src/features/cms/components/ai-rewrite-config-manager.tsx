@@ -74,23 +74,52 @@ import { defaultProviderCatalogDiscoveryPrompt } from "@fwqgo/core/provider-cata
 
 type Config = Awaited<ReturnType<typeof getAiRewriteConfigs>>[number];
 
-const providerDefaults = {
-  deepseek: {
+const interfacePresets = {
+  deepseekOfficial: {
+    provider: "deepseek",
     name: "DeepSeek 官方",
     baseUrl: "https://api.deepseek.com",
     model: "deepseek-chat",
   },
-  openai: {
+  deepseekRelay: {
+    provider: "compatible",
+    name: "DeepSeek 第三方中转",
+    baseUrl: "",
+    model: "deepseek-chat",
+  },
+  openaiOfficial: {
+    provider: "openai",
     name: "OpenAI 官方",
     baseUrl: "https://api.openai.com",
     model: "gpt-4.1-mini",
   },
   compatible: {
-    name: "第三方 OpenAI 兼容",
-    baseUrl: "https://api.example.com",
+    provider: "compatible",
+    name: "第三方中转 / OpenAI 兼容",
+    baseUrl: "",
     model: "gpt-4.1-mini",
   },
-};
+} as const;
+
+type InterfacePreset = keyof typeof interfacePresets;
+
+function resolveInterfacePreset(config?: Config): InterfacePreset {
+  if (config?.provider === "openai") return "openaiOfficial";
+  if (config?.provider === "compatible") {
+    return config.model.toLowerCase().startsWith("deepseek-")
+      ? "deepseekRelay"
+      : "compatible";
+  }
+  return "deepseekOfficial";
+}
+
+function describeProvider(config: Config) {
+  if (config.provider === "deepseek") return "DeepSeek 官方";
+  if (config.provider === "openai") return "OpenAI 官方";
+  return config.model.toLowerCase().startsWith("deepseek-")
+    ? "DeepSeek 第三方中转"
+    : "第三方中转 / OpenAI 兼容";
+}
 
 const defaultStylePrompt =
   "保持服务器/VPS推广文章的专业评测风格，强化商家特点、配置、线路、价格、优惠码、适用场景和SEO长尾词。保留原文中的表格、价格、配置、优惠码、官网链接和返利链接，不要编造不存在的信息。";
@@ -206,17 +235,33 @@ function ConfigForm({
   config?: Config;
   onDone?: () => void;
 }) {
-  const [provider, setProvider] = useState<
-    "deepseek" | "openai" | "compatible"
-  >(config?.provider ?? "deepseek");
+  const initialPreset = resolveInterfacePreset(config);
+  const [interfacePreset, setInterfacePreset] =
+    useState<InterfacePreset>(initialPreset);
+  const [name, setName] = useState(
+    config?.name ?? interfacePresets[initialPreset].name,
+  );
+  const [baseUrl, setBaseUrl] = useState(
+    config?.baseUrl ?? interfacePresets[initialPreset].baseUrl,
+  );
+  const [model, setModel] = useState(
+    config?.model ?? interfacePresets[initialPreset].model,
+  );
   const [enabled, setEnabled] = useState(config?.enabled ?? false);
   const [isDefault, setIsDefault] = useState(config?.isDefault ?? false);
   const [isSaving, setIsSaving] = useState(false);
-  const defaults = providerDefaults[provider];
+
+  function handlePresetChange(value: InterfacePreset) {
+    const preset = interfacePresets[value];
+    setInterfacePreset(value);
+    setName(preset.name);
+    setBaseUrl(preset.baseUrl);
+    setModel(preset.model);
+  }
 
   async function handleSubmit(formData: FormData) {
     setIsSaving(true);
-    formData.set("provider", provider);
+    formData.set("provider", interfacePresets[interfacePreset].provider);
     appendBoolean(formData, "enabled", enabled);
     appendBoolean(formData, "isDefault", isDefault);
 
@@ -268,18 +313,25 @@ function ConfigForm({
     >
       <div className="grid gap-4 md:grid-cols-3">
         <div className="space-y-2">
-          <Label>服务类型</Label>
+          <Label>接口预设</Label>
           <Select
-            value={provider}
-            onValueChange={(value) => setProvider(value as typeof provider)}
+            value={interfacePreset}
+            onValueChange={(value) =>
+              handlePresetChange(value as InterfacePreset)
+            }
           >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="deepseek">DeepSeek 官方</SelectItem>
-              <SelectItem value="openai">OpenAI 官方</SelectItem>
-              <SelectItem value="compatible">第三方 OpenAI 兼容</SelectItem>
+              <SelectItem value="deepseekOfficial">DeepSeek 官方</SelectItem>
+              <SelectItem value="deepseekRelay">
+                DeepSeek 第三方中转
+              </SelectItem>
+              <SelectItem value="openaiOfficial">OpenAI 官方</SelectItem>
+              <SelectItem value="compatible">
+                其他第三方中转 / OpenAI 兼容
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -287,7 +339,8 @@ function ConfigForm({
           <Label>配置名称</Label>
           <Input
             name="name"
-            defaultValue={config?.name ?? defaults.name}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
             required
           />
         </div>
@@ -295,9 +348,14 @@ function ConfigForm({
           <Label>模型</Label>
           <Input
             name="model"
-            defaultValue={config?.model ?? defaults.model}
+            value={model}
+            onChange={(event) => setModel(event.target.value)}
             required
           />
+          <p className="text-xs leading-5 text-muted-foreground">
+            填写中转站实际暴露的模型 ID，例如 deepseek-chat、deepseek-reasoner
+            或中转站自定义名称。
+          </p>
         </div>
       </div>
 
@@ -306,9 +364,15 @@ function ConfigForm({
           <Label>Base URL</Label>
           <Input
             name="baseUrl"
-            defaultValue={config?.baseUrl ?? defaults.baseUrl}
+            value={baseUrl}
+            onChange={(event) => setBaseUrl(event.target.value)}
+            placeholder="https://relay.example.com/v1"
             required
           />
+          <p className="text-xs leading-5 text-muted-foreground">
+            支持根地址、以 /v1 结尾的地址或完整 /chat/completions
+            地址，系统会自动补全请求路径。
+          </p>
         </div>
         <div className="space-y-2">
           <Label>API Key</Label>
@@ -719,7 +783,7 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
                 <Fragment key={config.id}>
                   <TableRow>
                     <TableCell className="font-medium">{config.name}</TableCell>
-                    <TableCell>{config.provider}</TableCell>
+                    <TableCell>{describeProvider(config)}</TableCell>
                     <TableCell>{config.model}</TableCell>
                     <TableCell>{config.styleName}</TableCell>
                     <TableCell>
