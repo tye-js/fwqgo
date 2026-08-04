@@ -3,7 +3,13 @@ import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { cacheLife } from "next/cache";
 import { decodeSlug } from "@fwqgo/core/utils";
 import { attachTagsToPosts } from "@/features/public/data/post-tags";
-import { homepageSlots, posts, tags, postTags } from "@fwqgo/db/schema";
+import {
+  categories,
+  homepageSlots,
+  posts,
+  tags,
+  postTags,
+} from "@fwqgo/db/schema";
 import {
   eq,
   desc,
@@ -315,9 +321,13 @@ export async function getPostWithTagsBySlug(slug: string) {
         recommendedTagId: posts.recommendedTagId,
         recommendedTagName: posts.recommendedTagName,
         recommendedTagSlug: tags.slug,
+        categoryId: categories.id,
+        categoryName: categories.name,
+        categorySlug: categories.slug,
       })
       .from(posts)
       .leftJoin(tags, eq(posts.recommendedTagId, tags.id))
+      .innerJoin(categories, eq(posts.categoryId, categories.id))
       .where(and(eq(posts.slug, decodedSlug), publishedChinesePostCondition()))
       .limit(1);
 
@@ -394,8 +404,14 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
         recommendedTagName: posts.recommendedTagName,
         language: posts.language,
         translationSourcePostId: posts.translationSourcePostId,
+        categoryId: categories.id,
+        categoryName: categories.name,
+        categorySlug: categories.slug,
+        categoryEnName: categories.enName,
+        categoryEnSlug: categories.enSlug,
       })
       .from(posts)
+      .innerJoin(categories, eq(posts.categoryId, categories.id))
       .where(
         and(
           eq(posts.slug, decodedSlug),

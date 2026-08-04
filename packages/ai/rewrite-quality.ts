@@ -23,6 +23,13 @@ export type RewriteQualityMetrics = {
   reasons: string[];
 };
 
+export type RewriteLengthBudget = {
+  sourceNarrativeLength: number;
+  verifiedFactCount: number;
+  targetNarrativeLength: number;
+  hardMaxNarrativeLength: number;
+};
+
 type MarkdownTableRange = {
   start: number;
   end: number;
@@ -197,6 +204,38 @@ function narrativeMarkdown(markdown: string) {
     .replace(/[ \t]+/g, " ")
     .trim();
 }
+
+export function getRewriteLengthBudget(
+  sourceMarkdown: string,
+  verifiedFactCount: number,
+): RewriteLengthBudget {
+  const sourceNarrativeLength = Array.from(
+    normalizeNarrative(narrativeMarkdown(sourceMarkdown)),
+  ).length;
+  const normalizedFactCount = Number.isFinite(verifiedFactCount)
+    ? Math.max(0, Math.min(40, Math.trunc(verifiedFactCount)))
+    : 0;
+  const ratio =
+    sourceNarrativeLength < 300
+      ? 2.5
+      : sourceNarrativeLength <= 1_000
+        ? 2
+        : 1.6;
+  const factAllowance = Math.min(1_200, normalizedFactCount * 45);
+  const targetNarrativeLength = Math.max(
+    MIN_REASONABLE_REWRITE_LENGTH,
+    Math.ceil(sourceNarrativeLength * ratio + factAllowance),
+  );
+
+  return {
+    sourceNarrativeLength,
+    verifiedFactCount: normalizedFactCount,
+    targetNarrativeLength,
+    hardMaxNarrativeLength: Math.ceil(targetNarrativeLength * 1.2),
+  };
+}
+
+const MIN_REASONABLE_REWRITE_LENGTH = 180;
 
 function normalizeNarrative(value: string) {
   return value
@@ -423,7 +462,10 @@ function criticalFactComparison(
 export function evaluateRewriteQuality(
   sourceMarkdown: string,
   outputMarkdown: string,
-  options: { allowedFactsMarkdown?: string } = {},
+  options: {
+    allowedFactsMarkdown?: string;
+    maxNarrativeLength?: number;
+  } = {},
 ): RewriteQualityMetrics {
   const sourceNarrative = narrativeMarkdown(sourceMarkdown);
   const outputNarrative = narrativeMarkdown(outputMarkdown);
@@ -466,6 +508,14 @@ export function evaluateRewriteQuality(
   if (criticalFacts.unsupported.length > 0) {
     reasons.push(
       `正文出现原文不存在的关键值：${criticalFacts.unsupported.slice(0, 6).join("、")}`,
+    );
+  }
+  if (
+    Number.isFinite(options.maxNarrativeLength) &&
+    outputNarrativeLength > (options.maxNarrativeLength ?? 0)
+  ) {
+    reasons.push(
+      `正文叙述长度 ${outputNarrativeLength} 超过事实信息量允许的 ${Math.trunc(options.maxNarrativeLength ?? 0)}`,
     );
   }
 

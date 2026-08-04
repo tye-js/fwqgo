@@ -543,6 +543,7 @@ async function scrapeByRule(input: {
   rewriteStyleId?: number;
   allowAiFallback?: boolean;
   aiInputMaxLength?: number;
+  categoryName?: string | null;
   onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>;
 }) {
   const parsedUrl = requirePublicHttpUrl(input.url, "抓取 URL");
@@ -678,6 +679,8 @@ async function scrapeByRule(input: {
         const rewritten = await RewriteArticle(preparedAiInput.markdown, {
           styleId: input.rewriteStyleId,
           providerNames: getMatchedAffiliateProviderNames(affiliateReport),
+          sourceTitle: scrapedTitle,
+          categoryName: input.categoryName,
           onProgress: async (ai) => {
             await input.onProgress?.({
               stage: "ai_progress",
@@ -762,6 +765,7 @@ export async function scrapeArticleWithOptions(input: {
   rewriteStyleId?: number;
   allowAiFallback?: boolean;
   aiInputMaxLength?: number;
+  categoryName?: string | null;
   onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>;
 }) {
   const parsedUrl = requirePublicHttpUrl(input.url, "抓取 URL");
@@ -772,6 +776,7 @@ export async function scrapeArticleWithOptions(input: {
     rewriteStyleId: input.rewriteStyleId,
     allowAiFallback: input.allowAiFallback,
     aiInputMaxLength: input.aiInputMaxLength,
+    categoryName: input.categoryName,
     onProgress: input.onProgress,
   });
 }

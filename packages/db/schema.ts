@@ -2175,6 +2175,119 @@ export const knowledgeArticles = pgTable(
   }),
 );
 
+export const postInternalLinks = pgTable(
+  "post_internal_links",
+  {
+    id: serial("id").primaryKey(),
+    sourcePostId: integer("sourcePostId").notNull(),
+    targetType: varchar("targetType", { length: 24 }).notNull(),
+    targetKey: varchar("targetKey", { length: 400 }).notNull(),
+    targetPostId: integer("targetPostId"),
+    targetKnowledgeArticleId: integer("targetKnowledgeArticleId"),
+    targetCategoryId: integer("targetCategoryId"),
+    targetTagId: integer("targetTagId"),
+    targetPath: text("targetPath"),
+    language: varchar("language", { length: 8 }).notNull(),
+    placement: varchar("placement", { length: 32 }).notNull(),
+    anchorText: text("anchorText"),
+    sourceExcerpt: text("sourceExcerpt"),
+    sectionHeading: text("sectionHeading"),
+    occurrenceIndex: integer("occurrenceIndex").default(0).notNull(),
+    score: integer("score").default(0).notNull(),
+    reason: text("reason"),
+    generatedBy: varchar("generatedBy", { length: 16 })
+      .default("rule")
+      .notNull(),
+    status: varchar("status", { length: 16 })
+      .default("suggested")
+      .notNull(),
+    sourceContentHash: varchar("sourceContentHash", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt"),
+  },
+  (table) => ({
+    sourceTargetPlacementUnique: uniqueIndex(
+      "post_internal_links_source_target_placement_uidx",
+    ).on(table.sourcePostId, table.targetKey, table.placement),
+    sourceStatusPlacementIdx: index(
+      "post_internal_links_source_status_placement_idx",
+    ).on(table.sourcePostId, table.status, table.placement),
+    targetPostIdx: index("post_internal_links_targetPostId_idx").on(
+      table.targetPostId,
+    ),
+    targetKnowledgeIdx: index(
+      "post_internal_links_targetKnowledgeArticleId_idx",
+    ).on(table.targetKnowledgeArticleId),
+    sourcePostFk: foreignKey({
+      columns: [table.sourcePostId],
+      foreignColumns: [posts.id],
+      name: "post_internal_links_sourcePostId_posts_id_fk",
+    }).onDelete("cascade"),
+    targetPostFk: foreignKey({
+      columns: [table.targetPostId],
+      foreignColumns: [posts.id],
+      name: "post_internal_links_targetPostId_posts_id_fk",
+    }).onDelete("cascade"),
+    targetKnowledgeFk: foreignKey({
+      columns: [table.targetKnowledgeArticleId],
+      foreignColumns: [knowledgeArticles.id],
+      name: "post_internal_links_targetKnowledgeArticleId_knowledge_articles_id_fk",
+    }).onDelete("cascade"),
+    targetCategoryFk: foreignKey({
+      columns: [table.targetCategoryId],
+      foreignColumns: [categories.id],
+      name: "post_internal_links_targetCategoryId_categories_id_fk",
+    }).onDelete("cascade"),
+    targetTagFk: foreignKey({
+      columns: [table.targetTagId],
+      foreignColumns: [tags.id],
+      name: "post_internal_links_targetTagId_tags_id_fk",
+    }).onDelete("cascade"),
+    targetTypeCheck: check(
+      "post_internal_links_targetType_check",
+      sql`${table.targetType} in ('post', 'knowledge', 'category', 'tag', 'tool', 'server_topic')`,
+    ),
+    placementCheck: check(
+      "post_internal_links_placement_check",
+      sql`${table.placement} in ('inline', 'related_knowledge', 'related_post', 'next_step')`,
+    ),
+    languageCheck: check(
+      "post_internal_links_language_check",
+      sql`${table.language} in ('zh', 'en')`,
+    ),
+    generatedByCheck: check(
+      "post_internal_links_generatedBy_check",
+      sql`${table.generatedBy} in ('rule', 'ai', 'manual')`,
+    ),
+    statusCheck: check(
+      "post_internal_links_status_check",
+      sql`${table.status} in ('suggested', 'approved', 'active', 'rejected', 'stale')`,
+    ),
+    scoreCheck: check(
+      "post_internal_links_score_check",
+      sql`${table.score} between 0 and 100`,
+    ),
+    occurrenceIndexCheck: check(
+      "post_internal_links_occurrenceIndex_check",
+      sql`${table.occurrenceIndex} >= 0`,
+    ),
+    targetShapeCheck: check(
+      "post_internal_links_target_shape_check",
+      sql`(
+        (${table.targetType} = 'post' and ${table.targetPostId} is not null and ${table.targetKnowledgeArticleId} is null and ${table.targetCategoryId} is null and ${table.targetTagId} is null and ${table.targetPath} is null)
+        or (${table.targetType} = 'knowledge' and ${table.targetPostId} is null and ${table.targetKnowledgeArticleId} is not null and ${table.targetCategoryId} is null and ${table.targetTagId} is null and ${table.targetPath} is null)
+        or (${table.targetType} = 'category' and ${table.targetPostId} is null and ${table.targetKnowledgeArticleId} is null and ${table.targetCategoryId} is not null and ${table.targetTagId} is null and ${table.targetPath} is null)
+        or (${table.targetType} = 'tag' and ${table.targetPostId} is null and ${table.targetKnowledgeArticleId} is null and ${table.targetCategoryId} is null and ${table.targetTagId} is not null and ${table.targetPath} is null)
+        or (${table.targetType} in ('tool', 'server_topic') and ${table.targetPostId} is null and ${table.targetKnowledgeArticleId} is null and ${table.targetCategoryId} is null and ${table.targetTagId} is null and length(trim(${table.targetPath})) > 0)
+      )`,
+    ),
+    noSelfPostLinkCheck: check(
+      "post_internal_links_no_self_post_link_check",
+      sql`${table.targetPostId} is null or ${table.targetPostId} <> ${table.sourcePostId}`,
+    ),
+  }),
+);
+
 /**
  * Knowledge evidence is versioned independently from articles. A source URL
  * can change without rewriting the historical revision referenced by a claim.
@@ -3647,6 +3760,12 @@ export const postsRelations = relations(posts, ({ one, many }) => ({
   tags: many(postTags),
   serverOffers: many(serverOffers),
   coverGenerationTasks: many(imageCoverGenerationTasks),
+  outgoingInternalLinks: many(postInternalLinks, {
+    relationName: "post_internal_links_source",
+  }),
+  incomingInternalLinks: many(postInternalLinks, {
+    relationName: "post_internal_links_target_post",
+  }),
 }));
 
 export const categoriesRelations = relations(categories, ({ one, many }) => ({
@@ -3659,11 +3778,13 @@ export const categoriesRelations = relations(categories, ({ one, many }) => ({
     relationName: "category_hierarchy",
   }),
   posts: many(posts),
+  incomingInternalLinks: many(postInternalLinks),
 }));
 
 export const tagsRelations = relations(tags, ({ many }) => ({
   posts: many(postTags),
   recommendedPosts: many(posts),
+  incomingInternalLinks: many(postInternalLinks),
 }));
 
 export const postTagsRelations = relations(postTags, ({ one }) => ({
@@ -3755,7 +3876,7 @@ export const knowledgeCategoriesRelations = relations(
 
 export const knowledgeArticlesRelations = relations(
   knowledgeArticles,
-  ({ one }) => ({
+  ({ one, many }) => ({
     category: one(knowledgeCategories, {
       fields: [knowledgeArticles.categoryId],
       references: [knowledgeCategories.id],
@@ -3763,6 +3884,35 @@ export const knowledgeArticlesRelations = relations(
     creator: one(users, {
       fields: [knowledgeArticles.createdBy],
       references: [users.id],
+    }),
+    incomingInternalLinks: many(postInternalLinks),
+  }),
+);
+
+export const postInternalLinksRelations = relations(
+  postInternalLinks,
+  ({ one }) => ({
+    sourcePost: one(posts, {
+      fields: [postInternalLinks.sourcePostId],
+      references: [posts.id],
+      relationName: "post_internal_links_source",
+    }),
+    targetPost: one(posts, {
+      fields: [postInternalLinks.targetPostId],
+      references: [posts.id],
+      relationName: "post_internal_links_target_post",
+    }),
+    targetKnowledgeArticle: one(knowledgeArticles, {
+      fields: [postInternalLinks.targetKnowledgeArticleId],
+      references: [knowledgeArticles.id],
+    }),
+    targetCategory: one(categories, {
+      fields: [postInternalLinks.targetCategoryId],
+      references: [categories.id],
+    }),
+    targetTag: one(tags, {
+      fields: [postInternalLinks.targetTagId],
+      references: [tags.id],
     }),
   }),
 );

@@ -1,7 +1,5 @@
 import {
   getPostWithTagsBySlug,
-  getLatestPostsForSidebar,
-  getPostsByPostId,
 } from "@/features/public/data/post";
 
 import { isRenderableImageSrc } from "@fwqgo/core/image-src";
@@ -15,8 +13,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import {
   ArrowRight,
-  ArrowLeftToLine,
-  ArrowRightToLine,
+  ChevronRight,
   Clock,
   Languages,
   SquareLibrary,
@@ -30,9 +27,12 @@ import {
   ArticleTocSidebar,
 } from "@/features/public/components/article-detail";
 import { PostViewCount } from "@/features/public/components/post-view-count";
-import { RecommendedPostCard } from "@/features/public/components/recommended-post-card";
-import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
 import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
+import {
+  ArticleRelatedKnowledge,
+  ArticleRelatedSidebar,
+} from "@/features/public/components/article-related-links";
+import { getPublicPostInternalLinks } from "@/features/public/data/article-internal-links";
 import { WebmasterStatement } from "@/features/public/components/webmaster-statement";
 import { ArticleShareActions } from "@/features/public/components/article-share-actions";
 import { notFound } from "next/navigation";
@@ -42,6 +42,7 @@ import {
 } from "@/server/offers/server-offers";
 import { addIdsToHeadings } from "@fwqgo/core/toc";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
+import { applyInternalLinksToArticleHtml } from "@fwqgo/core/article-internal-links";
 import {
   isSupportedServerOfferCurrency,
   parseServerOfferAmount,
@@ -139,20 +140,43 @@ async function PostPageContent({
   const { post, recommendedPosts } = data;
 
   if (!post) notFound();
-  const contentWithIds = addIdsToHeadings(
-    renderArticleContentHtml(post.content),
+  const [relatedOffers, internalLinks] = await Promise.all([
+    getRelatedServerOffersForPost({
+      postId: post.id,
+      tagNames: post.tags.map((tag) => tag.tag.name),
+    }),
+    getPublicPostInternalLinks(post.id, "zh"),
+  ]);
+  const renderedContent = renderArticleContentHtml(post.content);
+  const linkedContent = applyInternalLinksToArticleHtml(
+    renderedContent,
+    internalLinks.inline.map((link) => ({
+      targetKey: link.targetKey,
+      anchorText: link.anchorText ?? "",
+      href: link.href,
+      occurrenceIndex: link.occurrenceIndex,
+    })),
   );
-
-  const [{ data: posts }, { data: latestPosts }, relatedOffers] =
-    await Promise.all([
-      getPostsByPostId(post.id),
-      getLatestPostsForSidebar(),
-      getRelatedServerOffersForPost({
-        postId: post.id,
-        tagNames: post.tags.map((tag) => tag.tag.name),
-      }),
-    ]);
-  const [prevPost, nextPost] = posts ?? [null, null];
+  const contentWithIds = addIdsToHeadings(linkedContent.html);
+  const fallbackRecommendedLinks = (recommendedPosts ?? []).map(
+    (item, index) => ({
+      id: -item.id,
+      targetKey: `legacy-post:${item.id}`,
+      targetType: "post",
+      placement: "related_post",
+      title: item.title,
+      description: null,
+      href: `/fwq/posts/${encodeURIComponent(item.slug)}`,
+      anchorText: null,
+      occurrenceIndex: 0,
+      score: Math.max(1, 10 - index),
+      reason: "推荐标签匹配",
+    }),
+  );
+  const relatedPostLinks =
+    internalLinks.relatedPosts.length > 0
+      ? internalLinks.relatedPosts
+      : fallbackRecommendedLinks;
   const directOffers = relatedOffers.filter(
     (offer) => offer.sourcePostId === post.id,
   );
@@ -168,6 +192,7 @@ async function PostPageContent({
     );
   });
   const articleUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`;
+  const categoryUrl = `/fwq/${encodeURIComponent(post.categorySlug)}/page/1`;
   const absoluteImageUrl = toAbsoluteUrl(post.imgUrl);
 
   const blogPostingJsonLd = {
@@ -204,6 +229,12 @@ async function PostPageContent({
       {
         "@type": "ListItem",
         position: 2,
+        name: post.categoryName,
+        item: `${getSiteUrl()}${categoryUrl}`,
+      },
+      {
+        "@type": "ListItem",
+        position: 3,
         name: post.title,
         item: articleUrl,
       },
@@ -268,6 +299,23 @@ async function PostPageContent({
               }}
             />
             <ArticleDetailHeader
+              eyebrow={
+                <nav
+                  aria-label="面包屑"
+                  className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground"
+                >
+                  <Link href="/" className="hover:text-primary">
+                    首页
+                  </Link>
+                  <ChevronRight className="size-3.5 shrink-0" aria-hidden />
+                  <Link
+                    href={categoryUrl}
+                    className="truncate hover:text-primary"
+                  >
+                    {post.categoryName}
+                  </Link>
+                </nav>
+              }
               title={post.title}
               description={
                 post.description ??
@@ -328,6 +376,10 @@ async function PostPageContent({
 
               <WebmasterStatement />
 
+              <ArticleRelatedKnowledge
+                links={internalLinks.relatedKnowledge}
+              />
+
               {post.tags.length > 0 ? (
                 <section className="border-t border-border/70 pt-5">
                   <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -347,52 +399,6 @@ async function PostPageContent({
                     ))}
                   </div>
                 </section>
-              ) : null}
-
-              {prevPost || nextPost ? (
-                <nav
-                  aria-label="上下篇文章"
-                  className="grid gap-3 border-t border-border/70 pt-5 md:grid-cols-2"
-                >
-                  {prevPost ? (
-                    <Link
-                      href={`/fwq/posts/${encodeURIComponent(prevPost.slug)}`}
-                      prefetch
-                      className="group flex min-h-24 items-start gap-3 rounded-md border border-border/70 px-4 py-3.5 transition-colors hover:border-primary/35 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    >
-                      <ArrowLeftToLine
-                        className="mt-1 size-4 shrink-0 text-muted-foreground group-hover:text-primary"
-                        aria-hidden="true"
-                      />
-                      <div className="min-w-0">
-                        <p className="text-xs text-muted-foreground">上一篇</p>
-                        <p className="mt-1.5 line-clamp-2 text-sm font-semibold leading-6 text-foreground underline-offset-4 transition-colors group-hover:text-primary group-hover:underline">
-                          {prevPost.title}
-                        </p>
-                      </div>
-                    </Link>
-                  ) : (
-                    <div className="hidden md:block" />
-                  )}
-                  {nextPost ? (
-                    <Link
-                      href={`/fwq/posts/${encodeURIComponent(nextPost.slug)}`}
-                      prefetch
-                      className="group flex min-h-24 items-start justify-between gap-3 rounded-md border border-border/70 px-4 py-3.5 text-left transition-colors hover:border-primary/35 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:text-right"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-xs text-muted-foreground">下一篇</p>
-                        <p className="mt-1.5 line-clamp-2 text-sm font-semibold leading-6 text-foreground underline-offset-4 transition-colors group-hover:text-primary group-hover:underline">
-                          {nextPost.title}
-                        </p>
-                      </div>
-                      <ArrowRightToLine
-                        className="mt-1 size-4 shrink-0 text-muted-foreground group-hover:text-primary"
-                        aria-hidden="true"
-                      />
-                    </Link>
-                  ) : null}
-                </nav>
               ) : null}
 
               {matchedTopics.length > 0 ? (
@@ -436,33 +442,9 @@ async function PostPageContent({
             </div>
           </article>
 
-          {recommendedPosts && recommendedPosts.length > 0 && (
-            <section className="space-y-4 border-t border-border/70 pt-7">
-              <div className="flex flex-wrap items-center gap-2">
-                <SquareLibrary
-                  className="size-5 text-primary"
-                  aria-hidden="true"
-                />
-                <h2 className="font-editorial text-xl font-semibold md:text-2xl">
-                  {post.recommendedTagName
-                    ? `推荐阅读 · ${post.recommendedTagName}`
-                    : "推荐阅读"}
-                </h2>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {recommendedPosts.map((post) => (
-                  <RecommendedPostCard key={post.id} post={post} />
-                ))}
-              </div>
-            </section>
-          )}
         </div>
 
-        <aside className="hidden xl:block">
-          <div className="sticky top-20 space-y-4">
-            <LatestPostsSidebar posts={latestPosts ?? []} variant="compact" />
-          </div>
-        </aside>
+        <ArticleRelatedSidebar links={relatedPostLinks} />
       </div>
     </div>
   );

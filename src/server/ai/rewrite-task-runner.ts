@@ -65,6 +65,7 @@ import { applyEnglishTaxonomyToPost } from "@fwqgo/ai/english-taxonomy";
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
 import { shortenMarkdownOutboundLinks } from "@/server/links/outbound-short-link";
+import { regeneratePostInternalLinks } from "@/server/posts/internal-links";
 
 const runningTaskIds = new Set<number>();
 const runningTaskLeaseOwners = new Map<number, string>();
@@ -1114,6 +1115,56 @@ async function runEnglishSeoTask(
     });
 
     const postProcessWarnings: string[] = [];
+    activeStep = {
+      key: "english_internal_link_plan",
+      name: "生成英文文章内链",
+      attempt,
+      progress: 90,
+    };
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: activeStep.key,
+      stepName: activeStep.name,
+      status: "running",
+      progress: activeStep.progress,
+      message: "正在匹配英文知识和相关文章",
+    });
+    try {
+      const internalLinkResult = await regeneratePostInternalLinks({
+        postId: englishPost.id,
+        mode: "activate-high-confidence",
+        generatedBy: "rule",
+      });
+      await upsertTaskStep({
+        taskId: claimedTask.id,
+        attempt,
+        stepKey: activeStep.key,
+        stepName: activeStep.name,
+        status: "success",
+        progress: 91,
+        message: `生成 ${internalLinkResult.generated} 条英文内链，其中 ${internalLinkResult.active} 条已启用`,
+        payload: internalLinkResult,
+      });
+    } catch (error) {
+      structuredLog("error", "ai.english_internal_link_plan_failed", {
+        taskId: claimedTask.id,
+        postId: englishPost.id,
+        error,
+      });
+      await upsertTaskStep({
+        taskId: claimedTask.id,
+        attempt,
+        stepKey: activeStep.key,
+        stepName: activeStep.name,
+        status: "failed",
+        progress: 91,
+        message: "英文草稿已保存，但内链规划失败",
+        error: getErrorMessage(error),
+      });
+      postProcessWarnings.push("英文文章内链规划失败");
+    }
+
     const coverResult = await enqueueCoverForDraftPost({
       taskId: claimedTask.id,
       attempt,
@@ -1499,6 +1550,7 @@ async function createArticleFromManualTask(input: {
   sourceContent: string | null;
   sourceUrl: string;
   rewriteStyleId?: number;
+  categoryName?: string | null;
   aiInputMaxLength: number;
   onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>;
 }): Promise<ScrapedArticle> {
@@ -1561,6 +1613,8 @@ async function createArticleFromManualTask(input: {
     rewritten = await RewriteArticle(markdownInput.markdown, {
       styleId: input.rewriteStyleId,
       providerNames: getMatchedAffiliateProviderNames(affiliateReport),
+      sourceTitle,
+      categoryName: input.categoryName,
       onProgress: async (ai) => {
         await input.onProgress?.({
           stage: "ai_progress",
@@ -1618,6 +1672,11 @@ async function loadTaskArticle(
   const aiInputMaxLength = await getTaskAiInputMaxLength(
     claimedTask.rewriteStyleId,
   );
+  const [category] = await db
+    .select({ name: categories.name })
+    .from(categories)
+    .where(eq(categories.id, claimedTask.categoryId))
+    .limit(1);
 
   if (
     claimedTask.sourceType === "text" ||
@@ -1629,6 +1688,7 @@ async function loadTaskArticle(
       sourceContent: claimedTask.sourceContent,
       sourceUrl: claimedTask.sourceUrl,
       rewriteStyleId: claimedTask.rewriteStyleId ?? undefined,
+      categoryName: category?.name ?? null,
       aiInputMaxLength,
       onProgress,
     });
@@ -1638,6 +1698,7 @@ async function loadTaskArticle(
     url: claimedTask.sourceUrl,
     rewriteStyleId: claimedTask.rewriteStyleId ?? undefined,
     aiInputMaxLength,
+    categoryName: category?.name ?? null,
     onProgress,
   });
 }
@@ -2201,6 +2262,8 @@ export async function runAiRewriteTask(taskId: number) {
                 article.diagnostics.rewriteQuality.knowledgeReferences,
               providerReferences:
                 article.diagnostics.rewriteQuality.providerReferences,
+              seoKeywordPlan:
+                article.diagnostics.rewriteQuality.seoKeywordPlan,
             }
           : undefined,
       });
@@ -2324,6 +2387,56 @@ export async function runAiRewriteTask(taskId: number) {
       });
 
       const postProcessWarnings: string[] = [];
+      activeStep = {
+        key: "internal_link_plan",
+        name: "生成文章内链",
+        attempt,
+        progress: 90,
+      };
+      await upsertTaskStep({
+        taskId,
+        attempt,
+        stepKey: activeStep.key,
+        stepName: activeStep.name,
+        status: "running",
+        progress: activeStep.progress,
+        message: "正在匹配同语言知识和相关文章",
+      });
+      try {
+        const internalLinkResult = await regeneratePostInternalLinks({
+          postId: post.id,
+          mode: "activate-high-confidence",
+          generatedBy: "rule",
+        });
+        await upsertTaskStep({
+          taskId,
+          attempt,
+          stepKey: activeStep.key,
+          stepName: activeStep.name,
+          status: "success",
+          progress: 91,
+          message: `生成 ${internalLinkResult.generated} 条内链，其中 ${internalLinkResult.active} 条已启用`,
+          payload: internalLinkResult,
+        });
+      } catch (error) {
+        structuredLog("error", "ai.internal_link_plan_failed", {
+          taskId,
+          postId: post.id,
+          error,
+        });
+        await upsertTaskStep({
+          taskId,
+          attempt,
+          stepKey: activeStep.key,
+          stepName: activeStep.name,
+          status: "failed",
+          progress: 91,
+          message: "草稿已保存，但内链规划失败",
+          error: getErrorMessage(error),
+        });
+        postProcessWarnings.push("文章内链规划失败");
+      }
+
       const coverResult = await enqueueCoverForDraftPost({
         taskId,
         attempt,

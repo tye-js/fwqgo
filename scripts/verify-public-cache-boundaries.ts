@@ -17,6 +17,10 @@ const requirements = new Map<string, string[]>([
     ],
   ],
   [
+    "src/features/public/data/article-internal-links.ts",
+    ["getPublicPostInternalLinks"],
+  ],
+  [
     "src/features/public/data/tag.ts",
     ["getTagBySlug", "getPostsWithTagsByTagSlug"],
   ],

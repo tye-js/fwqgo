@@ -2,11 +2,10 @@ import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Clock, Languages, Tags } from "lucide-react";
+import { ChevronRight, Clock, Languages, Tags } from "lucide-react";
 
 import {
   getEnglishPostWithTagsBySlug,
-  getLatestPostsForSidebar,
 } from "@/features/public/data/post";
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
@@ -17,10 +16,15 @@ import {
   ArticleTocSidebar,
 } from "@/features/public/components/article-detail";
 import { ArticleShareActions } from "@/features/public/components/article-share-actions";
-import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
 import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
+import {
+  ArticleRelatedKnowledge,
+  ArticleRelatedSidebar,
+} from "@/features/public/components/article-related-links";
+import { getPublicPostInternalLinks } from "@/features/public/data/article-internal-links";
 import { isRenderableImageSrc } from "@fwqgo/core/image-src";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
+import { applyInternalLinksToArticleHtml } from "@fwqgo/core/article-internal-links";
 import { addIdsToHeadings } from "@fwqgo/core/toc";
 import {
   formatDate,
@@ -49,6 +53,12 @@ function toAbsoluteImageUrl(value: string | null | undefined) {
   } catch {
     return undefined;
   }
+}
+
+function nonEmptyValue(value: string | null | undefined) {
+  const normalized = value?.trim();
+  if (!normalized) return undefined;
+  return normalized;
 }
 
 type PageProps = {
@@ -124,24 +134,35 @@ async function EnglishPostContent({ params }: PageProps) {
   const canonicalSlug = post.enSlug ?? decodedSlug;
   const articleUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(canonicalSlug)}`;
   const absoluteImageUrl = toAbsoluteImageUrl(post.imgUrl);
-  const contentWithIds = addIdsToHeadings(
-    renderArticleContentHtml(post.content),
-  );
   const relatedPostId = post.translationSourcePostId ?? post.id;
-  const [{ data: latestPosts }, relatedOffers] = await Promise.all([
-    getLatestPostsForSidebar("en"),
+  const [relatedOffers, internalLinks] = await Promise.all([
     getRelatedServerOffersForPost({
       postId: relatedPostId,
       tagNames: post.tags.map((tag) => tag.tag.name),
       limit: 6,
     }),
+    getPublicPostInternalLinks(post.id, "en"),
   ]);
+  const renderedContent = renderArticleContentHtml(post.content);
+  const linkedContent = applyInternalLinksToArticleHtml(
+    renderedContent,
+    internalLinks.inline.map((link) => ({
+      targetKey: link.targetKey,
+      anchorText: link.anchorText ?? "",
+      href: link.href,
+      occurrenceIndex: link.occurrenceIndex,
+    })),
+  );
+  const contentWithIds = addIdsToHeadings(linkedContent.html);
   const directOffers = relatedOffers.filter(
     (offer) => offer.sourcePostId === relatedPostId,
   );
   const inferredOffers = relatedOffers.filter(
     (offer) => offer.sourcePostId !== relatedPostId,
   );
+  const categorySlug = nonEmptyValue(post.categoryEnSlug) ?? post.categorySlug;
+  const categoryName = nonEmptyValue(post.categoryEnName) ?? post.categoryName;
+  const categoryUrl = `/en/fwq/${encodeURIComponent(categorySlug)}/page/1`;
   const blogPostingJsonLd = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
@@ -177,6 +198,12 @@ async function EnglishPostContent({ params }: PageProps) {
       {
         "@type": "ListItem",
         position: 2,
+        name: categoryName,
+        item: `${getSiteUrl()}${categoryUrl}`,
+      },
+      {
+        "@type": "ListItem",
+        position: 3,
         name: post.title,
         item: articleUrl,
       },
@@ -241,6 +268,23 @@ async function EnglishPostContent({ params }: PageProps) {
             }}
           />
           <ArticleDetailHeader
+            eyebrow={
+              <nav
+                aria-label="Breadcrumb"
+                className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground"
+              >
+                <Link href="/en" className="hover:text-primary">
+                  Home
+                </Link>
+                <ChevronRight className="size-3.5 shrink-0" aria-hidden />
+                <Link
+                  href={categoryUrl}
+                  className="truncate hover:text-primary"
+                >
+                  {categoryName}
+                </Link>
+              </nav>
+            }
             title={post.title}
             description={
               post.description ??
@@ -325,17 +369,19 @@ async function EnglishPostContent({ params }: PageProps) {
               </div>
             </section>
           ) : null}
-        </article>
 
-        <aside className="hidden xl:block">
-          <div className="sticky top-20 space-y-4">
-            <LatestPostsSidebar
-              posts={latestPosts ?? []}
+          <div className="mt-10">
+            <ArticleRelatedKnowledge
+              links={internalLinks.relatedKnowledge}
               language="en"
-              variant="compact"
             />
           </div>
-        </aside>
+        </article>
+
+        <ArticleRelatedSidebar
+          links={internalLinks.relatedPosts}
+          language="en"
+        />
       </div>
     </main>
   );

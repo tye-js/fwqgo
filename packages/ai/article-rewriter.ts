@@ -32,12 +32,21 @@ import {
 } from "./provider-context";
 import {
   evaluateRewriteQuality,
+  getRewriteLengthBudget,
   protectMarkdownContent,
   replaceProtectedMarkdown,
   restoreProtectedMarkdown,
   type ProtectedMarkdownContent,
   type RewriteQualityMetrics,
 } from "./rewrite-quality";
+import {
+  bodySeoKeywordCandidates,
+  reconcileSeoKeywords,
+  validateSeoKeywordPlan,
+  validSeoKeywordCandidates,
+  type SeoKeywordPlanRaw,
+  type ValidatedSeoKeywordPlan,
+} from "./seo-keyword-plan";
 
 const DEFAULT_AI_REWRITE_TIMEOUT_MS = 300_000;
 const MIN_AI_INPUT_LENGTH = 80;
@@ -133,6 +142,8 @@ export interface AiRewriteExecutionOptions {
 
 export interface ArticleRewriteOptions extends AiRewriteExecutionOptions {
   providerNames?: string[];
+  sourceTitle?: string | null;
+  categoryName?: string | null;
   onProgress?: (progress: ArticleRewriteProgress) => void | Promise<void>;
 }
 
@@ -144,6 +155,7 @@ export interface ArticleRewriteQuality extends RewriteQualityMetrics {
   missingFacts: string[];
   unsupportedClaims: string[];
   distortedFacts: string[];
+  seoKeywordPlan?: ValidatedSeoKeywordPlan;
   knowledgeReferences: Array<{
     id: number;
     title: string;
@@ -202,6 +214,7 @@ type ArticleFactSheetRaw = Partial<{
   cautions: unknown;
   editorialAngle: string;
   outline: unknown;
+  seoKeywordPlan: SeoKeywordPlanRaw;
 }>;
 
 type ArticleFactSheet = {
@@ -217,6 +230,7 @@ type ArticleFactSheet = {
   cautions: string[];
   editorialAngle: string;
   outline: string[];
+  seoKeywordPlan: ValidatedSeoKeywordPlan;
 };
 
 type ArticleQualityReviewRaw = Partial<{
@@ -374,7 +388,14 @@ function normalizeFactText(value: unknown, maxLength = 800) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
 
-function normalizeFactSheet(raw: ArticleFactSheetRaw): ArticleFactSheet {
+function normalizeFactSheet(
+  raw: ArticleFactSheetRaw,
+  context: {
+    sourceMarkdown: string;
+    sourceTitle?: string | null;
+    categoryName?: string | null;
+  },
+): ArticleFactSheet {
   const criticalFacts = normalizeStringArray(raw.criticalFacts).slice(0, 80);
   const promotions = normalizeStringArray(raw.promotions).slice(0, 30);
   const productGroups = normalizeStringArray(raw.productGroups).slice(0, 40);
@@ -413,11 +434,59 @@ function normalizeFactSheet(raw: ArticleFactSheetRaw): ArticleFactSheet {
       normalizeFactText(raw.editorialAngle, 500) ||
       "以来源原文为事实主轴，补充必要解释，不引入原文未涉及的主题。",
     outline: outline.length > 0 ? outline : fallbackOutline,
+    seoKeywordPlan: validateSeoKeywordPlan(raw.seoKeywordPlan, {
+      sourceMarkdown: context.sourceMarkdown,
+      sourceTitle: context.sourceTitle,
+      taxonomyTerms: context.categoryName ? [context.categoryName] : [],
+    }),
   };
 }
 
-function buildFactExtractionPrompt(template: string, sourceMarkdown: string) {
-  return fillPromptTemplate(template, { sourceMarkdown });
+function buildFactExtractionPrompt(input: {
+  template: string;
+  sourceMarkdown: string;
+  sourceTitle?: string | null;
+  categoryName?: string | null;
+}) {
+  const normalizedText = (value: string | null | undefined) => {
+    const normalized = value?.trim();
+    if (!normalized) return undefined;
+    return normalized;
+  };
+  const sourceTitle = normalizedText(input.sourceTitle);
+  const categoryName = normalizedText(input.categoryName);
+  const sourceContext = [
+    `来源标题：${sourceTitle ?? "未提供"}`,
+    `文章分类：${categoryName ?? "未提供"}`,
+  ].join("\n");
+  const prompt = fillPromptTemplate(input.template, {
+    sourceMarkdown: input.sourceMarkdown,
+    sourceContext,
+  });
+
+  if (input.template.includes('"seoKeywordPlan"')) return prompt;
+
+  return `${prompt}\n\n必须在原有 JSON 对象中额外输出 seoKeywordPlan，包含 primaryKeyword、secondaryKeywords、longTailKeywords 和 searchIntent。每个关键词对象必须包含 keyword 与 evidence；evidence 每项包含可从来源逐字定位的 text，以及 body、table、title 或 taxonomy provenance。关键词不能作为新事实来源，不得加入来源没有的线路、地区、用途、性能或评价。\n\n${sourceContext}`;
+}
+
+function verifiedFactCount(factSheet: ArticleFactSheet) {
+  return new Set(
+    [
+      ...factSheet.criticalFacts,
+      ...factSheet.promotions,
+      ...factSheet.productGroups,
+      ...factSheet.regions,
+      ...factSheet.networkFacts,
+      ...factSheet.supportedUseCases,
+      ...factSheet.cautions,
+    ].map((item) => item.trim()),
+  ).size;
+}
+
+function describeRewriteLengthBudget(
+  budget: ReturnType<typeof getRewriteLengthBudget>,
+) {
+  return `来源叙述约 ${budget.sourceNarrativeLength} 字，已验证事实 ${budget.verifiedFactCount} 条；建议正文叙述不超过 ${budget.targetNarrativeLength} 字，硬上限 ${budget.hardMaxNarrativeLength} 字。表格和链接不计入叙述长度。`;
 }
 
 function describeProtectedContent(content: ProtectedMarkdownContent) {
@@ -447,20 +516,31 @@ function buildQualityReviewPrompt(input: {
   template: string;
   sourceContent: string;
   factSheet: ArticleFactSheet;
+  keywordPlan: ValidatedSeoKeywordPlan;
+  rewriteLengthBudget: string;
   protectedContent: ProtectedMarkdownContent;
   providerContext: string;
   knowledgeContext: string;
   markdownContent: string;
 }) {
-  return fillPromptTemplate(input.template, {
+  const prompt = fillPromptTemplate(input.template, {
     sourceContent: input.sourceContent,
     factSheet: JSON.stringify(input.factSheet),
+    keywordPlan: JSON.stringify(input.keywordPlan, null, 2),
+    rewriteLengthBudget: input.rewriteLengthBudget,
     protectedAuthorityContent:
       protectedAuthorityMarkdown(input.protectedContent) || "无",
     providerContext: input.providerContext,
     knowledgeContext: input.knowledgeContext,
     markdownContent: input.markdownContent,
   });
+  if (
+    input.template.includes("{keywordPlan}") &&
+    input.template.includes("{rewriteLengthBudget}")
+  ) {
+    return prompt;
+  }
+  return `${prompt}\n\n补充硬约束：关键词规划不能作为事实来源，必须检查关键词是否诱导出无依据事实或机械堆砌；正文必须遵守扩写硬上限。\n关键词规划：${JSON.stringify(input.keywordPlan)}\n长度预算：${input.rewriteLengthBudget}`;
 }
 
 function buildQualityRepairPrompt(input: {
@@ -468,6 +548,8 @@ function buildQualityRepairPrompt(input: {
   stylePrompt: string;
   sourceContent: string;
   factSheet: ArticleFactSheet;
+  keywordPlan: ValidatedSeoKeywordPlan;
+  rewriteLengthBudget: string;
   outline: string;
   protectedContent: ProtectedMarkdownContent;
   providerContext: string;
@@ -475,10 +557,12 @@ function buildQualityRepairPrompt(input: {
   candidateContent: string;
   issues: string;
 }) {
-  return fillPromptTemplate(input.template, {
+  const prompt = fillPromptTemplate(input.template, {
     stylePrompt: input.stylePrompt,
     sourceContent: input.sourceContent,
     factSheet: JSON.stringify(input.factSheet, null, 2),
+    keywordPlan: JSON.stringify(input.keywordPlan, null, 2),
+    rewriteLengthBudget: input.rewriteLengthBudget,
     outline: input.outline,
     protectedAuthorityContent:
       protectedAuthorityMarkdown(input.protectedContent) || "无",
@@ -488,6 +572,13 @@ function buildQualityRepairPrompt(input: {
     candidateContent: input.candidateContent,
     issues: input.issues,
   });
+  if (
+    input.template.includes("{keywordPlan}") &&
+    input.template.includes("{rewriteLengthBudget}")
+  ) {
+    return prompt;
+  }
+  return `${prompt}\n\n补充硬约束：不得用关键词补造事实或填充篇幅；修订后仍须遵守扩写硬上限。\n关键词规划：${JSON.stringify(input.keywordPlan)}\n长度预算：${input.rewriteLengthBudget}`;
 }
 
 function normalizeQualityIssueKind(value: unknown): ArticleQualityIssueKind | null {
@@ -690,6 +781,7 @@ function buildMetadataPrompt(
   metadataStylePrompt?: string | null,
   maxContentLength = MAX_METADATA_INPUT_LENGTH,
   configuredPrompt?: string | null,
+  keywordPlan = "未提供关键词规划，请仅依据已通过审查的正文生成。",
 ) {
   const style = getMetadataStylePrompt(metadataStylePrompt);
   const metadataInputLength = Math.min(
@@ -699,11 +791,15 @@ function buildMetadataPrompt(
 
   const template = configuredPrompt?.trim() ?? defaultMetadataPrompt;
 
-  return fillPromptTemplate(template, {
+  const prompt = fillPromptTemplate(template, {
     metadataStylePrompt: style,
+    keywordPlan,
     markdownContent: markdownContent.slice(0, metadataInputLength),
     htmlContent: markdownContent.slice(0, metadataInputLength),
   });
+  return template.includes("{keywordPlan}")
+    ? prompt
+    : `${prompt}\n\n经过原文证据校验的关键词规划（只能选择正文已覆盖的有效词）：\n${keywordPlan}`;
 }
 
 function buildEnglishContentPrompt(input: {
@@ -1344,12 +1440,15 @@ export async function rewriteArticleWithAi(
     normalizedContent,
     protectedContent,
   );
-  const factExtractionPrompt = buildFactExtractionPrompt(
-    config.factExtractionPrompt,
-    `${protectedSource}\n\n受保护原始内容：\n${
+  const factExtractionSource = `${protectedSource}\n\n受保护原始内容：\n${
       protectedAuthorityMarkdown(protectedContent) || "无"
-    }`,
-  );
+    }`;
+  const factExtractionPrompt = buildFactExtractionPrompt({
+    template: config.factExtractionPrompt,
+    sourceMarkdown: factExtractionSource,
+    sourceTitle: options.sourceTitle,
+    categoryName: options.categoryName,
+  });
   await reportRewriteProgress(options, {
     stage: "fact_extraction",
     status: "running",
@@ -1385,6 +1484,11 @@ export async function rewriteArticleWithAi(
         factExtractionText,
         "来源事实提取失败",
       ),
+      {
+        sourceMarkdown: normalizedContent,
+        sourceTitle: options.sourceTitle,
+        categoryName: options.categoryName,
+      },
     );
   } catch (error) {
     await updateRewriteAudit(options, config, {
@@ -1417,6 +1521,10 @@ export async function rewriteArticleWithAi(
     metadata: {
       criticalFactCount: factSheet.criticalFacts.length,
       outlineCount: factSheet.outline.length,
+      acceptedKeywordCount: validSeoKeywordCandidates(
+        factSheet.seoKeywordPlan,
+      ).length,
+      rejectedKeywords: factSheet.seoKeywordPlan.rejectedKeywords,
     },
   });
   if (!factSheet.factualSummary && factSheet.criticalFacts.length === 0) {
@@ -1481,6 +1589,16 @@ export async function rewriteArticleWithAi(
   const providerContext = formatRewriteProviderContext(providerReferences);
   const allowedProviderFacts =
     providerReferences.length > 0 ? providerContext : "";
+  const rewriteLengthBudget = getRewriteLengthBudget(
+    normalizedContent,
+    verifiedFactCount(factSheet),
+  );
+  const rewriteLengthBudgetDescription =
+    describeRewriteLengthBudget(rewriteLengthBudget);
+  const keywordPlanForWriting = {
+    searchIntent: factSheet.seoKeywordPlan.searchIntent,
+    keywords: bodySeoKeywordCandidates(factSheet.seoKeywordPlan),
+  };
   const configuredRewriteMaxAttempts = Number.isFinite(
     config.rewriteMaxAttempts,
   )
@@ -1515,6 +1633,8 @@ export async function rewriteArticleWithAi(
           stylePrompt: config.stylePrompt,
           sourceContent: protectedSource,
           factSheet,
+          keywordPlan: factSheet.seoKeywordPlan,
+          rewriteLengthBudget: rewriteLengthBudgetDescription,
           outline: rewriteOutline,
           protectedContent,
           providerContext,
@@ -1527,6 +1647,8 @@ export async function rewriteArticleWithAi(
           stylePrompt: config.stylePrompt,
           sourceContent: protectedSource,
           factSheet: JSON.stringify(factSheet, null, 2),
+          keywordPlan: JSON.stringify(keywordPlanForWriting, null, 2),
+          rewriteLengthBudget: rewriteLengthBudgetDescription,
           outline: rewriteOutline,
           providerContext,
           knowledgeContext,
@@ -1616,6 +1738,7 @@ export async function rewriteArticleWithAi(
     const restored = restoreProtectedMarkdown(candidate, protectedContent);
     let metrics = evaluateRewriteQuality(normalizedContent, restored.markdown, {
       allowedFactsMarkdown: allowedProviderFacts,
+      maxNarrativeLength: rewriteLengthBudget.hardMaxNarrativeLength,
     });
     if (restored.missingPlaceholders.length > 0) {
       metrics = {
@@ -1656,6 +1779,8 @@ export async function rewriteArticleWithAi(
       template: config.qualityReviewPrompt,
       sourceContent: protectedSource,
       factSheet,
+      keywordPlan: factSheet.seoKeywordPlan,
+      rewriteLengthBudget: rewriteLengthBudgetDescription,
       protectedContent,
       providerContext,
       knowledgeContext,
@@ -1917,6 +2042,7 @@ export async function rewriteArticleWithAi(
     config.metadataStylePrompt,
     getAiRewriteContentLimit(config.maxTokens),
     config.metadataPrompt,
+    JSON.stringify(factSheet.seoKeywordPlan, null, 2),
   );
   await reportRewriteProgress(options, {
     stage: "metadata_generation",
@@ -1939,13 +2065,21 @@ export async function rewriteArticleWithAi(
   const metadataText = metadataResult.text;
   let metadata: ArticleMetadataOutput;
   try {
-    metadata = normalizeMetadata(
+    const normalizedMetadata = normalizeMetadata(
       parseAiJsonObject<Partial<ArticleMetadataOutput>>(
         metadataText,
         "AI 元信息生成失败",
       ),
       acceptedMarkdown,
     );
+    metadata = {
+      ...normalizedMetadata,
+      keywords: reconcileSeoKeywords({
+        generatedKeywords: normalizedMetadata.keywords,
+        plan: factSheet.seoKeywordPlan,
+        acceptedMarkdown,
+      }),
+    };
     validateMetadata(metadata);
   } catch (error) {
     await updateRewriteAudit(options, config, {
@@ -2004,6 +2138,7 @@ export async function rewriteArticleWithAi(
       missingFacts: acceptedReview.missingFacts,
       unsupportedClaims: acceptedReview.unsupportedClaims,
       distortedFacts: acceptedReview.distortedFacts,
+      seoKeywordPlan: factSheet.seoKeywordPlan,
       knowledgeReferences: knowledgeReferences.map((reference) => ({
         id: reference.id,
         title: reference.title,

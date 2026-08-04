@@ -29,6 +29,7 @@ import {
 import { posts, categories, tags, postTags } from "@fwqgo/db/schema";
 import { desc, eq, and, inArray, ne, or } from "drizzle-orm";
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
+import { markPostInternalLinksStale } from "@/server/posts/internal-links";
 
 function normalizeTagName(name: string) {
   return name.trim();
@@ -425,6 +426,7 @@ export async function updatePostByRecommendedTagName(
       .returning();
 
     if (result) {
+      await markPostInternalLinksStale(result.id);
       revalidateSiteContent([
         cacheTags.post(result.id),
         cacheTags.postSlug(result.slug),
@@ -492,6 +494,7 @@ export async function updatePost(input: {
 
     const [currentPost] = await db
       .select({
+        title: posts.title,
         slug: posts.slug,
         categoryId: posts.categoryId,
         content: posts.content,
@@ -596,6 +599,10 @@ export async function updatePost(input: {
 
     if (!post) {
       return { error: "文章不存在或已被删除" };
+    }
+
+    if (currentPost.title !== post.title) {
+      await markPostInternalLinksStale(post.id);
     }
 
     const [translationSourcePost] = post.translationSourcePostId
@@ -1050,6 +1057,8 @@ export async function updatePostContent(input: {
       return { error: "文章不存在或已被删除" };
     }
 
+    await markPostInternalLinksStale(post.id);
+
     const maintenanceWarnings = await runPostSaveMaintenance({
       postId: post.id,
       routeHandler: true,
@@ -1206,6 +1215,8 @@ export async function updatePostEnglishContent(input: {
     if (!post) {
       return { error: "文章不存在或已被删除" };
     }
+
+    await markPostInternalLinksStale(post.id);
 
     const maintenanceWarnings = await runPostSaveMaintenance({
       postId: post.id,
@@ -1500,6 +1511,7 @@ export async function updatePostTags({
 
     const warnings: string[] = [];
     if (post) {
+      await markPostInternalLinksStale(post.id);
       try {
         revalidateSiteContentFromRouteHandler([
           cacheTags.post(post.id),

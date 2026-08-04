@@ -25,6 +25,11 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { type ScrapeDiagnostics } from "@/server/scrape/article-scraper";
 import { isHttpHref, parsePostgresIntegerId } from "@fwqgo/core/utils";
+import type {
+  SeoKeywordProvenance,
+  ValidatedSeoKeywordCandidate,
+  ValidatedSeoKeywordPlan,
+} from "@fwqgo/ai/seo-keyword-plan";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -98,6 +103,82 @@ function arrayValue<T>(
   normalizeItem: (item: unknown) => T,
 ): T[] {
   return Array.isArray(value) ? value.map(normalizeItem) : [];
+}
+
+const keywordProvenanceLabels: Record<SeoKeywordProvenance, string> = {
+  body: "正文",
+  table: "表格",
+  title: "标题",
+  taxonomy: "分类",
+};
+
+function normalizeKeywordProvenance(value: unknown): SeoKeywordProvenance | null {
+  if (value === "body") return "body";
+  if (value === "table") return "table";
+  if (value === "title") return "title";
+  if (value === "taxonomy") return "taxonomy";
+  return null;
+}
+
+function normalizeKeywordCandidate(
+  value: unknown,
+): ValidatedSeoKeywordCandidate | null {
+  if (!isRecord(value)) return null;
+  const keyword = stringValue(value.keyword).trim();
+  if (!keyword) return null;
+  const evidence = Array.isArray(value.evidence)
+    ? value.evidence.flatMap((item) => {
+        if (!isRecord(item)) return [];
+        const text = stringValue(item.text).trim();
+        const provenance = normalizeKeywordProvenance(item.provenance);
+        if (!text || !provenance) return [];
+        return [{ text, provenance }];
+      })
+    : [];
+  return {
+    keyword,
+    evidence,
+    bodyEligible: booleanValue(value.bodyEligible),
+  };
+}
+
+function normalizeSeoKeywordPlan(value: unknown): ValidatedSeoKeywordPlan | undefined {
+  if (!isRecord(value)) return undefined;
+  const primaryKeyword = normalizeKeywordCandidate(value.primaryKeyword);
+  const secondaryKeywords = arrayValue(value.secondaryKeywords, (item) =>
+    normalizeKeywordCandidate(item),
+  ).filter((item): item is ValidatedSeoKeywordCandidate => item !== null);
+  const longTailKeywords = arrayValue(value.longTailKeywords, (item) =>
+    normalizeKeywordCandidate(item),
+  ).filter((item): item is ValidatedSeoKeywordCandidate => item !== null);
+  const searchIntent =
+    value.searchIntent === "transactional" || value.searchIntent === "informational"
+      ? value.searchIntent
+      : "mixed";
+  const rejectedKeywords = Array.isArray(value.rejectedKeywords)
+    ? value.rejectedKeywords.flatMap((item) => {
+        if (!isRecord(item)) return [];
+        const keyword = stringValue(item.keyword).trim();
+        const reason = stringValue(item.reason).trim();
+        return keyword && reason ? [{ keyword, reason }] : [];
+      })
+    : [];
+
+  if (
+    !primaryKeyword &&
+    secondaryKeywords.length === 0 &&
+    longTailKeywords.length === 0 &&
+    rejectedKeywords.length === 0
+  ) {
+    return undefined;
+  }
+  return {
+    primaryKeyword,
+    secondaryKeywords,
+    longTailKeywords,
+    searchIntent,
+    rejectedKeywords,
+  };
 }
 
 function normalizeAffiliateReport(
@@ -213,6 +294,7 @@ function normalizeRewriteQuality(
     distortedFacts: arrayValue(value.distortedFacts, (item) =>
       stringValue(item),
     ).filter(Boolean),
+    seoKeywordPlan: normalizeSeoKeywordPlan(value.seoKeywordPlan),
     knowledgeReferences,
     providerReferences,
   };
@@ -596,6 +678,70 @@ function TaskStepTimeline({ steps }: { steps: TaskStep[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function SeoKeywordPlanPanel({ plan }: { plan: ValidatedSeoKeywordPlan }) {
+  const groups = [
+    { label: "主关键词", items: plan.primaryKeyword ? [plan.primaryKeyword] : [] },
+    { label: "次关键词", items: plan.secondaryKeywords },
+    { label: "长尾词", items: plan.longTailKeywords },
+  ];
+  const intentLabel = {
+    transactional: "交易型",
+    informational: "信息型",
+    mixed: "混合型",
+  }[plan.searchIntent];
+
+  return (
+    <AdminSectionCard title="SEO 关键词规划">
+      <div className="space-y-4">
+        <Badge variant="outline">搜索意图：{intentLabel}</Badge>
+        {groups.map((group) => (
+          <div key={group.label} className="space-y-2">
+            <p className="text-sm font-medium">{group.label}</p>
+            {group.items.length > 0 ? (
+              <div className="grid gap-2 md:grid-cols-2">
+                {group.items.map((candidate) => (
+                  <div
+                    key={candidate.keyword}
+                    className="rounded-md border border-border/70 p-3"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium">{candidate.keyword}</span>
+                      {!candidate.bodyEligible ? (
+                        <Badge variant="secondary">仅元信息</Badge>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
+                      {candidate.evidence.map((evidence, index) => (
+                        <p key={`${evidence.provenance}:${evidence.text}:${index}`}>
+                          {keywordProvenanceLabels[evidence.provenance]}：{evidence.text}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">无有效候选</p>
+            )}
+          </div>
+        ))}
+        {plan.rejectedKeywords.length > 0 ? (
+          <div className="space-y-2 border-t border-border/70 pt-4">
+            <p className="text-sm font-medium text-destructive">已拒绝关键词</p>
+            <div className="space-y-1 text-sm text-muted-foreground">
+              {plan.rejectedKeywords.map((item, index) => (
+                <p key={`${item.keyword}:${index}`}>
+                  {item.keyword}：{item.reason}
+                </p>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </AdminSectionCard>
   );
 }
 
@@ -1000,6 +1146,10 @@ export async function AiRewriteTaskDetailPageContent({
           report={report}
         />
       </AdminSectionCard>
+
+      {diagnostics?.rewriteQuality?.seoKeywordPlan ? (
+        <SeoKeywordPlanPanel plan={diagnostics.rewriteQuality.seoKeywordPlan} />
+      ) : null}
 
       <AdminSectionCard
         title="处理步骤"

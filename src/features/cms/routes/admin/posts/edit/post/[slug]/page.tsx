@@ -9,6 +9,7 @@ import {
   AdminSectionCard,
 } from "@/features/cms/components/admin-page-shell";
 import { contentToArticleMarkdown } from "@fwqgo/core/content";
+import { readAdminPostInternalLinks } from "@/server/posts/internal-links";
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) return error.message;
@@ -67,6 +68,12 @@ export default async function EditPostPage(props: {
       return null;
     },
   );
+  const internalLinks = await readAdminPostInternalLinks(post.id).catch(
+    (internalLinkError: unknown) => {
+      console.error("文章内链加载失败:", internalLinkError);
+      return [];
+    },
+  );
 
   return (
     <>
@@ -80,6 +87,7 @@ export default async function EditPostPage(props: {
           published: post.published,
         }}
         productionContext={productionContext}
+        internalLinks={internalLinks}
       />
     </>
   );

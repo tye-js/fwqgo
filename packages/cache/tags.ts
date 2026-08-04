@@ -11,6 +11,7 @@ export const cacheTags = {
   siteSeo: "site-seo",
   serverOffers: "server-offers",
   knowledge: "knowledge",
+  internalLinks: "post-internal-links",
   networkExperience: "network-experience",
   serverSizing: "server-sizing",
   category: (id: number) => `category:${id}`,
@@ -19,6 +20,7 @@ export const cacheTags = {
   tagSlug: (slug: string) => `tag-slug:${slug}`,
   post: (id: number) => `post:${id}`,
   postSlug: (slug: string) => `post-slug:${slug}`,
+  postInternalLinks: (id: number) => `post-internal-links:${id}`,
   serverOfferTopic: (slug: string) => `server-offer-topic:${slug}`,
   knowledgeArticle: (id: number) => `knowledge-article:${id}`,
   knowledgeSlug: (slug: string) => `knowledge-slug:${slug}`,
@@ -76,6 +78,7 @@ export function getPublicCacheEventTargets(
       cacheTags.homepage,
       cacheTags.sidebar,
       cacheTags.sitemap,
+      cacheTags.internalLinks,
     ].forEach((tag) => tags.add(tag));
     [
       "/",
@@ -86,6 +89,9 @@ export function getPublicCacheEventTargets(
     ].forEach((path) => paths.add(path));
     uniquePositiveIds(payload.postIds).forEach((id) =>
       tags.add(cacheTags.post(id)),
+    );
+    uniquePositiveIds(payload.postIds).forEach((id) =>
+      tags.add(cacheTags.postInternalLinks(id)),
     );
     uniqueSlugs(payload.postSlugs).forEach((slug) => {
       tags.add(cacheTags.postSlug(slug));
@@ -120,6 +126,7 @@ export function getPublicCacheEventTargets(
       cacheTags.tags,
       cacheTags.posts,
       cacheTags.sitemap,
+      cacheTags.internalLinks,
     ].forEach((tag) => tags.add(tag));
     [
       "/",
@@ -144,7 +151,9 @@ export function getPublicCacheEventTargets(
       tags.add(cacheTags.post(id)),
     );
   } else if (event === "knowledge.changed") {
-    [cacheTags.knowledge, cacheTags.sitemap].forEach((tag) => tags.add(tag));
+    [cacheTags.knowledge, cacheTags.sitemap, cacheTags.internalLinks].forEach(
+      (tag) => tags.add(tag),
+    );
     [
       "/knowledge",
       "/en/knowledge",

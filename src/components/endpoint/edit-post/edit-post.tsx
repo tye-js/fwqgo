@@ -47,6 +47,8 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import { type getPostProductionContext } from "@/features/cms/data/post";
 import { isRenderableImageSrc } from "@fwqgo/core/image-src";
+import { PostInternalLinkManager } from "@/features/cms/components/post-internal-link-manager";
+import type { AdminPostInternalLink } from "@/server/posts/internal-links";
 interface Category {
   id: number;
   name: string;
@@ -61,6 +63,7 @@ export default function EditPost({
   categories,
   postMeta,
   productionContext,
+  internalLinks,
 }: {
   post: PostEditFormData;
   categories: Category[];
@@ -71,6 +74,7 @@ export default function EditPost({
     published: boolean;
   };
   productionContext: ProductionContext | null;
+  internalLinks: AdminPostInternalLink[];
 }) {
   const router = useRouter();
   const postLanguage = postMeta.language === "en" ? "en" : "zh";
@@ -325,6 +329,13 @@ export default function EditPost({
       {productionContext ? (
         <PostProductionContextPanel context={productionContext} />
       ) : null}
+
+      <AdminSectionCard title="文章内链">
+        <PostInternalLinkManager
+          postId={post.post.id}
+          links={internalLinks}
+        />
+      </AdminSectionCard>
 
       <form
         className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]"
@@ -714,9 +725,9 @@ function buildSeoChecks(input: {
       note: `当前 ${keywordList.length} 个，建议 2-6 个。`,
     },
     {
-      label: "正文长度",
-      ok: plainText.length >= 800,
-      note: `当前 ${plainText.length} 字，建议至少 800 字。`,
+      label: "正文完整性",
+      ok: plainText.length >= 120,
+      note: `当前 ${plainText.length} 字；正文应服从原文事实信息量，不再要求固定 800 字。`,
     },
     {
       label: "标签覆盖",
