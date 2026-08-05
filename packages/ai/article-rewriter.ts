@@ -18,7 +18,10 @@ import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 
 import {
   buildOpenAiChatCompletionsEndpoint,
+  getTransientAiNetworkErrorMessage,
+  isTransientAiNetworkError,
   parseAiJsonObject,
+  retryTransientAiRequest,
 } from "./openai-compatible";
 import {
   formatRewriteKnowledgeContext,
@@ -1155,6 +1158,10 @@ function getAiProviderErrorMessage(input: {
     return `${prefix}，请求频率或额度受限，请稍后重试或更换模型`;
   }
 
+  if (input.status === 402) {
+    return `${prefix}，服务商余额不足，请充值后重试或切换备用配置`;
+  }
+
   if (input.status >= 500) {
     return `${prefix}，服务商当前异常，请稍后重试`;
   }
@@ -1177,45 +1184,53 @@ async function requestChatCompletionResult(input: {
   let timeout: ReturnType<typeof setTimeout> | undefined;
 
   try {
-    const request = async (): Promise<AiRewriteHttpResult> => {
-      const endpoint = await assertPublicHttpUrl(input.endpoint, "AI 接口地址");
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${input.config.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        redirect: "error",
-        signal: controller.signal,
-        body: JSON.stringify({
-          model: input.config.model,
-          temperature: input.temperature ?? input.config.temperature / 100,
-          max_tokens: input.maxTokens,
-          ...(input.responseFormat
-            ? { response_format: input.responseFormat }
-            : {}),
-          messages: [{ role: "user", content: input.userPrompt }],
-        }),
-      });
-      const responseText = await readResponseTextWithLimit(
-        response,
-        MAX_AI_RESPONSE_BYTES,
-      );
-      if (responseText === null) {
-        throw createReadableError(
-          `${input.stepName}失败：AI 响应过大`,
-          "服务商返回超过 4 MiB 安全限制，请检查中转接口或更换服务商",
-        );
-      }
-      let data: ChatCompletionResponse | null = null;
-      try {
-        data = JSON.parse(responseText || "{}") as ChatCompletionResponse;
-      } catch {
-        // HTTP errors may legitimately return non-JSON bodies; classify them below.
-      }
+    const request = () =>
+      retryTransientAiRequest<AiRewriteHttpResult>(
+        async () => {
+          const endpoint = await assertPublicHttpUrl(
+            input.endpoint,
+            "AI 接口地址",
+          );
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${input.config.apiKey}`,
+              "Content-Type": "application/json",
+            },
+            redirect: "error",
+            signal: controller.signal,
+            body: JSON.stringify({
+              model: input.config.model,
+              temperature:
+                input.temperature ?? input.config.temperature / 100,
+              max_tokens: input.maxTokens,
+              ...(input.responseFormat
+                ? { response_format: input.responseFormat }
+                : {}),
+              messages: [{ role: "user", content: input.userPrompt }],
+            }),
+          });
+          const responseText = await readResponseTextWithLimit(
+            response,
+            MAX_AI_RESPONSE_BYTES,
+          );
+          if (responseText === null) {
+            throw createReadableError(
+              `${input.stepName}失败：AI 响应过大`,
+              "服务商返回超过 4 MiB 安全限制，请检查中转接口或更换服务商",
+            );
+          }
+          let data: ChatCompletionResponse | null = null;
+          try {
+            data = JSON.parse(responseText || "{}") as ChatCompletionResponse;
+          } catch {
+            // HTTP errors may legitimately return non-JSON bodies; classify them below.
+          }
 
-      return { response, data };
-    };
+          return { response, data };
+        },
+        { signal: controller.signal },
+      );
 
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeout = setTimeout(() => {
@@ -1296,6 +1311,16 @@ async function requestChatCompletionResult(input: {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error(
         `AI 改写请求超时（${Math.round(input.timeoutMs / 1000)}秒）：${input.config.name} / ${input.config.model}，请稍后重试或换一个改写模型`,
+      );
+    }
+
+    if (isTransientAiNetworkError(error)) {
+      throw createReadableError(
+        `${input.stepName}失败：第三方 AI 中转连接中断`,
+        getTransientAiNetworkErrorMessage({
+          configName: input.config.name,
+          model: input.config.model,
+        }),
       );
     }
 

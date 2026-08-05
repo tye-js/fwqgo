@@ -3,7 +3,12 @@ import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 
 import { getAiRewriteConfigForStatusCheck } from "@fwqgo/ai/rewrite-config";
 
-import { buildOpenAiChatCompletionsEndpoint } from "./openai-compatible";
+import {
+  buildOpenAiChatCompletionsEndpoint,
+  getTransientAiNetworkErrorMessage,
+  isTransientAiNetworkError,
+  retryTransientAiRequest,
+} from "./openai-compatible";
 
 const MAX_STATUS_RESPONSE_BYTES = 256 * 1024;
 
@@ -134,6 +139,14 @@ export function classifyHttpError(input: {
     };
   }
 
+  if (input.status === 402) {
+    return {
+      errorTitle: "服务商余额不足",
+      error: `${prefix}；${error}`,
+      suggestion: "为当前中转账户充值，或切换一套已验证的备用配置。",
+    };
+  }
+
   if (input.status >= 500) {
     return {
       errorTitle: "服务商接口异常",
@@ -206,35 +219,42 @@ export async function checkAiRewriteConfigStatus(
   }
 
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
+    const signal = AbortSignal.timeout(15_000);
+    const { response, bodyText } = await retryTransientAiRequest(
+      async () => {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${config.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          redirect: "error",
+          signal,
+          body: JSON.stringify({
+            model: config.model,
+            temperature: 0,
+            max_tokens: 8,
+            messages: [
+              {
+                role: "system",
+                content: "You are a health check endpoint.",
+              },
+              {
+                role: "user",
+                content: "Reply with the single word: ok",
+              },
+            ],
+          }),
+        });
+        const bodyText = await readResponseTextWithLimit(
+          response,
+          MAX_STATUS_RESPONSE_BYTES,
+        );
+        return { response, bodyText };
       },
-      redirect: "error",
-      signal: AbortSignal.timeout(15_000),
-      body: JSON.stringify({
-        model: config.model,
-        temperature: 0,
-        max_tokens: 8,
-        messages: [
-          {
-            role: "system",
-            content: "You are a health check endpoint.",
-          },
-          {
-            role: "user",
-            content: "Reply with the single word: ok",
-          },
-        ],
-      }),
-    });
-    const latencyMs = Date.now() - startedAt;
-    const bodyText = await readResponseTextWithLimit(
-      response,
-      MAX_STATUS_RESPONSE_BYTES,
+      { signal },
     );
+    const latencyMs = Date.now() - startedAt;
 
     if (bodyText === null) {
       return failed({
@@ -337,6 +357,7 @@ export async function checkAiRewriteConfigStatus(
       (error.name === "TimeoutError" ||
         error.name === "AbortError" ||
         message.toLowerCase().includes("timeout"));
+    const isTransientNetworkError = isTransientAiNetworkError(error);
 
     return failed({
       configId,
@@ -345,10 +366,21 @@ export async function checkAiRewriteConfigStatus(
       endpoint,
       model: config.model,
       latencyMs,
-      errorTitle: isTimeout ? "接口检测超时" : "接口连接失败",
-      error: message,
+      errorTitle: isTimeout
+        ? "接口检测超时"
+        : isTransientNetworkError
+          ? "第三方 AI 中转连接中断"
+          : "接口连接失败",
+      error: isTransientNetworkError
+        ? getTransientAiNetworkErrorMessage({
+            configName: config.name,
+            model: config.model,
+          })
+        : message,
       suggestion: isTimeout
         ? "15 秒内没有返回。检查中转服务、模型可用性，或稍后重试。"
+        : isTransientNetworkError
+          ? "检查中转余额和上游超时限制；若持续断连，请切换备用配置。"
         : "检查网络连通性、Base URL、TLS 证书和服务商兼容性。",
     });
   }
