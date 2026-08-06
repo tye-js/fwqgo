@@ -463,14 +463,14 @@ function ConfigForm({
             required
           />
           <p className="text-xs leading-5 text-muted-foreground">
-            初稿单独审查；每次审查未通过都会自动修订并复审。该数值只限制修订次数，不包含初稿。
+            只在正文过短或表格、购买链接等受保护内容缺失时重试；不执行事实审查。该数值不包含初稿。
           </p>
         </div>
       </div>
 
       <details id="prompt-template" open className="scroll-mt-24 border-t pt-4">
         <summary className="cursor-pointer text-sm font-semibold text-foreground">
-          中文改写与审查提示词
+          中文改写提示词
         </summary>
         <div className="mt-4 space-y-6">
           <PromptTemplateField
@@ -500,6 +500,7 @@ function ConfigForm({
               "outline",
               "providerContext",
               "knowledgeContext",
+              "knowledgeSections",
               "protectedContent",
               "retryFeedback",
             ]}
@@ -516,58 +517,31 @@ function ConfigForm({
             description="首轮生成时填入正文模板的 {retryFeedback}。"
             className="min-h-24"
           />
-          <PromptTemplateField
+          <input
+            type="hidden"
             name="rewriteRetryPrompt"
-            label="5. 审查问题整理 Prompt"
             value={defaults?.rewriteRetryPrompt ?? defaultRewriteRetryPrompt}
-            variables={["issues"]}
-            description="把确定性检查和 AI 审查问题整理为修订指令，再注入下一轮直接修订 Prompt。"
-            className="min-h-32"
           />
-          <PromptTemplateField
+          <input
+            type="hidden"
             name="qualityRepairPrompt"
-            label="6. 审查后直接修订 Prompt"
             value={defaults?.qualityRepairPrompt ?? defaultQualityRepairPrompt}
-            variables={[
-              "stylePrompt",
-              "sourceContent",
-              "factSheet",
-              "outline",
-              "protectedAuthorityContent",
-              "protectedContent",
-              "providerContext",
-              "knowledgeContext",
-              "candidateContent",
-              "issues",
-            ]}
-            description="第 2 轮起直接修改上一版候选正文，只修复审查问题；修订结果会再次交给独立审查器。"
-            className="min-h-[38rem]"
           />
-          <PromptTemplateField
+          <input
+            type="hidden"
             name="qualityReviewPrompt"
-            label="7. 事实质量审查 Prompt"
             value={defaults?.qualityReviewPrompt ?? defaultQualityReviewPrompt}
-            variables={[
-              "sourceContent",
-              "factSheet",
-              "protectedAuthorityContent",
-              "providerContext",
-              "knowledgeContext",
-              "markdownContent",
-            ]}
-            description="每一轮候选正文都会使用该模板审查，原始 JSON 和归一化结果都会保留。"
-            className="min-h-[34rem]"
           />
           <PromptTemplateField
             name="metadataStylePrompt"
-            label="8. 中文标题 / SEO 风格片段"
+            label="5. 中文标题 / SEO 风格片段"
             value={defaults?.metadataStylePrompt ?? defaultMetadataStylePrompt}
             description="通过 {metadataStylePrompt} 注入中文元信息完整模板。"
             className="min-h-28"
           />
           <PromptTemplateField
             name="metadataPrompt"
-            label="9. 中文标题 / SEO 完整 Prompt"
+            label="6. 中文标题 / SEO 完整 Prompt"
             value={defaults?.metadataPrompt ?? defaultMetadataPrompt}
             variables={["metadataStylePrompt", "markdownContent"]}
             description="用于标题、摘要、关键词、标签和推荐标签生成。"

@@ -285,6 +285,7 @@ function normalizeRewriteQuality(
     attempts: numberValue(value.attempts),
     factualScore: numberValue(value.factualScore),
     reviewPassed: booleanValue(value.reviewPassed),
+    reviewSkipped: booleanValue(value.reviewSkipped),
     missingFacts: arrayValue(value.missingFacts, (item) =>
       stringValue(item),
     ).filter(Boolean),
@@ -938,7 +939,7 @@ function TruncationHint({
         {formatMaybeNumber(task.maxTokens)}，AI 输入{" "}
         {formatMaybeNumber(task.aiInputLength)}，输出{" "}
         {formatMaybeNumber(task.rewriteOutputLength)}
-        。事实提取、质量审查和正文生成现在都会使用配置中的 Max
+        。来源事实提取、正文生成和 SEO 生成都会使用配置中的 Max
         Tokens；如果重试后仍被截断，说明模型或中转服务还有自身输出上限，建议缩短正文输入或更换推理消耗更低的模型。
       </p>
       {task.aiInputLength === null && isAiRewriteStageError(error) ? (
@@ -1164,7 +1165,7 @@ export async function AiRewriteTaskDetailPageContent({
 
       <AdminSectionCard
         title="改写过程与候选正文"
-        description="保存每次模型调用的实际提示词、原始响应、人工可读正文和质量审查结果。失败或未通过审查的候选也会保留。"
+        description="保存每次模型调用的实际提示词、原始响应和人工可读正文；失败或因完整性问题重试的候选也会保留。"
       >
         <AiRewriteAuditViewer artifacts={task.artifacts} />
       </AdminSectionCard>
@@ -1264,10 +1265,6 @@ export async function AiRewriteTaskDetailPageContent({
                   <Stat
                     label="关键事实覆盖"
                     value={`${diagnostics.rewriteQuality.criticalFactCoverage}%`}
-                  />
-                  <Stat
-                    label="模型事实审查"
-                    value={`${diagnostics.rewriteQuality.factualScore}/100`}
                   />
                   <Stat
                     label="自动重写"

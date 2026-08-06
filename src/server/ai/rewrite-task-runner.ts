@@ -2245,7 +2245,7 @@ export async function runAiRewriteTask(taskId: number) {
         progress: 80,
         message: article.diagnostics.usedAiRewrite
           ? article.diagnostics.rewriteQuality
-            ? `AI 输出 ${article.diagnostics.rewriteOutputLength ?? article.htmlContent.length} 字符；原创度 ${article.diagnostics.rewriteQuality.originalityScore}%；事实覆盖 ${article.diagnostics.rewriteQuality.criticalFactCoverage}%；${article.diagnostics.rewriteQuality.attempts} 轮通过`
+            ? `AI 输出 ${article.diagnostics.rewriteOutputLength ?? article.htmlContent.length} 字符；完整性检查通过；生成 ${article.diagnostics.rewriteQuality.attempts} 轮`
             : `AI 输出 ${article.diagnostics.rewriteOutputLength ?? article.htmlContent.length} 字符`
           : (article.diagnostics.aiRewriteError ??
             "AI 未改写，使用原始采集内容"),
@@ -2256,7 +2256,6 @@ export async function runAiRewriteTask(taskId: number) {
                 article.diagnostics.rewriteQuality.originalityScore,
               criticalFactCoverage:
                 article.diagnostics.rewriteQuality.criticalFactCoverage,
-              factualScore: article.diagnostics.rewriteQuality.factualScore,
               attempts: article.diagnostics.rewriteQuality.attempts,
               knowledgeReferences:
                 article.diagnostics.rewriteQuality.knowledgeReferences,

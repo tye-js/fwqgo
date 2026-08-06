@@ -24,6 +24,9 @@ export const defaultBaseRewritePrompt = `你是服务器/VPS 优惠与评测网�
 知识库上下文（只可解释来源原文已经出现的通用概念）：
 {knowledgeContext}
 
+必须新增的基础知识章节（标题和素材由程序根据原文触发词匹配）：
+{knowledgeSections}
+
 受保护内容：
 {protectedContent}
 
@@ -34,14 +37,14 @@ export const defaultBaseRewritePrompt = `你是服务器/VPS 优惠与评测网�
 1. 只输出正文 Markdown，不要输出文章标题、JSON、代码块围栏、解释或写作过程；小标题从 ## 开始，第一段不需要标题。
 2. 原文中的主体与对象、运营商名称、肯定或否定、比较关系、适用条件、不确定性和信息归属必须保持不变。不得把电信、联通、移动等对象互换，也不得把推测写成结论。
 3. 保留原文事实骨架，用新的解释、过渡和信息分组进行扩写；不要逐句同义词替换，也不要为了追求结构差异而改变事实关系。
-4. 不强制生成原文没有依据的线路分析、适用场景、性能测试、社区反馈、优缺点或总结章节。只围绕原文主题及有官网来源的供应商政策组织 2 到 6 个必要小节；短文可以更少。
+4. 不要编造线路分析、性能测试、社区反馈或商家承诺。除原文主题外，必须按“必须新增的基础知识章节”逐条增加对应的二级标题和基础知识内容；没有匹配条目时不要强行增加章节。
 5. 供应商官网资料只能补充其中明确提供的供应商介绍、退款政策和禁止事项，不得据此推导套餐、线路、运营商、库存、解锁能力或实测结论。
-6. 知识库只能解释原文已经出现的技术概念，不能引入原文没有出现的 ASN、线路名、运营商、地区、测试数据或商家结论，也不能改写成该商家的实测、承诺或当前情况。
+6. 知识库章节只用于解释通用概念，不得改写成该商家的实测、承诺或当前情况。章节标题必须与程序给出的标题一致（例如“## 原生IP”），内容应围绕定义、判断方法和限制展开；不得把知识条目中的一般说明说成本文商家的产品事实。
 7. 不得编造或修改价格、配置、优惠码、日期、库存、机房、线路、运营商、解锁能力、退款政策、测速结果、用户反馈、社区反馈或商家承诺。没有明确来源时，不得使用“实测显示”“官方社区反馈”“多位用户反馈”等归因句式。
 8. 每个受保护占位符必须原样出现且只出现一次。不要自行重写占位符代表的套餐表格或链接，系统会在生成后恢复原始数据。
 9. 避免空泛宣传、重复总结和固定模板套话。可通过解释原文术语、梳理购买条件以及引用有官网来源的供应商政策来扩充信息；资料不足时明确建议购买前确认，不要补造事实。
 10. 关键词只用于确定主题和搜索意图，不能支持原文没有的地区、线路、用途、性能或评价。不得机械重复关键词；若关键词与事实冲突，舍弃关键词。
-11. 正文叙述长度不得超过扩写长度预算的硬上限。信息不足时宁可保持简洁，不得用市场评价、适用场景或空泛建议填充篇幅。`;
+11. 正文叙述长度不得超过扩写长度预算的硬上限；程序追加的基础知识章节属于必要内容。信息不足时不要用市场评价或空泛宣传填充篇幅。`;
 
 export const defaultFactExtractionPrompt = `你是严格的服务器文章事实抽取器。请从来源 Markdown 中提取一份用于忠实扩写的事实核对清单，并列出来源实际涉及的主题。
 
@@ -122,6 +125,9 @@ export const defaultQualityRepairPrompt = `你是服务器/VPS 文章的事实�
 知识库通用解释：
 {knowledgeContext}
 
+必须保留的基础知识章节：
+{knowledgeSections}
+
 上一版候选 Markdown（需要直接修订，受保护内容仍使用占位符）：
 {candidateContent}
 
@@ -137,7 +143,8 @@ export const defaultQualityRepairPrompt = `你是服务器/VPS 文章的事实�
 6. 不得新增价格、配置、线路、运营商、库存、测试、用户反馈、社区反馈、退款承诺或其他来源没有的结论。
 7. 输出前逐项自检 issues：每个 candidateText 被要求删除或修正的原句都不能继续出现在正文中；尤其是 type=unsupported_claim 的原句必须删除；不要为了保持篇幅而补写未经来源支持的评价性句子。
 8. 关键词不能支持来源没有的事实，也不要求保留导致失真的关键词表达。修订后的叙述长度不得超过扩写预算硬上限。
-9. 合理分析保留边界：由来源价格和配置直接得出的站内比较、基于带宽/存储/IP/地区等已知条件给出的非保证性用途建议、以及不增加新参数的通用技术解释，可以保留。不得保留新核心线程数、跑分、延迟、线路名称、用户反馈、市场竞争力或性能保证。`;
+9. 合理分析保留边界：由来源价格和配置直接得出的站内比较、基于带宽/存储/IP/地区等已知条件给出的非保证性用途建议、以及不增加新参数的通用技术解释，可以保留。不得保留新核心线程数、跑分、延迟、线路名称、用户反馈、市场竞争力或性能保证。
+10. 若上一版缺少“必须保留的基础知识章节”，按给出的标题补充对应二级标题和基础定义，不要把知识内容写成商家产品承诺。`;
 
 export const defaultQualityReviewPrompt = `你是独立的事实审查员。请审查候选文章是否忠于允许使用的事实，只输出 JSON。
 
@@ -258,6 +265,7 @@ export type SourceAnchoredRewritePromptInput = {
   outline: string;
   providerContext: string;
   knowledgeContext: string;
+  knowledgeSections?: string;
   protectedContent: string;
   retryFeedback: string;
 };
@@ -313,6 +321,8 @@ export function buildSourceAnchoredRewritePrompt(
     outline: input.outline,
     providerContext: input.providerContext,
     knowledgeContext: input.knowledgeContext,
+    knowledgeSections:
+      input.knowledgeSections ?? "未匹配到需要新增的基础知识章节。",
     protectedContent: input.protectedContent,
     retryFeedback: input.retryFeedback,
   };
@@ -324,6 +334,14 @@ export function buildSourceAnchoredRewritePrompt(
       : "",
     !template.includes("{rewriteLengthBudget}")
       ? `扩写长度预算（硬约束）：\n${input.rewriteLengthBudget}`
+      : "",
+    !template.includes("{knowledgeSections}")
+      ? `必须新增的基础知识章节（按原文触发词生成二级标题）：\n${
+          input.knowledgeSections ?? "未匹配到需要新增的基础知识章节。"
+        }`
+      : "",
+    !template.includes("{retryFeedback}")
+      ? `本轮正文完整性要求：\n${input.retryFeedback}`
       : "",
   ].filter(Boolean);
 
@@ -341,12 +359,12 @@ export const defaultEnglishStylePrompt =
 export const defaultEnglishMetadataStylePrompt =
   "Write concise English SEO metadata for VPS/server deal readers. Prioritize provider name, price, specs, location, network route and buying intent. Keep the slug short and readable.";
 
-export const defaultMetadataPrompt = `你是服务器/VPS推广文章的 SEO 编辑。请根据已经通过原创度和事实校验的 Markdown 正文生成文章元信息。
+export const defaultMetadataPrompt = `你是服务器/VPS推广文章的 SEO 编辑。请根据已完成改写和正文完整性检查的 Markdown 正文生成文章元信息。
 
 元信息生成风格：
 {metadataStylePrompt}
 
-经过原文证据校验的关键词规划：
+根据来源原文生成的关键词规划：
 {keywordPlan}
 
 要求：

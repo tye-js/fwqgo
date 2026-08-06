@@ -12,7 +12,7 @@ export type KnowledgeRankCandidate = {
 };
 
 const priorityTermPattern =
-  /\b(?:CN2(?:\s*GIA)?|CMIN2|CMI|CUII|BGP|IPLC|IEPL|NTT|Cogent|HE|GTT|AS\d{3,6}|IPv4|IPv6|KVM|LXC|VPS|VDS|NVMe|SSD|HDD|DDoS|Anycast)\b/gi;
+  /原生\s*IP|广播\s*IP|住宅\s*IP|\b(?:CN2(?:\s*GIA)?|CMIN2|CMI|CUII|BGP|IPLC|IEPL|NTT|Cogent|HE|GTT|AS\d{3,6}|IPv4|IPv6|KVM|LXC|VPS|VDS|NVMe|SSD|HDD|DDoS|Anycast)\b/gi;
 const ignoredTerms = new Set([
   "服务器",
   "套餐",

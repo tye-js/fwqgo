@@ -595,12 +595,6 @@ function AffiliateDiagnosticsSummary({
                 </p>
               </div>
               <div className="rounded-md border border-border/70 p-2">
-                <p className="text-muted-foreground">事实审查</p>
-                <p className="mt-1 font-medium text-foreground">
-                  {quality.factualScore}/100
-                </p>
-              </div>
-              <div className="rounded-md border border-border/70 p-2">
                 <p className="text-muted-foreground">生成轮数</p>
                 <p className="mt-1 font-medium text-foreground">
                   {quality.attempts}
