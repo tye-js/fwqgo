@@ -1973,6 +1973,10 @@ export async function rewriteArticleWithAi(
 
     retryIssues = [
       ...new Set([
+        ...metrics.reasons.map((item) => `确定性检查：${item}`),
+        ...restored.missingPlaceholders.map(
+          (item) => `缺失或重复占位符：${item}`,
+        ),
         ...review.missingFacts.map((item) => `遗漏事实：${item}`),
         ...review.unsupportedClaims.map((item) => `无依据表述：${item}`),
         ...review.distortedFacts.map((item) => `事实失真：${item}`),
@@ -1986,7 +1990,6 @@ export async function rewriteArticleWithAi(
           const exactText = issue.candidateText || issue.sourceText;
           return `${label}：${exactText}${issue.reason ? `（${issue.reason}）` : ""}`;
         }),
-        ...retryIssues,
       ]),
     ].slice(0, 24);
     retryFeedback = buildRewriteRetryFeedback({
@@ -1994,7 +1997,6 @@ export async function rewriteArticleWithAi(
       metrics,
       review,
       placeholderIssues: restored.missingPlaceholders,
-      previousIssues: retryIssues,
     });
     repairCandidate = candidate;
     await updateRewriteAudit(options, config, {

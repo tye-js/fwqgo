@@ -130,13 +130,14 @@ export const defaultQualityRepairPrompt = `你是服务器/VPS 文章的事实�
 
 修订要求：
 1. 只输出修订后的完整 Markdown 正文，不要输出标题、JSON、代码块围栏、修改说明或审查过程。
-2. 逐项解决审查问题。对于“必须删除无依据原句”，先在候选正文中定位对应原句并完整删除；不要把同一个判断换成同义词，也不要用“据此可见”“具有竞争力”“适合”等新句式保留同一结论。对于事实失真，按完整来源原文恢复主体、运营商、数字、条件和关系；对于遗漏事实，只补回来源明确支持且影响决策的内容。
+2. 逐项解决审查问题。完全无依据的结论必须删除，不能换成同义词继续保留。如果一个问题句同时包含来源支持的比较或合理用途分析，以及来源不支持的精确参数、适用范围或保证性结论，只删除或改正有问题的部分，保留其余有用内容并改为清楚的编辑分析。对于事实失真，按完整来源原文恢复主体、运营商、数字、条件和关系；对于遗漏事实，只补回来源明确支持且影响决策的内容。
 3. 保留上一版中已正确的结构、段落和表达，不要因为局部问题重新改写整篇文章。
 4. 所有事实必须能由完整来源原文、受保护原始内容或明确带来源的供应商资料支持。知识库只能解释原文已经出现的通用概念。
-5. 每个受保护占位符必须原样出现且只出现一次；不要重写占位符代表的套餐表格和链接。
+5. 每个受保护占位符必须原样出现且只出现一次；不要重写占位符代表的套餐表格和链接，也不要在文章总结中再次引用已经放置过的优惠码或购买链接占位符。若问题提示占位符重复，应删除重复引用所在的文字，不能只删除占位符而留下残缺句子。
 6. 不得新增价格、配置、线路、运营商、库存、测试、用户反馈、社区反馈、退款承诺或其他来源没有的结论。
 7. 输出前逐项自检 issues：每个 candidateText 被要求删除或修正的原句都不能继续出现在正文中；尤其是 type=unsupported_claim 的原句必须删除；不要为了保持篇幅而补写未经来源支持的评价性句子。
-8. 关键词不能支持来源没有的事实，也不要求保留导致失真的关键词表达。修订后的叙述长度不得超过扩写预算硬上限。`;
+8. 关键词不能支持来源没有的事实，也不要求保留导致失真的关键词表达。修订后的叙述长度不得超过扩写预算硬上限。
+9. 合理分析保留边界：由来源价格和配置直接得出的站内比较、基于带宽/存储/IP/地区等已知条件给出的非保证性用途建议、以及不增加新参数的通用技术解释，可以保留。不得保留新核心线程数、跑分、延迟、线路名称、用户反馈、市场竞争力或性能保证。`;
 
 export const defaultQualityReviewPrompt = `你是独立的事实审查员。请审查候选文章是否忠于允许使用的事实，只输出 JSON。
 
@@ -145,6 +146,15 @@ export const defaultQualityReviewPrompt = `你是独立的事实审查员。请�
 2. 带官网来源的供应商资料只能支持其中明确列出的供应商介绍、退款政策和禁止事项，不能支持套餐、线路、运营商、库存、解锁或测试事实。
 3. 知识库只能解释来源原文已经出现的通用概念，不能引入新的 ASN、线路名、运营商、地区、数据或商家结论。
 4. 必须逐项核对主体与对象、运营商、肯定或否定、比较关系、适用条件、不确定性及信息归属。把联通换成移动、把“可能”写成“确定”、把编辑推断写成官方或社区反馈，都属于事实失真或无依据表述。
+
+合理编辑分析判定边界：
+1. 不要把“来源没有逐字写出这句话”等同于“无依据”。改写文章允许在不改变事实的前提下提供有助于选购的编辑分析。
+2. 允许根据来源明确列出的价格、配置和促销范围进行直接比较或归纳，例如判断哪款是本文所列套餐中价格最低、50Mbps 高于 10Mbps、SSD 与 HDD 分别偏向性能或容量选择。
+3. 允许基于来源已有的带宽、存储、IP 数量、地区、流量限制等条件，使用“通常、相对、可考虑、可用于、对这类需求更友好”等非保证性语气说明常见用途。来源不必逐字列出每一个用途示例；只要推理链清楚、不增加隐藏前提，就不应判为 unsupported_claim。
+4. 允许解释来源已经出现的通用技术概念，也允许把多处分散事实合并成准确总结。不得因为出现“适合、友好、可胜任、较充裕”等分析词就自动判定失败，应判断其是否由已知配置合理支撑、是否被写成保证。
+5. 以下仍必须判为问题：新增精确硬件参数或核心线程数、新线路或运营商、新跑分/延迟/丢包/实测结果、新用户或社区反馈、来源未覆盖的优惠范围、无依据的全市场比较，以及“必然、保证、完全不卡”等无法由来源支持的确定性承诺。
+6. 来源内部可直接计算的比较，不属于全市场结论。“本文所列套餐中价格最低”可以由价格表支持；“在同类市场中有竞争力”需要外部市场证据，二者必须区分。
+7. 对混合句按实质判断：如果只有其中一个精确参数、范围或保证性分句有问题，reason 必须指出具体问题部分，不要把同句中其余合理分析一并认定为无依据。
 
 只输出紧凑 JSON。数组中的旧字段仍需保留；同时请填写 issues，便于系统直接执行修订：
 {
@@ -195,26 +205,47 @@ const qualityReviewActionabilitySupplement = `
 
 审查结果必须可直接用于自动修订：旧版字段 missingFacts、unsupportedClaims、distortedFacts 继续输出；同时必须输出 issues 数组。issues 中每项使用 {"type":"missing_fact | unsupported_claim | distorted_fact","candidateText":"候选正文中的完整原句；遗漏事实留空","sourceText":"来源中应补回或替换的完整事实；无依据表述留空","reason":"具体原因"}。candidateText 必须逐字复制候选正文中的完整句子；unsupported_claim 必须标出需要删除的原句，不要只写抽象判断。`;
 
+const qualityReviewEditorialBoundarySupplement = `
+
+合理编辑分析判定边界：不要把“来源没有逐字写出这句话”等同于“无依据”。允许根据来源明确列出的价格、配置和促销范围进行直接比较、算术归纳和准确总结；允许基于来源已有的带宽、存储、IP 数量、地区、流量限制等条件，以“通常、相对、可考虑、可用于、对这类需求更友好”等非保证性语气说明常见用途；允许解释来源已经出现的通用技术概念。来源不必逐字列出每一个用途示例，不能仅因出现“适合、友好、可胜任、较充裕”等分析词就判为 unsupported_claim。
+
+仍必须拒绝：新增精确硬件参数或核心线程数、新线路或运营商、新跑分/延迟/丢包/实测结果、新用户或社区反馈、来源未覆盖的优惠范围、无依据的全市场比较，以及无法由来源支持的确定性性能承诺。来源内部可计算的“本文所列套餐中最低”允许通过；“在同类市场中有竞争力”仍需要外部证据。对混合句只指出真正有问题的精确参数、范围或保证性分句，不要否定同句中其余由来源合理支撑的分析。`;
+
 const qualityRepairActionabilitySupplement = `
 
 自动修订附加要求：issues 中标记为 unsupported_claim 的 candidateText 必须从完整正文中删除，不能改写成同义评价或换一种归因；distorted_fact 必须恢复为完整来源原文支持的事实；missing_fact 只能补回来源明确提供的事实。输出前逐项搜索 candidateText，确认要求删除或修正的原句不再出现。`;
 
+const qualityRepairEditorialBoundarySupplement = `
+
+合理分析保留边界：完全无依据的结论必须删除，不能换成同义词继续保留。如果问题句同时包含来源支持的比较或非保证性用途分析，以及来源不支持的精确参数、适用范围或保证性结论，只删除或改正有问题的部分，保留其余有用分析。每个受保护占位符只能保留在原有信息位置一次，不要在总结中重复优惠码或购买链接；删除重复占位符时必须同时修复所在句子，不能留下空白或残句。`;
+
 export function resolveQualityReviewTemplate(value?: string | null) {
   const custom = value?.trim();
   if (!custom) return defaultQualityReviewPrompt;
-  if (custom.includes('"issues"') && custom.includes("candidateText")) {
-    return custom;
+  let resolved = custom;
+  if (!custom.includes('"issues"') || !custom.includes("candidateText")) {
+    resolved += qualityReviewActionabilitySupplement;
   }
-  return `${custom}${qualityReviewActionabilitySupplement}`;
+  if (!custom.includes("合理编辑分析判定边界")) {
+    resolved += qualityReviewEditorialBoundarySupplement;
+  }
+  return resolved;
 }
 
 export function resolveQualityRepairTemplate(value?: string | null) {
   const custom = value?.trim();
   if (!custom) return defaultQualityRepairPrompt;
-  if (custom.includes("candidateText") && custom.includes("unsupported_claim")) {
-    return custom;
+  let resolved = custom;
+  if (
+    !custom.includes("candidateText") ||
+    !custom.includes("unsupported_claim")
+  ) {
+    resolved += qualityRepairActionabilitySupplement;
   }
-  return `${custom}${qualityRepairActionabilitySupplement}`;
+  if (!custom.includes("合理分析保留边界")) {
+    resolved += qualityRepairEditorialBoundarySupplement;
+  }
+  return resolved;
 }
 
 export type SourceAnchoredRewritePromptInput = {

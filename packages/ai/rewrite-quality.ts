@@ -39,6 +39,8 @@ type MarkdownTableRange = {
 const markdownLinkPattern =
   /\[([^\]]+)]\((<([^>]+)>|[^)\s]+)(?:\s+"[^"]*")?\)/g;
 const standaloneUrlPattern = /(?:https?:\/\/|\/go\/)[^\s)<>'"]+/gi;
+const cpuModelPattern =
+  /(?:\d+\s*(?:\\?\*)\s*)?(?:e[3579]-\d{3,5}[a-z]*|(?:金牌|银牌|铜牌|铂金)\s*\d{4}[a-z]*)/gi;
 const tableRowPattern = /^\s*\|.*\|\s*$/;
 const tableSeparatorPattern =
   /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/;
@@ -318,6 +320,22 @@ function canonicalNumber(value: string) {
   return Number.isFinite(parsed) ? String(parsed) : normalized.toLowerCase();
 }
 
+function canonicalHardwareIdentifier(value: string) {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\\\*/g, "*")
+    .replace(/\s+/g, "");
+}
+
+function addHardwareIdentifierTokens(tokens: Set<string>, markdown: string) {
+  for (const match of markdown.matchAll(cpuModelPattern)) {
+    const identifier = match[0]?.trim();
+    if (!identifier) continue;
+    tokens.add(`hardware:${canonicalHardwareIdentifier(identifier)}`);
+  }
+}
+
 function addOperatorTokens(tokens: Set<string>, markdown: string) {
   const operatorKeys: Record<string, string> = {
     电信: "telecom",
@@ -372,22 +390,33 @@ function addAttributionTokens(tokens: Set<string>, markdown: string) {
 function criticalFactTokens(markdown: string) {
   const tokens = new Set<string>();
   const normalized = markdown.normalize("NFKC");
+  const numericSource = normalized
+    .replace(markdownLinkPattern, "$1")
+    .replace(standaloneUrlPattern, " ");
+  addHardwareIdentifierTokens(tokens, numericSource);
+  const withoutHardwareIdentifiers = numericSource.replace(
+    cpuModelPattern,
+    " ",
+  );
   const numericContext =
-    /[$€£¥￥%％折元美金美元加元欧元英镑日元年月日核]|\b(?:gb|tb|mb|gib|tib|mbps|gbps|ghz|mhz|ipv4|ipv6|ip|as)\b/i;
+    /[$€£¥￥%％折元美金美元加元欧元英镑日元年月日核个台路]|\b(?:gb|tb|mb|gib|tib|mbps|gbps|ghz|mhz|ipv4|ipv6|ip|as)\b/i;
 
-  for (const match of normalized.matchAll(/(?<![a-z])\d+(?:[.,]\d+)?/gi)) {
+  for (const match of withoutHardwareIdentifiers.matchAll(
+    /(?<![a-z0-9])\d+(?:[.,]\d+)?(?=\s*(?:(?:k|m|g|t)(?:i?b)?(?:ps)?\b|[^a-z0-9]|$))/gi,
+  )) {
     const index = match.index ?? 0;
-    const context = normalized.slice(
+    const context = withoutHardwareIdentifiers.slice(
       Math.max(0, index - 12),
-      Math.min(normalized.length, index + match[0].length + 12),
+      Math.min(withoutHardwareIdentifiers.length, index + match[0].length + 12),
     );
-    const followingText = normalized.slice(
+    const followingText = withoutHardwareIdentifiers.slice(
       index + match[0].length,
       index + match[0].length + 6,
     );
     if (
       numericContext.test(context) ||
-      /^\s*(?:天|小时)/.test(followingText)
+      /^\s*(?:天|小时)/.test(followingText) ||
+      /^\s*(?:k|m|g|t)(?:i?b)?(?:ps)?\b/i.test(followingText)
     ) {
       tokens.add(`number:${canonicalNumber(match[0])}`);
     }
@@ -427,7 +456,9 @@ function displayCriticalFactToken(token: string) {
     "attribution:official-claim": "官方或商家声明归因",
   };
 
-  return labels[token] ?? token.replace(/^(?:number|term|code|url):/, "");
+  return (
+    labels[token] ?? token.replace(/^(?:number|term|hardware|code|url):/, "")
+  );
 }
 
 function criticalFactComparison(

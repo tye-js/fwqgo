@@ -133,6 +133,28 @@ function stringValue(formData: FormData, key: string) {
   return typeof value === "string" ? value : "";
 }
 
+function getCreateTemplate(configs: Config[]) {
+  return (
+    configs.find((config) => config.enabled && config.isDefault) ??
+    configs.find((config) => config.enabled) ??
+    configs[0]
+  );
+}
+
+function getUniqueCopyName(template: Config, configs: Config[]) {
+  const names = new Set(configs.map((config) => config.name.trim()));
+  const baseName = `${template.name.trim()} 副本`;
+
+  if (!names.has(baseName)) return baseName;
+
+  for (let copyNumber = 2; copyNumber <= configs.length + 1; copyNumber += 1) {
+    const candidate = `${baseName} ${copyNumber}`;
+    if (!names.has(candidate)) return candidate;
+  }
+
+  return `${baseName} ${template.id}`;
+}
+
 function formatCheckTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
@@ -230,22 +252,27 @@ function PromptTemplateField({
 
 function ConfigForm({
   config,
+  templateConfig,
+  suggestedName,
   onDone,
 }: {
   config?: Config;
+  templateConfig?: Config;
+  suggestedName?: string;
   onDone?: () => void;
 }) {
-  const initialPreset = resolveInterfacePreset(config);
+  const defaults = config ?? templateConfig;
+  const initialPreset = resolveInterfacePreset(defaults);
   const [interfacePreset, setInterfacePreset] =
     useState<InterfacePreset>(initialPreset);
   const [name, setName] = useState(
-    config?.name ?? interfacePresets[initialPreset].name,
+    config?.name ?? suggestedName ?? interfacePresets[initialPreset].name,
   );
   const [baseUrl, setBaseUrl] = useState(
-    config?.baseUrl ?? interfacePresets[initialPreset].baseUrl,
+    defaults?.baseUrl ?? interfacePresets[initialPreset].baseUrl,
   );
   const [model, setModel] = useState(
-    config?.model ?? interfacePresets[initialPreset].model,
+    defaults?.model ?? interfacePresets[initialPreset].model,
   );
   const [enabled, setEnabled] = useState(config?.enabled ?? false);
   const [isDefault, setIsDefault] = useState(config?.isDefault ?? false);
@@ -393,7 +420,7 @@ function ConfigForm({
           <Label>风格名称</Label>
           <Input
             name="styleName"
-            defaultValue={config?.styleName ?? "服务器推广专业评测"}
+            defaultValue={defaults?.styleName ?? "服务器推广专业评测"}
             required
           />
         </div>
@@ -404,7 +431,7 @@ function ConfigForm({
             type="number"
             min={0}
             max={200}
-            defaultValue={config?.temperature ?? 40}
+            defaultValue={defaults?.temperature ?? 40}
             required
           />
         </div>
@@ -415,7 +442,7 @@ function ConfigForm({
             type="number"
             min={1000}
             max={64000}
-            defaultValue={config?.maxTokens ?? 8192}
+            defaultValue={defaults?.maxTokens ?? 8192}
             required
           />
           <p className="text-xs leading-5 text-muted-foreground">
@@ -431,7 +458,7 @@ function ConfigForm({
             min={MIN_AI_REWRITE_MAX_ATTEMPTS}
             max={MAX_AI_REWRITE_MAX_ATTEMPTS}
             defaultValue={
-              config?.rewriteMaxAttempts ?? DEFAULT_AI_REWRITE_MAX_ATTEMPTS
+              defaults?.rewriteMaxAttempts ?? DEFAULT_AI_REWRITE_MAX_ATTEMPTS
             }
             required
           />
@@ -449,21 +476,23 @@ function ConfigForm({
           <PromptTemplateField
             name="factExtractionPrompt"
             label="1. 来源事实提取 Prompt"
-            value={config?.factExtractionPrompt ?? defaultFactExtractionPrompt}
+            value={
+              defaults?.factExtractionPrompt ?? defaultFactExtractionPrompt
+            }
             variables={["sourceMarkdown"]}
             description="模型收到的完整事实提取模板。输出会保存到任务审计记录。"
           />
           <PromptTemplateField
             name="stylePrompt"
             label="2. 中文正文风格片段"
-            value={config?.stylePrompt ?? defaultStylePrompt}
+            value={defaults?.stylePrompt ?? defaultStylePrompt}
             description="通过 {stylePrompt} 注入中文正文完整模板。"
             className="min-h-28"
           />
           <PromptTemplateField
             name="basePrompt"
             label="3. 中文正文完整 Prompt"
-            value={config?.basePrompt ?? defaultBaseRewritePrompt}
+            value={defaults?.basePrompt ?? defaultBaseRewritePrompt}
             variables={[
               "stylePrompt",
               "sourceContent",
@@ -481,7 +510,7 @@ function ConfigForm({
             name="initialRewritePrompt"
             label="4. 首轮反馈 Prompt"
             value={
-              config?.initialRewritePrompt ??
+              defaults?.initialRewritePrompt ??
               defaultInitialRewriteFeedbackPrompt
             }
             description="首轮生成时填入正文模板的 {retryFeedback}。"
@@ -490,7 +519,7 @@ function ConfigForm({
           <PromptTemplateField
             name="rewriteRetryPrompt"
             label="5. 审查问题整理 Prompt"
-            value={config?.rewriteRetryPrompt ?? defaultRewriteRetryPrompt}
+            value={defaults?.rewriteRetryPrompt ?? defaultRewriteRetryPrompt}
             variables={["issues"]}
             description="把确定性检查和 AI 审查问题整理为修订指令，再注入下一轮直接修订 Prompt。"
             className="min-h-32"
@@ -498,7 +527,7 @@ function ConfigForm({
           <PromptTemplateField
             name="qualityRepairPrompt"
             label="6. 审查后直接修订 Prompt"
-            value={config?.qualityRepairPrompt ?? defaultQualityRepairPrompt}
+            value={defaults?.qualityRepairPrompt ?? defaultQualityRepairPrompt}
             variables={[
               "stylePrompt",
               "sourceContent",
@@ -517,7 +546,7 @@ function ConfigForm({
           <PromptTemplateField
             name="qualityReviewPrompt"
             label="7. 事实质量审查 Prompt"
-            value={config?.qualityReviewPrompt ?? defaultQualityReviewPrompt}
+            value={defaults?.qualityReviewPrompt ?? defaultQualityReviewPrompt}
             variables={[
               "sourceContent",
               "factSheet",
@@ -532,14 +561,14 @@ function ConfigForm({
           <PromptTemplateField
             name="metadataStylePrompt"
             label="8. 中文标题 / SEO 风格片段"
-            value={config?.metadataStylePrompt ?? defaultMetadataStylePrompt}
+            value={defaults?.metadataStylePrompt ?? defaultMetadataStylePrompt}
             description="通过 {metadataStylePrompt} 注入中文元信息完整模板。"
             className="min-h-28"
           />
           <PromptTemplateField
             name="metadataPrompt"
             label="9. 中文标题 / SEO 完整 Prompt"
-            value={config?.metadataPrompt ?? defaultMetadataPrompt}
+            value={defaults?.metadataPrompt ?? defaultMetadataPrompt}
             variables={["metadataStylePrompt", "markdownContent"]}
             description="用于标题、摘要、关键词、标签和推荐标签生成。"
             className="min-h-[28rem]"
@@ -555,14 +584,16 @@ function ConfigForm({
           <PromptTemplateField
             name="englishStylePrompt"
             label="1. 英文正文风格片段"
-            value={config?.englishStylePrompt ?? defaultEnglishStylePrompt}
+            value={defaults?.englishStylePrompt ?? defaultEnglishStylePrompt}
             description="通过 {englishStylePrompt} 注入英文正文完整模板。"
             className="min-h-28"
           />
           <PromptTemplateField
             name="englishContentPrompt"
             label="2. 英文正文完整 Prompt"
-            value={config?.englishContentPrompt ?? defaultEnglishContentPrompt}
+            value={
+              defaults?.englishContentPrompt ?? defaultEnglishContentPrompt
+            }
             variables={[
               "englishStylePrompt",
               "title",
@@ -577,7 +608,7 @@ function ConfigForm({
             name="englishContinuationPrompt"
             label="3. 英文正文续写 Prompt"
             value={
-              config?.englishContinuationPrompt ??
+              defaults?.englishContinuationPrompt ??
               defaultEnglishContinuationPrompt
             }
             variables={["originalPrompt", "generatedContentTail"]}
@@ -588,7 +619,7 @@ function ConfigForm({
             name="englishMetadataStylePrompt"
             label="4. 英文标题 / SEO 风格片段"
             value={
-              config?.englishMetadataStylePrompt ??
+              defaults?.englishMetadataStylePrompt ??
               defaultEnglishMetadataStylePrompt
             }
             description="通过 {englishMetadataStylePrompt} 注入英文元信息完整模板。"
@@ -598,7 +629,7 @@ function ConfigForm({
             name="englishMetadataPrompt"
             label="5. 英文标题 / SEO 完整 Prompt"
             value={
-              config?.englishMetadataPrompt ?? defaultEnglishMetadataPrompt
+              defaults?.englishMetadataPrompt ?? defaultEnglishMetadataPrompt
             }
             variables={[
               "englishMetadataStylePrompt",
@@ -623,7 +654,7 @@ function ConfigForm({
             name="providerCatalogDiscoveryPrompt"
             label="公开套餐目录结构映射 Prompt"
             value={
-              config?.providerCatalogDiscoveryPrompt ??
+              defaults?.providerCatalogDiscoveryPrompt ??
               defaultProviderCatalogDiscoveryPrompt
             }
             variables={["providerName", "officialUrl", "pagesJson"]}
@@ -667,6 +698,10 @@ function ConfigForm({
 
 export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
   const router = useRouter();
+  const createTemplate = getCreateTemplate(configs);
+  const suggestedCreateName = createTemplate
+    ? getUniqueCopyName(createTemplate, configs)
+    : undefined;
   const [showCreate, setShowCreate] = useState(configs.length === 0);
   const [editId, setEditId] = useState<number | null>(null);
   const [checkingId, setCheckingId] = useState<number | null>(null);
@@ -754,6 +789,8 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
 
       {showCreate ? (
         <ConfigForm
+          templateConfig={createTemplate}
+          suggestedName={suggestedCreateName}
           onDone={() => {
             setShowCreate(false);
             router.refresh();
