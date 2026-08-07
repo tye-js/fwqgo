@@ -11,11 +11,6 @@ import {
   updateAiRewriteConfigAction,
 } from "@/features/cms/actions/ai-rewrite-config";
 import { type AiRewriteStatusCheckResult } from "@fwqgo/ai/rewrite-status-check";
-import {
-  DEFAULT_AI_REWRITE_MAX_ATTEMPTS,
-  MAX_AI_REWRITE_MAX_ATTEMPTS,
-  MIN_AI_REWRITE_MAX_ATTEMPTS,
-} from "@fwqgo/core/ai-rewrite-limits";
 import type { getAiRewriteConfigs } from "@fwqgo/ai/rewrite-config";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -451,19 +446,22 @@ function ConfigForm({
           </p>
         </div>
         <div className="space-y-2">
-          <Label>最多自动修订次数</Label>
-          <Input
-            name="rewriteMaxAttempts"
-            type="number"
-            min={MIN_AI_REWRITE_MAX_ATTEMPTS}
-            max={MAX_AI_REWRITE_MAX_ATTEMPTS}
-            defaultValue={
-              defaults?.rewriteMaxAttempts ?? DEFAULT_AI_REWRITE_MAX_ATTEMPTS
-            }
-            required
-          />
+          <Label>中文正文调用次数</Label>
+          <Input value="1" readOnly aria-readonly="true" />
           <p className="text-xs leading-5 text-muted-foreground">
-            只在正文过短或表格、购买链接等受保护内容缺失时重试；不执行事实审查。该数值不包含初稿。
+            固定生成 1 次，不再自动重写。
+          </p>
+          <input
+            type="hidden"
+            name="rewriteMaxAttempts"
+            value={defaults?.rewriteMaxAttempts ?? 3}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>质量审查调用次数</Label>
+          <Input value="1" readOnly aria-readonly="true" />
+          <p className="text-xs leading-5 text-muted-foreground">
+            固定审查 1 次，只记录结果，不触发二次改写。
           </p>
         </div>
       </div>
@@ -527,21 +525,31 @@ function ConfigForm({
             name="qualityRepairPrompt"
             value={defaults?.qualityRepairPrompt ?? defaultQualityRepairPrompt}
           />
-          <input
-            type="hidden"
+          <PromptTemplateField
             name="qualityReviewPrompt"
+            label="5. 中文正文质量审查 Prompt（固定一次）"
             value={defaults?.qualityReviewPrompt ?? defaultQualityReviewPrompt}
+            variables={[
+              "sourceContent",
+              "factSheet",
+              "protectedAuthorityContent",
+              "providerContext",
+              "knowledgeContext",
+              "markdownContent",
+            ]}
+            description="正文生成后调用一次；结果写入任务审计，不触发再次改写。"
+            className="min-h-[32rem]"
           />
           <PromptTemplateField
             name="metadataStylePrompt"
-            label="5. 中文标题 / SEO 风格片段"
+            label="6. 中文标题 / SEO 风格片段"
             value={defaults?.metadataStylePrompt ?? defaultMetadataStylePrompt}
             description="通过 {metadataStylePrompt} 注入中文元信息完整模板。"
             className="min-h-28"
           />
           <PromptTemplateField
             name="metadataPrompt"
-            label="6. 中文标题 / SEO 完整 Prompt"
+            label="7. 中文标题 / SEO 完整 Prompt"
             value={defaults?.metadataPrompt ?? defaultMetadataPrompt}
             variables={["metadataStylePrompt", "markdownContent"]}
             description="用于标题、摘要、关键词、标签和推荐标签生成。"

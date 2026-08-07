@@ -163,7 +163,7 @@ export const defaultQualityReviewPrompt = `你是独立的事实审查员。请�
 6. 来源内部可直接计算的比较，不属于全市场结论。“本文所列套餐中价格最低”可以由价格表支持；“在同类市场中有竞争力”需要外部市场证据，二者必须区分。
 7. 对混合句按实质判断：如果只有其中一个精确参数、范围或保证性分句有问题，reason 必须指出具体问题部分，不要把同句中其余合理分析一并认定为无依据。
 
-只输出紧凑 JSON。数组中的旧字段仍需保留；同时请填写 issues，便于系统直接执行修订：
+只输出紧凑 JSON。数组中的旧字段仍需保留；同时请填写 issues，便于后台记录和人工复核：
 {
   "factualScore": 0到100的整数,
   "missingFacts": ["遗漏且影响读者决策的来源事实"],
@@ -180,7 +180,7 @@ export const defaultQualityReviewPrompt = `你是独立的事实审查员。请�
   "verdict": "pass 或 fail"
 }
 
-issues 的 candidateText 必须尽量逐字复制候选正文中的完整句子。unsupported_claim 必须明确标出需要删除的原句，不能只写抽象结论；distorted_fact 必须标出错误原句；missing_fact 必须标出来源中应补回的事实。候选正文通过前，所有 issues 都必须解决。
+issues 的 candidateText 必须尽量逐字复制候选正文中的完整句子。unsupported_claim 必须明确标出存在问题的原句，不能只写抽象结论；distorted_fact 必须标出错误原句；missing_fact 必须标出来源中遗漏的事实。本次只审查一次，不要输出修订稿。
 
 完整来源原文：
 {sourceContent}
@@ -208,9 +208,9 @@ issues 的 candidateText 必须尽量逐字复制候选正文中的完整句子�
 候选 Markdown：
 {markdownContent}`;
 
-const qualityReviewActionabilitySupplement = `
+const qualityReviewAuditSupplement = `
 
-审查结果必须可直接用于自动修订：旧版字段 missingFacts、unsupportedClaims、distortedFacts 继续输出；同时必须输出 issues 数组。issues 中每项使用 {"type":"missing_fact | unsupported_claim | distorted_fact","candidateText":"候选正文中的完整原句；遗漏事实留空","sourceText":"来源中应补回或替换的完整事实；无依据表述留空","reason":"具体原因"}。candidateText 必须逐字复制候选正文中的完整句子；unsupported_claim 必须标出需要删除的原句，不要只写抽象判断。`;
+审查结果必须可直接用于后台记录和人工复核：旧版字段 missingFacts、unsupportedClaims、distortedFacts 继续输出；同时必须输出 issues 数组。issues 中每项使用 {"type":"missing_fact | unsupported_claim | distorted_fact","candidateText":"候选正文中的完整原句；遗漏事实留空","sourceText":"来源中应补回或替换的完整事实；无依据表述留空","reason":"具体原因"}。candidateText 必须逐字复制候选正文中的完整句子；unsupported_claim 必须标出存在问题的原句，不要只写抽象判断。本次只审查一次，不要输出修订稿。`;
 
 const qualityReviewEditorialBoundarySupplement = `
 
@@ -231,7 +231,7 @@ export function resolveQualityReviewTemplate(value?: string | null) {
   if (!custom) return defaultQualityReviewPrompt;
   let resolved = custom;
   if (!custom.includes('"issues"') || !custom.includes("candidateText")) {
-    resolved += qualityReviewActionabilitySupplement;
+    resolved += qualityReviewAuditSupplement;
   }
   if (!custom.includes("合理编辑分析判定边界")) {
     resolved += qualityReviewEditorialBoundarySupplement;
@@ -359,7 +359,7 @@ export const defaultEnglishStylePrompt =
 export const defaultEnglishMetadataStylePrompt =
   "Write concise English SEO metadata for VPS/server deal readers. Prioritize provider name, price, specs, location, network route and buying intent. Keep the slug short and readable.";
 
-export const defaultMetadataPrompt = `你是服务器/VPS推广文章的 SEO 编辑。请根据已完成改写和正文完整性检查的 Markdown 正文生成文章元信息。
+export const defaultMetadataPrompt = `你是服务器/VPS推广文章的 SEO 编辑。请根据已完成单次改写和单次质量审查的 Markdown 正文生成文章元信息。
 
 元信息生成风格：
 {metadataStylePrompt}

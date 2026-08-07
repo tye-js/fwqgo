@@ -8,9 +8,7 @@ import {
   normalizeArticleHtml,
 } from "@fwqgo/core/content";
 import {
-  DEFAULT_AI_REWRITE_MAX_ATTEMPTS,
   MAX_AI_REWRITE_MAX_ATTEMPTS,
-  MIN_AI_REWRITE_MAX_ATTEMPTS,
 } from "@fwqgo/core/ai-rewrite-limits";
 import { parsePostgresIntegerId, slugify } from "@fwqgo/core/utils";
 import {
@@ -146,9 +144,9 @@ function getArticleRewriteProgress(input: {
   }
 
   const maxAttempts = Math.max(
-    MIN_AI_REWRITE_MAX_ATTEMPTS,
+    1,
     Math.min(
-      Math.trunc(input.maxAttempts ?? DEFAULT_AI_REWRITE_MAX_ATTEMPTS),
+      Math.trunc(input.maxAttempts ?? 1),
       MAX_AI_REWRITE_MAX_ATTEMPTS,
     ),
   );
