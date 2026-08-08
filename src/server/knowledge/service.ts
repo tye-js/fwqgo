@@ -5,6 +5,8 @@ import { db } from "@fwqgo/db";
 import { knowledgeArticles, knowledgeCategories } from "@fwqgo/db/schema";
 
 export type KnowledgeLanguage = "zh" | "en";
+export type KnowledgeContentRole =
+  "decision_core" | "decision_reference" | "post_purchase_guide";
 
 type KnowledgeArticleRow = typeof knowledgeArticles.$inferSelect;
 type KnowledgeCategoryRow = typeof knowledgeCategories.$inferSelect;
@@ -22,6 +24,7 @@ export type SaveKnowledgeDraftInput = {
   definition?: string | null;
   highlights?: string[] | null;
   quickTip?: string | null;
+  contentRole?: KnowledgeContentRole;
   content: string;
   keywords?: string | null;
   aliases?: string | null;
@@ -60,6 +63,7 @@ const TRANSLATION_CONTENT_FIELDS = [
   "definition",
   "highlights",
   "quickTip",
+  "contentRole",
   "content",
   "keywords",
   "aliases",
@@ -73,6 +77,7 @@ const PUBLIC_CONTENT_FIELDS = [
   "definition",
   "highlights",
   "quickTip",
+  "contentRole",
   "content",
   "keywords",
 ] as const;
@@ -81,6 +86,10 @@ function textOrNull(value: string | null | undefined) {
   const normalized = value?.trim();
   if (!normalized) return null;
   return normalized;
+}
+
+function normalizeContentRole(value: KnowledgeContentRole | undefined) {
+  return value ?? "decision_core";
 }
 
 function normalizeHighlights(value: string[] | null | undefined) {
@@ -121,10 +130,7 @@ function sameStringArray(left: string[] | null, right: string[] | null) {
 function contentFieldChanged(
   field: (typeof TRANSLATION_CONTENT_FIELDS)[number],
   current: KnowledgeArticleRow,
-  next: Pick<
-    KnowledgeArticleRow,
-    (typeof TRANSLATION_CONTENT_FIELDS)[number]
-  >,
+  next: Pick<KnowledgeArticleRow, (typeof TRANSLATION_CONTENT_FIELDS)[number]>,
 ) {
   if (field === "highlights") {
     return !sameStringArray(current.highlights, next.highlights);
@@ -327,6 +333,7 @@ export async function saveKnowledgeDraft(
       definition: textOrNull(input.definition),
       highlights: normalizeHighlights(input.highlights),
       quickTip: textOrNull(input.quickTip),
+      contentRole: normalizeContentRole(input.contentRole),
       content,
       keywords: textOrNull(input.keywords),
       aliases: textOrNull(input.aliases),
@@ -417,6 +424,11 @@ export async function saveKnowledgeDraft(
     }
     await ensureArticleSlugAvailable(tx, slug, current.id);
 
+    const nextNormalizedValues = {
+      ...normalizedValues,
+      contentRole: input.contentRole ?? current.contentRole,
+    };
+
     // Pair operations always lock the Chinese source before the English row.
     // Take the English lock before category locks to keep that order consistent.
     let translation =
@@ -437,11 +449,11 @@ export async function saveKnowledgeDraft(
       assertEnglishCategoryReady(nextCategory);
     }
 
-    const translationContentChanged = TRANSLATION_CONTENT_FIELDS.some(
-      (field) => contentFieldChanged(field, current, normalizedValues),
+    const translationContentChanged = TRANSLATION_CONTENT_FIELDS.some((field) =>
+      contentFieldChanged(field, current, nextNormalizedValues),
     );
-    const publicContentChanged = PUBLIC_CONTENT_FIELDS.some(
-      (field) => contentFieldChanged(field, current, normalizedValues),
+    const publicContentChanged = PUBLIC_CONTENT_FIELDS.some((field) =>
+      contentFieldChanged(field, current, nextNormalizedValues),
     );
 
     if (
@@ -459,7 +471,7 @@ export async function saveKnowledgeDraft(
     const [updated] = await tx
       .update(knowledgeArticles)
       .set({
-        ...normalizedValues,
+        ...nextNormalizedValues,
         categoryId: nextCategoryId,
         contentRevision: nextContentRevision,
         translatedFromRevision:

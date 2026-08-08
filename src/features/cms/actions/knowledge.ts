@@ -58,12 +58,19 @@ const articleInputSchema = z
     definition: optionalText(600, "卡片定义"),
     highlights: z
       .array(
-        z.string().trim().min(1, "核心要点不能为空").max(320, "单条核心要点不能超过 320 个字符"),
+        z
+          .string()
+          .trim()
+          .min(1, "核心要点不能为空")
+          .max(320, "单条核心要点不能超过 320 个字符"),
       )
       .max(3, "核心要点不能超过 3 条")
       .nullable()
       .optional(),
     quickTip: optionalText(600, "卡片速查"),
+    contentRole: z
+      .enum(["decision_core", "decision_reference", "post_purchase_guide"])
+      .default("decision_core"),
     content: z.string().trim().min(40, "正文至少 40 个字符").max(200_000),
     keywords: optionalText(2_000, "关键词"),
     aliases: optionalText(2_000, "别名"),
@@ -445,6 +452,7 @@ export async function getKnowledgeAdminOverview(
         slug: knowledgeArticles.slug,
         summary: knowledgeArticles.summary,
         definition: knowledgeArticles.definition,
+        contentRole: knowledgeArticles.contentRole,
         language: knowledgeArticles.language,
         categoryName: knowledgeCategories.name,
         categoryEnName: knowledgeCategories.enName,

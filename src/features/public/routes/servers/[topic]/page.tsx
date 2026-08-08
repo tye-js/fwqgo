@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import Header from "@/features/public/components/header";
 import Footer from "@/features/public/components/footer";
 import { ServerOfferTable } from "@/features/public/components/server-offer-table";
+import { ServerFitRecommendation } from "@/features/public/components/server-fit-recommendation";
 import { Badge } from "@/components/ui/badge";
 import {
   getServerOfferTopic,
@@ -244,6 +245,11 @@ async function ServerTopicContent({
 
       <section className="container mx-auto px-4 py-8 md:py-10">
         <ServerOfferTable offers={offers} />
+        <ServerFitRecommendation
+          offers={offers}
+          scopeKind="topic"
+          scopeLabel={topicInfo.title}
+        />
       </section>
 
       <section className="container mx-auto px-4 pb-12">

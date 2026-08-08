@@ -10,7 +10,7 @@ import {
   serverOffers,
   tags,
 } from "@fwqgo/db/schema";
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import {
   getServerOfferCollectionIndex,
   offerTopics,
@@ -133,7 +133,12 @@ export async function sitemapIndexGET() {
         contentUpdatedAt: knowledgeArticles.contentUpdatedAt,
       })
       .from(knowledgeArticles)
-      .where(eq(knowledgeArticles.published, true))
+      .where(
+        and(
+          eq(knowledgeArticles.published, true),
+          ne(knowledgeArticles.contentRole, "post_purchase_guide"),
+        ),
+      )
       .orderBy(desc(knowledgeArticles.contentUpdatedAt))
       .limit(1),
   ]);
@@ -381,7 +386,12 @@ export async function sitemapKnowledgeGET() {
       contentUpdatedAt: knowledgeArticles.contentUpdatedAt,
     })
     .from(knowledgeArticles)
-    .where(eq(knowledgeArticles.published, true))
+    .where(
+      and(
+        eq(knowledgeArticles.published, true),
+        ne(knowledgeArticles.contentRole, "post_purchase_guide"),
+      ),
+    )
     .orderBy(
       desc(knowledgeArticles.contentUpdatedAt),
       desc(knowledgeArticles.id),

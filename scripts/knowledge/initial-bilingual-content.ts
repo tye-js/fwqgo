@@ -6,6 +6,8 @@ export const KNOWLEDGE_CARD_VERSION = 1;
 
 type KnowledgePriority = "P0" | "P1";
 type KnowledgeLanguage = "zh" | "en";
+export type KnowledgeContentRole =
+  "decision_core" | "decision_reference" | "post_purchase_guide";
 
 type LocalizedKnowledgeDraft = {
   title: string;
@@ -344,9 +346,39 @@ export type KnowledgeUnit = {
   reviewMonths: 3 | 6 | 12;
   sourceKeys: KnowledgeSourceKey[];
   relatedIds: Array<`KB-${string}`>;
+  contentRole?: KnowledgeContentRole;
   zh: LocalizedKnowledgeDraft;
   en: LocalizedKnowledgeDraft;
 };
+
+const POST_PURCHASE_GUIDE_IDS = new Set([
+  "KB-021",
+  "KB-022",
+  "KB-023",
+  "KB-024",
+  "KB-025",
+  "KB-026",
+  "KB-028",
+  "KB-029",
+]);
+
+const DECISION_REFERENCE_IDS = new Set([
+  "KB-004",
+  "KB-005",
+  "KB-008",
+  "KB-010",
+  "KB-016",
+  "KB-018",
+  "KB-019",
+  "KB-027",
+]);
+
+function knowledgeContentRole(unit: KnowledgeUnit): KnowledgeContentRole {
+  if (unit.contentRole) return unit.contentRole;
+  if (POST_PURCHASE_GUIDE_IDS.has(unit.id)) return "post_purchase_guide";
+  if (DECISION_REFERENCE_IDS.has(unit.id)) return "decision_reference";
+  return "decision_core";
+}
 
 export const knowledgeUnits: KnowledgeUnit[] = [
   {
@@ -4484,6 +4516,7 @@ function renderRecord(
     definition: card.definition,
     highlights: card.highlights,
     quickTip: card.quickTip,
+    contentRole: knowledgeContentRole(unit),
     content,
     keywords: draft.keywords.join(", "),
     aliases: draft.aliases.join(", ") || null,

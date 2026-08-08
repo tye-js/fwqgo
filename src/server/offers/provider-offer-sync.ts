@@ -5,6 +5,7 @@ import {
   calculateMonthlyPriceUsd,
   getServerOfferTermMonths,
   normalizeServerOfferBillingCycle,
+  parseServerOfferVcpuCount,
 } from "@fwqgo/core/server-offer-price";
 import { parsePostgresIntegerId, slugify } from "@fwqgo/core/utils";
 import {
@@ -338,6 +339,12 @@ async function materializeOffer(
     productGroup: keepSpecs ? existing?.productGroup : candidate.productGroup,
     productType: keepSpecs ? existing?.productType : candidate.productType,
     cpu: keepSpecs ? existing?.cpu : candidate.cpu,
+    vcpuCount: keepSpecs
+      ? existing?.vcpuCount
+      : (() => {
+          const count = parseServerOfferVcpuCount(candidate.cpu);
+          return count === null ? null : String(count);
+        })(),
     memory: keepSpecs ? existing?.memory : candidate.memory,
     memoryMb: keepSpecs
       ? existing?.memoryMb

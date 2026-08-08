@@ -78,6 +78,13 @@ function splitKeywords(value: string | null) {
     .slice(0, 12);
 }
 
+function parseHighlight(value: string) {
+  const match = /^\*\*(.+?)\*\*\s*([：:])?\s*(.*)$/s.exec(value);
+  return match
+    ? { label: match[1]?.trim() ?? "", description: match[3]?.trim() ?? "" }
+    : { label: "", description: value };
+}
+
 function articlePath(language: PublicKnowledgeLanguage, slug: string) {
   return `${language === "en" ? "/en" : ""}/knowledge/${encodeURIComponent(slug)}`;
 }
@@ -258,6 +265,49 @@ async function KnowledgeArticleContent(props: {
           ) : null}
         </header>
 
+        {article.definition ||
+        article.highlights?.length ||
+        article.quickTip ? (
+          <section className="mx-auto mt-6 max-w-3xl rounded-lg border border-primary/20 bg-primary/[0.035] p-4 md:p-5">
+            {article.definition ? (
+              <p className="text-base font-semibold leading-7 text-foreground">
+                {article.definition}
+              </p>
+            ) : null}
+            {article.highlights?.length ? (
+              <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
+                {article.highlights.map((highlight) => {
+                  const parsed = parseHighlight(highlight);
+                  return (
+                    <li key={highlight} className="flex gap-2">
+                      <span
+                        aria-hidden="true"
+                        className="mt-2 size-1.5 shrink-0 rounded-full bg-primary"
+                      />
+                      <span>
+                        {parsed.label ? (
+                          <strong className="font-semibold text-foreground">
+                            {parsed.label}：
+                          </strong>
+                        ) : null}
+                        {parsed.description}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+            {article.quickTip ? (
+              <p className="mt-4 border-l-2 border-primary px-3 text-sm leading-6 text-muted-foreground">
+                <strong className="font-semibold text-foreground">
+                  {props.language === "en" ? "Check:" : "速查："}
+                </strong>{" "}
+                {article.quickTip}
+              </p>
+            ) : null}
+          </section>
+        ) : null}
+
         <div
           className={`${ARTICLE_PROSE_CLASS_NAME} mx-auto mt-8 max-w-3xl`}
           dangerouslySetInnerHTML={{ __html: contentHtml }}
@@ -268,13 +318,25 @@ async function KnowledgeArticleContent(props: {
             <h2 className="text-lg font-semibold">{languageCopy.sources}</h2>
             <ol className="mt-4 space-y-3 text-sm leading-6 text-muted-foreground">
               {article.sources.map((source) => (
-                <li key={source.citationKey} className="rounded-md border border-border/70 p-3">
+                <li
+                  key={source.citationKey}
+                  className="rounded-md border border-border/70 p-3"
+                >
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <span className="font-medium text-foreground">[{source.citationKey}] {source.title}</span>
-                    <span className="text-xs">{source.authorityTier} · {source.publisher}</span>
+                    <span className="font-medium text-foreground">
+                      [{source.citationKey}] {source.title}
+                    </span>
+                    <span className="text-xs">
+                      {source.authorityTier} · {source.publisher}
+                    </span>
                   </div>
                   <p className="mt-1">{source.claimScope}</p>
-                  <a className="mt-1 inline-block break-all text-primary hover:underline" href={source.canonicalUrl} rel="noreferrer" target="_blank">
+                  <a
+                    className="mt-1 inline-block break-all text-primary hover:underline"
+                    href={source.canonicalUrl}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
                     {source.canonicalUrl}
                   </a>
                 </li>

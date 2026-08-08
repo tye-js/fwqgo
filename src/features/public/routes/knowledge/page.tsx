@@ -31,20 +31,20 @@ export type KnowledgeSearchParams = {
 
 const copy = {
   zh: {
-    metadataTitle: "服务器知识库：配置、线路、机房与 IP 基础知识",
+    metadataTitle: "海外服务器适配知识库：三网、场景与配置判断",
     metadataDescription:
-      "查询 VPS、云服务器、独立服务器配置，CN2 GIA、CMI、BGP 等线路，以及机房、IP、网络和运维基础知识。",
+      "面向中国大陆电信、联通、移动用户，按业务用户地区、线路、服务器配置和 AI/流媒体场景判断海外服务器是否适合。",
     badge: "服务器知识库",
-    heading: "服务器配置、线路与网络知识",
+    heading: "先判断适不适合，再比较服务器",
     introduction:
-      "查询 VPS、云服务器、独立服务器的配置含义，了解线路、机房、IP、网络与常见应用场景。",
+      "从大陆用户运营商、目标用户地区、业务类型、项目规模和 AI/流媒体需求出发，理解套餐字段代表什么、哪些信息仍需自己测试。",
     searchLabel: "搜索知识库",
-    searchPlaceholder: "搜索 CN2 GIA、BGP、原生 IP、CPU、内存等",
+    searchPlaceholder: "搜索 电信、移动、CN2、Codex、流媒体、配置等",
     searchButton: "搜索",
     categoryNav: "知识分类",
     categoryQuickTitle: "分类速查",
     categoryQuickDescription:
-      "按配置、线路、机房、IP、运维与安全场景快速进入对应知识。",
+      "按购买判断、三网与地区、业务场景、AI/流媒体和配置验收快速进入对应知识。",
     categoryCount: (count: number) => `${count} 条知识`,
     allKnowledge: "全部知识",
     queryResult: (query: string) => `“${query}”的查询结果`,
@@ -57,20 +57,22 @@ const copy = {
     loading: "正在加载知识库...",
   },
   en: {
-    metadataTitle: "Server Knowledge Base: VPS, Networks, Data Centers, and IP",
+    metadataTitle:
+      "Overseas Server Fit Guide: Carriers, Workloads, and Specifications",
     metadataDescription:
-      "Learn how to choose and operate VPS, cloud, and dedicated servers, understand network routes and regions, and troubleshoot common IP, DNS, and deployment issues.",
+      "A bilingual guide for mainland-China users choosing overseas servers by carrier mix, audience location, workload, AI or streaming needs, and structured plan fields.",
     badge: "Server Knowledge Base",
-    heading: "Server configuration, routing, and network knowledge",
+    heading: "Check fit before comparing server plans",
     introduction:
-      "Learn how server resources, network routes, regions, IP addressing, and common operations affect real deployments.",
+      "Use carrier, audience, workload, AI/streaming, and sizing guidance to understand what a plan can and cannot tell you before you run your own tests.",
     searchLabel: "Search the knowledge base",
-    searchPlaceholder: "Search BGP, IPv6, DNS, CPU, memory, or MTR",
+    searchPlaceholder:
+      "Search Telecom, CMI, Codex, streaming, memory, or route",
     searchButton: "Search",
     categoryNav: "Knowledge categories",
     categoryQuickTitle: "Browse by category",
     categoryQuickDescription:
-      "Jump directly to server configuration, routing, regions, IP, operations, or security topics.",
+      "Jump directly to decision basics, carriers and regions, workloads, AI/streaming, or post-purchase verification.",
     categoryCount: (count: number) =>
       `${count} article${count === 1 ? "" : "s"}`,
     allKnowledge: "All knowledge",

@@ -1459,6 +1459,7 @@ export const serverOffers = pgTable(
     missingRuns: integer("missingRuns").default(0).notNull(),
     productType: varchar("productType", { length: 80 }).default("vps"),
     cpu: text("cpu"),
+    vcpuCount: numeric("vcpuCount", { precision: 6, scale: 2 }),
     memory: text("memory"),
     memoryMb: integer("memoryMb"),
     storage: text("storage"),
@@ -1626,6 +1627,10 @@ export const serverOffers = pgTable(
     legacyMonthlyPriceCheck: check(
       "server_offers_monthlyPriceUsd_check",
       sql`${table.monthlyPriceUsd} is null or ${table.monthlyPriceUsd} >= 0`,
+    ),
+    vcpuCountCheck: check(
+      "server_offers_vcpuCount_check",
+      sql`${table.vcpuCount} is null or ${table.vcpuCount} > 0`,
     ),
     legacyCurrencyCheck: check(
       "server_offers_currency_check",
@@ -2070,6 +2075,9 @@ export const knowledgeArticles = pgTable(
     definition: text("definition"),
     highlights: jsonb("highlights").$type<string[]>(),
     quickTip: text("quickTip"),
+    contentRole: varchar("contentRole", { length: 32 })
+      .default("decision_core")
+      .notNull(),
     content: text("content").notNull(),
     keywords: text("keywords"),
     aliases: text("aliases"),
@@ -2147,6 +2155,10 @@ export const knowledgeArticles = pgTable(
       "knowledge_articles_highlights_check",
       sql`${table.highlights} is null or (jsonb_typeof(${table.highlights}) = 'array' and jsonb_array_length(${table.highlights}) between 2 and 3)`,
     ),
+    contentRoleCheck: check(
+      "knowledge_articles_contentRole_check",
+      sql`${table.contentRole} in ('decision_core', 'decision_reference', 'post_purchase_guide')`,
+    ),
     languageCheck: check(
       "knowledge_articles_language_check",
       sql`${table.language} in ('zh', 'en')`,
@@ -2198,9 +2210,7 @@ export const postInternalLinks = pgTable(
     generatedBy: varchar("generatedBy", { length: 16 })
       .default("rule")
       .notNull(),
-    status: varchar("status", { length: 16 })
-      .default("suggested")
-      .notNull(),
+    status: varchar("status", { length: 16 }).default("suggested").notNull(),
     sourceContentHash: varchar("sourceContentHash", { length: 64 }).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
@@ -2587,7 +2597,9 @@ export const networkExperienceRuleSets = pgTable(
     engineVersion: varchar("engineVersion", { length: 120 }).notNull(),
     schemaVersion: integer("schemaVersion").notNull(),
     status: varchar("status", { length: 16 }).default("draft").notNull(),
-    snapshotJson: jsonb("snapshotJson").$type<Record<string, unknown>>().notNull(),
+    snapshotJson: jsonb("snapshotJson")
+      .$type<Record<string, unknown>>()
+      .notNull(),
     checksum: varchar("checksum", { length: 128 }).notNull(),
     revision: integer("revision").default(1).notNull(),
     changeSummary: text("changeSummary"),
@@ -2603,17 +2615,45 @@ export const networkExperienceRuleSets = pgTable(
     retiredAt: timestamp("retiredAt"),
   },
   (table) => ({
-    versionLabelUnique: unique("network_experience_rule_sets_versionLabel_unique").on(table.versionLabel),
-    publishedUnique: uniqueIndex("network_experience_rule_sets_published_unique")
+    versionLabelUnique: unique(
+      "network_experience_rule_sets_versionLabel_unique",
+    ).on(table.versionLabel),
+    publishedUnique: uniqueIndex(
+      "network_experience_rule_sets_published_unique",
+    )
       .on(table.status)
       .where(sql`${table.status} = 'published'`),
-    statusIdx: index("network_experience_rule_sets_status_createdAt_idx").on(table.status, table.createdAt),
-    statusCheck: check("network_experience_rule_sets_status_check", sql`${table.status} in ('draft', 'published', 'retired')`),
-    schemaVersionCheck: check("network_experience_rule_sets_schemaVersion_check", sql`${table.schemaVersion} >= 1`),
-    revisionCheck: check("network_experience_rule_sets_revision_check", sql`${table.revision} >= 1`),
-    createdByFk: foreignKey({ columns: [table.createdBy], foreignColumns: [users.id], name: "network_experience_rule_sets_createdBy_users_id_fk" }).onDelete("set null"),
-    reviewedByFk: foreignKey({ columns: [table.reviewedBy], foreignColumns: [users.id], name: "network_experience_rule_sets_reviewedBy_users_id_fk" }).onDelete("set null"),
-    publishedByFk: foreignKey({ columns: [table.publishedBy], foreignColumns: [users.id], name: "network_experience_rule_sets_publishedBy_users_id_fk" }).onDelete("set null"),
+    statusIdx: index("network_experience_rule_sets_status_createdAt_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+    statusCheck: check(
+      "network_experience_rule_sets_status_check",
+      sql`${table.status} in ('draft', 'published', 'retired')`,
+    ),
+    schemaVersionCheck: check(
+      "network_experience_rule_sets_schemaVersion_check",
+      sql`${table.schemaVersion} >= 1`,
+    ),
+    revisionCheck: check(
+      "network_experience_rule_sets_revision_check",
+      sql`${table.revision} >= 1`,
+    ),
+    createdByFk: foreignKey({
+      columns: [table.createdBy],
+      foreignColumns: [users.id],
+      name: "network_experience_rule_sets_createdBy_users_id_fk",
+    }).onDelete("set null"),
+    reviewedByFk: foreignKey({
+      columns: [table.reviewedBy],
+      foreignColumns: [users.id],
+      name: "network_experience_rule_sets_reviewedBy_users_id_fk",
+    }).onDelete("set null"),
+    publishedByFk: foreignKey({
+      columns: [table.publishedBy],
+      foreignColumns: [users.id],
+      name: "network_experience_rule_sets_publishedBy_users_id_fk",
+    }).onDelete("set null"),
   }),
 );
 
@@ -2632,24 +2672,63 @@ export const networkExperienceRules = pgTable(
     fit: varchar("fit", { length: 32 }).notNull(),
     basisStrength: varchar("basisStrength", { length: 16 }).notNull(),
     priority: integer("priority").default(0).notNull(),
-    conditionCodes: jsonb("conditionCodes").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
-    advantageCodes: jsonb("advantageCodes").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
-    riskCodes: jsonb("riskCodes").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
-    verificationCodes: jsonb("verificationCodes").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+    conditionCodes: jsonb("conditionCodes")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    advantageCodes: jsonb("advantageCodes")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    riskCodes: jsonb("riskCodes")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    verificationCodes: jsonb("verificationCodes")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
     sortOrder: integer("sortOrder").default(0).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
   },
   (table) => ({
-    ruleKeyUnique: unique("network_experience_rules_ruleSetId_ruleKey_unique").on(table.ruleSetId, table.ruleKey),
-    ruleSetIdx: index("network_experience_rules_ruleSetId_idx").on(table.ruleSetId, table.sortOrder),
-    lineIdx: index("network_experience_rules_networkLineId_idx").on(table.networkLineId),
-    ruleSetFk: foreignKey({ columns: [table.ruleSetId], foreignColumns: [networkExperienceRuleSets.id], name: "network_experience_rules_ruleSetId_network_experience_rule_sets_id_fk" }).onDelete("restrict"),
-    lineFk: foreignKey({ columns: [table.networkLineId], foreignColumns: [serverNetworkLines.id], name: "network_experience_rules_networkLineId_server_network_lines_id_fk" }).onDelete("restrict"),
-    carrierCheck: check("network_experience_rules_carrier_check", sql`${table.carrier} in ('telecom', 'unicom', 'mobile')`),
-    fitCheck: check("network_experience_rules_fit_check", sql`${table.fit} in ('usually_preferred', 'situational', 'usually_not_preferred', 'unknown')`),
-    basisCheck: check("network_experience_rules_basisStrength_check", sql`${table.basisStrength} in ('established', 'common', 'limited')`),
-    priorityCheck: check("network_experience_rules_priority_check", sql`${table.priority} between -100000 and 100000`),
+    ruleKeyUnique: unique(
+      "network_experience_rules_ruleSetId_ruleKey_unique",
+    ).on(table.ruleSetId, table.ruleKey),
+    ruleSetIdx: index("network_experience_rules_ruleSetId_idx").on(
+      table.ruleSetId,
+      table.sortOrder,
+    ),
+    lineIdx: index("network_experience_rules_networkLineId_idx").on(
+      table.networkLineId,
+    ),
+    ruleSetFk: foreignKey({
+      columns: [table.ruleSetId],
+      foreignColumns: [networkExperienceRuleSets.id],
+      name: "network_experience_rules_ruleSetId_network_experience_rule_sets_id_fk",
+    }).onDelete("restrict"),
+    lineFk: foreignKey({
+      columns: [table.networkLineId],
+      foreignColumns: [serverNetworkLines.id],
+      name: "network_experience_rules_networkLineId_server_network_lines_id_fk",
+    }).onDelete("restrict"),
+    carrierCheck: check(
+      "network_experience_rules_carrier_check",
+      sql`${table.carrier} in ('telecom', 'unicom', 'mobile')`,
+    ),
+    fitCheck: check(
+      "network_experience_rules_fit_check",
+      sql`${table.fit} in ('usually_preferred', 'situational', 'usually_not_preferred', 'unknown')`,
+    ),
+    basisCheck: check(
+      "network_experience_rules_basisStrength_check",
+      sql`${table.basisStrength} in ('established', 'common', 'limited')`,
+    ),
+    priorityCheck: check(
+      "network_experience_rules_priority_check",
+      sql`${table.priority} between -100000 and 100000`,
+    ),
   }),
 );
 
@@ -2666,8 +2745,16 @@ export const networkExperienceRuleSources = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.ruleId, table.sourceRevisionId] }),
-    ruleFk: foreignKey({ columns: [table.ruleId], foreignColumns: [networkExperienceRules.id], name: "network_experience_rule_sources_ruleId_network_experience_rules_id_fk" }).onDelete("restrict"),
-    sourceFk: foreignKey({ columns: [table.sourceRevisionId], foreignColumns: [knowledgeSourceRevisions.id], name: "network_experience_rule_sources_sourceRevisionId_knowledge_source_revisions_id_fk" }).onDelete("restrict"),
+    ruleFk: foreignKey({
+      columns: [table.ruleId],
+      foreignColumns: [networkExperienceRules.id],
+      name: "network_experience_rule_sources_ruleId_network_experience_rules_id_fk",
+    }).onDelete("restrict"),
+    sourceFk: foreignKey({
+      columns: [table.sourceRevisionId],
+      foreignColumns: [knowledgeSourceRevisions.id],
+      name: "network_experience_rule_sources_sourceRevisionId_knowledge_source_revisions_id_fk",
+    }).onDelete("restrict"),
   }),
 );
 
@@ -2680,9 +2767,20 @@ export const networkExperienceRuleArticles = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.ruleId, table.sourceArticleId] }),
-    ruleIdx: index("network_experience_rule_articles_ruleId_idx").on(table.ruleId, table.sortOrder),
-    ruleFk: foreignKey({ columns: [table.ruleId], foreignColumns: [networkExperienceRules.id], name: "network_experience_rule_articles_ruleId_network_experience_rules_id_fk" }).onDelete("restrict"),
-    articleFk: foreignKey({ columns: [table.sourceArticleId], foreignColumns: [knowledgeArticles.id], name: "network_experience_rule_articles_sourceArticleId_knowledge_articles_id_fk" }).onDelete("restrict"),
+    ruleIdx: index("network_experience_rule_articles_ruleId_idx").on(
+      table.ruleId,
+      table.sortOrder,
+    ),
+    ruleFk: foreignKey({
+      columns: [table.ruleId],
+      foreignColumns: [networkExperienceRules.id],
+      name: "network_experience_rule_articles_ruleId_network_experience_rules_id_fk",
+    }).onDelete("restrict"),
+    articleFk: foreignKey({
+      columns: [table.sourceArticleId],
+      foreignColumns: [knowledgeArticles.id],
+      name: "network_experience_rule_articles_sourceArticleId_knowledge_articles_id_fk",
+    }).onDelete("restrict"),
   }),
 );
 

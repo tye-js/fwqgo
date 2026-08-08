@@ -99,6 +99,19 @@ export function parseServerOfferTrafficGb(value: string | null | undefined) {
   return parseServerOfferStorageGb(value);
 }
 
+/**
+ * Parses only explicit vCPU/core quantities. Ambiguous CPU marketing text is
+ * intentionally left as null so fit rules can report missing data instead of
+ * inventing a capacity.
+ */
+export function parseServerOfferVcpuCount(value: string | null | undefined) {
+  const match = value?.match(
+    /(?:^|\b)([0-9]+(?:\.[0-9]+)?)\s*(?:v?cpu|核|cores?)\b/i,
+  );
+  const amount = parseSpecNumber(match?.[1]);
+  return amount ?? null;
+}
+
 export function isSupportedServerOfferCurrency(
   value: string | null | undefined,
 ) {

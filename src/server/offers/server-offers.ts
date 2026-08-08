@@ -24,6 +24,7 @@ import {
   parseServerOfferMemoryMb,
   parseServerOfferStorageGb,
   parseServerOfferTrafficGb,
+  parseServerOfferVcpuCount,
 } from "@fwqgo/core/server-offer-price";
 import {
   isServerOfferKind,
@@ -235,6 +236,7 @@ type ServerOfferDuplicateKeyInput = {
   providerName?: string | null;
   productType?: string | null;
   memoryMb?: number | null;
+  vcpuCount?: number | null;
   storageGb?: number | null;
   bandwidthMbps?: number | null;
   trafficGb?: number | null;
@@ -254,6 +256,7 @@ function makeDuplicateKey(
     resolvedProviderName ?? candidate.providerName ?? "",
     candidate.productType ?? "",
     candidate.memoryMb ?? "",
+    candidate.vcpuCount ?? "",
     candidate.storageGb ?? "",
     candidate.bandwidthMbps ?? "",
     candidate.trafficGb ?? "",
@@ -335,12 +338,22 @@ function serverOfferPublicSelect() {
     providerName: serverOffers.providerName,
     productType: serverOffers.productType,
     cpu: serverOffers.cpu,
+    vcpuCount: sql<
+      number | null
+    >`cast(${serverOffers.vcpuCount} as double precision)`,
     memory: serverOffers.memory,
+    memoryMb: serverOffers.memoryMb,
     storage: serverOffers.storage,
+    storageGb: serverOffers.storageGb,
+    storageType: serverOffers.storageType,
     bandwidth: serverOffers.bandwidth,
+    bandwidthMbps: serverOffers.bandwidthMbps,
     traffic: serverOffers.traffic,
+    trafficGb: serverOffers.trafficGb,
     region: serverOffers.region,
     lineType: serverOffers.lineType,
+    ipv4: serverOffers.ipv4,
+    ipv6: serverOffers.ipv6,
     priceAmount: serverOffers.priceAmount,
     monthlyPriceUsd: serverOffers.monthlyPriceUsd,
     currency: serverOffers.currency,
@@ -921,6 +934,7 @@ export async function getAdminServerOffers(
       offerKind: serverOffers.offerKind,
       productType: serverOffers.productType,
       cpu: serverOffers.cpu,
+      vcpuCount: serverOffers.vcpuCount,
       memory: serverOffers.memory,
       storage: serverOffers.storage,
       bandwidth: serverOffers.bandwidth,
@@ -1189,6 +1203,7 @@ export type ServerOfferUpdateInput = {
   productGroup?: string | null;
   productType?: string | null;
   cpu?: string | null;
+  vcpuCount?: number | null;
   memory?: string | null;
   storage?: string | null;
   bandwidth?: string | null;
@@ -1407,6 +1422,15 @@ export async function updateServerOffer(
         productGroup: input.productGroup ?? null,
         productType,
         cpu: input.cpu ?? null,
+        vcpuCount:
+          input.vcpuCount !== undefined
+            ? input.vcpuCount === null
+              ? null
+              : String(input.vcpuCount)
+            : (() => {
+                const count = parseServerOfferVcpuCount(input.cpu);
+                return count === null ? null : String(count);
+              })(),
         memory: input.memory ?? null,
         memoryMb,
         storage: input.storage ?? null,

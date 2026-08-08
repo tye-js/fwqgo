@@ -68,6 +68,8 @@ import { useUnsavedChangesGuard } from "@/features/cms/hooks/use-unsaved-changes
 import { cn } from "@fwqgo/core/utils";
 
 type KnowledgeLanguage = "zh" | "en";
+type KnowledgeContentRole =
+  "decision_core" | "decision_reference" | "post_purchase_guide";
 
 type KnowledgeCategoryRow = {
   id: number;
@@ -87,6 +89,7 @@ type KnowledgeArticleListRow = {
   slug: string;
   summary: string | null;
   definition: string | null;
+  contentRole: string;
   language: string;
   categoryName: string;
   categoryEnName: string | null;
@@ -122,6 +125,7 @@ type KnowledgeArticleEditorRow = {
   slug: string;
   summary: string | null;
   definition: string | null;
+  contentRole: string;
   highlights: string[] | null;
   quickTip: string | null;
   content: string;
@@ -160,6 +164,7 @@ type ArticleFormState = {
   slug: string;
   summary: string;
   definition: string;
+  contentRole: KnowledgeContentRole;
   highlights: string;
   quickTip: string;
   content: string;
@@ -168,6 +173,14 @@ type ArticleFormState = {
   retrievalTerms: string;
   sourceNotes: string;
 };
+
+function normalizeContentRole(
+  value: string | null | undefined,
+): KnowledgeContentRole {
+  return value === "decision_reference" || value === "post_purchase_guide"
+    ? value
+    : "decision_core";
+}
 
 type ArticleStatusState = {
   id?: number;
@@ -197,6 +210,7 @@ function createArticleForm(
       slug: article.slug,
       summary: article.summary ?? "",
       definition: article.definition ?? "",
+      contentRole: normalizeContentRole(article.contentRole),
       highlights: (article.highlights ?? []).join("\n"),
       quickTip: article.quickTip ?? "",
       content: article.content,
@@ -217,6 +231,7 @@ function createArticleForm(
     slug: "",
     summary: "",
     definition: "",
+    contentRole: "decision_core",
     highlights: "",
     quickTip: "",
     content: "",
@@ -262,6 +277,7 @@ function articleFormsEqual(left: ArticleFormState, right: ArticleFormState) {
     left.slug === right.slug &&
     left.summary === right.summary &&
     left.definition === right.definition &&
+    left.contentRole === right.contentRole &&
     left.highlights === right.highlights &&
     left.quickTip === right.quickTip &&
     left.content === right.content &&
@@ -477,6 +493,7 @@ export function KnowledgeManager({
           definition: form.definition,
           highlights: parseHighlightLines(form.highlights),
           quickTip: form.quickTip,
+          contentRole: form.contentRole,
           content: form.content,
           keywords: form.keywords,
           aliases: form.aliases,
@@ -1068,234 +1085,261 @@ export function KnowledgeManager({
             aria-busy={savingArticle}
           >
             <fieldset disabled={savingArticle}>
-              <fieldset
-                disabled={contentLocked}
-                className="min-w-0 space-y-5"
-              >
-              {categories.length === 0 ? (
-                <div className="rounded-md border border-amber-300/70 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
-                  请先创建至少一个知识分类，再新建知识条目。
-                </div>
-              ) : null}
+              <fieldset disabled={contentLocked} className="min-w-0 space-y-5">
+                {categories.length === 0 ? (
+                  <div className="rounded-md border border-amber-300/70 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
+                    请先创建至少一个知识分类，再新建知识条目。
+                  </div>
+                ) : null}
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <FormField id="knowledge-title" label="标题">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <FormField id="knowledge-title" label="标题">
+                    <Input
+                      id="knowledge-title"
+                      value={form.title}
+                      onChange={(event) =>
+                        updateForm("title", event.target.value)
+                      }
+                      required
+                    />
+                  </FormField>
+                  <FormField
+                    id="knowledge-category"
+                    label="分类"
+                    hint={form.language === "en" ? "继承中文源稿" : undefined}
+                  >
+                    <Select
+                      value={form.categoryId}
+                      disabled={form.language === "en"}
+                      onValueChange={(value) => updateForm("categoryId", value)}
+                    >
+                      <SelectTrigger id="knowledge-category">
+                        <SelectValue placeholder="选择分类" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem
+                            key={category.id}
+                            value={String(category.id)}
+                          >
+                            {form.language === "en"
+                              ? (category.enName ?? category.name)
+                              : category.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormField>
+                </div>
+
+                <FormField
+                  id="knowledge-slug"
+                  label="Slug"
+                  hint={
+                    status.publishedAt ? "首次发布后已锁定" : "留空时按标题生成"
+                  }
+                >
                   <Input
-                    id="knowledge-title"
-                    value={form.title}
-                    onChange={(event) =>
-                      updateForm("title", event.target.value)
+                    id="knowledge-slug"
+                    value={form.slug}
+                    disabled={Boolean(status.publishedAt)}
+                    onChange={(event) => updateForm("slug", event.target.value)}
+                    placeholder={
+                      form.language === "en"
+                        ? "server-routing-guide"
+                        : "例如 cn2-gia"
                     }
-                    required
                   />
                 </FormField>
+
+                <FormField id="knowledge-summary" label="摘要" hint="发布必填">
+                  <Textarea
+                    id="knowledge-summary"
+                    value={form.summary}
+                    onChange={(event) =>
+                      updateForm("summary", event.target.value)
+                    }
+                    rows={3}
+                  />
+                </FormField>
+
                 <FormField
-                  id="knowledge-category"
-                  label="分类"
-                  hint={form.language === "en" ? "继承中文源稿" : undefined}
+                  id="knowledge-content-role"
+                  label="内容角色"
+                  hint="核心首页只展示决策内容；旧教程保留原 URL 但不进入推荐"
                 >
                   <Select
-                    value={form.categoryId}
-                    disabled={form.language === "en"}
-                    onValueChange={(value) => updateForm("categoryId", value)}
+                    value={form.contentRole}
+                    onValueChange={(value) =>
+                      updateForm("contentRole", value as KnowledgeContentRole)
+                    }
                   >
-                    <SelectTrigger id="knowledge-category">
-                      <SelectValue placeholder="选择分类" />
+                    <SelectTrigger
+                      id="knowledge-content-role"
+                      className="min-h-11"
+                    >
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {categories.map((category) => (
-                        <SelectItem
-                          key={category.id}
-                          value={String(category.id)}
-                        >
-                          {form.language === "en"
-                            ? (category.enName ?? category.name)
-                            : category.name}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value="decision_core">决策核心</SelectItem>
+                      <SelectItem value="decision_reference">
+                        决策参考
+                      </SelectItem>
+                      <SelectItem value="post_purchase_guide">
+                        购买后教程
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </FormField>
-              </div>
 
-              <FormField
-                id="knowledge-slug"
-                label="Slug"
-                hint={
-                  status.publishedAt ? "首次发布后已锁定" : "留空时按标题生成"
-                }
-              >
-                <Input
-                  id="knowledge-slug"
-                  value={form.slug}
-                  disabled={Boolean(status.publishedAt)}
-                  onChange={(event) => updateForm("slug", event.target.value)}
-                  placeholder={
-                    form.language === "en"
-                      ? "server-routing-guide"
-                      : "例如 cn2-gia"
-                  }
-                />
-              </FormField>
-
-              <FormField id="knowledge-summary" label="摘要" hint="发布必填">
-                <Textarea
-                  id="knowledge-summary"
-                  value={form.summary}
-                  onChange={(event) =>
-                    updateForm("summary", event.target.value)
-                  }
-                  rows={3}
-                />
-              </FormField>
-
-              <div className="space-y-4 rounded-md border border-border/70 bg-muted/20 p-4">
-                <div>
-                  <h3 className="text-sm font-semibold">知识卡片</h3>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    中英文稿分别维护；前台卡片只展示定义、核心要点和速查，摘要继续用于 SEO 与详情内容。
-                  </p>
-                </div>
-                <FormField
-                  id="knowledge-definition"
-                  label="一句话定义"
-                  hint="发布必填，建议 1 句"
-                >
-                  <Textarea
+                <div className="space-y-4 rounded-md border border-border/70 bg-muted/20 p-4">
+                  <div>
+                    <h3 className="text-sm font-semibold">知识卡片</h3>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      中英文稿分别维护；前台卡片只展示定义、核心要点和速查，摘要继续用于
+                      SEO 与详情内容。
+                    </p>
+                  </div>
+                  <FormField
                     id="knowledge-definition"
-                    value={form.definition}
-                    onChange={(event) =>
-                      updateForm("definition", event.target.value)
-                    }
-                    rows={2}
-                    maxLength={600}
-                    placeholder={
-                      form.language === "en"
-                        ? "Define the topic in one concise sentence."
-                        : "用一句话说明这个知识点解决什么问题。"
-                    }
+                    label="一句话定义"
+                    hint="发布必填，建议 1 句"
+                  >
+                    <Textarea
+                      id="knowledge-definition"
+                      value={form.definition}
+                      onChange={(event) =>
+                        updateForm("definition", event.target.value)
+                      }
+                      rows={2}
+                      maxLength={600}
+                      placeholder={
+                        form.language === "en"
+                          ? "Define the topic in one concise sentence."
+                          : "用一句话说明这个知识点解决什么问题。"
+                      }
+                    />
+                  </FormField>
+                  <FormField
+                    id="knowledge-highlights"
+                    label="核心要点"
+                    hint="发布必填，每行 1 条，共 2–3 条"
+                  >
+                    <Textarea
+                      id="knowledge-highlights"
+                      value={form.highlights}
+                      onChange={(event) =>
+                        updateForm("highlights", event.target.value)
+                      }
+                      rows={5}
+                      placeholder={
+                        form.language === "en"
+                          ? "**Key term**: concise explanation"
+                          : "**重点词**：简短解释"
+                      }
+                    />
+                  </FormField>
+                  <FormField
+                    id="knowledge-quick-tip"
+                    label="速查 / 避坑"
+                    hint="发布必填，给出可执行检查"
+                  >
+                    <Textarea
+                      id="knowledge-quick-tip"
+                      value={form.quickTip}
+                      onChange={(event) =>
+                        updateForm("quickTip", event.target.value)
+                      }
+                      rows={2}
+                      maxLength={600}
+                      placeholder={
+                        form.language === "en"
+                          ? "State one practical check or pitfall."
+                          : "写一条可验证的检查方法或避坑建议。"
+                      }
+                    />
+                  </FormField>
+                </div>
+
+                <FormField id="knowledge-content" label="正文" hint="Markdown">
+                  <MarkdownEditor
+                    content={form.content}
+                    onChange={(value) => updateForm("content", value)}
+                    minHeightClassName="min-h-[420px]"
                   />
                 </FormField>
+
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <FormField
+                    id="knowledge-keywords"
+                    label="关键词"
+                    hint="发布必填"
+                  >
+                    <Textarea
+                      id="knowledge-keywords"
+                      value={form.keywords}
+                      onChange={(event) =>
+                        updateForm("keywords", event.target.value)
+                      }
+                      rows={4}
+                    />
+                  </FormField>
+                  <FormField
+                    id="knowledge-aliases"
+                    label="别名"
+                    hint="仅真实别名"
+                  >
+                    <Textarea
+                      id="knowledge-aliases"
+                      value={form.aliases}
+                      onChange={(event) =>
+                        updateForm("aliases", event.target.value)
+                      }
+                      rows={4}
+                    />
+                  </FormField>
+                  <FormField
+                    id="knowledge-retrieval"
+                    label="AI 检索词"
+                    hint="发布必填"
+                  >
+                    <Textarea
+                      id="knowledge-retrieval"
+                      value={form.retrievalTerms}
+                      onChange={(event) =>
+                        updateForm("retrievalTerms", event.target.value)
+                      }
+                      rows={4}
+                    />
+                  </FormField>
+                </div>
+
                 <FormField
-                  id="knowledge-highlights"
-                  label="核心要点"
-                  hint="发布必填，每行 1 条，共 2–3 条"
+                  id="knowledge-source"
+                  label="来源说明"
+                  hint="发布必填，仅后台可见"
                 >
                   <Textarea
-                    id="knowledge-highlights"
-                    value={form.highlights}
+                    id="knowledge-source"
+                    value={form.sourceNotes}
                     onChange={(event) =>
-                      updateForm("highlights", event.target.value)
+                      updateForm("sourceNotes", event.target.value)
                     }
                     rows={5}
-                    placeholder={
-                      form.language === "en"
-                        ? "**Key term**: concise explanation"
-                        : "**重点词**：简短解释"
-                    }
+                    placeholder="事实等级｜核验日期｜URL｜支持主张｜审核人｜下次复核日｜风险"
                   />
                 </FormField>
-                <FormField
-                  id="knowledge-quick-tip"
-                  label="速查 / 避坑"
-                  hint="发布必填，给出可执行检查"
-                >
-                  <Textarea
-                    id="knowledge-quick-tip"
-                    value={form.quickTip}
-                    onChange={(event) =>
-                      updateForm("quickTip", event.target.value)
-                    }
-                    rows={2}
-                    maxLength={600}
-                    placeholder={
-                      form.language === "en"
-                        ? "State one practical check or pitfall."
-                        : "写一条可验证的检查方法或避坑建议。"
-                    }
-                  />
-                </FormField>
-              </div>
 
-              <FormField id="knowledge-content" label="正文" hint="Markdown">
-                <MarkdownEditor
-                  content={form.content}
-                  onChange={(value) => updateForm("content", value)}
-                  minHeightClassName="min-h-[420px]"
-                />
-              </FormField>
-
-              <div className="grid gap-4 lg:grid-cols-3">
-                <FormField
-                  id="knowledge-keywords"
-                  label="关键词"
-                  hint="发布必填"
-                >
-                  <Textarea
-                    id="knowledge-keywords"
-                    value={form.keywords}
-                    onChange={(event) =>
-                      updateForm("keywords", event.target.value)
-                    }
-                    rows={4}
-                  />
-                </FormField>
-                <FormField
-                  id="knowledge-aliases"
-                  label="别名"
-                  hint="仅真实别名"
-                >
-                  <Textarea
-                    id="knowledge-aliases"
-                    value={form.aliases}
-                    onChange={(event) =>
-                      updateForm("aliases", event.target.value)
-                    }
-                    rows={4}
-                  />
-                </FormField>
-                <FormField
-                  id="knowledge-retrieval"
-                  label="AI 检索词"
-                  hint="发布必填"
-                >
-                  <Textarea
-                    id="knowledge-retrieval"
-                    value={form.retrievalTerms}
-                    onChange={(event) =>
-                      updateForm("retrievalTerms", event.target.value)
-                    }
-                    rows={4}
-                  />
-                </FormField>
-              </div>
-
-              <FormField
-                id="knowledge-source"
-                label="来源说明"
-                hint="发布必填，仅后台可见"
-              >
-                <Textarea
-                  id="knowledge-source"
-                  value={form.sourceNotes}
-                  onChange={(event) =>
-                    updateForm("sourceNotes", event.target.value)
-                  }
-                  rows={5}
-                  placeholder="事实等级｜核验日期｜URL｜支持主张｜审核人｜下次复核日｜风险"
-                />
-              </FormField>
-
-              <div className="flex justify-end border-t border-border/70 pt-4">
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={savingArticle || categories.length === 0}
-                >
-                  <Save className="size-4" />
-                  {savingArticle ? "保存中..." : "保存草稿"}
-                </Button>
-              </div>
+                <div className="flex justify-end border-t border-border/70 pt-4">
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={savingArticle || categories.length === 0}
+                  >
+                    <Save className="size-4" />
+                    {savingArticle ? "保存中..." : "保存草稿"}
+                  </Button>
+                </div>
               </fieldset>
             </fieldset>
           </form>

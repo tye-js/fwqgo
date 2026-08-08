@@ -27,8 +27,7 @@ const MAX_INLINE_LINKS = 4;
 const AUTO_ACTIVATE_INLINE_SCORE = 80;
 
 export type InternalLinkGenerationMode =
-  | "suggestions-only"
-  | "activate-high-confidence";
+  "suggestions-only" | "activate-high-confidence";
 
 export type PublicArticleInternalLink = {
   id: number;
@@ -96,7 +95,8 @@ function excerptForAnchor(content: string, anchor: string) {
 }
 
 async function loadTagsByPostIds(postIds: number[]) {
-  if (postIds.length === 0) return new Map<number, Array<{ id: number; name: string }>>();
+  if (postIds.length === 0)
+    return new Map<number, Array<{ id: number; name: string }>>();
 
   const rows = await db
     .select({ postId: postTags.postId, id: tags.id, name: tags.name })
@@ -127,7 +127,10 @@ async function loadGenerationContext(postId: number) {
     .from(posts)
     .where(eq(posts.id, postId))
     .limit(1);
-  if (!sourcePost || (sourcePost.language !== "zh" && sourcePost.language !== "en")) {
+  if (
+    !sourcePost ||
+    (sourcePost.language !== "zh" && sourcePost.language !== "en")
+  ) {
     return null;
   }
 
@@ -191,6 +194,7 @@ async function loadGenerationContext(postId: number) {
       and(
         eq(knowledgeArticles.language, sourcePost.language),
         eq(knowledgeArticles.published, true),
+        ne(knowledgeArticles.contentRole, "post_purchase_guide"),
       ),
     )
     .limit(300);
@@ -250,19 +254,22 @@ export async function regeneratePostInternalLinks(input: {
         right.candidate.id - left.candidate.id,
     )
     .slice(0, MAX_RELATED_POST_LINKS)
-    .map(({ candidate, relevance }) => ({
-      sourcePostId: input.postId,
-      targetType: "post",
-      targetKey: `post:${candidate.id}`,
-      targetPostId: candidate.id,
-      language: context.sourcePost.language,
-      placement: "related_post",
-      score: relevance.score,
-      reason: relevance.reasons.join("；"),
-      generatedBy,
-      status: mode === "suggestions-only" ? "suggested" : "active",
-      sourceContentHash,
-    } as const));
+    .map(
+      ({ candidate, relevance }) =>
+        ({
+          sourcePostId: input.postId,
+          targetType: "post",
+          targetKey: `post:${candidate.id}`,
+          targetPostId: candidate.id,
+          language: context.sourcePost.language,
+          placement: "related_post",
+          score: relevance.score,
+          reason: relevance.reasons.join("；"),
+          generatedBy,
+          status: mode === "suggestions-only" ? "suggested" : "active",
+          sourceContentHash,
+        }) as const,
+    );
 
   const scoredKnowledge = context.knowledgeRows
     .map((candidate) => ({
@@ -282,53 +289,60 @@ export async function regeneratePostInternalLinks(input: {
   const inlineLinks = scoredKnowledge
     .filter(({ anchorText }) => Boolean(anchorText))
     .slice(0, MAX_INLINE_LINKS)
-    .map(({ candidate, anchorText, relevance }) => ({
-      sourcePostId: input.postId,
-      targetType: "knowledge",
-      targetKey: `knowledge:${candidate.id}`,
-      targetKnowledgeArticleId: candidate.id,
-      language: context.sourcePost.language,
-      placement: "inline",
-      anchorText: anchorText!,
-      sourceExcerpt: excerptForAnchor(context.sourcePost.content, anchorText!),
-      occurrenceIndex: 0,
-      score: relevance.score,
-      reason: relevance.reasons.join("；"),
-      generatedBy,
-      status:
-        mode === "activate-high-confidence" &&
-        relevance.score >= AUTO_ACTIVATE_INLINE_SCORE
-          ? "active"
-          : "suggested",
-      sourceContentHash,
-    } as const));
+    .map(
+      ({ candidate, anchorText, relevance }) =>
+        ({
+          sourcePostId: input.postId,
+          targetType: "knowledge",
+          targetKey: `knowledge:${candidate.id}`,
+          targetKnowledgeArticleId: candidate.id,
+          language: context.sourcePost.language,
+          placement: "inline",
+          anchorText: anchorText!,
+          sourceExcerpt: excerptForAnchor(
+            context.sourcePost.content,
+            anchorText!,
+          ),
+          occurrenceIndex: 0,
+          score: relevance.score,
+          reason: relevance.reasons.join("；"),
+          generatedBy,
+          status:
+            mode === "activate-high-confidence" &&
+            relevance.score >= AUTO_ACTIVATE_INLINE_SCORE
+              ? "active"
+              : "suggested",
+          sourceContentHash,
+        }) as const,
+    );
   const inlineTargetKeys = new Set(inlineLinks.map((link) => link.targetKey));
   const relatedKnowledgeLinks = scoredKnowledge
     .filter(
       ({ candidate }) => !inlineTargetKeys.has(`knowledge:${candidate.id}`),
     )
     .slice(0, MAX_RELATED_KNOWLEDGE_LINKS)
-    .map(({ candidate, relevance }) => ({
-      sourcePostId: input.postId,
-      targetType: "knowledge",
-      targetKey: `knowledge:${candidate.id}`,
-      targetKnowledgeArticleId: candidate.id,
-      language: context.sourcePost.language,
-      placement: "related_knowledge",
-      score: relevance.score,
-      reason: relevance.reasons.join("；"),
-      generatedBy,
-      status: mode === "suggestions-only" ? "suggested" : "active",
-      sourceContentHash,
-    } as const));
+    .map(
+      ({ candidate, relevance }) =>
+        ({
+          sourcePostId: input.postId,
+          targetType: "knowledge",
+          targetKey: `knowledge:${candidate.id}`,
+          targetKnowledgeArticleId: candidate.id,
+          language: context.sourcePost.language,
+          placement: "related_knowledge",
+          score: relevance.score,
+          reason: relevance.reasons.join("；"),
+          generatedBy,
+          status: mode === "suggestions-only" ? "suggested" : "active",
+          sourceContentHash,
+        }) as const,
+    );
 
   const generated = [
     ...relatedPostLinks,
     ...inlineLinks,
     ...relatedKnowledgeLinks,
-  ].filter(
-    (link) => !protectedKeys.has(`${link.targetKey}:${link.placement}`),
-  );
+  ].filter((link) => !protectedKeys.has(`${link.targetKey}:${link.placement}`));
 
   await db.transaction(async (tx) => {
     await tx
@@ -386,7 +400,12 @@ export async function readPublicPostInternalLinks(
     .where(eq(posts.id, postId))
     .limit(1);
   if (sourcePost?.language !== language) {
-    return { inline: [], relatedKnowledge: [], relatedPosts: [], nextSteps: [] };
+    return {
+      inline: [],
+      relatedKnowledge: [],
+      relatedPosts: [],
+      nextSteps: [],
+    };
   }
   const currentContentHash = contentHash(sourcePost.content);
 
@@ -412,6 +431,7 @@ export async function readPublicPostInternalLinks(
       knowledgeSlug: knowledgeArticles.slug,
       knowledgeLanguage: knowledgeArticles.language,
       knowledgePublished: knowledgeArticles.published,
+      knowledgeContentRole: knowledgeArticles.contentRole,
       categoryName: categories.name,
       categoryEnName: categories.enName,
       categorySlug: categories.slug,
@@ -426,10 +446,7 @@ export async function readPublicPostInternalLinks(
     .leftJoin(posts, eq(postInternalLinks.targetPostId, posts.id))
     .leftJoin(
       knowledgeArticles,
-      eq(
-        postInternalLinks.targetKnowledgeArticleId,
-        knowledgeArticles.id,
-      ),
+      eq(postInternalLinks.targetKnowledgeArticleId, knowledgeArticles.id),
     )
     .leftJoin(categories, eq(postInternalLinks.targetCategoryId, categories.id))
     .leftJoin(tags, eq(postInternalLinks.targetTagId, tags.id))
@@ -450,66 +467,69 @@ export async function readPublicPostInternalLinks(
       row.postTitle &&
       row.postSlug
     ) {
-      return [{
-        id: row.id,
-        targetKey: row.targetKey,
-        targetType: row.targetType,
-        placement: row.placement,
-        title: row.postTitle,
-        description: row.postDescription,
-        href: `${language === "en" ? "/en" : ""}/fwq/posts/${encodeURIComponent(row.postSlug)}`,
-        anchorText: row.anchorText,
-        occurrenceIndex: row.occurrenceIndex,
-        score: row.score,
-        reason: row.reason,
-      }];
+      return [
+        {
+          id: row.id,
+          targetKey: row.targetKey,
+          targetType: row.targetType,
+          placement: row.placement,
+          title: row.postTitle,
+          description: row.postDescription,
+          href: `${language === "en" ? "/en" : ""}/fwq/posts/${encodeURIComponent(row.postSlug)}`,
+          anchorText: row.anchorText,
+          occurrenceIndex: row.occurrenceIndex,
+          score: row.score,
+          reason: row.reason,
+        },
+      ];
     }
     if (
       row.targetType === "knowledge" &&
       row.knowledgePublished &&
       row.knowledgeLanguage === language &&
+      row.knowledgeContentRole !== "post_purchase_guide" &&
       row.knowledgeTitle &&
       row.knowledgeSlug
     ) {
-      return [{
-        id: row.id,
-        targetKey: row.targetKey,
-        targetType: row.targetType,
-        placement: row.placement,
-        title: row.knowledgeTitle,
-        description: row.knowledgeSummary,
-        href: `${language === "en" ? "/en" : ""}/knowledge/${encodeURIComponent(row.knowledgeSlug)}`,
-        anchorText: row.anchorText,
-        occurrenceIndex: row.occurrenceIndex,
-        score: row.score,
-        reason: row.reason,
-      }];
+      return [
+        {
+          id: row.id,
+          targetKey: row.targetKey,
+          targetType: row.targetType,
+          placement: row.placement,
+          title: row.knowledgeTitle,
+          description: row.knowledgeSummary,
+          href: `${language === "en" ? "/en" : ""}/knowledge/${encodeURIComponent(row.knowledgeSlug)}`,
+          anchorText: row.anchorText,
+          occurrenceIndex: row.occurrenceIndex,
+          score: row.score,
+          reason: row.reason,
+        },
+      ];
     }
-    if (
-      row.targetType === "category" &&
-      row.categoryName &&
-      row.categorySlug
-    ) {
-      return [{
-        id: row.id,
-        targetKey: row.targetKey,
-        targetType: row.targetType,
-        placement: row.placement,
-        title:
-          language === "en"
-            ? nonEmptyOr(row.categoryEnName, row.categoryName)
-            : row.categoryName,
-        description: null,
-        href: localizedCategoryHref({
-          language,
-          slug: row.categorySlug,
-          enSlug: row.categoryEnSlug,
-        }),
-        anchorText: row.anchorText,
-        occurrenceIndex: row.occurrenceIndex,
-        score: row.score,
-        reason: row.reason,
-      }];
+    if (row.targetType === "category" && row.categoryName && row.categorySlug) {
+      return [
+        {
+          id: row.id,
+          targetKey: row.targetKey,
+          targetType: row.targetType,
+          placement: row.placement,
+          title:
+            language === "en"
+              ? nonEmptyOr(row.categoryEnName, row.categoryName)
+              : row.categoryName,
+          description: null,
+          href: localizedCategoryHref({
+            language,
+            slug: row.categorySlug,
+            enSlug: row.categoryEnSlug,
+          }),
+          anchorText: row.anchorText,
+          occurrenceIndex: row.occurrenceIndex,
+          score: row.score,
+          reason: row.reason,
+        },
+      ];
     }
     if (
       row.targetType === "tag" &&
@@ -517,43 +537,49 @@ export async function readPublicPostInternalLinks(
       row.tagName &&
       row.tagSlug
     ) {
-      return [{
-        id: row.id,
-        targetKey: row.targetKey,
-        targetType: row.targetType,
-        placement: row.placement,
-        title:
-          language === "en" ? nonEmptyOr(row.tagEnName, row.tagName) : row.tagName,
-        description: null,
-        href: localizedTagHref({
-          language,
-          slug: row.tagSlug,
-          enSlug: row.tagEnSlug,
-        }),
-        anchorText: row.anchorText,
-        occurrenceIndex: row.occurrenceIndex,
-        score: row.score,
-        reason: row.reason,
-      }];
+      return [
+        {
+          id: row.id,
+          targetKey: row.targetKey,
+          targetType: row.targetType,
+          placement: row.placement,
+          title:
+            language === "en"
+              ? nonEmptyOr(row.tagEnName, row.tagName)
+              : row.tagName,
+          description: null,
+          href: localizedTagHref({
+            language,
+            slug: row.tagSlug,
+            enSlug: row.tagEnSlug,
+          }),
+          anchorText: row.anchorText,
+          occurrenceIndex: row.occurrenceIndex,
+          score: row.score,
+          reason: row.reason,
+        },
+      ];
     }
     if (
       (row.targetType === "tool" || row.targetType === "server_topic") &&
       row.targetPath?.startsWith("/") &&
       !row.targetPath?.startsWith("//")
     ) {
-      return [{
-        id: row.id,
-        targetKey: row.targetKey,
-        targetType: row.targetType,
-        placement: row.placement,
-        title: row.anchorText ?? row.targetKey,
-        description: null,
-        href: row.targetPath,
-        anchorText: row.anchorText,
-        occurrenceIndex: row.occurrenceIndex,
-        score: row.score,
-        reason: row.reason,
-      }];
+      return [
+        {
+          id: row.id,
+          targetKey: row.targetKey,
+          targetType: row.targetType,
+          placement: row.placement,
+          title: row.anchorText ?? row.targetKey,
+          description: null,
+          href: row.targetPath,
+          anchorText: row.anchorText,
+          occurrenceIndex: row.occurrenceIndex,
+          score: row.score,
+          reason: row.reason,
+        },
+      ];
     }
     return [];
   });
@@ -630,10 +656,7 @@ export async function readAdminPostInternalLinks(
     .leftJoin(posts, eq(postInternalLinks.targetPostId, posts.id))
     .leftJoin(
       knowledgeArticles,
-      eq(
-        postInternalLinks.targetKnowledgeArticleId,
-        knowledgeArticles.id,
-      ),
+      eq(postInternalLinks.targetKnowledgeArticleId, knowledgeArticles.id),
     )
     .leftJoin(categories, eq(postInternalLinks.targetCategoryId, categories.id))
     .leftJoin(tags, eq(postInternalLinks.targetTagId, tags.id))
@@ -643,12 +666,16 @@ export async function readAdminPostInternalLinks(
     .map((row) => {
       const auditIssues: string[] = [];
       if (row.language !== sourcePost.language) auditIssues.push("跨语言");
-      if (row.sourceContentHash !== currentContentHash) auditIssues.push("正文已变化");
+      if (row.sourceContentHash !== currentContentHash)
+        auditIssues.push("正文已变化");
       if (row.targetPostId === postId) auditIssues.push("指向自身");
       if (row.targetType === "post" && !row.postPublished) {
         auditIssues.push("目标文章未发布或已删除");
       }
-      if (row.targetType === "post" && row.postLanguage !== sourcePost.language) {
+      if (
+        row.targetType === "post" &&
+        row.postLanguage !== sourcePost.language
+      ) {
         auditIssues.push("目标文章语言不一致");
       }
       if (row.targetType === "knowledge" && !row.knowledgePublished) {
@@ -663,7 +690,9 @@ export async function readAdminPostInternalLinks(
       if (
         row.placement === "inline" &&
         (!row.anchorText ||
-          !sourcePost.content.toLowerCase().includes(row.anchorText.toLowerCase()))
+          !sourcePost.content
+            .toLowerCase()
+            .includes(row.anchorText.toLowerCase()))
       ) {
         auditIssues.push("正文中找不到锚文本");
       }
@@ -690,10 +719,7 @@ export async function readAdminPostInternalLinks(
         updatedAt: row.updatedAt,
       };
     })
-    .sort(
-      (left, right) =>
-        right.score - left.score || right.id - left.id,
-    );
+    .sort((left, right) => right.score - left.score || right.id - left.id);
 }
 
 export async function updatePostInternalLink(input: {

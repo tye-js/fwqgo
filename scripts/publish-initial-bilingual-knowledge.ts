@@ -46,6 +46,7 @@ const BASE_CONTENT_FIELDS = [
   "title",
   "slug",
   "summary",
+  "contentRole",
   "content",
   "keywords",
   "aliases",
@@ -317,8 +318,14 @@ function inspectRevisionPair(
   assert(english, `${unit.id}/en 不存在，不能执行内容修订`);
   assert(chinese.language === "zh", `${unit.id}/zh 的数据库语言不一致`);
   assert(english.language === "en", `${unit.id}/en 的数据库语言不一致`);
-  assert(chinese.categoryId === category.id, `${unit.id}/zh 的数据库分类不一致`);
-  assert(english.categoryId === category.id, `${unit.id}/en 的数据库分类不一致`);
+  assert(
+    chinese.categoryId === category.id,
+    `${unit.id}/zh 的数据库分类不一致`,
+  );
+  assert(
+    english.categoryId === category.id,
+    `${unit.id}/en 的数据库分类不一致`,
+  );
   assert(
     chinese.translationSourceArticleId === null,
     `${unit.id}/zh 不应绑定翻译源`,
@@ -382,10 +389,7 @@ export function preflightCardUpgradeUnits(
   }
 }
 
-export function auditUnits(
-  units: KnowledgeUnit[],
-  state: PublicationState,
-) {
+export function auditUnits(units: KnowledgeUnit[], state: PublicationState) {
   preflightUnits(units, state);
   const articleIds = new Set<number>();
 
@@ -540,10 +544,7 @@ async function authorizeAiLanguage(
   language: "zh" | "en",
   state: PublicationState,
   service: Pick<KnowledgeService, "setKnowledgeAiReference">,
-  counts: Pick<
-    OperationCounts,
-    "chineseAiAuthorized" | "englishAiAuthorized"
-  >,
+  counts: Pick<OperationCounts, "chineseAiAuthorized" | "englishAiAuthorized">,
 ) {
   for (const unit of units) {
     const expected = expectedPair(unit)[language];
@@ -606,10 +607,7 @@ export async function reviseKnowledgeContent(
       pair = inspectRevisionPair(unit, state);
     }
 
-    if (
-      pair.chineseVersion !== "v2" ||
-      pair.chineseCardVersion !== "v1"
-    ) {
+    if (pair.chineseVersion !== "v2" || pair.chineseCardVersion !== "v1") {
       const result = await service.saveKnowledgeDraft({
         id: pair.chinese.id,
         language: "zh",
@@ -622,14 +620,8 @@ export async function reviseKnowledgeContent(
       pair = inspectRevisionPair(unit, state);
     }
 
-    if (
-      pair.englishVersion !== "v2" ||
-      pair.englishCardVersion !== "v1"
-    ) {
-      assert(
-        !pair.english.published,
-        `${unit.id}/en 必须先取消发布才能修订`,
-      );
+    if (pair.englishVersion !== "v2" || pair.englishCardVersion !== "v1") {
+      assert(!pair.english.published, `${unit.id}/en 必须先取消发布才能修订`);
       const result = await service.saveKnowledgeDraft({
         id: pair.english.id,
         language: "en",
@@ -642,9 +634,7 @@ export async function reviseKnowledgeContent(
       pair = inspectRevisionPair(unit, state);
     }
 
-    if (
-      pair.english.translatedFromRevision !== pair.chinese.contentRevision
-    ) {
+    if (pair.english.translatedFromRevision !== pair.chinese.contentRevision) {
       assert(
         !pair.english.published,
         `${unit.id}/en 必须先取消发布才能确认翻译同步`,

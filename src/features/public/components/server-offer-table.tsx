@@ -33,12 +33,20 @@ type Offer = {
   providerName: string | null;
   productType: string | null;
   cpu: string | null;
+  vcpuCount?: number | null;
   memory: string | null;
+  memoryMb?: number | null;
   storage: string | null;
+  storageGb?: number | null;
+  storageType?: string | null;
   bandwidth: string | null;
+  bandwidthMbps?: number | null;
   traffic: string | null;
+  trafficGb?: number | null;
   region: string | null;
   lineType: string | null;
+  ipv4?: string | null;
+  ipv6?: string | null;
   priceAmount: string | null;
   monthlyPriceUsd?: string | null;
   currency: string | null;
@@ -218,8 +226,9 @@ function formatPrice(offer: Offer, language: OfferLanguage) {
   });
   if (!formattedAmount) return copy.invalidPrice;
   const cycle = offer.billingCycle
-    ? (copy.billingCycle[offer.billingCycle as keyof typeof copy.billingCycle] ??
-      offer.billingCycle)
+    ? (copy.billingCycle[
+        offer.billingCycle as keyof typeof copy.billingCycle
+      ] ?? offer.billingCycle)
     : copy.unknownCycle;
   return `${formattedAmount} / ${cycle}`;
 }
@@ -388,7 +397,8 @@ function OfferMobileCard({
             {offer.title}
           </h2>
           <Badge variant="outline" className={getStatusClassName(offer.status)}>
-            {copy.status[offer.status as keyof typeof copy.status] ?? offer.status}
+            {copy.status[offer.status as keyof typeof copy.status] ??
+              offer.status}
           </Badge>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -561,7 +571,9 @@ export function ServerOfferTable({
     return (
       <div className="rounded-lg border border-dashed border-border bg-muted/20 px-6 py-12 text-center">
         <p className="text-sm font-medium text-foreground">{copy.emptyTitle}</p>
-        <p className="mt-2 text-sm text-muted-foreground">{copy.emptyDescription}</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {copy.emptyDescription}
+        </p>
       </div>
     );
   }
@@ -660,9 +672,7 @@ export function ServerOfferTable({
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-        <span>
-          {copy.currentShowing(filteredOffers.length, offers.length)}
-        </span>
+        <span>{copy.currentShowing(filteredOffers.length, offers.length)}</span>
         <span className="rounded-full bg-muted/40 px-3 py-1 text-xs">
           {sortKey === "price-asc"
             ? copy.priceAsc
@@ -673,8 +683,12 @@ export function ServerOfferTable({
       </div>
       {filteredOffers.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center">
-          <p className="text-sm font-medium text-foreground">{copy.noMatchTitle}</p>
-          <p className="mt-2 text-sm text-muted-foreground">{copy.noMatchDescription}</p>
+          <p className="text-sm font-medium text-foreground">
+            {copy.noMatchTitle}
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {copy.noMatchDescription}
+          </p>
         </div>
       ) : null}
       <div className="grid gap-3 md:hidden">
@@ -689,10 +703,16 @@ export function ServerOfferTable({
             <tr>
               <th className="w-[25%] px-3 py-3 font-medium">{copy.package}</th>
               <th className="w-[15%] px-3 py-3 font-medium">{copy.price}</th>
-              <th className="w-[14%] px-3 py-3 font-medium">{copy.regionLineHeader}</th>
+              <th className="w-[14%] px-3 py-3 font-medium">
+                {copy.regionLineHeader}
+              </th>
               <th className="w-[24%] px-3 py-3 font-medium">{copy.specs}</th>
-              <th className="w-[9%] px-3 py-3 font-medium">{copy.statusFilter}</th>
-              <th className="w-[13%] px-3 py-3 text-right font-medium">{copy.entry}</th>
+              <th className="w-[9%] px-3 py-3 font-medium">
+                {copy.statusFilter}
+              </th>
+              <th className="w-[13%] px-3 py-3 text-right font-medium">
+                {copy.entry}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/70">
@@ -736,7 +756,8 @@ export function ServerOfferTable({
                     </p>
                   ) : null}
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {copy.lastChecked}: {getOfferFreshnessLabel(offer, language)}
+                    {copy.lastChecked}:{" "}
+                    {getOfferFreshnessLabel(offer, language)}
                   </p>
                 </td>
                 <td className="px-3 py-3">

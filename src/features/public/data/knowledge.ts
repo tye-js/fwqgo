@@ -32,6 +32,7 @@ export async function getPublicKnowledgeCategories() {
       and(
         eq(knowledgeArticles.categoryId, knowledgeCategories.id),
         eq(knowledgeArticles.published, true),
+        ne(knowledgeArticles.contentRole, "post_purchase_guide"),
       ),
     )
     .groupBy(knowledgeCategories.id)
@@ -51,6 +52,7 @@ export async function listPublishedKnowledgeArticles(input: {
   const conditions = [
     eq(knowledgeArticles.language, input.language),
     eq(knowledgeArticles.published, true),
+    ne(knowledgeArticles.contentRole, "post_purchase_guide"),
   ];
 
   if (categorySlug) {
@@ -101,6 +103,7 @@ export async function listPublishedKnowledgeArticles(input: {
       definition: knowledgeArticles.definition,
       highlights: knowledgeArticles.highlights,
       quickTip: knowledgeArticles.quickTip,
+      contentRole: knowledgeArticles.contentRole,
       keywords: knowledgeArticles.keywords,
       categoryName: knowledgeCategories.name,
       categorySlug: knowledgeCategories.slug,
@@ -144,6 +147,7 @@ export async function getPublishedKnowledgeArticleBySlug(
       highlights: knowledgeArticles.highlights,
       quickTip: knowledgeArticles.quickTip,
       content: knowledgeArticles.content,
+      contentRole: knowledgeArticles.contentRole,
       keywords: knowledgeArticles.keywords,
       language: knowledgeArticles.language,
       translationSourceArticleId: knowledgeArticles.translationSourceArticleId,
@@ -225,6 +229,7 @@ export async function getRelatedKnowledgeArticles(input: {
       slug: knowledgeArticles.slug,
       summary: knowledgeArticles.summary,
       definition: knowledgeArticles.definition,
+      contentRole: knowledgeArticles.contentRole,
     })
     .from(knowledgeArticles)
     .where(
@@ -233,6 +238,7 @@ export async function getRelatedKnowledgeArticles(input: {
         eq(knowledgeArticles.published, true),
         eq(knowledgeArticles.categoryId, input.categoryId),
         ne(knowledgeArticles.id, input.articleId),
+        ne(knowledgeArticles.contentRole, "post_purchase_guide"),
       ),
     )
     .orderBy(

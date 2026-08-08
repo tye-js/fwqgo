@@ -37,6 +37,21 @@ assert(KNOWLEDGE_VERIFIED_DATE === "2026-07-26", "verification date drifted");
 assert(KNOWLEDGE_CONTENT_VERSION === 2, "expected content version 2");
 assert(KNOWLEDGE_CARD_VERSION === 1, "expected card version 1");
 assert(
+  knowledgeUnits.filter(
+    (unit) =>
+      renderKnowledgeRecord(unit, "zh").contentRole === "post_purchase_guide",
+  ).length === 8,
+  "expected eight post-purchase guides to stay out of the decision index",
+);
+assert(
+  knowledgeUnits.every((unit) =>
+    ["decision_core", "decision_reference", "post_purchase_guide"].includes(
+      renderKnowledgeRecord(unit, "zh").contentRole,
+    ),
+  ),
+  "every knowledge unit must have a controlled content role",
+);
+assert(
   knowledgeUnits.length === 30,
   `expected 30 units, found ${knowledgeUnits.length}`,
 );
@@ -273,7 +288,8 @@ assert(ipLabelUnit, "KB-017 is missing");
 const ipLabelCard = renderKnowledgeRecord(ipLabelUnit, "zh");
 assert(
   !ipLabelCard.highlights.some(
-    (highlight) => highlight.includes("极低风控") || highlight.includes("必然低风控"),
+    (highlight) =>
+      highlight.includes("极低风控") || highlight.includes("必然低风控"),
   ),
   "KB-017 must not make absolute risk-control claims",
 );
