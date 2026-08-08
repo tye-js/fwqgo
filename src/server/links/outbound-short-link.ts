@@ -136,6 +136,33 @@ function isShortLink(url: URL) {
   return isInternalUrl(url) && /^\/go\/[a-z0-9-]+$/i.test(url.pathname);
 }
 
+type OutboundShortLinkRecord = {
+  id: number;
+  slug: string;
+};
+
+function formatOutboundShortLink(
+  record: OutboundShortLinkRecord,
+  targetUrl: string,
+) {
+  return {
+    id: record.id,
+    slug: record.slug,
+    path: `/go/${record.slug}`,
+    targetUrl,
+  };
+}
+
+async function findOutboundShortLink(targetUrl: string) {
+  const [existing] = await db
+    .select({ id: outboundLinks.id, slug: outboundLinks.slug })
+    .from(outboundLinks)
+    .where(eq(outboundLinks.targetUrl, targetUrl))
+    .limit(1);
+
+  return existing;
+}
+
 export async function getOrCreateOutboundShortLink(targetUrl: string) {
   const normalizedTargetUrl = normalizeTargetUrl(targetUrl);
 
@@ -143,19 +170,10 @@ export async function getOrCreateOutboundShortLink(targetUrl: string) {
     return null;
   }
 
-  const [existing] = await db
-    .select({ id: outboundLinks.id, slug: outboundLinks.slug })
-    .from(outboundLinks)
-    .where(eq(outboundLinks.targetUrl, normalizedTargetUrl))
-    .limit(1);
+  const existing = await findOutboundShortLink(normalizedTargetUrl);
 
   if (existing) {
-    return {
-      id: existing.id,
-      slug: existing.slug,
-      path: `/go/${existing.slug}`,
-      targetUrl: normalizedTargetUrl,
-    };
+    return formatOutboundShortLink(existing, normalizedTargetUrl);
   }
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -166,32 +184,27 @@ export async function getOrCreateOutboundShortLink(targetUrl: string) {
       const [created] = await db
         .insert(outboundLinks)
         .values({ slug, targetUrl: normalizedTargetUrl })
+        .onConflictDoNothing({ target: outboundLinks.targetUrl })
         .returning({ id: outboundLinks.id, slug: outboundLinks.slug });
 
       if (!created) {
+        const existingAfterConflict =
+          await findOutboundShortLink(normalizedTargetUrl);
+        if (existingAfterConflict) {
+          return formatOutboundShortLink(
+            existingAfterConflict,
+            normalizedTargetUrl,
+          );
+        }
         continue;
       }
 
-      return {
-        id: created.id,
-        slug: created.slug,
-        path: `/go/${created.slug}`,
-        targetUrl: normalizedTargetUrl,
-      };
+      return formatOutboundShortLink(created, normalizedTargetUrl);
     } catch {
-      const [raceExisting] = await db
-        .select({ id: outboundLinks.id, slug: outboundLinks.slug })
-        .from(outboundLinks)
-        .where(eq(outboundLinks.targetUrl, normalizedTargetUrl))
-        .limit(1);
+      const raceExisting = await findOutboundShortLink(normalizedTargetUrl);
 
       if (raceExisting) {
-        return {
-          id: raceExisting.id,
-          slug: raceExisting.slug,
-          path: `/go/${raceExisting.slug}`,
-          targetUrl: normalizedTargetUrl,
-        };
+        return formatOutboundShortLink(raceExisting, normalizedTargetUrl);
       }
     }
   }
