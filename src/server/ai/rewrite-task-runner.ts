@@ -511,7 +511,7 @@ async function createEnglishSeoTask(input: {
     sourceContent: sourceSnapshot,
     categoryId: input.parentTask.categoryId,
     initialPostId: input.post.id,
-    currentStep: "等待翻译中文改写正文并生成英文 SEO",
+    currentStep: "等待根据已保存的中文正文生成英文 SEO",
     rewriteConfig: {
       id: input.parentTask.rewriteStyleId,
       name: input.parentTask.rewriteConfigName,
@@ -530,13 +530,19 @@ async function createEnglishSeoTask(input: {
   return task.id;
 }
 
+// Retain this task-shape helper for legacy task recovery compatibility. New
+// Chinese rewrite runs deliberately do not call it automatically.
+void createEnglishSeoTask;
+
 async function getEnglishSourceContent(
   claimedTask: typeof aiRewriteTasks.$inferSelect,
   postContent: string | null,
 ) {
+  // The linked Chinese post is the source of truth. A queued task may have
+  // been created before the editor made the final manual changes.
   for (const value of [
-    claimedTask.sourceContent,
     postContent,
+    claimedTask.sourceContent,
     claimedTask.scrapedHtml,
   ]) {
     const trimmed = value?.trim();
@@ -940,7 +946,7 @@ async function runEnglishSeoTask(
     );
     if (!englishSourceContent) {
       throw new Error(
-        "英文 SEO 任务缺少改写后的中文正文，请重新运行中文改写任务",
+        "英文 SEO 任务缺少已保存的中文正文，请先保存中文文章后重试",
       );
     }
 
@@ -2509,46 +2515,21 @@ export async function runAiRewriteTask(taskId: number) {
         message: "文章不再提取套餐；套餐由供应商官网采集并单独审核",
         payload: { source: "provider_catalog", postId: post.id },
       });
-      let englishTaskId: number | null = null;
-      try {
-        englishTaskId = await createEnglishSeoTask({
-          parentTask: claimedTask,
-          post,
-          rewrittenChineseContent: firstNonEmptyContent(
-            article.htmlContent,
-            article.content,
-            article.cleanedHtmlContent,
-          ),
-        });
-        await upsertTaskStep({
-          taskId,
-          attempt,
-          stepKey: "english_enqueue",
-          stepName: "派生英文 SEO 任务",
-          status: "success",
-          progress: 98,
-          message: `英文 SEO 任务已创建 #${englishTaskId}`,
-          payload: { taskId: englishTaskId, postId: post.id },
-        });
-        await enqueueAiRewriteTask(englishTaskId);
-      } catch (englishTaskError) {
-        structuredLog("error", "ai.english_task_enqueue_failed", {
-          taskId,
+      await upsertTaskStep({
+        taskId,
+        attempt,
+        stepKey: "english_enqueue",
+        stepName: "等待人工确认后生成英文",
+        status: "skipped",
+        progress: 98,
+        message:
+          "中文草稿已保存。请先手动修改并保存中文文章，再从文章生产面板生成英文。",
+        payload: {
+          requiresManualChineseEdit: true,
           postId: post.id,
-          error: englishTaskError,
-        });
-        await upsertTaskStep({
-          taskId,
-          attempt,
-          stepKey: "english_enqueue",
-          stepName: "派生英文 SEO 任务",
-          status: "failed",
-          progress: 98,
-          message: "中文草稿已保存，但英文 SEO 任务创建或入队失败",
-          error: getErrorMessage(englishTaskError),
-        });
-        postProcessWarnings.push("英文 SEO 任务创建或入队失败");
-      }
+          reason: "manual_chinese_edit_required",
+        },
+      });
 
       activeStep = {
         key: "task_finalize",
@@ -2557,9 +2538,7 @@ export async function runAiRewriteTask(taskId: number) {
         progress: 99,
       };
       const completionParts = [finishedStepText({ manualRequired })];
-      if (englishTaskId) {
-        completionParts.push(`英文 SEO 任务已创建 #${englishTaskId}`);
-      }
+      completionParts.push("英文生成已暂停，等待人工修改并保存中文文章");
       completionParts.push(...postProcessWarnings);
       const terminalStatus = manualRequired ? "manual_required" : "succeeded";
       const finalized = await finalizeTask(claimedTask, terminalStatus, {

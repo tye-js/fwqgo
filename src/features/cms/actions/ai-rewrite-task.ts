@@ -826,7 +826,7 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
       sourceContent: sourceSnapshot,
       categoryId: parentPost.categoryId,
       initialPostId: parentPost.id,
-      currentStep: "等待翻译中文改写正文并生成英文 SEO",
+      currentStep: "等待根据已保存的中文正文生成英文 SEO",
       rewriteConfig: {
         id: rewriteConfig.id,
         name: rewriteConfig.name,

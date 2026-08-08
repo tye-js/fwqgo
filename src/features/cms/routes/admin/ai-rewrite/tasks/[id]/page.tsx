@@ -844,7 +844,7 @@ function ProductionChain({
     {
       title: "翻译英文",
       status:
-        storedStatus("english_generate") ??
+        storedStatus("english_generate", "english_enqueue") ??
         (task.sourceType === "english" && task.postId
           ? "success"
           : task.sourceType === "english" && task.status === "running"
@@ -855,7 +855,7 @@ function ProductionChain({
           ? task.postId
             ? `英文草稿 #${task.postId}`
             : "正在从中文正文翻译英文"
-          : "中文任务完成后会自动创建英文任务",
+          : "中文草稿完成后需人工修改并保存，再从文章生产面板生成英文",
     },
     {
       title: "SEO 字段",

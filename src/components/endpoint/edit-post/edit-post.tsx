@@ -609,9 +609,8 @@ export default function EditPost({
                 <Input
                   className="min-h-11 w-full"
                   value={keywords}
-                  onChange={(e) =>
-                    setKeywords(limitKeywordInput(e.target.value))
-                  }
+                  onChange={(e) => setKeywords(e.target.value)}
+                  maxLength={800}
                   placeholder="香港服务器,独立服务器,CN2"
                 />
               </div>
@@ -709,6 +708,7 @@ function buildSeoChecks(input: {
 }) {
   const plainText = markdownToPlainText(input.content);
   const keywordList = input.keywords
+    .replace(/，/g, ",")
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);

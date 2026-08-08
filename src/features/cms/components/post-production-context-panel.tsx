@@ -174,7 +174,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function RegenerateEnglishButton({ postId }: { postId: number }) {
+function GenerateEnglishButton({ postId }: { postId: number }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -210,7 +210,7 @@ function RegenerateEnglishButton({ postId }: { postId: number }) {
             title: "英文生成任务已加入队列",
             description: describeAdminResult([
               `任务 ID ${result.data.taskId}`,
-              "会从当前中文文章正文翻译英文，并单独生成 SEO 字段",
+              "会从当前已保存的中文文章正文翻译英文，并单独生成 SEO 字段",
             ]),
           });
           router.refresh();
@@ -218,7 +218,7 @@ function RegenerateEnglishButton({ postId }: { postId: number }) {
       }}
     >
       <RotateCcw className="size-4" />
-      {isPending ? "提交中..." : "重新生成英文"}
+      {isPending ? "提交中..." : "根据当前中文生成英文"}
     </Button>
   );
 }
@@ -248,7 +248,7 @@ export function PostProductionContextPanel({
     <div className="space-y-4">
       <AdminSectionCard
         title="生产链路与中英文关系"
-        description="查看当前文章对应关系、最近 AI 任务、SEO、封面图和返利审计状态。"
+        description="英文不会随中文改写自动生成；请先手动修改并保存中文文章，再从这里根据最新中文正文生成英文。"
       >
         <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
           <div className="space-y-3">
@@ -303,7 +303,7 @@ export function PostProductionContextPanel({
 
               <div className="mt-3 flex flex-wrap gap-2">
                 {context.currentPost.language === "zh" || context.sourcePost ? (
-                  <RegenerateEnglishButton
+                  <GenerateEnglishButton
                     postId={context.sourcePost?.id ?? context.currentPost.id}
                   />
                 ) : null}

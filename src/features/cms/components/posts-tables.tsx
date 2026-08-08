@@ -417,6 +417,7 @@ export function PostList({
         description: describeAdminResult([
           `处理 ${stats.requested} 篇`,
           `排队 ${stats.queued} 个任务`,
+          "任务会读取当前已保存的中文正文，请确认中文修改已完成",
           stats.skipped > 0 ? `跳过 ${stats.skipped} 篇` : null,
           stats.failed > 0 ? `失败 ${stats.failed} 个` : null,
         ]),
@@ -624,7 +625,7 @@ export function PostList({
               className="min-h-11 w-full sm:w-auto"
             >
               <Languages className="size-4" />
-              {bulkAction === "english" ? "排队中..." : "生成英文"}
+              {bulkAction === "english" ? "排队中..." : "根据中文生成英文"}
             </Button>
             <Button
               variant="outline"
