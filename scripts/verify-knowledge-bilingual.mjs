@@ -136,10 +136,20 @@ requireText("packages/ai/knowledge-retrieval.ts", [
   "eq(knowledgeArticles.language, input.language)",
   "knowledgeCategories.enName",
 ]);
-requireText("packages/ai/article-rewriter.ts", [
-  "retrieveRewriteKnowledge({",
-  'language: "zh"',
+const articleRewriter = requireText("packages/ai/article-rewriter.ts", [
+  "const sourceOnlyContext =",
+  "本次改写只使用清洗后的来源原文和受保护内容；不引用知识库、供应商资料或其他外部信息。",
+  "knowledgeReferences: [],",
+  "providerReferences: [],",
 ]);
+if (
+  articleRewriter.includes("retrieveRewriteKnowledge({") ||
+  articleRewriter.includes("retrieveRewriteProviderReferences({")
+) {
+  fail(
+    "article-rewriter.ts must not retrieve knowledge-base or provider context during source-only rewriting",
+  );
+}
 requireText("packages/cache/tags.ts", [
   '"/knowledge"',
   '"/en/knowledge"',
