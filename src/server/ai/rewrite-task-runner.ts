@@ -7,9 +7,8 @@ import {
   htmlToArticleMarkdown,
   normalizeArticleHtml,
 } from "@fwqgo/core/content";
-import {
-  MAX_AI_REWRITE_MAX_ATTEMPTS,
-} from "@fwqgo/core/ai-rewrite-limits";
+import { cleanArticleNoise } from "@fwqgo/core/article-noise-cleaner";
+import { MAX_AI_REWRITE_MAX_ATTEMPTS } from "@fwqgo/core/ai-rewrite-limits";
 import { parsePostgresIntegerId, slugify } from "@fwqgo/core/utils";
 import {
   createTaskLeaseOwner,
@@ -46,7 +45,6 @@ import {
   type ScrapeDiagnostics,
 } from "@/server/scrape/article-scraper";
 import {
-  getMatchedAffiliateProviderNames,
   repairMarkdownAffiliateLinks,
   rewriteAffiliateLinks,
 } from "@/server/links/affiliate-link-rewriter";
@@ -145,10 +143,7 @@ function getArticleRewriteProgress(input: {
 
   const maxAttempts = Math.max(
     1,
-    Math.min(
-      Math.trunc(input.maxAttempts ?? 1),
-      MAX_AI_REWRITE_MAX_ATTEMPTS,
-    ),
+    Math.min(Math.trunc(input.maxAttempts ?? 1), MAX_AI_REWRITE_MAX_ATTEMPTS),
   );
   const attempt = Math.max(
     1,
@@ -1568,9 +1563,11 @@ async function createArticleFromManualTask(input: {
     typeof trimmedTitle === "string" && trimmedTitle.length > 0
       ? trimmedTitle
       : "手动素材";
-  const html = normalizeArticleHtml(
+  const normalizedHtml = normalizeArticleHtml(
     looksLikeHtml(rawContent) ? rawContent : textToHtml(rawContent),
   );
+  const noiseCleanup = cleanArticleNoise(normalizedHtml);
+  const html = noiseCleanup.html;
   const $ = cheerio.load(html, null, false);
   const baseUrl = process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com";
   const affiliateReport = await rewriteAffiliateLinks({
@@ -1595,7 +1592,8 @@ async function createArticleFromManualTask(input: {
     cleanedHtmlLength: cleanedHtml.length,
     aiInputLength: markdownInput.markdown.length,
     aiInputTruncated: markdownInput.truncated,
-    removedSelectors: [],
+    removedSelectors: noiseCleanup.removedSelectors,
+    removedContentPatterns: noiseCleanup.removedContentPatterns,
     affiliateReport,
     warnings: markdownInput.truncated
       ? ["AI Markdown 输入过长，已按正文结构截取前半部分核心内容改写"]
@@ -1616,7 +1614,6 @@ async function createArticleFromManualTask(input: {
   try {
     rewritten = await RewriteArticle(markdownInput.markdown, {
       styleId: input.rewriteStyleId,
-      providerNames: getMatchedAffiliateProviderNames(affiliateReport),
       sourceTitle,
       categoryName: input.categoryName,
       onProgress: async (ai) => {
@@ -2265,8 +2262,7 @@ export async function runAiRewriteTask(taskId: number) {
                 article.diagnostics.rewriteQuality.knowledgeReferences,
               providerReferences:
                 article.diagnostics.rewriteQuality.providerReferences,
-              seoKeywordPlan:
-                article.diagnostics.rewriteQuality.seoKeywordPlan,
+              seoKeywordPlan: article.diagnostics.rewriteQuality.seoKeywordPlan,
             }
           : undefined,
       });

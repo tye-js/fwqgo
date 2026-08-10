@@ -495,6 +495,7 @@ export function evaluateRewriteQuality(
   outputMarkdown: string,
   options: {
     allowedFactsMarkdown?: string;
+    allowHighSimilarity?: boolean;
     maxNarrativeLength?: number;
   } = {},
 ): RewriteQualityMetrics {
@@ -520,15 +521,15 @@ export function evaluateRewriteQuality(
   const requiredFactCoverage = criticalFacts.sourceFactCount <= 4 ? 100 : 90;
   const reasons: string[] = [];
 
-  if (narrativeSimilarity > maxNarrativeSimilarity) {
+  if (!options.allowHighSimilarity && narrativeSimilarity > maxNarrativeSimilarity) {
     reasons.push(
       `叙述片段重合率 ${narrativeSimilarity}% 超过 ${maxNarrativeSimilarity}%`,
     );
   }
-  if (sentenceRatio > 25) {
+  if (!options.allowHighSimilarity && sentenceRatio > 25) {
     reasons.push(`完整长句复用率 ${sentenceRatio}% 超过 25%`);
   }
-  if (headings > 75) {
+  if (!options.allowHighSimilarity && headings > 75) {
     reasons.push(`小标题结构重合率 ${headings}% 超过 75%`);
   }
   if (criticalFacts.coverage < requiredFactCoverage) {

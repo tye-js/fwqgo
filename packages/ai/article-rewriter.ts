@@ -19,20 +19,6 @@ import {
   retryTransientAiRequest,
 } from "./openai-compatible";
 import {
-  ensureRewriteKnowledgeSections,
-  formatRewriteKnowledgeSections,
-  formatRewriteKnowledgeContext,
-  retrieveRewriteKnowledge,
-  selectRewriteKnowledgeSections,
-  type RewriteKnowledgeSection,
-  type RewriteKnowledgeReference,
-} from "./knowledge-retrieval";
-import {
-  formatRewriteProviderContext,
-  retrieveRewriteProviderReferences,
-  type RewriteProviderReference,
-} from "./provider-context";
-import {
   evaluateRewriteQuality,
   getRewriteLengthBudget,
   protectMarkdownContent,
@@ -143,7 +129,6 @@ export interface AiRewriteExecutionOptions {
 }
 
 export interface ArticleRewriteOptions extends AiRewriteExecutionOptions {
-  providerNames?: string[];
   sourceTitle?: string | null;
   categoryName?: string | null;
   onProgress?: (progress: ArticleRewriteProgress) => void | Promise<void>;
@@ -356,7 +341,7 @@ function createConfigSnapshot(
 
 function getPromptVersion(config: AiRewriteConfig) {
   const timestamp = (config.updatedAt ?? config.createdAt)?.getTime() ?? 0;
-  return `config-${config.id}-${timestamp}`;
+  return `config-${config.id}-${timestamp}-source-only-v1`;
 }
 
 function getAuditTemperature(
@@ -520,8 +505,8 @@ function buildQualityReviewPrompt(input: {
     rewriteLengthBudget: input.rewriteLengthBudget,
     protectedAuthorityContent:
       protectedAuthorityMarkdown(input.protectedContent) || "无",
-    providerContext: input.providerContext,
-    knowledgeContext: input.knowledgeContext,
+    providerContext: "本次审查不使用供应商资料，只依据清洗后的来源原文。",
+    knowledgeContext: "本次审查不使用知识库，只依据清洗后的来源原文。",
     markdownContent: input.markdownContent,
   });
 
@@ -668,16 +653,20 @@ function normalizeStringArray(value: unknown) {
 
 function normalizeQualityReview(raw: ArticleQualityReviewRaw) {
   const missingFacts = normalizeStringArray(raw.missingFacts).slice(0, 20);
-  const unsupportedClaims = normalizeStringArray(
-    raw.unsupportedClaims,
-  ).slice(0, 20);
+  const unsupportedClaims = normalizeStringArray(raw.unsupportedClaims).slice(
+    0,
+    20,
+  );
   const distortedFacts = normalizeStringArray(raw.distortedFacts).slice(0, 20);
 
   if (Array.isArray(raw.issues)) {
     for (const item of raw.issues) {
       if (!item || typeof item !== "object") continue;
       const issue = item as Record<string, unknown>;
-      const type = normalizeFactText(issue.type ?? issue.kind, 40).toLowerCase();
+      const type = normalizeFactText(
+        issue.type ?? issue.kind,
+        40,
+      ).toLowerCase();
       const candidateText = normalizeFactText(
         issue.candidateText ?? issue.claim,
         1_200,
@@ -1033,8 +1022,7 @@ async function requestChatCompletionResult(input: {
             signal: controller.signal,
             body: JSON.stringify({
               model: input.config.model,
-              temperature:
-                input.temperature ?? input.config.temperature / 100,
+              temperature: input.temperature ?? input.config.temperature / 100,
               max_tokens: input.maxTokens,
               ...(input.responseFormat
                 ? { response_format: input.responseFormat }
@@ -1298,8 +1286,8 @@ export async function rewriteArticleWithAi(
     protectedContent,
   );
   const factExtractionSource = `${protectedSource}\n\n受保护原始内容：\n${
-      protectedAuthorityMarkdown(protectedContent) || "无"
-    }`;
+    protectedAuthorityMarkdown(protectedContent) || "无"
+  }`;
   const factExtractionPrompt = buildFactExtractionPrompt({
     template: config.factExtractionPrompt,
     sourceMarkdown: factExtractionSource,
@@ -1378,9 +1366,8 @@ export async function rewriteArticleWithAi(
     metadata: {
       criticalFactCount: factSheet.criticalFacts.length,
       outlineCount: factSheet.outline.length,
-      acceptedKeywordCount: validSeoKeywordCandidates(
-        factSheet.seoKeywordPlan,
-      ).length,
+      acceptedKeywordCount: validSeoKeywordCandidates(factSheet.seoKeywordPlan)
+        .length,
       rejectedKeywords: factSheet.seoKeywordPlan.rejectedKeywords,
     },
   });
@@ -1406,55 +1393,8 @@ export async function rewriteArticleWithAi(
     throw error;
   }
 
-  let knowledgeReferences: RewriteKnowledgeReference[] = [];
-  let knowledgeSections: RewriteKnowledgeSection[] = [];
-  let providerReferences: RewriteProviderReference[] = [];
-  const [knowledgeResult, providerResult] = await Promise.allSettled([
-    retrieveRewriteKnowledge({
-      language: "zh",
-      values: [
-        normalizedContent,
-        factSheet.providerName,
-        factSheet.articleType,
-        factSheet.factualSummary,
-        factSheet.editorialAngle,
-        ...factSheet.criticalFacts,
-        ...factSheet.productGroups,
-        ...factSheet.regions,
-        ...factSheet.networkFacts,
-        ...factSheet.supportedUseCases,
-        ...factSheet.cautions,
-      ],
-    }),
-    retrieveRewriteProviderReferences({ names: options.providerNames ?? [] }),
-  ]);
-  if (knowledgeResult.status === "fulfilled") {
-    knowledgeReferences = knowledgeResult.value;
-  } else {
-    console.error(
-      "AI 改写知识库检索失败，将在无知识上下文下继续:",
-      knowledgeResult.reason,
-    );
-  }
-  if (providerResult.status === "fulfilled") {
-    providerReferences = providerResult.value;
-  } else {
-    console.error(
-      "AI 改写供应商资料检索失败，将在无供应商上下文下继续:",
-      providerResult.reason,
-    );
-  }
-  knowledgeSections = selectRewriteKnowledgeSections(
-    normalizedContent,
-    knowledgeReferences,
-  );
-  const knowledgeContext = formatRewriteKnowledgeContext(knowledgeReferences);
-  const knowledgeSectionRequirements = formatRewriteKnowledgeSections(
-    knowledgeSections,
-  );
-  const providerContext = formatRewriteProviderContext(providerReferences);
-  const allowedProviderFacts =
-    providerReferences.length > 0 ? providerContext : "";
+  const sourceOnlyContext =
+    "本次改写只使用清洗后的来源原文和受保护内容；不引用知识库、供应商资料或其他外部信息。";
   const rewriteLengthBudget = getRewriteLengthBudget(
     normalizedContent,
     verifiedFactCount(factSheet),
@@ -1468,7 +1408,7 @@ export async function rewriteArticleWithAi(
   const rewriteOutline =
     factSheet.outline.length > 0
       ? factSheet.outline.map((item) => `- ${item}`).join("\n")
-      : "来源内容较短，请按原文主题自然扩写，不必强行增加小节。";
+      : "来源内容较短，请仅整理原文已有段落，不要增加小节。";
   const candidatePrompt = buildSourceAnchoredRewritePrompt({
     configuredPrompt: config.basePrompt,
     stylePrompt: config.stylePrompt,
@@ -1477,17 +1417,17 @@ export async function rewriteArticleWithAi(
     keywordPlan: JSON.stringify(keywordPlanForWriting, null, 2),
     rewriteLengthBudget: rewriteLengthBudgetDescription,
     outline: rewriteOutline,
-    providerContext,
-    knowledgeContext,
-    knowledgeSections: knowledgeSectionRequirements,
+    providerContext: sourceOnlyContext,
+    knowledgeContext: sourceOnlyContext,
+    knowledgeSections: "不添加来源之外的基础知识章节。",
     protectedContent: describeProtectedContent(protectedContent),
     retryFeedback: config.initialRewritePrompt,
   });
-  const candidateStepName = "原文锚定正文扩写";
+  const candidateStepName = "原文轻量改写";
   await reportRewriteProgress(options, {
     stage: "content_generation",
     status: "running",
-    message: "正在生成正文（固定 1 次）",
+    message: "正在轻量改写正文（固定 1 次）",
     maxTokens: config.maxTokens,
     attempt: 1,
     maxAttempts: 1,
@@ -1533,15 +1473,12 @@ export async function rewriteArticleWithAi(
   }
 
   const restored = restoreProtectedMarkdown(candidate, protectedContent);
-  const acceptedMarkdown = ensureRewriteKnowledgeSections(
-    restored.markdown,
-    knowledgeSections,
-  );
+  const acceptedMarkdown = restored.markdown;
   let acceptedMetrics = evaluateRewriteQuality(
     normalizedContent,
     acceptedMarkdown,
     {
-      allowedFactsMarkdown: allowedProviderFacts,
+      allowHighSimilarity: true,
       maxNarrativeLength: rewriteLengthBudget.hardMaxNarrativeLength,
     },
   );
@@ -1597,7 +1534,7 @@ export async function rewriteArticleWithAi(
   await reportRewriteProgress(options, {
     stage: "content_generation",
     status: "success",
-    message: "正文生成完成（1/1）",
+    message: "正文轻量改写完成（1/1）",
     maxTokens: config.maxTokens,
     attempt: 1,
     maxAttempts: 1,
@@ -1614,8 +1551,8 @@ export async function rewriteArticleWithAi(
     keywordPlan: factSheet.seoKeywordPlan,
     rewriteLengthBudget: rewriteLengthBudgetDescription,
     protectedContent,
-    providerContext,
-    knowledgeContext,
+    providerContext: sourceOnlyContext,
+    knowledgeContext: sourceOnlyContext,
     markdownContent: acceptedMarkdown,
   });
   let qualityReview: ArticleQualityReview = {
@@ -1808,17 +1745,8 @@ export async function rewriteArticleWithAi(
       unsupportedClaims: qualityReview.unsupportedClaims,
       distortedFacts: qualityReview.distortedFacts,
       seoKeywordPlan: factSheet.seoKeywordPlan,
-      knowledgeReferences: knowledgeReferences.map((reference) => ({
-        id: reference.id,
-        title: reference.title,
-        slug: reference.slug,
-        categoryName: reference.categoryName,
-      })),
-      providerReferences: providerReferences.map((reference) => ({
-        id: reference.id,
-        name: reference.name,
-        slug: reference.slug ?? "",
-      })),
+      knowledgeReferences: [],
+      providerReferences: [],
     },
   };
 }

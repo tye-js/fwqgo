@@ -112,7 +112,9 @@ const keywordProvenanceLabels: Record<SeoKeywordProvenance, string> = {
   taxonomy: "分类",
 };
 
-function normalizeKeywordProvenance(value: unknown): SeoKeywordProvenance | null {
+function normalizeKeywordProvenance(
+  value: unknown,
+): SeoKeywordProvenance | null {
   if (value === "body") return "body";
   if (value === "table") return "table";
   if (value === "title") return "title";
@@ -142,7 +144,9 @@ function normalizeKeywordCandidate(
   };
 }
 
-function normalizeSeoKeywordPlan(value: unknown): ValidatedSeoKeywordPlan | undefined {
+function normalizeSeoKeywordPlan(
+  value: unknown,
+): ValidatedSeoKeywordPlan | undefined {
   if (!isRecord(value)) return undefined;
   const primaryKeyword = normalizeKeywordCandidate(value.primaryKeyword);
   const secondaryKeywords = arrayValue(value.secondaryKeywords, (item) =>
@@ -152,7 +156,8 @@ function normalizeSeoKeywordPlan(value: unknown): ValidatedSeoKeywordPlan | unde
     normalizeKeywordCandidate(item),
   ).filter((item): item is ValidatedSeoKeywordCandidate => item !== null);
   const searchIntent =
-    value.searchIntent === "transactional" || value.searchIntent === "informational"
+    value.searchIntent === "transactional" ||
+    value.searchIntent === "informational"
       ? value.searchIntent
       : "mixed";
   const rejectedKeywords = Array.isArray(value.rejectedKeywords)
@@ -340,6 +345,10 @@ function parseDiagnostics(value: string | null) {
       aiInputTruncated: booleanValue(parsed.aiInputTruncated),
       removedSelectors: arrayValue(parsed.removedSelectors, (item) =>
         stringValue(item),
+      ).filter(Boolean),
+      removedContentPatterns: arrayValue(
+        parsed.removedContentPatterns,
+        (item) => stringValue(item),
       ).filter(Boolean),
       affiliateReport: normalizeAffiliateReport(parsed.affiliateReport),
       warnings: arrayValue(parsed.warnings, (item) => stringValue(item)).filter(
@@ -684,7 +693,10 @@ function TaskStepTimeline({ steps }: { steps: TaskStep[] }) {
 
 function SeoKeywordPlanPanel({ plan }: { plan: ValidatedSeoKeywordPlan }) {
   const groups = [
-    { label: "主关键词", items: plan.primaryKeyword ? [plan.primaryKeyword] : [] },
+    {
+      label: "主关键词",
+      items: plan.primaryKeyword ? [plan.primaryKeyword] : [],
+    },
     { label: "次关键词", items: plan.secondaryKeywords },
     { label: "长尾词", items: plan.longTailKeywords },
   ];
@@ -709,15 +721,20 @@ function SeoKeywordPlanPanel({ plan }: { plan: ValidatedSeoKeywordPlan }) {
                     className="rounded-md border border-border/70 p-3"
                   >
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium">{candidate.keyword}</span>
+                      <span className="text-sm font-medium">
+                        {candidate.keyword}
+                      </span>
                       {!candidate.bodyEligible ? (
                         <Badge variant="secondary">仅元信息</Badge>
                       ) : null}
                     </div>
                     <div className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
                       {candidate.evidence.map((evidence, index) => (
-                        <p key={`${evidence.provenance}:${evidence.text}:${index}`}>
-                          {keywordProvenanceLabels[evidence.provenance]}：{evidence.text}
+                        <p
+                          key={`${evidence.provenance}:${evidence.text}:${index}`}
+                        >
+                          {keywordProvenanceLabels[evidence.provenance]}：
+                          {evidence.text}
                         </p>
                       ))}
                     </div>
@@ -1275,24 +1292,7 @@ export async function AiRewriteTaskDetailPageContent({
                   <Badge variant="outline">
                     {diagnostics.rewriteQuality.promptVersion}
                   </Badge>
-                  {diagnostics.rewriteQuality.knowledgeReferences.map(
-                    (reference) => (
-                      <Badge key={reference.id} variant="secondary">
-                        知识：{reference.title}
-                      </Badge>
-                    ),
-                  )}
-                  {diagnostics.rewriteQuality.knowledgeReferences.length ===
-                  0 ? (
-                    <Badge variant="outline">未引用知识库</Badge>
-                  ) : null}
-                  {diagnostics.rewriteQuality.providerReferences.map(
-                    (reference) => (
-                      <Badge key={reference.id} variant="secondary">
-                        供应商资料：{reference.name}
-                      </Badge>
-                    ),
-                  )}
+                  <Badge variant="outline">仅基于清洗后的原文</Badge>
                 </div>
               </div>
             ) : null}
@@ -1303,6 +1303,18 @@ export async function AiRewriteTaskDetailPageContent({
                   {diagnostics.removedSelectors.map((selector) => (
                     <Badge key={selector} variant="outline">
                       {selector}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {diagnostics.removedContentPatterns?.length ? (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">语义清洗</p>
+                <div className="flex flex-wrap gap-2">
+                  {diagnostics.removedContentPatterns.map((pattern) => (
+                    <Badge key={pattern} variant="outline">
+                      {pattern}
                     </Badge>
                   ))}
                 </div>

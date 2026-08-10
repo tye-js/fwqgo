@@ -225,6 +225,9 @@ function normalizeTaskDiagnostics(
         ? diagnostics.aiInputTruncated
         : undefined,
     removedSelectors: normalizeTextArray(diagnostics.removedSelectors),
+    removedContentPatterns: normalizeTextArray(
+      diagnostics.removedContentPatterns,
+    ),
     affiliateReport: normalizeAffiliateReport(diagnostics.affiliateReport),
     warnings: normalizeTextArray(diagnostics.warnings),
     aiRewriteError:
@@ -521,8 +524,6 @@ function AffiliateDiagnosticsSummary({
 }) {
   const report = diagnostics?.affiliateReport;
   const quality = diagnostics?.rewriteQuality;
-  const knowledgeReferences = quality?.knowledgeReferences ?? [];
-  const providerReferences = quality?.providerReferences ?? [];
 
   if (!report) {
     return <span className="text-sm text-muted-foreground">等待抓取</span>;
@@ -601,28 +602,7 @@ function AffiliateDiagnosticsSummary({
                 </p>
               </div>
             </div>
-            {knowledgeReferences.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {knowledgeReferences.map((reference) => (
-                  <Badge key={reference.id} variant="outline">
-                    知识：{reference.title}
-                  </Badge>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                本次未引用知识库条目
-              </p>
-            )}
-            {providerReferences.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {providerReferences.map((reference) => (
-                  <Badge key={reference.id} variant="outline">
-                    供应商资料：{reference.name}
-                  </Badge>
-                ))}
-              </div>
-            ) : null}
+            <Badge variant="outline">仅基于清洗后的原文</Badge>
           </div>
         ) : null}
 

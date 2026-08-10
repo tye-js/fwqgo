@@ -6,6 +6,7 @@ import {
   looksLikeHtmlContent,
   normalizeArticleHtml,
 } from "@fwqgo/core/content";
+import { cleanArticleNoise } from "@fwqgo/core/article-noise-cleaner";
 import {
   assertPublicHttpUrl,
   fetchPublicHttpUrl,
@@ -20,7 +21,6 @@ import type {
 } from "@fwqgo/ai/article-rewriter";
 import RewriteArticle from "@/langchain/rewrite-article";
 import {
-  getMatchedAffiliateProviderNames,
   mergeAffiliateReports,
   repairMarkdownAffiliateLinks,
   rewriteAffiliateLinks,
@@ -42,6 +42,7 @@ export interface ScrapeDiagnostics {
   rewriteOutputLength?: number;
   aiInputTruncated?: boolean;
   removedSelectors: string[];
+  removedContentPatterns?: string[];
   affiliateReport: AffiliateRewriteReport;
   warnings: string[];
   aiRewriteError?: string;
@@ -216,6 +217,7 @@ function createEmptyDiagnostics(input: {
     ...input,
     contentLength: 0,
     removedSelectors: [],
+    removedContentPatterns: [],
     affiliateReport: mergeAffiliateReports([]),
     warnings: [],
   };
@@ -583,6 +585,15 @@ async function scrapeByRule(input: {
     );
     cleanInvisibleText($content);
 
+    const noiseCleanup = cleanArticleNoise($content.html() ?? "", {
+      sourceHost: parsedUrl.hostname,
+    });
+    $content = cheerio.load(noiseCleanup.html, null, false);
+    diagnostics.removedSelectors.push(...noiseCleanup.removedSelectors);
+    diagnostics.removedContentPatterns?.push(
+      ...noiseCleanup.removedContentPatterns,
+    );
+
     const redirectBrowser = browser;
     const resolveHref = async (href: string) => {
       if (
@@ -678,7 +689,6 @@ async function scrapeByRule(input: {
       try {
         const rewritten = await RewriteArticle(preparedAiInput.markdown, {
           styleId: input.rewriteStyleId,
-          providerNames: getMatchedAffiliateProviderNames(affiliateReport),
           sourceTitle: scrapedTitle,
           categoryName: input.categoryName,
           onProgress: async (ai) => {
