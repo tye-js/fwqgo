@@ -27,10 +27,7 @@ import {
   HomepagePromotionGrid,
   HomepageSidebarPromotions,
 } from "@/features/public/components/homepage-promotion-slots";
-import {
-  FeaturedOfferList,
-  type FeaturedOffer,
-} from "@/features/public/components/featured-offer-list";
+import type { FeaturedOffer } from "@/features/public/components/featured-offer-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, isHttpHref, isInternalHref } from "@fwqgo/core/utils";
@@ -261,32 +258,6 @@ async function HomeContent() {
   const sidebarSlots = homepageSlots.filter(
     (slot) => slot.placement === "sidebar",
   );
-  const configuredFeaturedOffers: FeaturedOffer[] = homepageSlots
-    .filter(
-      (slot) =>
-        slot.placement === "featured_offers" &&
-        slot.contentType === "offer" &&
-        slot.offerId &&
-        slot.offerTitle,
-    )
-    .map((slot) => ({
-      id: slot.offerId!,
-      title: slot.offerTitle!,
-      providerName: slot.offerProviderName,
-      region: slot.offerRegion,
-      lineType: slot.offerLineType,
-      priceAmount: slot.offerPriceAmount,
-      currency: slot.offerCurrency,
-      billingCycle: slot.offerBillingCycle,
-      promoCode: slot.offerPromoCode,
-      purchaseUrl: slot.resolvedTargetUrl ?? slot.offerPurchaseUrl,
-      articleUrl: slot.offerArticleUrl,
-      status: slot.offerStatus ?? "in_stock",
-    }));
-  const featuredOffers =
-    configuredFeaturedOffers.length > 0
-      ? configuredFeaturedOffers.slice(0, 6)
-      : latestOffers.slice(0, 6);
   const promoOffers = latestOffers
     .filter((offer) => offer.promoCode?.trim())
     .slice(0, 4);
@@ -477,23 +448,6 @@ async function HomeContent() {
           <HomepagePromotionGrid slots={promoGridSlots} />
         </section>
       ) : null}
-
-      {/* 精选套餐：少量展示，完整筛选在 /servers */}
-      <section className="container mx-auto px-4 py-8 md:py-10">
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-          <SectionHeading
-            title="最新精选套餐"
-            description="价格、地区、线路和购买入口一眼可比，下单前请以商家结算页为准。"
-          />
-          <Button asChild variant="outline" size="sm" className="rounded-md">
-            <Link href="/servers" prefetch>
-              打开比价工具
-              <ArrowRight className="size-4" />
-            </Link>
-          </Button>
-        </div>
-        <FeaturedOfferList offers={featuredOffers} />
-      </section>
 
       {/* 最新文章 + 侧栏 */}
       <section className="container mx-auto grid gap-8 px-4 pb-12 xl:grid-cols-[minmax(0,1fr)_320px]">

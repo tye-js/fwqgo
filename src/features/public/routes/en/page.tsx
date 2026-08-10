@@ -28,10 +28,7 @@ import {
   HomepagePromotionGrid,
   HomepageSidebarPromotions,
 } from "@/features/public/components/homepage-promotion-slots";
-import {
-  FeaturedOfferList,
-  type FeaturedOffer,
-} from "@/features/public/components/featured-offer-list";
+import type { FeaturedOffer } from "@/features/public/components/featured-offer-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -262,32 +259,6 @@ async function EnglishHomeContent() {
   const sidebarSlots = homepageSlots.filter(
     (slot) => slot.placement === "sidebar",
   );
-  const configuredFeaturedOffers: FeaturedOffer[] = homepageSlots
-    .filter(
-      (slot) =>
-        slot.placement === "featured_offers" &&
-        slot.contentType === "offer" &&
-        slot.offerId &&
-        slot.offerTitle,
-    )
-    .map((slot) => ({
-      id: slot.offerId!,
-      title: slot.offerTitle!,
-      providerName: slot.offerProviderName,
-      region: slot.offerRegion,
-      lineType: slot.offerLineType,
-      priceAmount: slot.offerPriceAmount,
-      currency: slot.offerCurrency,
-      billingCycle: slot.offerBillingCycle,
-      promoCode: slot.offerPromoCode,
-      purchaseUrl: slot.resolvedTargetUrl ?? slot.offerPurchaseUrl,
-      articleUrl: slot.offerArticleUrl,
-      status: slot.offerStatus ?? "in_stock",
-    }));
-  const featuredOffers =
-    configuredFeaturedOffers.length > 0
-      ? configuredFeaturedOffers.slice(0, 6)
-      : latestOffers.slice(0, 6);
   const promoOffers = latestOffers
     .filter((offer) => offer.promoCode?.trim())
     .slice(0, 4);
@@ -497,22 +468,6 @@ async function EnglishHomeContent() {
           <HomepagePromotionGrid slots={promoGridSlots} />
         </section>
       ) : null}
-
-      <section className="container mx-auto px-4 py-8 md:py-10">
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-          <SectionHeading
-            title="Latest featured offers"
-            description="Prices, regions, routes, and buying links at a glance. Always confirm at checkout."
-          />
-          <Button asChild variant="outline" size="sm" className="rounded-md">
-            <Link href="/servers" prefetch>
-              Open comparison tool
-              <ArrowRight className="size-4" />
-            </Link>
-          </Button>
-        </div>
-        <FeaturedOfferList offers={featuredOffers} language="en" />
-      </section>
 
       <section className="container mx-auto grid gap-8 px-4 pb-12 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-4">
