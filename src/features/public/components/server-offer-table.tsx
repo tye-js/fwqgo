@@ -21,7 +21,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { isInternalHref, isSafePublicHref } from "@fwqgo/core/utils";
+import {
+  isInternalHref,
+  isOutboundShortLinkHref,
+  isSafePublicHref,
+} from "@fwqgo/core/utils";
 import {
   formatServerOfferAmount,
   resolveMonthlyPriceUsd,
@@ -302,25 +306,43 @@ function SafeActionButton({
   icon,
   label,
   rel,
+  newTab = false,
   variant = "outline",
 }: {
   href: string | null;
   icon: ReactNode;
   label: string;
   rel?: string;
+  newTab?: boolean;
   variant?: "default" | "outline";
 }) {
   if (!isSafePublicHref(href)) return null;
 
+  const internal = isInternalHref(href);
+  const shortLink = isOutboundShortLinkHref(href);
+  const linkRel =
+    rel ??
+    (internal
+      ? newTab
+        ? "noopener noreferrer"
+        : undefined
+      : "noopener noreferrer");
+  const linkTarget = internal ? (newTab ? "_blank" : undefined) : "_blank";
+
   return (
     <Button asChild size="sm" variant={variant} className="min-h-11 px-3">
-      {isInternalHref(href) ? (
-        <Link href={href} prefetch={false}>
+      {internal && !shortLink ? (
+        <Link
+          href={href}
+          prefetch={false}
+          target={newTab ? "_blank" : undefined}
+          rel={linkRel}
+        >
           {icon}
           {label}
         </Link>
       ) : (
-        <a href={href} target="_blank" rel={rel ?? "noopener noreferrer"}>
+        <a href={href} target={linkTarget} rel={linkRel}>
           {icon}
           {label}
         </a>
@@ -349,6 +371,7 @@ function OfferActions({
         icon={<ShoppingCart className="size-4" />}
         label={copy.buy}
         rel="nofollow sponsored noopener noreferrer"
+        newTab
         variant="default"
       />
       <SafeActionButton

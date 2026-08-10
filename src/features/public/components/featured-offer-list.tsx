@@ -4,7 +4,12 @@ import { ArrowUpRight, FileText, ShoppingCart } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { formatServerOfferAmount } from "@fwqgo/core/server-offer-price";
-import { cn, isHttpHref, isInternalHref } from "@fwqgo/core/utils";
+import {
+  cn,
+  isHttpHref,
+  isInternalHref,
+  isOutboundShortLinkHref,
+} from "@fwqgo/core/utils";
 
 type PublicLanguage = "zh" | "en";
 
@@ -130,7 +135,7 @@ function SafeOfferLink({
   const safeHref = href?.trim();
   if (!safeHref) return null;
 
-  if (isInternalHref(safeHref)) {
+  if (isInternalHref(safeHref) && !isOutboundShortLinkHref(safeHref)) {
     return (
       <Link href={safeHref} prefetch={false} className={className}>
         {children}
@@ -138,7 +143,7 @@ function SafeOfferLink({
     );
   }
 
-  if (isHttpHref(safeHref)) {
+  if (isHttpHref(safeHref) || isOutboundShortLinkHref(safeHref)) {
     return (
       <a
         href={safeHref}

@@ -3,7 +3,11 @@ import type { ReactNode } from "react";
 import { ArrowUpRight, ImageIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { isHttpHref, isInternalHref } from "@fwqgo/core/utils";
+import {
+  isHttpHref,
+  isInternalHref,
+  isOutboundShortLinkHref,
+} from "@fwqgo/core/utils";
 import type { getActiveHomepageSlots } from "@/server/homepage/homepage-slots";
 import { SafePostImage } from "@/features/public/components/safe-post-image";
 
@@ -21,7 +25,7 @@ function PromotionLink({
   children: ReactNode;
 }) {
   const href = slot.resolvedTargetUrl?.trim();
-  if (isInternalHref(href)) {
+  if (isInternalHref(href) && !isOutboundShortLinkHref(href)) {
     return (
       <Link
         href={href}
@@ -33,7 +37,7 @@ function PromotionLink({
       </Link>
     );
   }
-  if (isHttpHref(href)) {
+  if (isHttpHref(href) || isOutboundShortLinkHref(href)) {
     return (
       <a
         href={href}

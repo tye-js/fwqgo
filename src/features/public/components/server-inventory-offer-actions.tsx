@@ -13,7 +13,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { isInternalHref, isSafePublicHref } from "@fwqgo/core/utils";
+import {
+  isInternalHref,
+  isOutboundShortLinkHref,
+  isSafePublicHref,
+} from "@fwqgo/core/utils";
 import {
   formatServerOfferAmount,
   resolveMonthlyPriceUsd,
@@ -51,14 +55,26 @@ function SafeLinkButton({
   variant = "outline",
   ariaLabel,
   sponsored = false,
+  newTab = false,
 }: {
   href: string | null | undefined;
   children: React.ReactNode;
   variant?: "default" | "outline" | "ghost";
   ariaLabel?: string;
   sponsored?: boolean;
+  newTab?: boolean;
 }) {
   if (!isSafePublicHref(href)) return null;
+
+  const internal = isInternalHref(href);
+  const shortLink = isOutboundShortLinkHref(href);
+  const rel = sponsored
+    ? "nofollow sponsored noopener noreferrer"
+    : newTab
+      ? "noopener noreferrer"
+      : undefined;
+  const anchorRel = rel ?? (internal ? undefined : "noopener noreferrer");
+  const anchorTarget = internal ? (newTab ? "_blank" : undefined) : "_blank";
 
   return (
     <Button
@@ -68,20 +84,12 @@ function SafeLinkButton({
       className="min-h-11"
       aria-label={ariaLabel}
     >
-      {isInternalHref(href) ? (
-        <Link href={href} rel={sponsored ? "nofollow sponsored" : undefined}>
+      {internal && !shortLink ? (
+        <Link href={href} target={newTab ? "_blank" : undefined} rel={rel}>
           {children}
         </Link>
       ) : (
-        <a
-          href={href}
-          target="_blank"
-          rel={
-            sponsored
-              ? "nofollow sponsored noopener noreferrer"
-              : "noopener noreferrer"
-          }
-        >
+        <a href={href} target={anchorTarget} rel={anchorRel}>
           {children}
         </a>
       )}
@@ -207,7 +215,12 @@ export function ServerInventoryOfferActions({
       ) : null}
 
       <div className="flex flex-wrap gap-1.5">
-        <SafeLinkButton href={selectedPurchaseUrl} variant="default" sponsored>
+        <SafeLinkButton
+          href={selectedPurchaseUrl}
+          variant="default"
+          sponsored
+          newTab
+        >
           购买
           <ExternalLink className="size-3.5" />
         </SafeLinkButton>

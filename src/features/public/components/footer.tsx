@@ -229,6 +229,34 @@ function FooterTextLink({ link }: { link: FooterLink }) {
   );
 }
 
+function ContactEmailLink({
+  email,
+}: {
+  email: string;
+}) {
+  const atIndex = email.indexOf("@");
+  const localPart = atIndex >= 0 ? email.slice(0, atIndex) : email;
+  const domain = atIndex >= 0 ? email.slice(atIndex + 1) : "";
+  const href =
+    atIndex >= 0
+      ? `mailto:${encodeURIComponent(localPart)}%40${encodeURIComponent(domain)}`
+      : `mailto:${encodeURIComponent(email)}`;
+
+  return (
+    <a
+      href={href}
+      className="inline-flex min-h-11 w-fit items-center gap-2 rounded-md px-2 transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    >
+      <Mail className="size-4 text-primary" />
+      <span>
+        {localPart}
+        {atIndex >= 0 ? "@" : null}
+        {domain}
+      </span>
+    </a>
+  );
+}
+
 function FooterGroupView({ group }: { group: FooterGroup }) {
   const Icon = group.icon;
   const titleId = `footer-${group.id}`;
@@ -322,13 +350,7 @@ function FooterView({
             </div>
 
             <div className="grid gap-2 text-sm text-muted-foreground">
-              <a
-                href={`mailto:${copy.contactEmail}`}
-                className="inline-flex min-h-11 w-fit items-center gap-2 rounded-md px-2 transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <Mail className="size-4 text-primary" />
-                {copy.contactEmail}
-              </a>
+              <ContactEmailLink email={copy.contactEmail} />
               <Suspense
                 fallback={
                   <Link

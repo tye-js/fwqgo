@@ -4,7 +4,11 @@ import { ArrowRight, ExternalLink, ShoppingCart } from "lucide-react";
 
 import { type ServerOfferTable } from "@/features/public/components/server-offer-table";
 import { formatServerOfferAmount } from "@fwqgo/core/server-offer-price";
-import { isHttpHref, isInternalHref } from "@fwqgo/core/utils";
+import {
+  isHttpHref,
+  isInternalHref,
+  isOutboundShortLinkHref,
+} from "@fwqgo/core/utils";
 
 type Offer = ComponentProps<typeof ServerOfferTable>["offers"][number];
 
@@ -109,7 +113,8 @@ export function RelatedServerOfferCards({
               </span>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-              {isHttpHref(offer.purchaseUrl) ? (
+              {isHttpHref(offer.purchaseUrl) ||
+              isOutboundShortLinkHref(offer.purchaseUrl) ? (
                 <a
                   href={offer.purchaseUrl}
                   target="_blank"

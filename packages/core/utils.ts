@@ -105,6 +105,20 @@ export function isInternalHref(
   return Boolean(href?.startsWith("/") && !href.startsWith("//"));
 }
 
+export function isOutboundShortLinkHref(
+  href: string | null | undefined,
+): href is string {
+  if (!isInternalHref(href)) return false;
+
+  try {
+    return /^\/go\/[a-z0-9-]+$/i.test(
+      new URL(href, "https://fwqgo.com").pathname,
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function isHttpHref(href: string | null | undefined): href is string {
   if (!href) return false;
 
