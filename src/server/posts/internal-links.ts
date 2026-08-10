@@ -130,7 +130,10 @@ async function loadTagsByPostIds(postIds: number[]) {
   return result;
 }
 
-async function loadGenerationContext(postId: number) {
+async function loadGenerationContext(
+  postId: number,
+  includeKnowledge: boolean,
+) {
   const [sourcePost] = await db
     .select({
       id: posts.id,
@@ -198,31 +201,33 @@ async function loadGenerationContext(postId: number) {
     };
   });
 
-  const knowledgeRows = await db
-    .select({
-      id: knowledgeArticles.id,
-      title: knowledgeArticles.title,
-      summary: knowledgeArticles.summary,
-      keywords: knowledgeArticles.keywords,
-      aliases: knowledgeArticles.aliases,
-      retrievalTerms: knowledgeArticles.retrievalTerms,
-    })
-    .from(knowledgeArticles)
-    .where(
-      and(
-        eq(knowledgeArticles.language, sourcePost.language),
-        eq(knowledgeArticles.published, true),
-        ne(knowledgeArticles.contentRole, "post_purchase_guide"),
-      ),
-    )
-    .limit(300);
+  const knowledgeRows: KnowledgeRelevanceCandidate[] = includeKnowledge
+    ? await db
+        .select({
+          id: knowledgeArticles.id,
+          title: knowledgeArticles.title,
+          summary: knowledgeArticles.summary,
+          keywords: knowledgeArticles.keywords,
+          aliases: knowledgeArticles.aliases,
+          retrievalTerms: knowledgeArticles.retrievalTerms,
+        })
+        .from(knowledgeArticles)
+        .where(
+          and(
+            eq(knowledgeArticles.language, sourcePost.language),
+            eq(knowledgeArticles.published, true),
+            ne(knowledgeArticles.contentRole, "post_purchase_guide"),
+          ),
+        )
+        .limit(300)
+    : [];
 
   return {
     sourcePost,
     source,
     sourceTags,
     relatedPosts,
-    knowledgeRows: knowledgeRows satisfies KnowledgeRelevanceCandidate[],
+    knowledgeRows,
   };
 }
 
@@ -230,8 +235,10 @@ export async function regeneratePostInternalLinks(input: {
   postId: number;
   mode?: InternalLinkGenerationMode;
   generatedBy?: "rule" | "ai" | "manual";
+  includeKnowledge?: boolean;
 }) {
-  const context = await loadGenerationContext(input.postId);
+  const includeKnowledge = input.includeKnowledge ?? true;
+  const context = await loadGenerationContext(input.postId, includeKnowledge);
   if (!context) throw new Error("文章不存在或语言不受支持");
 
   const mode = input.mode ?? "activate-high-confidence";
@@ -350,17 +357,19 @@ export async function regeneratePostInternalLinks(input: {
       } as const;
     });
 
-  const scoredKnowledge = context.knowledgeRows
-    .map((candidate) => ({
-      candidate,
-      relevance: scoreKnowledgeArticle(context.source, candidate),
-    }))
-    .filter(({ relevance }) => relevance.score >= 30)
-    .sort(
-      (left, right) =>
-        right.relevance.score - left.relevance.score ||
-        right.candidate.id - left.candidate.id,
-    );
+  const scoredKnowledge = includeKnowledge
+    ? context.knowledgeRows
+        .map((candidate) => ({
+          candidate,
+          relevance: scoreKnowledgeArticle(context.source, candidate),
+        }))
+        .filter(({ relevance }) => relevance.score >= 30)
+        .sort(
+          (left, right) =>
+            right.relevance.score - left.relevance.score ||
+            right.candidate.id - left.candidate.id,
+        )
+    : [];
   const relatedKnowledgeLinks = scoredKnowledge
     .slice(0, MAX_RELATED_KNOWLEDGE_LINKS)
     .map(

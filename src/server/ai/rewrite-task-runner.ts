@@ -1127,13 +1127,14 @@ async function runEnglishSeoTask(
       stepName: activeStep.name,
       status: "running",
       progress: activeStep.progress,
-      message: "正在匹配英文正文标签、相关知识和相关文章",
+      message: "正在匹配英文正文标签和相关文章",
     });
     try {
       const internalLinkResult = await regeneratePostInternalLinks({
         postId: englishPost.id,
         mode: "activate-high-confidence",
         generatedBy: "rule",
+        includeKnowledge: false,
       });
       await upsertTaskStep({
         taskId: claimedTask.id,
@@ -2399,13 +2400,14 @@ export async function runAiRewriteTask(taskId: number) {
         stepName: activeStep.name,
         status: "running",
         progress: activeStep.progress,
-        message: "正在匹配正文标签、相关知识和相关文章",
+        message: "正在匹配正文标签和相关文章",
       });
       try {
         const internalLinkResult = await regeneratePostInternalLinks({
           postId: post.id,
           mode: "activate-high-confidence",
           generatedBy: "rule",
+          includeKnowledge: false,
         });
         await upsertTaskStep({
           taskId,

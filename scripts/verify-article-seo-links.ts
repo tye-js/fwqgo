@@ -178,10 +178,39 @@ async function verifyMigrationScope() {
   assert.match(migration, /post_internal_links_no_self_post_link_check/);
 }
 
+async function verifyAiRewriteInternalLinkScope() {
+  const [internalLinks, rewriteRunner] = await Promise.all([
+    readFile(
+      new URL("../src/server/posts/internal-links.ts", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../src/server/ai/rewrite-task-runner.ts", import.meta.url),
+      "utf8",
+    ),
+  ]);
+
+  assert.match(internalLinks, /includeKnowledge\?: boolean/);
+  assert.match(internalLinks, /input\.includeKnowledge \?\? true/);
+  assert.match(
+    internalLinks,
+    /const knowledgeRows: KnowledgeRelevanceCandidate\[\] = includeKnowledge/,
+  );
+  assert.equal(
+    (rewriteRunner.match(/includeKnowledge: false/g) ?? []).length,
+    2,
+  );
+  assert.doesNotMatch(
+    rewriteRunner,
+    /正在匹配(?:英文)?正文标签、相关知识和相关文章/,
+  );
+}
+
 async function main() {
   verifyKeywordPlanning();
   verifyInternalLinking();
   await verifyMigrationScope();
+  await verifyAiRewriteInternalLinkScope();
   console.log("Article SEO and internal-link verification passed.");
 }
 
