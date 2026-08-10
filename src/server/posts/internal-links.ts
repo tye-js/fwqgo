@@ -3,14 +3,16 @@ import { createHash } from "node:crypto";
 import { and, eq, inArray, ne, or } from "drizzle-orm";
 
 import {
-  findKnowledgeAnchorInContent,
+  findTagAnchorInContent,
   scoreKnowledgeArticle,
   scoreRelatedPost,
   type ArticleLinkLanguage,
   type ArticleRelevanceSource,
   type KnowledgeRelevanceCandidate,
   type RelatedPostRelevanceCandidate,
+  type TagRelevanceCandidate,
 } from "@fwqgo/core/article-internal-links";
+import { resolveEnglishTagIdentity } from "@fwqgo/core/taxonomy";
 import { db, readDb } from "@fwqgo/db";
 import {
   categories,
@@ -95,18 +97,34 @@ function excerptForAnchor(content: string, anchor: string) {
 }
 
 async function loadTagsByPostIds(postIds: number[]) {
-  if (postIds.length === 0)
-    return new Map<number, Array<{ id: number; name: string }>>();
+  if (postIds.length === 0) return new Map<number, TagRelevanceCandidate[]>();
 
   const rows = await db
-    .select({ postId: postTags.postId, id: tags.id, name: tags.name })
+    .select({
+      postId: postTags.postId,
+      id: tags.id,
+      name: tags.name,
+      slug: tags.slug,
+      enName: tags.enName,
+      enSlug: tags.enSlug,
+      keywords: tags.keywords,
+      enKeywords: tags.enKeywords,
+    })
     .from(postTags)
     .innerJoin(tags, eq(postTags.tagId, tags.id))
     .where(inArray(postTags.postId, postIds));
-  const result = new Map<number, Array<{ id: number; name: string }>>();
+  const result = new Map<number, TagRelevanceCandidate[]>();
   for (const row of rows) {
     const items = result.get(row.postId) ?? [];
-    items.push({ id: row.id, name: row.name });
+    items.push({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      enName: row.enName,
+      enSlug: row.enSlug,
+      keywords: row.keywords,
+      enKeywords: row.enKeywords,
+    });
     result.set(row.postId, items);
   }
   return result;
@@ -202,6 +220,7 @@ async function loadGenerationContext(postId: number) {
   return {
     sourcePost,
     source,
+    sourceTags,
     relatedPosts,
     knowledgeRows: knowledgeRows satisfies KnowledgeRelevanceCandidate[],
   };
@@ -217,6 +236,8 @@ export async function regeneratePostInternalLinks(input: {
 
   const mode = input.mode ?? "activate-high-confidence";
   const generatedBy = input.generatedBy ?? "rule";
+  const sourceLanguage: ArticleLinkLanguage =
+    context.sourcePost.language === "en" ? "en" : "zh";
   const sourceContentHash = contentHash(context.sourcePost.content);
   const existingProtected = await db
     .select({
@@ -271,13 +292,67 @@ export async function regeneratePostInternalLinks(input: {
         }) as const,
     );
 
+  const scoredTags = context.sourceTags
+    .filter(
+      (candidate) =>
+        sourceLanguage !== "en" ||
+        Boolean(
+          resolveEnglishTagIdentity({
+            name: candidate.name,
+            slug: candidate.slug ?? "",
+            enName: candidate.enName,
+            enSlug: candidate.enSlug,
+          }),
+        ),
+    )
+    .flatMap((candidate) => {
+      const anchorText = findTagAnchorInContent(
+        context.sourcePost.content,
+        candidate,
+        sourceLanguage,
+      );
+      return anchorText ? [{ candidate, anchorText }] : [];
+    })
+    .sort(
+      (left, right) =>
+        right.anchorText.length - left.anchorText.length ||
+        right.candidate.id - left.candidate.id,
+    );
+  const inlineLinks = scoredTags
+    .slice(0, MAX_INLINE_LINKS)
+    .map(({ candidate, anchorText }) => {
+      const isRecommended = candidate.id === context.source.recommendedTagId;
+      const score = Math.min(
+        100,
+        80 + anchorText.length + (isRecommended ? 10 : 0),
+      );
+      return {
+        sourcePostId: input.postId,
+        targetType: "tag",
+        targetKey: `tag:${candidate.id}`,
+        targetTagId: candidate.id,
+        language: context.sourcePost.language,
+        placement: "inline",
+        anchorText,
+        sourceExcerpt: excerptForAnchor(context.sourcePost.content, anchorText),
+        occurrenceIndex: 0,
+        score,
+        reason: isRecommended
+          ? `正文命中标签：${anchorText}；推荐标签`
+          : `正文命中标签：${anchorText}`,
+        generatedBy,
+        status:
+          mode === "activate-high-confidence" &&
+          score >= AUTO_ACTIVATE_INLINE_SCORE
+            ? "active"
+            : "suggested",
+        sourceContentHash,
+      } as const;
+    });
+
   const scoredKnowledge = context.knowledgeRows
     .map((candidate) => ({
       candidate,
-      anchorText: findKnowledgeAnchorInContent(
-        context.sourcePost.content,
-        candidate,
-      ),
       relevance: scoreKnowledgeArticle(context.source, candidate),
     }))
     .filter(({ relevance }) => relevance.score >= 30)
@@ -286,40 +361,7 @@ export async function regeneratePostInternalLinks(input: {
         right.relevance.score - left.relevance.score ||
         right.candidate.id - left.candidate.id,
     );
-  const inlineLinks = scoredKnowledge
-    .filter(({ anchorText }) => Boolean(anchorText))
-    .slice(0, MAX_INLINE_LINKS)
-    .map(
-      ({ candidate, anchorText, relevance }) =>
-        ({
-          sourcePostId: input.postId,
-          targetType: "knowledge",
-          targetKey: `knowledge:${candidate.id}`,
-          targetKnowledgeArticleId: candidate.id,
-          language: context.sourcePost.language,
-          placement: "inline",
-          anchorText: anchorText!,
-          sourceExcerpt: excerptForAnchor(
-            context.sourcePost.content,
-            anchorText!,
-          ),
-          occurrenceIndex: 0,
-          score: relevance.score,
-          reason: relevance.reasons.join("；"),
-          generatedBy,
-          status:
-            mode === "activate-high-confidence" &&
-            relevance.score >= AUTO_ACTIVATE_INLINE_SCORE
-              ? "active"
-              : "suggested",
-          sourceContentHash,
-        }) as const,
-    );
-  const inlineTargetKeys = new Set(inlineLinks.map((link) => link.targetKey));
   const relatedKnowledgeLinks = scoredKnowledge
-    .filter(
-      ({ candidate }) => !inlineTargetKeys.has(`knowledge:${candidate.id}`),
-    )
     .slice(0, MAX_RELATED_KNOWLEDGE_LINKS)
     .map(
       ({ candidate, relevance }) =>
@@ -419,6 +461,7 @@ export async function readPublicPostInternalLinks(
       occurrenceIndex: postInternalLinks.occurrenceIndex,
       score: postInternalLinks.score,
       reason: postInternalLinks.reason,
+      generatedBy: postInternalLinks.generatedBy,
       targetPath: postInternalLinks.targetPath,
       sourceContentHash: postInternalLinks.sourceContentHash,
       postTitle: posts.title,
@@ -440,7 +483,6 @@ export async function readPublicPostInternalLinks(
       tagEnName: tags.enName,
       tagSlug: tags.slug,
       tagEnSlug: tags.enSlug,
-      tagIndexable: tags.indexable,
     })
     .from(postInternalLinks)
     .leftJoin(posts, eq(postInternalLinks.targetPostId, posts.id))
@@ -460,6 +502,13 @@ export async function readPublicPostInternalLinks(
 
   const links = rows.flatMap((row): PublicArticleInternalLink[] => {
     if (row.sourceContentHash !== currentContentHash) return [];
+    if (
+      row.placement === "inline" &&
+      row.targetType === "knowledge" &&
+      row.generatedBy !== "manual"
+    ) {
+      return [];
+    }
     if (
       row.targetType === "post" &&
       row.postPublished &&
@@ -531,12 +580,7 @@ export async function readPublicPostInternalLinks(
         },
       ];
     }
-    if (
-      row.targetType === "tag" &&
-      row.tagIndexable &&
-      row.tagName &&
-      row.tagSlug
-    ) {
+    if (row.targetType === "tag" && row.tagName && row.tagSlug) {
       return [
         {
           id: row.id,

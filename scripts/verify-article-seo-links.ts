@@ -9,6 +9,7 @@ import { getRewriteLengthBudget } from "@fwqgo/ai/rewrite-quality";
 import {
   applyInternalLinksToArticleHtml,
   findKnowledgeAnchorInContent,
+  findTagAnchorInContent,
   scoreRelatedPost,
 } from "@fwqgo/core/article-internal-links";
 
@@ -110,6 +111,34 @@ function verifyInternalLinking() {
       title: "CN2 GIA",
     }),
     null,
+  );
+  assert.equal(
+    findTagAnchorInContent(
+      "本文适合使用 CN2 GIA 线路的 VPS。",
+      {
+        id: 8,
+        name: "线路",
+        slug: "line",
+        keywords: "CN2 GIA, VPS",
+      },
+      "zh",
+    ),
+    "CN2 GIA",
+  );
+  assert.equal(
+    findTagAnchorInContent(
+      "This article compares KVM VPS plans.",
+      {
+        id: 9,
+        name: "虚拟化",
+        slug: "virtualization",
+        enName: "Virtualization",
+        enSlug: "virtualization",
+        enKeywords: "KVM, VPS",
+      },
+      "en",
+    ),
+    "KVM",
   );
 
   const injected = applyInternalLinksToArticleHtml(

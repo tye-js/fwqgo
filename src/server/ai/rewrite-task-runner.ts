@@ -1127,7 +1127,7 @@ async function runEnglishSeoTask(
       stepName: activeStep.name,
       status: "running",
       progress: activeStep.progress,
-      message: "正在匹配英文知识和相关文章",
+      message: "正在匹配英文正文标签、相关知识和相关文章",
     });
     try {
       const internalLinkResult = await regeneratePostInternalLinks({
@@ -2399,7 +2399,7 @@ export async function runAiRewriteTask(taskId: number) {
         stepName: activeStep.name,
         status: "running",
         progress: activeStep.progress,
-        message: "正在匹配同语言知识和相关文章",
+        message: "正在匹配正文标签、相关知识和相关文章",
       });
       try {
         const internalLinkResult = await regeneratePostInternalLinks({

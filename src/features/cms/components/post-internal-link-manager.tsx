@@ -98,7 +98,7 @@ export function PostInternalLinkManager({
 
       {links.length === 0 ? (
         <p className="py-4 text-sm text-muted-foreground">
-          当前没有内链记录，重新生成后会匹配同语言知识和相关文章。
+          当前没有内链记录，重新生成后正文会优先匹配标签，文章下方再匹配同语言知识和相关文章。
         </p>
       ) : (
         <div className="overflow-x-auto">

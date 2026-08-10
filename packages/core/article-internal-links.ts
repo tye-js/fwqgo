@@ -35,6 +35,16 @@ export type KnowledgeRelevanceCandidate = {
   retrievalTerms?: string | null;
 };
 
+export type TagRelevanceCandidate = {
+  id: number;
+  name: string;
+  slug?: string | null;
+  enName?: string | null;
+  enSlug?: string | null;
+  keywords?: string | null;
+  enKeywords?: string | null;
+};
+
 export type RelevanceScore = {
   score: number;
   reasons: string[];
@@ -188,6 +198,36 @@ export function findKnowledgeAnchorInContent(
   const corpus = normalize(content);
   return (
     knowledgeCandidatePhrases(candidate)
+      .filter((phrase) => corpus.includes(normalize(phrase)))
+      .sort((left, right) => right.length - left.length)[0] ?? null
+  );
+}
+
+export function tagCandidatePhrases(
+  candidate: TagRelevanceCandidate,
+  language: ArticleLinkLanguage,
+) {
+  const name =
+    language === "en" ? (candidate.enName ?? candidate.name) : candidate.name;
+  const keywords =
+    language === "en"
+      ? (candidate.enKeywords ?? candidate.keywords)
+      : candidate.keywords;
+
+  return [...new Set([name.trim(), ...phrases(keywords)])].filter((item) => {
+    const normalized = normalize(item);
+    return normalized.length >= 2 && !genericAnchorTerms.has(normalized);
+  });
+}
+
+export function findTagAnchorInContent(
+  content: string,
+  candidate: TagRelevanceCandidate,
+  language: ArticleLinkLanguage,
+) {
+  const corpus = normalize(content);
+  return (
+    tagCandidatePhrases(candidate, language)
       .filter((phrase) => corpus.includes(normalize(phrase)))
       .sort((left, right) => right.length - left.length)[0] ?? null
   );
