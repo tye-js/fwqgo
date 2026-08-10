@@ -172,7 +172,10 @@ export function ScraperForm({
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4">
-      <form action={formAction} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_220px_auto]">
+      <form
+        action={formAction}
+        className="grid gap-2 md:grid-cols-[minmax(0,1fr)_220px_auto]"
+      >
         <Input
           type="url"
           name="url"
@@ -185,9 +188,7 @@ export function ScraperForm({
         >
           <SelectTrigger>
             <SelectValue
-              placeholder={
-                rewriteStyles.length > 0 ? "改写风格" : "未配置 AI"
-              }
+              placeholder={rewriteStyles.length > 0 ? "改写风格" : "未配置 AI"}
             />
           </SelectTrigger>
           <SelectContent>
@@ -229,9 +230,15 @@ function ScrapeDiagnosticsPanel({
     <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="secondary">{diagnostics.strategy}</Badge>
-        {diagnostics.usedFallback ? <Badge variant="outline">通用采集</Badge> : null}
-        {diagnostics.usedPuppeteer ? <Badge variant="outline">浏览器渲染</Badge> : null}
-        {diagnostics.usedAiRewrite ? <Badge variant="outline">AI 改写</Badge> : null}
+        {diagnostics.usedFallback ? (
+          <Badge variant="outline">通用采集</Badge>
+        ) : null}
+        {diagnostics.usedPuppeteer ? (
+          <Badge variant="outline">浏览器渲染</Badge>
+        ) : null}
+        {diagnostics.usedAiRewrite ? (
+          <Badge variant="outline">AI 改写</Badge>
+        ) : null}
       </div>
       <div className="mt-3 grid gap-3 text-sm text-muted-foreground md:grid-cols-4">
         <p>正文长度：{diagnostics.contentLength}</p>
@@ -243,17 +250,19 @@ function ScrapeDiagnosticsPanel({
         <div className="mt-3 space-y-1">
           <p className="text-sm font-medium text-foreground">命中的返利商家</p>
           <div className="flex flex-wrap gap-2">
-            {[...new Set(report.matchedLinks.map((item) => item.providerName))].map(
-              (name) => (
-                <Badge key={name}>{name}</Badge>
-              ),
-            )}
+            {[
+              ...new Set(report.matchedLinks.map((item) => item.providerName)),
+            ].map((name) => (
+              <Badge key={name}>{name}</Badge>
+            ))}
           </div>
         </div>
       ) : null}
       {unmatchedHosts.length > 0 ? (
         <div className="mt-3 space-y-1">
-          <p className="text-sm font-medium text-foreground">未配置返利的外链域名</p>
+          <p className="text-sm font-medium text-foreground">
+            未配置返利的外链域名
+          </p>
           <div className="flex flex-wrap gap-2">
             {unmatchedHosts.slice(0, 12).map((host) => (
               <Badge key={host} variant="outline">
@@ -266,6 +275,18 @@ function ScrapeDiagnosticsPanel({
       {diagnostics.warnings.length > 0 ? (
         <div className="mt-3 text-sm text-amber-600">
           {diagnostics.warnings.join("；")}
+        </div>
+      ) : null}
+      {diagnostics.removedContentPatterns?.length ? (
+        <div className="mt-3 space-y-1">
+          <p className="text-sm font-medium text-foreground">语义清洗</p>
+          <div className="flex flex-wrap gap-2">
+            {diagnostics.removedContentPatterns.map((pattern) => (
+              <Badge key={pattern} variant="outline">
+                {pattern}
+              </Badge>
+            ))}
+          </div>
         </div>
       ) : null}
     </div>

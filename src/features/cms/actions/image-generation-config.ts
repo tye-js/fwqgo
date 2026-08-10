@@ -11,6 +11,8 @@ import {
   deleteImageGenerationConfig,
   getImageGenerationConfigs,
   imageGenerationProviderOptions,
+  setDefaultImageGenerationConfig,
+  setImageGenerationConfigEnabled,
   updateImageGenerationConfig,
 } from "@/server/images/generation-config";
 import { defineAdminAction } from "@/features/cms/lib/define-admin-action";
@@ -110,6 +112,39 @@ const deleteImageGenerationConfigMutation = defineAdminAction({
   entityId: (id) => id,
 });
 
+const setImageGenerationConfigEnabledMutation = defineAdminAction({
+  action: "image_generation_config.set_enabled",
+  entityType: "image_generation_config",
+  parse: (input: { id: number; enabled: boolean }) => ({
+    id: postgresIntegerIdSchema.parse(input.id),
+    enabled: z.boolean().parse(input.enabled),
+  }),
+  execute: async ({ id, enabled }) => {
+    const result = await setImageGenerationConfigEnabled(id, enabled);
+    revalidateImageGenerationPages();
+    return result;
+  },
+  successMessage: "生图配置状态已更新",
+  errorTitle: "生图配置状态更新失败",
+  errorSuggestion: "请刷新配置列表后重试。",
+  entityId: ({ id }) => id,
+});
+
+const setDefaultImageGenerationConfigMutation = defineAdminAction({
+  action: "image_generation_config.set_default",
+  entityType: "image_generation_config",
+  parse: (id: number) => postgresIntegerIdSchema.parse(id),
+  execute: async (id) => {
+    const result = await setDefaultImageGenerationConfig(id);
+    revalidateImageGenerationPages();
+    return result;
+  },
+  successMessage: "默认生图配置已更新",
+  errorTitle: "默认生图配置更新失败",
+  errorSuggestion: "请刷新配置列表后重试。",
+  entityId: (id) => id,
+});
+
 export async function getImageGenerationConfigList() {
   await requireAdminSession();
   return getImageGenerationConfigs();
@@ -128,4 +163,15 @@ export async function updateImageGenerationConfigAction(
 
 export async function deleteImageGenerationConfigAction(id: number) {
   return deleteImageGenerationConfigMutation(id);
+}
+
+export async function setImageGenerationConfigEnabledAction(
+  id: number,
+  enabled: boolean,
+) {
+  return setImageGenerationConfigEnabledMutation({ id, enabled });
+}
+
+export async function setDefaultImageGenerationConfigAction(id: number) {
+  return setDefaultImageGenerationConfigMutation(id);
 }

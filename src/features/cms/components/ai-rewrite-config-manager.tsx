@@ -2,12 +2,21 @@
 
 import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, BrainCircuit, Loader2, Plus, Trash2 } from "lucide-react";
+import {
+  Activity,
+  BrainCircuit,
+  Loader2,
+  Plus,
+  Star,
+  Trash2,
+} from "lucide-react";
 
 import {
   checkAiRewriteConfigStatusAction,
   createAiRewriteConfigAction,
   deleteAiRewriteConfigAction,
+  setAiRewriteConfigEnabledAction,
+  setDefaultAiRewriteConfigAction,
   updateAiRewriteConfigAction,
 } from "@/features/cms/actions/ai-rewrite-config";
 import { type AiRewriteStatusCheckResult } from "@fwqgo/ai/rewrite-status-check";
@@ -117,7 +126,7 @@ function describeProvider(config: Config) {
 }
 
 const defaultStylePrompt =
-  "保持服务器/VPS推广文章的专业评测风格，强化商家特点、配置、线路、价格、优惠码、适用场景和SEO长尾词。保留原文中的表格、价格、配置、优惠码、官网链接和返利链接，不要编造不存在的信息。";
+  "保持服务器/VPS文章的专业评测风格，只对原文做小幅改写和排版整理。保留原文中的表格、价格、配置、优惠码、官网链接和返利链接，不新增外部信息。";
 
 function appendBoolean(formData: FormData, key: string, value: boolean) {
   formData.set(key, value ? "true" : "false");
@@ -496,13 +505,10 @@ function ConfigForm({
               "sourceContent",
               "factSheet",
               "outline",
-              "providerContext",
-              "knowledgeContext",
-              "knowledgeSections",
               "protectedContent",
               "retryFeedback",
             ]}
-            description="每轮候选正文实际使用的完整模板，系统只替换变量，不再追加隐藏业务指令。"
+            description="每次候选正文只基于清洗后的原文做小幅改写和排版整理。"
             className="min-h-[34rem]"
           />
           <PromptTemplateField
@@ -533,8 +539,6 @@ function ConfigForm({
               "sourceContent",
               "factSheet",
               "protectedAuthorityContent",
-              "providerContext",
-              "knowledgeContext",
               "markdownContent",
             ]}
             description="正文生成后调用一次；结果写入任务审计，不触发再次改写。"
@@ -687,6 +691,10 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
   const [showCreate, setShowCreate] = useState(configs.length === 0);
   const [editId, setEditId] = useState<number | null>(null);
   const [checkingId, setCheckingId] = useState<number | null>(null);
+  const [pendingAction, setPendingAction] = useState<{
+    id: number;
+    type: "enabled" | "default";
+  } | null>(null);
   const [checkResults, setCheckResults] = useState<
     Record<number, AiRewriteStatusCheckResult>
   >({});
@@ -730,6 +738,64 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
       });
     } finally {
       setCheckingId(null);
+    }
+  }
+
+  async function handleEnabledChange(id: number, enabled: boolean) {
+    const config = configs.find((item) => item.id === id);
+    setPendingAction({ id, type: "enabled" });
+
+    try {
+      unwrapAdminActionResult(
+        await setAiRewriteConfigEnabledAction(id, enabled),
+      );
+      notifySuccess({
+        title: enabled ? "AI 改写配置已启用" : "AI 改写配置已停用",
+        description: describeAdminResult([
+          config?.name,
+          !enabled && config?.isDefault
+            ? "默认状态已同步更新；如有其他启用配置，系统会自动设为默认"
+            : null,
+        ]),
+      });
+      router.refresh();
+    } catch (error) {
+      notifyError({
+        title: "AI 改写配置状态更新失败",
+        description: describeAdminResult([
+          config?.name,
+          error instanceof Error ? error.message : "状态更新失败",
+        ]),
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function handleSetDefault(id: number) {
+    const config = configs.find((item) => item.id === id);
+    setPendingAction({ id, type: "default" });
+
+    try {
+      unwrapAdminActionResult(await setDefaultAiRewriteConfigAction(id));
+      notifySuccess({
+        title: "默认 AI 改写配置已更新",
+        description: describeAdminResult([
+          config?.name,
+          config?.enabled ? null : "配置已同时启用",
+        ]),
+      });
+      router.refresh();
+    } catch (error) {
+      notifyError({
+        title: "默认 AI 改写配置更新失败",
+        description: describeAdminResult([
+          config?.name,
+          error instanceof Error ? error.message : "默认配置更新失败",
+        ]),
+      });
+    } finally {
+      setPendingAction(null);
     }
   }
 
@@ -808,15 +874,44 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
                     <TableCell>
                       {config.hasApiKey ? config.apiKeyPreview : "未配置"}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-2">
-                        {config.enabled ? (
-                          <Badge>启用</Badge>
-                        ) : (
-                          <Badge variant="outline">停用</Badge>
-                        )}
-                        {config.isDefault ? (
-                          <Badge variant="secondary">默认</Badge>
+                    <TableCell className="min-w-64">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="flex h-11 items-center gap-2 text-sm">
+                          <Switch
+                            checked={config.enabled}
+                            disabled={pendingAction !== null}
+                            aria-label={`${config.enabled ? "停用" : "启用"} AI 改写配置：${config.name}`}
+                            onCheckedChange={(enabled) =>
+                              void handleEnabledChange(config.id, enabled)
+                            }
+                          />
+                          <span>{config.enabled ? "已启用" : "已停用"}</span>
+                        </label>
+                        <Button
+                          type="button"
+                          variant={config.isDefault ? "secondary" : "outline"}
+                          size="sm"
+                          className="h-11"
+                          disabled={pendingAction !== null || config.isDefault}
+                          onClick={() => void handleSetDefault(config.id)}
+                        >
+                          {pendingAction?.id === config.id &&
+                          pendingAction.type === "default" ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <Star
+                              className="size-4"
+                              fill={config.isDefault ? "currentColor" : "none"}
+                            />
+                          )}
+                          {config.isDefault ? "默认配置" : "设为默认"}
+                        </Button>
+                        {pendingAction?.id === config.id &&
+                        pendingAction.type === "enabled" ? (
+                          <Loader2
+                            className="size-4 animate-spin text-muted-foreground"
+                            aria-label="正在更新状态"
+                          />
                         ) : null}
                       </div>
                     </TableCell>

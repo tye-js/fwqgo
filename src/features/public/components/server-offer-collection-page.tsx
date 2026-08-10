@@ -4,7 +4,6 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { ServerOfferTable } from "@/features/public/components/server-offer-table";
-import { ServerFitRecommendation } from "@/features/public/components/server-fit-recommendation";
 import { offerTopics } from "@/server/offers/server-offers";
 import { jsonLdScriptContent, toAbsoluteHttpUrl } from "@fwqgo/core/utils";
 import {
@@ -348,11 +347,6 @@ export function ServerOfferCollectionPage({
 
       <section className="container mx-auto px-4 py-8 md:py-10">
         <ServerOfferTable offers={offers} />
-        <ServerFitRecommendation
-          offers={offers}
-          scopeKind={kind}
-          scopeLabel={value}
-        />
       </section>
 
       <section className="container mx-auto px-4 pb-12">

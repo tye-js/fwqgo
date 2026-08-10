@@ -371,6 +371,67 @@ export async function updateAiRewriteConfig(
   });
 }
 
+export async function setAiRewriteConfigEnabled(
+  id: number,
+  enabled: boolean,
+) {
+  return db.transaction(async (tx) => {
+    await lockDefaultSelection(tx);
+    const [updated] = await tx
+      .update(aiRewriteConfigs)
+      .set({
+        enabled,
+        ...(enabled ? {} : { isDefault: false }),
+        updatedAt: new Date(),
+      })
+      .where(eq(aiRewriteConfigs.id, id))
+      .returning({
+        id: aiRewriteConfigs.id,
+        enabled: aiRewriteConfigs.enabled,
+        isDefault: aiRewriteConfigs.isDefault,
+      });
+
+    if (!updated) {
+      throw new Error("AI 改写配置不存在或已被删除");
+    }
+
+    await ensureEnabledDefault(tx);
+    return updated;
+  });
+}
+
+export async function setDefaultAiRewriteConfig(id: number) {
+  return db.transaction(async (tx) => {
+    await lockDefaultSelection(tx);
+    const [target] = await tx
+      .select({ id: aiRewriteConfigs.id })
+      .from(aiRewriteConfigs)
+      .where(eq(aiRewriteConfigs.id, id))
+      .limit(1);
+
+    if (!target) {
+      throw new Error("AI 改写配置不存在或已被删除");
+    }
+
+    await unsetOtherDefaults(tx);
+    const [updated] = await tx
+      .update(aiRewriteConfigs)
+      .set({ enabled: true, isDefault: true, updatedAt: new Date() })
+      .where(eq(aiRewriteConfigs.id, id))
+      .returning({
+        id: aiRewriteConfigs.id,
+        enabled: aiRewriteConfigs.enabled,
+        isDefault: aiRewriteConfigs.isDefault,
+      });
+
+    if (!updated) {
+      throw new Error("AI 改写配置不存在或已被删除");
+    }
+
+    return updated;
+  });
+}
+
 export async function deleteAiRewriteConfig(id: number) {
   await db.transaction(async (tx) => {
     await lockDefaultSelection(tx);

@@ -2,14 +2,15 @@
 
 import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ImagePlus, Plus, Trash2 } from "lucide-react";
+import { ImagePlus, Loader2, Plus, Star, Trash2 } from "lucide-react";
 
 import {
   createImageGenerationConfigAction,
   deleteImageGenerationConfigAction,
+  setDefaultImageGenerationConfigAction,
+  setImageGenerationConfigEnabledAction,
   updateImageGenerationConfigAction,
 } from "@/features/cms/actions/image-generation-config";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -326,6 +327,76 @@ export function ImageGenerationConfigManager({
   const router = useRouter();
   const [showCreate, setShowCreate] = useState(configs.length === 0);
   const [editId, setEditId] = useState<number | null>(null);
+  const [pendingAction, setPendingAction] = useState<{
+    id: number;
+    type: "enabled" | "default";
+  } | null>(null);
+
+  async function handleEnabledChange(id: number, enabled: boolean) {
+    const config = configs.find((item) => item.id === id);
+    setPendingAction({ id, type: "enabled" });
+
+    try {
+      const result = unwrapAdminActionResult(
+        await setImageGenerationConfigEnabledAction(id, enabled),
+      );
+      notifySuccess({
+        title: enabled ? "生图配置已启用" : "生图配置已停用",
+        description: describeAdminResult([
+          config?.name,
+          !enabled && config?.isDefault
+            ? "默认状态已同步更新；如有其他启用配置，系统会自动设为默认"
+            : null,
+          result.reboundFailedTaskCount > 0
+            ? `${result.reboundFailedTaskCount} 个失败任务已切换到新的默认配置`
+            : null,
+        ]),
+      });
+      router.refresh();
+    } catch (error) {
+      notifyError({
+        title: "生图配置状态更新失败",
+        description: describeAdminResult([
+          config?.name,
+          error instanceof Error ? error.message : "状态更新失败",
+        ]),
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function handleSetDefault(id: number) {
+    const config = configs.find((item) => item.id === id);
+    setPendingAction({ id, type: "default" });
+
+    try {
+      const result = unwrapAdminActionResult(
+        await setDefaultImageGenerationConfigAction(id),
+      );
+      notifySuccess({
+        title: "默认生图配置已更新",
+        description: describeAdminResult([
+          config?.name,
+          config?.enabled ? null : "配置已同时启用",
+          result.reboundFailedTaskCount > 0
+            ? `${result.reboundFailedTaskCount} 个失败任务已切换到新的默认配置`
+            : null,
+        ]),
+      });
+      router.refresh();
+    } catch (error) {
+      notifyError({
+        title: "默认生图配置更新失败",
+        description: describeAdminResult([
+          config?.name,
+          error instanceof Error ? error.message : "默认配置更新失败",
+        ]),
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  }
 
   async function handleDelete(id: number) {
     const config = configs.find((item) => item.id === id);
@@ -403,13 +474,44 @@ export function ImageGenerationConfigManager({
                   <TableCell>
                     {config.hasApiKey ? config.apiKeyPreview : "未配置"}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant={config.enabled ? "default" : "secondary"}>
-                        {config.enabled ? "启用" : "停用"}
-                      </Badge>
-                      {config.isDefault ? (
-                        <Badge variant="outline">默认</Badge>
+                  <TableCell className="min-w-64">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="flex h-11 items-center gap-2 text-sm">
+                        <Switch
+                          checked={config.enabled}
+                          disabled={pendingAction !== null}
+                          aria-label={`${config.enabled ? "停用" : "启用"}生图配置：${config.name}`}
+                          onCheckedChange={(enabled) =>
+                            void handleEnabledChange(config.id, enabled)
+                          }
+                        />
+                        <span>{config.enabled ? "已启用" : "已停用"}</span>
+                      </label>
+                      <Button
+                        type="button"
+                        variant={config.isDefault ? "secondary" : "outline"}
+                        size="sm"
+                        className="h-11"
+                        disabled={pendingAction !== null || config.isDefault}
+                        onClick={() => void handleSetDefault(config.id)}
+                      >
+                        {pendingAction?.id === config.id &&
+                        pendingAction.type === "default" ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Star
+                            className="size-4"
+                            fill={config.isDefault ? "currentColor" : "none"}
+                          />
+                        )}
+                        {config.isDefault ? "默认配置" : "设为默认"}
+                      </Button>
+                      {pendingAction?.id === config.id &&
+                      pendingAction.type === "enabled" ? (
+                        <Loader2
+                          className="size-4 animate-spin text-muted-foreground"
+                          aria-label="正在更新状态"
+                        />
                       ) : null}
                     </div>
                   </TableCell>

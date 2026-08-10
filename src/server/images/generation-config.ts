@@ -320,6 +320,90 @@ export async function updateImageGenerationConfig(
   });
 }
 
+async function finalizeQuickStateChange(
+  tx: ConfigTransaction,
+  previousDefault: ImageGenerationConfigRow | null,
+) {
+  await ensureEnabledDefault(tx);
+  const currentDefault = await getEnabledDefault(tx);
+  const reboundFailedTaskCount =
+    currentDefault && currentDefault.id !== previousDefault?.id
+      ? await rebindFailedCoverTasks(tx, currentDefault)
+      : 0;
+
+  return { currentDefault, reboundFailedTaskCount };
+}
+
+export async function setImageGenerationConfigEnabled(
+  id: number,
+  enabled: boolean,
+) {
+  return db.transaction(async (tx) => {
+    await lockDefaultSelection(tx);
+    const previousDefault = await getEnabledDefault(tx);
+    const [updated] = await tx
+      .update(imageGenerationConfigs)
+      .set({
+        enabled,
+        ...(enabled ? {} : { isDefault: false }),
+        updatedAt: new Date(),
+      })
+      .where(eq(imageGenerationConfigs.id, id))
+      .returning({
+        id: imageGenerationConfigs.id,
+        enabled: imageGenerationConfigs.enabled,
+        isDefault: imageGenerationConfigs.isDefault,
+      });
+
+    if (!updated) {
+      throw new Error("生图配置不存在或已被删除");
+    }
+
+    const { reboundFailedTaskCount } = await finalizeQuickStateChange(
+      tx,
+      previousDefault,
+    );
+    return { ...updated, reboundFailedTaskCount };
+  });
+}
+
+export async function setDefaultImageGenerationConfig(id: number) {
+  return db.transaction(async (tx) => {
+    await lockDefaultSelection(tx);
+    const previousDefault = await getEnabledDefault(tx);
+    const [target] = await tx
+      .select({ id: imageGenerationConfigs.id })
+      .from(imageGenerationConfigs)
+      .where(eq(imageGenerationConfigs.id, id))
+      .limit(1);
+
+    if (!target) {
+      throw new Error("生图配置不存在或已被删除");
+    }
+
+    await unsetOtherDefaults(tx);
+    const [updated] = await tx
+      .update(imageGenerationConfigs)
+      .set({ enabled: true, isDefault: true, updatedAt: new Date() })
+      .where(eq(imageGenerationConfigs.id, id))
+      .returning({
+        id: imageGenerationConfigs.id,
+        enabled: imageGenerationConfigs.enabled,
+        isDefault: imageGenerationConfigs.isDefault,
+      });
+
+    if (!updated) {
+      throw new Error("生图配置不存在或已被删除");
+    }
+
+    const { reboundFailedTaskCount } = await finalizeQuickStateChange(
+      tx,
+      previousDefault,
+    );
+    return { ...updated, reboundFailedTaskCount };
+  });
+}
+
 export async function deleteImageGenerationConfig(id: number) {
   return db.transaction(async (tx) => {
     await lockDefaultSelection(tx);

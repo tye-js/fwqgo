@@ -15,6 +15,8 @@ import {
   createAiRewriteConfig,
   deleteAiRewriteConfig,
   getAiRewriteConfigs,
+  setAiRewriteConfigEnabled,
+  setDefaultAiRewriteConfig,
   updateAiRewriteConfig,
 } from "@fwqgo/ai/rewrite-config";
 import { checkAiRewriteConfigStatus } from "@fwqgo/ai/rewrite-status-check";
@@ -61,8 +63,6 @@ const configSchema = z.object({
     "sourceContent",
     "factSheet",
     "outline",
-    "providerContext",
-    "knowledgeContext",
     "protectedContent",
     "retryFeedback",
   ]),
@@ -75,8 +75,6 @@ const configSchema = z.object({
     "outline",
     "protectedAuthorityContent",
     "protectedContent",
-    "providerContext",
-    "knowledgeContext",
     "candidateContent",
     "issues",
   ]),
@@ -84,8 +82,6 @@ const configSchema = z.object({
     "sourceContent",
     "factSheet",
     "protectedAuthorityContent",
-    "providerContext",
-    "knowledgeContext",
     "markdownContent",
   ]),
   metadataPrompt: metadataPromptSchema,
@@ -192,6 +188,39 @@ const deleteAiRewriteConfigMutation = defineAdminAction({
   entityId: (id) => id,
 });
 
+const setAiRewriteConfigEnabledMutation = defineAdminAction({
+  action: "ai_rewrite_config.set_enabled",
+  entityType: "ai_rewrite_config",
+  parse: (input: { id: number; enabled: boolean }) => ({
+    id: postgresIntegerIdSchema.parse(input.id),
+    enabled: z.boolean().parse(input.enabled),
+  }),
+  execute: async ({ id, enabled }) => {
+    const result = await setAiRewriteConfigEnabled(id, enabled);
+    revalidatePath("/collect/ai-rewrite");
+    return result;
+  },
+  successMessage: "AI 改写配置状态已更新",
+  errorTitle: "AI 改写配置状态更新失败",
+  errorSuggestion: "请刷新配置列表后重试。",
+  entityId: ({ id }) => id,
+});
+
+const setDefaultAiRewriteConfigMutation = defineAdminAction({
+  action: "ai_rewrite_config.set_default",
+  entityType: "ai_rewrite_config",
+  parse: (id: number) => postgresIntegerIdSchema.parse(id),
+  execute: async (id) => {
+    const result = await setDefaultAiRewriteConfig(id);
+    revalidatePath("/collect/ai-rewrite");
+    return result;
+  },
+  successMessage: "默认 AI 改写配置已更新",
+  errorTitle: "默认 AI 改写配置更新失败",
+  errorSuggestion: "请刷新配置列表后重试。",
+  entityId: (id) => id,
+});
+
 export async function getAiRewriteConfigList() {
   await requireAdminSession();
   return getAiRewriteConfigs();
@@ -210,6 +239,17 @@ export async function updateAiRewriteConfigAction(
 
 export async function deleteAiRewriteConfigAction(id: number) {
   return deleteAiRewriteConfigMutation(id);
+}
+
+export async function setAiRewriteConfigEnabledAction(
+  id: number,
+  enabled: boolean,
+) {
+  return setAiRewriteConfigEnabledMutation({ id, enabled });
+}
+
+export async function setDefaultAiRewriteConfigAction(id: number) {
+  return setDefaultAiRewriteConfigMutation(id);
 }
 
 export async function checkAiRewriteConfigStatusAction(id: number) {
