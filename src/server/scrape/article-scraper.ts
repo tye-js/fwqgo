@@ -16,9 +16,11 @@ import {
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import type {
   AiRewriteAuditEvent,
+  AiRequestStage,
   ArticleRewriteProgress,
   ArticleRewriteQuality,
 } from "@fwqgo/ai/article-rewriter";
+import { AiRequestConnectionInterruptedError } from "@fwqgo/ai/article-rewriter";
 import RewriteArticle from "@/langchain/rewrite-article";
 import {
   mergeAffiliateReports,
@@ -87,6 +89,11 @@ export type ArticleProcessingProgress =
       stage: "ai_audit";
       snapshot: ArticleProcessingSnapshot;
       audit: AiRewriteAuditEvent;
+    }
+  | {
+      stage: "ai_request_stage";
+      snapshot: ArticleProcessingSnapshot;
+      requestStage: AiRequestStage;
     };
 
 type SiteRule = {
@@ -547,6 +554,7 @@ async function scrapeByRule(input: {
   aiInputMaxLength?: number;
   categoryName?: string | null;
   onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>;
+  onRequestStage?: (stage: AiRequestStage) => void | Promise<void>;
 }) {
   const parsedUrl = requirePublicHttpUrl(input.url, "抓取 URL");
   const diagnostics = createEmptyDiagnostics({
@@ -705,6 +713,14 @@ async function scrapeByRule(input: {
               audit,
             });
           },
+          onRequestStage: async (requestStage) => {
+            await input.onProgress?.({
+              stage: "ai_request_stage",
+              snapshot: progressSnapshot(),
+              requestStage,
+            });
+            await input.onRequestStage?.(requestStage);
+          },
         });
         const repairedMarkdown = repairMarkdownAffiliateLinks(
           rewritten.markdownContent,
@@ -739,8 +755,17 @@ async function scrapeByRule(input: {
           error: message,
         });
 
+        if (error instanceof AiRequestConnectionInterruptedError) {
+          // An interrupted request may already have been accepted upstream.
+          // Never hide that uncertain result behind an original-content fallback.
+          throw error;
+        }
+
         if (!input.allowAiFallback) {
-          throw new Error(message);
+          // Preserve the typed interruption error so the durable AI task can
+          // enter manual-required instead of treating an unknown upstream
+          // result as an ordinary retryable failure.
+          throw error;
         }
 
         diagnostics.warnings.push(
@@ -777,6 +802,7 @@ export async function scrapeArticleWithOptions(input: {
   aiInputMaxLength?: number;
   categoryName?: string | null;
   onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>;
+  onRequestStage?: (stage: AiRequestStage) => void | Promise<void>;
 }) {
   const parsedUrl = requirePublicHttpUrl(input.url, "抓取 URL");
   const rule = findRule(parsedUrl);
@@ -788,5 +814,6 @@ export async function scrapeArticleWithOptions(input: {
     aiInputMaxLength: input.aiInputMaxLength,
     categoryName: input.categoryName,
     onProgress: input.onProgress,
+    onRequestStage: input.onRequestStage,
   });
 }

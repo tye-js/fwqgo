@@ -1,6 +1,3 @@
-const TRANSIENT_AI_REQUEST_ATTEMPTS = 2;
-const TRANSIENT_AI_REQUEST_RETRY_DELAY_MS = 750;
-
 function errorDetails(error: unknown): string[] {
   if (!(error instanceof Error)) {
     return typeof error === "string" ? [error] : [];
@@ -38,51 +35,11 @@ export function isTransientAiNetworkError(error: unknown) {
   ].some((fragment) => detail.includes(fragment));
 }
 
-export async function retryTransientAiRequest<T>(
-  request: () => Promise<T>,
-  options: {
-    signal?: AbortSignal;
-    attempts?: number;
-    retryDelayMs?: number;
-  } = {},
-) {
-  const attempts = Math.max(
-    1,
-    Math.min(3, Math.trunc(options.attempts ?? TRANSIENT_AI_REQUEST_ATTEMPTS)),
-  );
-  const retryDelayMs = Math.max(
-    0,
-    Math.trunc(
-      options.retryDelayMs ?? TRANSIENT_AI_REQUEST_RETRY_DELAY_MS,
-    ),
-  );
-
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      return await request();
-    } catch (error) {
-      if (
-        options.signal?.aborted ||
-        !isTransientAiNetworkError(error) ||
-        attempt === attempts
-      ) {
-        throw error;
-      }
-
-      if (retryDelayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-      }
-    }
-  }
-
-  throw new Error("AI 请求重试状态异常");
-}
-
 export function getTransientAiNetworkErrorMessage(input: {
   configName: string;
   model: string;
 }) {
-  return `第三方 AI 中转在响应完成前关闭了连接，系统已自动重试 1 次：${input.configName} / ${input.model}。请检查中转余额、上游请求时限和模型可用性，或切换备用配置`;
+  return `第三方 AI 中转在响应完成前关闭了连接，系统未自动重试：${input.configName} / ${input.model}。为避免重复计费，请检查中转余额、上游请求时限和模型可用性后手动重试`;
 }
 
 export function buildOpenAiChatCompletionsEndpoint(baseUrl: string) {

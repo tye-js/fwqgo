@@ -150,6 +150,7 @@ export async function generateArticleCoverImageAction(input: {
           runningCount: activeTask.status === "running" ? 1 : 0,
           successCount: 0,
           failedCount: 0,
+          uncertainCount: 0,
         };
       }
 
@@ -172,6 +173,7 @@ export async function generateArticleCoverImageAction(input: {
         runningCount: 0,
         successCount: 0,
         failedCount: 0,
+        uncertainCount: 0,
       };
     }
 
@@ -189,6 +191,7 @@ export async function generateArticleCoverImageAction(input: {
       runningCount: 0,
       successCount: 0,
       failedCount: 0,
+      uncertainCount: 0,
     };
   } catch (error) {
     return {
@@ -267,6 +270,7 @@ export async function batchGenerateArticleCoverImagesAction(input: {
       results: tasks.map(serializeCoverTask),
       successCount: 0,
       failedCount: 0,
+      uncertainCount: 0,
       pendingCount: tasks.length,
       runningCount: 0,
       skippedActiveCount: activePostIds.size,
@@ -296,7 +300,12 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
     }
 
     const [existingTask] = await db
-      .select({ status: imageCoverGenerationTasks.status })
+      .select({
+        status: imageCoverGenerationTasks.status,
+        prompt: imageCoverGenerationTasks.prompt,
+        assetId: imageCoverGenerationTasks.assetId,
+        outputUrl: imageCoverGenerationTasks.outputUrl,
+      })
       .from(imageCoverGenerationTasks)
       .where(eq(imageCoverGenerationTasks.id, parsedTaskId))
       .limit(1);
@@ -311,11 +320,16 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
       });
     }
 
+    const hasAssetCheckpoint = Boolean(
+      existingTask.assetId ?? existingTask.outputUrl,
+    );
     const defaultConfig =
-      existingTask.status === "failed" || existingTask.status === "uncertain"
+      !hasAssetCheckpoint &&
+      (existingTask.status === "failed" || existingTask.status === "uncertain")
         ? await getActiveImageGenerationConfig()
         : null;
     if (
+      !hasAssetCheckpoint &&
       (existingTask.status === "failed" ||
         existingTask.status === "uncertain") &&
       !defaultConfig
@@ -329,10 +343,8 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
     const retryValues: Partial<typeof imageCoverGenerationTasks.$inferInsert> =
       {
         status: "pending",
-        requestStage: "queued",
-        outputUrl: null,
-        assetId: null,
-        prompt: null,
+        requestStage: hasAssetCheckpoint ? "asset_persisted" : "queued",
+        retryAfterAt: null,
         errorTitle: null,
         errorDetail: null,
         startedAt: null,
@@ -401,6 +413,7 @@ export async function cancelCoverGenerationTaskAction(taskId: number) {
       .update(imageCoverGenerationTasks)
       .set({
         status: "cancelled",
+        retryAfterAt: null,
         errorTitle: null,
         errorDetail: null,
         finishedAt: new Date(),
@@ -539,6 +552,7 @@ export async function getCoverGenerationBatchStatusAction(batchId: string) {
       results: tasks.map(serializeCoverTask),
       successCount: tasks.filter((task) => task.status === "succeeded").length,
       failedCount: tasks.filter((task) => task.status === "failed").length,
+      uncertainCount: tasks.filter((task) => task.status === "uncertain").length,
       pendingCount: tasks.filter((task) => task.status === "pending").length,
       runningCount: tasks.filter((task) => task.status === "running").length,
       done: tasks.every((task) =>

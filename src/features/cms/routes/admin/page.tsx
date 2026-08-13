@@ -374,6 +374,12 @@ export default async function Page() {
     taskOverview.ai.manualRequired > 0
       ? "/ai-tasks?type=ai&status=manual_required"
       : "/ai-tasks?type=ai&status=failed";
+  const coverAttention =
+    taskOverview.cover.failed + taskOverview.cover.uncertain;
+  const coverAttentionHref =
+    taskOverview.cover.uncertain > 0
+      ? "/ai-tasks?type=cover&status=uncertain"
+      : "/ai-tasks?type=cover&status=failed";
 
   return (
     <AdminPageShell
@@ -457,12 +463,12 @@ export default async function Page() {
             tone={taskOverview.ai.attention > 0 ? "critical" : "neutral"}
           />
           <QueueItem
-            title="封面生图失败"
-            count={taskOverview.cover.failed}
-            detail={`${taskOverview.cover.active} 个处理中 · 可进入任务中心重试`}
-            href="/ai-tasks?type=cover&status=failed"
+            title="封面生图需处理"
+            count={coverAttention}
+            detail={`${taskOverview.cover.uncertain} 个结果不确定 · ${taskOverview.cover.failed} 个失败`}
+            href={coverAttentionHref}
             icon={Images}
-            tone={taskOverview.cover.failed > 0 ? "critical" : "neutral"}
+            tone={coverAttention > 0 ? "critical" : "neutral"}
           />
           <QueueItem
             title="套餐待审核"

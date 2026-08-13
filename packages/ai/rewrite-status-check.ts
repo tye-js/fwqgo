@@ -7,7 +7,6 @@ import {
   buildOpenAiChatCompletionsEndpoint,
   getTransientAiNetworkErrorMessage,
   isTransientAiNetworkError,
-  retryTransientAiRequest,
 } from "./openai-compatible";
 
 const MAX_STATUS_RESPONSE_BYTES = 256 * 1024;
@@ -220,39 +219,33 @@ export async function checkAiRewriteConfigStatus(
 
   try {
     const signal = AbortSignal.timeout(15_000);
-    const { response, bodyText } = await retryTransientAiRequest(
-      async () => {
-        const response = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${config.apiKey}`,
-            "Content-Type": "application/json",
-          },
-          redirect: "error",
-          signal,
-          body: JSON.stringify({
-            model: config.model,
-            temperature: 0,
-            max_tokens: 8,
-            messages: [
-              {
-                role: "system",
-                content: "You are a health check endpoint.",
-              },
-              {
-                role: "user",
-                content: "Reply with the single word: ok",
-              },
-            ],
-          }),
-        });
-        const bodyText = await readResponseTextWithLimit(
-          response,
-          MAX_STATUS_RESPONSE_BYTES,
-        );
-        return { response, bodyText };
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
       },
-      { signal },
+      redirect: "error",
+      signal,
+      body: JSON.stringify({
+        model: config.model,
+        temperature: 0,
+        max_tokens: 8,
+        messages: [
+          {
+            role: "system",
+            content: "You are a health check endpoint.",
+          },
+          {
+            role: "user",
+            content: "Reply with the single word: ok",
+          },
+        ],
+      }),
+    });
+    const bodyText = await readResponseTextWithLimit(
+      response,
+      MAX_STATUS_RESPONSE_BYTES,
     );
     const latencyMs = Date.now() - startedAt;
 

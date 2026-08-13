@@ -44,6 +44,7 @@ const statusFilters: Array<{
   { value: "pending", label: "排队" },
   { value: "running", label: "运行中" },
   { value: "failed", label: "失败" },
+  { value: "uncertain", label: "不确定失败" },
   { value: "manual_required", label: "需人工" },
   { value: "cancelled", label: "已取消" },
   { value: "succeeded", label: "成功" },

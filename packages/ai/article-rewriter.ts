@@ -16,7 +16,6 @@ import {
   getTransientAiNetworkErrorMessage,
   isTransientAiNetworkError,
   parseAiJsonObject,
-  retryTransientAiRequest,
 } from "./openai-compatible";
 import {
   evaluateRewriteQuality,
@@ -123,7 +122,13 @@ export interface AiRewriteAuditEvent {
 export interface AiRewriteExecutionOptions {
   styleId?: number;
   onAudit?: (event: AiRewriteAuditEvent) => void | Promise<void>;
+  onRequestStage?: (stage: AiRequestStage) => void | Promise<void>;
 }
+
+export type AiRequestStage =
+  | "request_started"
+  | "response_received"
+  | "checkpointed";
 
 export interface ArticleRewriteOptions extends AiRewriteExecutionOptions {
   sourceTitle?: string | null;
@@ -266,11 +271,6 @@ type ChatCompletionResponse = {
   };
 };
 
-type AiRewriteHttpResult = {
-  response: Response;
-  data: ChatCompletionResponse | null;
-};
-
 type ChatCompletionTextResult = {
   text: string;
   finishReason: string | null;
@@ -285,6 +285,13 @@ type AiRewriteConfig = NonNullable<
 
 function createReadableError(message: string, detail?: string) {
   return new Error(detail ? `${message}；原因：${detail}` : message);
+}
+
+export class AiRequestConnectionInterruptedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AiRequestConnectionInterruptedError";
+  }
 }
 
 export function getAiRewriteContentLimit(maxTokens: number) {
@@ -972,7 +979,7 @@ function getAiProviderErrorMessage(input: {
   }
 
   if (input.status === 429) {
-    return `${prefix}，请求频率或额度受限，请稍后重试或更换模型`;
+    return `${prefix}，请求频率或额度受限，请确认服务商状态后手动重试或更换模型`;
   }
 
   if (input.status === 402) {
@@ -980,7 +987,7 @@ function getAiProviderErrorMessage(input: {
   }
 
   if (input.status >= 500) {
-    return `${prefix}，服务商当前异常，请稍后重试`;
+    return `${prefix}，服务商当前异常，请确认服务商状态后手动重试`;
   }
 
   return message ? `${prefix}，${message}` : prefix;
@@ -996,64 +1003,60 @@ async function requestChatCompletionResult(input: {
   userPrompt: string;
   stepName: string;
   allowLengthFinishReason?: boolean;
+  onRequestStage?: (stage: AiRequestStage) => void | Promise<void>;
 }): Promise<ChatCompletionTextResult> {
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
 
   try {
-    const request = () =>
-      retryTransientAiRequest<AiRewriteHttpResult>(
-        async () => {
-          const endpoint = await assertPublicHttpUrl(
-            input.endpoint,
-            "AI 接口地址",
-          );
-          const response = await fetch(endpoint, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${input.config.apiKey}`,
-              "Content-Type": "application/json",
-            },
-            redirect: "error",
-            signal: controller.signal,
-            body: JSON.stringify({
-              model: input.config.model,
-              temperature: input.temperature ?? input.config.temperature / 100,
-              max_tokens: input.maxTokens,
-              ...(input.responseFormat
-                ? { response_format: input.responseFormat }
-                : {}),
-              messages: [{ role: "user", content: input.userPrompt }],
-            }),
-          });
-          const responseText = await readResponseTextWithLimit(
-            response,
-            MAX_AI_RESPONSE_BYTES,
-          );
-          if (responseText === null) {
-            throw createReadableError(
-              `${input.stepName}失败：AI 响应过大`,
-              "服务商返回超过 4 MiB 安全限制，请检查中转接口或更换服务商",
-            );
-          }
-          let data: ChatCompletionResponse | null = null;
-          try {
-            data = JSON.parse(responseText || "{}") as ChatCompletionResponse;
-          } catch {
-            // HTTP errors may legitimately return non-JSON bodies; classify them below.
-          }
-
-          return { response, data };
+    const endpoint = await assertPublicHttpUrl(input.endpoint, "AI 接口地址");
+    await input.onRequestStage?.("request_started");
+    const request = async () => {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${input.config.apiKey}`,
+          "Content-Type": "application/json",
         },
-        { signal: controller.signal },
+        redirect: "error",
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: input.config.model,
+          temperature: input.temperature ?? input.config.temperature / 100,
+          max_tokens: input.maxTokens,
+          ...(input.responseFormat
+            ? { response_format: input.responseFormat }
+            : {}),
+          messages: [{ role: "user", content: input.userPrompt }],
+        }),
+      });
+      const responseText = await readResponseTextWithLimit(
+        response,
+        MAX_AI_RESPONSE_BYTES,
       );
+      await input.onRequestStage?.("response_received");
+      if (responseText === null) {
+        throw createReadableError(
+          `${input.stepName}失败：AI 响应过大`,
+          "服务商返回超过 4 MiB 安全限制，请检查中转接口或更换服务商",
+        );
+      }
+      let data: ChatCompletionResponse | null = null;
+      try {
+        data = JSON.parse(responseText || "{}") as ChatCompletionResponse;
+      } catch {
+        // HTTP errors may legitimately return non-JSON bodies; classify them below.
+      }
+
+      return { response, data };
+    };
 
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeout = setTimeout(() => {
         controller.abort();
         reject(
-          new Error(
-            `AI 改写请求超时（${Math.round(input.timeoutMs / 1000)}秒）：${input.config.name} / ${input.config.model}，请稍后重试或换一个改写模型`,
+          new AiRequestConnectionInterruptedError(
+            `AI 改写请求超时（${Math.round(input.timeoutMs / 1000)}秒）：${input.config.name} / ${input.config.model}，上游可能仍在处理，系统不会自动重试，请先确认服务商侧状态后再手动重试`,
           ),
         );
       }, input.timeoutMs);
@@ -1125,18 +1128,26 @@ async function requestChatCompletionResult(input: {
     };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(
-        `AI 改写请求超时（${Math.round(input.timeoutMs / 1000)}秒）：${input.config.name} / ${input.config.model}，请稍后重试或换一个改写模型`,
+      throw new AiRequestConnectionInterruptedError(
+        `AI 改写请求超时（${Math.round(input.timeoutMs / 1000)}秒）：${input.config.name} / ${input.config.model}，上游可能仍在处理，系统不会自动重试；请先确认服务商侧状态后再手动重试或更换模型`,
       );
     }
 
     if (isTransientAiNetworkError(error)) {
-      throw createReadableError(
+      throw new AiRequestConnectionInterruptedError(
         `${input.stepName}失败：第三方 AI 中转连接中断`,
-        getTransientAiNetworkErrorMessage({
+      );
+    }
+
+    if (error instanceof AiRequestConnectionInterruptedError) {
+      if (error.message.includes("系统不会自动重试")) {
+        throw error;
+      }
+      throw new AiRequestConnectionInterruptedError(
+        `${error.message}；${getTransientAiNetworkErrorMessage({
           configName: input.config.name,
           model: input.config.model,
-        }),
+        })}`,
       );
     }
 
@@ -1190,6 +1201,7 @@ async function requestAuditedChatCompletion(input: {
       userPrompt: input.userPrompt,
       stepName: input.stepName,
       allowLengthFinishReason: input.allowLengthFinishReason,
+      onRequestStage: input.options.onRequestStage,
     });
     await reportRewriteAudit(input.options, {
       ...baseEvent,
@@ -1200,6 +1212,7 @@ async function requestAuditedChatCompletion(input: {
       completionTokens: result.completionTokens,
       totalTokens: result.totalTokens,
     });
+    await input.options.onRequestStage?.("checkpointed");
     return result;
   } catch (error) {
     await reportRewriteAudit(input.options, {
@@ -1612,8 +1625,21 @@ export async function rewriteArticleWithAi(
       outputLength: reviewResult.text.length,
     });
   } catch (error) {
-    reviewSkipped = true;
     const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof AiRequestConnectionInterruptedError) {
+      await updateRewriteAudit(options, config, {
+        stage: "quality_review",
+        stageName: "正文质量审查（1/1）",
+        stageAttempt: 1,
+        status: "failed",
+        prompt: reviewPrompt,
+        error: message,
+        metadata: { accepted: false, nonBlocking: false },
+      });
+      throw error;
+    }
+
+    reviewSkipped = true;
     await updateRewriteAudit(options, config, {
       stage: "quality_review",
       stageName: "正文质量审查（1/1）",

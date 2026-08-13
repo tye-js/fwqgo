@@ -48,6 +48,14 @@ const statusLabels: Record<string, string> = {
   cancelled: "已取消",
 };
 
+const requestStageLabels: Record<string, string> = {
+  queued: "等待请求",
+  request_started: "请求已发出",
+  response_received: "响应已收到",
+  checkpointed: "结果已保存",
+  manual_required: "需人工确认",
+};
+
 const stepStatusLabels = {
   pending: "等待中",
   running: "处理中",
@@ -1113,6 +1121,12 @@ export async function AiRewriteTaskDetailPageContent({
       />
       <div className="grid gap-4 md:grid-cols-4 xl:grid-cols-6">
         <Stat label="状态" value={statusLabels[task.status] ?? task.status} />
+        <Stat
+          label="请求阶段"
+          value={
+            requestStageLabels[task.requestStage] ?? task.requestStage ?? "-"
+          }
+        />
         <Stat label="尝试次数" value={task.attempts} />
         <Stat label="改写配置" value={task.rewriteStyleName ?? "-"} />
         <Stat label="模型" value={task.model ?? "-"} />

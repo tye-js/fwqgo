@@ -48,6 +48,7 @@ type GenerateCoverInput = {
   signal?: AbortSignal;
   onPrompt?: (prompt: string) => void | Promise<void>;
   onRequestStarted?: () => void | Promise<void>;
+  onResponseReceived?: () => void | Promise<void>;
   onAssetPersisted?: (asset: ImageAssetRow) => void | Promise<void>;
 };
 
@@ -384,6 +385,7 @@ export async function generateArticleCoverImage(
       "生图接口响应过大，已停止读取；请检查接口是否返回了异常内容",
     );
   }
+  await input.onResponseReceived?.();
   if (!response.ok) {
     const httpError = createImageGenerationHttpError({
       status: response.status,

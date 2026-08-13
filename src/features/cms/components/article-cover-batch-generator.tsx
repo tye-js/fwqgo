@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
+  AlertTriangle,
   CheckCircle2,
   Clock3,
   ExternalLink,
@@ -86,6 +87,7 @@ type BatchStatusResult = {
   results?: GenerateResult[];
   successCount?: number;
   failedCount?: number;
+  uncertainCount?: number;
   pendingCount?: number;
   runningCount?: number;
   done?: boolean;
@@ -125,6 +127,14 @@ function getResultBadge(result: GenerateResult) {
     return {
       label: "失败",
       icon: XCircle,
+      variant: "destructive" as const,
+    };
+  }
+
+  if (status === "uncertain") {
+    return {
+      label: "不确定失败",
+      icon: AlertTriangle,
       variant: "destructive" as const,
     };
   }
@@ -200,6 +210,7 @@ export function ArticleCoverBatchGenerator({
   const [batchSummary, setBatchSummary] = useState({
     successCount: 0,
     failedCount: 0,
+    uncertainCount: 0,
     pendingCount: 0,
     runningCount: 0,
     done: true,
@@ -284,6 +295,10 @@ export function ArticleCoverBatchGenerator({
       failedCount:
         result.failedCount ??
         resultRows.filter((item) => getResultStatus(item) === "failed").length,
+      uncertainCount:
+        result.uncertainCount ??
+        resultRows.filter((item) => getResultStatus(item) === "uncertain")
+          .length,
       pendingCount:
         result.pendingCount ??
         resultRows.filter((item) => getResultStatus(item) === "pending").length,
@@ -350,6 +365,9 @@ export function ArticleCoverBatchGenerator({
               (result.failedCount ?? 0) > 0
                 ? `失败 ${result.failedCount ?? 0} 篇`
                 : null,
+              (result.uncertainCount ?? 0) > 0
+                ? `不确定失败 ${result.uncertainCount} 篇`
+                : null,
             ]),
           });
         }
@@ -398,6 +416,9 @@ export function ArticleCoverBatchGenerator({
             `成功 ${result.successCount ?? 0} 篇`,
             (result.failedCount ?? 0) > 0
               ? `失败 ${result.failedCount ?? 0} 篇`
+              : null,
+            (result.uncertainCount ?? 0) > 0
+              ? `不确定失败 ${result.uncertainCount} 篇`
               : null,
           ]),
         });
@@ -545,6 +566,15 @@ export function ArticleCoverBatchGenerator({
               >
                 失败 {batchSummary.failedCount}
               </Badge>
+              <Badge
+                variant={
+                  batchSummary.uncertainCount > 0
+                    ? "destructive"
+                    : "outline"
+                }
+              >
+                不确定失败 {batchSummary.uncertainCount}
+              </Badge>
               <Button
                 type="button"
                 variant="outline"
@@ -581,9 +611,16 @@ export function ArticleCoverBatchGenerator({
                     <p className="break-all text-xs text-muted-foreground">
                       {result.url}
                     </p>
-                  ) : getResultStatus(result) === "failed" ? (
+                  ) : ["failed", "uncertain"].includes(
+                      getResultStatus(result),
+                    ) ? (
                     <div className="mt-1 space-y-1 text-xs text-destructive">
-                      <p>{result.errorTitle ?? "生成失败"}</p>
+                      <p>
+                        {result.errorTitle ??
+                          (getResultStatus(result) === "uncertain"
+                            ? "不确定失败"
+                            : "生成失败")}
+                      </p>
                       {result.errorDetail || result.error ? (
                         <p className="break-all text-muted-foreground">
                           {result.errorDetail ?? result.error}

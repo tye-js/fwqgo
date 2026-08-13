@@ -661,9 +661,10 @@ export async function getDashboardStats() {
       active: value("queued", "pending", "running"),
       succeeded: value("succeeded", "success"),
       failed: value("failed"),
+      uncertain: value("uncertain"),
       manualRequired: value("manual_required"),
       cancelled: value("cancelled"),
-      attention: value("failed", "manual_required"),
+      attention: value("failed", "uncertain", "manual_required"),
     };
   };
   const formatDayKey = (date: Date) => {

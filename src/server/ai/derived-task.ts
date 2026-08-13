@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 
 import { db } from "@fwqgo/db";
-import { aiRewriteTasks, aiTaskSteps } from "@fwqgo/db/schema";
+import { aiRewriteTasks } from "@fwqgo/db/schema";
 
 type DerivedTaskConfigSnapshot = {
   id: number | null;
@@ -26,7 +26,6 @@ export async function upsertDerivedAiTask(input: {
   currentStep: string;
   rewriteConfig: DerivedTaskConfigSnapshot;
   imageConfig?: DerivedImageConfigSnapshot | null;
-  clearStepsOnReuse?: boolean;
 }) {
   return db.transaction(async (tx) => {
     await tx.execute(
@@ -71,6 +70,7 @@ export async function upsertDerivedAiTask(input: {
       status: "pending",
       progress: 0,
       currentStep: input.currentStep,
+      requestStage: "queued",
       error: null,
       categoryId: input.categoryId,
       rewriteStyleId: input.rewriteConfig.id,
@@ -112,10 +112,6 @@ export async function upsertDerivedAiTask(input: {
       if (!reusedTask) {
         throw new Error("派生 AI 任务状态已变化，请刷新后重试");
       }
-      if (input.clearStepsOnReuse) {
-        await tx.delete(aiTaskSteps).where(eq(aiTaskSteps.taskId, reusedTask.id));
-      }
-
       return { id: reusedTask.id, status: "pending" as const, reused: true };
     }
 

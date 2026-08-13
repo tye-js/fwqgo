@@ -1,10 +1,22 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  isNull,
+  inArray,
+  lte,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { db } from "@fwqgo/db";
 import {
   affServiceProviders,
   imageCoverGenerationTasks,
+  imageAssets,
   posts,
 } from "@fwqgo/db/schema";
 import {
@@ -98,12 +110,6 @@ let isCoverGenerationWorkerRunning = false;
 
 const COVER_TASK_TIMEOUT_MS = 6 * 60 * 1000;
 
-function wait(ms: number) {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
 function formatWaitMinutes(ms: number) {
   return Math.max(1, Math.ceil(ms / 60_000));
 }
@@ -158,6 +164,10 @@ export function serializeCoverTask(task: CoverTaskRow) {
     model: task.model ?? undefined,
     status,
     requestStage: task.requestStage,
+    prompt: task.prompt ?? undefined,
+    hasPromptCheckpoint: Boolean(task.prompt?.trim()),
+    hasAssetCheckpoint: Boolean(task.assetId ?? task.outputUrl),
+    retryAfterAt: task.retryAfterAt?.toISOString() ?? null,
     success: status === "succeeded",
     url: task.outputUrl ?? undefined,
     assetId: task.assetId ?? undefined,
@@ -279,6 +289,7 @@ export async function enqueueArticleCoverGenerationTask(
               assetId: null,
               prompt: null,
               requestStage: "queued",
+              retryAfterAt: null,
               errorTitle: null,
               errorDetail: null,
               createdBy: input.createdBy ?? existingTask.createdBy,
@@ -446,6 +457,7 @@ async function persistCoverTaskConfig(
     .where(
       and(
         eq(imageCoverGenerationTasks.id, task.id),
+        eq(imageCoverGenerationTasks.status, "running"),
         eq(imageCoverGenerationTasks.leaseOwner, task.leaseOwner),
       ),
     )
@@ -465,17 +477,10 @@ async function bindCoverTaskConfig(task: CoverTaskRow) {
       ? null
       : await getActiveImageGenerationConfig();
 
-  if (!config) {
-    throw new Error(
-      task.configId
-        ? `任务绑定的生图配置 #${task.configId} 已停用或不存在，请重试任务以切换到当前默认配置`
-        : task.configName || task.provider || task.model
-          ? "任务绑定的生图配置已被删除，请重试任务以切换到当前默认配置"
-          : "当前没有已启用的默认生图配置",
-    );
-  }
-
-  return persistCoverTaskConfig(task, config);
+  // A historical task may point to a deleted or disabled configuration. Keep
+  // the historical snapshot for diagnostics, but let the candidate list pick
+  // an enabled provider before treating the task as failed.
+  return config ? persistCoverTaskConfig(task, config) : task;
 }
 
 async function persistCoverTaskPrompt(task: CoverTaskRow, prompt: string) {
@@ -540,7 +545,13 @@ async function resetStaleRunningCoverTasks() {
     .where(
       and(
         eq(imageCoverGenerationTasks.status, "running"),
-        eq(imageCoverGenerationTasks.requestStage, "request_started"),
+        inArray(imageCoverGenerationTasks.requestStage, [
+          "request_started",
+          "response_received",
+          "asset_persisted",
+        ]),
+        isNull(imageCoverGenerationTasks.assetId),
+        isNull(imageCoverGenerationTasks.outputUrl),
         or(
           isNull(imageCoverGenerationTasks.leaseExpiresAt),
           lt(imageCoverGenerationTasks.leaseExpiresAt, now),
@@ -553,9 +564,10 @@ async function resetStaleRunningCoverTasks() {
     .update(imageCoverGenerationTasks)
     .set({
       status: "pending",
-      requestStage: "queued",
+      requestStage: sql`case when ${imageCoverGenerationTasks.assetId} is not null or ${imageCoverGenerationTasks.outputUrl} is not null then 'asset_persisted' else 'queued' end`,
       errorTitle: null,
       errorDetail: null,
+      retryAfterAt: null,
       startedAt: null,
       leaseOwner: null,
       leaseExpiresAt: null,
@@ -592,8 +604,19 @@ async function getNextPendingCoverTask() {
   const [task] = await db
     .select({ id: imageCoverGenerationTasks.id })
     .from(imageCoverGenerationTasks)
-    .where(eq(imageCoverGenerationTasks.status, "pending"))
-    .orderBy(asc(imageCoverGenerationTasks.id))
+    .where(
+      and(
+        eq(imageCoverGenerationTasks.status, "pending"),
+        or(
+          isNull(imageCoverGenerationTasks.retryAfterAt),
+          lte(imageCoverGenerationTasks.retryAfterAt, now),
+        ),
+      ),
+    )
+    .orderBy(
+      asc(imageCoverGenerationTasks.retryAfterAt),
+      asc(imageCoverGenerationTasks.id),
+    )
     .limit(1);
 
   if (!task) return null;
@@ -626,11 +649,12 @@ async function processCoverGenerationTask(
   signal: AbortSignal,
 ) {
   signal.throwIfAborted();
-  const boundTask = await bindCoverTaskConfig(task);
-  signal.throwIfAborted();
-  const taskType = boundTask.taskType as ImageGenerationTaskType;
+  const taskType = task.taskType as ImageGenerationTaskType;
+  if (taskType === "article_cover" && !task.postId) {
+    throw new Error("文章封面任务缺少关联文章，无法继续生成");
+  }
   const [post] =
-    taskType === "article_cover" && boundTask.postId
+    taskType === "article_cover" && task.postId
       ? await db
           .select({
             id: posts.id,
@@ -643,41 +667,83 @@ async function processCoverGenerationTask(
             language: posts.language,
           })
           .from(posts)
-          .where(eq(posts.id, boundTask.postId))
+          .where(eq(posts.id, task.postId))
           .limit(1)
       : [];
 
-  if (taskType === "article_cover" && !post) {
+  if (taskType === "article_cover" && task.postId && !post) {
     throw new Error("文章不存在或已被删除");
   }
 
-  const enabledConfigs = await getEnabledImageGenerationConfigs();
-  const currentConfig = enabledConfigs.find(
-    (config) => config.id === boundTask.configId,
-  );
-  const candidates = currentConfig
-    ? [
-        currentConfig,
-        ...enabledConfigs.filter((config) => config.id !== currentConfig.id),
-      ]
-    : enabledConfigs;
+  let activeTask = task;
+  let generated: {
+    asset: { id: number | null; path: string };
+    prompt: string;
+  } | null = null;
 
-  let activeTask = boundTask;
-  let generated: { asset: { id: number; path: string }; prompt: string } | null =
-    boundTask.assetId && boundTask.outputUrl
-      ? {
-          asset: { id: boundTask.assetId, path: boundTask.outputUrl },
-          prompt: boundTask.prompt ?? "",
-        }
-      : null;
+  if (task.assetId || task.outputUrl) {
+    let checkpointPath = task.outputUrl;
+    let checkpointAssetId = task.assetId;
 
-  for (const [index, config] of generated ? [] : candidates.entries()) {
-    signal.throwIfAborted();
-    if (activeTask.configId !== config.id) {
-      activeTask = await persistCoverTaskConfig(activeTask, config);
+    if (!checkpointPath && checkpointAssetId) {
+      const [asset] = await db
+        .select({ id: imageAssets.id, path: imageAssets.path })
+        .from(imageAssets)
+        .where(eq(imageAssets.id, checkpointAssetId))
+        .limit(1);
+      checkpointPath = asset?.path ?? null;
     }
 
-    try {
+    if (checkpointPath && !checkpointAssetId) {
+      const [asset] = await db
+        .select({ id: imageAssets.id })
+        .from(imageAssets)
+        .where(eq(imageAssets.path, checkpointPath))
+        .limit(1);
+      checkpointAssetId = asset?.id ?? null;
+    }
+
+    if (!checkpointPath) {
+      throw new ImageGenerationConnectionInterruptedError(
+        "生图资产 checkpoint 不完整，无法安全恢复。为避免重复生成，请先确认图片资产后再处理",
+      );
+    }
+
+    generated = {
+      asset: { id: checkpointAssetId, path: checkpointPath },
+      prompt: task.prompt ?? "",
+    };
+  }
+
+  if (!generated) {
+    activeTask = await bindCoverTaskConfig(task);
+    signal.throwIfAborted();
+    const enabledConfigs = await getEnabledImageGenerationConfigs();
+    const currentConfig = enabledConfigs.find(
+      (config) => config.id === activeTask.configId,
+    );
+    const candidates = currentConfig
+      ? [
+          currentConfig,
+          ...enabledConfigs.filter((config) => config.id !== currentConfig.id),
+        ]
+      : enabledConfigs;
+
+    if (candidates.length === 0) {
+      throw new Error(
+        activeTask.configId
+          ? `任务绑定的生图配置 #${activeTask.configId} 已停用或不存在，且当前没有其他已启用配置`
+          : "当前没有已启用的生图配置",
+      );
+    }
+
+    for (const [index, config] of candidates.entries()) {
+      signal.throwIfAborted();
+      if (activeTask.configId !== config.id) {
+        activeTask = await persistCoverTaskConfig(activeTask, config);
+      }
+
+      try {
       const callbacks = {
         onPrompt: async (prompt: string) => {
           activeTask = await persistCoverTaskPrompt(activeTask, prompt);
@@ -685,6 +751,11 @@ async function processCoverGenerationTask(
         onRequestStarted: async () => {
           activeTask = await persistCoverTaskCheckpoint(activeTask, {
             requestStage: "request_started",
+          });
+        },
+        onResponseReceived: async () => {
+          activeTask = await persistCoverTaskCheckpoint(activeTask, {
+            requestStage: "response_received",
           });
         },
         onAssetPersisted: async (asset: { id: number; path: string }) => {
@@ -727,20 +798,21 @@ async function processCoverGenerationTask(
         });
       }
       break;
-    } catch (error) {
-      const hasFallback = index < candidates.length - 1;
-      if (!hasFallback || !canFailoverImageGenerationError(error)) {
-        throw error;
-      }
+      } catch (error) {
+        const hasFallback = index < candidates.length - 1;
+        if (!hasFallback || !canFailoverImageGenerationError(error)) {
+          throw error;
+        }
 
-      structuredLog("warn", "cover.task_config_failover", {
-        taskId: task.id,
-        postId: task.postId,
-        failedConfigId: config.id,
-        failedConfigName: config.name,
-        nextConfigId: candidates[index + 1]?.id,
-        error,
-      });
+        structuredLog("warn", "cover.task_config_failover", {
+          taskId: task.id,
+          postId: task.postId,
+          failedConfigId: config.id,
+          failedConfigName: config.name,
+          nextConfigId: candidates[index + 1]?.id,
+          error,
+        });
+      }
     }
   }
 
@@ -824,12 +896,14 @@ async function requeueRateLimitedCoverTask(
   task: CoverTaskRow,
   error: ImageGenerationRateLimitError,
 ) {
+  const retryAfterAt = new Date(Date.now() + error.retryAfterMs);
   const waitMinutes = formatWaitMinutes(error.retryAfterMs);
   const [requeued] = await db
     .update(imageCoverGenerationTasks)
     .set({
       status: "pending",
       requestStage: "queued",
+      retryAfterAt,
       errorTitle: "生图接口限流，自动等待",
       errorDetail: `接口返回 429，当前任务将在约 ${waitMinutes} 分钟后自动重试；${error.message}`,
       startedAt: null,
@@ -849,6 +923,7 @@ async function requeueRateLimitedCoverTask(
     .returning({ id: imageCoverGenerationTasks.id });
 
   if (!requeued) throw new TaskLeaseLostError();
+  return retryAfterAt;
 }
 
 async function processCoverGenerationTaskWithTimeout(
@@ -906,6 +981,7 @@ async function runCoverGenerationWorker() {
             requestStage: "completed",
             outputUrl: generated.asset.path,
             assetId: generated.asset.id,
+            retryAfterAt: null,
             errorTitle: null,
             errorDetail: null,
             finishedAt: new Date(),
@@ -934,8 +1010,9 @@ async function runCoverGenerationWorker() {
         }
 
         if (error instanceof ImageGenerationRateLimitError) {
+          let retryAfterAt: Date;
           try {
-            await requeueRateLimitedCoverTask(task, error);
+            retryAfterAt = await requeueRateLimitedCoverTask(task, error);
           } catch (requeueError) {
             if (requeueError instanceof TaskLeaseLostError) {
               structuredLog(
@@ -956,7 +1033,7 @@ async function runCoverGenerationWorker() {
             postId: task.postId,
             retryAfterMs: error.retryAfterMs,
           });
-          await wait(error.retryAfterMs);
+          await ensureCoverGenerationWorker(retryAfterAt);
           continue;
         }
 
@@ -966,6 +1043,8 @@ async function runCoverGenerationWorker() {
             .update(imageCoverGenerationTasks)
             .set({
               status: "uncertain",
+              requestStage: "request_started",
+              retryAfterAt: null,
               errorTitle: "生图结果不确定",
               errorDetail: readableError.detail,
               finishedAt: new Date(),
@@ -1007,6 +1086,7 @@ async function runCoverGenerationWorker() {
           .set({
             status: "failed",
             requestStage: "failed",
+            retryAfterAt: null,
             errorTitle: readableError.title,
             errorDetail: readableError.detail,
             finishedAt: new Date(),
@@ -1038,10 +1118,11 @@ async function runCoverGenerationWorker() {
   }
 }
 
-export async function ensureCoverGenerationWorker() {
+export async function ensureCoverGenerationWorker(runAfter?: Date) {
   await enqueueAdminBackgroundJob({
     key: "article-cover-generation-worker",
     label: "Article cover generation worker",
     run: runCoverGenerationWorker,
+    runAfter,
   });
 }

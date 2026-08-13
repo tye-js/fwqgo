@@ -36,6 +36,23 @@ const statusLabels: Record<string, string> = {
   cancelled: "已取消",
 };
 
+const taskTypeLabels: Record<string, string> = {
+  article_cover: "文章封面",
+  standalone_cover: "独立封面",
+  custom: "自定义生图",
+};
+
+const requestStageLabels: Record<string, string> = {
+  queued: "等待请求",
+  prompt_persisted: "提示词已保存",
+  request_started: "请求已发出",
+  response_received: "响应已收到",
+  asset_persisted: "图片资产已保存",
+  completed: "已完成",
+  failed: "请求失败",
+  manual_required: "需人工确认",
+};
+
 function CoverPreview({ src, title }: { src: string | null; title: string }) {
   if (!isRenderableImageSrc(src)) {
     return (
@@ -111,6 +128,16 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
           label="状态"
           value={statusLabels[task.status] ?? task.status}
         />
+        <UnifiedTaskStat
+          label="任务类型"
+          value={taskTypeLabels[task.taskType] ?? task.taskType}
+        />
+        <UnifiedTaskStat
+          label="请求阶段"
+          value={
+            requestStageLabels[task.requestStage] ?? task.requestStage ?? "-"
+          }
+        />
         <UnifiedTaskStat label="批次" value={task.batchId} />
         <UnifiedTaskStat label="文章 ID" value={task.postId} />
         <UnifiedTaskStat
@@ -144,6 +171,9 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
                   {task.post.language === "en" ? "英文文章" : "中文文章"}
                 </Badge>
               ) : null}
+              <Badge variant="outline">
+                {taskTypeLabels[task.taskType] ?? task.taskType}
+              </Badge>
             </div>
             <p className="break-all text-muted-foreground">
               {task.description}
@@ -168,8 +198,21 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
                 </pre>
               </details>
             ) : null}
+            <p className="break-all text-xs text-muted-foreground">
+              请求阶段：
+              {requestStageLabels[task.requestStage] ?? task.requestStage ?? "-"}
+            </p>
           </div>
         </div>
+      </AdminSectionCard>
+
+      <AdminSectionCard
+        title="输入 checkpoint"
+        description="任务创建时固定的任务类型、视觉简报和输入快照；排队后文章变化不会改写本次 Prompt。"
+      >
+        <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
+          {JSON.stringify(task.inputSnapshot, null, 2)}
+        </pre>
       </AdminSectionCard>
 
       {task.status === "failed" || task.status === "uncertain" ? (

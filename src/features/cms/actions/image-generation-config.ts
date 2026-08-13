@@ -17,13 +17,14 @@ import {
 } from "@/server/images/generation-config";
 import { defineAdminAction } from "@/features/cms/lib/define-admin-action";
 
-const removedCoverPlaceholderPattern = /\{(?:title|content)\}/i;
+const removedCoverPlaceholderPattern = /\{content\}/i;
 const promptTemplateSchema = z
   .string()
   .trim()
   .min(1, "Prompt 模板不能为空")
   .refine((value) => !removedCoverPlaceholderPattern.test(value), {
-    message: "Prompt 不再支持 {title} 或 {content}，请删除后保存",
+    message:
+      "Prompt 不支持 {content}。可使用 {title}、{description}、{keywords}、{visualBrief}",
   });
 
 const configSchema = z.object({

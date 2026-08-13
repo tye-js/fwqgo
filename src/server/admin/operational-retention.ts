@@ -81,6 +81,7 @@ export async function runOperationalRetention(now = new Date()) {
             inArray(imageCoverGenerationTasks.status, [
               "succeeded",
               "failed",
+              "uncertain",
               "cancelled",
             ]),
             lt(

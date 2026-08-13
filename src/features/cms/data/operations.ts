@@ -34,6 +34,7 @@ type TaskStatusSummary = {
   running: number;
   succeeded: number;
   failed: number;
+  uncertain: number;
   manualRequired: number;
   byStatus: StatusCountRow[];
 };
@@ -213,6 +214,7 @@ function toStatusSummary(rows: StatusCountRow[]): TaskStatusSummary {
     running,
     succeeded: countByStatus.get("succeeded") ?? 0,
     failed: countByStatus.get("failed") ?? 0,
+    uncertain: countByStatus.get("uncertain") ?? 0,
     manualRequired: countByStatus.get("manual_required") ?? 0,
     byStatus: rows,
   };
@@ -302,7 +304,7 @@ export async function getCmsTaskOperationsSummary() {
         updatedAt: aiRewriteTasks.updatedAt,
       })
       .from(aiRewriteTasks)
-      .where(eq(aiRewriteTasks.status, "failed"))
+      .where(inArray(aiRewriteTasks.status, ["failed", "manual_required"]))
       .orderBy(desc(aiRewriteTasks.updatedAt), desc(aiRewriteTasks.createdAt))
       .limit(5),
     db
@@ -310,14 +312,21 @@ export async function getCmsTaskOperationsSummary() {
         id: imageCoverGenerationTasks.id,
         postId: imageCoverGenerationTasks.postId,
         title: imageCoverGenerationTasks.title,
+        taskType: imageCoverGenerationTasks.taskType,
         status: imageCoverGenerationTasks.status,
+        requestStage: imageCoverGenerationTasks.requestStage,
         errorTitle: imageCoverGenerationTasks.errorTitle,
         errorDetail: imageCoverGenerationTasks.errorDetail,
         createdAt: imageCoverGenerationTasks.createdAt,
         updatedAt: imageCoverGenerationTasks.updatedAt,
       })
       .from(imageCoverGenerationTasks)
-      .where(eq(imageCoverGenerationTasks.status, "failed"))
+      .where(
+        inArray(imageCoverGenerationTasks.status, [
+          "failed",
+          "uncertain",
+        ]),
+      )
       .orderBy(
         desc(imageCoverGenerationTasks.updatedAt),
         desc(imageCoverGenerationTasks.createdAt),
@@ -369,7 +378,9 @@ export async function getCmsTaskOperationsSummary() {
         id: imageCoverGenerationTasks.id,
         postId: imageCoverGenerationTasks.postId,
         title: imageCoverGenerationTasks.title,
+        taskType: imageCoverGenerationTasks.taskType,
         status: imageCoverGenerationTasks.status,
+        requestStage: imageCoverGenerationTasks.requestStage,
         startedAt: imageCoverGenerationTasks.startedAt,
         createdAt: imageCoverGenerationTasks.createdAt,
         updatedAt: imageCoverGenerationTasks.updatedAt,
@@ -704,7 +715,9 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
             id: imageCoverGenerationTasks.id,
             batchId: imageCoverGenerationTasks.batchId,
             title: imageCoverGenerationTasks.title,
+            taskType: imageCoverGenerationTasks.taskType,
             status: imageCoverGenerationTasks.status,
+            requestStage: imageCoverGenerationTasks.requestStage,
             outputUrl: imageCoverGenerationTasks.outputUrl,
             errorTitle: imageCoverGenerationTasks.errorTitle,
             errorDetail: imageCoverGenerationTasks.errorDetail,
@@ -875,11 +888,14 @@ export async function getCoverTaskDetail(taskId: number) {
       batchId: imageCoverGenerationTasks.batchId,
       postId: imageCoverGenerationTasks.postId,
       title: imageCoverGenerationTasks.title,
+      taskType: imageCoverGenerationTasks.taskType,
       configId: imageCoverGenerationTasks.configId,
       configName: imageCoverGenerationTasks.configName,
       provider: imageCoverGenerationTasks.provider,
       model: imageCoverGenerationTasks.model,
       prompt: imageCoverGenerationTasks.prompt,
+      requestStage: imageCoverGenerationTasks.requestStage,
+      inputSnapshot: imageCoverGenerationTasks.inputSnapshot,
       status: imageCoverGenerationTasks.status,
       outputUrl: imageCoverGenerationTasks.outputUrl,
       errorTitle: imageCoverGenerationTasks.errorTitle,
@@ -910,7 +926,9 @@ export async function getCoverTaskDetail(taskId: number) {
 
   if (!task) return null;
 
-  const rawPrompt = task.prompt?.trim() ?? task.assetPrompt?.trim();
+  const rawPrompt = [task.prompt, task.assetPrompt]
+    .map((value) => value?.trim())
+    .find((value) => Boolean(value));
   const prompt = rawPrompt?.length ? rawPrompt : null;
 
   const steps: UnifiedTaskStep[] = [
@@ -948,9 +966,14 @@ export async function getCoverTaskDetail(taskId: number) {
     {
       key: "generate",
       name: "生成封面",
-      status: stepStatusForTask(task.status),
+      status:
+        task.requestStage === "asset_persisted" || task.outputUrl
+          ? "success"
+          : stepStatusForTask(task.status),
       description:
-        task.status === "failed"
+        task.status === "uncertain"
+          ? "已发出请求但结果不确定，请先确认服务商侧状态"
+          : task.status === "failed"
           ? failureMessage(task.errorTitle, task.errorDetail)
           : task.outputUrl
             ? `输出 ${task.outputUrl}`
@@ -958,7 +981,10 @@ export async function getCoverTaskDetail(taskId: number) {
       time: serializeDate(task.finishedAt ?? task.updatedAt),
       payload: prompt,
     },
-    {
+  ];
+
+  if (task.taskType === "article_cover") {
+    steps.push({
       key: "write-post",
       name: "写回文章封面",
       status:
@@ -970,8 +996,8 @@ export async function getCoverTaskDetail(taskId: number) {
           ? "封面已写入文章 imgUrl"
           : "生成成功后写回文章封面字段",
       time: serializeDate(task.finishedAt),
-    },
-  ];
+    });
+  }
 
   return {
     ...task,

@@ -191,9 +191,10 @@ export function buildArticleCoverPrompt(
     visualBriefOverrides?: CoverVisualBriefOverrides | null;
   },
 ) {
-  const visualBrief =
-    input.visualBrief ??
-    mergeCoverVisualBrief(extractCoverVisualBrief(input), input.visualBriefOverrides);
+  const visualBrief = mergeCoverVisualBrief(
+    input.visualBrief ?? extractCoverVisualBrief(input),
+    input.visualBriefOverrides,
+  );
   const renderInput = { ...input, title: visualBrief.title, visualBrief };
   if (input.language === "en") {
     return [

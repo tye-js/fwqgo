@@ -19,6 +19,7 @@ function statusLabel(status: string) {
     running: "运行中",
     succeeded: "成功",
     failed: "失败",
+    uncertain: "不确定失败",
     manual_required: "需人工处理",
     cancelled: "已取消",
   };
@@ -28,6 +29,7 @@ function statusLabel(status: string) {
 
 function statusVariant(status: string) {
   if (status === "failed") return "destructive" as const;
+  if (status === "uncertain") return "destructive" as const;
   if (status === "succeeded") return "default" as const;
   if (status === "running" || status === "pending" || status === "queued") {
     return "secondary" as const;
@@ -91,35 +93,46 @@ function QueueSummaryLink({
   summary: CmsTaskOperationsSummary["queues"]["ai"];
 }) {
   return (
-    <Link
-      href={`/ai-tasks?type=${type}`}
-      className="group min-w-0 px-3 py-2.5 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-    >
-      <div className="flex items-center justify-between gap-3">
+    <div className="group min-w-0 px-3 py-2.5 transition-colors hover:bg-muted/40">
+      <Link
+        href={`/ai-tasks?type=${type}`}
+        className="flex items-center justify-between gap-3 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
         <span className="text-sm font-medium">{title}</span>
         <span className="text-xs tabular-nums text-muted-foreground">
           共 {summary.total}
         </span>
-      </div>
-      <div className="mt-1.5 flex items-center gap-4 text-xs">
+      </Link>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
         <span className="text-muted-foreground">
           处理中{" "}
           <strong className="font-semibold tabular-nums text-foreground">
             {summary.active}
           </strong>
         </span>
-        <span
+        <Link
+          href={`/ai-tasks?type=${type}&status=failed`}
           className={
-            summary.failed > 0 ? "text-destructive" : "text-muted-foreground"
+            summary.failed > 0
+              ? "text-destructive hover:underline"
+              : "text-muted-foreground hover:underline"
           }
         >
-          失败{" "}
-          <strong className="font-semibold tabular-nums">
-            {summary.failed}
-          </strong>
-        </span>
+          失败 <strong className="font-semibold tabular-nums">{summary.failed}</strong>
+        </Link>
+        {summary.uncertain > 0 ? (
+          <Link
+            href={`/ai-tasks?type=${type}&status=uncertain`}
+            className="text-destructive hover:underline"
+          >
+            不确定失败{" "}
+            <strong className="font-semibold tabular-nums">
+              {summary.uncertain}
+            </strong>
+          </Link>
+        ) : null}
       </div>
-    </Link>
+    </div>
   );
 }
 

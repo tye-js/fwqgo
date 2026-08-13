@@ -463,6 +463,7 @@ export async function pullSourceSiteToAiTasks(input: SourceSitePullInput) {
           status: "pending",
           progress: 0,
           currentStep: "来源站发现，等待处理",
+          requestStage: "queued",
         })
         .returning({
           id: aiRewriteTasks.id,

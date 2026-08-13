@@ -738,6 +738,9 @@ export const aiRewriteTasks = pgTable(
     status: varchar("status", { length: 24 }).default("pending").notNull(),
     progress: integer("progress").default(0).notNull(),
     currentStep: text("currentStep"),
+    requestStage: varchar("requestStage", { length: 32 })
+      .default("queued")
+      .notNull(),
     error: text("error"),
     categoryId: integer("categoryId").notNull(),
     rewriteStyleId: integer("rewriteStyleId"),
@@ -783,6 +786,9 @@ export const aiRewriteTasks = pgTable(
     statusLeaseExpiresAtIdx: index(
       "ai_rewrite_tasks_status_leaseExpiresAt_idx",
     ).on(table.status, table.leaseExpiresAt),
+    requestStageIdx: index("ai_rewrite_tasks_requestStage_idx").on(
+      table.requestStage,
+    ),
     sourceUrlCreatedAtIdx: index("ai_rewrite_tasks_sourceUrl_createdAt_idx").on(
       table.sourceUrl,
       table.createdAt,
@@ -790,6 +796,10 @@ export const aiRewriteTasks = pgTable(
     statusCheck: check(
       "ai_rewrite_tasks_status_check",
       sql`${table.status} in ('pending', 'running', 'succeeded', 'failed', 'manual_required', 'cancelled')`,
+    ),
+    requestStageCheck: check(
+      "ai_rewrite_tasks_requestStage_check",
+      sql`${table.requestStage} in ('queued', 'request_started', 'response_received', 'checkpointed', 'manual_required')`,
     ),
     sourceTypeCheck: check(
       "ai_rewrite_tasks_sourceType_check",
@@ -1043,6 +1053,7 @@ export const imageCoverGenerationTasks = pgTable(
     requestStage: varchar("requestStage", { length: 32 })
       .default("queued")
       .notNull(),
+    retryAfterAt: timestamp("retryAfterAt"),
     status: varchar("status", { length: 24 }).default("pending").notNull(),
     outputUrl: text("outputUrl"),
     assetId: integer("assetId"),
@@ -1070,6 +1081,9 @@ export const imageCoverGenerationTasks = pgTable(
     statusLeaseExpiresAtIdx: index(
       "image_cover_generation_tasks_status_leaseExpiresAt_idx",
     ).on(table.status, table.leaseExpiresAt),
+    statusRetryAfterAtIdx: index(
+      "image_cover_generation_tasks_status_retryAfterAt_idx",
+    ).on(table.status, table.retryAfterAt),
     postIdx: index("image_cover_generation_tasks_postId_idx").on(table.postId),
     configIdx: index("image_cover_generation_tasks_configId_idx").on(
       table.configId,
@@ -1082,11 +1096,15 @@ export const imageCoverGenerationTasks = pgTable(
       "image_cover_generation_tasks_task_type_check",
       sql`${table.taskType} in ('article_cover', 'standalone_cover', 'custom')`,
     ),
+    requestStageCheck: check(
+      "image_cover_generation_tasks_requestStage_check",
+      sql`${table.requestStage} in ('queued', 'prompt_persisted', 'request_started', 'response_received', 'asset_persisted', 'completed', 'failed', 'manual_required')`,
+    ),
     postFk: foreignKey({
       columns: [table.postId],
       foreignColumns: [posts.id],
       name: "image_cover_generation_tasks_postId_posts_id_fk",
-    }).onDelete("cascade"),
+    }).onDelete("set null"),
     assetFk: foreignKey({
       columns: [table.assetId],
       foreignColumns: [imageAssets.id],

@@ -304,6 +304,7 @@ async function createSourceMaterialAndTask(input: {
         status: "pending",
         progress: 0,
         currentStep: input.currentStep,
+        requestStage: "queued",
       })
       .returning({ id: aiRewriteTasks.id });
 
@@ -505,6 +506,8 @@ export async function retryAiRewriteTaskAction(taskId: number) {
     const [retryCandidate] = await db
       .select({
         status: aiRewriteTasks.status,
+        sourceType: aiRewriteTasks.sourceType,
+        postId: aiRewriteTasks.postId,
         rewriteStyleId: aiRewriteTasks.rewriteStyleId,
         rewriteConfigName: aiRewriteTasks.rewriteConfigName,
         rewriteProvider: aiRewriteTasks.rewriteProvider,
@@ -522,6 +525,9 @@ export async function retryAiRewriteTaskAction(taskId: number) {
       return { error: "任务不存在，或当前状态不能重试" };
     }
 
+    const canResumeChineseDraft =
+      retryCandidate.postId !== null &&
+      ["url", "text", "email", "file"].includes(retryCandidate.sourceType);
     const hasDeletedConfigSnapshot =
       !retryCandidate.rewriteStyleId &&
       [
@@ -529,12 +535,14 @@ export async function retryAiRewriteTaskAction(taskId: number) {
         retryCandidate.rewriteProvider,
         retryCandidate.rewriteModel,
       ].some((value) => Boolean(value));
-    const rewriteConfig = hasDeletedConfigSnapshot
+    const rewriteConfig = canResumeChineseDraft
       ? null
-      : await getActiveAiRewriteConfig(
-          retryCandidate.rewriteStyleId ?? undefined,
-        );
-    if (!rewriteConfig) {
+      : hasDeletedConfigSnapshot
+        ? null
+        : await getActiveAiRewriteConfig(
+            retryCandidate.rewriteStyleId ?? undefined,
+          );
+    if (!rewriteConfig && !canResumeChineseDraft) {
       return {
         error: retryCandidate.rewriteStyleId
           ? `任务绑定的 AI 改写配置 #${retryCandidate.rewriteStyleId} 已停用或不存在，请启用原配置后重试`
@@ -551,18 +559,23 @@ export async function retryAiRewriteTaskAction(taskId: number) {
           status: "pending",
           progress: 0,
           currentStep: "等待重试",
+          requestStage: "queued",
           error: null,
-          rewriteStyleId: rewriteConfig.id,
-          rewriteConfigName: rewriteConfig.name,
-          rewriteProvider: rewriteConfig.provider,
-          rewriteModel: rewriteConfig.model,
-          rewriteMaxTokens: rewriteConfig.maxTokens,
           updatedAt: new Date(),
           startedAt: null,
           finishedAt: null,
           leaseOwner: null,
           leaseExpiresAt: null,
           heartbeatAt: null,
+          ...(rewriteConfig
+            ? {
+                rewriteStyleId: rewriteConfig.id,
+                rewriteConfigName: rewriteConfig.name,
+                rewriteProvider: rewriteConfig.provider,
+                rewriteModel: rewriteConfig.model,
+                rewriteMaxTokens: rewriteConfig.maxTokens,
+              }
+            : {}),
         })
         .where(
           and(
@@ -681,6 +694,7 @@ export async function cancelAiRewriteTaskAction(taskId: number) {
           status: "cancelled",
           progress: 0,
           currentStep: "任务已取消",
+          requestStage: "queued",
           error: null,
           finishedAt: now,
           leaseOwner: null,
@@ -785,7 +799,12 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
         imageConfigId: aiRewriteTasks.imageConfigId,
       })
       .from(aiRewriteTasks)
-      .where(eq(aiRewriteTasks.postId, parentPost.id))
+      .where(
+        and(
+          eq(aiRewriteTasks.postId, parentPost.id),
+          inArray(aiRewriteTasks.sourceType, ["url", "text", "email", "file"]),
+        ),
+      )
       .orderBy(desc(aiRewriteTasks.createdAt))
       .limit(1);
 
@@ -831,7 +850,6 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
             model: imageConfig.model,
           }
         : null,
-      clearStepsOnReuse: true,
     });
 
     if (task.status !== "running") {
@@ -970,7 +988,12 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
           rewriteStyleId: aiRewriteTasks.rewriteStyleId,
         })
         .from(aiRewriteTasks)
-        .where(eq(aiRewriteTasks.postId, post.id))
+        .where(
+          and(
+            eq(aiRewriteTasks.postId, post.id),
+            inArray(aiRewriteTasks.sourceType, ["url", "text", "email", "file"]),
+          ),
+        )
         .orderBy(desc(aiRewriteTasks.createdAt))
         .limit(1);
       const rewriteConfig = latestSourceTask?.rewriteStyleId
@@ -1001,7 +1024,6 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
           model: rewriteConfig.model,
           maxTokens: rewriteConfig.maxTokens,
         },
-        clearStepsOnReuse: true,
       });
 
       taskIds.push(task.id);
@@ -1142,6 +1164,7 @@ export async function getAiRewriteTaskList(
       sourceType: aiRewriteTasks.sourceType,
       sourceTitle: aiRewriteTasks.sourceTitle,
       status: aiRewriteTasks.status,
+      requestStage: aiRewriteTasks.requestStage,
       progress: aiRewriteTasks.progress,
       currentStep: aiRewriteTasks.currentStep,
       error: aiRewriteTasks.error,
@@ -1249,6 +1272,7 @@ export async function getAiRewriteTaskDetail(id: number) {
       sourceContent: aiRewriteTasks.sourceContent,
       sourceFileName: aiRewriteTasks.sourceFileName,
       status: aiRewriteTasks.status,
+      requestStage: aiRewriteTasks.requestStage,
       progress: aiRewriteTasks.progress,
       currentStep: aiRewriteTasks.currentStep,
       error: aiRewriteTasks.error,

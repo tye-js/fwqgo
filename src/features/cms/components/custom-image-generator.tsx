@@ -1,8 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Copy, ExternalLink, ImagePlus } from "lucide-react";
 
 import { generateCustomImageAction } from "@/features/cms/actions/custom-image-generation";
@@ -27,6 +34,8 @@ type GeneratedImage = {
 };
 
 export function CustomImageGenerator() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [prompt, setPrompt] = useState("");
   const [fileName, setFileName] = useState("");
   const [altZh, setAltZh] = useState("");
@@ -34,6 +43,24 @@ export function CustomImageGenerator() {
   const [batchId, setBatchId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const submittedPromptRef = useRef("");
+  const initialBatchIdRef = useRef<string | null>(
+    searchParams.get("batchId"),
+  );
+
+  const updateBatchIdUrl = useCallback((nextBatchId: string | null) => {
+    const currentUrl = new URL(window.location.href);
+    const nextParams = currentUrl.searchParams;
+    if (nextBatchId) nextParams.set("batchId", nextBatchId);
+    else nextParams.delete("batchId");
+    const query = nextParams.toString();
+    router.replace(`${currentUrl.pathname}${query ? `?${query}` : ""}`, {
+      scroll: false,
+    });
+  }, [router]);
+
+  useEffect(() => {
+    if (initialBatchIdRef.current) setBatchId(initialBatchIdRef.current);
+  }, []);
 
   useEffect(() => {
     if (!batchId) return;
@@ -43,6 +70,7 @@ export function CustomImageGenerator() {
       if (stopped) return;
       if (!result.success) {
         setBatchId(null);
+        updateBatchIdUrl(null);
         notifyError({
           title: result.errorTitle ?? "读取生图状态失败",
           description: result.error ?? "请刷新页面后重试。",
@@ -51,13 +79,14 @@ export function CustomImageGenerator() {
       }
       if (!result.done) return;
       setBatchId(null);
+      updateBatchIdUrl(null);
       await finalizeCoverGenerationBatchAction(batchId);
       const completed = result.results?.find((item) => item.url);
       if (completed?.url && completed.assetId) {
         setGenerated({
           url: completed.url,
           assetId: completed.assetId,
-          prompt: submittedPromptRef.current,
+          prompt: completed.prompt ?? submittedPromptRef.current,
         });
         notifySuccess({
           title: "AI 图片已生成",
@@ -84,7 +113,7 @@ export function CustomImageGenerator() {
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [batchId]);
+  }, [batchId, updateBatchIdUrl]);
 
   function handleGenerate() {
     if (!prompt.trim()) {
@@ -112,6 +141,7 @@ export function CustomImageGenerator() {
 
       submittedPromptRef.current = prompt;
       setBatchId(result.batchId);
+      updateBatchIdUrl(result.batchId);
       notifySuccess({
         title: "AI 生图任务已创建",
         description: `任务 ID：${result.task?.taskId ?? "-"}，可离开页面后台执行。`,

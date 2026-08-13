@@ -213,16 +213,46 @@ export function UnifiedTaskActionButtons({
   return (
     <div className="flex flex-wrap justify-end gap-2">
       {canRetry ? (
-        <Button
-          type="button"
-          size={size}
-          variant="outline"
-          disabled={pending}
-          onClick={handleRetry}
-        >
-          <RotateCcw className="size-4" />
-          {pending ? "处理中" : status === "cancelled" ? "恢复" : "重试"}
-        </Button>
+        status === "uncertain" ? (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                type="button"
+                size={size}
+                variant="outline"
+                disabled={pending}
+              >
+                <RotateCcw className="size-4" />
+                {pending ? "处理中" : "确认后重试"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>确认要重新发起生图请求吗？</AlertDialogTitle>
+                <AlertDialogDescription>
+                  本任务的上游结果尚未确认。请先检查服务商任务页，确认没有生成成功或扣费中的请求；直接重试可能造成重复生成或重复扣费。
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>取消</AlertDialogCancel>
+                <AlertDialogAction onClick={handleRetry}>
+                  我已确认，继续重试
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        ) : (
+          <Button
+            type="button"
+            size={size}
+            variant="outline"
+            disabled={pending}
+            onClick={handleRetry}
+          >
+            <RotateCcw className="size-4" />
+            {pending ? "处理中" : status === "cancelled" ? "恢复" : "重试"}
+          </Button>
+        )
       ) : null}
       {canCancel ? (
         <Button

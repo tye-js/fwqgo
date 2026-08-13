@@ -53,7 +53,9 @@ import {
   generateEnglishMetadata,
   generateArticleMetadata,
   getAiRewriteContentLimit,
+  AiRequestConnectionInterruptedError,
   type AiRewriteAuditEvent,
+  type AiRequestStage,
   type ArticleRewriteProgress,
   type EnglishMetadataOutput,
 } from "@fwqgo/ai/article-rewriter";
@@ -63,8 +65,6 @@ import { getActiveImageGenerationConfig } from "@/server/images/generation-confi
 import { shortenMarkdownOutboundLinks } from "@/server/links/outbound-short-link";
 import { regeneratePostInternalLinks } from "@/server/posts/internal-links";
 
-const runningTaskIds = new Set<number>();
-const runningTaskLeaseOwners = new Map<number, string>();
 const MAX_AI_MARKDOWN_INPUT_LENGTH = 14_000;
 const MAX_AI_AUDIT_PROMPT_LENGTH = 1_000_000;
 const MAX_AI_AUDIT_RESPONSE_LENGTH = 512_000;
@@ -163,10 +163,10 @@ function getArticleRewriteProgress(input: {
 }
 
 async function updateTask(
-  taskId: number,
+  task: Pick<typeof aiRewriteTasks.$inferSelect, "id" | "leaseOwner">,
   values: Partial<typeof aiRewriteTasks.$inferInsert>,
 ) {
-  const leaseOwner = runningTaskLeaseOwners.get(taskId);
+  const leaseOwner = task.leaseOwner;
   if (!leaseOwner) throw new TaskLeaseLostError();
 
   const updated = await db
@@ -174,7 +174,7 @@ async function updateTask(
     .set({ ...values, updatedAt: new Date() })
     .where(
       and(
-        eq(aiRewriteTasks.id, taskId),
+        eq(aiRewriteTasks.id, task.id),
         eq(aiRewriteTasks.status, "running"),
         eq(aiRewriteTasks.leaseOwner, leaseOwner),
       ),
@@ -182,6 +182,14 @@ async function updateTask(
     .returning({ id: aiRewriteTasks.id });
 
   if (updated.length === 0) throw new TaskLeaseLostError();
+}
+
+function createAiRequestStageHandler(
+  task: Pick<typeof aiRewriteTasks.$inferSelect, "id" | "leaseOwner">,
+) {
+  return async (requestStage: AiRequestStage) => {
+    await updateTask(task, { requestStage });
+  };
 }
 
 async function renewAiTaskLease(task: typeof aiRewriteTasks.$inferSelect) {
@@ -197,6 +205,7 @@ async function renewAiTaskLease(task: typeof aiRewriteTasks.$inferSelect) {
     .where(
       and(
         eq(aiRewriteTasks.id, task.id),
+        eq(aiRewriteTasks.status, "running"),
         eq(aiRewriteTasks.leaseOwner, task.leaseOwner),
       ),
     )
@@ -209,14 +218,21 @@ async function finalizeTask(
   status: Exclude<TaskStatus, "pending" | "running">,
   values: Partial<typeof aiRewriteTasks.$inferInsert>,
 ) {
-  const leaseOwner = runningTaskLeaseOwners.get(task.id);
-  if (!leaseOwner || leaseOwner !== task.leaseOwner) return false;
+  const leaseOwner = task.leaseOwner;
+  if (!leaseOwner) return false;
 
   const now = new Date();
   return db.transaction(async (tx) => {
     const [updatedTask] = await tx
       .update(aiRewriteTasks)
-      .set({ ...values, status, updatedAt: now })
+      .set({
+        ...values,
+        status,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        heartbeatAt: null,
+        updatedAt: now,
+      })
       .where(
         and(
           eq(aiRewriteTasks.id, task.id),
@@ -302,6 +318,12 @@ async function failTask(
   error: unknown,
   failedStep?: ActiveTaskStep,
 ) {
+  const requiresManualConfirmation =
+    error instanceof AiRequestConnectionInterruptedError;
+  const terminalStatus = requiresManualConfirmation
+    ? ("manual_required" as const)
+    : ("failed" as const);
+
   if (failedStep) {
     try {
       await upsertTaskStep({
@@ -309,7 +331,7 @@ async function failTask(
         attempt: failedStep.attempt,
         stepKey: failedStep.key,
         stepName: failedStep.name,
-        status: "failed",
+        status: requiresManualConfirmation ? "manual_required" : "failed",
         progress: failedStep.progress,
         error: getErrorMessage(error),
         payload: failedStep.payload,
@@ -324,10 +346,13 @@ async function failTask(
     }
   }
 
-  const finalized = await finalizeTask(task, "failed", {
+  const finalized = await finalizeTask(task, terminalStatus, {
     progress: 100,
-    currentStep: "处理失败",
+    currentStep: requiresManualConfirmation
+      ? `需要人工确认：${getErrorMessage(error)}`
+      : "处理失败",
     error: getErrorMessage(error),
+    requestStage: requiresManualConfirmation ? "manual_required" : undefined,
     finishedAt: new Date(),
   });
 
@@ -749,7 +774,7 @@ async function enqueueCoverForDraftPost(input: {
       attempt: input.attempt,
       stepKey: input.stepKey,
       stepName: input.stepName,
-      status: "failed",
+      status: "manual_required",
       progress: input.progress,
       message: "草稿已保存，但自动封面任务入队失败",
       error: getErrorMessage(error),
@@ -790,12 +815,12 @@ async function resumeChineseTaskFromDraft(
 
   const attempt = claimedTask.attempts;
   const diagnostics = readStoredDiagnostics(claimedTask.diagnostics);
-  const manualRequired = diagnostics
+  let manualRequired = diagnostics
     ? needsManualAffiliateReview(diagnostics)
     : false;
   const warnings: string[] = [];
 
-  await updateTask(claimedTask.id, {
+  await updateTask(claimedTask, {
     progress: 88,
     currentStep: "检测到已保存草稿，跳过抓取和 AI 改写并继续后处理",
     resultTitle: post.title,
@@ -846,13 +871,14 @@ async function resumeChineseTaskFromDraft(
       payload: result,
     });
   } catch (error) {
+    manualRequired = true;
     warnings.push("文章内链规划失败");
     await upsertTaskStep({
       taskId: claimedTask.id,
       attempt,
       stepKey: "internal_link_plan",
       stepName: "生成文章内链",
-      status: "failed",
+      status: "manual_required",
       progress: 91,
       message: "草稿已保留，但内链规划失败",
       error: getErrorMessage(error),
@@ -869,7 +895,10 @@ async function resumeChineseTaskFromDraft(
     language: "zh",
     configId: claimedTask.imageConfigId,
   });
-  if (coverResult.status === "failed") warnings.push("中文封面任务入队失败");
+  if (coverResult.status === "failed") {
+    manualRequired = true;
+    warnings.push("中文封面任务入队失败");
+  }
 
   try {
     await syncImageReferencesForPost(post.id);
@@ -883,13 +912,14 @@ async function resumeChineseTaskFromDraft(
       message: "图片引用同步完成",
     });
   } catch (error) {
+    manualRequired = true;
     warnings.push("图片引用索引同步失败");
     await upsertTaskStep({
       taskId: claimedTask.id,
       attempt,
       stepKey: "image_references",
       stepName: "同步图片引用",
-      status: "failed",
+      status: "manual_required",
       progress: 94,
       message: "草稿已保留，但图片引用索引同步失败",
       error: getErrorMessage(error),
@@ -1060,6 +1090,7 @@ async function runEnglishSeoTask(
   const attempt = claimedTask.attempts;
   const rewriteExecutionOptions = {
     styleId: claimedTask.rewriteStyleId ?? undefined,
+    onRequestStage: createAiRequestStageHandler(claimedTask),
     onAudit: (audit: AiRewriteAuditEvent) =>
       persistAiRewriteArtifactBestEffort({
         taskId: claimedTask.id,
@@ -1132,7 +1163,7 @@ async function runEnglishSeoTask(
         ? `正在翻译中文改写正文，Markdown 输入 ${markdownInput.markdown.length} 字符，已截断`
         : `正在翻译中文改写正文，Markdown 输入 ${markdownInput.markdown.length} 字符`,
     });
-    await updateTask(claimedTask.id, {
+    await updateTask(claimedTask, {
       progress: 35,
       currentStep: "生成英文正文",
       resultTitle: post.title,
@@ -1184,7 +1215,7 @@ async function runEnglishSeoTask(
       progress: 68,
       message: "正在生成英文标题、分类、标签和 SEO 元信息",
     });
-    await updateTask(claimedTask.id, {
+    await updateTask(claimedTask, {
       progress: 68,
       currentStep: "生成英文 SEO 信息",
       rewriteOutputLength: enContent.length,
@@ -1243,7 +1274,7 @@ async function runEnglishSeoTask(
       progress: 82,
       message: "正在写入文章英文 SEO 字段",
     });
-    await updateTask(claimedTask.id, {
+    await updateTask(claimedTask, {
       progress: 82,
       currentStep: "写入英文 SEO 草稿",
       rewriteOutputLength: enContent.length,
@@ -1260,7 +1291,7 @@ async function runEnglishSeoTask(
       content: enContent,
       metadata: english,
     });
-    await updateTask(claimedTask.id, {
+    await updateTask(claimedTask, {
       progress: 88,
       currentStep: "英文草稿已保存，正在执行后续处理",
       resultTitle: englishPost.title,
@@ -1329,7 +1360,7 @@ async function runEnglishSeoTask(
         attempt,
         stepKey: activeStep.key,
         stepName: activeStep.name,
-        status: "failed",
+        status: "manual_required",
         progress: 91,
         message: "英文草稿已保存，但内链规划失败",
         error: getErrorMessage(error),
@@ -1392,7 +1423,7 @@ async function runEnglishSeoTask(
         attempt,
         stepKey: activeStep.key,
         stepName: activeStep.name,
-        status: "failed",
+        status: "manual_required",
         progress: 96,
         message: "英文草稿已保存，但图片引用索引同步失败",
         error: getErrorMessage(error),
@@ -1406,7 +1437,10 @@ async function runEnglishSeoTask(
       attempt,
       progress: 98,
     };
-    const finalized = await finalizeTask(claimedTask, "succeeded", {
+    const finalized = await finalizeTask(
+      claimedTask,
+      postProcessWarnings.length > 0 ? "manual_required" : "succeeded",
+      {
       progress: 100,
       currentStep:
         postProcessWarnings.length > 0
@@ -1431,8 +1465,9 @@ async function runEnglishSeoTask(
           ...postProcessWarnings,
         ],
       }),
-      finishedAt: new Date(),
-    });
+        finishedAt: new Date(),
+      },
+    );
     if (!finalized) throw new TaskLeaseLostError();
   } catch (error) {
     await failTask(claimedTask, error, activeStep);
@@ -1445,6 +1480,7 @@ async function runSeoMetadataTask(
   const attempt = claimedTask.attempts;
   const rewriteExecutionOptions = {
     styleId: claimedTask.rewriteStyleId ?? undefined,
+    onRequestStage: createAiRequestStageHandler(claimedTask),
     onAudit: (audit: AiRewriteAuditEvent) =>
       persistAiRewriteArtifactBestEffort({
         taskId: claimedTask.id,
@@ -1510,7 +1546,7 @@ async function runSeoMetadataTask(
       },
     });
 
-    await updateTask(claimedTask.id, {
+    await updateTask(claimedTask, {
       progress: 35,
       currentStep: "生成文章 SEO",
       resultTitle: post.title,
@@ -1725,6 +1761,7 @@ async function createArticleFromManualTask(input: {
   categoryName?: string | null;
   aiInputMaxLength: number;
   onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>;
+  onRequestStage?: (stage: AiRequestStage) => void | Promise<void>;
 }): Promise<ScrapedArticle> {
   const rawContent = input.sourceContent?.trim();
   if (!rawContent) {
@@ -1803,6 +1840,7 @@ async function createArticleFromManualTask(input: {
           audit,
         });
       },
+      onRequestStage: input.onRequestStage,
     });
   } catch (error) {
     const message = getErrorMessage(error);
@@ -1842,6 +1880,7 @@ async function createArticleFromManualTask(input: {
 async function loadTaskArticle(
   claimedTask: typeof aiRewriteTasks.$inferSelect,
   onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>,
+  onRequestStage?: (stage: AiRequestStage) => void | Promise<void>,
 ) {
   const aiInputMaxLength = await getTaskAiInputMaxLength(
     claimedTask.rewriteStyleId,
@@ -1865,6 +1904,7 @@ async function loadTaskArticle(
       categoryName: category?.name ?? null,
       aiInputMaxLength,
       onProgress,
+      onRequestStage,
     });
   }
 
@@ -1874,6 +1914,7 @@ async function loadTaskArticle(
     aiInputMaxLength,
     categoryName: category?.name ?? null,
     onProgress,
+    onRequestStage,
   });
 }
 
@@ -2021,16 +2062,18 @@ async function getNextPendingAiRewriteTaskId() {
 
 async function recoverInterruptedAiRewriteTasks() {
   const now = new Date();
-  const recoveredTasks = await db.transaction(async (tx) => {
-    const rows = await tx
+  const recovery = await db.transaction(async (tx) => {
+    const uncertainRows = await tx
       .update(aiRewriteTasks)
       .set({
-        status: "pending",
-        progress: 0,
-        currentStep: "检测到上次执行中断，已自动重新排队",
-        error: null,
-        startedAt: null,
-        finishedAt: null,
+        status: "manual_required",
+        progress: 100,
+        currentStep:
+          "上次执行已发出 AI 请求但连接中断，无法确认上游结果，请人工确认后再重试",
+        error:
+          "AI 请求已发出但运行租约过期，无法确认上游是否完成。为避免重复计费，系统没有自动重试。",
+        requestStage: "manual_required",
+        finishedAt: now,
         leaseOwner: null,
         leaseExpiresAt: null,
         heartbeatAt: null,
@@ -2039,6 +2082,12 @@ async function recoverInterruptedAiRewriteTasks() {
       .where(
         and(
           eq(aiRewriteTasks.status, "running"),
+          inArray(aiRewriteTasks.requestStage, [
+            "request_started",
+            "response_received",
+            "checkpointed",
+            "manual_required",
+          ]),
           or(
             isNull(aiRewriteTasks.leaseExpiresAt),
             lt(aiRewriteTasks.leaseExpiresAt, now),
@@ -2049,28 +2098,78 @@ async function recoverInterruptedAiRewriteTasks() {
         id: aiRewriteTasks.id,
         sourceMaterialId: aiRewriteTasks.sourceMaterialId,
       });
-    const sourceMaterialIds = [
+
+    const recoveredRows = await tx
+      .update(aiRewriteTasks)
+      .set({
+        status: "pending",
+        currentStep: "检测到上次执行尚未发出 AI 请求，已保留历史并重新排队",
+        error: null,
+        startedAt: null,
+        finishedAt: null,
+        requestStage: "queued",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        heartbeatAt: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(aiRewriteTasks.status, "running"),
+          eq(aiRewriteTasks.requestStage, "queued"),
+          or(
+            isNull(aiRewriteTasks.leaseExpiresAt),
+            lt(aiRewriteTasks.leaseExpiresAt, now),
+          ),
+        ),
+      )
+      .returning({
+        id: aiRewriteTasks.id,
+        sourceMaterialId: aiRewriteTasks.sourceMaterialId,
+      });
+
+    const uncertainSourceMaterialIds = [
       ...new Set(
-        rows
+        uncertainRows
+          .map((row) => row.sourceMaterialId)
+          .filter((id): id is number => typeof id === "number"),
+      ),
+    ];
+    const recoveredSourceMaterialIds = [
+      ...new Set(
+        recoveredRows
           .map((row) => row.sourceMaterialId)
           .filter((id): id is number => typeof id === "number"),
       ),
     ];
 
-    if (sourceMaterialIds.length > 0) {
+    if (uncertainSourceMaterialIds.length > 0) {
+      await tx
+        .update(sourceMaterials)
+        .set({ status: "manual_required", updatedAt: now })
+        .where(inArray(sourceMaterials.id, uncertainSourceMaterialIds));
+    }
+
+    if (recoveredSourceMaterialIds.length > 0) {
       await tx
         .update(sourceMaterials)
         .set({ status: "queued", updatedAt: now })
-        .where(inArray(sourceMaterials.id, sourceMaterialIds));
+        .where(inArray(sourceMaterials.id, recoveredSourceMaterialIds));
     }
 
-    return rows;
+    return { uncertainRows, recoveredRows };
   });
 
-  if (recoveredTasks.length > 0) {
+  if (recovery.recoveredRows.length > 0) {
     structuredLog("warn", "ai.tasks_recovered", {
-      count: recoveredTasks.length,
-      taskIds: recoveredTasks.map((task) => task.id),
+      count: recovery.recoveredRows.length,
+      taskIds: recovery.recoveredRows.map((task) => task.id),
+    });
+  }
+  if (recovery.uncertainRows.length > 0) {
+    structuredLog("warn", "ai.tasks_marked_manual_required", {
+      count: recovery.uncertainRows.length,
+      taskIds: recovery.uncertainRows.map((task) => task.id),
     });
   }
 }
@@ -2095,8 +2194,6 @@ export async function ensureAiRewriteWorker() {
 
 export async function runAiRewriteTask(taskId: number) {
   if (!Number.isSafeInteger(taskId) || taskId <= 0) return;
-  if (runningTaskIds.has(taskId)) return;
-  runningTaskIds.add(taskId);
 
   let leaseHeartbeat: ReturnType<typeof setInterval> | null = null;
   let leaseOwner: string | null = null;
@@ -2146,7 +2243,6 @@ export async function runAiRewriteTask(taskId: number) {
     }
 
     const leasedTask = claimedTask;
-    runningTaskLeaseOwners.set(taskId, leaseOwner);
     leaseHeartbeat = setInterval(() => {
       if (leaseHeartbeatRunning || leaseLost) return;
       leaseHeartbeatRunning = true;
@@ -2164,6 +2260,34 @@ export async function runAiRewriteTask(taskId: number) {
         });
     }, TASK_LEASE_HEARTBEAT_MS);
     leaseHeartbeat.unref?.();
+
+    if (
+      claimedTask.postId &&
+      claimedTask.sourceType !== "seo" &&
+      claimedTask.sourceType !== "english"
+    ) {
+      try {
+        await upsertTaskStep({
+          taskId: claimedTask.id,
+          attempt: claimedTask.attempts,
+          stepKey: "config_bind",
+          stepName: "绑定 AI 配置",
+          status: "skipped",
+          progress: 10,
+          message: "已存在草稿 checkpoint，先恢复草稿后处理，不重新绑定改写配置",
+          payload: { resumedFromPostId: claimedTask.postId },
+        });
+        await resumeChineseTaskFromDraft(claimedTask);
+      } catch (error) {
+        await failTask(claimedTask, error, {
+          key: "resume_postprocess",
+          name: "从草稿断点恢复后处理",
+          attempt: claimedTask.attempts,
+          progress: 88,
+        });
+      }
+      return;
+    }
 
     try {
       claimedTask = await bindTaskConfigs(claimedTask);
@@ -2212,20 +2336,6 @@ export async function runAiRewriteTask(taskId: number) {
 
     if (claimedTask.sourceType === "english") {
       await runEnglishSeoTask(claimedTask);
-      return;
-    }
-
-    if (claimedTask.postId) {
-      try {
-        await resumeChineseTaskFromDraft(claimedTask);
-      } catch (error) {
-        await failTask(claimedTask, error, {
-          key: "resume_postprocess",
-          name: "从草稿断点恢复后处理",
-          attempt: claimedTask.attempts,
-          progress: 88,
-        });
-      }
       return;
     }
 
@@ -2306,7 +2416,7 @@ export async function runAiRewriteTask(taskId: number) {
           message: `命中 ${affiliateReport.matchedLinks.length} 条，未命中 ${affiliateReport.unmatchedLinks.length} 条，无效 ${affiliateReport.invalidLinks.length} 条`,
         });
         activeStep = aiStep;
-        await updateTask(taskId, {
+        await updateTask(claimedTask, {
           ...commonTaskValues,
           progress: 50,
           currentStep: "正文已清洗，准备执行 AI 改写",
@@ -2315,10 +2425,41 @@ export async function runAiRewriteTask(taskId: number) {
       }
 
       if (event.stage === "ai_failed") {
-        await updateTask(taskId, {
+        await updateTask(claimedTask, {
           ...commonTaskValues,
           currentStep: `AI 改写失败：${event.error}`,
           error: event.error,
+        });
+        return;
+      }
+
+      if (event.stage === "ai_request_stage") {
+        activeStep = {
+          ...aiStep,
+          progress: event.requestStage === "request_started" ? 58 : 59,
+          payload: { requestStage: event.requestStage },
+        };
+        await upsertTaskStep({
+          taskId,
+          attempt,
+          stepKey: aiStep.key,
+          stepName: aiStep.name,
+          status: "running",
+          progress: activeStep.progress,
+          message:
+            event.requestStage === "request_started"
+              ? "AI 请求已发出，等待上游响应"
+              : "已收到 AI 响应，正在保存结果",
+          payload: { requestStage: event.requestStage },
+        });
+        await updateTask(claimedTask, {
+          ...commonTaskValues,
+          progress: activeStep.progress,
+          requestStage: event.requestStage,
+          currentStep:
+            event.requestStage === "request_started"
+              ? "AI 请求已发出，等待上游响应"
+              : "已收到 AI 响应，正在保存 AI 结果",
         });
         return;
       }
@@ -2360,7 +2501,7 @@ export async function runAiRewriteTask(taskId: number) {
       ) {
         taskValues.rewriteOutputLength = event.ai.outputLength;
       }
-      await updateTask(taskId, taskValues);
+      await updateTask(claimedTask, taskValues);
     };
 
     try {
@@ -2373,7 +2514,7 @@ export async function runAiRewriteTask(taskId: number) {
         progress: sourceStep.progress,
         message: "正在读取素材并准备正文",
       });
-      await updateTask(taskId, {
+      await updateTask(claimedTask, {
         progress: 35,
         currentStep: "抓取文章并执行 AI 改写",
       });
@@ -2381,8 +2522,9 @@ export async function runAiRewriteTask(taskId: number) {
       const article = await loadTaskArticle(
         claimedTask,
         persistArticleProgress,
+        createAiRequestStageHandler(claimedTask),
       );
-      const manualRequired = needsManualAffiliateReview(article.diagnostics);
+      let manualRequired = needsManualAffiliateReview(article.diagnostics);
 
       await upsertTaskStep({
         taskId,
@@ -2457,7 +2599,7 @@ export async function runAiRewriteTask(taskId: number) {
         attempt,
         progress: 82,
       };
-      await updateTask(taskId, {
+      await updateTask(claimedTask, {
         progress: 82,
         currentStep: "保存为草稿文章",
         resultTitle: article.title,
@@ -2549,7 +2691,7 @@ export async function runAiRewriteTask(taskId: number) {
       }
 
       if (reusedDraft) {
-        await updateTask(taskId, {
+        await updateTask(claimedTask, {
           progress: 88,
           currentStep: "已找到上次保存的草稿，正在继续后续处理",
           postId: post.id,
@@ -2614,11 +2756,12 @@ export async function runAiRewriteTask(taskId: number) {
           attempt,
           stepKey: activeStep.key,
           stepName: activeStep.name,
-          status: "failed",
+          status: "manual_required",
           progress: 91,
           message: "草稿已保存，但内链规划失败",
           error: getErrorMessage(error),
         });
+        manualRequired = true;
         postProcessWarnings.push("文章内链规划失败");
       }
 
@@ -2633,6 +2776,7 @@ export async function runAiRewriteTask(taskId: number) {
         configId: claimedTask.imageConfigId,
       });
       if (coverResult.status === "failed") {
+        manualRequired = true;
         postProcessWarnings.push("中文封面任务入队失败");
       }
 
@@ -2673,11 +2817,12 @@ export async function runAiRewriteTask(taskId: number) {
           attempt,
           stepKey: activeStep.key,
           stepName: activeStep.name,
-          status: "failed",
+          status: "manual_required",
           progress: 94,
           message: "中文草稿已保存，但图片引用索引同步失败",
           error: getErrorMessage(error),
         });
+        manualRequired = true;
         postProcessWarnings.push("图片引用索引同步失败");
       }
 
@@ -2764,7 +2909,5 @@ export async function runAiRewriteTask(taskId: number) {
         });
       }
     }
-    runningTaskLeaseOwners.delete(taskId);
-    runningTaskIds.delete(taskId);
   }
 }

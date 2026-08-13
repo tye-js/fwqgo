@@ -456,6 +456,13 @@
       "when": 1786579200000,
       "tag": "0064_general_image_generation_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1786665600000,
+      "tag": "0065_ai_request_and_cover_recovery",
+      "breakpoints": true
     }
   ]
 }

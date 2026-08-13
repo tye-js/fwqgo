@@ -58,9 +58,34 @@ export type AiRewriteConfig = Awaited<
 >[number];
 
 type ConfigTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
-type ActiveAiRewriteConfigRow = Omit<
+type ActiveAiRewriteConfigRow = Pick<
   typeof aiRewriteConfigs.$inferSelect,
-  "rewriteRetryPrompt" | "qualityRepairPrompt" | "rewriteMaxAttempts"
+  | "id"
+  | "name"
+  | "provider"
+  | "baseUrl"
+  | "apiKey"
+  | "model"
+  | "factExtractionPrompt"
+  | "basePrompt"
+  | "initialRewritePrompt"
+  | "qualityReviewPrompt"
+  | "metadataPrompt"
+  | "styleName"
+  | "stylePrompt"
+  | "metadataStylePrompt"
+  | "englishContentPrompt"
+  | "englishContinuationPrompt"
+  | "englishMetadataPrompt"
+  | "englishStylePrompt"
+  | "englishMetadataStylePrompt"
+  | "providerCatalogDiscoveryPrompt"
+  | "temperature"
+  | "maxTokens"
+  | "enabled"
+  | "isDefault"
+  | "createdAt"
+  | "updatedAt"
 >;
 
 const activeAiRewriteConfigColumns = {
