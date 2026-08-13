@@ -1026,13 +1026,23 @@ export const imageCoverGenerationTasks = pgTable(
   {
     id: serial("id").primaryKey(),
     batchId: varchar("batchId", { length: 64 }).notNull(),
-    postId: integer("postId").notNull(),
+    taskType: varchar("taskType", { length: 24 })
+      .default("article_cover")
+      .notNull(),
+    postId: integer("postId"),
     title: text("title").notNull(),
+    inputSnapshot: jsonb("inputSnapshot")
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
     configId: integer("configId"),
     configName: text("configName"),
     provider: varchar("provider", { length: 40 }),
     model: text("model"),
     prompt: text("prompt"),
+    requestStage: varchar("requestStage", { length: 32 })
+      .default("queued")
+      .notNull(),
     status: varchar("status", { length: 24 }).default("pending").notNull(),
     outputUrl: text("outputUrl"),
     assetId: integer("assetId"),
@@ -1066,7 +1076,11 @@ export const imageCoverGenerationTasks = pgTable(
     ),
     statusCheck: check(
       "image_cover_generation_tasks_status_check",
-      sql`${table.status} in ('pending', 'running', 'succeeded', 'failed', 'cancelled')`,
+      sql`${table.status} in ('pending', 'running', 'succeeded', 'failed', 'uncertain', 'cancelled')`,
+    ),
+    taskTypeCheck: check(
+      "image_cover_generation_tasks_task_type_check",
+      sql`${table.taskType} in ('article_cover', 'standalone_cover', 'custom')`,
     ),
     postFk: foreignKey({
       columns: [table.postId],

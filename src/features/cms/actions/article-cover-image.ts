@@ -3,11 +3,11 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { CoverVisualBriefOverrides } from "@fwqgo/core/image-generation-prompts";
 import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
-import { reserveBoundedMapCapacity } from "@fwqgo/core/bounded-map";
 import {
   formPostgresIntegerIdSchema,
   postgresIntegerIdSchema,
@@ -15,15 +15,14 @@ import {
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 import { db } from "@fwqgo/db";
 import { imageCoverGenerationTasks, posts } from "@fwqgo/db/schema";
-import { generateArticleCoverImage } from "@/server/images/generated-cover";
 import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
-import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import {
+  enqueueArticleCoverGenerationTask,
+  enqueueStandaloneCoverGenerationTask,
   ensureCoverGenerationWorker,
   formatCoverGenerationError,
   serializeCoverTask,
   terminalCoverTaskStatuses,
-  type CoverTaskStatus,
 } from "@/server/images/cover-generation-task-runner";
 import {
   adminActionFailure,
@@ -39,6 +38,17 @@ const coverSchema = z.object({
   fileSlug: z.string().trim().optional(),
   language: z.enum(["zh", "en"]).default("zh"),
   configId: formPostgresIntegerIdSchema.optional(),
+  visualBriefOverrides: z
+    .object({
+      title: z.string().trim().max(240).optional(),
+      brands: z.array(z.string().trim().max(120)).max(20).optional(),
+      regions: z.array(z.string().trim().max(120)).max(20).optional(),
+      productTypes: z.array(z.string().trim().max(120)).max(20).optional(),
+      specifications: z.array(z.string().trim().max(120)).max(30).optional(),
+      promotionThemes: z.array(z.string().trim().max(120)).max(20).optional(),
+      forbiddenElements: z.array(z.string().trim().max(160)).max(30).optional(),
+    })
+    .optional(),
 });
 
 const batchCoverSchema = z.object({
@@ -50,116 +60,6 @@ const coverBatchIdSchema = z.string().trim().uuid("封面生成批次号无效")
 function parseTaskId(taskId: number) {
   const parsed = postgresIntegerIdSchema.safeParse(taskId);
   return parsed.success ? parsed.data : null;
-}
-
-const finalizedCoverGenerationBatches = new Map<string, number>();
-const MAX_FINALIZED_COVER_GENERATION_BATCHES = 500;
-
-type EphemeralCoverTask = {
-  taskId: number;
-  batchId: string;
-  title: string;
-  status: CoverTaskStatus;
-  url?: string;
-  assetId?: number;
-  errorTitle?: string;
-  errorDetail?: string;
-  startedAt: Date | null;
-  finishedAt: Date | null;
-};
-
-const ephemeralCoverBatches = new Map<string, EphemeralCoverTask[]>();
-const MAX_EPHEMERAL_COVER_BATCHES = 30;
-
-function markCoverGenerationBatchFinalized(batchId: string) {
-  if (finalizedCoverGenerationBatches.has(batchId)) return;
-
-  reserveBoundedMapCapacity(finalizedCoverGenerationBatches, {
-    maxEntries: MAX_FINALIZED_COVER_GENERATION_BATCHES,
-    isEvictable: () => true,
-    getEvictionPriority: (finalizedAt) => finalizedAt,
-  });
-  finalizedCoverGenerationBatches.set(batchId, Date.now());
-}
-
-async function requireActiveImageConfig(configId?: number) {
-  const config = await getActiveImageGenerationConfig(configId);
-  if (!config) {
-    throw new Error(
-      configId
-        ? `指定的生图配置 #${configId} 不存在或已停用`
-        : "当前没有已启用的默认生图配置",
-    );
-  }
-
-  return config;
-}
-
-function serializeEphemeralCoverTask(task: EphemeralCoverTask) {
-  return {
-    taskId: task.taskId,
-    batchId: task.batchId,
-    postId: 0,
-    title: task.title,
-    status: task.status,
-    success: task.status === "succeeded",
-    url: task.url,
-    assetId: task.assetId,
-    error: task.errorTitle
-      ? [task.errorTitle, task.errorDetail].filter(Boolean).join("：")
-      : undefined,
-    errorTitle: task.errorTitle,
-    errorDetail: task.errorDetail,
-    startedAt: task.startedAt?.toISOString() ?? null,
-    finishedAt: task.finishedAt?.toISOString() ?? null,
-  };
-}
-
-async function runEphemeralCoverGenerationTask(
-  batchId: string,
-  payload: z.infer<typeof coverSchema>,
-  uploadedBy: string,
-) {
-  const tasks = ephemeralCoverBatches.get(batchId);
-  const task = tasks?.[0];
-  if (!tasks || !task) {
-    throw new Error("临时封面任务状态已丢失，请重新提交任务");
-  }
-
-  const runningTask: EphemeralCoverTask = {
-    ...task,
-    status: "running",
-    startedAt: new Date(),
-  };
-  ephemeralCoverBatches.set(batchId, [runningTask]);
-
-  try {
-    const result = await generateArticleCoverImage({
-      ...payload,
-      uploadedBy,
-    });
-
-    ephemeralCoverBatches.set(batchId, [
-      {
-        ...runningTask,
-        status: "succeeded",
-        url: result.asset.path,
-        assetId: result.asset.id,
-        finishedAt: new Date(),
-      },
-    ]);
-  } catch (error) {
-    const readableError = formatCoverGenerationError(error);
-    ephemeralCoverBatches.set(batchId, [
-      {
-        ...runningTask,
-        status: "failed",
-        errorTitle: readableError.title,
-        errorDetail: readableError.detail,
-        finishedAt: new Date(),
-      },
-    ]);
-  }
 }
 
 function revalidateCoverGenerationAdminPaths() {
@@ -205,6 +105,7 @@ export async function generateArticleCoverImageAction(input: {
   fileSlug?: string | null;
   language?: "zh" | "en";
   configId?: number;
+  visualBriefOverrides?: CoverVisualBriefOverrides | null;
 }) {
   try {
     const session = await requireAdminSession();
@@ -252,39 +153,20 @@ export async function generateArticleCoverImageAction(input: {
         };
       }
 
-      const imageConfig = await requireActiveImageConfig(payload.configId);
-
-      const batchId = randomUUID();
-      const [task] = await db
-        .insert(imageCoverGenerationTasks)
-        .values({
-          batchId,
-          postId: post.id,
-          title: post.title,
-          configId: imageConfig.id,
-          configName: imageConfig.name,
-          provider: imageConfig.provider,
-          model: imageConfig.model,
-          status: "pending",
-          createdBy: session.userId,
-        })
-        .returning();
-
-      if (!task) {
-        return {
-          success: false,
-          error: "封面生成任务创建失败",
-          errorTitle: "无法创建封面生成任务",
-        };
-      }
+      const { task } = await enqueueArticleCoverGenerationTask({
+        postId: post.id,
+        title: post.title,
+        configId: payload.configId,
+        createdBy: session.userId,
+        visualBriefOverrides: payload.visualBriefOverrides,
+      });
 
       revalidatePath("/images/covers");
-      await ensureCoverGenerationWorker();
 
       return {
         success: true,
         queued: true,
-        batchId,
+        batchId: task.batchId,
         results: [serializeCoverTask(task)],
         pendingCount: 1,
         runningCount: 0,
@@ -293,60 +175,16 @@ export async function generateArticleCoverImageAction(input: {
       };
     }
 
-    const imageConfig = await requireActiveImageConfig(payload.configId);
-    const boundPayload = { ...payload, configId: imageConfig.id };
-    const hasCapacity = reserveBoundedMapCapacity(ephemeralCoverBatches, {
-      maxEntries: MAX_EPHEMERAL_COVER_BATCHES,
-      isEvictable: (tasks) =>
-        tasks.length > 0 &&
-        tasks.every((task) => terminalCoverTaskStatuses.includes(task.status)),
-      getEvictionPriority: (tasks) =>
-        Math.min(
-          ...tasks.map(
-            (task) => task.finishedAt?.getTime() ?? Number.POSITIVE_INFINITY,
-          ),
-        ),
+    const task = await enqueueStandaloneCoverGenerationTask({
+      ...payload,
+      createdBy: session.userId,
     });
-    if (!hasCapacity) {
-      return {
-        success: false,
-        error: "当前活跃封面生成任务过多，请等待现有任务完成后重试",
-        errorTitle: "无法创建封面生成任务",
-      };
-    }
-
-    const batchId = randomUUID();
-    const task: EphemeralCoverTask = {
-      taskId: -Date.now(),
-      batchId,
-      title: payload.title,
-      status: "pending",
-      startedAt: null,
-      finishedAt: null,
-    };
-    ephemeralCoverBatches.set(batchId, [task]);
-    try {
-      await enqueueAdminBackgroundJob({
-        key: `article-cover-generation:${batchId}`,
-        label: `Article cover generation: ${payload.title}`,
-        maxAttempts: 1,
-        run: () =>
-          runEphemeralCoverGenerationTask(
-            batchId,
-            boundPayload,
-            session.userId,
-          ),
-      });
-    } catch (error) {
-      ephemeralCoverBatches.delete(batchId);
-      throw error;
-    }
 
     return {
       success: true,
       queued: true,
-      batchId,
-      results: [serializeEphemeralCoverTask(task)],
+      batchId: task.batchId,
+      results: [serializeCoverTask(task)],
       pendingCount: 1,
       runningCount: 0,
       successCount: 0,
@@ -409,29 +247,20 @@ export async function batchGenerateArticleCoverImagesAction(input: {
       };
     }
 
-    const imageConfig = await requireActiveImageConfig();
-
     const batchId = randomUUID();
-    const tasks = await db
-      .insert(imageCoverGenerationTasks)
-      .values(
-        queuedPostRows.map((post) => ({
+    const tasks = await Promise.all(
+      queuedPostRows.map(async (post) => {
+        const result = await enqueueArticleCoverGenerationTask({
           batchId,
           postId: post.id,
           title: post.title,
-          configId: imageConfig.id,
-          configName: imageConfig.name,
-          provider: imageConfig.provider,
-          model: imageConfig.model,
-          status: "pending",
           createdBy: session.userId,
-        })),
-      )
-      .returning();
+        });
+        return result.task;
+      }),
+    );
 
     revalidatePath("/images/covers");
-    await ensureCoverGenerationWorker();
-
     return {
       success: true,
       batchId,
@@ -474,19 +303,23 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
 
     if (
       !existingTask ||
-      (existingTask.status !== "failed" && existingTask.status !== "cancelled")
+      !["failed", "uncertain", "cancelled"].includes(existingTask.status)
     ) {
       return adminActionFailure(new Error("任务不存在，或当前状态不能恢复"), {
         title: "恢复封面生成任务失败",
-        suggestion: "只有失败或已取消的封面任务可以恢复。",
+        suggestion: "只有失败、结果不确定或已取消的生图任务可以恢复。",
       });
     }
 
     const defaultConfig =
-      existingTask.status === "failed"
+      existingTask.status === "failed" || existingTask.status === "uncertain"
         ? await getActiveImageGenerationConfig()
         : null;
-    if (existingTask.status === "failed" && !defaultConfig) {
+    if (
+      (existingTask.status === "failed" ||
+        existingTask.status === "uncertain") &&
+      !defaultConfig
+    ) {
       return adminActionFailure(new Error("当前没有已启用的默认生图配置"), {
         title: "封面生成任务重试失败",
         suggestion: "请先在生图接口配置中启用并设定默认配置。",
@@ -496,6 +329,7 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
     const retryValues: Partial<typeof imageCoverGenerationTasks.$inferInsert> =
       {
         status: "pending",
+        requestStage: "queued",
         outputUrl: null,
         assetId: null,
         prompt: null,
@@ -530,7 +364,7 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
     if (!task) {
       return adminActionFailure(new Error("任务不存在，或当前状态不能恢复"), {
         title: "恢复封面生成任务失败",
-        suggestion: "只有失败或已取消的封面任务可以恢复。",
+        suggestion: "只有失败、结果不确定或已取消的生图任务可以恢复。",
       });
     }
 
@@ -684,27 +518,6 @@ export async function getCoverGenerationBatchStatusAction(batchId: string) {
 
     const normalizedBatchId = coverBatchIdSchema.parse(batchId);
 
-    const ephemeralTasks = ephemeralCoverBatches.get(normalizedBatchId);
-    if (ephemeralTasks) {
-      return {
-        success: true,
-        batchId: normalizedBatchId,
-        results: ephemeralTasks.map(serializeEphemeralCoverTask),
-        successCount: ephemeralTasks.filter(
-          (task) => task.status === "succeeded",
-        ).length,
-        failedCount: ephemeralTasks.filter((task) => task.status === "failed")
-          .length,
-        pendingCount: ephemeralTasks.filter((task) => task.status === "pending")
-          .length,
-        runningCount: ephemeralTasks.filter((task) => task.status === "running")
-          .length,
-        done: ephemeralTasks.every((task) =>
-          terminalCoverTaskStatuses.includes(task.status),
-        ),
-      };
-    }
-
     const tasks = await db
       .select()
       .from(imageCoverGenerationTasks)
@@ -749,27 +562,6 @@ export async function finalizeCoverGenerationBatchAction(batchId: string) {
 
     const normalizedBatchId = coverBatchIdSchema.parse(batchId);
 
-    if (finalizedCoverGenerationBatches.has(normalizedBatchId)) {
-      return { success: true, revalidated: false };
-    }
-
-    const ephemeralTasks = ephemeralCoverBatches.get(normalizedBatchId);
-    if (ephemeralTasks) {
-      const done = ephemeralTasks.every((task) =>
-        terminalCoverTaskStatuses.includes(task.status),
-      );
-      if (!done) {
-        return {
-          success: false,
-          error: "封面生成批次还在运行，请完成后再刷新缓存",
-        };
-      }
-
-      revalidateCoverGenerationAdminPaths();
-      markCoverGenerationBatchFinalized(normalizedBatchId);
-      return { success: true, revalidated: true };
-    }
-
     const tasks = await db
       .select({
         postId: imageCoverGenerationTasks.postId,
@@ -793,8 +585,10 @@ export async function finalizeCoverGenerationBatchAction(batchId: string) {
     }
 
     const succeededPostIds = tasks
-      .filter((task) => task.status === "succeeded")
-      .map((task) => task.postId);
+      .map((task) =>
+        task.status === "succeeded" ? task.postId : null,
+      )
+      .filter((postId): postId is number => postId !== null);
     const tags = await getPostCoverRevalidationTags(succeededPostIds);
 
     if (tags.length > 0) {
@@ -804,7 +598,6 @@ export async function finalizeCoverGenerationBatchAction(batchId: string) {
       });
     }
     revalidateCoverGenerationAdminPaths();
-    markCoverGenerationBatchFinalized(normalizedBatchId);
 
     return {
       success: true,

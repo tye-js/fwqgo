@@ -763,6 +763,178 @@ async function enqueueCoverForDraftPost(input: {
   }
 }
 
+function readStoredDiagnostics(value: string | null) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as ScrapeDiagnostics;
+  } catch {
+    return null;
+  }
+}
+
+async function resumeChineseTaskFromDraft(
+  claimedTask: typeof aiRewriteTasks.$inferSelect,
+) {
+  if (!claimedTask.postId) throw new Error("断点续跑缺少草稿文章 ID");
+  const [post] = await db
+    .select({
+      id: posts.id,
+      title: posts.title,
+      content: posts.content,
+    })
+    .from(posts)
+    .where(eq(posts.id, claimedTask.postId))
+    .limit(1);
+  if (!post) throw new Error("上次保存的草稿文章已被删除，无法断点续跑");
+  if (!post.content?.trim()) throw new Error("上次保存的草稿正文为空，无法断点续跑");
+
+  const attempt = claimedTask.attempts;
+  const diagnostics = readStoredDiagnostics(claimedTask.diagnostics);
+  const manualRequired = diagnostics
+    ? needsManualAffiliateReview(diagnostics)
+    : false;
+  const warnings: string[] = [];
+
+  await updateTask(claimedTask.id, {
+    progress: 88,
+    currentStep: "检测到已保存草稿，跳过抓取和 AI 改写并继续后处理",
+    resultTitle: post.title,
+  });
+  for (const step of [
+    ["source_collect", "抓取/读取素材", "草稿 checkpoint 已存在，跳过重新抓取"],
+    ["html_clean", "清洗正文结构", "保留已保存草稿，不重新清洗正文"],
+    ["affiliate_check", "识别商户与返利链接", "保留上次诊断结果"],
+    ["ai_rewrite", "AI 改写文章", "草稿 checkpoint 已存在，跳过再次调用模型"],
+  ] as const) {
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: step[0],
+      stepName: step[1],
+      status: "skipped",
+      progress: 88,
+      message: step[2],
+      payload: { resumedFromPostId: post.id },
+    });
+  }
+  await upsertTaskStep({
+    taskId: claimedTask.id,
+    attempt,
+    stepKey: "save_draft",
+    stepName: "保存草稿",
+    status: "success",
+    progress: 90,
+    message: `复用现有草稿文章 #${post.id}，未覆盖人工编辑`,
+    payload: { postId: post.id, title: post.title, checkpoint: true },
+  });
+
+  try {
+    const result = await regeneratePostInternalLinks({
+      postId: post.id,
+      mode: "activate-high-confidence",
+      generatedBy: "rule",
+      includeKnowledge: false,
+    });
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "internal_link_plan",
+      stepName: "生成文章内链",
+      status: "success",
+      progress: 91,
+      message: `生成 ${result.generated} 条内链，其中 ${result.active} 条已启用`,
+      payload: result,
+    });
+  } catch (error) {
+    warnings.push("文章内链规划失败");
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "internal_link_plan",
+      stepName: "生成文章内链",
+      status: "failed",
+      progress: 91,
+      message: "草稿已保留，但内链规划失败",
+      error: getErrorMessage(error),
+    });
+  }
+
+  const coverResult = await enqueueCoverForDraftPost({
+    taskId: claimedTask.id,
+    attempt,
+    stepKey: "cover_generate",
+    stepName: "自动生成中文封面",
+    progress: 91,
+    postId: post.id,
+    language: "zh",
+    configId: claimedTask.imageConfigId,
+  });
+  if (coverResult.status === "failed") warnings.push("中文封面任务入队失败");
+
+  try {
+    await syncImageReferencesForPost(post.id);
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "image_references",
+      stepName: "同步图片引用",
+      status: "success",
+      progress: 94,
+      message: "图片引用同步完成",
+    });
+  } catch (error) {
+    warnings.push("图片引用索引同步失败");
+    await upsertTaskStep({
+      taskId: claimedTask.id,
+      attempt,
+      stepKey: "image_references",
+      stepName: "同步图片引用",
+      status: "failed",
+      progress: 94,
+      message: "草稿已保留，但图片引用索引同步失败",
+      error: getErrorMessage(error),
+    });
+  }
+
+  await upsertTaskStep({
+    taskId: claimedTask.id,
+    attempt,
+    stepKey: "offer_source",
+    stepName: "套餐数据来源",
+    status: "success",
+    progress: 96,
+    message: "文章不再提取套餐；套餐由供应商官网采集并单独审核",
+    payload: { source: "provider_catalog", postId: post.id },
+  });
+  await upsertTaskStep({
+    taskId: claimedTask.id,
+    attempt,
+    stepKey: "english_enqueue",
+    stepName: "等待人工确认后生成英文",
+    status: "skipped",
+    progress: 98,
+    message: "中文草稿已保留。请确认人工修改后再生成英文。",
+    payload: { requiresManualChineseEdit: true, postId: post.id },
+  });
+
+  const completionParts = [finishedStepText({ manualRequired })];
+  completionParts.push("已从草稿 checkpoint 恢复，未重新调用 AI");
+  completionParts.push(...warnings);
+  const finalized = await finalizeTask(
+    claimedTask,
+    manualRequired ? "manual_required" : "succeeded",
+    {
+      progress: 100,
+      currentStep: completionParts.join("；"),
+      postId: post.id,
+      resultTitle: post.title,
+      diagnostics: claimedTask.diagnostics,
+      finishedAt: new Date(),
+    },
+  );
+  if (!finalized) throw new TaskLeaseLostError();
+}
+
 async function upsertEnglishDraftPost(input: {
   parentPost: {
     id: number;
@@ -2043,6 +2215,20 @@ export async function runAiRewriteTask(taskId: number) {
       return;
     }
 
+    if (claimedTask.postId) {
+      try {
+        await resumeChineseTaskFromDraft(claimedTask);
+      } catch (error) {
+        await failTask(claimedTask, error, {
+          key: "resume_postprocess",
+          name: "从草稿断点恢复后处理",
+          attempt: claimedTask.attempts,
+          progress: 88,
+        });
+      }
+      return;
+    }
+
     const attempt = claimedTask.attempts;
     const sourceStep = {
       key: "source_collect",
@@ -2143,8 +2329,6 @@ export async function runAiRewriteTask(taskId: number) {
         status: event.ai.status,
         attempt: event.ai.attempt ?? null,
         maxAttempts: event.ai.maxAttempts ?? null,
-        repairAttempt: event.ai.repairAttempt ?? null,
-        maxRepairAttempts: event.ai.maxRepairAttempts ?? null,
         maxTokens: event.ai.maxTokens,
         inputLength: event.ai.inputLength ?? null,
         outputLength: event.ai.outputLength ?? null,

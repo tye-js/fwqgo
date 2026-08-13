@@ -9,6 +9,18 @@ import {
   getCoverGenerationBatchStatusAction,
 } from "@/features/cms/actions/article-cover-image";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   describeAdminResult,
   notifyActionError,
@@ -37,7 +49,15 @@ export function ArticleCoverGenerator({
   onGenerated: (url: string) => void;
 }) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [batchId, setBatchId] = useState<string | null>(null);
+  const [briefTitle, setBriefTitle] = useState(title);
+  const [brands, setBrands] = useState("");
+  const [regions, setRegions] = useState("");
+  const [productTypes, setProductTypes] = useState("");
+  const [specifications, setSpecifications] = useState("");
+  const [promotionThemes, setPromotionThemes] = useState("");
+  const [forbiddenElements, setForbiddenElements] = useState("");
   const finalizedBatchIdsRef = useRef(new Set<string>());
 
   useEffect(() => {
@@ -142,6 +162,15 @@ export function ArticleCoverGenerator({
         content,
         fileSlug,
         language,
+        visualBriefOverrides: {
+          title: briefTitle,
+          brands: splitBriefValues(brands),
+          regions: splitBriefValues(regions),
+          productTypes: splitBriefValues(productTypes),
+          specifications: splitBriefValues(specifications),
+          promotionThemes: splitBriefValues(promotionThemes),
+          forbiddenElements: splitBriefValues(forbiddenElements),
+        },
       });
 
       if (!result.success) {
@@ -154,6 +183,7 @@ export function ArticleCoverGenerator({
 
       if (result.queued) {
         queued = true;
+        setDialogOpen(false);
         setBatchId(result.batchId ?? null);
         notifyInfo({
           title: "封面图已加入后台生成队列",
@@ -184,15 +214,82 @@ export function ArticleCoverGenerator({
   }
 
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      disabled={isGenerating}
-      onClick={handleGenerate}
+    <Dialog
+      open={dialogOpen}
+      onOpenChange={(open) => {
+        if (open) setBriefTitle(title);
+        setDialogOpen(open);
+      }}
     >
-      <ImagePlus className="size-4" />
-      {isGenerating ? "后台生成中..." : "生成封面图"}
-    </Button>
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline" size="sm" disabled={isGenerating}>
+          <ImagePlus className="size-4" />
+          {isGenerating ? "后台生成中..." : "生成封面图"}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>确认封面视觉简报</DialogTitle>
+          <DialogDescription>
+            系统会从文章中自动提取明确事实；这里填写的内容会覆盖自动结果。多个值用逗号或换行分隔。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-2 md:grid-cols-2">
+          <BriefField label="标题（核心主题）" value={briefTitle} onChange={setBriefTitle} />
+          <BriefField label="品牌" value={brands} onChange={setBrands} />
+          <BriefField label="地区" value={regions} onChange={setRegions} />
+          <BriefField label="产品类型" value={productTypes} onChange={setProductTypes} />
+          <BriefField label="关键规格" value={specifications} onChange={setSpecifications} />
+          <BriefField label="促销主题" value={promotionThemes} onChange={setPromotionThemes} />
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="cover-brief-forbidden">附加禁用元素</Label>
+            <Textarea
+              id="cover-brief-forbidden"
+              value={forbiddenElements}
+              onChange={(event) => setForbiddenElements(event.target.value)}
+              placeholder="例如：人物、硬币、价格文字"
+            />
+            <p className="text-xs text-muted-foreground">
+              系统强制禁用的水印、二维码和相关旗帜元素始终保留。
+            </p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button type="button" onClick={handleGenerate} disabled={isGenerating}>
+            <ImagePlus className="size-4" />
+            {isGenerating ? "正在创建任务..." : "确认并后台生成"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function splitBriefValues(value: string) {
+  return value
+    .split(/[,，\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function BriefField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const id = `cover-brief-${label}`;
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
   );
 }

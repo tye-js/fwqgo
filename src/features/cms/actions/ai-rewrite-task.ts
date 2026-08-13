@@ -552,13 +552,6 @@ export async function retryAiRewriteTaskAction(taskId: number) {
           progress: 0,
           currentStep: "等待重试",
           error: null,
-          resultTitle: null,
-          scrapedTitle: null,
-          scrapedDescription: null,
-          scrapedHtml: null,
-          aiInputLength: null,
-          rewriteOutputLength: null,
-          diagnostics: null,
           rewriteStyleId: rewriteConfig.id,
           rewriteConfigName: rewriteConfig.name,
           rewriteProvider: rewriteConfig.provider,
@@ -587,10 +580,6 @@ export async function retryAiRewriteTaskAction(taskId: number) {
         });
 
       if (!updatedTask) return null;
-
-      await tx
-        .delete(aiTaskSteps)
-        .where(eq(aiTaskSteps.taskId, updatedTask.id));
 
       if (updatedTask.sourceMaterialId) {
         await tx

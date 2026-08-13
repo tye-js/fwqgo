@@ -70,9 +70,7 @@ import {
   defaultInitialRewriteFeedbackPrompt,
   defaultMetadataPrompt,
   defaultMetadataStylePrompt,
-  defaultQualityRepairPrompt,
   defaultQualityReviewPrompt,
-  defaultRewriteRetryPrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
 import { defaultProviderCatalogDiscoveryPrompt } from "@fwqgo/core/provider-catalog-discovery";
 
@@ -460,11 +458,6 @@ function ConfigForm({
           <p className="text-xs leading-5 text-muted-foreground">
             固定生成 1 次，不再自动重写。
           </p>
-          <input
-            type="hidden"
-            name="rewriteMaxAttempts"
-            value={defaults?.rewriteMaxAttempts ?? 3}
-          />
         </div>
         <div className="space-y-2">
           <Label>质量审查调用次数</Label>
@@ -520,16 +513,6 @@ function ConfigForm({
             }
             description="首轮生成时填入正文模板的 {retryFeedback}。"
             className="min-h-24"
-          />
-          <input
-            type="hidden"
-            name="rewriteRetryPrompt"
-            value={defaults?.rewriteRetryPrompt ?? defaultRewriteRetryPrompt}
-          />
-          <input
-            type="hidden"
-            name="qualityRepairPrompt"
-            value={defaults?.qualityRepairPrompt ?? defaultQualityRepairPrompt}
           />
           <PromptTemplateField
             name="qualityReviewPrompt"

@@ -12,6 +12,8 @@ import {
 import {
   buildArticleCoverPrompt,
   defaultEnglishCoverPromptTemplate,
+  type CoverVisualBrief,
+  type CoverVisualBriefOverrides,
 } from "@fwqgo/core/image-generation-prompts";
 import {
   extractGeneratedImageSource,
@@ -38,10 +40,15 @@ type GenerateCoverInput = {
   content?: string | null;
   fileSlug?: string | null;
   language?: "zh" | "en";
+  knownBrands?: string[];
+  visualBrief?: CoverVisualBrief;
+  visualBriefOverrides?: CoverVisualBriefOverrides | null;
   uploadedBy: string | null;
   configId?: number;
   signal?: AbortSignal;
   onPrompt?: (prompt: string) => void | Promise<void>;
+  onRequestStarted?: () => void | Promise<void>;
+  onAssetPersisted?: (asset: ImageAssetRow) => void | Promise<void>;
 };
 
 type CoverRequestPreview = {
@@ -322,6 +329,7 @@ export async function generateArticleCoverImage(
   let requestStarted = false;
   try {
     const safeEndpoint = await assertPublicHttpUrl(endpoint, "生图接口地址");
+    await input.onRequestStarted?.();
     requestStarted = true;
     response = await fetch(safeEndpoint, {
       method: "POST",
@@ -444,6 +452,7 @@ export async function generateArticleCoverImage(
       input.language === "en" ? input.title : toEnglishFileSlug(input.title),
     prompt,
   });
+  await input.onAssetPersisted?.(asset);
   throwIfAborted(input.signal);
 
   return { asset, prompt };

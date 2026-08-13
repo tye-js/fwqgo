@@ -80,52 +80,6 @@ JSON 格式：
 export const defaultInitialRewriteFeedbackPrompt =
   "首次生成，没有上一轮反馈。请直接满足全部事实保真要求。";
 
-export const defaultRewriteRetryPrompt = `上一轮未通过。请只依据完整来源原文做小幅修改和排版整理，不要补充外部信息，也不要局部替换后扩大文章内容：
-{issues}`;
-
-export const defaultQualityRepairPrompt = `你是服务器/VPS 文章的事实修订编辑。请根据审查问题直接修改上一版候选正文，输出一份修订后的完整 Markdown 正文，不要重新自由创作。
-
-写作风格：
-{stylePrompt}
-
-完整来源原文（事实最高优先级，表格和链接已替换为受保护占位符）：
-{sourceContent}
-
-事实核对清单：
-{factSheet}
-
-经程序验证的 SEO 关键词规划：
-{keywordPlan}
-
-正文长度边界：
-{rewriteLengthBudget}
-
-来源允许的主题大纲：
-{outline}
-
-受保护原始内容：
-{protectedAuthorityContent}
-
-受保护内容放置要求：
-{protectedContent}
-
-上一版候选 Markdown（需要直接修订，受保护内容仍使用占位符）：
-{candidateContent}
-
-本轮必须解决的审查问题：
-{issues}
-
-修订要求：
-1. 只输出修订后的完整 Markdown 正文，不要输出标题、JSON、代码块围栏、修改说明或审查过程。
-2. 逐项解决审查问题。只删除或修正来源不支持的内容，保留来源事实和原有结构；不得引入知识库、供应商资料或其他外部信息，也不得扩写。
-3. 保留上一版中已正确的结构、段落和表达，不要因为局部问题重新改写整篇文章。
-4. 所有事实必须能由完整来源原文或受保护原始内容支持。
-5. 每个受保护占位符必须原样出现且只出现一次；不要重写占位符代表的套餐表格和链接，也不要在文章总结中再次引用已经放置过的优惠码或购买链接占位符。若问题提示占位符重复，应删除重复引用所在的文字，不能只删除占位符而留下残缺句子。
-6. 不得新增价格、配置、线路、运营商、库存、测试、用户反馈、社区反馈、退款承诺或其他来源没有的结论。
-7. 输出前逐项自检 issues：每个 candidateText 被要求删除或修正的原句都不能继续出现在正文中；尤其是 type=unsupported_claim 的原句必须删除；不要为了保持篇幅而补写未经来源支持的评价性句子。
-8. 关键词不能支持来源没有的事实，也不要求为了关键词改变原文结构。修订后的叙述长度只能接近来源原文，不得超过长度边界。
-9. 不得新增基础知识章节、市场比较、用途建议、线路名称、用户反馈、性能结论或总结；来源已有内容可以保留并整理排版。`;
-
 export const defaultQualityReviewPrompt = `你是独立的来源一致性审查员。请审查候选文章是否只对来源原文做了小幅改写和排版整理，只输出 JSON。
 
 审查边界：
@@ -181,10 +135,6 @@ const sourceOnlyRewriteSupplement = `
 
 本次改写模式：只允许使用清洗后的来源原文和受保护原始内容。只做小幅度改写与排版整理，不引用知识库、供应商资料或其他外部信息，不新增基础知识章节、市场评价、用途建议、性能结论或总结；不要因为正文与来源相似而判定失败。`;
 
-const qualityRepairActionabilitySupplement = `
-
-自动修订附加要求：issues 中标记为 unsupported_claim 的 candidateText 必须从完整正文中删除，不能改写成同义评价或换一种归因；distorted_fact 必须恢复为完整来源原文支持的事实；missing_fact 只能补回来源明确提供的事实。输出前逐项搜索 candidateText，确认要求删除或修正的原句不再出现。`;
-
 const sourceContentBoundarySupplement = `
 
 正文清洗边界：只保留当前文章主题的正文。来源站名称、来源网址、转载声明、版权尾注、作者/发布时间等页面元信息，以及非本文内容的相关推荐、相关文章、猜你喜欢、上一篇/下一篇、分享、评论或导航文案，都必须删除，不得改写后重新放回正文。`;
@@ -195,22 +145,6 @@ export function resolveQualityReviewTemplate(value?: string | null) {
   let resolved = custom;
   if (!custom.includes('"issues"') || !custom.includes("candidateText")) {
     resolved += qualityReviewAuditSupplement;
-  }
-  if (!custom.includes("本次改写模式")) {
-    resolved += sourceOnlyRewriteSupplement;
-  }
-  return resolved;
-}
-
-export function resolveQualityRepairTemplate(value?: string | null) {
-  const custom = value?.trim();
-  if (!custom) return defaultQualityRepairPrompt;
-  let resolved = custom;
-  if (
-    !custom.includes("candidateText") ||
-    !custom.includes("unsupported_claim")
-  ) {
-    resolved += qualityRepairActionabilitySupplement;
   }
   if (!custom.includes("本次改写模式")) {
     resolved += sourceOnlyRewriteSupplement;

@@ -1,11 +1,13 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { formPostgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
-import { generateCustomImage } from "@/server/images/generated-custom-image";
+import {
+  enqueueCustomImageGenerationTask,
+  serializeCoverTask,
+} from "@/server/images/cover-generation-task-runner";
 
 const customImageSchema = z.object({
   prompt: z.string().trim().min(4, "请输入更具体的生图要求").max(4000),
@@ -23,19 +25,16 @@ export async function generateCustomImageAction(input: {
   try {
     const session = await requireAdminSession();
     const payload = customImageSchema.parse(input);
-    const result = await generateCustomImage({
+    const task = await enqueueCustomImageGenerationTask({
       ...payload,
-      uploadedBy: session.userId,
+      createdBy: session.userId,
     });
-
-    revalidatePath("/images/ai-generate");
-    revalidatePath("/images/list");
 
     return {
       success: true,
-      url: result.asset.path,
-      assetId: result.asset.id,
-      prompt: result.prompt,
+      queued: true,
+      batchId: task.batchId,
+      task: serializeCoverTask(task),
     };
   } catch (error) {
     return {

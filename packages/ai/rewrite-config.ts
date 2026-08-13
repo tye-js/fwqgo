@@ -11,11 +11,8 @@ import {
   defaultFactExtractionPrompt,
   defaultInitialRewriteFeedbackPrompt,
   defaultMetadataStylePrompt,
-  defaultQualityRepairPrompt,
   defaultQualityReviewPrompt,
-  defaultRewriteRetryPrompt,
   resolveMetadataPromptTemplate,
-  resolveQualityRepairTemplate,
   resolveQualityReviewTemplate,
   resolveSourceAnchoredRewriteTemplate,
 } from "@fwqgo/core/ai-rewrite-prompts";
@@ -39,8 +36,6 @@ export type AiRewriteConfigInput = {
   factExtractionPrompt: string;
   basePrompt: string;
   initialRewritePrompt: string;
-  rewriteRetryPrompt: string;
-  qualityRepairPrompt: string;
   qualityReviewPrompt: string;
   metadataPrompt: string;
   styleName: string;
@@ -54,7 +49,6 @@ export type AiRewriteConfigInput = {
   providerCatalogDiscoveryPrompt: string;
   temperature: number;
   maxTokens: number;
-  rewriteMaxAttempts: number;
   enabled: boolean;
   isDefault: boolean;
 };
@@ -64,12 +58,43 @@ export type AiRewriteConfig = Awaited<
 >[number];
 
 type ConfigTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type ActiveAiRewriteConfigRow = Omit<
+  typeof aiRewriteConfigs.$inferSelect,
+  "rewriteRetryPrompt" | "qualityRepairPrompt" | "rewriteMaxAttempts"
+>;
+
+const activeAiRewriteConfigColumns = {
+  id: aiRewriteConfigs.id,
+  name: aiRewriteConfigs.name,
+  provider: aiRewriteConfigs.provider,
+  baseUrl: aiRewriteConfigs.baseUrl,
+  apiKey: aiRewriteConfigs.apiKey,
+  model: aiRewriteConfigs.model,
+  factExtractionPrompt: aiRewriteConfigs.factExtractionPrompt,
+  basePrompt: aiRewriteConfigs.basePrompt,
+  initialRewritePrompt: aiRewriteConfigs.initialRewritePrompt,
+  qualityReviewPrompt: aiRewriteConfigs.qualityReviewPrompt,
+  metadataPrompt: aiRewriteConfigs.metadataPrompt,
+  styleName: aiRewriteConfigs.styleName,
+  stylePrompt: aiRewriteConfigs.stylePrompt,
+  metadataStylePrompt: aiRewriteConfigs.metadataStylePrompt,
+  englishContentPrompt: aiRewriteConfigs.englishContentPrompt,
+  englishContinuationPrompt: aiRewriteConfigs.englishContinuationPrompt,
+  englishMetadataPrompt: aiRewriteConfigs.englishMetadataPrompt,
+  englishStylePrompt: aiRewriteConfigs.englishStylePrompt,
+  englishMetadataStylePrompt: aiRewriteConfigs.englishMetadataStylePrompt,
+  providerCatalogDiscoveryPrompt: aiRewriteConfigs.providerCatalogDiscoveryPrompt,
+  temperature: aiRewriteConfigs.temperature,
+  maxTokens: aiRewriteConfigs.maxTokens,
+  enabled: aiRewriteConfigs.enabled,
+  isDefault: aiRewriteConfigs.isDefault,
+  createdAt: aiRewriteConfigs.createdAt,
+  updatedAt: aiRewriteConfigs.updatedAt,
+};
 
 const AI_REWRITE_DEFAULT_LOCK_ID = 9_021_001;
 
-function withPromptDefaults<T extends typeof aiRewriteConfigs.$inferSelect>(
-  row: T,
-) {
+function withPromptDefaults<T extends ActiveAiRewriteConfigRow>(row: T) {
   return {
     ...row,
     provider: row.provider as AiProvider,
@@ -78,10 +103,6 @@ function withPromptDefaults<T extends typeof aiRewriteConfigs.$inferSelect>(
     basePrompt: resolveSourceAnchoredRewriteTemplate(row.basePrompt),
     initialRewritePrompt:
       row.initialRewritePrompt ?? defaultInitialRewriteFeedbackPrompt,
-    rewriteRetryPrompt: row.rewriteRetryPrompt ?? defaultRewriteRetryPrompt,
-    qualityRepairPrompt: resolveQualityRepairTemplate(
-      row.qualityRepairPrompt ?? defaultQualityRepairPrompt,
-    ),
     qualityReviewPrompt: resolveQualityReviewTemplate(
       row.qualityReviewPrompt ?? defaultQualityReviewPrompt,
     ),
@@ -132,38 +153,7 @@ async function resolveStoredApiKey<
 
 export async function getAiRewriteConfigs() {
   const rows = await db
-    .select({
-      id: aiRewriteConfigs.id,
-      name: aiRewriteConfigs.name,
-      provider: aiRewriteConfigs.provider,
-      baseUrl: aiRewriteConfigs.baseUrl,
-      model: aiRewriteConfigs.model,
-      factExtractionPrompt: aiRewriteConfigs.factExtractionPrompt,
-      basePrompt: aiRewriteConfigs.basePrompt,
-      initialRewritePrompt: aiRewriteConfigs.initialRewritePrompt,
-      rewriteRetryPrompt: aiRewriteConfigs.rewriteRetryPrompt,
-      qualityRepairPrompt: aiRewriteConfigs.qualityRepairPrompt,
-      qualityReviewPrompt: aiRewriteConfigs.qualityReviewPrompt,
-      metadataPrompt: aiRewriteConfigs.metadataPrompt,
-      styleName: aiRewriteConfigs.styleName,
-      stylePrompt: aiRewriteConfigs.stylePrompt,
-      metadataStylePrompt: aiRewriteConfigs.metadataStylePrompt,
-      englishContentPrompt: aiRewriteConfigs.englishContentPrompt,
-      englishContinuationPrompt: aiRewriteConfigs.englishContinuationPrompt,
-      englishMetadataPrompt: aiRewriteConfigs.englishMetadataPrompt,
-      englishStylePrompt: aiRewriteConfigs.englishStylePrompt,
-      englishMetadataStylePrompt: aiRewriteConfigs.englishMetadataStylePrompt,
-      providerCatalogDiscoveryPrompt:
-        aiRewriteConfigs.providerCatalogDiscoveryPrompt,
-      temperature: aiRewriteConfigs.temperature,
-      maxTokens: aiRewriteConfigs.maxTokens,
-      rewriteMaxAttempts: aiRewriteConfigs.rewriteMaxAttempts,
-      enabled: aiRewriteConfigs.enabled,
-      isDefault: aiRewriteConfigs.isDefault,
-      createdAt: aiRewriteConfigs.createdAt,
-      updatedAt: aiRewriteConfigs.updatedAt,
-      apiKey: aiRewriteConfigs.apiKey,
-    })
+    .select(activeAiRewriteConfigColumns)
     .from(aiRewriteConfigs)
     .orderBy(desc(aiRewriteConfigs.isDefault), desc(aiRewriteConfigs.id));
 
@@ -187,7 +177,7 @@ export async function getActiveAiRewriteConfig(styleId?: number) {
       );
 
   const [preferred] = await db
-    .select()
+    .select(activeAiRewriteConfigColumns)
     .from(aiRewriteConfigs)
     .where(where)
     .limit(1);
@@ -199,7 +189,7 @@ export async function getActiveAiRewriteConfig(styleId?: number) {
   if (styleId) return null;
 
   const [fallback] = await db
-    .select()
+    .select(activeAiRewriteConfigColumns)
     .from(aiRewriteConfigs)
     .where(eq(aiRewriteConfigs.enabled, true))
     .orderBy(desc(aiRewriteConfigs.id))
@@ -212,7 +202,7 @@ export async function getActiveAiRewriteConfig(styleId?: number) {
 
 export async function getAiRewriteConfigForStatusCheck(id: number) {
   const [config] = await db
-    .select()
+    .select(activeAiRewriteConfigColumns)
     .from(aiRewriteConfigs)
     .where(eq(aiRewriteConfigs.id, id))
     .limit(1);
@@ -282,8 +272,6 @@ export async function createAiRewriteConfig(input: AiRewriteConfigInput) {
         factExtractionPrompt: input.factExtractionPrompt,
         basePrompt: input.basePrompt,
         initialRewritePrompt: input.initialRewritePrompt,
-        rewriteRetryPrompt: input.rewriteRetryPrompt,
-        qualityRepairPrompt: input.qualityRepairPrompt,
         qualityReviewPrompt: input.qualityReviewPrompt,
         metadataPrompt: input.metadataPrompt,
         metadataStylePrompt: input.metadataStylePrompt,
@@ -317,8 +305,6 @@ export async function updateAiRewriteConfig(
     factExtractionPrompt: input.factExtractionPrompt,
     basePrompt: input.basePrompt,
     initialRewritePrompt: input.initialRewritePrompt,
-    rewriteRetryPrompt: input.rewriteRetryPrompt,
-    qualityRepairPrompt: input.qualityRepairPrompt,
     qualityReviewPrompt: input.qualityReviewPrompt,
     metadataPrompt: input.metadataPrompt,
     styleName: input.styleName,
@@ -332,7 +318,6 @@ export async function updateAiRewriteConfig(
     providerCatalogDiscoveryPrompt: input.providerCatalogDiscoveryPrompt,
     temperature: input.temperature,
     maxTokens: input.maxTokens,
-    rewriteMaxAttempts: input.rewriteMaxAttempts,
     enabled: input.enabled,
     isDefault: input.isDefault,
     updatedAt: new Date(),

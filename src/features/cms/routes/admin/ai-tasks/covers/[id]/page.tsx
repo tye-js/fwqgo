@@ -32,6 +32,7 @@ const statusLabels: Record<string, string> = {
   running: "生成中",
   succeeded: "已完成",
   failed: "失败",
+  uncertain: "结果不确定",
   cancelled: "已取消",
 };
 
@@ -157,7 +158,7 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
                 输出地址：{task.outputUrl}
               </p>
             ) : null}
-            {task.prompt && task.status !== "failed" ? (
+            {task.prompt ? (
               <details>
                 <summary className="cursor-pointer text-xs font-medium text-primary">
                   查看生图提示词
@@ -171,7 +172,7 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
         </div>
       </AdminSectionCard>
 
-      {task.status === "failed" ? (
+      {task.status === "failed" || task.status === "uncertain" ? (
         <AdminSectionCard
           title="外部生图提示词"
           description="AI 生图失败时，可复制本次任务的完整提示词并交给其他生图工具。"

@@ -60,12 +60,14 @@ const statusLabels: Record<string, string> = {
   running: "运行中",
   succeeded: "成功",
   failed: "失败",
+  uncertain: "结果不确定",
   manual_required: "需人工",
   cancelled: "已取消",
 };
 
 function statusVariant(status: string) {
-  if (status === "failed") return "destructive" as const;
+  if (status === "failed" || status === "uncertain")
+    return "destructive" as const;
   if (status === "succeeded") return "default" as const;
   if (status === "running" || status === "pending") return "secondary" as const;
   return "outline" as const;

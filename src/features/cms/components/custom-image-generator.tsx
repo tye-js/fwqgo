@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Copy, ExternalLink, ImagePlus } from "lucide-react";
 
 import { generateCustomImageAction } from "@/features/cms/actions/custom-image-generation";
+import {
+  finalizeCoverGenerationBatchAction,
+  getCoverGenerationBatchStatusAction,
+} from "@/features/cms/actions/article-cover-image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,7 +31,60 @@ export function CustomImageGenerator() {
   const [fileName, setFileName] = useState("");
   const [altZh, setAltZh] = useState("");
   const [generated, setGenerated] = useState<GeneratedImage | null>(null);
+  const [batchId, setBatchId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const submittedPromptRef = useRef("");
+
+  useEffect(() => {
+    if (!batchId) return;
+    let stopped = false;
+    const poll = async () => {
+      const result = await getCoverGenerationBatchStatusAction(batchId);
+      if (stopped) return;
+      if (!result.success) {
+        setBatchId(null);
+        notifyError({
+          title: result.errorTitle ?? "读取生图状态失败",
+          description: result.error ?? "请刷新页面后重试。",
+        });
+        return;
+      }
+      if (!result.done) return;
+      setBatchId(null);
+      await finalizeCoverGenerationBatchAction(batchId);
+      const completed = result.results?.find((item) => item.url);
+      if (completed?.url && completed.assetId) {
+        setGenerated({
+          url: completed.url,
+          assetId: completed.assetId,
+          prompt: submittedPromptRef.current,
+        });
+        notifySuccess({
+          title: "AI 图片已生成",
+          description: describeAdminResult([
+            completed.url,
+            `图片资产 ID：${completed.assetId}`,
+          ]),
+        });
+        return;
+      }
+      const failed = result.results?.find((item) => item.error);
+      notifyError({
+        title:
+          failed?.status === "uncertain"
+            ? "生图结果不确定"
+            : "AI 生图失败",
+        description:
+          failed?.error ?? "任务没有返回可用图片，请到任务中心查看详情。",
+      });
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 3000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [batchId]);
 
   function handleGenerate() {
     if (!prompt.trim()) {
@@ -45,7 +102,7 @@ export function CustomImageGenerator() {
         altZh: altZh || null,
       });
 
-      if (!result.success || !result.url || !result.assetId || !result.prompt) {
+      if (!result.success || !result.batchId) {
         notifyError({
           title: "AI 生图失败",
           description: result.error ?? "接口没有返回可用图片",
@@ -53,17 +110,11 @@ export function CustomImageGenerator() {
         return;
       }
 
-      setGenerated({
-        url: result.url,
-        assetId: result.assetId,
-        prompt: result.prompt,
-      });
+      submittedPromptRef.current = prompt;
+      setBatchId(result.batchId);
       notifySuccess({
-        title: "AI 图片已生成",
-        description: describeAdminResult([
-          result.url,
-          `图片资产 ID：${result.assetId}`,
-        ]),
+        title: "AI 生图任务已创建",
+        description: `任务 ID：${result.task?.taskId ?? "-"}，可离开页面后台执行。`,
       });
     });
   }
@@ -126,9 +177,13 @@ export function CustomImageGenerator() {
           <p className="text-xs leading-5 text-muted-foreground">
             生成结果会自动保存到图片资产，可在文章封面、正文或媒体库中继续使用。
           </p>
-          <Button type="button" disabled={isPending} onClick={handleGenerate}>
+          <Button
+            type="button"
+            disabled={isPending || Boolean(batchId)}
+            onClick={handleGenerate}
+          >
             <ImagePlus className="size-4" />
-            {isPending ? "生成中..." : "生成图片"}
+            {isPending || batchId ? "后台生成中..." : "生成图片"}
           </Button>
         </div>
       </div>

@@ -63,9 +63,15 @@ export type CoverGenerationPost = {
 
 type GenerateResult = {
   taskId?: number;
-  postId: number;
+  postId: number | null;
   title?: string;
-  status?: "pending" | "running" | "succeeded" | "failed" | "cancelled";
+  status?:
+    | "pending"
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "uncertain"
+    | "cancelled";
   success: boolean;
   url?: string;
   assetId?: number;
@@ -287,7 +293,9 @@ export function ArticleCoverBatchGenerator({
       done:
         result.done ??
         resultRows.every((item) =>
-          ["succeeded", "failed", "cancelled"].includes(getResultStatus(item)),
+          ["succeeded", "failed", "uncertain", "cancelled"].includes(
+            getResultStatus(item),
+          ),
         ),
     });
   }, []);

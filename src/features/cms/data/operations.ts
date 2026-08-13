@@ -67,6 +67,7 @@ export type UnifiedTaskStatusFilter =
   | "running"
   | "succeeded"
   | "failed"
+  | "uncertain"
   | "manual_required"
   | "cancelled";
 
@@ -129,6 +130,7 @@ function normalizeUnifiedTaskStatus(
     "running",
     "succeeded",
     "failed",
+    "uncertain",
     "manual_required",
     "cancelled",
   ]);
@@ -174,7 +176,8 @@ function andMaybe(...conditions: Array<SQL<unknown> | undefined>) {
 function serializeProgress(value: number | null | undefined, status: string) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (status === "succeeded") return 100;
-  if (status === "failed" || status === "cancelled") return 100;
+  if (status === "failed" || status === "uncertain" || status === "cancelled")
+    return 100;
   if (status === "running") return 50;
   return 0;
 }
@@ -182,6 +185,7 @@ function serializeProgress(value: number | null | undefined, status: string) {
 function stepStatusForTask(status: string): UnifiedTaskStep["status"] {
   if (status === "succeeded") return "success";
   if (status === "failed") return "failed";
+  if (status === "uncertain") return "failed";
   if (status === "cancelled") return "cancelled";
   if (status === "running") return "running";
   return "pending";
@@ -785,7 +789,9 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
       updatedAt: serializeDate(task.updatedAt),
       startedAt: serializeDate(task.startedAt),
       finishedAt: serializeDate(task.finishedAt),
-      canRetry: task.status === "failed" || task.status === "cancelled",
+      canRetry:
+        task.status === "failed" ||
+        task.status === "cancelled",
       canCancel: task.status === "pending",
       canResolve: task.status === "manual_required",
     })),
@@ -808,7 +814,10 @@ export async function getUnifiedTaskList(filtersInput: UnifiedTaskListFilters) {
       updatedAt: serializeDate(task.updatedAt),
       startedAt: serializeDate(task.startedAt),
       finishedAt: serializeDate(task.finishedAt),
-      canRetry: task.status === "failed" || task.status === "cancelled",
+      canRetry:
+        task.status === "failed" ||
+        task.status === "uncertain" ||
+        task.status === "cancelled",
       canCancel: task.status === "pending",
       canResolve: false,
     })),
@@ -993,7 +1002,10 @@ export async function getCoverTaskDetail(taskId: number) {
     updatedAt: serializeDate(task.updatedAt),
     startedAt: serializeDate(task.startedAt),
     finishedAt: serializeDate(task.finishedAt),
-    canRetry: task.status === "failed" || task.status === "cancelled",
+    canRetry:
+      task.status === "failed" ||
+      task.status === "uncertain" ||
+      task.status === "cancelled",
     canCancel: task.status === "pending",
   };
 }

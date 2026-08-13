@@ -76,8 +76,6 @@ export interface ArticleRewriteProgress {
   maxTokens: number;
   attempt?: number;
   maxAttempts?: number;
-  repairAttempt?: number;
-  maxRepairAttempts?: number;
   inputLength?: number;
   outputLength?: number;
 }
@@ -99,7 +97,6 @@ export interface AiRewriteConfigSnapshot {
   provider: string;
   model: string;
   maxTokens: number;
-  rewriteMaxAttempts: number;
   temperature: number;
   updatedAt: string | null;
 }
@@ -333,7 +330,6 @@ function createConfigSnapshot(
     provider: config.provider,
     model: config.model,
     maxTokens: config.maxTokens,
-    rewriteMaxAttempts: 1,
     temperature: config.temperature,
     updatedAt: (config.updatedAt ?? config.createdAt)?.toISOString() ?? null,
   };
@@ -1431,8 +1427,6 @@ export async function rewriteArticleWithAi(
     maxTokens: config.maxTokens,
     attempt: 1,
     maxAttempts: 1,
-    repairAttempt: 0,
-    maxRepairAttempts: 0,
     inputLength: candidatePrompt.length,
   });
   const candidateResult = await requestAuditedChatCompletion({
@@ -1538,8 +1532,6 @@ export async function rewriteArticleWithAi(
     maxTokens: config.maxTokens,
     attempt: 1,
     maxAttempts: 1,
-    repairAttempt: 0,
-    maxRepairAttempts: 0,
     inputLength: candidatePrompt.length,
     outputLength: acceptedMarkdown.length,
   });

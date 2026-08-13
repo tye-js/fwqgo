@@ -38,6 +38,10 @@ type GenerateCustomImageInput = {
   configId?: number;
   allowFailover?: boolean;
   attemptedConfigIds?: number[];
+  signal?: AbortSignal;
+  onPrompt?: (prompt: string) => void | Promise<void>;
+  onRequestStarted?: () => void | Promise<void>;
+  onAssetPersisted?: (asset: ImageAssetRow) => void | Promise<void>;
 };
 
 const MAX_IMAGE_API_RESPONSE_BYTES = 24 * 1024 * 1024;
@@ -126,13 +130,28 @@ async function getCustomImageFallbackConfig(
   );
 }
 
-async function downloadImage(url: string, timeoutSeconds: number) {
+function throwIfAborted(signal?: AbortSignal) {
+  if (!signal?.aborted) return;
+  if (signal.reason instanceof Error) throw signal.reason;
+  throw new Error("生图任务已终止");
+}
+
+async function downloadImage(
+  url: string,
+  timeoutSeconds: number,
+  signal?: AbortSignal,
+) {
   let response: Response;
   try {
     response = await fetchPublicHttpUrl(
       url,
       {
-        signal: AbortSignal.timeout(timeoutSeconds * 1000),
+        signal: signal
+          ? AbortSignal.any([
+              signal,
+              AbortSignal.timeout(timeoutSeconds * 1000),
+            ])
+          : AbortSignal.timeout(timeoutSeconds * 1000),
       },
       "生图结果图片 URL",
     );
@@ -167,6 +186,7 @@ export async function generateCustomImage(
   input: GenerateCustomImageInput,
 ): Promise<{ asset: ImageAssetRow; prompt: string }> {
   const prompt = input.prompt.trim();
+  throwIfAborted(input.signal);
 
   if (!prompt) {
     throw new Error("生图要求不能为空");
@@ -180,6 +200,7 @@ export async function generateCustomImage(
   if (!config.apiKey?.trim()) {
     throw new Error("生图配置缺少 API Key");
   }
+  await input.onPrompt?.(prompt);
 
   const allowFailover = input.allowFailover ?? input.configId === undefined;
   const attemptedConfigIds = input.attemptedConfigIds ?? [];
@@ -189,6 +210,7 @@ export async function generateCustomImage(
   let requestStarted = false;
   try {
     const safeEndpoint = await assertPublicHttpUrl(endpoint, "生图接口地址");
+    await input.onRequestStarted?.();
     requestStarted = true;
     response = await fetch(safeEndpoint, {
       method: "POST",
@@ -206,9 +228,15 @@ export async function generateCustomImage(
           quality: config.quality,
         }),
       ),
-      signal: AbortSignal.timeout(config.timeoutSeconds * 1000),
+      signal: input.signal
+        ? AbortSignal.any([
+            input.signal,
+            AbortSignal.timeout(config.timeoutSeconds * 1000),
+          ])
+        : AbortSignal.timeout(config.timeoutSeconds * 1000),
     });
   } catch (error) {
+    throwIfAborted(input.signal);
     const message = error instanceof Error ? error.message : "未知错误";
     if (
       error instanceof Error &&
@@ -233,6 +261,7 @@ export async function generateCustomImage(
       MAX_IMAGE_API_RESPONSE_BYTES,
     );
   } catch (error) {
+    throwIfAborted(input.signal);
     throw new ImageGenerationConnectionInterruptedError(
       `生图接口响应中断：已收到响应头，但图片数据没有传输完整；上游任务可能已经成功，本地暂时无法取得图片。请先到服务商任务页确认，避免立即重复生成；底层错误：${getErrorDiagnostic(error)}`,
     );
@@ -304,6 +333,7 @@ export async function generateCustomImage(
       ? await downloadImage(
           normalizeImageGenerationResultUrl(imageSource.value, endpoint),
           config.timeoutSeconds,
+          input.signal,
         )
       : imageSource?.kind === "bytes"
         ? {
@@ -325,6 +355,8 @@ export async function generateCustomImage(
     altZh: input.altZh ?? input.prompt.slice(0, 120),
     prompt,
   });
+  await input.onAssetPersisted?.(asset);
+  throwIfAborted(input.signal);
 
   return { asset, prompt };
 }

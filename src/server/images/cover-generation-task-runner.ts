@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "@fwqgo/db";
-import { imageCoverGenerationTasks, posts } from "@fwqgo/db/schema";
+import {
+  affServiceProviders,
+  imageCoverGenerationTasks,
+  posts,
+} from "@fwqgo/db/schema";
 import {
   createTaskLeaseOwner,
   getTaskLeaseExpiry,
@@ -20,13 +24,48 @@ import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import { generateArticleCoverImage } from "@/server/images/generated-cover";
+import { generateCustomImage } from "@/server/images/generated-custom-image";
+import {
+  extractCoverVisualBrief,
+  mergeCoverVisualBrief,
+  type CoverVisualBrief,
+  type CoverVisualBriefOverrides,
+} from "@fwqgo/core/image-generation-prompts";
 import {
   getActiveImageGenerationConfig,
   getEnabledImageGenerationConfigs,
 } from "@/server/images/generation-config";
 
 export type CoverTaskStatus =
-  "pending" | "running" | "succeeded" | "failed" | "cancelled";
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "uncertain"
+  | "cancelled";
+
+export type ImageGenerationTaskType =
+  | "article_cover"
+  | "standalone_cover"
+  | "custom";
+
+type CoverTaskInputSnapshot = {
+  title: string;
+  description?: string | null;
+  keywords?: string | null;
+  content?: string | null;
+  fileSlug?: string | null;
+  language?: "zh" | "en";
+  knownBrands?: string[];
+  visualBrief?: CoverVisualBrief;
+  visualBriefOverrides?: CoverVisualBriefOverrides | null;
+};
+
+type CustomTaskInputSnapshot = {
+  prompt: string;
+  fileName?: string | null;
+  altZh?: string | null;
+};
 
 type CoverTaskRow = typeof imageCoverGenerationTasks.$inferSelect;
 type ImageGenerationConfig = Awaited<
@@ -40,6 +79,19 @@ type EnqueueCoverGenerationTaskInput = {
   createdBy?: string | null;
   batchId?: string;
   restartTerminal?: boolean;
+  visualBriefOverrides?: CoverVisualBriefOverrides | null;
+};
+
+type EnqueueStandaloneCoverGenerationTaskInput = CoverTaskInputSnapshot & {
+  configId?: number | null;
+  createdBy?: string | null;
+  batchId?: string;
+};
+
+type EnqueueCustomImageGenerationTaskInput = CustomTaskInputSnapshot & {
+  configId?: number | null;
+  createdBy?: string | null;
+  batchId?: string;
 };
 
 let isCoverGenerationWorkerRunning = false;
@@ -56,7 +108,7 @@ function formatWaitMinutes(ms: number) {
   return Math.max(1, Math.ceil(ms / 60_000));
 }
 
-class CoverGenerationTimeoutError extends Error {
+class CoverGenerationTimeoutError extends ImageGenerationConnectionInterruptedError {
   constructor() {
     super(
       "封面生图任务超时：任务执行超过 6 分钟，已自动终止并继续处理后续任务。请检查生图接口状态后重试",
@@ -68,6 +120,7 @@ class CoverGenerationTimeoutError extends Error {
 export const terminalCoverTaskStatuses: readonly string[] = [
   "succeeded",
   "failed",
+  "uncertain",
   "cancelled",
 ];
 
@@ -97,12 +150,14 @@ export function serializeCoverTask(task: CoverTaskRow) {
     taskId: task.id,
     batchId: task.batchId,
     postId: task.postId,
+    taskType: task.taskType as ImageGenerationTaskType,
     title: task.title,
     configId: task.configId ?? undefined,
     configName: task.configName ?? undefined,
     provider: task.provider ?? undefined,
     model: task.model ?? undefined,
     status,
+    requestStage: task.requestStage,
     success: status === "succeeded",
     url: task.outputUrl ?? undefined,
     assetId: task.assetId ?? undefined,
@@ -121,6 +176,45 @@ export function serializeCoverTask(task: CoverTaskRow) {
 export async function enqueueArticleCoverGenerationTask(
   input: EnqueueCoverGenerationTaskInput,
 ) {
+  const [[post], brandRows] = await Promise.all([
+    db
+      .select({
+        id: posts.id,
+        title: posts.title,
+        description: posts.description,
+        keywords: posts.keywords,
+        content: posts.content,
+        slug: posts.slug,
+        language: posts.language,
+      })
+      .from(posts)
+      .where(eq(posts.id, input.postId))
+      .limit(1),
+    db
+      .select({
+        name: affServiceProviders.name,
+        aliases: affServiceProviders.aliases,
+      })
+      .from(affServiceProviders),
+  ]);
+  if (!post) throw new Error("文章不存在或已被删除");
+  const coverInput: CoverTaskInputSnapshot = {
+    title: post.title,
+    description: post.description,
+    keywords: post.keywords,
+    content: post.content,
+    fileSlug: post.slug,
+    language: post.language === "en" ? "en" : "zh",
+    knownBrands: brandRows.flatMap((row) => [
+      row.name,
+      ...(row.aliases?.split(/[,，\n]/) ?? []),
+    ]),
+  };
+  coverInput.visualBrief = mergeCoverVisualBrief(
+    extractCoverVisualBrief(coverInput),
+    input.visualBriefOverrides,
+  );
+  coverInput.visualBriefOverrides = input.visualBriefOverrides;
   const requestedBatchId = input.batchId?.trim();
   const batchId = requestedBatchId?.length ? requestedBatchId : randomUUID();
   const enqueueResult = await db.transaction(async (tx) => {
@@ -173,7 +267,9 @@ export async function enqueueArticleCoverGenerationTask(
           await tx
             .update(imageCoverGenerationTasks)
             .set({
-              title: input.title,
+              taskType: "article_cover",
+              title: post.title,
+              inputSnapshot: coverInput,
               configId: config.id,
               configName: config.name,
               provider: config.provider,
@@ -182,6 +278,7 @@ export async function enqueueArticleCoverGenerationTask(
               outputUrl: null,
               assetId: null,
               prompt: null,
+              requestStage: "queued",
               errorTitle: null,
               errorDetail: null,
               createdBy: input.createdBy ?? existingTask.createdBy,
@@ -205,8 +302,10 @@ export async function enqueueArticleCoverGenerationTask(
             .insert(imageCoverGenerationTasks)
             .values({
               batchId,
+              taskType: "article_cover",
               postId: input.postId,
-              title: input.title,
+              title: post.title,
+              inputSnapshot: coverInput,
               configId: config.id,
               configName: config.name,
               provider: config.provider,
@@ -230,6 +329,101 @@ export async function enqueueArticleCoverGenerationTask(
 
   if (enqueueResult.ensureWorker) await ensureCoverGenerationWorker();
   return { task: enqueueResult.task, reused: enqueueResult.reused };
+}
+
+async function enqueueDetachedImageGenerationTask(input: {
+  taskType: "standalone_cover" | "custom";
+  title: string;
+  inputSnapshot: CoverTaskInputSnapshot | CustomTaskInputSnapshot;
+  configId?: number | null;
+  createdBy?: string | null;
+  batchId?: string;
+}) {
+  const config = await getActiveImageGenerationConfig(
+    input.configId ?? undefined,
+  );
+  if (!config) {
+    throw new Error(
+      input.configId
+        ? `指定的生图配置 #${input.configId} 不存在或已停用`
+        : "当前没有已启用的默认生图配置",
+    );
+  }
+  const requestedBatchId = input.batchId?.trim();
+  const batchId = requestedBatchId?.length ? requestedBatchId : randomUUID();
+  const [task] = await db
+    .insert(imageCoverGenerationTasks)
+    .values({
+      batchId,
+      taskType: input.taskType,
+      postId: null,
+      title: input.title,
+      inputSnapshot: input.inputSnapshot,
+      configId: config.id,
+      configName: config.name,
+      provider: config.provider,
+      model: config.model,
+      status: "pending",
+      requestStage: "queued",
+      createdBy: input.createdBy ?? null,
+    })
+    .returning();
+  if (!task) throw new Error("生图任务创建失败");
+  await ensureCoverGenerationWorker();
+  return task;
+}
+
+export async function enqueueStandaloneCoverGenerationTask(
+  input: EnqueueStandaloneCoverGenerationTaskInput,
+) {
+  const brandRows = await db
+    .select({
+      name: affServiceProviders.name,
+      aliases: affServiceProviders.aliases,
+    })
+    .from(affServiceProviders);
+  const snapshot: CoverTaskInputSnapshot = {
+    ...input,
+    knownBrands: brandRows.flatMap((row) => [
+      row.name,
+      ...(row.aliases?.split(/[,，\n]/) ?? []),
+    ]),
+  };
+  snapshot.visualBrief = mergeCoverVisualBrief(
+    extractCoverVisualBrief(snapshot),
+    input.visualBriefOverrides,
+  );
+  return enqueueDetachedImageGenerationTask({
+    taskType: "standalone_cover",
+    title: snapshot.title,
+    inputSnapshot: snapshot,
+    configId: input.configId,
+    createdBy: input.createdBy,
+    batchId: input.batchId,
+  });
+}
+
+export async function enqueueCustomImageGenerationTask(
+  input: EnqueueCustomImageGenerationTaskInput,
+) {
+  const altTitle = input.altZh?.trim();
+  const fileTitle = input.fileName?.trim();
+  return enqueueDetachedImageGenerationTask({
+    taskType: "custom",
+    title: altTitle?.length
+      ? altTitle
+      : fileTitle?.length
+        ? fileTitle
+        : "自定义 AI 生图",
+    inputSnapshot: {
+      prompt: input.prompt.trim(),
+      fileName: input.fileName,
+      altZh: input.altZh,
+    },
+    configId: input.configId,
+    createdBy: input.createdBy,
+    batchId: input.batchId,
+  });
 }
 
 async function persistCoverTaskConfig(
@@ -291,6 +485,7 @@ async function persistCoverTaskPrompt(task: CoverTaskRow, prompt: string) {
     .update(imageCoverGenerationTasks)
     .set({
       prompt,
+      requestStage: "prompt_persisted",
       updatedAt: new Date(),
     })
     .where(
@@ -306,13 +501,59 @@ async function persistCoverTaskPrompt(task: CoverTaskRow, prompt: string) {
   return updatedTask;
 }
 
+async function persistCoverTaskCheckpoint(
+  task: CoverTaskRow,
+  values: Partial<typeof imageCoverGenerationTasks.$inferInsert>,
+) {
+  if (!task.leaseOwner) throw new TaskLeaseLostError();
+  const [updatedTask] = await db
+    .update(imageCoverGenerationTasks)
+    .set({ ...values, updatedAt: new Date() })
+    .where(
+      and(
+        eq(imageCoverGenerationTasks.id, task.id),
+        eq(imageCoverGenerationTasks.status, "running"),
+        eq(imageCoverGenerationTasks.leaseOwner, task.leaseOwner),
+      ),
+    )
+    .returning();
+  if (!updatedTask) throw new TaskLeaseLostError();
+  return updatedTask;
+}
+
 async function resetStaleRunningCoverTasks() {
   const now = new Date();
+
+  const uncertain = await db
+    .update(imageCoverGenerationTasks)
+    .set({
+      status: "uncertain",
+      errorTitle: "生图结果不确定",
+      errorDetail:
+        "任务在上游请求发出后失去运行租约，无法确认服务商是否已完成生图。为避免重复扣费，系统不会自动重试，请先到服务商侧确认。",
+      finishedAt: now,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      heartbeatAt: null,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(imageCoverGenerationTasks.status, "running"),
+        eq(imageCoverGenerationTasks.requestStage, "request_started"),
+        or(
+          isNull(imageCoverGenerationTasks.leaseExpiresAt),
+          lt(imageCoverGenerationTasks.leaseExpiresAt, now),
+        ),
+      ),
+    )
+    .returning({ id: imageCoverGenerationTasks.id });
 
   const recovered = await db
     .update(imageCoverGenerationTasks)
     .set({
       status: "pending",
+      requestStage: "queued",
       errorTitle: null,
       errorDetail: null,
       startedAt: null,
@@ -335,6 +576,12 @@ async function resetStaleRunningCoverTasks() {
     structuredLog("warn", "cover.tasks_recovered", {
       count: recovered.length,
       taskIds: recovered.map((task) => task.id),
+    });
+  }
+  if (uncertain.length > 0) {
+    structuredLog("warn", "cover.tasks_marked_uncertain", {
+      count: uncertain.length,
+      taskIds: uncertain.map((task) => task.id),
     });
   }
 }
@@ -381,22 +628,26 @@ async function processCoverGenerationTask(
   signal.throwIfAborted();
   const boundTask = await bindCoverTaskConfig(task);
   signal.throwIfAborted();
-  const [post] = await db
-    .select({
-      id: posts.id,
-      title: posts.title,
-      slug: posts.slug,
-      description: posts.description,
-      keywords: posts.keywords,
-      content: posts.content,
-      categoryId: posts.categoryId,
-      language: posts.language,
-    })
-    .from(posts)
-    .where(eq(posts.id, task.postId))
-    .limit(1);
+  const taskType = boundTask.taskType as ImageGenerationTaskType;
+  const [post] =
+    taskType === "article_cover" && boundTask.postId
+      ? await db
+          .select({
+            id: posts.id,
+            title: posts.title,
+            slug: posts.slug,
+            description: posts.description,
+            keywords: posts.keywords,
+            content: posts.content,
+            categoryId: posts.categoryId,
+            language: posts.language,
+          })
+          .from(posts)
+          .where(eq(posts.id, boundTask.postId))
+          .limit(1)
+      : [];
 
-  if (!post) {
+  if (taskType === "article_cover" && !post) {
     throw new Error("文章不存在或已被删除");
   }
 
@@ -412,30 +663,69 @@ async function processCoverGenerationTask(
     : enabledConfigs;
 
   let activeTask = boundTask;
-  let generated: Awaited<ReturnType<typeof generateArticleCoverImage>> | null =
-    null;
+  let generated: { asset: { id: number; path: string }; prompt: string } | null =
+    boundTask.assetId && boundTask.outputUrl
+      ? {
+          asset: { id: boundTask.assetId, path: boundTask.outputUrl },
+          prompt: boundTask.prompt ?? "",
+        }
+      : null;
 
-  for (const [index, config] of candidates.entries()) {
+  for (const [index, config] of generated ? [] : candidates.entries()) {
     signal.throwIfAborted();
     if (activeTask.configId !== config.id) {
       activeTask = await persistCoverTaskConfig(activeTask, config);
     }
 
     try {
-      generated = await generateArticleCoverImage({
-        title: post.title,
-        description: post.description,
-        keywords: post.keywords,
-        content: post.content,
-        fileSlug: post.slug,
-        language: post.language === "en" ? "en" : "zh",
-        configId: config.id,
-        uploadedBy: activeTask.createdBy,
-        signal,
-        onPrompt: async (prompt) => {
+      const callbacks = {
+        onPrompt: async (prompt: string) => {
           activeTask = await persistCoverTaskPrompt(activeTask, prompt);
         },
-      });
+        onRequestStarted: async () => {
+          activeTask = await persistCoverTaskCheckpoint(activeTask, {
+            requestStage: "request_started",
+          });
+        },
+        onAssetPersisted: async (asset: { id: number; path: string }) => {
+          activeTask = await persistCoverTaskCheckpoint(activeTask, {
+            requestStage: "asset_persisted",
+            assetId: asset.id,
+            outputUrl: asset.path,
+          });
+        },
+      };
+      if (taskType === "custom") {
+        const snapshot = activeTask.inputSnapshot as CustomTaskInputSnapshot;
+        if (!snapshot.prompt?.trim()) throw new Error("自定义生图任务缺少 Prompt");
+        generated = await generateCustomImage({
+          ...snapshot,
+          configId: config.id,
+          uploadedBy: activeTask.createdBy,
+          allowFailover: false,
+          signal,
+          ...callbacks,
+        });
+      } else {
+        const snapshot = activeTask.inputSnapshot as CoverTaskInputSnapshot;
+        const coverInput: CoverTaskInputSnapshot = snapshot.title?.trim()
+          ? snapshot
+          : {
+              title: post?.title ?? activeTask.title,
+              description: post?.description,
+              keywords: post?.keywords,
+              content: post?.content,
+              fileSlug: post?.slug,
+              language: post?.language === "en" ? "en" : "zh",
+            };
+        generated = await generateArticleCoverImage({
+          ...coverInput,
+          configId: config.id,
+          uploadedBy: activeTask.createdBy,
+          signal,
+          ...callbacks,
+        });
+      }
       break;
     } catch (error) {
       const hasFallback = index < candidates.length - 1;
@@ -462,6 +752,8 @@ async function processCoverGenerationTask(
   if (!(await renewCoverTaskLease(activeTask))) {
     throw new TaskLeaseLostError();
   }
+  if (taskType !== "article_cover" || !post) return generated;
+
   const [updatedPost] = await db
     .update(posts)
     .set({
@@ -537,6 +829,7 @@ async function requeueRateLimitedCoverTask(
     .update(imageCoverGenerationTasks)
     .set({
       status: "pending",
+      requestStage: "queued",
       errorTitle: "生图接口限流，自动等待",
       errorDetail: `接口返回 429，当前任务将在约 ${waitMinutes} 分钟后自动重试；${error.message}`,
       startedAt: null,
@@ -556,15 +849,6 @@ async function requeueRateLimitedCoverTask(
     .returning({ id: imageCoverGenerationTasks.id });
 
   if (!requeued) throw new TaskLeaseLostError();
-}
-
-async function hasPendingCoverGenerationTasks() {
-  const [task] = await db
-    .select({ id: imageCoverGenerationTasks.id })
-    .from(imageCoverGenerationTasks)
-    .where(eq(imageCoverGenerationTasks.status, "pending"))
-    .limit(1);
-  return Boolean(task);
 }
 
 async function processCoverGenerationTaskWithTimeout(
@@ -619,6 +903,7 @@ async function runCoverGenerationWorker() {
           .update(imageCoverGenerationTasks)
           .set({
             status: "succeeded",
+            requestStage: "completed",
             outputUrl: generated.asset.path,
             assetId: generated.asset.id,
             errorTitle: null,
@@ -675,6 +960,40 @@ async function runCoverGenerationWorker() {
           continue;
         }
 
+        if (error instanceof ImageGenerationConnectionInterruptedError) {
+          const readableError = formatCoverGenerationError(error);
+          const uncertain = await db
+            .update(imageCoverGenerationTasks)
+            .set({
+              status: "uncertain",
+              errorTitle: "生图结果不确定",
+              errorDetail: readableError.detail,
+              finishedAt: new Date(),
+              leaseOwner: null,
+              leaseExpiresAt: null,
+              heartbeatAt: null,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(imageCoverGenerationTasks.id, task.id),
+                eq(imageCoverGenerationTasks.status, "running"),
+                eq(
+                  imageCoverGenerationTasks.leaseOwner,
+                  task.leaseOwner ?? "",
+                ),
+              ),
+            )
+            .returning({ id: imageCoverGenerationTasks.id });
+          if (uncertain.length === 0) throw new TaskLeaseLostError();
+          structuredLog("warn", "cover.task_result_uncertain", {
+            taskId: task.id,
+            postId: task.postId,
+            error,
+          });
+          continue;
+        }
+
         const readableError = formatCoverGenerationError(error);
         structuredLog("error", "cover.task_failed", {
           taskId: task.id,
@@ -687,6 +1006,7 @@ async function runCoverGenerationWorker() {
           .update(imageCoverGenerationTasks)
           .set({
             status: "failed",
+            requestStage: "failed",
             errorTitle: readableError.title,
             errorDetail: readableError.detail,
             finishedAt: new Date(),
@@ -710,18 +1030,6 @@ async function runCoverGenerationWorker() {
             leaseOwner: task.leaseOwner,
           });
           continue;
-        }
-
-        if (
-          error instanceof ImageGenerationConnectionInterruptedError &&
-          (await hasPendingCoverGenerationTasks())
-        ) {
-          structuredLog("warn", "cover.queue_paused_after_disconnect", {
-            taskId: task.id,
-            postId: task.postId,
-            pauseAfterMs: error.pauseAfterMs,
-          });
-          await wait(error.pauseAfterMs);
         }
       }
     }
