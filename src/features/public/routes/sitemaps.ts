@@ -2,7 +2,9 @@ import { readDb } from "@fwqgo/db";
 import { renderSitemapLastmod } from "@fwqgo/core/sitemap-lastmod";
 import { getLatestDateValue } from "@fwqgo/core/date-value";
 import { resolveEnglishTagIdentity } from "@fwqgo/core/taxonomy";
+import { unstable_cache } from "next/cache";
 import { connection } from "next/server";
+import { cacheTags } from "@fwqgo/cache/tags";
 import {
   categories,
   knowledgeArticles,
@@ -45,6 +47,25 @@ function xmlResponse(xml: string) {
   });
 }
 
+const SITEMAP_CACHE_REVALIDATE_SECONDS = 60 * 60;
+
+function cachedSitemapXml(
+  name: string,
+  tags: string[],
+  build: () => string | Promise<string>,
+) {
+  const baseUrl = getBaseUrl();
+
+  return unstable_cache(
+    async () => build(),
+    ["public-sitemap", name, baseUrl],
+    {
+      revalidate: SITEMAP_CACHE_REVALIDATE_SECONDS,
+      tags: [cacheTags.sitemap, ...tags],
+    },
+  )();
+}
+
 function sitemapEntry(input: { loc: string; lastmod?: Date | null }) {
   const lastmod = renderSitemapLastmod(input.lastmod);
 
@@ -78,123 +99,59 @@ function urlEntry(input: {
   </url>`;
 }
 
-function urlset(entries: string[]) {
-  return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>
+function renderUrlset(entries: string[]) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
 ${entries.join("")}
-</urlset>`);
+</urlset>`;
 }
 
 export async function sitemapIndexGET() {
-  const baseUrl = getBaseUrl();
-  const [
-    [latestPost],
-    [latestOffer],
-    [latestCategory],
-    [latestTag],
-    [latestKnowledge],
-  ] = await Promise.all([
-    readDb
-      .select({ updatedAt: posts.updatedAt, createdAt: posts.createdAt })
-      .from(posts)
-      .where(eq(posts.published, true))
-      .orderBy(desc(sql`coalesce(${posts.updatedAt}, ${posts.createdAt})`))
-      .limit(1),
-    readDb
-      .select({
-        updatedAt: serverOffers.updatedAt,
-        createdAt: serverOffers.createdAt,
-      })
-      .from(serverOffers)
-      .where(eq(serverOffers.visible, true))
-      .orderBy(
-        desc(
-          sql`coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt})`,
-        ),
-      )
-      .limit(1),
-    readDb
-      .select({
-        updatedAt: categories.updatedAt,
-        createdAt: categories.createdAt,
-      })
-      .from(categories)
-      .orderBy(
-        desc(sql`coalesce(${categories.updatedAt}, ${categories.createdAt})`),
-      )
-      .limit(1),
-    readDb
-      .select({ updatedAt: tags.updatedAt, createdAt: tags.createdAt })
-      .from(tags)
-      .orderBy(desc(sql`coalesce(${tags.updatedAt}, ${tags.createdAt})`))
-      .limit(1),
-    readDb
-      .select({
-        contentUpdatedAt: knowledgeArticles.contentUpdatedAt,
-      })
-      .from(knowledgeArticles)
-      .where(
-        and(
-          eq(knowledgeArticles.published, true),
-          ne(knowledgeArticles.contentRole, "post_purchase_guide"),
-        ),
-      )
-      .orderBy(desc(knowledgeArticles.contentUpdatedAt))
-      .limit(1),
-  ]);
-  const latestPostDate = getLatestDateValue([
-    latestPost?.updatedAt,
-    latestPost?.createdAt,
-  ]);
-  const latestOfferDate = getLatestDateValue([
-    latestOffer?.updatedAt,
-    latestOffer?.createdAt,
-  ]);
-  const latestCategoryDate = getLatestDateValue([
-    latestCategory?.updatedAt,
-    latestCategory?.createdAt,
-  ]);
-  const latestTagDate = getLatestDateValue([
-    latestTag?.updatedAt,
-    latestTag?.createdAt,
-  ]);
-  const latestKnowledgeDate = latestKnowledge?.contentUpdatedAt ?? null;
+  return xmlResponse(await cachedSitemapXml("index", [], buildSitemapIndexXml));
+}
 
-  return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?>
+async function buildSitemapIndexXml() {
+  const baseUrl = getBaseUrl();
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${[
   sitemapEntry({
     loc: `${baseUrl}/sitemap-posts.xml`,
-    lastmod: latestPostDate,
   }),
   sitemapEntry({
     loc: `${baseUrl}/sitemap-en.xml`,
-    lastmod: latestPostDate,
   }),
   sitemapEntry({
     loc: `${baseUrl}/sitemap-categories.xml`,
-    lastmod: latestCategoryDate,
   }),
   sitemapEntry({
     loc: `${baseUrl}/sitemap-tags.xml`,
-    lastmod: latestTagDate,
   }),
   sitemapEntry({
     loc: `${baseUrl}/sitemap-servers.xml`,
-    lastmod: latestOfferDate ?? latestPostDate,
   }),
   sitemapEntry({
     loc: `${baseUrl}/sitemap-knowledge.xml`,
-    lastmod: latestKnowledgeDate,
   }),
   sitemapEntry({
     loc: `${baseUrl}/sitemap-tools.xml`,
   }),
 ].join("")}
-</sitemapindex>`);
+</sitemapindex>`;
 }
 
 export async function sitemapToolsGET() {
+  return xmlResponse(
+    await cachedSitemapXml(
+      "tools",
+      [cacheTags.networkExperience, cacheTags.serverSizing],
+      buildSitemapToolsXml,
+    ),
+  );
+}
+
+async function buildSitemapToolsXml() {
   const baseUrl = getBaseUrl();
   const zhSizing = `${baseUrl}/tools/server-sizing`;
   const enSizing = `${baseUrl}/en/tools/server-sizing`;
@@ -210,7 +167,7 @@ export async function sitemapToolsGET() {
     { hreflang: "en", href: enLines },
     { hreflang: "x-default", href: zhLines },
   ];
-  return urlset([
+  return renderUrlset([
     urlEntry({
       loc: zhSizing,
       changefreq: "monthly",
@@ -239,6 +196,13 @@ export async function sitemapToolsGET() {
 }
 
 export async function sitemapPostsGET() {
+  await connection();
+  return xmlResponse(
+    await cachedSitemapXml("posts", [cacheTags.posts], buildSitemapPostsXml),
+  );
+}
+
+async function buildSitemapPostsXml() {
   const baseUrl = getBaseUrl();
   const [rows, englishRows] = await Promise.all([
     readDb
@@ -271,7 +235,7 @@ export async function sitemapPostsGET() {
       .map((post) => [post.translationSourcePostId!, post.slug]),
   );
 
-  return urlset(
+  return renderUrlset(
     rows.map((post) => {
       const englishSlug = englishSlugBySourcePostId.get(post.id) ?? null;
 
@@ -302,6 +266,13 @@ export async function sitemapPostsGET() {
 }
 
 export async function sitemapEnglishGET() {
+  await connection();
+  return xmlResponse(
+    await cachedSitemapXml("english", [cacheTags.posts], buildSitemapEnglishXml),
+  );
+}
+
+async function buildSitemapEnglishXml() {
   const baseUrl = getBaseUrl();
   const englishRows = await readDb
     .select({
@@ -372,10 +343,21 @@ export async function sitemapEnglishGET() {
     }),
   ];
 
-  return urlset(entries);
+  return renderUrlset(entries);
 }
 
 export async function sitemapKnowledgeGET() {
+  await connection();
+  return xmlResponse(
+    await cachedSitemapXml(
+      "knowledge",
+      [cacheTags.knowledge],
+      buildSitemapKnowledgeXml,
+    ),
+  );
+}
+
+async function buildSitemapKnowledgeXml() {
   const baseUrl = getBaseUrl();
   const rows = await readDb
     .select({
@@ -418,7 +400,7 @@ export async function sitemapKnowledgeGET() {
     { hreflang: "x-default", href: `${baseUrl}/knowledge` },
   ];
 
-  return urlset([
+  return renderUrlset([
     urlEntry({
       loc: `${baseUrl}/knowledge`,
       lastmod: latestChineseDate,
@@ -472,6 +454,17 @@ export async function sitemapKnowledgeGET() {
 }
 
 export async function sitemapCategoriesGET() {
+  await connection();
+  return xmlResponse(
+    await cachedSitemapXml(
+      "categories",
+      [cacheTags.categories],
+      buildSitemapCategoriesXml,
+    ),
+  );
+}
+
+async function buildSitemapCategoriesXml() {
   const baseUrl = getBaseUrl();
   const rows = await readDb
     .select({
@@ -482,7 +475,7 @@ export async function sitemapCategoriesGET() {
     .from(categories)
     .orderBy(desc(categories.updatedAt));
 
-  return urlset(
+  return renderUrlset(
     rows.flatMap((category) => {
       const enSlug = category.enSlug?.trim();
       const zhUrl = `${baseUrl}/fwq/${encodeURIComponent(category.slug)}/page/1`;
@@ -522,6 +515,13 @@ export async function sitemapCategoriesGET() {
 }
 
 export async function sitemapTagsGET() {
+  await connection();
+  return xmlResponse(
+    await cachedSitemapXml("tags", [cacheTags.tags], buildSitemapTagsXml),
+  );
+}
+
+async function buildSitemapTagsXml() {
   const baseUrl = getBaseUrl();
   const rows = await readDb
     .select({
@@ -535,7 +535,7 @@ export async function sitemapTagsGET() {
     .where(eq(tags.indexable, true))
     .orderBy(desc(tags.updatedAt));
 
-  return urlset(
+  return renderUrlset(
     rows.flatMap((tag) => {
       const englishIdentity = resolveEnglishTagIdentity(tag);
       const zhUrl = `${baseUrl}/fwq/tags/${encodeURIComponent(tag.slug)}/page/1`;
@@ -576,6 +576,16 @@ export async function sitemapTagsGET() {
 
 export async function sitemapServersGET() {
   await connection();
+  return xmlResponse(
+    await cachedSitemapXml(
+      "servers",
+      [cacheTags.serverOffers],
+      buildSitemapServersXml,
+    ),
+  );
+}
+
+async function buildSitemapServersXml() {
   const baseUrl = getBaseUrl();
   const [[latestOffer], collections] = await Promise.all([
     readDb
@@ -615,7 +625,7 @@ export async function sitemapServersGET() {
     })),
   ];
 
-  return urlset([
+  return renderUrlset([
     urlEntry({
       loc: `${baseUrl}/servers`,
       lastmod,

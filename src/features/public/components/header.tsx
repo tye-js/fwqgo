@@ -73,7 +73,7 @@ const headerCopy: Record<
     errorLabel: "分类暂不可用",
     errorDescription: "分类暂时加载失败，可以先进入服务器比价或稍后刷新页面。",
     navigationTitle: "导航",
-    articleCategories: "文章分类",
+    articleCategories: "服务器分类",
   },
   en: {
     homeLabel: "Back to fwqgo English homepage",

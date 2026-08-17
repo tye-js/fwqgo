@@ -4,6 +4,11 @@ import path from "node:path";
 
 const root = process.cwd();
 const runtime = process.env.SMOKE_RUNTIME_BIN?.trim() ?? process.execPath;
+const configuredSmokeDatabaseUrl = process.env.SMOKE_DATABASE_URL?.trim();
+const smokeDatabaseUrl =
+  configuredSmokeDatabaseUrl?.length
+    ? configuredSmokeDatabaseUrl
+    : "postgresql://smoke:smoke@127.0.0.1:5432/fwqgo_smoke";
 /** @type {import("node:child_process").ChildProcess[]} */
 const processes = [];
 /** @type {string[]} */
@@ -13,7 +18,16 @@ const output = [];
 function startServer(name, cwd, entry, port) {
   const child = spawn(runtime, [entry], {
     cwd,
-    env: { ...process.env, HOSTNAME: "127.0.0.1", PORT: String(port) },
+    env: {
+      ...process.env,
+      DATABASE_URL: smokeDatabaseUrl,
+      CMS_DATABASE_URL: smokeDatabaseUrl,
+      READ_DATABASE_URL: smokeDatabaseUrl,
+      ANALYTICS_DATABASE_URL: smokeDatabaseUrl,
+      ENABLE_CMS_BACKGROUND_WORKERS: "false",
+      HOSTNAME: "127.0.0.1",
+      PORT: String(port),
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
   for (const stream of [child.stdout, child.stderr]) {

@@ -62,6 +62,21 @@ if (
   );
 }
 
+for (const requiredFragment of [
+  "SMOKE_DATABASE_URL",
+  "DATABASE_URL: smokeDatabaseUrl",
+  "CMS_DATABASE_URL: smokeDatabaseUrl",
+  "READ_DATABASE_URL: smokeDatabaseUrl",
+  "ANALYTICS_DATABASE_URL: smokeDatabaseUrl",
+  'ENABLE_CMS_BACKGROUND_WORKERS: "false"',
+]) {
+  if (!builtSmoke.includes(requiredFragment)) {
+    throw new Error(
+      `Built application smoke tests must isolate runtime database access: ${requiredFragment}`,
+    );
+  }
+}
+
 if (
   !workflow.includes("- name: Prepare cache revalidation secret") ||
   !workflow.includes(
