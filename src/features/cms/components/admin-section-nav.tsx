@@ -27,7 +27,7 @@ export function AdminSectionNav({
           asChild
           size="sm"
           variant={currentHref === item.href ? "secondary" : "ghost"}
-          className="min-h-10 flex-1 sm:flex-none"
+          className="min-h-11 flex-1 sm:flex-none"
         >
           <Link
             href={item.href}

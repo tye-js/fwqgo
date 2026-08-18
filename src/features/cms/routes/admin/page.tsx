@@ -36,13 +36,6 @@ function formatNumber(value: number) {
   return value.toLocaleString("zh-CN");
 }
 
-function formatMonthLabel(date: Date) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "long",
-  }).format(date);
-}
-
 function formatDateTime(date: Date) {
   return new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
@@ -356,7 +349,7 @@ export default async function Page() {
     recentPosts,
     topCategories,
   } = data;
-  const monthLabel = formatMonthLabel(overview.monthStart);
+  const recentContentLabel = `近${overview.recentContentDays}日`;
   const englishCoverage =
     overview.zhPublishedPostCount > 0
       ? (overview.enPublishedPostCount / overview.zhPublishedPostCount) * 100
@@ -383,9 +376,9 @@ export default async function Page() {
 
   return (
     <AdminPageShell
-      badge={monthLabel}
+      badge={recentContentLabel}
       title="运营看板"
-      description={`内容、AI 任务和数据资产的实时工作概览 · 更新于 ${formatDateTime(overview.generatedAt)}`}
+      description={`内容、AI 任务和数据资产的实时工作概览；文章表现按${recentContentLabel}新文统计 · 更新于 ${formatDateTime(overview.generatedAt)}`}
       actions={
         <>
           <Button asChild variant="secondary" size="sm">
@@ -421,9 +414,9 @@ export default async function Page() {
             tone: overview.draftPostCount > 0 ? "attention" : "neutral",
           },
           {
-            label: "累计浏览量",
-            value: formatNumber(overview.totalViews),
-            note: `已发布文章篇均 ${formatNumber(overview.averageViewsPerPublishedPost)} 次`,
+            label: `${recentContentLabel}新文浏览量`,
+            value: formatNumber(overview.recentPublishedViews),
+            note: `${formatNumber(overview.recentPublishedPostCount)} 篇新文 · 篇均 ${formatNumber(overview.recentAverageViewsPerPublishedPost)} 次`,
             icon: Eye,
           },
           {
@@ -499,21 +492,21 @@ export default async function Page() {
           <ContentTrendChart data={contentTrend} />
           <div className="mt-4 grid grid-cols-2 border-t border-border/60 pt-3 sm:grid-cols-4">
             <div className="pr-2">
-              <p className="text-xs text-muted-foreground">本月新建</p>
+              <p className="text-xs text-muted-foreground">{recentContentLabel}新文</p>
               <p className="mt-1 text-base font-semibold tabular-nums">
-                {formatNumber(overview.monthlyNewPostCount)}
+                {formatNumber(overview.recentPublishedPostCount)}
               </p>
             </div>
             <div className="border-l border-border/60 px-2">
-              <p className="text-xs text-muted-foreground">本月已发布</p>
+              <p className="text-xs text-muted-foreground">{recentContentLabel}新文累计浏览</p>
               <p className="mt-1 text-base font-semibold tabular-nums">
-                {formatNumber(overview.monthlyPublishedPostCount)}
+                {formatNumber(overview.recentPublishedViews)}
               </p>
             </div>
             <div className="mt-3 border-t border-border/60 pr-2 pt-3 sm:mt-0 sm:border-l sm:border-t-0 sm:px-2 sm:pt-0">
-              <p className="text-xs text-muted-foreground">本月新文累计浏览</p>
+              <p className="text-xs text-muted-foreground">{recentContentLabel}篇均浏览</p>
               <p className="mt-1 text-base font-semibold tabular-nums">
-                {formatNumber(overview.monthlyReferenceViews)}
+                {formatNumber(overview.recentAverageViewsPerPublishedPost)}
               </p>
             </div>
             <div className="mt-3 border-l border-t border-border/60 px-2 pt-3 sm:mt-0 sm:border-t-0 sm:pt-0">
@@ -595,8 +588,8 @@ export default async function Page() {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.7fr)]">
         <AdminSectionCard
-          title="内容表现"
-          description="累计浏览量最高的已发布文章。"
+          title={`${recentContentLabel}新文表现`}
+          description={`仅统计${recentContentLabel}内发布的文章，浏览量为这些新文当前累计浏览量。`}
         >
           <div className="overflow-x-auto">
             <Table className="min-w-[680px]">
@@ -644,7 +637,7 @@ export default async function Page() {
                       colSpan={5}
                       className="h-24 text-center text-sm text-muted-foreground"
                     >
-                      暂无已发布文章。
+                      {recentContentLabel}暂无已发布文章。
                     </TableCell>
                   </TableRow>
                 )}
@@ -654,8 +647,8 @@ export default async function Page() {
         </AdminSectionCard>
 
         <AdminSectionCard
-          title="分类表现"
-          description="按已发布文章量排序，浏览量作为辅助指标。"
+          title={`${recentContentLabel}分类表现`}
+          description={`按${recentContentLabel}新文数量排序，并显示这些新文的累计浏览量。`}
         >
           <div className="divide-y divide-border/60">
             {topCategories.length > 0 ? (
@@ -671,12 +664,12 @@ export default async function Page() {
                           {category.name}
                         </p>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          #{index + 1} · {formatNumber(category.totalViews)}{" "}
-                          次浏览
+                          #{index + 1} · {formatNumber(category.publishedCount)}{" "}
+                          篇新文 · {formatNumber(category.totalViews)} 次浏览
                         </p>
                       </div>
                       <strong className="shrink-0 text-sm tabular-nums">
-                        {formatNumber(category.publishedCount)} 篇
+                        {formatNumber(category.totalViews)} 次
                       </strong>
                     </div>
                     <Progress value={progress} className="mt-2 h-1.5" />
@@ -694,16 +687,17 @@ export default async function Page() {
 
       <AdminSectionCard
         title="最近内容"
-        description="最近创建的中文和英文文章，可直接进入编辑。"
+        description={`${recentContentLabel}内创建的中文和英文文章，可直接查看浏览量并进入编辑。`}
       >
         <div className="overflow-x-auto">
-          <Table className="min-w-[760px]">
+          <Table className="min-w-[820px]">
             <TableHeader>
               <TableRow>
                 <TableHead>文章</TableHead>
                 <TableHead className="w-32">分类</TableHead>
                 <TableHead className="w-20">语言</TableHead>
                 <TableHead className="w-24">状态</TableHead>
+                <TableHead className="w-24 text-right">浏览量</TableHead>
                 <TableHead className="w-32">创建时间</TableHead>
               </TableRow>
             </TableHeader>
@@ -730,6 +724,9 @@ export default async function Page() {
                         {post.published ? "已发布" : "草稿"}
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {formatNumber(post.views)}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {formatDate(post.createdAt)}
                     </TableCell>
@@ -738,7 +735,7 @@ export default async function Page() {
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="h-24 text-center text-sm text-muted-foreground"
                   >
                     暂无最近文章。

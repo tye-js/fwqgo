@@ -1050,7 +1050,7 @@ export default function AffManTable({
         />
       ) : (
         <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-          <Table className="min-w-[1420px]">
+          <Table className="cms-mobile-sticky-actions min-w-[1420px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[44px]">

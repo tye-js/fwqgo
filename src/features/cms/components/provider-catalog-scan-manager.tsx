@@ -308,7 +308,7 @@ export function ProviderCatalogScanManager({
           ) : null}
         </div>
         <div className="overflow-x-auto rounded-md border">
-          <Table className="min-w-[980px]">
+          <Table className="cms-mobile-sticky-actions min-w-[980px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-20">ID</TableHead>

@@ -677,7 +677,7 @@ export function ArticleCoverBatchGenerator({
             description="调整搜索词或筛选条件后再选择文章生成封面。"
           />
         ) : (
-          <Table className="min-w-[860px]">
+          <Table className="cms-mobile-sticky-actions min-w-[860px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">

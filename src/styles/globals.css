@@ -396,3 +396,23 @@
     28px 28px,
     28px 28px;
 }
+
+@media (max-width: 767px) {
+  .cms-mobile-sticky-actions tr > :last-child {
+    position: sticky;
+    right: 0;
+    z-index: 10;
+    background-color: hsl(var(--card));
+    box-shadow: -0.75rem 0 1rem -1rem hsl(var(--foreground) / 0.45);
+  }
+
+  .cms-mobile-sticky-actions thead tr > :last-child {
+    z-index: 20;
+    background-color: hsl(var(--background));
+  }
+
+  .cms-mobile-sticky-actions tbody tr:hover > :last-child,
+  .cms-mobile-sticky-actions tbody tr[data-state="selected"] > :last-child {
+    background-color: hsl(var(--muted));
+  }
+}

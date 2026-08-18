@@ -336,7 +336,7 @@ export function CategorySeoTable({ data }: { data: CategorySeoRow[] }) {
 
       {filteredRows.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border border-border/70">
-          <Table className="min-w-[1320px]">
+          <Table className="cms-mobile-sticky-actions min-w-[1320px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">

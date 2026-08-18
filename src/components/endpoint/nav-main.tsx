@@ -55,7 +55,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
                   isActive={item.isActive}
                   className="h-11"
                 >
-                  <Link href={item.url}>
+                  <Link href={item.url} onClick={closeMobileNavigation}>
                     {item.icon && <item.icon />}
                     <span>{item.title}</span>
                   </Link>

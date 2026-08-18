@@ -102,7 +102,7 @@ export function PostInternalLinkManager({
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
+          <table className="cms-mobile-sticky-actions w-full min-w-[760px] text-left text-sm">
             <thead>
               <tr className="border-b border-border/70 text-xs text-muted-foreground">
                 <th className="px-2 py-2 font-medium">目标</th>

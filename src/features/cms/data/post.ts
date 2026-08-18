@@ -35,6 +35,8 @@ export type PostStatusFilter = "all" | "published" | "draft";
 export type PostSort =
   "id-desc" | "id-asc" | "title-asc" | "slug-asc" | "published-desc";
 
+export const DASHBOARD_RECENT_CONTENT_DAYS = 30;
+
 function getDataErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   return typeof error === "string" ? error : "未知错误";
@@ -511,6 +513,11 @@ export async function getDashboardStats() {
   const trendStart = new Date(now);
   trendStart.setHours(0, 0, 0, 0);
   trendStart.setDate(trendStart.getDate() - 6);
+  const recentContentStart = new Date(now);
+  recentContentStart.setHours(0, 0, 0, 0);
+  recentContentStart.setDate(
+    recentContentStart.getDate() - (DASHBOARD_RECENT_CONTENT_DAYS - 1),
+  );
   const categoryPublishedCountExpr = sql<number>`count(${posts.id})::int`;
   const categoryTotalViewsExpr = sql<number>`coalesce(sum(${posts.views}), 0)`;
   const trendDayExpr = sql<string>`to_char(date_trunc('day', ${posts.createdAt}), 'YYYY-MM-DD')`;
@@ -541,6 +548,8 @@ export async function getDashboardStats() {
         monthlyPublishedCount: sql<number>`(count(*) filter (where ${posts.published} = true and ${posts.createdAt} >= ${sql.param(monthStart, posts.createdAt)}))::int`,
         totalViews: sql<number>`coalesce(sum(${posts.views}) filter (where ${posts.published} = true), 0)`,
         monthlyReferenceViews: sql<number>`coalesce(sum(${posts.views}) filter (where ${posts.published} = true and ${posts.createdAt} >= ${sql.param(monthStart, posts.createdAt)}), 0)`,
+        recentPublishedCount: sql<number>`(count(*) filter (where ${posts.published} = true and ${posts.createdAt} >= ${sql.param(recentContentStart, posts.createdAt)}))::int`,
+        recentPublishedViews: sql<number>`coalesce(sum(${posts.views}) filter (where ${posts.published} = true and ${posts.createdAt} >= ${sql.param(recentContentStart, posts.createdAt)}), 0)`,
         missingCoverCount: sql<number>`(count(*) filter (where coalesce(btrim(${posts.imgUrl}), '') = ''))::int`,
         affiliateAttentionCount: sql<number>`(count(*) filter (where ${posts.published} = true and ${posts.affiliateReviewStatus} in ('pending', 'manual_required')))::int`,
         contentAttentionCount: sql<number>`(count(*) filter (where coalesce(btrim(${posts.imgUrl}), '') = '' or (${posts.published} = true and ${posts.affiliateReviewStatus} in ('pending', 'manual_required'))))::int`,
@@ -604,7 +613,12 @@ export async function getDashboardStats() {
       })
       .from(posts)
       .innerJoin(categories, eq(posts.categoryId, categories.id))
-      .where(eq(posts.published, true))
+      .where(
+        and(
+          eq(posts.published, true),
+          gte(posts.createdAt, recentContentStart),
+        ),
+      )
       .orderBy(desc(posts.views), desc(posts.createdAt))
       .limit(5),
     db
@@ -620,6 +634,7 @@ export async function getDashboardStats() {
       })
       .from(posts)
       .innerJoin(categories, eq(posts.categoryId, categories.id))
+      .where(gte(posts.createdAt, recentContentStart))
       .orderBy(desc(posts.createdAt))
       .limit(6),
     db
@@ -632,9 +647,14 @@ export async function getDashboardStats() {
       .from(categories)
       .leftJoin(
         posts,
-        and(eq(posts.categoryId, categories.id), eq(posts.published, true)),
+        and(
+          eq(posts.categoryId, categories.id),
+          eq(posts.published, true),
+          gte(posts.createdAt, recentContentStart),
+        ),
       )
       .groupBy(categories.id, categories.name)
+      .having(sql`count(${posts.id}) > 0`)
       .orderBy(
         desc(categoryPublishedCountExpr),
         desc(categoryTotalViewsExpr),
@@ -702,12 +722,22 @@ export async function getDashboardStats() {
         monthlyPublishedPostCount: asNumber(postSummary?.monthlyPublishedCount),
         totalViews,
         monthlyReferenceViews: asNumber(postSummary?.monthlyReferenceViews),
+        recentContentDays: DASHBOARD_RECENT_CONTENT_DAYS,
+        recentPublishedPostCount: asNumber(postSummary?.recentPublishedCount),
+        recentPublishedViews: asNumber(postSummary?.recentPublishedViews),
         missingCoverCount: asNumber(postSummary?.missingCoverCount),
         affiliateAttentionCount: asNumber(postSummary?.affiliateAttentionCount),
         contentAttentionCount: asNumber(postSummary?.contentAttentionCount),
         averageViewsPerPublishedPost:
           publishedPostCount > 0
             ? Math.round(totalViews / publishedPostCount)
+            : 0,
+        recentAverageViewsPerPublishedPost:
+          asNumber(postSummary?.recentPublishedCount) > 0
+            ? Math.round(
+                asNumber(postSummary?.recentPublishedViews) /
+                  asNumber(postSummary?.recentPublishedCount),
+              )
             : 0,
         monthStart,
         generatedAt: now,

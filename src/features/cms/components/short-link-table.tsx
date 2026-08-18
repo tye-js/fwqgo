@@ -95,7 +95,7 @@ export function ShortLinkTable({
         />
       ) : (
         <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-          <Table className="min-w-[760px]">
+          <Table className="cms-mobile-sticky-actions min-w-[760px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[140px]">短链</TableHead>

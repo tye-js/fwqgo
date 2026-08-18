@@ -73,8 +73,8 @@ export const cmsNavigation: CmsNavigationItem[] = [
       },
       {
         title: "AI 生图",
-        url: "/images/ai-generate",
-        matchUrls: ["/images/covers"],
+        url: "/images/covers",
+        matchUrls: ["/images/ai-generate"],
       },
     ],
   },

@@ -107,7 +107,7 @@ export function ServerSizingRuleManager({ rules }: { rules: RuleRow[] }) {
       </div>
 
       <div className="overflow-x-auto rounded-md border border-border/70">
-        <table className="w-full min-w-[900px] text-left text-sm">
+        <table className="cms-mobile-sticky-actions w-full min-w-[900px] text-left text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground"><tr><th className="px-3 py-2">版本</th><th className="px-3 py-2">状态</th><th className="px-3 py-2">checksum</th><th className="px-3 py-2">审核 / 发布</th><th className="px-3 py-2">操作</th></tr></thead>
           <tbody className="divide-y divide-border/70">
             {rules.map((rule) => (

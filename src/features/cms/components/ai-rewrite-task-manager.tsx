@@ -1183,7 +1183,7 @@ export function AiRewriteTaskManager({
                 description="提交来源 URL 后，系统会在后台抓取、清洗、改写，并在成功后保存为草稿。"
               />
             ) : (
-              <Table>
+              <Table className="cms-mobile-sticky-actions">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-[280px]">任务来源</TableHead>

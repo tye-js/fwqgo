@@ -195,7 +195,7 @@ export function UnifiedTaskList({ result }: { result: UnifiedTaskListResult }) {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-          <Table className="min-w-[960px]">
+          <Table className="cms-mobile-sticky-actions min-w-[960px]">
             <TableHeader>
               <TableRow>
                 <TableHead>任务</TableHead>

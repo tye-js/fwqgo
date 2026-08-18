@@ -429,7 +429,7 @@ export function HomepageSlotManager({
         </Button>
       </div>
       <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-        <Table className="min-w-[880px]">
+        <Table className="cms-mobile-sticky-actions min-w-[880px]">
           <TableHeader>
             <TableRow>
               <TableHead>位置 / 排序</TableHead>

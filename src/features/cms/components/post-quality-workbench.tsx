@@ -133,7 +133,7 @@ export function PostQualityWorkbench({
           </p>
         </div>
       ) : (
-        <Table className="min-w-[1120px]">
+        <Table className="cms-mobile-sticky-actions min-w-[1120px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[300px]">文章</TableHead>

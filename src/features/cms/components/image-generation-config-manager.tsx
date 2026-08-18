@@ -453,7 +453,7 @@ export function ImageGenerationConfigManager({
       ) : null}
 
       <div className="overflow-x-auto rounded-md border border-border/70">
-        <Table className="min-w-[860px]">
+        <Table className="cms-mobile-sticky-actions min-w-[860px]">
           <TableHeader>
             <TableRow>
               <TableHead>名称</TableHead>

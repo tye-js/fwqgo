@@ -220,7 +220,7 @@ function SystemDiagnostics({ summary }: { summary: CmsTaskOperationsSummary }) {
 
         <div className="overflow-x-auto rounded-md border border-border/70">
           {summary.backgroundJobs.length > 0 ? (
-            <Table className="min-w-[760px]">
+            <Table className="cms-mobile-sticky-actions min-w-[760px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>后台任务</TableHead>
