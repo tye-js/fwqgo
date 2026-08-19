@@ -38,9 +38,9 @@ export type AiRewriteAuditArtifact = {
 };
 
 const stageLabels: Record<string, string> = {
-  fact_extraction: "来源事实提取",
+  fact_extraction: "旧版来源事实提取",
   content_generation: "中文候选正文",
-  quality_review: "事实质量审查",
+  quality_review: "旧版事实质量审查",
   metadata_generation: "中文 SEO 元信息",
   english_content_generation: "英文正文",
   english_continuation: "英文正文续写",

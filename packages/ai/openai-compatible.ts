@@ -19,6 +19,43 @@ function errorDetails(error: unknown): string[] {
   return details;
 }
 
+export class AiProviderHttpError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "AiProviderHttpError";
+    this.status = status;
+  }
+}
+
+export function canFailoverAiProviderError(error: unknown) {
+  if (error instanceof AiProviderHttpError) {
+    // A complete HTTP response proves that the provider rejected or failed
+    // the request. Keep timeout/gateway-timeout statuses out because the
+    // upstream may still be processing a non-idempotent request.
+    return new Set([
+      400,
+      401,
+      402,
+      403,
+      404,
+      405,
+      413,
+      415,
+      422,
+      429,
+      500,
+      501,
+      502,
+      503,
+    ]).has(error.status);
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  return /AI 改写配置不完整|缺少 API Key|AI 接口地址校验失败/.test(message);
+}
+
 export function isTransientAiNetworkError(error: unknown) {
   const detail = errorDetails(error).join(" ").toLowerCase();
 

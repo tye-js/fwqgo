@@ -297,6 +297,7 @@ function normalizeRewriteQuality(
     promptVersion: stringValue(value.promptVersion),
     attempts: numberValue(value.attempts),
     factualScore: numberValue(value.factualScore),
+    factCheckSkipped: booleanValue(value.factCheckSkipped),
     reviewPassed: booleanValue(value.reviewPassed),
     reviewSkipped: booleanValue(value.reviewSkipped),
     missingFacts: arrayValue(value.missingFacts, (item) =>
@@ -507,7 +508,9 @@ function buildTaskSteps({
             : "pending",
       description: diagnostics?.usedAiRewrite
         ? diagnostics.rewriteQuality
-          ? `输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符，原创度 ${diagnostics.rewriteQuality.originalityScore}%，事实覆盖 ${diagnostics.rewriteQuality.criticalFactCoverage}%，共 ${diagnostics.rewriteQuality.attempts} 轮`
+          ? diagnostics.rewriteQuality.factCheckSkipped
+            ? `输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符，原创度 ${diagnostics.rewriteQuality.originalityScore}%，事实核查已关闭，共 ${diagnostics.rewriteQuality.attempts} 轮`
+            : `输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符，原创度 ${diagnostics.rewriteQuality.originalityScore}%，事实覆盖 ${diagnostics.rewriteQuality.criticalFactCoverage}%，共 ${diagnostics.rewriteQuality.attempts} 轮`
           : `输入 ${diagnostics.aiInputLength ?? "-"} 字符，输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符`
         : isEnglishTask
           ? "等待从中文改写正文翻译英文正文，SEO 字段会单独生成"
@@ -964,7 +967,7 @@ function TruncationHint({
         {formatMaybeNumber(task.maxTokens)}，AI 输入{" "}
         {formatMaybeNumber(task.aiInputLength)}，输出{" "}
         {formatMaybeNumber(task.rewriteOutputLength)}
-        。来源事实提取、正文生成和 SEO 生成都会使用配置中的 Max
+        。正文生成和 SEO 生成都会使用配置中的 Max
         Tokens；如果重试后仍被截断，说明模型或中转服务还有自身输出上限，建议缩短正文输入或更换推理消耗更低的模型。
       </p>
       {task.aiInputLength === null && isAiRewriteStageError(error) ? (
@@ -1294,8 +1297,16 @@ export async function AiRewriteTaskDetailPageContent({
                     value={`${diagnostics.rewriteQuality.originalityScore}%`}
                   />
                   <Stat
-                    label="关键事实覆盖"
-                    value={`${diagnostics.rewriteQuality.criticalFactCoverage}%`}
+                    label={
+                      diagnostics.rewriteQuality.factCheckSkipped
+                        ? "事实核查"
+                        : "关键事实覆盖"
+                    }
+                    value={
+                      diagnostics.rewriteQuality.factCheckSkipped
+                        ? "已关闭"
+                        : `${diagnostics.rewriteQuality.criticalFactCoverage}%`
+                    }
                   />
                   <Stat
                     label="自动重写"

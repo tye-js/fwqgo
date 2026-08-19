@@ -1083,12 +1083,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "factExtractionPrompt": {
-          "name": "factExtractionPrompt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "basePrompt": {
           "name": "basePrompt",
           "type": "text",
@@ -1107,18 +1101,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "stylePrompt": {
-          "name": "stylePrompt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "metadataStylePrompt": {
-          "name": "metadataStylePrompt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "englishContentPrompt": {
           "name": "englishContentPrompt",
           "type": "text",
@@ -1133,18 +1115,6 @@
         },
         "englishMetadataPrompt": {
           "name": "englishMetadataPrompt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "englishStylePrompt": {
-          "name": "englishStylePrompt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "englishMetadataStylePrompt": {
-          "name": "englishMetadataStylePrompt",
           "type": "text",
           "primaryKey": false,
           "notNull": false

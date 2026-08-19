@@ -53,21 +53,13 @@ const configSchema = z.object({
     }),
   apiKey: z.string().trim().optional(),
   model: z.string().trim().min(1, "模型不能为空"),
-  factExtractionPrompt: promptSchema("事实提取 Prompt", ["sourceMarkdown"]),
   basePrompt: promptSchema("中文正文改写 Prompt", [
-    "stylePrompt",
     "sourceContent",
-    "factSheet",
-    "outline",
     "protectedContent",
-    "retryFeedback",
   ]),
   metadataPrompt: metadataPromptSchema,
   styleName: z.string().trim().min(1, "风格名称不能为空"),
-  stylePrompt: z.string().trim().min(1, "正文改写风格不能为空"),
-  metadataStylePrompt: z.string().trim().min(1, "元信息生成风格不能为空"),
   englishContentPrompt: promptSchema("英文正文生成 Prompt", [
-    "englishStylePrompt",
     "title",
     "description",
     "keywords",
@@ -78,18 +70,12 @@ const configSchema = z.object({
     "generatedContentTail",
   ]),
   englishMetadataPrompt: promptSchema("英文元信息 Prompt", [
-    "englishMetadataStylePrompt",
     "title",
     "description",
     "keywords",
     "categoryContext",
     "enContent",
   ]),
-  englishStylePrompt: z.string().trim().min(1, "英文正文生成风格不能为空"),
-  englishMetadataStylePrompt: z
-    .string()
-    .trim()
-    .min(1, "英文 SEO 生成风格不能为空"),
   providerCatalogDiscoveryPrompt: promptSchema("供应商套餐源发现 Prompt", [
     "providerName",
     "officialUrl",

@@ -6,10 +6,6 @@ import {
   defaultEnglishContentPrompt,
   defaultEnglishContinuationPrompt,
   defaultEnglishMetadataPrompt,
-  defaultEnglishMetadataStylePrompt,
-  defaultEnglishStylePrompt,
-  defaultFactExtractionPrompt,
-  defaultMetadataStylePrompt,
   resolveMetadataPromptTemplate,
   resolveSourceAnchoredRewriteTemplate,
 } from "@fwqgo/core/ai-rewrite-prompts";
@@ -30,17 +26,12 @@ export type AiRewriteConfigInput = {
   baseUrl: string;
   apiKey?: string;
   model: string;
-  factExtractionPrompt: string;
   basePrompt: string;
   metadataPrompt: string;
   styleName: string;
-  stylePrompt: string;
-  metadataStylePrompt: string;
   englishContentPrompt: string;
   englishContinuationPrompt: string;
   englishMetadataPrompt: string;
-  englishStylePrompt: string;
-  englishMetadataStylePrompt: string;
   providerCatalogDiscoveryPrompt: string;
   temperature: number;
   maxTokens: number;
@@ -61,17 +52,12 @@ type ActiveAiRewriteConfigRow = Pick<
   | "baseUrl"
   | "apiKey"
   | "model"
-  | "factExtractionPrompt"
   | "basePrompt"
   | "metadataPrompt"
   | "styleName"
-  | "stylePrompt"
-  | "metadataStylePrompt"
   | "englishContentPrompt"
   | "englishContinuationPrompt"
   | "englishMetadataPrompt"
-  | "englishStylePrompt"
-  | "englishMetadataStylePrompt"
   | "providerCatalogDiscoveryPrompt"
   | "temperature"
   | "maxTokens"
@@ -88,17 +74,12 @@ const activeAiRewriteConfigColumns = {
   baseUrl: aiRewriteConfigs.baseUrl,
   apiKey: aiRewriteConfigs.apiKey,
   model: aiRewriteConfigs.model,
-  factExtractionPrompt: aiRewriteConfigs.factExtractionPrompt,
   basePrompt: aiRewriteConfigs.basePrompt,
   metadataPrompt: aiRewriteConfigs.metadataPrompt,
   styleName: aiRewriteConfigs.styleName,
-  stylePrompt: aiRewriteConfigs.stylePrompt,
-  metadataStylePrompt: aiRewriteConfigs.metadataStylePrompt,
   englishContentPrompt: aiRewriteConfigs.englishContentPrompt,
   englishContinuationPrompt: aiRewriteConfigs.englishContinuationPrompt,
   englishMetadataPrompt: aiRewriteConfigs.englishMetadataPrompt,
-  englishStylePrompt: aiRewriteConfigs.englishStylePrompt,
-  englishMetadataStylePrompt: aiRewriteConfigs.englishMetadataStylePrompt,
   providerCatalogDiscoveryPrompt:
     aiRewriteConfigs.providerCatalogDiscoveryPrompt,
   temperature: aiRewriteConfigs.temperature,
@@ -115,20 +96,14 @@ function withPromptDefaults<T extends ActiveAiRewriteConfigRow>(row: T) {
   return {
     ...row,
     provider: row.provider as AiProvider,
-    factExtractionPrompt:
-      row.factExtractionPrompt ?? defaultFactExtractionPrompt,
     basePrompt: resolveSourceAnchoredRewriteTemplate(row.basePrompt),
     metadataPrompt: resolveMetadataPromptTemplate(row.metadataPrompt),
-    metadataStylePrompt: row.metadataStylePrompt ?? defaultMetadataStylePrompt,
     englishContentPrompt:
       row.englishContentPrompt ?? defaultEnglishContentPrompt,
     englishContinuationPrompt:
       row.englishContinuationPrompt ?? defaultEnglishContinuationPrompt,
     englishMetadataPrompt:
       row.englishMetadataPrompt ?? defaultEnglishMetadataPrompt,
-    englishStylePrompt: row.englishStylePrompt ?? defaultEnglishStylePrompt,
-    englishMetadataStylePrompt:
-      row.englishMetadataStylePrompt ?? defaultEnglishMetadataStylePrompt,
     providerCatalogDiscoveryPrompt: resolveProviderCatalogDiscoveryPrompt(
       row.providerCatalogDiscoveryPrompt,
     ),
@@ -212,6 +187,19 @@ export async function getActiveAiRewriteConfig(styleId?: number) {
     : null;
 }
 
+export async function getEnabledAiRewriteConfigs() {
+  const rows = await db
+    .select(activeAiRewriteConfigColumns)
+    .from(aiRewriteConfigs)
+    .where(eq(aiRewriteConfigs.enabled, true))
+    .orderBy(
+      desc(aiRewriteConfigs.isDefault),
+      desc(aiRewriteConfigs.id),
+    );
+
+  return Promise.all(rows.map((row) => resolveStoredApiKey(withPromptDefaults(row))));
+}
+
 export async function getAiRewriteConfigForStatusCheck(id: number) {
   const [config] = await db
     .select(activeAiRewriteConfigColumns)
@@ -281,15 +269,11 @@ export async function createAiRewriteConfig(input: AiRewriteConfigInput) {
         ...input,
         baseUrl: normalizeBaseUrl(input.baseUrl),
         apiKey: input.apiKey?.trim() ? encryptSecret(input.apiKey) : null,
-        factExtractionPrompt: input.factExtractionPrompt,
         basePrompt: input.basePrompt,
         metadataPrompt: input.metadataPrompt,
-        metadataStylePrompt: input.metadataStylePrompt,
         englishContentPrompt: input.englishContentPrompt,
         englishContinuationPrompt: input.englishContinuationPrompt,
         englishMetadataPrompt: input.englishMetadataPrompt,
-        englishStylePrompt: input.englishStylePrompt,
-        englishMetadataStylePrompt: input.englishMetadataStylePrompt,
         providerCatalogDiscoveryPrompt: input.providerCatalogDiscoveryPrompt,
       })
       .returning({ id: aiRewriteConfigs.id });
@@ -312,17 +296,12 @@ export async function updateAiRewriteConfig(
     provider: input.provider,
     baseUrl: normalizeBaseUrl(input.baseUrl),
     model: input.model,
-    factExtractionPrompt: input.factExtractionPrompt,
     basePrompt: input.basePrompt,
     metadataPrompt: input.metadataPrompt,
     styleName: input.styleName,
-    stylePrompt: input.stylePrompt,
-    metadataStylePrompt: input.metadataStylePrompt,
     englishContentPrompt: input.englishContentPrompt,
     englishContinuationPrompt: input.englishContinuationPrompt,
     englishMetadataPrompt: input.englishMetadataPrompt,
-    englishStylePrompt: input.englishStylePrompt,
-    englishMetadataStylePrompt: input.englishMetadataStylePrompt,
     providerCatalogDiscoveryPrompt: input.providerCatalogDiscoveryPrompt,
     temperature: input.temperature,
     maxTokens: input.maxTokens,

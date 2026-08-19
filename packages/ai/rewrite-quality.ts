@@ -497,6 +497,7 @@ export function evaluateRewriteQuality(
     allowedFactsMarkdown?: string;
     allowHighSimilarity?: boolean;
     maxNarrativeLength?: number;
+    skipFactChecks?: boolean;
   } = {},
 ): RewriteQualityMetrics {
   const sourceNarrative = narrativeMarkdown(sourceMarkdown);
@@ -511,17 +512,22 @@ export function evaluateRewriteQuality(
   );
   const sentenceRatio = exactSentenceRatio(sourceNarrative, outputNarrative);
   const headings = headingSimilarity(sourceMarkdown, outputMarkdown);
-  const criticalFacts = criticalFactComparison(
-    sourceMarkdown,
-    outputMarkdown,
-    options.allowedFactsMarkdown,
-  );
+  const criticalFacts = options.skipFactChecks
+    ? { coverage: 100, missing: [], unsupported: [], sourceFactCount: 0 }
+    : criticalFactComparison(
+        sourceMarkdown,
+        outputMarkdown,
+        options.allowedFactsMarkdown,
+      );
   const maxNarrativeSimilarity =
     sourceNarrativeLength < 200 ? 60 : sourceNarrativeLength < 500 ? 50 : 42;
   const requiredFactCoverage = criticalFacts.sourceFactCount <= 4 ? 100 : 90;
   const reasons: string[] = [];
 
-  if (!options.allowHighSimilarity && narrativeSimilarity > maxNarrativeSimilarity) {
+  if (
+    !options.allowHighSimilarity &&
+    narrativeSimilarity > maxNarrativeSimilarity
+  ) {
     reasons.push(
       `叙述片段重合率 ${narrativeSimilarity}% 超过 ${maxNarrativeSimilarity}%`,
     );
@@ -532,12 +538,15 @@ export function evaluateRewriteQuality(
   if (!options.allowHighSimilarity && headings > 75) {
     reasons.push(`小标题结构重合率 ${headings}% 超过 75%`);
   }
-  if (criticalFacts.coverage < requiredFactCoverage) {
+  if (
+    !options.skipFactChecks &&
+    criticalFacts.coverage < requiredFactCoverage
+  ) {
     reasons.push(
       `关键事实覆盖率 ${criticalFacts.coverage}% 低于 ${requiredFactCoverage}%`,
     );
   }
-  if (criticalFacts.unsupported.length > 0) {
+  if (!options.skipFactChecks && criticalFacts.unsupported.length > 0) {
     reasons.push(
       `正文出现原文不存在的关键值：${criticalFacts.unsupported.slice(0, 6).join("、")}`,
     );

@@ -5,8 +5,6 @@ export {
   defaultEnglishMetadataPrompt,
   defaultEnglishMetadataStylePrompt,
   defaultEnglishStylePrompt,
-  defaultFactExtractionPrompt,
-  defaultInitialRewriteFeedbackPrompt,
   defaultMetadataPrompt,
   defaultMetadataStylePrompt,
   resolveMetadataPromptTemplate,

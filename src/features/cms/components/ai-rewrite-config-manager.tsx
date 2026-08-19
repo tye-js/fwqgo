@@ -64,11 +64,7 @@ import {
   defaultEnglishContentPrompt,
   defaultEnglishContinuationPrompt,
   defaultEnglishMetadataPrompt,
-  defaultEnglishMetadataStylePrompt,
-  defaultEnglishStylePrompt,
-  defaultFactExtractionPrompt,
   defaultMetadataPrompt,
-  defaultMetadataStylePrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
 import { defaultProviderCatalogDiscoveryPrompt } from "@fwqgo/core/provider-catalog-discovery";
 import { useConfirmUnsavedChanges } from "@/features/cms/hooks/use-confirm-unsaved-changes";
@@ -121,9 +117,6 @@ function describeProvider(config: Config) {
     ? "DeepSeek 第三方中转"
     : "第三方中转 / OpenAI 兼容";
 }
-
-const defaultStylePrompt =
-  "保持服务器/VPS文章的专业评测风格，只对原文做小幅改写和排版整理。保留原文中的表格、价格、配置、优惠码、官网链接和返利链接，不新增外部信息。";
 
 function appendBoolean(formData: FormData, key: string, value: boolean) {
   formData.set(key, value ? "true" : "false");
@@ -490,49 +483,23 @@ function ConfigForm({
         </summary>
         <div className="mt-4 space-y-6">
           <PromptTemplateField
-            name="factExtractionPrompt"
-            label="1. 来源信息提取 Prompt（独立调用）"
-            value={
-              defaults?.factExtractionPrompt ?? defaultFactExtractionPrompt
-            }
-            variables={["sourceMarkdown"]}
-            description="整理来源信息供正文组织和 SEO 使用，不执行独立事实审查。"
-          />
-          <PromptTemplateField
-            name="stylePrompt"
-            label="2. 中文正文风格片段"
-            value={defaults?.stylePrompt ?? defaultStylePrompt}
-            description="通过 {stylePrompt} 注入中文正文完整模板。"
-            className="min-h-28"
-          />
-          <PromptTemplateField
             name="basePrompt"
-            label="3. 中文正文完整 Prompt"
+            label="1. 中文正文改写 Prompt"
             value={defaults?.basePrompt ?? defaultBaseRewritePrompt}
             variables={[
-              "stylePrompt",
               "sourceContent",
-              "factSheet",
-              "outline",
+              "rewriteLengthBudget",
               "protectedContent",
-              "retryFeedback",
             ]}
-            description="每次候选正文只基于清洗后的原文做小幅改写和排版整理，不追加独立事实审查。"
+            description="直接根据清洗后的原文完成单次改写，不再执行来源事实提取或事实核查调用。"
             className="min-h-72 lg:min-h-[34rem]"
           />
           <PromptTemplateField
-            name="metadataStylePrompt"
-            label="4. 中文标题 / SEO 风格片段"
-            value={defaults?.metadataStylePrompt ?? defaultMetadataStylePrompt}
-            description="通过 {metadataStylePrompt} 注入中文元信息完整模板。"
-            className="min-h-28"
-          />
-          <PromptTemplateField
             name="metadataPrompt"
-            label="5. 中文标题 / SEO 完整 Prompt"
+            label="2. 中文标题 / SEO Prompt"
             value={defaults?.metadataPrompt ?? defaultMetadataPrompt}
-            variables={["metadataStylePrompt", "markdownContent"]}
-            description="用于标题、摘要、关键词、标签和推荐标签生成。"
+            variables={["markdownContent"]}
+            description="直接从改写后的正文生成标题、摘要、关键词、标签和推荐标签。"
             className="min-h-72 lg:min-h-[28rem]"
           />
         </div>
@@ -544,31 +511,18 @@ function ConfigForm({
         </summary>
         <div className="mt-4 space-y-6">
           <PromptTemplateField
-            name="englishStylePrompt"
-            label="1. 英文正文风格片段"
-            value={defaults?.englishStylePrompt ?? defaultEnglishStylePrompt}
-            description="通过 {englishStylePrompt} 注入英文正文完整模板。"
-            className="min-h-28"
-          />
-          <PromptTemplateField
             name="englishContentPrompt"
-            label="2. 英文正文完整 Prompt"
+            label="1. 英文正文 Prompt"
             value={
               defaults?.englishContentPrompt ?? defaultEnglishContentPrompt
             }
-            variables={[
-              "englishStylePrompt",
-              "title",
-              "description",
-              "keywords",
-              "markdownContent",
-            ]}
+            variables={["title", "description", "keywords", "markdownContent"]}
             description="用于从已完成改写的中文正文生成英文 Markdown。"
             className="min-h-72 lg:min-h-[30rem]"
           />
           <PromptTemplateField
             name="englishContinuationPrompt"
-            label="3. 英文正文续写 Prompt（仅截断时）"
+            label="2. 英文正文续写 Prompt（仅截断时）"
             value={
               defaults?.englishContinuationPrompt ??
               defaultEnglishContinuationPrompt
@@ -578,23 +532,12 @@ function ConfigForm({
             className="min-h-52"
           />
           <PromptTemplateField
-            name="englishMetadataStylePrompt"
-            label="4. 英文标题 / SEO 风格片段"
-            value={
-              defaults?.englishMetadataStylePrompt ??
-              defaultEnglishMetadataStylePrompt
-            }
-            description="通过 {englishMetadataStylePrompt} 注入英文元信息完整模板。"
-            className="min-h-28"
-          />
-          <PromptTemplateField
             name="englishMetadataPrompt"
-            label="5. 英文标题 / SEO 完整 Prompt"
+            label="3. 英文标题 / SEO Prompt"
             value={
               defaults?.englishMetadataPrompt ?? defaultEnglishMetadataPrompt
             }
             variables={[
-              "englishMetadataStylePrompt",
               "title",
               "description",
               "keywords",

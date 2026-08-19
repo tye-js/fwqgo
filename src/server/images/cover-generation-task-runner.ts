@@ -445,6 +445,7 @@ async function persistCoverTaskConfig(
     throw new Error("封面生成任务缺少租约所有者");
   }
 
+  const now = new Date();
   const [boundTask] = await db
     .update(imageCoverGenerationTasks)
     .set({
@@ -452,7 +453,14 @@ async function persistCoverTaskConfig(
       configName: config.name,
       provider: config.provider,
       model: config.model,
-      updatedAt: new Date(),
+      requestStage: task.prompt?.trim() ? "prompt_persisted" : "queued",
+      retryAfterAt: null,
+      errorTitle: null,
+      errorDetail: null,
+      startedAt: now,
+      heartbeatAt: now,
+      leaseExpiresAt: getTaskLeaseExpiry(now),
+      updatedAt: now,
     })
     .where(
       and(
@@ -647,6 +655,7 @@ async function getNextPendingCoverTask() {
 async function processCoverGenerationTask(
   task: CoverTaskRow,
   signal: AbortSignal,
+  onConfigFailover?: () => void,
 ) {
   signal.throwIfAborted();
   const taskType = task.taskType as ImageGenerationTaskType;
@@ -741,6 +750,7 @@ async function processCoverGenerationTask(
       signal.throwIfAborted();
       if (activeTask.configId !== config.id) {
         activeTask = await persistCoverTaskConfig(activeTask, config);
+        onConfigFailover?.();
       }
 
       try {
@@ -932,21 +942,34 @@ async function processCoverGenerationTaskWithTimeout(
 ) {
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | null = null;
+  let finished = false;
   const abortForLostLease = () => controller.abort(leaseSignal.reason);
   if (leaseSignal.aborted) abortForLostLease();
   else leaseSignal.addEventListener("abort", abortForLostLease, { once: true });
-  const processing = processCoverGenerationTask(task, controller.signal);
-  const timedOut = new Promise<never>((_, reject) => {
+  let rejectTimeout: ((error: Error) => void) | null = null;
+  const resetTimeout = () => {
+    if (finished) return;
+    if (timeout) clearTimeout(timeout);
     timeout = setTimeout(() => {
       const error = new CoverGenerationTimeoutError();
       controller.abort(error);
-      reject(error);
+      rejectTimeout?.(error);
     }, COVER_TASK_TIMEOUT_MS);
+  };
+  resetTimeout();
+  const processing = processCoverGenerationTask(
+    task,
+    controller.signal,
+    resetTimeout,
+  );
+  const timedOut = new Promise<never>((_, reject) => {
+    rejectTimeout = reject;
   });
 
   try {
     return await Promise.race([processing, timedOut]);
   } finally {
+    finished = true;
     if (timeout) clearTimeout(timeout);
     leaseSignal.removeEventListener("abort", abortForLostLease);
   }

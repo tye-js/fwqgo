@@ -1,11 +1,7 @@
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import {
   buildSourceAnchoredRewritePrompt,
-  defaultEnglishMetadataStylePrompt,
-  defaultEnglishStylePrompt,
-  defaultInitialRewriteFeedbackPrompt,
   defaultMetadataPrompt,
-  defaultMetadataStylePrompt,
   interpolatePromptTemplate,
 } from "@fwqgo/core/ai-rewrite-prompts";
 import { contentToArticleMarkdown } from "@fwqgo/core/content";
@@ -13,6 +9,7 @@ import { assertPublicHttpUrl } from "@fwqgo/core/network-url";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 
 import {
+  AiProviderHttpError,
   buildOpenAiChatCompletionsEndpoint,
   getTransientAiNetworkErrorMessage,
   isTransientAiNetworkError,
@@ -27,14 +24,7 @@ import {
   type ProtectedMarkdownContent,
   type RewriteQualityMetrics,
 } from "./rewrite-quality";
-import {
-  bodySeoKeywordCandidates,
-  reconcileSeoKeywords,
-  validateSeoKeywordPlan,
-  validSeoKeywordCandidates,
-  type SeoKeywordPlanRaw,
-  type ValidatedSeoKeywordPlan,
-} from "./seo-keyword-plan";
+import { type ValidatedSeoKeywordPlan } from "./seo-keyword-plan";
 
 const DEFAULT_AI_REWRITE_TIMEOUT_MS = 300_000;
 const MIN_AI_INPUT_LENGTH = 80;
@@ -64,10 +54,7 @@ export interface ArticleRewriteOutput {
 }
 
 export type ArticleRewriteProgressStage =
-  | "fact_extraction"
-  | "content_generation"
-  | "quality_review"
-  | "metadata_generation";
+  "content_generation" | "metadata_generation";
 
 export interface ArticleRewriteProgress {
   stage: ArticleRewriteProgressStage;
@@ -139,6 +126,7 @@ export interface ArticleRewriteQuality extends RewriteQualityMetrics {
   promptVersion: string;
   attempts: number;
   factualScore: number;
+  factCheckSkipped?: boolean;
   reviewPassed: boolean;
   reviewSkipped?: boolean;
   missingFacts: string[];
@@ -189,38 +177,6 @@ export type ArticleMetadataOutput = Omit<
   ArticleRewriteOutput,
   "markdownContent" | "quality"
 >;
-
-type ArticleFactSheetRaw = Partial<{
-  providerName: string;
-  articleType: string;
-  factualSummary: string;
-  criticalFacts: unknown;
-  promotions: unknown;
-  productGroups: unknown;
-  regions: unknown;
-  networkFacts: unknown;
-  supportedUseCases: unknown;
-  cautions: unknown;
-  editorialAngle: string;
-  outline: unknown;
-  seoKeywordPlan: SeoKeywordPlanRaw;
-}>;
-
-type ArticleFactSheet = {
-  providerName: string;
-  articleType: string;
-  factualSummary: string;
-  criticalFacts: string[];
-  promotions: string[];
-  productGroups: string[];
-  regions: string[];
-  networkFacts: string[];
-  supportedUseCases: string[];
-  cautions: string[];
-  editorialAngle: string;
-  outline: string[];
-  seoKeywordPlan: ValidatedSeoKeywordPlan;
-};
 
 type EnglishSeoVersionRawOutput = Partial<{
   enTitle: string;
@@ -326,7 +282,7 @@ function createConfigSnapshot(
 
 function getPromptVersion(config: AiRewriteConfig) {
   const timestamp = (config.updatedAt ?? config.createdAt)?.getTime() ?? 0;
-  return `config-${config.id}-${timestamp}-source-only-no-review-v2`;
+  return `config-${config.id}-${timestamp}-direct-rewrite-no-fact-check-v3`;
 }
 
 function getAuditTemperature(
@@ -344,109 +300,10 @@ function getAuditTemperature(
   return config.temperature;
 }
 
-function normalizeFactText(value: unknown, maxLength = 800) {
-  return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
-}
-
-function normalizeFactSheet(
-  raw: ArticleFactSheetRaw,
-  context: {
-    sourceMarkdown: string;
-    sourceTitle?: string | null;
-    categoryName?: string | null;
-  },
-): ArticleFactSheet {
-  const criticalFacts = normalizeStringArray(raw.criticalFacts).slice(0, 80);
-  const promotions = normalizeStringArray(raw.promotions).slice(0, 30);
-  const productGroups = normalizeStringArray(raw.productGroups).slice(0, 40);
-  const regions = normalizeStringArray(raw.regions).slice(0, 30);
-  const networkFacts = normalizeStringArray(raw.networkFacts).slice(0, 40);
-  const supportedUseCases = normalizeStringArray(raw.supportedUseCases).slice(
-    0,
-    20,
-  );
-  const cautions = normalizeStringArray(raw.cautions).slice(0, 30);
-  const outline = normalizeStringArray(raw.outline).slice(0, 6);
-  const fallbackOutline = [
-    criticalFacts.length > 0 || normalizeFactText(raw.factualSummary, 1_500)
-      ? "核心事实"
-      : "",
-    promotions.length > 0 || productGroups.length > 0 ? "活动与套餐" : "",
-    regions.length > 0 || networkFacts.length > 0 ? "机房与网络" : "",
-    supportedUseCases.length > 0 ? "来源明确提到的适用场景" : "",
-    cautions.length > 0 ? "购买前需要确认的事项" : "",
-  ].filter(Boolean);
-
-  return {
-    providerName: normalizeFactText(raw.providerName, 160),
-    articleType: normalizeFactText(raw.articleType, 80) || "服务器内容",
-    factualSummary:
-      normalizeFactText(raw.factualSummary, 1_500) ||
-      criticalFacts.slice(0, 6).join("；"),
-    criticalFacts,
-    promotions,
-    productGroups,
-    regions,
-    networkFacts,
-    supportedUseCases,
-    cautions,
-    editorialAngle:
-      normalizeFactText(raw.editorialAngle, 500) ||
-      "以来源原文为事实主轴，补充必要解释，不引入原文未涉及的主题。",
-    outline: outline.length > 0 ? outline : fallbackOutline,
-    seoKeywordPlan: validateSeoKeywordPlan(raw.seoKeywordPlan, {
-      sourceMarkdown: context.sourceMarkdown,
-      sourceTitle: context.sourceTitle,
-      taxonomyTerms: context.categoryName ? [context.categoryName] : [],
-    }),
-  };
-}
-
-function buildFactExtractionPrompt(input: {
-  template: string;
-  sourceMarkdown: string;
-  sourceTitle?: string | null;
-  categoryName?: string | null;
-}) {
-  const normalizedText = (value: string | null | undefined) => {
-    const normalized = value?.trim();
-    if (!normalized) return undefined;
-    return normalized;
-  };
-  const sourceTitle = normalizedText(input.sourceTitle);
-  const categoryName = normalizedText(input.categoryName);
-  const sourceContext = [
-    `来源标题：${sourceTitle ?? "未提供"}`,
-    `文章分类：${categoryName ?? "未提供"}`,
-  ].join("\n");
-  const prompt = fillPromptTemplate(input.template, {
-    sourceMarkdown: input.sourceMarkdown,
-    sourceContext,
-  });
-
-  if (input.template.includes('"seoKeywordPlan"')) return prompt;
-
-  return `${prompt}\n\n必须在原有 JSON 对象中额外输出 seoKeywordPlan，包含 primaryKeyword、secondaryKeywords、longTailKeywords 和 searchIntent。每个关键词对象必须包含 keyword 与 evidence；evidence 每项包含可从来源逐字定位的 text，以及 body、table、title 或 taxonomy provenance。关键词不能作为新事实来源，不得加入来源没有的线路、地区、用途、性能或评价。\n\n${sourceContext}`;
-}
-
-function verifiedFactCount(factSheet: ArticleFactSheet) {
-  return new Set(
-    [
-      ...factSheet.criticalFacts,
-      ...factSheet.promotions,
-      ...factSheet.productGroups,
-      ...factSheet.regions,
-      ...factSheet.networkFacts,
-      ...factSheet.supportedUseCases,
-      ...factSheet.cautions,
-    ].map((item) => item.trim()),
-  ).size;
-}
-
 function describeRewriteLengthBudget(
   budget: ReturnType<typeof getRewriteLengthBudget>,
 ) {
-  return `来源叙述约 ${budget.sourceNarrativeLength} 字，已验证事实 ${budget.verifiedFactCount} 条；建议正文叙述不超过 ${budget.targetNarrativeLength} 字，硬上限 ${budget.hardMaxNarrativeLength} 字。表格和链接不计入叙述长度。`;
+  return `来源叙述约 ${budget.sourceNarrativeLength} 字；建议正文叙述不超过 ${budget.targetNarrativeLength} 字，硬上限 ${budget.hardMaxNarrativeLength} 字。表格和链接不计入叙述长度。`;
 }
 
 function describeProtectedContent(content: ProtectedMarkdownContent) {
@@ -466,41 +323,15 @@ function describeProtectedContent(content: ProtectedMarkdownContent) {
     : "来源中没有需要占位保护的套餐表或链接。";
 }
 
-function protectedAuthorityMarkdown(content: ProtectedMarkdownContent) {
-  return [...content.tables, ...content.links]
-    .map((block) => `${block.placeholder}\n${block.markdown}`)
-    .join("\n\n");
-}
-
 function fillPromptTemplate(template: string, values: Record<string, string>) {
   return interpolatePromptTemplate(template, values);
 }
 
-function getMetadataStylePrompt(value?: string | null) {
-  const trimmed = value?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : defaultMetadataStylePrompt;
-}
-
-function getEnglishStylePrompt(value?: string | null) {
-  const trimmed = value?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : defaultEnglishStylePrompt;
-}
-
-function getEnglishMetadataStylePrompt(value?: string | null) {
-  const trimmed = value?.trim();
-  return trimmed && trimmed.length > 0
-    ? trimmed
-    : defaultEnglishMetadataStylePrompt;
-}
-
 function buildMetadataPrompt(
   markdownContent: string,
-  metadataStylePrompt?: string | null,
   maxContentLength = MAX_METADATA_INPUT_LENGTH,
   configuredPrompt?: string | null,
-  keywordPlan = "未提供关键词规划，请仅依据已完成改写的正文生成。",
 ) {
-  const style = getMetadataStylePrompt(metadataStylePrompt);
   const metadataInputLength = Math.min(
     MAX_METADATA_INPUT_LENGTH,
     Math.max(MIN_AI_INPUT_LENGTH, Math.floor(maxContentLength)),
@@ -509,14 +340,12 @@ function buildMetadataPrompt(
   const template = configuredPrompt?.trim() ?? defaultMetadataPrompt;
 
   const prompt = fillPromptTemplate(template, {
-    metadataStylePrompt: style,
-    keywordPlan,
+    metadataStylePrompt: "",
+    keywordPlan: "不再单独生成关键词规划，请直接依据正文生成。",
     markdownContent: markdownContent.slice(0, metadataInputLength),
     htmlContent: markdownContent.slice(0, metadataInputLength),
   });
-  return template.includes("{keywordPlan}")
-    ? prompt
-    : `${prompt}\n\n来源关键词规划（只能选择正文已覆盖的有效词）：\n${keywordPlan}`;
+  return prompt;
 }
 
 function buildEnglishContentPrompt(input: {
@@ -525,11 +354,10 @@ function buildEnglishContentPrompt(input: {
   description: string | null;
   keywords: string | null;
   markdownContent: string;
-  stylePrompt: string;
   maxMarkdownLength: number;
 }) {
   return fillPromptTemplate(input.template, {
-    englishStylePrompt: input.stylePrompt,
+    englishStylePrompt: "",
     title: input.title,
     description: input.description ?? "",
     keywords: input.keywords ?? "",
@@ -555,10 +383,8 @@ function buildEnglishMetadataPrompt(input: {
   keywords: string | null;
   enContent: string;
   category?: EnglishMetadataCategoryInput | null;
-  metadataStylePrompt?: string | null;
   maxContentLength?: number;
 }) {
-  const style = getEnglishMetadataStylePrompt(input.metadataStylePrompt);
   const metadataInputLength = Math.min(
     MAX_METADATA_INPUT_LENGTH,
     Math.max(
@@ -572,7 +398,7 @@ function buildEnglishMetadataPrompt(input: {
     : "No source category was provided.";
 
   return fillPromptTemplate(input.template, {
-    englishMetadataStylePrompt: style,
+    englishMetadataStylePrompt: "",
     title: input.title,
     description: input.description ?? "",
     keywords: input.keywords ?? "",
@@ -955,13 +781,13 @@ async function requestChatCompletionResult(input: {
     const result = await Promise.race([request(), timeoutPromise]);
 
     if (!result.response.ok) {
-      throw createReadableError(
-        `${input.stepName}失败`,
-        getAiProviderErrorMessage({
+      throw new AiProviderHttpError(
+        `${input.stepName}失败：${getAiProviderErrorMessage({
           status: result.response.status,
           statusText: result.response.statusText,
           error: result.data?.error,
-        }),
+        })}`,
+        result.response.status,
       );
     }
 
@@ -1184,143 +1010,14 @@ export async function rewriteArticleWithAi(
     normalizedContent,
     protectedContent,
   );
-  const factExtractionSource = `${protectedSource}\n\n受保护原始内容：\n${
-    protectedAuthorityMarkdown(protectedContent) || "无"
-  }`;
-  const factExtractionPrompt = buildFactExtractionPrompt({
-    template: config.factExtractionPrompt,
-    sourceMarkdown: factExtractionSource,
-    sourceTitle: options.sourceTitle,
-    categoryName: options.categoryName,
-  });
-  await reportRewriteProgress(options, {
-    stage: "fact_extraction",
-    status: "running",
-    message: "正在提取来源事实",
-    maxTokens: config.maxTokens,
-    inputLength: factExtractionPrompt.length,
-  });
-  const factExtractionResult = await requestAuditedChatCompletion({
-    options,
-    config,
-    endpoint,
-    timeoutMs,
-    maxTokens: config.maxTokens,
-    responseFormat: { type: "json_object" },
-    temperature: 0.1,
-    stepName: "来源事实提取",
-    stage: "fact_extraction",
-    userPrompt: factExtractionPrompt,
-  });
-  const factExtractionText = factExtractionResult.text;
-  await reportRewriteProgress(options, {
-    stage: "fact_extraction",
-    status: "success",
-    message: "来源事实提取完成",
-    maxTokens: config.maxTokens,
-    inputLength: factExtractionPrompt.length,
-    outputLength: factExtractionText.length,
-  });
-  let factSheet: ArticleFactSheet;
-  try {
-    factSheet = normalizeFactSheet(
-      parseAiJsonObject<ArticleFactSheetRaw>(
-        factExtractionText,
-        "来源事实提取失败",
-      ),
-      {
-        sourceMarkdown: normalizedContent,
-        sourceTitle: options.sourceTitle,
-        categoryName: options.categoryName,
-      },
-    );
-  } catch (error) {
-    await updateRewriteAudit(options, config, {
-      stage: "fact_extraction",
-      stageName: "来源事实提取",
-      stageAttempt: 1,
-      status: "failed",
-      prompt: factExtractionPrompt,
-      response: factExtractionText,
-      error: error instanceof Error ? error.message : String(error),
-      finishReason: factExtractionResult.finishReason,
-      promptTokens: factExtractionResult.promptTokens,
-      completionTokens: factExtractionResult.completionTokens,
-      totalTokens: factExtractionResult.totalTokens,
-    });
-    throw error;
-  }
-  await updateRewriteAudit(options, config, {
-    stage: "fact_extraction",
-    stageName: "来源事实提取",
-    stageAttempt: 1,
-    status: "success",
-    prompt: factExtractionPrompt,
-    response: factExtractionText,
-    readableContent: JSON.stringify(factSheet, null, 2),
-    finishReason: factExtractionResult.finishReason,
-    promptTokens: factExtractionResult.promptTokens,
-    completionTokens: factExtractionResult.completionTokens,
-    totalTokens: factExtractionResult.totalTokens,
-    metadata: {
-      criticalFactCount: factSheet.criticalFacts.length,
-      outlineCount: factSheet.outline.length,
-      acceptedKeywordCount: validSeoKeywordCandidates(factSheet.seoKeywordPlan)
-        .length,
-      rejectedKeywords: factSheet.seoKeywordPlan.rejectedKeywords,
-    },
-  });
-  if (!factSheet.factualSummary && factSheet.criticalFacts.length === 0) {
-    const error = createReadableError(
-      "来源事实提取失败：事实包为空",
-      "请检查来源正文是否包含可识别的服务器、套餐或活动信息",
-    );
-    await updateRewriteAudit(options, config, {
-      stage: "fact_extraction",
-      stageName: "来源事实提取",
-      stageAttempt: 1,
-      status: "failed",
-      prompt: factExtractionPrompt,
-      response: factExtractionText,
-      readableContent: JSON.stringify(factSheet, null, 2),
-      error: error.message,
-      finishReason: factExtractionResult.finishReason,
-      promptTokens: factExtractionResult.promptTokens,
-      completionTokens: factExtractionResult.completionTokens,
-      totalTokens: factExtractionResult.totalTokens,
-    });
-    throw error;
-  }
-
-  const sourceOnlyContext =
-    "本次改写只使用清洗后的来源原文和受保护内容；不引用知识库、供应商资料或其他外部信息。";
-  const rewriteLengthBudget = getRewriteLengthBudget(
-    normalizedContent,
-    verifiedFactCount(factSheet),
-  );
+  const rewriteLengthBudget = getRewriteLengthBudget(normalizedContent, 0);
   const rewriteLengthBudgetDescription =
     describeRewriteLengthBudget(rewriteLengthBudget);
-  const keywordPlanForWriting = {
-    searchIntent: factSheet.seoKeywordPlan.searchIntent,
-    keywords: bodySeoKeywordCandidates(factSheet.seoKeywordPlan),
-  };
-  const rewriteOutline =
-    factSheet.outline.length > 0
-      ? factSheet.outline.map((item) => `- ${item}`).join("\n")
-      : "来源内容较短，请仅整理原文已有段落，不要增加小节。";
   const candidatePrompt = buildSourceAnchoredRewritePrompt({
     configuredPrompt: config.basePrompt,
-    stylePrompt: config.stylePrompt,
     sourceContent: protectedSource,
-    factSheet: JSON.stringify(factSheet, null, 2),
-    keywordPlan: JSON.stringify(keywordPlanForWriting, null, 2),
     rewriteLengthBudget: rewriteLengthBudgetDescription,
-    outline: rewriteOutline,
-    providerContext: sourceOnlyContext,
-    knowledgeContext: sourceOnlyContext,
-    knowledgeSections: "不添加来源之外的基础知识章节。",
     protectedContent: describeProtectedContent(protectedContent),
-    retryFeedback: defaultInitialRewriteFeedbackPrompt,
   });
   const candidateStepName = "原文轻量改写";
   await reportRewriteProgress(options, {
@@ -1377,6 +1074,7 @@ export async function rewriteArticleWithAi(
     {
       allowHighSimilarity: true,
       maxNarrativeLength: rewriteLengthBudget.hardMaxNarrativeLength,
+      skipFactChecks: true,
     },
   );
   if (restored.missingPlaceholders.length > 0) {
@@ -1441,10 +1139,8 @@ export async function rewriteArticleWithAi(
 
   const metadataPrompt = buildMetadataPrompt(
     acceptedMarkdown,
-    config.metadataStylePrompt,
     getAiRewriteContentLimit(config.maxTokens),
     config.metadataPrompt,
-    JSON.stringify(factSheet.seoKeywordPlan, null, 2),
   );
   await reportRewriteProgress(options, {
     stage: "metadata_generation",
@@ -1467,21 +1163,13 @@ export async function rewriteArticleWithAi(
   const metadataText = metadataResult.text;
   let metadata: ArticleMetadataOutput;
   try {
-    const normalizedMetadata = normalizeMetadata(
+    metadata = normalizeMetadata(
       parseAiJsonObject<Partial<ArticleMetadataOutput>>(
         metadataText,
         "AI 元信息生成失败",
       ),
       acceptedMarkdown,
     );
-    metadata = {
-      ...normalizedMetadata,
-      keywords: reconcileSeoKeywords({
-        generatedKeywords: normalizedMetadata.keywords,
-        plan: factSheet.seoKeywordPlan,
-        acceptedMarkdown,
-      }),
-    };
     validateMetadata(metadata);
   } catch (error) {
     await updateRewriteAudit(options, config, {
@@ -1533,17 +1221,18 @@ export async function rewriteArticleWithAi(
     quality: {
       ...acceptedMetrics,
       // Keep the historical review fields for task/report compatibility.
-      // The rewrite flow no longer makes a separate AI fact-review request.
+      // Historical quality fields remain for task/report compatibility.
+      // The simplified pipeline skips both AI and deterministic fact checks.
       passed: acceptedMetrics.passed,
       promptVersion: getPromptVersion(config),
       attempts: 1,
       factualScore: acceptedMetrics.criticalFactCoverage,
+      factCheckSkipped: true,
       reviewPassed: true,
       reviewSkipped: true,
       missingFacts: acceptedMetrics.missingCriticalFacts,
       unsupportedClaims: acceptedMetrics.unsupportedCriticalFacts,
       distortedFacts: [],
-      seoKeywordPlan: factSheet.seoKeywordPlan,
       knowledgeReferences: [],
       providerReferences: [],
     },
@@ -1568,7 +1257,6 @@ export async function generateArticleMetadata(
   const endpoint = buildOpenAiChatCompletionsEndpoint(config.baseUrl);
   const userPrompt = buildMetadataPrompt(
     normalizedContent,
-    config.metadataStylePrompt,
     getAiRewriteContentLimit(config.maxTokens),
     config.metadataPrompt,
   );
@@ -1676,7 +1364,6 @@ export async function generateEnglishArticleContent(
     template: config.englishContentPrompt,
     ...input,
     markdownContent: normalizedContent,
-    stylePrompt: getEnglishStylePrompt(config.englishStylePrompt),
     maxMarkdownLength: contentLimit,
   });
   const firstResult = await requestAuditedChatCompletion({
@@ -1811,7 +1498,6 @@ export async function generateEnglishMetadata(
     keywords: input.keywords,
     enContent: input.enContent,
     category: input.category,
-    metadataStylePrompt: config.englishMetadataStylePrompt,
     maxContentLength: getAiRewriteContentLimit(config.maxTokens),
   });
   const metadataResult = await requestAuditedChatCompletion({

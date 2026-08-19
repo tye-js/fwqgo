@@ -203,12 +203,25 @@ export function canFailoverImageGenerationError(error: unknown) {
   }
 
   if (error instanceof ImageGenerationHttpError) {
-    // Only statuses that prove the request was rejected before generation
-    // may switch providers.  Conflict/early-hint and gateway statuses can
-    // still represent an accepted upstream request and must not be replayed.
-    return new Set([400, 401, 402, 403, 404, 405, 413, 415, 422]).has(
-      error.status,
-    );
+    // A complete response from the provider is safe to fail over for
+    // explicit request/config failures and definite service failures.
+    // Conflict and gateway-timeout statuses can still represent an accepted
+    // upstream request and must not be replayed automatically.
+    return new Set([
+      400,
+      401,
+      402,
+      403,
+      404,
+      405,
+      413,
+      415,
+      422,
+      500,
+      501,
+      502,
+      503,
+    ]).has(error.status);
   }
 
   const message = error instanceof Error ? error.message : "";

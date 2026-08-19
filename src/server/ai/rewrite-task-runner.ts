@@ -59,8 +59,12 @@ import {
   type ArticleRewriteProgress,
   type EnglishMetadataOutput,
 } from "@fwqgo/ai/article-rewriter";
+import { canFailoverAiProviderError } from "@fwqgo/ai/openai-compatible";
 import { applyEnglishTaxonomyToPost } from "@fwqgo/ai/english-taxonomy";
-import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
+import {
+  getActiveAiRewriteConfig,
+  getEnabledAiRewriteConfigs,
+} from "@fwqgo/ai/rewrite-config";
 import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
 import { shortenMarkdownOutboundLinks } from "@/server/links/outbound-short-link";
 import { regeneratePostInternalLinks } from "@/server/posts/internal-links";
@@ -133,10 +137,6 @@ function getArticleRewriteProgress(input: {
   attempt?: ArticleRewriteProgress["attempt"];
   maxAttempts?: ArticleRewriteProgress["maxAttempts"];
 }) {
-  if (input.stage === "fact_extraction") {
-    return input.status === "running" ? 54 : 56;
-  }
-
   if (input.stage === "metadata_generation") {
     return input.status === "running" ? 78 : 80;
   }
@@ -149,17 +149,11 @@ function getArticleRewriteProgress(input: {
     1,
     Math.min(Math.trunc(input.attempt ?? 1), maxAttempts),
   );
-  const attemptStart = 58 + Math.floor(((attempt - 1) * 18) / maxAttempts);
-  const attemptEnd = 58 + Math.floor((attempt * 18) / maxAttempts);
-  if (input.stage === "content_generation") {
-    return input.status === "running"
-      ? attemptStart
-      : Math.min(attemptEnd, attemptStart + 1);
-  }
-
+  const attemptStart = 54 + Math.floor(((attempt - 1) * 22) / maxAttempts);
+  const attemptEnd = 54 + Math.floor((attempt * 22) / maxAttempts);
   return input.status === "running"
-    ? Math.min(attemptEnd, Math.max(attemptStart + 1, attemptEnd - 1))
-    : attemptEnd;
+    ? attemptStart
+    : Math.min(attemptEnd, attemptStart + 1);
 }
 
 async function updateTask(
@@ -363,6 +357,92 @@ async function failTask(
       error,
     });
   }
+}
+
+async function requeueAiTaskWithNextConfig(
+  task: typeof aiRewriteTasks.$inferSelect,
+  error: unknown,
+  failedStep?: ActiveTaskStep,
+) {
+  if (!canFailoverAiProviderError(error) || !task.leaseOwner) {
+    return false;
+  }
+
+  const configs = await getEnabledAiRewriteConfigs();
+  const currentIndex = configs.findIndex(
+    (config) => config.id === task.rewriteStyleId,
+  );
+  const nextConfig =
+    currentIndex >= 0 ? configs[currentIndex + 1] : configs[0];
+
+  if (!nextConfig || nextConfig.id === task.rewriteStyleId) {
+    return false;
+  }
+
+  const errorMessage = getErrorMessage(error);
+  if (failedStep) {
+    await upsertTaskStep({
+      taskId: task.id,
+      attempt: failedStep.attempt,
+      stepKey: failedStep.key,
+      stepName: failedStep.name,
+      status: "failed",
+      progress: failedStep.progress,
+      error: errorMessage,
+      payload: {
+        ...(failedStep.payload && typeof failedStep.payload === "object"
+          ? failedStep.payload
+          : {}),
+        failover: {
+          fromConfigId: task.rewriteStyleId,
+          toConfigId: nextConfig.id,
+          toConfigName: nextConfig.name,
+        },
+      },
+    });
+  }
+
+  const now = new Date();
+  const [requeued] = await db
+    .update(aiRewriteTasks)
+    .set({
+      status: "pending",
+      progress: 10,
+      currentStep: `AI 服务异常，已切换到配置「${nextConfig.name}」，重新计时排队`,
+      error: null,
+      requestStage: "queued",
+      rewriteStyleId: nextConfig.id,
+      rewriteConfigName: nextConfig.name,
+      rewriteProvider: nextConfig.provider,
+      rewriteModel: nextConfig.model,
+      rewriteMaxTokens: nextConfig.maxTokens,
+      startedAt: null,
+      finishedAt: null,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      heartbeatAt: null,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(aiRewriteTasks.id, task.id),
+        eq(aiRewriteTasks.status, "running"),
+        eq(aiRewriteTasks.leaseOwner, task.leaseOwner),
+      ),
+    )
+    .returning({ id: aiRewriteTasks.id });
+
+  if (!requeued) throw new TaskLeaseLostError();
+
+  structuredLog("warn", "ai.task_config_failover", {
+    taskId: task.id,
+    failedConfigId: task.rewriteStyleId,
+    failedConfigName: task.rewriteConfigName,
+    nextConfigId: nextConfig.id,
+    nextConfigName: nextConfig.name,
+    error,
+  });
+  return true;
 }
 
 function needsManualAffiliateReview(diagnostics: ScrapeDiagnostics) {
@@ -811,7 +891,8 @@ async function resumeChineseTaskFromDraft(
     .where(eq(posts.id, claimedTask.postId))
     .limit(1);
   if (!post) throw new Error("上次保存的草稿文章已被删除，无法断点续跑");
-  if (!post.content?.trim()) throw new Error("上次保存的草稿正文为空，无法断点续跑");
+  if (!post.content?.trim())
+    throw new Error("上次保存的草稿正文为空，无法断点续跑");
 
   const attempt = claimedTask.attempts;
   const diagnostics = readStoredDiagnostics(claimedTask.diagnostics);
@@ -1441,36 +1522,38 @@ async function runEnglishSeoTask(
       claimedTask,
       postProcessWarnings.length > 0 ? "manual_required" : "succeeded",
       {
-      progress: 100,
-      currentStep:
-        postProcessWarnings.length > 0
-          ? `英文 SEO 版本已生成；${postProcessWarnings.join("；")}`
-          : "英文 SEO 版本已生成",
-      resultTitle: english.enTitle,
-      postId: englishPost.id,
-      diagnostics: JSON.stringify({
-        sourceHost: "english-seo",
-        strategy: "english-seo-version",
-        usedAiRewrite: true,
-        aiInputLength: markdownInput.markdown.length,
-        rewriteOutputLength: enContent.length,
-        markdownInputLength: markdownInput.markdown.length,
-        markdownInputTruncated: markdownInput.truncated,
-        sourceHtmlLength: markdownInput.document.sourceHtmlLength,
-        semanticBlockCount: markdownInput.document.blocks.length,
-        warnings: [
-          ...(markdownInput.truncated
-            ? ["英文生成使用的中文 Markdown 输入过长，已按正文结构截断"]
-            : []),
-          ...postProcessWarnings,
-        ],
-      }),
+        progress: 100,
+        currentStep:
+          postProcessWarnings.length > 0
+            ? `英文 SEO 版本已生成；${postProcessWarnings.join("；")}`
+            : "英文 SEO 版本已生成",
+        resultTitle: english.enTitle,
+        postId: englishPost.id,
+        diagnostics: JSON.stringify({
+          sourceHost: "english-seo",
+          strategy: "english-seo-version",
+          usedAiRewrite: true,
+          aiInputLength: markdownInput.markdown.length,
+          rewriteOutputLength: enContent.length,
+          markdownInputLength: markdownInput.markdown.length,
+          markdownInputTruncated: markdownInput.truncated,
+          sourceHtmlLength: markdownInput.document.sourceHtmlLength,
+          semanticBlockCount: markdownInput.document.blocks.length,
+          warnings: [
+            ...(markdownInput.truncated
+              ? ["英文生成使用的中文 Markdown 输入过长，已按正文结构截断"]
+              : []),
+            ...postProcessWarnings,
+          ],
+        }),
         finishedAt: new Date(),
       },
     );
     if (!finalized) throw new TaskLeaseLostError();
   } catch (error) {
-    await failTask(claimedTask, error, activeStep);
+    if (!(await requeueAiTaskWithNextConfig(claimedTask, error, activeStep))) {
+      await failTask(claimedTask, error, activeStep);
+    }
   }
 }
 
@@ -1749,7 +1832,9 @@ async function runSeoMetadataTask(
     });
     if (!finalized) throw new TaskLeaseLostError();
   } catch (error) {
-    await failTask(claimedTask, error, activeStep);
+    if (!(await requeueAiTaskWithNextConfig(claimedTask, error, activeStep))) {
+      await failTask(claimedTask, error, activeStep);
+    }
   }
 }
 
@@ -2274,7 +2359,8 @@ export async function runAiRewriteTask(taskId: number) {
           stepName: "绑定 AI 配置",
           status: "skipped",
           progress: 10,
-          message: "已存在草稿 checkpoint，先恢复草稿后处理，不重新绑定改写配置",
+          message:
+            "已存在草稿 checkpoint，先恢复草稿后处理，不重新绑定改写配置",
           payload: { resumedFromPostId: claimedTask.postId },
         });
         await resumeChineseTaskFromDraft(claimedTask);
@@ -2881,7 +2967,9 @@ export async function runAiRewriteTask(taskId: number) {
       });
       if (!finalized) throw new TaskLeaseLostError();
     } catch (error) {
-      await failTask(claimedTask, error, activeStep);
+      if (!(await requeueAiTaskWithNextConfig(claimedTask, error, activeStep))) {
+        await failTask(claimedTask, error, activeStep);
+      }
     }
   } finally {
     if (leaseHeartbeat) clearInterval(leaseHeartbeat);
