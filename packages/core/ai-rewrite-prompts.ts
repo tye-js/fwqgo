@@ -3,10 +3,10 @@ export const defaultBaseRewritePrompt = `你是服务器/VPS 文章的中文编�
 写作风格：
 {stylePrompt}
 
-来源原文（事实最高优先级，表格和链接已替换为受保护占位符）：
+来源原文（唯一正文依据，表格和链接已替换为受保护占位符）：
 {sourceContent}
 
-事实核对清单（用于防遗漏，若与原文冲突，以原文为准）：
+来源信息摘要（仅用于组织原文，若与原文冲突，以原文为准）：
 {factSheet}
 
 来源关键词信息（只用于核对来源主题，不用于新增正文内容）：
@@ -28,7 +28,7 @@ export const defaultBaseRewritePrompt = `你是服务器/VPS 文章的中文编�
 1. 只输出正文 Markdown，不要输出文章标题、JSON、代码块围栏、解释或写作过程；小标题从 ## 开始，第一段不需要标题。
 2. 原文中的主体与对象、运营商名称、肯定或否定、比较关系、适用条件、不确定性和信息归属必须保持不变。不得把电信、联通、移动等对象互换，也不得把推测写成结论。
 3. 只做小幅度改写：调整语序、用词、段落层次、列表和小标题，使内容更清楚；不要为了追求差异而扩写或改变篇幅。
-4. 只允许使用来源原文、受保护内容和事实核对清单中可回溯到来源的内容。禁止引用知识库、供应商资料、搜索结果或任何其他外部信息。
+4. 只允许使用来源原文、受保护内容和来源信息摘要中可回溯到来源的内容。禁止引用知识库、供应商资料、搜索结果或任何其他外部信息。
 5. 不新增基础知识章节、购买建议、市场评价、适用场景、线路分析、性能测试、社区反馈、商家承诺或总结；来源已有的标题和总结可以保留并调整排版。
 6. 不得编造或修改价格、配置、优惠码、日期、库存、机房、线路、运营商、解锁能力、退款政策、测速结果、用户反馈或商家承诺。没有明确来源时，不得使用“实测显示”“官方社区反馈”“多位用户反馈”等归因句式。
 7. 每个受保护占位符必须原样出现且只出现一次。不要自行重写占位符代表的套餐表格或链接，系统会在生成后恢复原始数据。
@@ -78,58 +78,7 @@ JSON 格式：
 {sourceMarkdown}`;
 
 export const defaultInitialRewriteFeedbackPrompt =
-  "首次生成，没有上一轮反馈。请直接满足全部事实保真要求。";
-
-export const defaultQualityReviewPrompt = `你是独立的来源一致性审查员。请审查候选文章是否只对来源原文做了小幅改写和排版整理，只输出 JSON。
-
-审查边界：
-1. 完整来源原文和受保护原始内容是唯一事实依据。禁止使用知识库、供应商资料、搜索结果或任何其他外部信息。
-2. 小幅改写允许调整语序、用词、段落层次、列表和小标题；不因为输出与来源相似就判定失败。
-3. 重点检查主体、运营商、价格、配置、日期、库存、机房、线路、优惠码、链接、肯定或否定、比较关系和适用条件是否被改变。
-4. 只有候选正文新增来源没有的事实、改变来源事实、删除影响决策的来源内容或新增外部知识时，才记录问题。不要要求新增基础知识、市场评价、用途建议或总结。
-
-只输出紧凑 JSON。数组中的旧字段仍需保留；同时请填写 issues，便于后台记录和人工复核：
-{
-  "factualScore": 0到100的整数,
-  "missingFacts": ["遗漏且影响读者决策的来源事实"],
-  "unsupportedClaims": ["无依据的新事实或商家结论"],
-  "distortedFacts": ["被改错的数字、名称、条件或关系"],
-  "issues": [
-    {
-      "type": "missing_fact | unsupported_claim | distorted_fact",
-      "candidateText": "候选正文中的完整错误原句；遗漏事实留空",
-      "sourceText": "来源原文中应补回或替换的完整事实；无依据表述留空",
-      "reason": "一句话说明为什么不符合来源"
-    }
-  ],
-  "verdict": "pass 或 fail"
-}
-
-issues 的 candidateText 必须尽量逐字复制候选正文中的完整句子。unsupported_claim 必须明确标出存在问题的原句，不能只写抽象结论；distorted_fact 必须标出错误原句；missing_fact 必须标出来源中遗漏的事实。本次只审查一次，不要输出修订稿。
-
-完整来源原文：
-{sourceContent}
-
-来源事实核对清单：
-{factSheet}
-
-来源关键词信息（仅用于核对，不是正文事实来源）：
-{keywordPlan}
-
-正文长度边界：
-{rewriteLengthBudget}
-
-受保护原始内容：
-{protectedAuthorityContent}
-
-审查时还必须检查：候选正文是否因关键词、外部信息或扩写要求引入来源不支持的新事实，是否删除了受保护内容，以及是否明显超出来源篇幅。不要因为小幅改写导致的高相似度而判定失败。
-
-候选 Markdown：
-{markdownContent}`;
-
-const qualityReviewAuditSupplement = `
-
-审查结果必须可直接用于后台记录和人工复核：旧版字段 missingFacts、unsupportedClaims、distortedFacts 继续输出；同时必须输出 issues 数组。issues 中每项使用 {"type":"missing_fact | unsupported_claim | distorted_fact","candidateText":"候选正文中的完整原句；遗漏事实留空","sourceText":"来源中应补回或替换的完整事实；无依据表述留空","reason":"具体原因"}。candidateText 必须逐字复制候选正文中的完整句子；unsupported_claim 必须标出存在问题的原句，不要只写抽象判断。本次只审查一次，不要输出修订稿。`;
+  "首次生成，没有上一轮反馈。请直接按正文模板输出。";
 
 const sourceOnlyRewriteSupplement = `
 
@@ -138,19 +87,6 @@ const sourceOnlyRewriteSupplement = `
 const sourceContentBoundarySupplement = `
 
 正文清洗边界：只保留当前文章主题的正文。来源站名称、来源网址、转载声明、版权尾注、作者/发布时间等页面元信息，以及非本文内容的相关推荐、相关文章、猜你喜欢、上一篇/下一篇、分享、评论或导航文案，都必须删除，不得改写后重新放回正文。`;
-
-export function resolveQualityReviewTemplate(value?: string | null) {
-  const custom = value?.trim();
-  if (!custom) return defaultQualityReviewPrompt;
-  let resolved = custom;
-  if (!custom.includes('"issues"') || !custom.includes("candidateText")) {
-    resolved += qualityReviewAuditSupplement;
-  }
-  if (!custom.includes("本次改写模式")) {
-    resolved += sourceOnlyRewriteSupplement;
-  }
-  return resolved;
-}
 
 export type SourceAnchoredRewritePromptInput = {
   configuredPrompt?: string | null;
@@ -258,7 +194,7 @@ export const defaultEnglishStylePrompt =
 export const defaultEnglishMetadataStylePrompt =
   "Write concise English SEO metadata for VPS/server deal readers. Prioritize provider name, price, specs, location, network route and buying intent. Keep the slug short and readable.";
 
-export const defaultMetadataPrompt = `你是服务器/VPS推广文章的 SEO 编辑。请根据已完成单次改写和单次质量审查的 Markdown 正文生成文章元信息。
+export const defaultMetadataPrompt = `你是服务器/VPS推广文章的 SEO 编辑。请根据已完成单次改写的 Markdown 正文生成文章元信息。
 
 元信息生成风格：
 {metadataStylePrompt}

@@ -11,9 +11,7 @@ import {
   defaultFactExtractionPrompt,
   defaultInitialRewriteFeedbackPrompt,
   defaultMetadataStylePrompt,
-  defaultQualityReviewPrompt,
   resolveMetadataPromptTemplate,
-  resolveQualityReviewTemplate,
   resolveSourceAnchoredRewriteTemplate,
 } from "@fwqgo/core/ai-rewrite-prompts";
 import { resolveProviderCatalogDiscoveryPrompt } from "@fwqgo/core/provider-catalog-discovery";
@@ -36,7 +34,6 @@ export type AiRewriteConfigInput = {
   factExtractionPrompt: string;
   basePrompt: string;
   initialRewritePrompt: string;
-  qualityReviewPrompt: string;
   metadataPrompt: string;
   styleName: string;
   stylePrompt: string;
@@ -69,7 +66,6 @@ type ActiveAiRewriteConfigRow = Pick<
   | "factExtractionPrompt"
   | "basePrompt"
   | "initialRewritePrompt"
-  | "qualityReviewPrompt"
   | "metadataPrompt"
   | "styleName"
   | "stylePrompt"
@@ -98,7 +94,6 @@ const activeAiRewriteConfigColumns = {
   factExtractionPrompt: aiRewriteConfigs.factExtractionPrompt,
   basePrompt: aiRewriteConfigs.basePrompt,
   initialRewritePrompt: aiRewriteConfigs.initialRewritePrompt,
-  qualityReviewPrompt: aiRewriteConfigs.qualityReviewPrompt,
   metadataPrompt: aiRewriteConfigs.metadataPrompt,
   styleName: aiRewriteConfigs.styleName,
   stylePrompt: aiRewriteConfigs.stylePrompt,
@@ -128,9 +123,6 @@ function withPromptDefaults<T extends ActiveAiRewriteConfigRow>(row: T) {
     basePrompt: resolveSourceAnchoredRewriteTemplate(row.basePrompt),
     initialRewritePrompt:
       row.initialRewritePrompt ?? defaultInitialRewriteFeedbackPrompt,
-    qualityReviewPrompt: resolveQualityReviewTemplate(
-      row.qualityReviewPrompt ?? defaultQualityReviewPrompt,
-    ),
     metadataPrompt: resolveMetadataPromptTemplate(row.metadataPrompt),
     metadataStylePrompt: row.metadataStylePrompt ?? defaultMetadataStylePrompt,
     englishContentPrompt:
@@ -297,7 +289,6 @@ export async function createAiRewriteConfig(input: AiRewriteConfigInput) {
         factExtractionPrompt: input.factExtractionPrompt,
         basePrompt: input.basePrompt,
         initialRewritePrompt: input.initialRewritePrompt,
-        qualityReviewPrompt: input.qualityReviewPrompt,
         metadataPrompt: input.metadataPrompt,
         metadataStylePrompt: input.metadataStylePrompt,
         englishContentPrompt: input.englishContentPrompt,
@@ -330,7 +321,6 @@ export async function updateAiRewriteConfig(
     factExtractionPrompt: input.factExtractionPrompt,
     basePrompt: input.basePrompt,
     initialRewritePrompt: input.initialRewritePrompt,
-    qualityReviewPrompt: input.qualityReviewPrompt,
     metadataPrompt: input.metadataPrompt,
     styleName: input.styleName,
     stylePrompt: input.stylePrompt,

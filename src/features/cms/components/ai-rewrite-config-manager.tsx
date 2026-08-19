@@ -70,7 +70,6 @@ import {
   defaultInitialRewriteFeedbackPrompt,
   defaultMetadataPrompt,
   defaultMetadataStylePrompt,
-  defaultQualityReviewPrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
 import { defaultProviderCatalogDiscoveryPrompt } from "@fwqgo/core/provider-catalog-discovery";
 
@@ -459,13 +458,6 @@ function ConfigForm({
             固定生成 1 次，不再自动重写。
           </p>
         </div>
-        <div className="space-y-2">
-          <Label>质量审查调用次数</Label>
-          <Input value="1" readOnly aria-readonly="true" />
-          <p className="text-xs leading-5 text-muted-foreground">
-            固定审查 1 次，只记录结果，不触发二次改写。
-          </p>
-        </div>
       </div>
 
       <details id="prompt-template" open className="scroll-mt-24 border-t pt-4">
@@ -475,12 +467,12 @@ function ConfigForm({
         <div className="mt-4 space-y-6">
           <PromptTemplateField
             name="factExtractionPrompt"
-            label="1. 来源事实提取 Prompt"
+            label="1. 来源信息提取 Prompt"
             value={
               defaults?.factExtractionPrompt ?? defaultFactExtractionPrompt
             }
             variables={["sourceMarkdown"]}
-            description="模型收到的完整事实提取模板。输出会保存到任务审计记录。"
+            description="整理来源信息供正文组织和 SEO 使用，不执行独立事实审查。"
           />
           <PromptTemplateField
             name="stylePrompt"
@@ -501,7 +493,7 @@ function ConfigForm({
               "protectedContent",
               "retryFeedback",
             ]}
-            description="每次候选正文只基于清洗后的原文做小幅改写和排版整理。"
+            description="每次候选正文只基于清洗后的原文做小幅改写和排版整理，不追加独立事实审查。"
             className="min-h-[34rem]"
           />
           <PromptTemplateField
@@ -515,28 +507,15 @@ function ConfigForm({
             className="min-h-24"
           />
           <PromptTemplateField
-            name="qualityReviewPrompt"
-            label="5. 中文正文质量审查 Prompt（固定一次）"
-            value={defaults?.qualityReviewPrompt ?? defaultQualityReviewPrompt}
-            variables={[
-              "sourceContent",
-              "factSheet",
-              "protectedAuthorityContent",
-              "markdownContent",
-            ]}
-            description="正文生成后调用一次；结果写入任务审计，不触发再次改写。"
-            className="min-h-[32rem]"
-          />
-          <PromptTemplateField
             name="metadataStylePrompt"
-            label="6. 中文标题 / SEO 风格片段"
+            label="5. 中文标题 / SEO 风格片段"
             value={defaults?.metadataStylePrompt ?? defaultMetadataStylePrompt}
             description="通过 {metadataStylePrompt} 注入中文元信息完整模板。"
             className="min-h-28"
           />
           <PromptTemplateField
             name="metadataPrompt"
-            label="7. 中文标题 / SEO 完整 Prompt"
+            label="6. 中文标题 / SEO 完整 Prompt"
             value={defaults?.metadataPrompt ?? defaultMetadataPrompt}
             variables={["metadataStylePrompt", "markdownContent"]}
             description="用于标题、摘要、关键词、标签和推荐标签生成。"
@@ -570,7 +549,7 @@ function ConfigForm({
               "keywords",
               "markdownContent",
             ]}
-            description="用于从已通过审查的中文正文生成英文 Markdown。"
+            description="用于从已完成改写的中文正文生成英文 Markdown。"
             className="min-h-[30rem]"
           />
           <PromptTemplateField

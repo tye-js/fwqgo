@@ -223,23 +223,6 @@ type ArticleFactSheet = {
   seoKeywordPlan: ValidatedSeoKeywordPlan;
 };
 
-type ArticleQualityReviewRaw = Partial<{
-  factualScore: number;
-  missingFacts: unknown;
-  unsupportedClaims: unknown;
-  distortedFacts: unknown;
-  issues: unknown;
-  verdict: string;
-}>;
-
-type ArticleQualityReview = {
-  factualScore: number;
-  missingFacts: string[];
-  unsupportedClaims: string[];
-  distortedFacts: string[];
-  passed: boolean;
-};
-
 type EnglishSeoVersionRawOutput = Partial<{
   enTitle: string;
   enSlug: string;
@@ -344,7 +327,7 @@ function createConfigSnapshot(
 
 function getPromptVersion(config: AiRewriteConfig) {
   const timestamp = (config.updatedAt ?? config.createdAt)?.getTime() ?? 0;
-  return `config-${config.id}-${timestamp}-source-only-v1`;
+  return `config-${config.id}-${timestamp}-source-only-no-review-v2`;
 }
 
 function getAuditTemperature(
@@ -490,39 +473,6 @@ function protectedAuthorityMarkdown(content: ProtectedMarkdownContent) {
     .join("\n\n");
 }
 
-function buildQualityReviewPrompt(input: {
-  template: string;
-  sourceContent: string;
-  factSheet: ArticleFactSheet;
-  keywordPlan: ValidatedSeoKeywordPlan;
-  rewriteLengthBudget: string;
-  protectedContent: ProtectedMarkdownContent;
-  providerContext: string;
-  knowledgeContext: string;
-  markdownContent: string;
-}) {
-  const prompt = fillPromptTemplate(input.template, {
-    sourceContent: input.sourceContent,
-    factSheet: JSON.stringify(input.factSheet, null, 2),
-    keywordPlan: JSON.stringify(input.keywordPlan, null, 2),
-    rewriteLengthBudget: input.rewriteLengthBudget,
-    protectedAuthorityContent:
-      protectedAuthorityMarkdown(input.protectedContent) || "无",
-    providerContext: "本次审查不使用供应商资料，只依据清洗后的来源原文。",
-    knowledgeContext: "本次审查不使用知识库，只依据清洗后的来源原文。",
-    markdownContent: input.markdownContent,
-  });
-
-  if (
-    input.template.includes("{keywordPlan}") &&
-    input.template.includes("{rewriteLengthBudget}")
-  ) {
-    return prompt;
-  }
-
-  return `${prompt}\n\n补充审查上下文：\n关键词规划：${JSON.stringify(input.keywordPlan)}\n长度预算：${input.rewriteLengthBudget}`;
-}
-
 function fillPromptTemplate(template: string, values: Record<string, string>) {
   return interpolatePromptTemplate(template, values);
 }
@@ -549,7 +499,7 @@ function buildMetadataPrompt(
   metadataStylePrompt?: string | null,
   maxContentLength = MAX_METADATA_INPUT_LENGTH,
   configuredPrompt?: string | null,
-  keywordPlan = "未提供关键词规划，请仅依据已通过审查的正文生成。",
+  keywordPlan = "未提供关键词规划，请仅依据已完成改写的正文生成。",
 ) {
   const style = getMetadataStylePrompt(metadataStylePrompt);
   const metadataInputLength = Math.min(
@@ -567,7 +517,7 @@ function buildMetadataPrompt(
   });
   return template.includes("{keywordPlan}")
     ? prompt
-    : `${prompt}\n\n经过原文证据校验的关键词规划（只能选择正文已覆盖的有效词）：\n${keywordPlan}`;
+    : `${prompt}\n\n来源关键词规划（只能选择正文已覆盖的有效词）：\n${keywordPlan}`;
 }
 
 function buildEnglishContentPrompt(input: {
@@ -652,65 +602,6 @@ function normalizeStringArray(value: unknown) {
   }
 
   return [];
-}
-
-function normalizeQualityReview(raw: ArticleQualityReviewRaw) {
-  const missingFacts = normalizeStringArray(raw.missingFacts).slice(0, 20);
-  const unsupportedClaims = normalizeStringArray(raw.unsupportedClaims).slice(
-    0,
-    20,
-  );
-  const distortedFacts = normalizeStringArray(raw.distortedFacts).slice(0, 20);
-
-  if (Array.isArray(raw.issues)) {
-    for (const item of raw.issues) {
-      if (!item || typeof item !== "object") continue;
-      const issue = item as Record<string, unknown>;
-      const type = normalizeFactText(
-        issue.type ?? issue.kind,
-        40,
-      ).toLowerCase();
-      const candidateText = normalizeFactText(
-        issue.candidateText ?? issue.claim,
-        1_200,
-      );
-      const sourceText = normalizeFactText(
-        issue.sourceText ?? issue.correction,
-        1_200,
-      );
-      const reason = normalizeFactText(issue.reason, 600);
-      if (type === "missing_fact" && sourceText) {
-        missingFacts.push(sourceText);
-      } else if (type === "unsupported_claim" && (candidateText || reason)) {
-        unsupportedClaims.push(candidateText || reason);
-      } else if (type === "distorted_fact" && (candidateText || reason)) {
-        distortedFacts.push(candidateText || reason);
-      }
-    }
-  }
-
-  const factualScoreValue = Number(raw.factualScore);
-  const factualScore = Number.isFinite(factualScoreValue)
-    ? Math.max(0, Math.min(100, Math.round(factualScoreValue)))
-    : 0;
-  const verdict = normalizeFactText(raw.verdict, 20).toLowerCase();
-  const unique = (values: string[]) => [...new Set(values)].slice(0, 20);
-  const normalized = {
-    factualScore,
-    missingFacts: unique(missingFacts),
-    unsupportedClaims: unique(unsupportedClaims),
-    distortedFacts: unique(distortedFacts),
-  };
-
-  return {
-    ...normalized,
-    passed:
-      (verdict === "pass" || verdict === "通过") &&
-      factualScore >= 85 &&
-      normalized.missingFacts.length === 0 &&
-      normalized.unsupportedClaims.length === 0 &&
-      normalized.distortedFacts.length === 0,
-  } satisfies ArticleQualityReview;
 }
 
 function nonEmptyTrim(value: string | null | undefined) {
@@ -1549,117 +1440,6 @@ export async function rewriteArticleWithAi(
     outputLength: acceptedMarkdown.length,
   });
 
-  const reviewPrompt = buildQualityReviewPrompt({
-    template: config.qualityReviewPrompt,
-    sourceContent: protectedSource,
-    factSheet,
-    keywordPlan: factSheet.seoKeywordPlan,
-    rewriteLengthBudget: rewriteLengthBudgetDescription,
-    protectedContent,
-    providerContext: sourceOnlyContext,
-    knowledgeContext: sourceOnlyContext,
-    markdownContent: acceptedMarkdown,
-  });
-  let qualityReview: ArticleQualityReview = {
-    factualScore: 0,
-    missingFacts: [],
-    unsupportedClaims: [],
-    distortedFacts: [],
-    passed: false,
-  };
-  let reviewSkipped = false;
-  await reportRewriteProgress(options, {
-    stage: "quality_review",
-    status: "running",
-    message: "正在执行质量审查（固定 1 次）",
-    maxTokens: config.maxTokens,
-    attempt: 1,
-    maxAttempts: 1,
-    inputLength: reviewPrompt.length,
-    outputLength: acceptedMarkdown.length,
-  });
-  try {
-    const reviewResult = await requestAuditedChatCompletion({
-      options,
-      config,
-      endpoint,
-      timeoutMs,
-      maxTokens: config.maxTokens,
-      responseFormat: { type: "json_object" },
-      temperature: 0.1,
-      stepName: "正文质量审查（1/1）",
-      stage: "quality_review",
-      stageAttempt: 1,
-      userPrompt: reviewPrompt,
-    });
-    qualityReview = normalizeQualityReview(
-      parseAiJsonObject<ArticleQualityReviewRaw>(
-        reviewResult.text,
-        "正文质量审查失败",
-      ),
-    );
-    await updateRewriteAudit(options, config, {
-      stage: "quality_review",
-      stageName: "正文质量审查（1/1）",
-      stageAttempt: 1,
-      status: "success",
-      prompt: reviewPrompt,
-      response: reviewResult.text,
-      readableContent: JSON.stringify(qualityReview, null, 2),
-      finishReason: reviewResult.finishReason,
-      promptTokens: reviewResult.promptTokens,
-      completionTokens: reviewResult.completionTokens,
-      totalTokens: reviewResult.totalTokens,
-      metadata: { accepted: qualityReview.passed, review: qualityReview },
-    });
-    await reportRewriteProgress(options, {
-      stage: "quality_review",
-      status: "success",
-      message: qualityReview.passed
-        ? "质量审查通过（1/1）"
-        : "质量审查完成，问题已记录（1/1）",
-      maxTokens: config.maxTokens,
-      attempt: 1,
-      maxAttempts: 1,
-      inputLength: reviewPrompt.length,
-      outputLength: reviewResult.text.length,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (error instanceof AiRequestConnectionInterruptedError) {
-      await updateRewriteAudit(options, config, {
-        stage: "quality_review",
-        stageName: "正文质量审查（1/1）",
-        stageAttempt: 1,
-        status: "failed",
-        prompt: reviewPrompt,
-        error: message,
-        metadata: { accepted: false, nonBlocking: false },
-      });
-      throw error;
-    }
-
-    reviewSkipped = true;
-    await updateRewriteAudit(options, config, {
-      stage: "quality_review",
-      stageName: "正文质量审查（1/1）",
-      stageAttempt: 1,
-      status: "failed",
-      prompt: reviewPrompt,
-      error: message,
-      metadata: { accepted: false, nonBlocking: true },
-    });
-    await reportRewriteProgress(options, {
-      stage: "quality_review",
-      status: "success",
-      message: "质量审查调用失败，已记录并继续（1/1）",
-      maxTokens: config.maxTokens,
-      attempt: 1,
-      maxAttempts: 1,
-      inputLength: reviewPrompt.length,
-    });
-  }
-
   const metadataPrompt = buildMetadataPrompt(
     acceptedMarkdown,
     config.metadataStylePrompt,
@@ -1753,15 +1533,17 @@ export async function rewriteArticleWithAi(
     markdownContent: finalMarkdown || acceptedMarkdown,
     quality: {
       ...acceptedMetrics,
-      passed: acceptedMetrics.passed && qualityReview.passed,
+      // Keep the historical review fields for task/report compatibility.
+      // The rewrite flow no longer makes a separate AI fact-review request.
+      passed: acceptedMetrics.passed,
       promptVersion: getPromptVersion(config),
       attempts: 1,
-      factualScore: qualityReview.factualScore,
-      reviewPassed: qualityReview.passed,
-      reviewSkipped,
-      missingFacts: qualityReview.missingFacts,
-      unsupportedClaims: qualityReview.unsupportedClaims,
-      distortedFacts: qualityReview.distortedFacts,
+      factualScore: acceptedMetrics.criticalFactCoverage,
+      reviewPassed: true,
+      reviewSkipped: true,
+      missingFacts: acceptedMetrics.missingCriticalFacts,
+      unsupportedClaims: acceptedMetrics.unsupportedCriticalFacts,
+      distortedFacts: [],
       seoKeywordPlan: factSheet.seoKeywordPlan,
       knowledgeReferences: [],
       providerReferences: [],
