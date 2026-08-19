@@ -62,7 +62,6 @@ const configSchema = z.object({
     "protectedContent",
     "retryFeedback",
   ]),
-  initialRewritePrompt: promptSchema("首次改写反馈 Prompt"),
   metadataPrompt: metadataPromptSchema,
   styleName: z.string().trim().min(1, "风格名称不能为空"),
   stylePrompt: z.string().trim().min(1, "正文改写风格不能为空"),

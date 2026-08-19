@@ -543,10 +543,6 @@ export const aiRewriteConfigs = pgTable(
     model: text("model").notNull(),
     factExtractionPrompt: text("factExtractionPrompt"),
     basePrompt: text("basePrompt"),
-    initialRewritePrompt: text("initialRewritePrompt"),
-    rewriteRetryPrompt: text("rewriteRetryPrompt"),
-    qualityRepairPrompt: text("qualityRepairPrompt"),
-    qualityReviewPrompt: text("qualityReviewPrompt"),
     metadataPrompt: text("metadataPrompt"),
     styleName: text("styleName").notNull(),
     stylePrompt: text("stylePrompt").notNull(),
@@ -559,7 +555,6 @@ export const aiRewriteConfigs = pgTable(
     providerCatalogDiscoveryPrompt: text("providerCatalogDiscoveryPrompt"),
     temperature: integer("temperature").default(40).notNull(),
     maxTokens: integer("maxTokens").default(8192).notNull(),
-    rewriteMaxAttempts: integer("rewriteMaxAttempts").default(3).notNull(),
     enabled: boolean("enabled").default(false).notNull(),
     isDefault: boolean("isDefault").default(false).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -574,10 +569,6 @@ export const aiRewriteConfigs = pgTable(
     defaultRequiresEnabled: check(
       "ai_rewrite_configs_default_requires_enabled",
       sql`NOT ${table.isDefault} OR ${table.enabled}`,
-    ),
-    rewriteMaxAttemptsCheck: check(
-      "ai_rewrite_configs_rewrite_max_attempts_check",
-      sql`${table.rewriteMaxAttempts} between 2 and 10`,
     ),
   }),
 );

@@ -9,7 +9,6 @@ import {
   defaultEnglishMetadataStylePrompt,
   defaultEnglishStylePrompt,
   defaultFactExtractionPrompt,
-  defaultInitialRewriteFeedbackPrompt,
   defaultMetadataStylePrompt,
   resolveMetadataPromptTemplate,
   resolveSourceAnchoredRewriteTemplate,
@@ -33,7 +32,6 @@ export type AiRewriteConfigInput = {
   model: string;
   factExtractionPrompt: string;
   basePrompt: string;
-  initialRewritePrompt: string;
   metadataPrompt: string;
   styleName: string;
   stylePrompt: string;
@@ -65,7 +63,6 @@ type ActiveAiRewriteConfigRow = Pick<
   | "model"
   | "factExtractionPrompt"
   | "basePrompt"
-  | "initialRewritePrompt"
   | "metadataPrompt"
   | "styleName"
   | "stylePrompt"
@@ -93,7 +90,6 @@ const activeAiRewriteConfigColumns = {
   model: aiRewriteConfigs.model,
   factExtractionPrompt: aiRewriteConfigs.factExtractionPrompt,
   basePrompt: aiRewriteConfigs.basePrompt,
-  initialRewritePrompt: aiRewriteConfigs.initialRewritePrompt,
   metadataPrompt: aiRewriteConfigs.metadataPrompt,
   styleName: aiRewriteConfigs.styleName,
   stylePrompt: aiRewriteConfigs.stylePrompt,
@@ -103,7 +99,8 @@ const activeAiRewriteConfigColumns = {
   englishMetadataPrompt: aiRewriteConfigs.englishMetadataPrompt,
   englishStylePrompt: aiRewriteConfigs.englishStylePrompt,
   englishMetadataStylePrompt: aiRewriteConfigs.englishMetadataStylePrompt,
-  providerCatalogDiscoveryPrompt: aiRewriteConfigs.providerCatalogDiscoveryPrompt,
+  providerCatalogDiscoveryPrompt:
+    aiRewriteConfigs.providerCatalogDiscoveryPrompt,
   temperature: aiRewriteConfigs.temperature,
   maxTokens: aiRewriteConfigs.maxTokens,
   enabled: aiRewriteConfigs.enabled,
@@ -121,8 +118,6 @@ function withPromptDefaults<T extends ActiveAiRewriteConfigRow>(row: T) {
     factExtractionPrompt:
       row.factExtractionPrompt ?? defaultFactExtractionPrompt,
     basePrompt: resolveSourceAnchoredRewriteTemplate(row.basePrompt),
-    initialRewritePrompt:
-      row.initialRewritePrompt ?? defaultInitialRewriteFeedbackPrompt,
     metadataPrompt: resolveMetadataPromptTemplate(row.metadataPrompt),
     metadataStylePrompt: row.metadataStylePrompt ?? defaultMetadataStylePrompt,
     englishContentPrompt:
@@ -288,7 +283,6 @@ export async function createAiRewriteConfig(input: AiRewriteConfigInput) {
         apiKey: input.apiKey?.trim() ? encryptSecret(input.apiKey) : null,
         factExtractionPrompt: input.factExtractionPrompt,
         basePrompt: input.basePrompt,
-        initialRewritePrompt: input.initialRewritePrompt,
         metadataPrompt: input.metadataPrompt,
         metadataStylePrompt: input.metadataStylePrompt,
         englishContentPrompt: input.englishContentPrompt,
@@ -320,7 +314,6 @@ export async function updateAiRewriteConfig(
     model: input.model,
     factExtractionPrompt: input.factExtractionPrompt,
     basePrompt: input.basePrompt,
-    initialRewritePrompt: input.initialRewritePrompt,
     metadataPrompt: input.metadataPrompt,
     styleName: input.styleName,
     stylePrompt: input.stylePrompt,
@@ -371,10 +364,7 @@ export async function updateAiRewriteConfig(
   });
 }
 
-export async function setAiRewriteConfigEnabled(
-  id: number,
-  enabled: boolean,
-) {
+export async function setAiRewriteConfigEnabled(id: number, enabled: boolean) {
   return db.transaction(async (tx) => {
     await lockDefaultSelection(tx);
     const [updated] = await tx

@@ -67,7 +67,6 @@ import {
   defaultEnglishMetadataStylePrompt,
   defaultEnglishStylePrompt,
   defaultFactExtractionPrompt,
-  defaultInitialRewriteFeedbackPrompt,
   defaultMetadataPrompt,
   defaultMetadataStylePrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
@@ -492,7 +491,7 @@ function ConfigForm({
         <div className="mt-4 space-y-6">
           <PromptTemplateField
             name="factExtractionPrompt"
-            label="1. 来源信息提取 Prompt"
+            label="1. 来源信息提取 Prompt（独立调用）"
             value={
               defaults?.factExtractionPrompt ?? defaultFactExtractionPrompt
             }
@@ -522,25 +521,15 @@ function ConfigForm({
             className="min-h-72 lg:min-h-[34rem]"
           />
           <PromptTemplateField
-            name="initialRewritePrompt"
-            label="4. 首轮反馈 Prompt"
-            value={
-              defaults?.initialRewritePrompt ??
-              defaultInitialRewriteFeedbackPrompt
-            }
-            description="首轮生成时填入正文模板的 {retryFeedback}。"
-            className="min-h-24"
-          />
-          <PromptTemplateField
             name="metadataStylePrompt"
-            label="5. 中文标题 / SEO 风格片段"
+            label="4. 中文标题 / SEO 风格片段"
             value={defaults?.metadataStylePrompt ?? defaultMetadataStylePrompt}
             description="通过 {metadataStylePrompt} 注入中文元信息完整模板。"
             className="min-h-28"
           />
           <PromptTemplateField
             name="metadataPrompt"
-            label="6. 中文标题 / SEO 完整 Prompt"
+            label="5. 中文标题 / SEO 完整 Prompt"
             value={defaults?.metadataPrompt ?? defaultMetadataPrompt}
             variables={["metadataStylePrompt", "markdownContent"]}
             description="用于标题、摘要、关键词、标签和推荐标签生成。"
@@ -579,7 +568,7 @@ function ConfigForm({
           />
           <PromptTemplateField
             name="englishContinuationPrompt"
-            label="3. 英文正文续写 Prompt"
+            label="3. 英文正文续写 Prompt（仅截断时）"
             value={
               defaults?.englishContinuationPrompt ??
               defaultEnglishContinuationPrompt
@@ -620,7 +609,7 @@ function ConfigForm({
 
       <details className="border-t pt-4">
         <summary className="cursor-pointer text-sm font-semibold text-foreground">
-          供应商套餐源发现提示词
+          供应商套餐源发现提示词（非文章改写）
         </summary>
         <div className="mt-4">
           <PromptTemplateField
@@ -631,7 +620,7 @@ function ConfigForm({
               defaultProviderCatalogDiscoveryPrompt
             }
             variables={["providerName", "officialUrl", "pagesJson"]}
-            description="一次性扫描时发送给模型的完整用户提示词。系统不追加隐藏业务提示词；实际提示词和模型原始输出都会保留在扫描记录中。"
+            description="仅用于供应商套餐目录的一次性扫描，不参与文章正文改写。系统不追加隐藏业务提示词；实际提示词和模型原始输出都会保留在扫描记录中。"
             className="min-h-72 lg:min-h-[34rem]"
           />
         </div>

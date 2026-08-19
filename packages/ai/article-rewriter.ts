@@ -3,6 +3,7 @@ import {
   buildSourceAnchoredRewritePrompt,
   defaultEnglishMetadataStylePrompt,
   defaultEnglishStylePrompt,
+  defaultInitialRewriteFeedbackPrompt,
   defaultMetadataPrompt,
   defaultMetadataStylePrompt,
   interpolatePromptTemplate,
@@ -126,9 +127,7 @@ export interface AiRewriteExecutionOptions {
 }
 
 export type AiRequestStage =
-  | "request_started"
-  | "response_received"
-  | "checkpointed";
+  "request_started" | "response_received" | "checkpointed";
 
 export interface ArticleRewriteOptions extends AiRewriteExecutionOptions {
   sourceTitle?: string | null;
@@ -1321,7 +1320,7 @@ export async function rewriteArticleWithAi(
     knowledgeContext: sourceOnlyContext,
     knowledgeSections: "不添加来源之外的基础知识章节。",
     protectedContent: describeProtectedContent(protectedContent),
-    retryFeedback: config.initialRewritePrompt,
+    retryFeedback: defaultInitialRewriteFeedbackPrompt,
   });
   const candidateStepName = "原文轻量改写";
   await reportRewriteProgress(options, {
