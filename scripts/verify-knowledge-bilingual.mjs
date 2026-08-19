@@ -137,10 +137,15 @@ requireText("packages/ai/knowledge-retrieval.ts", [
   "knowledgeCategories.enName",
 ]);
 const articleRewriter = requireText("packages/ai/article-rewriter.ts", [
-  "const sourceOnlyContext =",
-  "本次改写只使用清洗后的来源原文和受保护内容；不引用知识库、供应商资料或其他外部信息。",
+  "buildSourceAnchoredRewritePrompt({",
+  "sourceContent: protectedSource,",
+  "protectedContent: describeProtectedContent(protectedContent),",
   "knowledgeReferences: [],",
   "providerReferences: [],",
+]);
+requireText("packages/core/ai-rewrite-prompts.ts", [
+  "本次改写模式：只允许使用清洗后的来源原文和受保护原始内容。",
+  "不引用知识库、供应商资料或其他外部信息",
 ]);
 if (
   articleRewriter.includes("retrieveRewriteKnowledge({") ||

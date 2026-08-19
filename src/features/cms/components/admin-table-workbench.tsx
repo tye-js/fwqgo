@@ -14,6 +14,7 @@ export function AdminTableWorkbench({
   filterSlot,
   selectionCount,
   actionSlot,
+  actionDisclosureId,
 }: {
   title?: string;
   description?: string;
@@ -24,6 +25,7 @@ export function AdminTableWorkbench({
   filterSlot?: ReactNode;
   selectionCount?: number;
   actionSlot?: ReactNode;
+  actionDisclosureId?: string;
 }) {
   return (
     <div className="min-w-0 space-y-3 rounded-md border border-border/70 bg-muted/15 p-3">
@@ -93,7 +95,11 @@ export function AdminTableWorkbench({
           </div>
         ) : null}
         {actionSlot ? (
-          <details className="group min-w-0 xl:contents">
+          <details
+            id={actionDisclosureId}
+            open={selectionCount && selectionCount > 0 ? true : undefined}
+            className="group min-w-0 scroll-mt-20 xl:contents"
+          >
             <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between rounded-md border border-border/70 bg-background px-3 text-sm font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring xl:hidden [&::-webkit-details-marker]:hidden">
               批量与更多操作
               <ChevronDown className="size-4 transition-transform group-open:rotate-180" />

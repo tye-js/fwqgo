@@ -60,6 +60,7 @@ const styles = read("src/styles/globals.css");
 const unsavedGuard = read(
   "src/features/cms/hooks/use-unsaved-changes-guard.ts",
 );
+const postList = read("src/features/cms/components/posts-tables.tsx");
 
 assert.match(mobileHook, /MOBILE_BREAKPOINT = 1024/);
 assert.match(sidebar, /text-sidebar-foreground lg:block/);
@@ -84,6 +85,13 @@ assert.match(sheet, /safe-area-inset-top/);
 assert.match(styles, /cms-mobile-save-bar/);
 assert.match(unsavedGuard, /popstate/);
 assert.match(unsavedGuard, /window\.history\.forward\(\)/);
+
+assert.match(postList, /选择本页 \$\{sortedPosts\.length\} 篇文章/);
+assert.match(postList, /actionDisclosureId="post-bulk-actions"/);
+assert.match(postList, /打开完整编辑/);
+assert.match(postList, /className="block break-words text-base/);
+assert.match(postList, /break-all font-mono text-foreground/);
+assert.match(postList, /批量操作 · \{selectedIds\.length\}/);
 
 console.log(
   `CMS mobile UI verification passed: ${responsiveTableCount} responsive tables, 1024px adaptive navigation, touch and safe-area guards present.`,

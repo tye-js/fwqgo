@@ -7,6 +7,7 @@ import {
   Archive,
   CircleCheck,
   CircleX,
+  ExternalLink,
   ImagePlus,
   Languages,
   SearchCheck,
@@ -533,6 +534,7 @@ export function PostList({
         onSearchChange={setQuery}
         searchPlaceholder="搜索文章标题或 slug"
         selectionCount={selectedIds.length}
+        actionDisclosureId="post-bulk-actions"
         filterSlot={
           <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
             {!lockStatusFilter ? (
@@ -677,13 +679,47 @@ export function PostList({
         />
       ) : (
         <>
+          <div className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-border/70 bg-muted/20 p-2 lg:hidden">
+            <div className="flex min-w-0 items-center gap-1">
+              <Checkbox
+                checked={allFilteredSelected}
+                onCheckedChange={(checked) => toggleSelectAll(Boolean(checked))}
+                aria-label="全选当前页文章"
+              />
+              <button
+                type="button"
+                className="min-h-11 min-w-0 break-words rounded-md px-2 text-left text-sm font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => toggleSelectAll(!allFilteredSelected)}
+              >
+                {allFilteredSelected
+                  ? "取消全选"
+                  : `选择本页 ${sortedPosts.length} 篇文章`}
+              </button>
+            </div>
+            {selectedIds.length > 0 ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                onClick={() =>
+                  document
+                    .getElementById("post-bulk-actions")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                }
+              >
+                批量操作 · {selectedIds.length}
+              </Button>
+            ) : null}
+          </div>
+
           <div className="grid gap-3 lg:hidden">
             {sortedPosts.map((post) => (
               <article
                 key={post.id}
-                className="rounded-md border border-border/70 bg-card p-3 shadow-none"
+                className="min-w-0 overflow-hidden rounded-md border border-border/70 bg-card shadow-none"
               >
-                <div className="flex items-start gap-3">
+                <div className="flex min-w-0 items-start gap-2 p-3">
                   <Checkbox
                     checked={selectedIds.includes(post.id)}
                     onCheckedChange={(checked) =>
@@ -711,25 +747,43 @@ export function PostList({
                     </div>
 
                     {editPostId === post.id ? (
-                      <div className="space-y-2">
-                        <Input
-                          className="min-h-11"
-                          autoFocus
-                          aria-label="文章标题"
-                          value={editPostData?.title ?? ""}
-                          onChange={(e) =>
-                            handleInputChange("title", e.target.value)
-                          }
-                        />
-                        <Input
-                          className="min-h-11"
-                          aria-label="文章 slug"
-                          value={editPostData?.slug ?? ""}
-                          onChange={(e) =>
-                            handleInputChange("slug", e.target.value)
-                          }
-                        />
-                        <div className="flex items-center gap-2">
+                      <div className="min-w-0 space-y-3">
+                        <div className="space-y-1.5">
+                          <label
+                            htmlFor={`mobile-post-title-${post.id}`}
+                            className="text-xs font-medium text-muted-foreground"
+                          >
+                            文章标题
+                          </label>
+                          <Input
+                            id={`mobile-post-title-${post.id}`}
+                            className="min-h-11"
+                            autoFocus
+                            aria-label="文章标题"
+                            value={editPostData?.title ?? ""}
+                            onChange={(e) =>
+                              handleInputChange("title", e.target.value)
+                            }
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label
+                            htmlFor={`mobile-post-slug-${post.id}`}
+                            className="text-xs font-medium text-muted-foreground"
+                          >
+                            Slug
+                          </label>
+                          <Input
+                            id={`mobile-post-slug-${post.id}`}
+                            className="min-h-11"
+                            aria-label="文章 slug"
+                            value={editPostData?.slug ?? ""}
+                            onChange={(e) =>
+                              handleInputChange("slug", e.target.value)
+                            }
+                          />
+                        </div>
+                        <div className="flex min-h-11 items-center gap-2 rounded-md border border-border/70 px-2">
                           <Checkbox
                             aria-label="发布文章"
                             checked={editPostData?.published ?? false}
@@ -741,9 +795,17 @@ export function PostList({
                             发布文章
                           </span>
                         </div>
-                        <div className="grid gap-2">
+                        <div className="grid min-w-0 gap-2">
+                          <label
+                            htmlFor={`mobile-post-cover-${post.id}`}
+                            className="text-xs font-medium text-muted-foreground"
+                          >
+                            封面地址
+                          </label>
                           <Input
+                            id={`mobile-post-cover-${post.id}`}
                             className="min-h-11"
+                            aria-label={`修改封面地址：${post.title}`}
                             value={editPostData?.imgUrl ?? ""}
                             onChange={(e) =>
                               handleInputChange("imgUrl", e.target.value)
@@ -761,22 +823,34 @@ export function PostList({
                       <>
                         <Link
                           href={`${editBasePath ?? pathname}/post/${encodeURIComponent(post.slug)}`}
-                          className="line-clamp-2 text-base font-medium leading-6 text-foreground underline-offset-4 hover:text-accent hover:underline"
+                          className="block break-words text-base font-medium leading-6 text-foreground underline-offset-4 hover:text-accent hover:underline"
                         >
                           {post.title}
                         </Link>
-                        <p className="truncate font-mono text-xs text-muted-foreground">
-                          {post.slug}
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {post.imgUrl ?? "未设置封面"}
-                        </p>
+                        <dl className="grid min-w-0 gap-2 rounded-md bg-muted/25 p-2 text-xs">
+                          <div className="min-w-0">
+                            <dt className="font-medium text-muted-foreground">
+                              Slug
+                            </dt>
+                            <dd className="mt-0.5 break-all font-mono text-foreground">
+                              {post.slug}
+                            </dd>
+                          </div>
+                          <div className="min-w-0 border-t border-border/60 pt-2">
+                            <dt className="font-medium text-muted-foreground">
+                              封面
+                            </dt>
+                            <dd className="mt-0.5 break-all text-foreground">
+                              {post.imgUrl ?? "未设置封面"}
+                            </dd>
+                          </div>
+                        </dl>
                       </>
                     )}
                   </div>
                 </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2 border-t border-border/70 bg-muted/15 p-3">
                   {editPostId === post.id ? (
                     <>
                       <Button
@@ -796,21 +870,29 @@ export function PostList({
                     </>
                   ) : (
                     <>
+                      <Button asChild className="col-span-2 min-h-11 w-full">
+                        <Link
+                          href={`${editBasePath ?? pathname}/post/${encodeURIComponent(post.slug)}`}
+                        >
+                          <ExternalLink className="size-4" />
+                          打开完整编辑
+                        </Link>
+                      </Button>
                       <Button
                         variant="outline"
-                        className="col-span-2 min-h-11"
+                        className="min-h-11 w-full"
                         onClick={() => {
                           setEditPostId(post.id);
                           setEditPostData(post);
                         }}
                       >
-                        编辑
+                        快速编辑
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button
                             variant="destructive"
-                            className="col-span-2 min-h-11"
+                            className="min-h-11 w-full"
                           >
                             删除
                           </Button>
