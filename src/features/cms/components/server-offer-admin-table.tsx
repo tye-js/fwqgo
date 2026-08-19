@@ -124,11 +124,7 @@ function getServerOfferMutationKey(offerId: number, operation: string) {
 }
 
 function formatPrice(offer: Offer) {
-  return formatObservedPrice(
-    offer.priceAmount,
-    offer.currency,
-    "待补充",
-  );
+  return formatObservedPrice(offer.priceAmount, offer.currency, "待补充");
 }
 
 function cleanText(value: string | null | undefined) {
@@ -938,8 +934,8 @@ function OfferEditForm({
                         {formatDateTimeLocalValue(check.checkedAt).replace(
                           "T",
                           " ",
-                        )} ·{" "}
-                        {check.status}
+                        )}{" "}
+                        · {check.status}
                       </span>
                       <span className="tabular-nums text-muted-foreground">
                         {formatObservedPrice(
@@ -970,7 +966,7 @@ function OfferEditForm({
           </div>
         )}
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="cms-mobile-save-bar flex flex-wrap items-center justify-between gap-4 bg-background/95 py-3 backdrop-blur">
         <div className="flex gap-5">
           <label className="flex items-center gap-2 text-sm">
             <Switch checked={visible} onCheckedChange={setVisible} />
@@ -1090,8 +1086,7 @@ export function ServerOfferAdminTable({
       key: serverOfferBulkMutationKey,
       action: () => bulkUpdateServerOffersAction({ ids, ...input }),
       pendingMessage: `正在批量更新 ${ids.length} 条套餐...`,
-      successMessage: (result) =>
-        `已更新 ${result.data?.updated ?? 0} 条套餐`,
+      successMessage: (result) => `已更新 ${result.data?.updated ?? 0} 条套餐`,
       errorTitle: "批量更新套餐失败",
       errorSuggestion: "请刷新列表确认套餐状态后重试。",
       onSuccess: () => setSelectedIds([]),

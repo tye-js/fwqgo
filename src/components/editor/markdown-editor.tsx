@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
 type MarkdownEditorProps = {
+  id?: string;
   content: string;
   onChange: (content: string) => void;
   minHeightClassName?: string;
@@ -36,15 +37,15 @@ const snippets = [
   {
     label: "表格",
     icon: Table2,
-    text:
-      "\n\n| 套餐 | CPU | 内存 | 硬盘 | 流量 | 价格 |\n| --- | --- | --- | --- | --- | --- |\n| 示例 | 2 核 | 2GB | 40GB SSD | 1TB | $5/月 |\n\n",
+    text: "\n\n| 套餐 | CPU | 内存 | 硬盘 | 流量 | 价格 |\n| --- | --- | --- | --- | --- | --- |\n| 示例 | 2 核 | 2GB | 40GB SSD | 1TB | $5/月 |\n\n",
   },
 ];
 
 export function MarkdownEditor({
+  id,
   content,
   onChange,
-  minHeightClassName = "min-h-[560px]",
+  minHeightClassName = "min-h-[50dvh] lg:min-h-[560px]",
 }: MarkdownEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -87,6 +88,7 @@ export function MarkdownEditor({
         })}
       </div>
       <Textarea
+        id={id}
         ref={textareaRef}
         value={content}
         onChange={(event) => onChange(event.target.value)}

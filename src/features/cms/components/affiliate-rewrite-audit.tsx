@@ -62,7 +62,7 @@ export function AffiliateRewriteAudit({
 
       {matchedLinks.length > 0 ? (
         <div className="overflow-hidden rounded-md border border-border/70">
-          <Table>
+          <Table className="cms-mobile-sticky-actions">
             <TableHeader>
               <TableRow>
                 <TableHead className="min-w-[160px]">命中商家</TableHead>

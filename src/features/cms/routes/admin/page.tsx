@@ -492,19 +492,25 @@ export default async function Page() {
           <ContentTrendChart data={contentTrend} />
           <div className="mt-4 grid grid-cols-2 border-t border-border/60 pt-3 sm:grid-cols-4">
             <div className="pr-2">
-              <p className="text-xs text-muted-foreground">{recentContentLabel}新文</p>
+              <p className="text-xs text-muted-foreground">
+                {recentContentLabel}新文
+              </p>
               <p className="mt-1 text-base font-semibold tabular-nums">
                 {formatNumber(overview.recentPublishedPostCount)}
               </p>
             </div>
             <div className="border-l border-border/60 px-2">
-              <p className="text-xs text-muted-foreground">{recentContentLabel}新文累计浏览</p>
+              <p className="text-xs text-muted-foreground">
+                {recentContentLabel}新文累计浏览
+              </p>
               <p className="mt-1 text-base font-semibold tabular-nums">
                 {formatNumber(overview.recentPublishedViews)}
               </p>
             </div>
             <div className="mt-3 border-t border-border/60 pr-2 pt-3 sm:mt-0 sm:border-l sm:border-t-0 sm:px-2 sm:pt-0">
-              <p className="text-xs text-muted-foreground">{recentContentLabel}篇均浏览</p>
+              <p className="text-xs text-muted-foreground">
+                {recentContentLabel}篇均浏览
+              </p>
               <p className="mt-1 text-base font-semibold tabular-nums">
                 {formatNumber(overview.recentAverageViewsPerPublishedPost)}
               </p>
@@ -592,7 +598,7 @@ export default async function Page() {
           description={`仅统计${recentContentLabel}内发布的文章，浏览量为这些新文当前累计浏览量。`}
         >
           <div className="overflow-x-auto">
-            <Table className="min-w-[680px]">
+            <Table className="cms-mobile-sticky-actions min-w-[680px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">排名</TableHead>
@@ -690,7 +696,7 @@ export default async function Page() {
         description={`${recentContentLabel}内创建的中文和英文文章，可直接查看浏览量并进入编辑。`}
       >
         <div className="overflow-x-auto">
-          <Table className="min-w-[820px]">
+          <Table className="cms-mobile-sticky-actions min-w-[820px]">
             <TableHeader>
               <TableRow>
                 <TableHead>文章</TableHead>

@@ -1040,7 +1040,7 @@ function MonitorFormDialog({
               )}
             </div>
           ) : null}
-          <DialogFooter>
+          <DialogFooter className="cms-mobile-save-bar bg-background/95 pt-3 backdrop-blur">
             <Button
               type="button"
               variant="outline"
@@ -1738,8 +1738,8 @@ export function ProviderMonitorManager({
           }
         />
       ) : (
-        <div className="overflow-hidden rounded-md border border-border/70 bg-background [&>div]:max-h-[70dvh]">
-          <Table className="min-w-[1120px]">
+        <div className="overflow-hidden rounded-md border border-border/70 bg-background lg:[&>div]:max-h-[70dvh]">
+          <Table className="cms-mobile-sticky-actions min-w-[1120px]">
             <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
               <TableRow>
                 <TableHead className="sticky left-0 z-30 w-12 bg-background p-0">
@@ -2170,8 +2170,8 @@ export function ProviderMonitorManager({
                   </Badge>
                 </div>
               </div>
-              <div className="overflow-hidden rounded-md border border-border/70 bg-background [&>div]:max-h-[70dvh]">
-                <Table className="min-w-[980px]">
+              <div className="overflow-hidden rounded-md border border-border/70 bg-background lg:[&>div]:max-h-[70dvh]">
+                <Table className="cms-mobile-sticky-actions min-w-[980px]">
                   <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
                     <TableRow>
                       <TableHead className="sticky left-0 z-30 w-12 bg-background p-0">
@@ -2465,7 +2465,7 @@ export function ProviderMonitorManager({
               </p>
             </div>
             <div className="overflow-hidden rounded-md border border-border/70 bg-background">
-              <Table className="min-w-[940px]">
+              <Table className="cms-mobile-sticky-actions min-w-[940px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>开始时间</TableHead>
@@ -2571,7 +2571,7 @@ export function ProviderMonitorManager({
               </p>
             </div>
             <div className="overflow-hidden rounded-md border border-border/70 bg-background">
-              <Table className="min-w-[760px]">
+              <Table className="cms-mobile-sticky-actions min-w-[760px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>时间</TableHead>

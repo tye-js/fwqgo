@@ -42,6 +42,8 @@ export function useUnsavedChangesGuard({
   onNavigationAttempt,
 }: UnsavedChangesGuardOptions) {
   const navigationHandlerRef = useRef(onNavigationAttempt);
+  const restoringHistoryRef = useRef(false);
+  const pendingHistoryHrefRef = useRef<string | null>(null);
 
   useEffect(() => {
     navigationHandlerRef.current = onNavigationAttempt;
@@ -62,11 +64,27 @@ export function useUnsavedChangesGuard({
       event.stopPropagation();
       navigationHandlerRef.current(href);
     };
+    const handlePopState = () => {
+      if (restoringHistoryRef.current) {
+        restoringHistoryRef.current = false;
+        const pendingHref = pendingHistoryHrefRef.current;
+        pendingHistoryHrefRef.current = null;
+        if (pendingHref) navigationHandlerRef.current(pendingHref);
+        return;
+      }
+
+      const href = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      pendingHistoryHrefRef.current = href;
+      restoringHistoryRef.current = true;
+      window.history.forward();
+    };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("popstate", handlePopState);
     document.addEventListener("click", handleDocumentClick, true);
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("popstate", handlePopState);
       document.removeEventListener("click", handleDocumentClick, true);
     };
   }, [enabled]);

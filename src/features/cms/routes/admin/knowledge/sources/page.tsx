@@ -64,7 +64,7 @@ export default async function KnowledgeSourcesAdminPage() {
             <tbody className="divide-y divide-border/70">
               {sources.map((source) => (
                 <tr key={source.id}>
-                  <td className="px-3 py-3">
+                  <td data-mobile-label="来源" className="px-3 py-3">
                     <div className="font-medium">
                       {source.title ?? source.sourceKey}
                     </div>
@@ -72,17 +72,31 @@ export default async function KnowledgeSourcesAdminPage() {
                       {source.sourceKey} · {source.kind}
                     </div>
                   </td>
-                  <td className="px-3 py-3 font-semibold">
+                  <td
+                    data-mobile-label="等级"
+                    className="px-3 py-3 font-semibold"
+                  >
                     {source.authorityTier}
                   </td>
-                  <td className="px-3 py-3 tabular-nums">
+                  <td
+                    data-mobile-label="当前 revision"
+                    className="px-3 py-3 tabular-nums"
+                  >
                     {source.revision ? `r${source.revision}` : "—"}
                   </td>
-                  <td className="px-3 py-3">{source.status}</td>
-                  <td className="px-3 py-3 text-muted-foreground">
+                  <td data-mobile-label="状态" className="px-3 py-3">
+                    {source.status}
+                  </td>
+                  <td
+                    data-mobile-label="复核日期"
+                    className="px-3 py-3 text-muted-foreground"
+                  >
                     {dateText(source.reviewDueAt)}
                   </td>
-                  <td className="max-w-[320px] px-3 py-3">
+                  <td
+                    data-mobile-label="链接"
+                    className="max-w-[320px] px-3 py-3"
+                  >
                     {source.canonicalUrl ? (
                       <a
                         className="break-all text-primary hover:underline"

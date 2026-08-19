@@ -1238,7 +1238,7 @@ export function ProviderProfileSheet({
                   placeholder="禁止事项来源 URL"
                 />
               </div>
-              <div className="flex justify-end">
+              <div className="cms-mobile-save-bar flex justify-end bg-background/95 py-3 backdrop-blur">
                 <Button
                   disabled={savingProfile || candidateReviewing}
                   onClick={handleSaveProfile}

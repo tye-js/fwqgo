@@ -46,7 +46,7 @@ export default async function ServerSizingRulesAdminPage() {
         description="公开工具只读取当前 published 规则；配置输入仍在浏览器本地计算。"
       >
         <div className="overflow-x-auto rounded-md border border-border/70">
-          <table className="w-full min-w-[760px] text-left text-sm">
+          <table className="cms-mobile-sticky-actions w-full min-w-[760px] text-left text-sm">
             <thead className="bg-muted/50 text-xs text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">版本</th>
@@ -59,22 +59,36 @@ export default async function ServerSizingRulesAdminPage() {
             <tbody className="divide-y divide-border/70">
               {rules.map((rule) => (
                 <tr key={rule.id}>
-                  <td className="px-3 py-3 font-medium">
+                  <td
+                    data-mobile-label="版本"
+                    className="px-3 py-3 font-medium"
+                  >
                     {rule.versionLabel}
                     <div className="mt-1 text-xs text-muted-foreground">
                       r{rule.revision}
                     </div>
                   </td>
-                  <td className="px-3 py-3">{rule.status}</td>
-                  <td className="px-3 py-3 text-xs">
+                  <td data-mobile-label="状态" className="px-3 py-3">
+                    {rule.status}
+                  </td>
+                  <td
+                    data-mobile-label="引擎 / schema"
+                    className="px-3 py-3 text-xs"
+                  >
                     {rule.engineVersion}
                     <br />
                     schema {rule.schemaVersion}
                   </td>
-                  <td className="max-w-[240px] break-all px-3 py-3 font-mono text-xs text-muted-foreground">
+                  <td
+                    data-mobile-label="checksum"
+                    className="max-w-[240px] break-all px-3 py-3 font-mono text-xs text-muted-foreground"
+                  >
                     {rule.checksum}
                   </td>
-                  <td className="px-3 py-3 text-xs text-muted-foreground">
+                  <td
+                    data-mobile-label="审核 / 发布"
+                    className="px-3 py-3 text-xs text-muted-foreground"
+                  >
                     {rule.reviewedBy ?? "未审核"}
                     <br />
                     {rule.publishedBy ?? "未发布"}

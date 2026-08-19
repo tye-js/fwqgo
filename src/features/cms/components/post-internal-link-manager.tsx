@@ -115,8 +115,11 @@ export function PostInternalLinkManager({
             </thead>
             <tbody>
               {links.map((link) => (
-                <tr key={link.id} className="border-b border-border/50 align-top">
-                  <td className="px-2 py-3">
+                <tr
+                  key={link.id}
+                  className="border-b border-border/50 align-top"
+                >
+                  <td data-mobile-label="目标" className="px-2 py-3">
                     <p className="font-medium text-foreground">
                       {link.targetTitle}
                     </p>
@@ -135,10 +138,13 @@ export function PostInternalLinkManager({
                       </div>
                     ) : null}
                   </td>
-                  <td className="px-2 py-3 text-muted-foreground">
+                  <td
+                    data-mobile-label="位置"
+                    className="px-2 py-3 text-muted-foreground"
+                  >
                     {placementLabels[link.placement] ?? link.placement}
                   </td>
-                  <td className="px-2 py-2">
+                  <td data-mobile-label="锚文本" className="px-2 py-2">
                     {link.placement === "inline" ? (
                       <Input
                         value={anchors[link.id] ?? link.anchorText ?? ""}
@@ -155,15 +161,22 @@ export function PostInternalLinkManager({
                       <span className="text-muted-foreground">-</span>
                     )}
                   </td>
-                  <td className="px-2 py-3 tabular-nums">{link.score}</td>
-                  <td className="px-2 py-3">
+                  <td
+                    data-mobile-label="评分"
+                    className="px-2 py-3 tabular-nums"
+                  >
+                    {link.score}
+                  </td>
+                  <td data-mobile-label="状态" className="px-2 py-3">
                     <Badge
-                      variant={link.status === "active" ? "default" : "secondary"}
+                      variant={
+                        link.status === "active" ? "default" : "secondary"
+                      }
                     >
                       {statusLabels[link.status] ?? link.status}
                     </Badge>
                   </td>
-                  <td className="px-2 py-2">
+                  <td data-mobile-label="操作" className="px-2 py-2">
                     <div className="flex justify-end gap-1">
                       {link.placement === "inline" ? (
                         <Button
@@ -171,7 +184,9 @@ export function PostInternalLinkManager({
                           variant="ghost"
                           size="icon"
                           title="保存并启用"
-                          disabled={busyKey !== null || link.auditIssues.length > 0}
+                          disabled={
+                            busyKey !== null || link.auditIssues.length > 0
+                          }
                           onClick={() => updateLink(link, "active")}
                         >
                           <Save className="size-4" />
@@ -182,7 +197,9 @@ export function PostInternalLinkManager({
                           variant="ghost"
                           size="icon"
                           title="启用"
-                          disabled={busyKey !== null || link.auditIssues.length > 0}
+                          disabled={
+                            busyKey !== null || link.auditIssues.length > 0
+                          }
                           onClick={() => updateLink(link, "active")}
                         >
                           <Check className="size-4" />

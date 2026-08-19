@@ -118,7 +118,10 @@ function QueueSummaryLink({
               : "text-muted-foreground hover:underline"
           }
         >
-          失败 <strong className="font-semibold tabular-nums">{summary.failed}</strong>
+          失败{" "}
+          <strong className="font-semibold tabular-nums">
+            {summary.failed}
+          </strong>
         </Link>
         {summary.uncertain > 0 ? (
           <Link
@@ -220,7 +223,7 @@ function SystemDiagnostics({ summary }: { summary: CmsTaskOperationsSummary }) {
 
         <div className="overflow-x-auto rounded-md border border-border/70">
           {summary.backgroundJobs.length > 0 ? (
-            <Table className="min-w-[760px]">
+            <Table className="cms-mobile-sticky-actions min-w-[760px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>后台任务</TableHead>

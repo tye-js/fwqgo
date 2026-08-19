@@ -74,7 +74,9 @@ export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
     <Card
       className={cn(
         "relative flex min-h-0 flex-col overflow-hidden rounded-lg border-border/70 bg-background shadow-sm",
-        isFullscreen ? "fixed inset-0 z-50 rounded-none" : "min-h-[80vh]",
+        isFullscreen
+          ? "fixed inset-0 z-50 rounded-none pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]"
+          : "min-h-[60dvh] lg:min-h-[80vh]",
       )}
     >
       <EditorToolbar

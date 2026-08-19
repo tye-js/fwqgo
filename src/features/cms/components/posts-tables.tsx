@@ -78,13 +78,7 @@ type PostListProp = Pick<
   "id" | "title" | "published" | "imgUrl" | "slug" | "language"
 >;
 type PostStatusFilter = "all" | "published" | "draft";
-type BulkAction =
-  | "publish"
-  | "draft"
-  | "cover"
-  | "english"
-  | "seo"
-  | "delete";
+type BulkAction = "publish" | "draft" | "cover" | "english" | "seo" | "delete";
 
 type CoverBatch = {
   batchId: string;
@@ -683,7 +677,7 @@ export function PostList({
         />
       ) : (
         <>
-          <div className="grid gap-3 md:hidden">
+          <div className="grid gap-3 lg:hidden">
             {sortedPosts.map((post) => (
               <article
                 key={post.id}
@@ -850,7 +844,7 @@ export function PostList({
             ))}
           </div>
 
-          <div className="hidden overflow-x-auto rounded-md border border-border/70 md:block">
+          <div className="hidden overflow-x-auto rounded-md border border-border/70 lg:block">
             <Table>
               <TableHeader>
                 <TableRow>

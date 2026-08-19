@@ -49,6 +49,7 @@ import { type getPostProductionContext } from "@/features/cms/data/post";
 import { isRenderableImageSrc } from "@fwqgo/core/image-src";
 import { PostInternalLinkManager } from "@/features/cms/components/post-internal-link-manager";
 import type { AdminPostInternalLink } from "@/server/posts/internal-links";
+import { useConfirmUnsavedChanges } from "@/features/cms/hooks/use-confirm-unsaved-changes";
 interface Category {
   id: number;
   name: string;
@@ -101,6 +102,23 @@ export default function EditPost({
   const [tags, setTags] = useState<NewTag[]>(post.tags);
   const [keywords, setKeywords] = useState<string>(
     limitKeywordInput(post.post.keywords ?? ""),
+  );
+  const articleFormDirty =
+    title !== postMeta.title ||
+    slug !== postMeta.slug ||
+    published !== postMeta.published ||
+    description !== post.post.description ||
+    content !== post.post.content ||
+    imageUrl !== (post.post.imgUrl ?? "") ||
+    categoryId !== post.post.categoryId.toString() ||
+    recommendTagName !== (post.post.recommendedTagName ?? "") ||
+    keywords !== limitKeywordInput(post.post.keywords ?? "") ||
+    tags.map((item) => item.tag.name).join("\u0000") !==
+      post.tags.map((item) => item.tag.name).join("\u0000");
+
+  useConfirmUnsavedChanges(
+    articleFormDirty && !isSubmitting,
+    "文章修改尚未保存，确定离开编辑页面吗？",
   );
   const handleAddTag = (tagInput: string) => {
     const name = tagInput.trim();
@@ -248,9 +266,7 @@ export default function EditPost({
       });
       const savedSlug = result?.data?.slug?.trim() ?? normalizedSlug;
       if (savedSlug !== postMeta.slug) {
-        router.replace(
-          `/posts/edit/post/${encodeURIComponent(savedSlug)}`,
-        );
+        router.replace(`/posts/edit/post/${encodeURIComponent(savedSlug)}`);
       } else {
         router.refresh();
       }
@@ -331,10 +347,7 @@ export default function EditPost({
       ) : null}
 
       <AdminSectionCard title="文章内链">
-        <PostInternalLinkManager
-          postId={post.post.id}
-          links={internalLinks}
-        />
+        <PostInternalLinkManager postId={post.post.id} links={internalLinks} />
       </AdminSectionCard>
 
       <form
@@ -344,7 +357,12 @@ export default function EditPost({
         <AdminSectionCard title="正文编辑" description={title}>
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <label className="text-sm font-medium">文章内容</label>
+              <label
+                htmlFor="edit-post-content"
+                className="text-sm font-medium"
+              >
+                文章内容
+              </label>
               <Button
                 type="button"
                 variant="outline"
@@ -357,7 +375,11 @@ export default function EditPost({
                 {isRewritingLinks ? "替换中..." : "替换返利链接"}
               </Button>
             </div>
-            <MarkdownEditor content={content} onChange={setContent} />
+            <MarkdownEditor
+              id="edit-post-content"
+              content={content}
+              onChange={setContent}
+            />
           </div>
 
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -466,8 +488,14 @@ export default function EditPost({
               <Separator />
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">文章简述</label>
+                <label
+                  htmlFor="edit-post-description"
+                  className="text-sm font-medium"
+                >
+                  文章简述
+                </label>
                 <Textarea
+                  id="edit-post-description"
                   value={description ?? ""}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="输入内容简述"
@@ -495,12 +523,20 @@ export default function EditPost({
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">分类</label>
+                  <label
+                    htmlFor="edit-post-category"
+                    className="text-sm font-medium"
+                  >
+                    分类
+                  </label>
                   <Select
                     value={categoryId}
                     onValueChange={(value) => setCategoryId(value)}
                   >
-                    <SelectTrigger className="min-h-11 w-full">
+                    <SelectTrigger
+                      id="edit-post-category"
+                      className="min-h-11 w-full"
+                    >
                       <SelectValue placeholder="选择分类" />
                     </SelectTrigger>
                     <SelectContent>
@@ -520,8 +556,14 @@ export default function EditPost({
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">推荐标签</label>
+                  <label
+                    htmlFor="edit-post-recommended-tag"
+                    className="text-sm font-medium"
+                  >
+                    推荐标签
+                  </label>
                   <Input
+                    id="edit-post-recommended-tag"
                     className="min-h-11"
                     value={recommendTagName}
                     onChange={(e) => setRecommendTagName(e.target.value)}
@@ -600,13 +642,17 @@ export default function EditPost({
               <Separator />
 
               <div className="space-y-2">
-                <label className="text-nowrap text-sm font-medium">
+                <label
+                  htmlFor="edit-post-keywords"
+                  className="text-nowrap text-sm font-medium"
+                >
                   关键词
                 </label>
                 <p className="text-xs leading-5 text-muted-foreground">
                   关键词之间用逗号分隔，建议 2-6 个，单个关键词保持简短。
                 </p>
                 <Input
+                  id="edit-post-keywords"
                   className="min-h-11 w-full"
                   value={keywords}
                   onChange={(e) => setKeywords(e.target.value)}
@@ -659,7 +705,7 @@ export default function EditPost({
             </div>
           </AdminSectionCard>
 
-          <div className="sticky bottom-4 rounded-md border border-border/70 bg-background/95 p-3 shadow-sm backdrop-blur">
+          <div className="cms-mobile-save-bar rounded-md border border-border/70 bg-background/95 p-3 shadow-sm backdrop-blur lg:sticky lg:bottom-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs leading-5 text-muted-foreground">
                 一次保存会更新标题、slug、发布状态、正文、分类、推荐标签、关键词和标签关系。

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity,
@@ -72,6 +72,7 @@ import {
   defaultMetadataStylePrompt,
 } from "@fwqgo/core/ai-rewrite-prompts";
 import { defaultProviderCatalogDiscoveryPrompt } from "@fwqgo/core/provider-catalog-discovery";
+import { useConfirmUnsavedChanges } from "@/features/cms/hooks/use-confirm-unsaved-changes";
 
 type Config = Awaited<ReturnType<typeof getAiRewriteConfigs>>[number];
 
@@ -229,10 +230,12 @@ function PromptTemplateField({
   description: string;
   className?: string;
 }) {
+  const fieldId = useId();
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Label htmlFor={name}>{label}</Label>
+        <Label htmlFor={fieldId}>{label}</Label>
         {variables.map((variable) => (
           <Badge key={variable} variant="outline" className="font-mono text-xs">
             {`{${variable}}`}
@@ -240,7 +243,7 @@ function PromptTemplateField({
         ))}
       </div>
       <Textarea
-        id={name}
+        id={fieldId}
         name={name}
         className={`${className} resize-y font-mono text-xs leading-5`}
         defaultValue={value}
@@ -263,6 +266,7 @@ function ConfigForm({
   onDone?: () => void;
 }) {
   const defaults = config ?? templateConfig;
+  const formId = useId();
   const initialPreset = resolveInterfacePreset(defaults);
   const [interfacePreset, setInterfacePreset] =
     useState<InterfacePreset>(initialPreset);
@@ -278,6 +282,12 @@ function ConfigForm({
   const [enabled, setEnabled] = useState(config?.enabled ?? false);
   const [isDefault, setIsDefault] = useState(config?.isDefault ?? false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+
+  useConfirmUnsavedChanges(
+    isDirty && !isSaving,
+    "AI 改写配置尚未保存，确定离开吗？",
+  );
 
   function handlePresetChange(value: InterfacePreset) {
     const preset = interfacePresets[value];
@@ -285,6 +295,7 @@ function ConfigForm({
     setName(preset.name);
     setBaseUrl(preset.baseUrl);
     setModel(preset.model);
+    setIsDirty(true);
   }
 
   async function handleSubmit(formData: FormData) {
@@ -319,6 +330,7 @@ function ConfigForm({
           ]),
         });
       }
+      setIsDirty(false);
       onDone?.();
     } catch (error) {
       notifyError({
@@ -337,25 +349,24 @@ function ConfigForm({
   return (
     <form
       action={handleSubmit}
+      onChangeCapture={() => setIsDirty(true)}
       className="grid gap-4 rounded-md border border-border/70 bg-muted/20 p-4"
     >
       <div className="grid gap-4 md:grid-cols-3">
         <div className="space-y-2">
-          <Label>接口预设</Label>
+          <Label htmlFor={`${formId}-interface-preset`}>接口预设</Label>
           <Select
             value={interfacePreset}
             onValueChange={(value) =>
               handlePresetChange(value as InterfacePreset)
             }
           >
-            <SelectTrigger>
+            <SelectTrigger id={`${formId}-interface-preset`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="deepseekOfficial">DeepSeek 官方</SelectItem>
-              <SelectItem value="deepseekRelay">
-                DeepSeek 第三方中转
-              </SelectItem>
+              <SelectItem value="deepseekRelay">DeepSeek 第三方中转</SelectItem>
               <SelectItem value="openaiOfficial">OpenAI 官方</SelectItem>
               <SelectItem value="compatible">
                 其他第三方中转 / OpenAI 兼容
@@ -364,8 +375,9 @@ function ConfigForm({
           </Select>
         </div>
         <div className="space-y-2">
-          <Label>配置名称</Label>
+          <Label htmlFor={`${formId}-name`}>配置名称</Label>
           <Input
+            id={`${formId}-name`}
             name="name"
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -373,8 +385,9 @@ function ConfigForm({
           />
         </div>
         <div className="space-y-2">
-          <Label>模型</Label>
+          <Label htmlFor={`${formId}-model`}>模型</Label>
           <Input
+            id={`${formId}-model`}
             name="model"
             value={model}
             onChange={(event) => setModel(event.target.value)}
@@ -389,8 +402,9 @@ function ConfigForm({
 
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.45fr)]">
         <div className="space-y-2">
-          <Label>Base URL</Label>
+          <Label htmlFor={`${formId}-base-url`}>Base URL</Label>
           <Input
+            id={`${formId}-base-url`}
             name="baseUrl"
             value={baseUrl}
             onChange={(event) => setBaseUrl(event.target.value)}
@@ -403,8 +417,9 @@ function ConfigForm({
           </p>
         </div>
         <div className="space-y-2">
-          <Label>API Key</Label>
+          <Label htmlFor={`${formId}-api-key`}>API Key</Label>
           <Input
+            id={`${formId}-api-key`}
             name="apiKey"
             type="password"
             placeholder={
@@ -418,16 +433,18 @@ function ConfigForm({
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_120px_180px_160px]">
         <div className="space-y-2">
-          <Label>风格名称</Label>
+          <Label htmlFor={`${formId}-style-name`}>风格名称</Label>
           <Input
+            id={`${formId}-style-name`}
             name="styleName"
             defaultValue={defaults?.styleName ?? "服务器推广专业评测"}
             required
           />
         </div>
         <div className="space-y-2">
-          <Label>Temperature</Label>
+          <Label htmlFor={`${formId}-temperature`}>Temperature</Label>
           <Input
+            id={`${formId}-temperature`}
             name="temperature"
             type="number"
             min={0}
@@ -437,8 +454,11 @@ function ConfigForm({
           />
         </div>
         <div className="space-y-2">
-          <Label>Max Tokens（中文 / 英文）</Label>
+          <Label htmlFor={`${formId}-max-tokens`}>
+            Max Tokens（中文 / 英文）
+          </Label>
           <Input
+            id={`${formId}-max-tokens`}
             name="maxTokens"
             type="number"
             min={1000}
@@ -452,8 +472,13 @@ function ConfigForm({
           </p>
         </div>
         <div className="space-y-2">
-          <Label>中文正文调用次数</Label>
-          <Input value="1" readOnly aria-readonly="true" />
+          <Label htmlFor={`${formId}-rewrite-count`}>中文正文调用次数</Label>
+          <Input
+            id={`${formId}-rewrite-count`}
+            value="1"
+            readOnly
+            aria-readonly="true"
+          />
           <p className="text-xs leading-5 text-muted-foreground">
             固定生成 1 次，不再自动重写。
           </p>
@@ -494,7 +519,7 @@ function ConfigForm({
               "retryFeedback",
             ]}
             description="每次候选正文只基于清洗后的原文做小幅改写和排版整理，不追加独立事实审查。"
-            className="min-h-[34rem]"
+            className="min-h-72 lg:min-h-[34rem]"
           />
           <PromptTemplateField
             name="initialRewritePrompt"
@@ -519,12 +544,12 @@ function ConfigForm({
             value={defaults?.metadataPrompt ?? defaultMetadataPrompt}
             variables={["metadataStylePrompt", "markdownContent"]}
             description="用于标题、摘要、关键词、标签和推荐标签生成。"
-            className="min-h-[28rem]"
+            className="min-h-72 lg:min-h-[28rem]"
           />
         </div>
       </details>
 
-      <details open className="border-t pt-4">
+      <details className="border-t pt-4">
         <summary className="cursor-pointer text-sm font-semibold text-foreground">
           英文正文与 SEO 提示词
         </summary>
@@ -550,7 +575,7 @@ function ConfigForm({
               "markdownContent",
             ]}
             description="用于从已完成改写的中文正文生成英文 Markdown。"
-            className="min-h-[30rem]"
+            className="min-h-72 lg:min-h-[30rem]"
           />
           <PromptTemplateField
             name="englishContinuationPrompt"
@@ -588,7 +613,7 @@ function ConfigForm({
               "enContent",
             ]}
             description="用于英文标题、slug、摘要、关键词、标签和分类元信息。"
-            className="min-h-[32rem]"
+            className="min-h-72 lg:min-h-[32rem]"
           />
         </div>
       </details>
@@ -607,12 +632,12 @@ function ConfigForm({
             }
             variables={["providerName", "officialUrl", "pagesJson"]}
             description="一次性扫描时发送给模型的完整用户提示词。系统不追加隐藏业务提示词；实际提示词和模型原始输出都会保留在扫描记录中。"
-            className="min-h-[34rem]"
+            className="min-h-72 lg:min-h-[34rem]"
           />
         </div>
       </details>
 
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="cms-mobile-save-bar flex flex-wrap items-center justify-between gap-4 rounded-md border border-border/70 bg-background/95 p-3 shadow-sm backdrop-blur">
         <div className="flex flex-wrap gap-5">
           <label className="flex items-center gap-2 text-sm">
             <Switch
@@ -620,6 +645,7 @@ function ConfigForm({
               onCheckedChange={(checked) => {
                 setEnabled(checked);
                 if (!checked) setIsDefault(false);
+                setIsDirty(true);
               }}
             />
             启用
@@ -630,6 +656,7 @@ function ConfigForm({
               onCheckedChange={(checked) => {
                 setIsDefault(checked);
                 if (checked) setEnabled(true);
+                setIsDirty(true);
               }}
             />
             默认改写配置

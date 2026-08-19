@@ -103,13 +103,13 @@ export function AdminSummaryStrip({
   items: Array<{ label: string; value: string; note?: string }>;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border/70 bg-border/70 lg:[grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]">
+    <div className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-border/70 bg-border/70 sm:grid-cols-2 lg:[grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]">
       {items.map((item, index) => (
         <div
           key={item.label}
           className={`min-w-0 bg-card px-3 py-2.5 ${
             items.length % 2 === 1 && index === items.length - 1
-              ? "col-span-2 lg:col-span-1"
+              ? "sm:col-span-2 lg:col-span-1"
               : ""
           }`}
         >

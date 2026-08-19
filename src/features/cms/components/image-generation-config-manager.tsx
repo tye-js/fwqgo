@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ImagePlus, Loader2, Plus, Star, Trash2 } from "lucide-react";
 
@@ -52,6 +52,7 @@ import {
   notifySuccess,
 } from "@/lib/admin-toast";
 import { unwrapAdminActionResult } from "@/lib/admin-action-result";
+import { useConfirmUnsavedChanges } from "@/features/cms/hooks/use-confirm-unsaved-changes";
 
 type Config = {
   id: number;
@@ -104,13 +105,20 @@ function ConfigForm({
   config?: Config;
   onDone?: () => void;
 }) {
+  const formId = useId();
   const [provider, setProvider] = useState<"image2" | "openai" | "compatible">(
     config?.provider ?? "image2",
   );
   const [enabled, setEnabled] = useState(config?.enabled ?? false);
   const [isDefault, setIsDefault] = useState(config?.isDefault ?? false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const defaults = providerDefaults[provider];
+
+  useConfirmUnsavedChanges(
+    isDirty && !isSaving,
+    "生图配置尚未保存，确定离开吗？",
+  );
 
   async function handleSubmit(formData: FormData) {
     setIsSaving(true);
@@ -151,6 +159,7 @@ function ConfigForm({
           ]),
         });
       }
+      setIsDirty(false);
       onDone?.();
     } catch (error) {
       notifyError({
@@ -169,16 +178,20 @@ function ConfigForm({
   return (
     <form
       action={handleSubmit}
+      onChangeCapture={() => setIsDirty(true)}
       className="grid gap-4 rounded-md border border-border/70 bg-muted/20 p-4"
     >
       <div className="grid gap-4 md:grid-cols-3">
         <div className="space-y-2">
-          <Label>服务类型</Label>
+          <Label htmlFor={`${formId}-provider`}>服务类型</Label>
           <Select
             value={provider}
-            onValueChange={(value) => setProvider(value as typeof provider)}
+            onValueChange={(value) => {
+              setProvider(value as typeof provider);
+              setIsDirty(true);
+            }}
           >
-            <SelectTrigger>
+            <SelectTrigger id={`${formId}-provider`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -189,16 +202,18 @@ function ConfigForm({
           </Select>
         </div>
         <div className="space-y-2">
-          <Label>配置名称</Label>
+          <Label htmlFor={`${formId}-name`}>配置名称</Label>
           <Input
+            id={`${formId}-name`}
             name="name"
             defaultValue={config?.name ?? defaults.name}
             required
           />
         </div>
         <div className="space-y-2">
-          <Label>模型</Label>
+          <Label htmlFor={`${formId}-model`}>模型</Label>
           <Input
+            id={`${formId}-model`}
             name="model"
             defaultValue={config?.model ?? defaults.model}
             required
@@ -208,8 +223,9 @@ function ConfigForm({
 
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.45fr)]">
         <div className="space-y-2">
-          <Label>Base URL</Label>
+          <Label htmlFor={`${formId}-base-url`}>Base URL</Label>
           <Input
+            id={`${formId}-base-url`}
             name="baseUrl"
             defaultValue={config?.baseUrl ?? defaults.baseUrl}
             placeholder="https://api.example.com"
@@ -221,8 +237,9 @@ function ConfigForm({
           </p>
         </div>
         <div className="space-y-2">
-          <Label>API Key</Label>
+          <Label htmlFor={`${formId}-api-key`}>API Key</Label>
           <Input
+            id={`${formId}-api-key`}
             name="apiKey"
             type="password"
             placeholder={
@@ -236,16 +253,25 @@ function ConfigForm({
 
       <div className="grid gap-4 md:grid-cols-3">
         <div className="space-y-2">
-          <Label>默认尺寸</Label>
-          <Input name="size" defaultValue={config?.size ?? "1024x576"} />
-        </div>
-        <div className="space-y-2">
-          <Label>质量参数</Label>
-          <Input name="quality" defaultValue={config?.quality ?? "standard"} />
-        </div>
-        <div className="space-y-2">
-          <Label>超时秒数</Label>
+          <Label htmlFor={`${formId}-size`}>默认尺寸</Label>
           <Input
+            id={`${formId}-size`}
+            name="size"
+            defaultValue={config?.size ?? "1024x576"}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`${formId}-quality`}>质量参数</Label>
+          <Input
+            id={`${formId}-quality`}
+            name="quality"
+            defaultValue={config?.quality ?? "standard"}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`${formId}-timeout`}>超时秒数</Label>
+          <Input
+            id={`${formId}-timeout`}
             name="timeoutSeconds"
             type="number"
             min={10}
@@ -259,8 +285,9 @@ function ConfigForm({
       </div>
 
       <div className="space-y-2">
-        <Label>中文封面 Prompt 模板</Label>
+        <Label htmlFor={`${formId}-prompt`}>中文封面 Prompt 模板</Label>
         <Textarea
+          id={`${formId}-prompt`}
           name="promptTemplate"
           className="min-h-56 font-mono text-xs leading-5"
           defaultValue={config?.promptTemplate ?? defaultCoverPromptTemplate}
@@ -269,13 +296,15 @@ function ConfigForm({
         <p className="text-xs leading-5 text-muted-foreground">
           仅用于中文文章封面。支持占位符：
           <code>{"{title}"}</code>、<code>{"{description}"}</code>、
-          <code>{"{keywords}"}</code>、<code>{"{visualBrief}"}</code>。正文不会直接注入 Prompt，系统会自动追加中文语言约束和旗帜限制。
+          <code>{"{keywords}"}</code>、<code>{"{visualBrief}"}</code>
+          。正文不会直接注入 Prompt，系统会自动追加中文语言约束和旗帜限制。
         </p>
       </div>
 
       <div className="space-y-2">
-        <Label>英文封面 Prompt 模板</Label>
+        <Label htmlFor={`${formId}-english-prompt`}>英文封面 Prompt 模板</Label>
         <Textarea
+          id={`${formId}-english-prompt`}
           name="englishPromptTemplate"
           className="min-h-72 font-mono text-xs leading-5"
           defaultValue={
@@ -290,7 +319,7 @@ function ConfigForm({
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-border/70 bg-background px-4 py-3">
+      <div className="cms-mobile-save-bar flex flex-wrap items-center justify-between gap-4 rounded-md border border-border/70 bg-background/95 px-4 py-3 shadow-sm backdrop-blur">
         <div className="flex flex-wrap gap-6">
           <label className="flex items-center gap-3 text-sm">
             <Switch
@@ -298,6 +327,7 @@ function ConfigForm({
               onCheckedChange={(checked) => {
                 setEnabled(checked);
                 if (!checked) setIsDefault(false);
+                setIsDirty(true);
               }}
             />
             启用配置
@@ -308,6 +338,7 @@ function ConfigForm({
               onCheckedChange={(checked) => {
                 setIsDefault(checked);
                 if (checked) setEnabled(true);
+                setIsDirty(true);
               }}
             />
             设为默认

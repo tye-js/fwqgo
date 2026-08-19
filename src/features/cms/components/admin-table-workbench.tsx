@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Filter, Search, SearchX, X } from "lucide-react";
+import { ChevronDown, Filter, Search, SearchX, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -93,9 +93,15 @@ export function AdminTableWorkbench({
           </div>
         ) : null}
         {actionSlot ? (
-          <div className="flex min-w-0 flex-wrap justify-start gap-2 xl:col-start-2 xl:row-start-1 xl:justify-end [&>*]:w-full sm:[&>*]:w-auto">
-            {actionSlot}
-          </div>
+          <details className="group min-w-0 xl:contents">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between rounded-md border border-border/70 bg-background px-3 text-sm font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring xl:hidden [&::-webkit-details-marker]:hidden">
+              批量与更多操作
+              <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-2 flex min-w-0 flex-wrap justify-start gap-2 group-open:flex xl:col-start-2 xl:row-start-1 xl:mt-0 xl:flex xl:justify-end [&>*]:w-full sm:[&>*]:w-auto">
+              {actionSlot}
+            </div>
+          </details>
         ) : null}
       </div>
     </div>

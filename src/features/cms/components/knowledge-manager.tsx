@@ -422,7 +422,12 @@ export function KnowledgeManager({
   ) {
     const targetsCurrentForm =
       targetId === null ? !form.id : targetId === form.id;
-    if (targetsCurrentForm || savingArticle) {
+    if (savingArticle) {
+      event.preventDefault();
+      return;
+    }
+    if (targetsCurrentForm) {
+      if (href.includes("#knowledge-editor")) return;
       event.preventDefault();
       return;
     }
@@ -761,11 +766,11 @@ export function KnowledgeManager({
           {language === "zh" ? (
             <Button asChild>
               <Link
-                href={knowledgeAdminHref({ language: "zh" })}
+                href={`${knowledgeAdminHref({ language: "zh" })}#knowledge-editor`}
                 onClick={(event) =>
                   requestArticleNavigation(
                     event,
-                    knowledgeAdminHref({ language: "zh" }),
+                    `${knowledgeAdminHref({ language: "zh" })}#knowledge-editor`,
                     null,
                   )
                 }
@@ -779,14 +784,18 @@ export function KnowledgeManager({
       </div>
 
       <div className="grid min-w-0 gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
-        <section className="min-w-0" aria-label="知识条目列表">
+        <section
+          id="knowledge-list"
+          className="min-w-0 scroll-mt-20"
+          aria-label="知识条目列表"
+        >
           <div className="mb-2 flex items-center justify-between gap-3">
             <h2 className="text-sm font-semibold">
               {language === "en" ? "英文知识稿" : "中文知识稿"}
             </h2>
             <Badge variant="outline">{articles.length} 条</Badge>
           </div>
-          <div className="max-h-[calc(100dvh-220px)] overflow-y-auto rounded-md border border-border/70">
+          <div className="rounded-md border border-border/70 xl:max-h-[calc(100dvh-220px)] xl:overflow-y-auto">
             {articles.map((article) => {
               const articleHref = knowledgeAdminHref({
                 language,
@@ -801,9 +810,13 @@ export function KnowledgeManager({
               return (
                 <Link
                   key={article.id}
-                  href={articleHref}
+                  href={`${articleHref}#knowledge-editor`}
                   onClick={(event) =>
-                    requestArticleNavigation(event, articleHref, article.id)
+                    requestArticleNavigation(
+                      event,
+                      `${articleHref}#knowledge-editor`,
+                      article.id,
+                    )
                   }
                   className={cn(
                     "block border-b border-border/60 px-3 py-3 transition-colors last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
@@ -856,7 +869,7 @@ export function KnowledgeManager({
           </div>
         </section>
 
-        <div className="min-w-0">
+        <div id="knowledge-editor" className="min-w-0 scroll-mt-20">
           <div className="flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -886,6 +899,15 @@ export function KnowledgeManager({
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
+              <Button
+                asChild
+                type="button"
+                variant="outline"
+                size="sm"
+                className="xl:hidden"
+              >
+                <a href="#knowledge-list">返回知识列表</a>
+              </Button>
               {form.id && status.published ? (
                 <Button asChild type="button" variant="outline" size="sm">
                   {form.language === "en" ? (
@@ -1330,7 +1352,7 @@ export function KnowledgeManager({
                   />
                 </FormField>
 
-                <div className="flex justify-end border-t border-border/70 pt-4">
+                <div className="cms-mobile-save-bar flex justify-end border-t border-border/70 bg-background/95 pt-4 backdrop-blur">
                   <Button
                     type="submit"
                     size="sm"

@@ -26,6 +26,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
+import { useConfirmUnsavedChanges } from "@/features/cms/hooks/use-confirm-unsaved-changes";
 
 export type CreatePostCategory = {
   id: number;
@@ -77,6 +78,20 @@ export function CreatePostWorkbench({
   });
   const seoPassedCount = seoChecks.filter((check) => check.ok).length;
   const failedSeoChecks = seoChecks.filter((check) => !check.ok);
+  const hasUnsavedChanges = Boolean(
+    title.trim() ||
+    description.trim() ||
+    content.trim() ||
+    imageUrl.trim() ||
+    recommendTag.name.trim() ||
+    tags.length ||
+    normalizedKeywords.length,
+  );
+
+  useConfirmUnsavedChanges(
+    hasUnsavedChanges && !isSubmitting && !isSaving,
+    "这篇文章还没有保存，确定离开创建页面吗？",
+  );
 
   const handleAddTag = () => {
     const name = tagInput.trim();
@@ -100,7 +115,11 @@ export function CreatePostWorkbench({
     e.preventDefault();
     if (mutationRef.current) return;
 
-    const missingFields = getMissingRequiredFields({ title, content, description });
+    const missingFields = getMissingRequiredFields({
+      title,
+      content,
+      description,
+    });
     if (missingFields.length > 0) {
       toast.error(`发布前请补全：${missingFields.join("、")}`);
       return;
@@ -129,7 +148,9 @@ export function CreatePostWorkbench({
       });
 
       if (!result.success) {
-        toast.error(result.message ?? result.error ?? "创建文章失败，请检查表单后重试");
+        toast.error(
+          result.message ?? result.error ?? "创建文章失败，请检查表单后重试",
+        );
         return;
       }
 
@@ -147,7 +168,11 @@ export function CreatePostWorkbench({
   const handleSaveDraft = async () => {
     if (mutationRef.current) return;
 
-    const missingFields = getMissingRequiredFields({ title, content, description });
+    const missingFields = getMissingRequiredFields({
+      title,
+      content,
+      description,
+    });
     if (missingFields.length > 0) {
       toast.error(`保存草稿前请补全：${missingFields.join("、")}`);
       return;
@@ -176,15 +201,15 @@ export function CreatePostWorkbench({
       });
 
       if (!result.success) {
-        toast.error(result.message ?? result.error ?? "保存草稿失败，请检查表单后重试");
+        toast.error(
+          result.message ?? result.error ?? "保存草稿失败，请检查表单后重试",
+        );
         return;
       }
 
       toast.success("草稿保存成功");
       if (result.data?.slug) {
-        router.push(
-          `/posts/edit/post/${encodeURIComponent(result.data.slug)}`,
-        );
+        router.push(`/posts/edit/post/${encodeURIComponent(result.data.slug)}`);
         router.refresh();
       } else {
         router.push("/posts/drafts");
@@ -217,10 +242,22 @@ export function CreatePostWorkbench({
         className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]"
         onSubmit={handleSubmit}
       >
-        <AdminSectionCard title="正文编辑器" description="文章主体内容会在这里完成。">
+        <AdminSectionCard
+          title="正文编辑器"
+          description="文章主体内容会在这里完成。"
+        >
           <div className="space-y-2">
-            <label className="text-sm font-medium">文章内容</label>
-            <MarkdownEditor content={content} onChange={setContent} />
+            <label
+              htmlFor="create-post-content"
+              className="text-sm font-medium"
+            >
+              文章内容
+            </label>
+            <MarkdownEditor
+              id="create-post-content"
+              content={content}
+              onChange={setContent}
+            />
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
@@ -252,210 +289,256 @@ export function CreatePostWorkbench({
             </div>
           </div>
         </AdminSectionCard>
-        <AdminSectionCard title="发布设置" description="填写标题、封面、分类、标签和 SEO 元信息。">
+        <AdminSectionCard
+          title="发布设置"
+          description="填写标题、封面、分类、标签和 SEO 元信息。"
+        >
           <div className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">文章标题</label>
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="建议包含商家、地区、套餐或核心优惠点"
-              required
-            />
-            <p className="text-xs text-muted-foreground">
-              当前 {title.trim().length} 字，建议 12-36 字，避免标题过短或堆关键词。
-            </p>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">内容简述</label>
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="概括优惠、适用场景、核心配置或购买理由"
-              required
-            />
-            <p className="text-xs text-muted-foreground">
-              当前 {description.trim().length} 字，建议 80-160 字，方便搜索摘要展示。
-            </p>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">分类</label>
-            <Select
-              value={categoryId}
-              onValueChange={(value) => setCategoryId(value)}
-              disabled={categories.length === 0}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="选择分类" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectLabel>文章分类</SelectLabel>
-                  {categories.map((category) => (
-                    <SelectItem
-                      value={category.id.toString()}
-                      key={category.id}
-                    >
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            {categories.length === 0 ? (
-              <p className="text-xs text-destructive">
-                当前没有可选文章分类，请先在 SEO 分类中创建分类。
+            <div className="space-y-2">
+              <label
+                htmlFor="create-post-title"
+                className="text-sm font-medium"
+              >
+                文章标题
+              </label>
+              <Input
+                id="create-post-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="建议包含商家、地区、套餐或核心优惠点"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                当前 {title.trim().length} 字，建议 12-36
+                字，避免标题过短或堆关键词。
               </p>
-            ) : null}
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">标签</label>
-            <div className="flex flex-wrap items-center gap-2">
-              {tags.length > 0 &&
-                tags.map((tag) => (
-                  <div key={tag.name} className="flex h-10 items-center gap-1">
-                    <Badge variant="default">{tag.name}</Badge>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTag(tag.name)}
-                      className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      aria-label={`删除标签 ${tag.name}`}
-                      title={`删除标签 ${tag.name}`}
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="create-post-description"
+                className="text-sm font-medium"
+              >
+                内容简述
+              </label>
+              <Textarea
+                id="create-post-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="概括优惠、适用场景、核心配置或购买理由"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                当前 {description.trim().length} 字，建议 80-160
+                字，方便搜索摘要展示。
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="create-post-category"
+                className="text-sm font-medium"
+              >
+                分类
+              </label>
+              <Select
+                value={categoryId}
+                onValueChange={(value) => setCategoryId(value)}
+                disabled={categories.length === 0}
+              >
+                <SelectTrigger id="create-post-category" className="w-full">
+                  <SelectValue placeholder="选择分类" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectLabel>文章分类</SelectLabel>
+                    {categories.map((category) => (
+                      <SelectItem
+                        value={category.id.toString()}
+                        key={category.id}
+                      >
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {categories.length === 0 ? (
+                <p className="text-xs text-destructive">
+                  当前没有可选文章分类，请先在 SEO 分类中创建分类。
+                </p>
+              ) : null}
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">标签</label>
+              <div className="flex flex-wrap items-center gap-2">
+                {tags.length > 0 &&
+                  tags.map((tag) => (
+                    <div
+                      key={tag.name}
+                      className="flex h-10 items-center gap-1"
                     >
-                      <X className="size-4" aria-hidden="true" />
-                    </button>
-                  </div>
-                ))}
+                      <Badge variant="default">{tag.name}</Badge>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTag(tag.name)}
+                        className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        aria-label={`删除标签 ${tag.name}`}
+                        title={`删除标签 ${tag.name}`}
+                      >
+                        <X className="size-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                  ))}
 
-              {isAddingTag ? (
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={tagInput}
-                    onChange={(e) => setTagInput(e.target.value)}
-                    placeholder="输入标签名称"
-                    className="w-32"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleAddTag();
-                      }
-                      if (e.key === "Escape") {
-                        e.preventDefault();
-                        setIsAddingTag(false);
-                      }
-                    }}
-                    autoFocus
-                  />
+                {isAddingTag ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      placeholder="输入标签名称"
+                      className="w-32"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddTag();
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setIsAddingTag(false);
+                        }
+                      }}
+                      autoFocus
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddTag}
+                    >
+                      添加
+                    </Button>
+                  </div>
+                ) : (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={handleAddTag}
+                    onClick={() => setIsAddingTag(true)}
                   >
-                    添加
+                    +
                   </Button>
-                </div>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsAddingTag(true)}
-                >
-                  +
-                </Button>
-              )}
+                )}
+              </div>
             </div>
-          </div>
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="text-sm font-medium">封面图片</label>
-              <ArticleCoverGenerator
-                title={title}
-                description={description}
-                keywords={normalizedKeywords.join(",")}
-                content={content}
-                fileSlug={title}
-                language="zh"
-                onGenerated={setImageUrl}
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-sm font-medium">封面图片</label>
+                <ArticleCoverGenerator
+                  title={title}
+                  description={description}
+                  keywords={normalizedKeywords.join(",")}
+                  content={content}
+                  fileSlug={title}
+                  language="zh"
+                  onGenerated={setImageUrl}
+                />
+              </div>
+              <ImageUpload value={imageUrl} onChange={setImageUrl} />
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="create-post-recommended-tag"
+                className="text-sm font-medium"
+              >
+                推荐标签
+              </label>
+              <Input
+                id="create-post-recommended-tag"
+                value={recommendTag.name}
+                onChange={(e) => setRecommendTag({ name: e.target.value })}
+                placeholder="用于详情页推荐阅读"
               />
             </div>
-            <ImageUpload value={imageUrl} onChange={setImageUrl} />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">推荐标签</label>
-            <Input
-              value={recommendTag.name}
-              onChange={(e) => setRecommendTag({ name: e.target.value })}
-              placeholder="用于详情页推荐阅读"
-            />
-          </div>
-          <Separator />
-          <div className="flex flex-col gap-2">
-            <label className="text-nowrap text-sm font-medium">关键词</label>
-            <p className="text-xs text-muted-foreground">
-              建议：关键词之间用逗号分隔，保留 2-6 个核心词，优先覆盖商家、地区、线路、套餐类型。
-            </p>
-            <Input
-              className="w-full"
-              value={keywords.join(",")}
-              onChange={(e) =>
-                setKeywords(
-                  e.target.value.replace(/，/g, ",").split(",").slice(0, 6),
-                )
-              }
-            />
-          </div>
-          <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-semibold">SEO 检查</h3>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  发布前用于快速发现标题、摘要、关键词和正文结构问题，不会阻止保存草稿。
-                </p>
+            <Separator />
+            <div className="flex flex-col gap-2">
+              <label
+                htmlFor="create-post-keywords"
+                className="text-nowrap text-sm font-medium"
+              >
+                关键词
+              </label>
+              <p className="text-xs text-muted-foreground">
+                建议：关键词之间用逗号分隔，保留 2-6
+                个核心词，优先覆盖商家、地区、线路、套餐类型。
+              </p>
+              <Input
+                id="create-post-keywords"
+                className="w-full"
+                value={keywords.join(",")}
+                onChange={(e) =>
+                  setKeywords(
+                    e.target.value.replace(/，/g, ",").split(",").slice(0, 6),
+                  )
+                }
+              />
+            </div>
+            <div className="rounded-md border border-border/70 bg-muted/20 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold">SEO 检查</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    发布前用于快速发现标题、摘要、关键词和正文结构问题，不会阻止保存草稿。
+                  </p>
+                </div>
+                <Badge
+                  variant={
+                    seoPassedCount === seoChecks.length
+                      ? "default"
+                      : "secondary"
+                  }
+                >
+                  {seoPassedCount}/{seoChecks.length}
+                </Badge>
               </div>
-              <Badge variant={seoPassedCount === seoChecks.length ? "default" : "secondary"}>
-                {seoPassedCount}/{seoChecks.length}
-              </Badge>
-            </div>
-            <div className="mt-4 space-y-3">
-              {failedSeoChecks.length === 0 ? (
-                <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                  SEO 检查已全部通过。
-                </div>
-              ) : null}
-              {failedSeoChecks.map((check) => (
-                <div key={check.label} className="flex items-start gap-3">
-                  <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">{check.label}</p>
-                    <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                      {check.detail}
-                    </p>
+              <div className="mt-4 space-y-3">
+                {failedSeoChecks.length === 0 ? (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                    SEO 检查已全部通过。
                   </div>
-                </div>
-              ))}
+                ) : null}
+                {failedSeoChecks.map((check) => (
+                  <div key={check.label} className="flex items-start gap-3">
+                    <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground">
+                        {check.label}
+                      </p>
+                      <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                        {check.detail}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="cms-mobile-save-bar flex flex-col gap-3 rounded-md border border-border/70 bg-background/95 px-4 py-3 shadow-sm backdrop-blur md:flex-row md:justify-end">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={isSaving || isSubmitting}
+                className="md:min-w-[140px]"
+                onClick={handleSaveDraft}
+              >
+                {isSaving ? "存储中..." : "存为草稿"}
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting || isSaving}
+                className="md:min-w-[140px]"
+              >
+                {isSubmitting ? "发布中..." : "发布文章"}
+              </Button>
             </div>
           </div>
-          <div className="flex flex-col gap-3 rounded-md border border-border/70 bg-muted/20 px-4 py-3 md:flex-row md:justify-end">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={isSaving || isSubmitting}
-              className="md:min-w-[140px]"
-              onClick={handleSaveDraft}
-            >
-              {isSaving ? "存储中..." : "存为草稿"}
-            </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting || isSaving}
-              className="md:min-w-[140px]"
-            >
-              {isSubmitting ? "发布中..." : "发布文章"}
-            </Button>
-          </div>
-        </div>
         </AdminSectionCard>
       </form>
     </>
@@ -490,7 +573,9 @@ function buildCreateSeoChecks(input: {
   const keywordCount = input.keywords.length;
   const hasHeading = /^#{2,3}\s+\S+/m.test(input.content);
   const hasCoverImage = Boolean(input.imageUrl.trim());
-  const hasCategory = Boolean(input.categoryId && Number.isFinite(Number(input.categoryId)));
+  const hasCategory = Boolean(
+    input.categoryId && Number.isFinite(Number(input.categoryId)),
+  );
 
   return [
     {
@@ -516,7 +601,9 @@ function buildCreateSeoChecks(input: {
     {
       label: "正文有小标题结构",
       ok: hasHeading,
-      detail: hasHeading ? "已检测到 H2/H3 小标题。" : "建议使用 H2/H3 拆分配置、优惠、购买、注意事项等段落。",
+      detail: hasHeading
+        ? "已检测到 H2/H3 小标题。"
+        : "建议使用 H2/H3 拆分配置、优惠、购买、注意事项等段落。",
     },
     {
       label: "标签覆盖主题",
