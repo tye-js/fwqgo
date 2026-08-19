@@ -44,7 +44,7 @@ export default function EnglishAllArticlesPage(props: {
   params: Promise<{ pageNo: string }>;
 }) {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dvh flex-col bg-background">
       <Header language="en" />
       <Separator />
       <main className="container mx-auto flex-1 py-6 md:py-8">
@@ -55,10 +55,7 @@ export default function EnglishAllArticlesPage(props: {
             </div>
           }
         >
-          <AllArticlesPageContent
-            paramsPromise={props.params}
-            language="en"
-          />
+          <AllArticlesPageContent paramsPromise={props.params} language="en" />
         </Suspense>
       </main>
       <Separator className="mt-4" />

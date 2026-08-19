@@ -385,21 +385,37 @@ function Section({
   );
 }
 
-function StatusIcon({
-  status,
-}: {
-  status: ServerSizingResultV1["status"];
-}) {
+function StatusIcon({ status }: { status: ServerSizingResultV1["status"] }) {
   if (status === "ok") {
-    return <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />;
+    return (
+      <CheckCircle2
+        className="mt-0.5 size-5 shrink-0 text-primary"
+        aria-hidden="true"
+      />
+    );
   }
   if (status === "range_only") {
-    return <Info className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />;
+    return (
+      <Info
+        className="mt-0.5 size-5 shrink-0 text-primary"
+        aria-hidden="true"
+      />
+    );
   }
   if (status === "invalid_input") {
-    return <AlertTriangle className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />;
+    return (
+      <AlertTriangle
+        className="mt-0.5 size-5 shrink-0 text-primary"
+        aria-hidden="true"
+      />
+    );
   }
-  return <TriangleAlert className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />;
+  return (
+    <TriangleAlert
+      className="mt-0.5 size-5 shrink-0 text-primary"
+      aria-hidden="true"
+    />
+  );
 }
 
 function ReasonList({
@@ -557,7 +573,10 @@ export function ServerSizingCalculator({
     () =>
       calculateServerSizing(
         input,
-        ruleSet ?? { ...PUBLISHED_SERVER_SIZING_RULE_SET, status: "retired" as const },
+        ruleSet ?? {
+          ...PUBLISHED_SERVER_SIZING_RULE_SET,
+          status: "retired" as const,
+        },
       ),
     [input, ruleSet],
   );
@@ -573,7 +592,7 @@ export function ServerSizingCalculator({
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dvh flex-col bg-background">
       <main className="flex-1">
         <section className="border-b border-border/70 bg-muted/20">
           <div className="container mx-auto px-4 py-10 md:py-14">

@@ -27,17 +27,17 @@ export function ArticleDetailHeader({
   return (
     <header className="border-b border-border/70 pb-5 md:pb-6">
       {eyebrow ? <div className="mb-3">{eyebrow}</div> : null}
-      <h1 className="font-editorial max-w-4xl text-3xl font-semibold leading-tight text-foreground md:text-4xl">
+      <h1 className="font-editorial max-w-4xl break-words text-2xl font-semibold leading-tight text-foreground sm:text-3xl md:text-4xl">
         {title}
       </h1>
-      <p className="mt-3 line-clamp-2 max-w-3xl text-sm leading-6 text-muted-foreground md:text-base md:leading-7">
+      <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground md:line-clamp-2 md:text-base md:leading-7">
         {description}
       </p>
-      <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-border/60 pt-2 text-sm text-muted-foreground">
-        <div className="flex min-w-0 flex-nowrap items-center gap-x-3 overflow-hidden">
+      <div className="mt-4 flex min-w-0 flex-col gap-2 border-t border-border/60 pt-2 text-sm text-muted-foreground sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 [&>*]:min-h-11">
           {meta}
         </div>
-        <div className="shrink-0 justify-self-end">{actions}</div>
+        <div className="w-full justify-self-end sm:w-auto">{actions}</div>
       </div>
     </header>
   );

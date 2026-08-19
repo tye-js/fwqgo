@@ -59,7 +59,7 @@ export default async function ServerSizingPage({
 }) {
   const rules = await getPublishedServerSizingRuleSnapshot();
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dvh flex-col bg-background">
       <Header language={language} />
       <Suspense fallback={<div className="min-h-[60vh]" />}>
         <ServerSizingCalculator

@@ -584,7 +584,7 @@ async function EnglishHomeContent() {
 
 export default function EnglishHomePage() {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dvh flex-col bg-background">
       <Header language="en" />
       <Suspense
         fallback={

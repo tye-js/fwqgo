@@ -46,11 +46,10 @@ export function PostViewCount({
       .catch(() => {
         // Ignore tracking failures so the page remains interactive.
       });
-
   }, [initialViews, slug]);
 
   return (
-    <div className="hidden items-center gap-1 md:flex">
+    <div className="flex min-h-11 items-center gap-1">
       <Eye className="size-4" />
       {views}次浏览
     </div>

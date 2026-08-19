@@ -4,9 +4,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ChevronRight, Clock, Languages, Tags } from "lucide-react";
 
-import {
-  getEnglishPostWithTagsBySlug,
-} from "@/features/public/data/post";
+import { getEnglishPostWithTagsBySlug } from "@/features/public/data/post";
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
 import {
@@ -389,7 +387,7 @@ async function EnglishPostContent({ params }: PageProps) {
 
 export default function EnglishPostPage({ params }: PageProps) {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dvh flex-col bg-background">
       <Header language="en" />
       <Suspense
         fallback={

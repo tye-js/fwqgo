@@ -243,7 +243,7 @@ async function SearchFooter(props: SearchPageProps) {
 
 export default function SearchPage(props: SearchPageProps) {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dvh flex-col bg-background">
       <Suspense fallback={<Header />}>
         <SearchHeader searchParams={props.searchParams} />
       </Suspense>

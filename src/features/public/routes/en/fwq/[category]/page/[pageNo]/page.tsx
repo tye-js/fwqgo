@@ -221,7 +221,7 @@ export default function EnglishCategoryPage(props: {
   params: Promise<{ category: string; pageNo: string }>;
 }) {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dvh flex-col bg-background">
       <Header language="en" />
       <Separator />
       <main className="container mx-auto flex-1 px-4 py-6 md:py-8">

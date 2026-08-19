@@ -714,13 +714,13 @@ export function ServerOfferTable({
           </p>
         </div>
       ) : null}
-      <div className="grid gap-3 md:hidden">
+      <div className="grid gap-3 lg:hidden">
         {filteredOffers.map((offer) => (
           <OfferMobileCard key={offer.id} offer={offer} language={language} />
         ))}
       </div>
 
-      <div className="hidden overflow-x-auto rounded-lg border border-border/70 bg-background shadow-sm md:block">
+      <div className="hidden overflow-x-auto rounded-lg border border-border/70 bg-background shadow-sm lg:block">
         <table className="w-full min-w-[920px] table-fixed text-[13px]">
           <thead className="border-b border-border/70 bg-muted/30 text-left text-xs uppercase text-muted-foreground">
             <tr>

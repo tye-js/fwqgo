@@ -470,6 +470,13 @@
       "when": 1787152023519,
       "tag": "0066_drop_legacy_ai_rewrite_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1787156038263,
+      "tag": "0067_sync_ai_rewrite_prompt_defaults",
+      "breakpoints": true
     }
   ]
 }

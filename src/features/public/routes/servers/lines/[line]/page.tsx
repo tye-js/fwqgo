@@ -83,7 +83,7 @@ async function LineContent({ params }: PageProps) {
 
 export default function ServerLinePage({ params }: PageProps) {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dvh flex-col bg-background">
       <Header />
       <Suspense
         fallback={

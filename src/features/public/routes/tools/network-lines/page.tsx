@@ -55,7 +55,7 @@ export function generateMetadata(): Metadata {
 export default async function NetworkLinesPage() {
   const ruleSet = await getPublishedNetworkExperienceRuleSnapshot();
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dvh flex-col bg-background">
       <Header language="zh" />
       <NetworkLineSelector language="zh" ruleSet={ruleSet} />
       <Footer language="zh" />

@@ -1,5 +1,10 @@
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Clock3, PackageSearch } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock3,
+  PackageSearch,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,8 +29,7 @@ const stockClasses: Record<string, string> = {
   restocking:
     "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   discontinued: "border-border bg-muted text-muted-foreground",
-  preorder:
-    "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  preorder: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
 };
 
 function cleanText(value: string | null | undefined) {
@@ -59,7 +63,10 @@ function formatCheckedAt(value: Date | null) {
   }).format(value);
 }
 
-function collectionHref(kind: "providers" | "regions" | "lines", value: string) {
+function collectionHref(
+  kind: "providers" | "regions" | "lines",
+  value: string,
+) {
   return `/servers/${kind}/${encodeURIComponent(value)}`;
 }
 
@@ -142,7 +149,7 @@ function OfferMobileCard({
 
   return (
     <article className="rounded-lg border border-border/70 bg-background p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between">
         <div className="min-w-0">
           <p className="text-sm font-semibold leading-6 text-foreground">
             {offer.title}
@@ -183,8 +190,8 @@ function OfferMobileCard({
         </div>
       </dl>
 
-      <div className="mt-3 flex items-end justify-between gap-3 border-t border-border/70 pt-3">
-        <div className="min-w-0 text-xs text-muted-foreground">
+      <div className="mt-3 flex flex-col items-stretch gap-3 border-t border-border/70 pt-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0 break-words text-xs text-muted-foreground">
           {offer.offerKind === "promotion"
             ? `上次探测：${formatCheckedAt(offer.lastCheckedAt)}`
             : `资料更新：${formatCheckedAt(offer.updatedAt ?? offer.createdAt)}`}
@@ -230,18 +237,19 @@ export function ServerInventoryResults({
     <div id="inventory-results" className="scroll-mt-24 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
         <span>
-          本页 {page.items.length} 条，共匹配 {page.total.toLocaleString("zh-CN")} 条
+          本页 {page.items.length} 条，共匹配{" "}
+          {page.total.toLocaleString("zh-CN")} 条
         </span>
         <span>价格统一折算为美元月价排序</span>
       </div>
 
-      <div className="grid gap-3 md:hidden">
+      <div className="grid gap-3 lg:hidden">
         {page.items.map((offer) => (
           <OfferMobileCard key={offer.id} offer={offer} />
         ))}
       </div>
 
-      <div className="hidden overflow-x-auto rounded-lg border border-border/70 bg-background shadow-sm md:block">
+      <div className="hidden overflow-x-auto rounded-lg border border-border/70 bg-background shadow-sm lg:block">
         <table className="w-full min-w-[1120px] table-fixed text-[13px]">
           <thead className="sticky top-0 z-10 border-b border-border/70 bg-muted/95 text-left text-xs text-muted-foreground backdrop-blur">
             <tr>
@@ -283,7 +291,11 @@ export function ServerInventoryResults({
                         </span>
                       ) : null}
                       {offer.tags.slice(0, 4).map((tag) => (
-                        <Badge key={tag.slug} variant="outline" className="text-[11px]">
+                        <Badge
+                          key={tag.slug}
+                          variant="outline"
+                          className="text-[11px]"
+                        >
                           {tag.label}
                         </Badge>
                       ))}

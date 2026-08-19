@@ -168,12 +168,12 @@ export function ServerInventoryOfferActions({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="w-full min-w-0 space-y-2 sm:w-auto">
       {selected ? (
         <div className="space-y-1">
           {options.length > 1 ? (
             <Select value={selectedValue} onValueChange={setSelectedId}>
-              <SelectTrigger className="min-h-11 min-w-[150px] text-xs">
+              <SelectTrigger className="min-h-11 w-full text-xs sm:min-w-[150px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -214,7 +214,7 @@ export function ServerInventoryOfferActions({
         </button>
       ) : null}
 
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex min-w-0 flex-wrap gap-1.5">
         <SafeLinkButton
           href={selectedPurchaseUrl}
           variant="default"

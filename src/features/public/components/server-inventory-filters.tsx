@@ -395,7 +395,7 @@ export function ServerInventoryToolbar({
       </div>
 
       <details className="mt-2 rounded-md border border-border/60 bg-muted/15 px-3 py-2">
-        <summary className="cursor-pointer select-none text-sm font-medium text-foreground">
+        <summary className="flex min-h-11 cursor-pointer select-none items-center text-sm font-medium text-foreground">
           更多筛选
         </summary>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">

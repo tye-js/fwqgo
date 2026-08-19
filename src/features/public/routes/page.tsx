@@ -555,7 +555,7 @@ async function HomeContent() {
 
 export default function Home() {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dvh flex-col bg-background">
       <Header />
       <Suspense
         fallback={

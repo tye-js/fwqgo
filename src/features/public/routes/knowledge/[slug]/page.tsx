@@ -402,7 +402,7 @@ export function KnowledgeArticlePage(props: {
   params: Promise<{ slug: string }>;
 }) {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dvh flex-col bg-background">
       <Header language={props.language} />
       <Suspense
         fallback={
