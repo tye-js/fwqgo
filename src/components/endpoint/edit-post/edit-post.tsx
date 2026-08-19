@@ -543,7 +543,7 @@ export default function EditPost({
                       <button
                         type="button"
                         aria-label={`移除标签 ${tag.tag.name}`}
-                        className="ml-1 rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="ml-1 inline-flex size-11 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => handleRemoveTag(tag.tag.name)}
                       >
                         <X className="size-3.5" />

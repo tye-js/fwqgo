@@ -73,7 +73,7 @@ export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
   return (
     <Card
       className={cn(
-        "relative overflow-hidden rounded-lg border-border/70 bg-background shadow-sm",
+        "relative flex min-h-0 flex-col overflow-hidden rounded-lg border-border/70 bg-background shadow-sm",
         isFullscreen ? "fixed inset-0 z-50 rounded-none" : "min-h-[80vh]",
       )}
     >
@@ -85,7 +85,7 @@ export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
           setIsFullscreen(!isFullscreen);
         }}
       />
-      <CardContent className="h-[calc(100%-252px)] overflow-y-auto px-5 py-4 md:px-6">
+      <CardContent className="min-h-0 flex-1 overflow-y-auto px-5 py-4 md:px-6">
         <EditorContent editor={editor} className="h-full" />
       </CardContent>
     </Card>

@@ -299,7 +299,7 @@ export function ImageUploadWorkbench() {
             </div>
           </div>
         ) : (
-          <Table className="min-w-[880px]">
+          <Table className="cms-mobile-sticky-actions min-w-[880px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[96px]">预览</TableHead>
@@ -341,7 +341,7 @@ export function ImageUploadWorkbench() {
                     {item.url ? (
                       <button
                         type="button"
-                        className="flex min-h-10 max-w-[320px] items-center gap-1.5 rounded-md px-2 text-left text-xs text-muted-foreground underline-offset-4 transition-colors hover:bg-muted hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="flex min-h-11 max-w-[320px] items-center gap-1.5 rounded-md px-2 text-left text-xs text-muted-foreground underline-offset-4 transition-colors hover:bg-muted hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => void handleCopy(item.url!)}
                         aria-label={`复制图片 URL：${item.url}`}
                         title="复制图片 URL"

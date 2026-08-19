@@ -148,7 +148,7 @@ export function PostInternalLinkManager({
                             [link.id]: event.target.value,
                           }))
                         }
-                        className="h-9"
+                        className="min-h-11"
                         aria-label={`修改 ${link.targetTitle} 的锚文本`}
                       />
                     ) : (

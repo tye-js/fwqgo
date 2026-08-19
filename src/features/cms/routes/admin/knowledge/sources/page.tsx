@@ -50,7 +50,7 @@ export default async function KnowledgeSourcesAdminPage() {
         description="A 级规范与官方文档、B 级实测、C 级发现线索分别标记。"
       >
         <div className="overflow-x-auto rounded-md border border-border/70">
-          <table className="w-full min-w-[920px] text-left text-sm">
+          <table className="cms-mobile-sticky-actions w-full min-w-[920px] text-left text-sm">
             <thead className="bg-muted/50 text-xs text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">来源</th>

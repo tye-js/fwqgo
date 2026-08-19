@@ -82,7 +82,7 @@ export function KnowledgeSourceManager({ sources }: { sources: SourceRow[] }) {
           </Field>
           <Field label="权威等级">
             <select
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              className="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
               value={draft.authorityTier}
               onChange={(event) => update("authorityTier", event.target.value)}
             >

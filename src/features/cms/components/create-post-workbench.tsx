@@ -318,7 +318,7 @@ export function CreatePostWorkbench({
                     <button
                       type="button"
                       onClick={() => handleRemoveTag(tag.name)}
-                      className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       aria-label={`删除标签 ${tag.name}`}
                       title={`删除标签 ${tag.name}`}
                     >

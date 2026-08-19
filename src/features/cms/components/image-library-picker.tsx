@@ -103,7 +103,7 @@ export function ImageLibraryPicker({
             className="pl-10"
           />
         </div>
-        <div className="max-h-[60vh] overflow-y-auto">
+        <div className="max-h-[60dvh] overflow-y-auto">
           {isLoading ? (
             <div className="space-y-3" role="status" aria-live="polite">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">

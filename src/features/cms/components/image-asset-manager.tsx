@@ -700,7 +700,7 @@ export function ImageAssetManager({
                       </p>
                       <button
                         type="button"
-                        className="flex min-h-10 max-w-full items-center gap-1.5 rounded-md px-2 text-left text-xs text-muted-foreground underline-offset-4 transition-colors hover:bg-muted hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="flex min-h-11 max-w-full items-center gap-1.5 rounded-md px-2 text-left text-xs text-muted-foreground underline-offset-4 transition-colors hover:bg-muted hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => void handleCopy(image.path)}
                         aria-label={`复制图片 URL：${image.path}`}
                         title="复制图片 URL"
@@ -956,7 +956,7 @@ export function ImageAssetManager({
                           </p>
                           <button
                             type="button"
-                            className="flex min-h-10 max-w-[340px] items-center gap-1.5 rounded-md px-2 text-left text-xs text-muted-foreground underline-offset-4 transition-colors hover:bg-muted hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="flex min-h-11 max-w-[340px] items-center gap-1.5 rounded-md px-2 text-left text-xs text-muted-foreground underline-offset-4 transition-colors hover:bg-muted hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             onClick={() => void handleCopy(image.path)}
                             aria-label={`复制图片 URL：${image.path}`}
                             title="复制图片 URL"

@@ -227,7 +227,7 @@ export function ArticleCoverGenerator({
           {isGenerating ? "后台生成中..." : "生成封面图"}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>确认封面视觉简报</DialogTitle>
           <DialogDescription>

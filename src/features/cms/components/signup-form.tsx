@@ -15,7 +15,7 @@ export function SignupForm() {
   return (
     <Card className="mx-auto max-w-sm">
       <CardHeader>
-        <CardTitle className="flex w-[340px] items-center justify-center text-2xl">
+        <CardTitle className="flex w-full items-center justify-center text-2xl">
           注 册
         </CardTitle>
         <CardDescription>

@@ -382,7 +382,7 @@ function PromoCodeDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{promo ? "编辑优惠码" : "新增优惠码"}</DialogTitle>
             <DialogDescription>供应商 #{providerId}</DialogDescription>
@@ -1315,7 +1315,7 @@ export function ProviderProfileSheet({
                           <Button
                             variant="outline"
                             size="icon"
-                            className="size-10"
+                            className="size-11"
                             aria-label={`编辑优惠码 ${promo.code}`}
                             title="编辑优惠码"
                             onClick={() => {
@@ -1330,7 +1330,7 @@ export function ProviderProfileSheet({
                               <Button
                                 variant="destructive"
                                 size="icon"
-                                className="size-10"
+                                className="size-11"
                                 disabled={deletingPromoId !== null}
                                 aria-label={`删除优惠码 ${promo.code}`}
                                 title="删除优惠码"
