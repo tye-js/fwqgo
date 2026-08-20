@@ -95,7 +95,7 @@ export function LatestPostsSidebar({
               key={post.id}
               href={`${postPrefix}/${encodeURIComponent(post.slug)}`}
               prefetch
-              className="group grid min-h-16 grid-cols-[28px_1fr_auto] items-center gap-3 px-5 py-3 transition-colors hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="group grid min-h-16 min-w-0 grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-3 px-5 py-3 transition-colors hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <span className="flex size-7 items-center justify-center rounded-full bg-muted text-xs font-semibold tabular-nums text-muted-foreground transition-colors group-hover:bg-accent/10 group-hover:text-accent">
                 {index + (variant === "compact" ? 1 : 2)}

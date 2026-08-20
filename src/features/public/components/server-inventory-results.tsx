@@ -148,16 +148,22 @@ function OfferMobileCard({
     cleanText(offer.productGroup) ?? cleanText(offer.productType) ?? "未分组";
 
   return (
-    <article className="rounded-lg border border-border/70 bg-background p-4 shadow-sm">
+    <article className="min-w-0 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold leading-6 text-foreground">
+        <div className="min-w-0 max-w-full">
+          <p className="break-words text-sm font-semibold leading-6 text-foreground">
             {offer.title}
           </p>
           <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-            {offer.providerName ? <span>{offer.providerName}</span> : null}
+            {offer.providerName ? (
+              <span className="max-w-full break-words">
+                {offer.providerName}
+              </span>
+            ) : null}
             {offer.externalProductId ? (
-              <span>PID {offer.externalProductId}</span>
+              <span className="max-w-full break-all">
+                PID {offer.externalProductId}
+              </span>
             ) : null}
           </div>
         </div>
@@ -169,22 +175,22 @@ function OfferMobileCard({
         />
       </div>
 
-      <dl className="mt-3 grid grid-cols-2 gap-2 rounded-md bg-muted/25 p-3 text-xs">
-        <div>
+      <dl className="mt-3 grid min-w-0 grid-cols-1 gap-2 rounded-md bg-muted/25 p-3 text-xs sm:grid-cols-2">
+        <div className="min-w-0">
           <dt className="text-muted-foreground">地区 / 线路</dt>
-          <dd className="mt-1 font-medium text-foreground">
+          <dd className="mt-1 break-words font-medium text-foreground">
             {location ? location : "待补充"}
           </dd>
         </div>
-        <div>
+        <div className="min-w-0">
           <dt className="text-muted-foreground">产品组</dt>
-          <dd className="mt-1 line-clamp-2 font-medium text-foreground">
+          <dd className="mt-1 break-words font-medium text-foreground">
             {productGroup}
           </dd>
         </div>
-        <div className="col-span-2">
+        <div className="min-w-0 sm:col-span-2">
           <dt className="text-muted-foreground">配置</dt>
-          <dd className="mt-1 leading-5 text-foreground">
+          <dd className="mt-1 break-words leading-5 text-foreground">
             {specs ? specs : "配置待补充"}
           </dd>
         </div>

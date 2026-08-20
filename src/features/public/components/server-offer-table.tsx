@@ -413,10 +413,10 @@ function OfferMobileCard({
   const lineType = cleanText(offer.lineType);
 
   return (
-    <article className="space-y-4 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
+    <article className="min-w-0 space-y-4 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
       <div className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <h2 className="min-w-0 flex-1 text-base font-semibold leading-6 text-foreground">
+          <h2 className="min-w-0 flex-1 break-words text-base font-semibold leading-6 text-foreground">
             {offer.title}
           </h2>
           <Badge variant="outline" className={getStatusClassName(offer.status)}>
@@ -426,19 +426,29 @@ function OfferMobileCard({
         </div>
         <div className="flex flex-wrap gap-2">
           {providerName ? (
-            <Badge variant="secondary">
+            <Badge
+              variant="secondary"
+              className="max-w-full whitespace-normal break-words"
+            >
               <Link
                 href={collectionHref("providers", providerName)}
                 prefetch
-                className="hover:underline"
+                className="break-words hover:underline"
               >
                 {providerName}
               </Link>
             </Badge>
           ) : null}
-          {productType ? <Badge variant="outline">{productType}</Badge> : null}
+          {productType ? (
+            <Badge
+              variant="outline"
+              className="max-w-full whitespace-normal break-words"
+            >
+              {productType}
+            </Badge>
+          ) : null}
           {promoCode ? (
-            <Badge className="bg-primary/10 font-mono text-primary hover:bg-primary/10">
+            <Badge className="max-w-full whitespace-normal break-all bg-primary/10 font-mono text-primary hover:bg-primary/10">
               {copy.promoCode} {promoCode}
             </Badge>
           ) : null}
@@ -454,12 +464,12 @@ function OfferMobileCard({
         </div>
         <div className="rounded-md bg-muted/30 p-3">
           <p className="text-xs text-muted-foreground">{copy.regionLine}</p>
-          <p className="mt-1 font-medium text-foreground">
+          <p className="mt-1 break-words font-medium text-foreground">
             {region ? (
               <Link
                 href={collectionHref("regions", region)}
                 prefetch
-                className="underline-offset-4 hover:text-primary hover:underline"
+                className="break-words underline-offset-4 hover:text-primary hover:underline"
               >
                 {region}
               </Link>
@@ -467,12 +477,12 @@ function OfferMobileCard({
               copy.regionMissing
             )}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 break-words text-xs text-muted-foreground">
             {lineType ? (
               <Link
                 href={collectionHref("lines", lineType)}
                 prefetch
-                className="underline-offset-4 hover:text-primary hover:underline"
+                className="break-words underline-offset-4 hover:text-primary hover:underline"
               >
                 {lineType}
               </Link>
@@ -494,7 +504,7 @@ function OfferMobileCard({
 
       <div className="rounded-md bg-muted/20 p-3">
         <p className="text-xs text-muted-foreground">{copy.specs}</p>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+        <p className="mt-1 break-words text-sm leading-6 text-muted-foreground">
           {specsText(offer) || copy.specsMissing}
         </p>
       </div>

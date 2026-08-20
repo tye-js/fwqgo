@@ -28,7 +28,11 @@ for (const routePage of webRoutePages) {
   const source = readFileSync(routePage, "utf8");
 
   if (routePath.includes("[...notFound]")) {
-    assert.match(source, /notFound\(\)/, `${appRelativePath} must delegate to notFound()`);
+    assert.match(
+      source,
+      /notFound\(\)/,
+      `${appRelativePath} must delegate to notFound()`,
+    );
     continue;
   }
 
@@ -45,9 +49,9 @@ for (const routePage of webRoutePages) {
   mappedWebRouteCount += 1;
 }
 
-const publicRoutePages = listFiles(join(root, "src/features/public/routes")).filter(
-  (path) => path.endsWith("page.tsx"),
-);
+const publicRoutePages = listFiles(
+  join(root, "src/features/public/routes"),
+).filter((path) => path.endsWith("page.tsx"));
 assert.equal(
   mappedWebRouteCount,
   publicRoutePages.length,
@@ -79,7 +83,11 @@ const publicSources = listFiles(join(root, "src/features/public"))
     source: readFileSync(path, "utf8"),
   }));
 
-assert.equal(webRoutePages.length, 26, "Expected the complete public page route set");
+assert.equal(
+  webRoutePages.length,
+  26,
+  "Expected the complete public page route set",
+);
 
 for (const file of publicSources) {
   assert.doesNotMatch(
@@ -119,9 +127,7 @@ const serverTopic = read("src/features/public/routes/servers/[topic]/page.tsx");
 const serverCollection = read(
   "src/features/public/components/server-offer-collection-page.tsx",
 );
-const zhArticle = read(
-  "src/features/public/routes/fwq/posts/[slug]/page.tsx",
-);
+const zhArticle = read("src/features/public/routes/fwq/posts/[slug]/page.tsx");
 const enArticle = read(
   "src/features/public/routes/en/fwq/posts/[slug]/page.tsx",
 );
@@ -154,7 +160,10 @@ for (const home of [zhHome, enHome]) {
   assert.match(home, /min-w-0 flex-1 break-words text-foreground/);
   assert.match(home, /max-w-\[45%\] shrink-0 break-all/);
 }
-assert.match(sizingCalculator, /whitespace-normal break-words px-2 text-center/);
+assert.match(
+  sizingCalculator,
+  /whitespace-normal break-words px-2 text-center/,
+);
 for (const source of [latestPostsSidebar, serverTopic, serverCollection]) {
   assert.match(source, /min-h-11[^"\n]*md:min-h-9/);
 }
@@ -163,6 +172,19 @@ for (const source of [zhArticle, enArticle]) {
 }
 assert.match(tagContext, /inline-flex min-h-11[^"\n]*xl:min-h-8/);
 assert.match(scrollToTop, /safe-area-inset-bottom/);
+assert.match(offerTable, /min-w-0 flex-1 break-words text-base/);
+assert.match(offerTable, /max-w-full whitespace-normal break-all/);
+assert.match(inventoryResults, /min-w-0 rounded-lg border/);
+assert.match(inventoryResults, /PID \{offer\.externalProductId\}/);
+assert.match(inventoryResults, /max-w-full break-all/);
+assert.match(inventoryResults, /grid min-w-0 grid-cols-1[^"\n]*sm:grid-cols-2/);
+for (const source of [zhArticle, enArticle]) {
+  assert.match(source, /flex min-w-0 flex-wrap items-center/);
+  assert.match(
+    source,
+    /inline-flex min-h-11 min-w-0 max-w-full items-center break-words/,
+  );
+}
 assert.match(select, /radix-select-content-available-height/);
 assert.match(select, /max-w-\[calc\(100vw-1\.5rem\)\]/);
 assert.match(dropdown, /radix-dropdown-menu-content-available-height/);

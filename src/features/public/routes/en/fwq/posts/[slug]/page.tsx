@@ -269,15 +269,18 @@ async function EnglishPostContent({ params }: PageProps) {
             eyebrow={
               <nav
                 aria-label="Breadcrumb"
-                className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground"
+                className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm text-muted-foreground"
               >
-                <Link href="/en" className="hover:text-primary">
+                <Link
+                  href="/en"
+                  className="inline-flex min-h-11 items-center hover:text-primary md:min-h-8"
+                >
                   Home
                 </Link>
                 <ChevronRight className="size-3.5 shrink-0" aria-hidden />
                 <Link
                   href={categoryUrl}
-                  className="truncate hover:text-primary"
+                  className="inline-flex min-h-11 min-w-0 max-w-full items-center break-words hover:text-primary md:min-h-8"
                 >
                   {categoryName}
                 </Link>

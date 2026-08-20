@@ -302,15 +302,18 @@ async function PostPageContent({
               eyebrow={
                 <nav
                   aria-label="面包屑"
-                  className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground"
+                  className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm text-muted-foreground"
                 >
-                  <Link href="/" className="hover:text-primary">
+                  <Link
+                    href="/"
+                    className="inline-flex min-h-11 items-center hover:text-primary md:min-h-8"
+                  >
                     首页
                   </Link>
                   <ChevronRight className="size-3.5 shrink-0" aria-hidden />
                   <Link
                     href={categoryUrl}
-                    className="truncate hover:text-primary"
+                    className="inline-flex min-h-11 min-w-0 max-w-full items-center break-words hover:text-primary md:min-h-8"
                   >
                     {post.categoryName}
                   </Link>

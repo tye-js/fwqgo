@@ -679,7 +679,7 @@ export function PostList({
         />
       ) : (
         <>
-          <div className="flex min-w-0 flex-col gap-2 rounded-md border border-border/70 bg-muted/20 p-2 sm:flex-row sm:items-center sm:justify-between xl:hidden">
+          <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-10 flex min-w-0 flex-col gap-2 rounded-md border border-border/70 bg-background/95 p-2 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between xl:hidden">
             <div className="flex min-w-0 items-center gap-1">
               <Checkbox
                 checked={allFilteredSelected}
@@ -713,7 +713,7 @@ export function PostList({
             ) : null}
           </div>
 
-          <div className="grid gap-3 xl:hidden">
+          <div className="grid min-w-0 gap-3 xl:hidden">
             {sortedPosts.map((post) => (
               <article
                 key={post.id}
@@ -850,17 +850,19 @@ export function PostList({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-2 border-t border-border/70 bg-muted/15 p-3 min-[380px]:grid-cols-2">
+                <div className="grid min-w-0 grid-cols-1 gap-2 border-t border-border/70 bg-muted/15 p-3 min-[480px]:grid-cols-2">
                   {editPostId === post.id ? (
                     <>
                       <Button
                         variant="secondary"
-                        className="min-h-11"
+                        type="button"
+                        className="min-h-11 min-w-0 whitespace-normal break-words text-center leading-5"
                         onClick={() => setEditPostId(null)}
                       >
                         取消
                       </Button>
                       <Button
+                        type="button"
                         className="min-h-11"
                         disabled={isSaving}
                         onClick={() => handleSave(post.id)}
@@ -872,7 +874,7 @@ export function PostList({
                     <>
                       <Button
                         asChild
-                        className="min-h-11 w-full min-[380px]:col-span-2"
+                        className="min-h-11 w-full min-w-0 whitespace-normal break-words text-center leading-5 min-[480px]:col-span-2"
                       >
                         <Link
                           href={`${editBasePath ?? pathname}/post/${encodeURIComponent(post.slug)}`}
@@ -883,7 +885,8 @@ export function PostList({
                       </Button>
                       <Button
                         variant="outline"
-                        className="min-h-11 w-full"
+                        type="button"
+                        className="min-h-11 w-full min-w-0 whitespace-normal break-words text-center leading-5"
                         onClick={() => {
                           setEditPostId(post.id);
                           setEditPostData(post);
@@ -895,7 +898,8 @@ export function PostList({
                         <AlertDialogTrigger asChild>
                           <Button
                             variant="destructive"
-                            className="min-h-11 w-full"
+                            type="button"
+                            className="min-h-11 w-full min-w-0 whitespace-normal break-words text-center leading-5"
                           >
                             删除
                           </Button>

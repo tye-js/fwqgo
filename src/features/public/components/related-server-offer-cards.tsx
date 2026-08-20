@@ -108,7 +108,7 @@ export function RelatedServerOfferCards({
                   {offer.lineType ?? copy.linePending}
                 </p>
               </div>
-              <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+              <span className="max-w-[45%] shrink-0 break-all text-right text-sm font-semibold tabular-nums text-foreground">
                 {formatOfferPrice(offer, language)}
               </span>
             </div>
