@@ -198,7 +198,7 @@ async function verifyAiRewriteInternalLinkScope() {
   );
   assert.equal(
     (rewriteRunner.match(/includeKnowledge: false/g) ?? []).length,
-    2,
+    3,
   );
   assert.doesNotMatch(
     rewriteRunner,

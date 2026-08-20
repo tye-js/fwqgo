@@ -662,7 +662,7 @@ export function ImageAssetManager({
         />
       ) : (
         <>
-          <div className="grid gap-3 lg:hidden">
+          <div className="grid gap-3 xl:hidden">
             {visibleImages.map((image) => {
               const isUsed = image.references.length > 0;
               const qualityIssues = getImageQualityIssues(
@@ -906,7 +906,7 @@ export function ImageAssetManager({
             })}
           </div>
 
-          <div className="hidden overflow-x-auto rounded-md border border-border/70 lg:block">
+          <div className="hidden overflow-x-auto rounded-md border border-border/70 xl:block">
             <Table>
               <TableHeader>
                 <TableRow>

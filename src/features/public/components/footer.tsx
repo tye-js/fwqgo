@@ -219,7 +219,7 @@ function FooterTextLink({ link }: { link: FooterLink }) {
           {link.title}
         </span>
         {link.description ? (
-          <span className="mt-1 line-clamp-1 block text-xs leading-5 text-muted-foreground">
+          <span className="mt-1 block break-words text-xs leading-5 text-muted-foreground">
             {link.description}
           </span>
         ) : null}
@@ -248,7 +248,7 @@ function ContactEmailLink({
       className="inline-flex min-h-11 w-fit items-center gap-2 rounded-md px-2 transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
       <Mail className="size-4 text-primary" />
-      <span>
+      <span className="break-all">
         {localPart}
         {atIndex >= 0 ? "@" : null}
         {domain}
@@ -336,7 +336,7 @@ function FooterView({
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-3">
               {copy.highlights.map((link) => (
                 <Link
                   key={link.href}

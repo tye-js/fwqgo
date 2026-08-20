@@ -73,13 +73,14 @@ function LanguageFilter({
   ];
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
       {items.map((item) => (
         <Button
           key={item.value}
           asChild
           size="sm"
           variant={value === item.value ? "default" : "outline"}
+          className="min-h-11 w-full sm:w-auto"
         >
           <Link href={languageFilterHref(item.value, filters)}>
             {item.label}

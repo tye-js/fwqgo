@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const root = process.cwd();
@@ -22,12 +22,66 @@ const cmsFiles = listFiles(join(root, "src/features/cms"))
     source: readFileSync(path, "utf8"),
   }));
 
+const cmsAppRoutePages = listFiles(join(root, "apps/cms/app")).filter((path) =>
+  path.endsWith("page.tsx"),
+);
+const cmsFeatureRoutePages = listFiles(join(root, "src/features/cms/routes")).filter(
+  (path) => path.endsWith("page.tsx"),
+);
+let mappedCmsRouteCount = 0;
+for (const routePage of cmsAppRoutePages) {
+  const appRelativePath = relative(join(root, "apps/cms/app"), routePage);
+  const segments = appRelativePath.split("/");
+  const routeGroup = segments.shift();
+  assert.ok(routeGroup, `${appRelativePath} must live in a CMS route group`);
+  const featureGroup = routeGroup === "(admin)" ? "admin" : routeGroup;
+  const featureRelativePath = [featureGroup, ...segments].join("/");
+  const featurePath = join(root, "src/features/cms/routes", featureRelativePath);
+  const featureImport = `@/features/cms/routes/${featureRelativePath.replace(/\.tsx$/, "")}`;
+  const source = readFileSync(routePage, "utf8");
+
+  assert.ok(
+    existsSync(featurePath),
+    `${appRelativePath} is missing its CMS feature route: ${relative(root, featurePath)}`,
+  );
+  assert.ok(
+    source.includes(featureImport),
+    `${appRelativePath} does not delegate to ${featureImport}`,
+  );
+  mappedCmsRouteCount += 1;
+}
+assert.equal(
+  mappedCmsRouteCount,
+  cmsFeatureRoutePages.length,
+  "Every CMS feature page must have exactly one app route entry",
+);
+const delegatedCmsShells = new Set([
+  "admin/ai-tasks/[id]/page.tsx",
+  "admin/ai-tasks/page.tsx",
+  "admin/posts/drafts/page.tsx",
+  "admin/servers/page.tsx",
+]);
+for (const routePage of cmsFeatureRoutePages) {
+  const routeRelativePath = relative(
+    join(root, "src/features/cms/routes"),
+    routePage,
+  );
+  const source = readFileSync(routePage, "utf8");
+  assert.ok(
+    source.includes("AdminPageShell") ||
+      source.includes("min-h-dvh") ||
+      delegatedCmsShells.has(routeRelativePath),
+    `${routeRelativePath} has no AdminPageShell, auth viewport shell, or explicit delegate`,
+  );
+}
+
 const dedicatedResponsiveTables = new Set<string>([
   "src/features/cms/components/posts-tables.tsx",
   "src/features/cms/components/image-asset-manager.tsx",
 ]);
 
 let responsiveTableCount = 0;
+let labeledNativeCellCount = 0;
 for (const file of cmsFiles) {
   const tableTags = [
     ...(file.source.match(/<Table\b[^>]*>/g) ?? []),
@@ -44,8 +98,21 @@ for (const file of cmsFiles) {
       dedicatedResponsiveTables.has(file.path),
       `${file.path} has a CMS table without a mobile card strategy: ${tag}`,
     );
-    assert.match(file.source, /grid gap-3 lg:hidden/);
-    assert.match(file.source, /hidden[^"\n]*lg:block/);
+    assert.match(file.source, /grid gap-3 (?:lg|xl):hidden/);
+    assert.match(file.source, /hidden[^"\n]*(?:lg|xl):block/);
+  }
+
+  for (const tableBlock of file.source.match(/<table\b[\s\S]*?<\/table>/g) ?? []) {
+    if (!tableBlock.includes("cms-mobile-sticky-actions")) continue;
+    for (const cellTag of tableBlock.match(/<td\b[^>]*>/g) ?? []) {
+      if (/\bcolSpan=/.test(cellTag)) continue;
+      assert.match(
+        cellTag,
+        /data-mobile-label=/,
+        `${file.path} has an unlabeled native mobile table cell: ${cellTag}`,
+      );
+      labeledNativeCellCount += 1;
+    }
   }
 }
 
@@ -61,20 +128,70 @@ const unsavedGuard = read(
   "src/features/cms/hooks/use-unsaved-changes-guard.ts",
 );
 const postList = read("src/features/cms/components/posts-tables.tsx");
+const adminLayout = read("src/features/cms/routes/admin/layout.tsx");
+const loginPage = read("src/features/cms/routes/(auth)/login/page.tsx");
+const signupPage = read("src/features/cms/routes/(auth)/signup/page.tsx");
+const select = read("src/components/ui/select.tsx");
+const dropdown = read("src/components/ui/dropdown-menu.tsx");
 
 assert.match(mobileHook, /MOBILE_BREAKPOINT = 1024/);
 assert.match(sidebar, /text-sidebar-foreground lg:block/);
 assert.match(sidebar, /transition-\[left,right,width\][^"\n]*lg:flex/);
 assert.doesNotMatch(sidebar, /text-sidebar-foreground md:block/);
+assert.equal(cmsAppRoutePages.length, 33, "Expected the complete CMS page route set");
+assert.match(adminLayout, /cms-theme min-h-dvh/);
+assert.match(adminLayout, /SidebarInset className="min-w-0"/);
+assert.match(adminLayout, /min-w-0 overflow-x-hidden/);
+assert.match(adminLayout, /safe-area-inset-top/);
+for (const authPage of [loginPage, signupPage]) {
+  assert.match(authPage, /min-h-dvh/);
+  assert.match(authPage, /px-4 py-10/);
+}
+assert.match(signupPage, /inline-flex size-11/);
+assert.match(select, /radix-select-content-available-height/);
+assert.match(dropdown, /radix-dropdown-menu-content-available-height/);
+assert.match(
+  styles,
+  /@media \(max-width: 767px\)[\s\S]*input,[\s\S]*textarea,[\s\S]*select[\s\S]*font-size: 1rem !important/,
+);
 
 assert.ok(responsiveTableCount >= 20, "Expected all wide CMS tables to opt in");
 assert.match(table, /useLayoutEffect/);
 assert.match(table, /data-mobile-label/);
 assert.match(styles, /content: attr\(data-mobile-label\)/);
 assert.match(styles, /:last-child:not\(\[colspan\]\)/);
+const tabletStickyActionsStart = styles.indexOf(
+  "@media (max-width: 1279px)",
+);
+const mobileCardTableStart = styles.indexOf(
+  "@media (max-width: 1023px)",
+  tabletStickyActionsStart,
+);
+assert.ok(tabletStickyActionsStart >= 0);
+assert.ok(mobileCardTableStart > tabletStickyActionsStart);
+const tabletStickyActionsStyles = styles.slice(
+  tabletStickyActionsStart,
+  mobileCardTableStart,
+);
+assert.match(
+  tabletStickyActionsStyles,
+  /\.cms-mobile-sticky-actions tr > :last-child:not\(\[colspan\]\)/,
+);
+assert.match(
+  tabletStickyActionsStyles,
+  /cms-mobile-sticky-actions tbody > tr > td:last-child[\s\S]*:where\(button, a, \[role="button"\]\)[\s\S]*min-height: 2\.75rem/,
+);
 assert.match(
   styles,
   /@media \(max-width: 1023px\) \{\s+\.cms-mobile-sticky-actions \{/,
+);
+assert.match(
+  styles,
+  /cms-mobile-sticky-actions tbody > tr > td[\s\S]*\.truncate[\s\S]*-webkit-line-clamp: unset/,
+);
+assert.match(
+  styles,
+  /cms-mobile-sticky-actions tbody > tr > td[\s\S]*\.whitespace-nowrap[\s\S]*white-space: normal !important/,
 );
 
 assert.match(checkbox, /size-11/);
@@ -92,7 +209,26 @@ assert.match(postList, /打开完整编辑/);
 assert.match(postList, /className="block break-words text-base/);
 assert.match(postList, /break-all font-mono text-foreground/);
 assert.match(postList, /批量操作 · \{selectedIds\.length\}/);
+assert.match(postList, /grid gap-3 xl:hidden/);
+assert.match(postList, /hidden overflow-x-auto[^"\n]*xl:block/);
+assert.match(postList, /grid-cols-1[^"\n]*min-\[380px\]:grid-cols-2/);
+assert.match(
+  postList,
+  /className="min-h-11 w-full min-\[380px\]:col-span-2"[\s\S]*打开完整编辑/,
+);
+assert.match(
+  postList,
+  /className="min-h-11 w-full"[\s\S]*快速编辑[\s\S]*className="min-h-11 w-full"[\s\S]*删除/,
+);
+const postListPage = read(
+  "src/features/cms/routes/admin/posts/edit/page.tsx",
+);
+assert.match(postListPage, /grid grid-cols-3 gap-2 sm:flex sm:flex-wrap/);
+assert.match(postListPage, /className="min-h-11 w-full sm:w-auto"/);
+const imageManager = read("src/features/cms/components/image-asset-manager.tsx");
+assert.match(imageManager, /grid gap-3 xl:hidden/);
+assert.match(imageManager, /hidden overflow-x-auto[^"\n]*xl:block/);
 
 console.log(
-  `CMS mobile UI verification passed: ${responsiveTableCount} responsive tables, 1024px adaptive navigation, touch and safe-area guards present.`,
+  `CMS mobile UI verification passed: ${cmsAppRoutePages.length} app pages mapped to ${cmsFeatureRoutePages.length} feature routes, ${responsiveTableCount} responsive tables, ${labeledNativeCellCount} native cells labeled, and adaptive navigation guards present.`,
 );

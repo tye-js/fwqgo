@@ -679,7 +679,7 @@ export function PostList({
         />
       ) : (
         <>
-          <div className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-border/70 bg-muted/20 p-2 lg:hidden">
+          <div className="flex min-w-0 flex-col gap-2 rounded-md border border-border/70 bg-muted/20 p-2 sm:flex-row sm:items-center sm:justify-between xl:hidden">
             <div className="flex min-w-0 items-center gap-1">
               <Checkbox
                 checked={allFilteredSelected}
@@ -701,7 +701,7 @@ export function PostList({
                 type="button"
                 size="sm"
                 variant="outline"
-                className="shrink-0"
+                className="min-h-11 w-full shrink-0 sm:w-auto"
                 onClick={() =>
                   document
                     .getElementById("post-bulk-actions")
@@ -713,7 +713,7 @@ export function PostList({
             ) : null}
           </div>
 
-          <div className="grid gap-3 lg:hidden">
+          <div className="grid gap-3 xl:hidden">
             {sortedPosts.map((post) => (
               <article
                 key={post.id}
@@ -850,7 +850,7 @@ export function PostList({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 border-t border-border/70 bg-muted/15 p-3">
+                <div className="grid grid-cols-1 gap-2 border-t border-border/70 bg-muted/15 p-3 min-[380px]:grid-cols-2">
                   {editPostId === post.id ? (
                     <>
                       <Button
@@ -870,7 +870,10 @@ export function PostList({
                     </>
                   ) : (
                     <>
-                      <Button asChild className="col-span-2 min-h-11 w-full">
+                      <Button
+                        asChild
+                        className="min-h-11 w-full min-[380px]:col-span-2"
+                      >
                         <Link
                           href={`${editBasePath ?? pathname}/post/${encodeURIComponent(post.slug)}`}
                         >
@@ -926,7 +929,7 @@ export function PostList({
             ))}
           </div>
 
-          <div className="hidden overflow-x-auto rounded-md border border-border/70 lg:block">
+          <div className="hidden overflow-x-auto rounded-md border border-border/70 xl:block">
             <Table>
               <TableHeader>
                 <TableRow>

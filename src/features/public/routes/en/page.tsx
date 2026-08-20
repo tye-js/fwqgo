@@ -144,8 +144,8 @@ function PromoCodeLink({ offer }: { offer: FeaturedOffer }) {
     "flex min-h-11 items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm transition-colors hover:border-primary/35 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
   const content = (
     <>
-      <span className="min-w-0 truncate text-foreground">{label}</span>
-      <Badge className="shrink-0 bg-primary/10 font-mono text-primary hover:bg-primary/10">
+      <span className="min-w-0 flex-1 break-words text-foreground">{label}</span>
+      <Badge className="max-w-[45%] shrink-0 break-all text-right font-mono bg-primary/10 text-primary hover:bg-primary/10">
         {offer.promoCode}
       </Badge>
     </>

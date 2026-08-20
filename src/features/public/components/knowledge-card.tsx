@@ -80,13 +80,13 @@ export function KnowledgeCard({
 
   return (
     <article className="flex min-h-72 flex-col rounded-lg border border-border/70 bg-background p-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-primary/35 hover:shadow-md">
-      <div className="flex items-start justify-between gap-3 text-xs text-muted-foreground">
-        <span className="inline-flex min-w-0 items-center gap-1.5 font-medium text-primary">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span className="inline-flex min-w-0 flex-1 items-start gap-1.5 break-words font-medium text-primary">
           <Layers3 className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="truncate">{item.categoryName}</span>
+          <span className="break-words">{item.categoryName}</span>
         </span>
         <time
-          className="shrink-0"
+          className="shrink-0 whitespace-nowrap"
           dateTime={item.contentUpdatedAt.toISOString()}
         >
           {formatKnowledgeDate(item.contentUpdatedAt, language)}
@@ -96,7 +96,7 @@ export function KnowledgeCard({
       <h3 className="mt-3 text-lg font-semibold leading-7 tracking-normal">
         <Link
           href={href}
-          className="rounded-sm outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="break-words rounded-sm outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           {item.title}
         </Link>
@@ -145,7 +145,7 @@ export function KnowledgeCard({
             className="mt-0.5 size-3.5 shrink-0 text-primary"
             aria-hidden="true"
           />
-          <span>{inlineCode(item.quickTip)}</span>
+          <span className="min-w-0 break-words">{inlineCode(item.quickTip)}</span>
         </div>
       ) : null}
 

@@ -38,7 +38,7 @@ export function ScrollToTop() {
     <Button
       variant="outline"
       size="icon"
-      className="fixed bottom-8 right-4 z-50 size-11 rounded-full bg-background/90 shadow-lg backdrop-blur-sm hover:bg-muted"
+      className="fixed bottom-[max(2rem,calc(env(safe-area-inset-bottom)+1rem))] right-4 z-50 size-11 rounded-full bg-background/90 shadow-lg backdrop-blur-sm hover:bg-muted"
       onClick={scrollToTop}
       aria-label="回到顶部"
     >

@@ -94,7 +94,7 @@ function ArticleCard({
           >
             <h3
               id={titleId}
-              className="font-editorial line-clamp-2 text-lg font-semibold leading-7 text-foreground underline-offset-4 transition-colors group-hover:text-primary group-hover:underline"
+              className="font-editorial break-words text-lg font-semibold leading-7 text-foreground underline-offset-4 transition-colors group-hover:text-primary group-hover:underline md:line-clamp-2"
             >
               {post.title}
             </h3>

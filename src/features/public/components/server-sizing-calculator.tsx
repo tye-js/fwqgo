@@ -892,7 +892,7 @@ export function ServerSizingCalculator({
                     aria-selected={planKey === key}
                     disabled={!result[key]}
                     onClick={() => setPlanKey(key)}
-                    className={`min-h-11 rounded-sm px-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${planKey === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"} disabled:cursor-not-allowed disabled:opacity-50`}
+                    className={`min-h-11 whitespace-normal break-words px-2 text-center text-sm font-medium leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${planKey === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"} disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     {text.plans[key]}
                   </button>

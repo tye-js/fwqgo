@@ -508,9 +508,7 @@ function buildTaskSteps({
             : "pending",
       description: diagnostics?.usedAiRewrite
         ? diagnostics.rewriteQuality
-          ? diagnostics.rewriteQuality.factCheckSkipped
-            ? `输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符，原创度 ${diagnostics.rewriteQuality.originalityScore}%，事实核查已关闭，共 ${diagnostics.rewriteQuality.attempts} 轮`
-            : `输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符，原创度 ${diagnostics.rewriteQuality.originalityScore}%，事实覆盖 ${diagnostics.rewriteQuality.criticalFactCoverage}%，共 ${diagnostics.rewriteQuality.attempts} 轮`
+          ? `输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符，原创度 ${diagnostics.rewriteQuality.originalityScore}%，原文约束模式（不执行事实核查），共 ${diagnostics.rewriteQuality.attempts} 轮`
           : `输入 ${diagnostics.aiInputLength ?? "-"} 字符，输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符`
         : isEnglishTask
           ? "等待从中文改写正文翻译英文正文，SEO 字段会单独生成"
@@ -1291,33 +1289,24 @@ export async function AiRewriteTaskDetailPageContent({
             </div>
             {diagnostics.rewriteQuality ? (
               <div className="space-y-3 border-t border-border/70 pt-4">
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <Stat
                     label="原创度"
                     value={`${diagnostics.rewriteQuality.originalityScore}%`}
                   />
                   <Stat
-                    label={
-                      diagnostics.rewriteQuality.factCheckSkipped
-                        ? "事实核查"
-                        : "关键事实覆盖"
-                    }
-                    value={
-                      diagnostics.rewriteQuality.factCheckSkipped
-                        ? "已关闭"
-                        : `${diagnostics.rewriteQuality.criticalFactCoverage}%`
-                    }
-                  />
-                  <Stat
                     label="自动重写"
                     value={`${diagnostics.rewriteQuality.attempts} 轮`}
                   />
+                  <Stat label="改写模式" value="原文约束 · 不做事实核查" />
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="outline">
                     {diagnostics.rewriteQuality.promptVersion}
                   </Badge>
-                  <Badge variant="outline">仅基于清洗后的原文</Badge>
+                  <Badge variant="outline">
+                    仅基于清洗后的原文 · 不执行事实核查
+                  </Badge>
                 </div>
               </div>
             ) : null}

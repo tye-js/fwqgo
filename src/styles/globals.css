@@ -397,7 +397,7 @@
     28px 28px;
 }
 
-@media (max-width: 1023px) {
+@media (max-width: 1279px) {
   .cms-mobile-sticky-actions tr > :last-child:not([colspan]) {
     position: sticky;
     right: 0;
@@ -417,6 +417,11 @@
     tr[data-state="selected"]
     > :last-child:not([colspan]) {
     background-color: hsl(var(--muted));
+  }
+
+  .cms-mobile-sticky-actions tbody > tr > td:last-child
+    :where(button, a, [role="button"]) {
+    min-height: 2.75rem;
   }
 }
 
@@ -497,6 +502,25 @@
     box-shadow: none !important;
   }
 
+  .cms-mobile-sticky-actions tbody > tr > td
+    :where(
+      .truncate,
+      .line-clamp-1,
+      .line-clamp-2,
+      .line-clamp-3,
+      .whitespace-nowrap,
+      .text-nowrap
+    ) {
+    display: block;
+    max-width: 100%;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal !important;
+    -webkit-box-orient: initial;
+    -webkit-line-clamp: unset;
+  }
+
   .cms-mobile-sticky-actions tbody > tr > td + td {
     border-top: 1px solid hsl(var(--border) / 0.7);
   }
@@ -543,7 +567,7 @@
   -webkit-overflow-scrolling: touch;
 }
 
-@media (max-width: 1023px) {
+@media (max-width: 1279px) {
   .cms-table-viewport {
     background:
       linear-gradient(to right, hsl(var(--background)), transparent 1rem) left,
@@ -552,7 +576,9 @@
     background-repeat: no-repeat;
     background-size: 1.5rem 100%;
   }
+}
 
+@media (max-width: 1023px) {
   .cms-mobile-save-bar {
     position: sticky;
     bottom: 0;
@@ -562,6 +588,12 @@
 }
 
 @media (max-width: 767px) {
+  input,
+  textarea,
+  select {
+    font-size: 1rem !important;
+  }
+
   .cms-theme .text-xs {
     font-size: 0.8125rem;
     line-height: 1.25rem;

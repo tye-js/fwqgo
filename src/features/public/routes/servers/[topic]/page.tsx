@@ -195,7 +195,7 @@ async function ServerTopicContent({
           <Link
             href="/servers"
             prefetch
-            className="inline-flex min-h-9 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+            className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary md:min-h-9"
           >
             <ArrowLeft className="size-4" />
             返回服务器比价

@@ -195,7 +195,7 @@ export function FeaturedOfferList({
           >
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="min-w-0 flex-1 basis-52 truncate text-sm font-semibold leading-6 text-foreground">
+                <h3 className="min-w-0 flex-1 basis-52 break-words text-sm font-semibold leading-6 text-foreground">
                   {offer.title}
                 </h3>
                 <Badge
@@ -205,10 +205,10 @@ export function FeaturedOfferList({
                   {copy.status[offer.status] ?? offer.status}
                 </Badge>
               </div>
-              <p className="mt-1 truncate text-xs leading-5 text-muted-foreground">
+              <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
                 {meta || copy.metaFallback}
                 {offer.promoCode ? (
-                  <span className="ml-2 rounded-sm bg-primary/10 px-1.5 py-0.5 font-medium text-primary">
+                  <span className="ml-2 inline-flex max-w-full break-all rounded-sm bg-primary/10 px-1.5 py-0.5 font-medium text-primary">
                     {copy.promo} {offer.promoCode}
                   </span>
                 ) : null}
@@ -216,10 +216,10 @@ export function FeaturedOfferList({
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 md:justify-end">
-              <p className="text-base font-semibold tabular-nums tracking-tight text-foreground">
+              <p className="min-w-0 break-words text-base font-semibold tabular-nums tracking-tight text-foreground">
                 {formatOfferPrice(offer, language)}
               </p>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <SafeOfferLink
                   href={offer.purchaseUrl}
                   sponsored

@@ -590,19 +590,13 @@ function AffiliateDiagnosticsSummary({
                 </p>
               </div>
               <div className="rounded-md border border-border/70 p-2">
-                <p className="text-muted-foreground">关键事实覆盖</p>
-                <p className="mt-1 font-medium text-foreground">
-                  {quality.criticalFactCoverage}%
-                </p>
-              </div>
-              <div className="rounded-md border border-border/70 p-2">
                 <p className="text-muted-foreground">生成轮数</p>
                 <p className="mt-1 font-medium text-foreground">
                   {quality.attempts}
                 </p>
               </div>
             </div>
-            <Badge variant="outline">仅基于清洗后的原文</Badge>
+            <Badge variant="outline">原文约束模式 · 不执行事实核查</Badge>
           </div>
         ) : null}
 

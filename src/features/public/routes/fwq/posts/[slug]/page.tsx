@@ -332,7 +332,7 @@ async function PostPageContent({
                     <Link
                       href={`/en/fwq/posts/${encodeURIComponent(post.enSlug)}`}
                       prefetch
-                      className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-8"
                     >
                       <Languages className="size-4" aria-hidden="true" />
                       English
