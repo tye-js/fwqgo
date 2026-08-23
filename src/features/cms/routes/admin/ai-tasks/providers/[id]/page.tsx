@@ -47,7 +47,7 @@ export default async function ProviderRunDetailPage({ params }: PageProps) {
       title={run.title}
       description="查看供应商请求、解析质量、幂等同步、待审核数量、缺失判定和可读失败原因。"
       actions={
-        <div className="flex flex-wrap gap-2">
+        <div className="flex w-full flex-wrap gap-2 md:w-auto">
           <Button asChild variant="outline">
             <Link href="/ai-tasks">
               <ArrowLeft className="size-4" />

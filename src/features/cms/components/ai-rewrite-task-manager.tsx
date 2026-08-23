@@ -397,7 +397,7 @@ function FailedTaskPanel({
             className="grid gap-3 rounded-md border border-destructive/20 bg-background p-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)_auto]"
           >
             <div className="min-w-0 space-y-1">
-              <p className="truncate text-sm font-medium text-foreground">
+              <p className="break-words text-sm font-medium text-foreground">
                 #{task.id} {getSourceHost(task.sourceUrl)}
               </p>
               {isHttpHref(task.sourceUrl) ? (
@@ -405,12 +405,12 @@ function FailedTaskPanel({
                   href={task.sourceUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="block truncate text-xs text-muted-foreground hover:text-primary"
+                  className="block min-h-11 break-all py-3 text-xs text-muted-foreground hover:text-primary"
                 >
                   {task.sourceUrl}
                 </a>
               ) : (
-                <p className="block truncate text-xs text-muted-foreground">
+                <p className="block break-all text-xs text-muted-foreground">
                   {task.sourceUrl}
                 </p>
               )}
@@ -1177,7 +1177,7 @@ export function AiRewriteTaskManager({
                 description="提交来源 URL 后，系统会在后台抓取、清洗、改写，并在成功后保存为草稿。"
               />
             ) : (
-              <Table className="cms-mobile-sticky-actions">
+              <Table className="cms-mobile-sticky-actions cms-table-sticky-actions">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-[280px]">任务来源</TableHead>
@@ -1230,12 +1230,12 @@ export function AiRewriteTaskManager({
                                 href={task.sourceUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="line-clamp-2 break-all text-sm font-medium text-foreground hover:underline"
+                                className="inline-flex min-h-11 break-all py-3 text-sm font-medium text-foreground hover:underline"
                               >
                                 {taskSourceTitle(task)}
                               </a>
                             ) : (
-                              <p className="line-clamp-2 break-all text-sm font-medium text-foreground">
+                              <p className="break-all text-sm font-medium text-foreground">
                                 {taskSourceTitle(task)}
                               </p>
                             )}

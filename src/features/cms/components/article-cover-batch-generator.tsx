@@ -670,14 +670,14 @@ export function ArticleCoverBatchGenerator({
         </div>
       ) : null}
 
-      <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
+      <div className="overflow-hidden rounded-md border border-border/70 bg-background">
         {filteredPosts.length === 0 ? (
           <AdminTableEmpty
             title="没有匹配的文章"
             description="调整搜索词或筛选条件后再选择文章生成封面。"
           />
         ) : (
-          <Table className="cms-mobile-sticky-actions min-w-[860px]">
+          <Table className="cms-mobile-sticky-actions cms-table-sticky-actions min-w-[860px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">

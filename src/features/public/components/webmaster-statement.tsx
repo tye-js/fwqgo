@@ -22,7 +22,7 @@ export function WebmasterStatement() {
           href="https://qm.qq.com/q/WCugMBGEso"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-11 items-center gap-1 rounded-sm font-medium text-primary underline underline-offset-4 transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-8"
+          className="inline-flex min-h-11 items-center gap-1 rounded-sm font-medium text-primary underline underline-offset-4 transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <MessageCircle className="size-4" aria-hidden="true" />
           QQ群：601090215
@@ -32,7 +32,7 @@ export function WebmasterStatement() {
           target="_blank"
           rel="noopener noreferrer"
           aria-label="加入 Telegram 群组"
-          className="inline-flex min-h-11 items-center gap-1 rounded-sm font-medium text-primary underline underline-offset-4 transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-8"
+          className="inline-flex min-h-11 items-center gap-1 rounded-sm font-medium text-primary underline underline-offset-4 transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <Send className="size-4" aria-hidden="true" />
           Telegram

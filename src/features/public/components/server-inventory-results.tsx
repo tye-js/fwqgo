@@ -143,7 +143,6 @@ function OfferMobileCard({
   offer: PublicInventoryPage["items"][number];
 }) {
   const specs = specText(offer);
-  const location = [offer.region, offer.lineType].filter(Boolean).join(" · ");
   const productGroup =
     cleanText(offer.productGroup) ?? cleanText(offer.productType) ?? "未分组";
 
@@ -156,9 +155,15 @@ function OfferMobileCard({
           </p>
           <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
             {offer.providerName ? (
-              <span className="max-w-full break-words">
+              <Link
+                href={collectionHref(
+                  "providers",
+                  offer.providerSlug ?? offer.providerName,
+                )}
+                className="min-h-11 max-w-full break-words py-3 text-primary underline-offset-4 hover:underline"
+              >
                 {offer.providerName}
-              </span>
+              </Link>
             ) : null}
             {offer.externalProductId ? (
               <span className="max-w-full break-all">
@@ -179,7 +184,24 @@ function OfferMobileCard({
         <div className="min-w-0">
           <dt className="text-muted-foreground">地区 / 线路</dt>
           <dd className="mt-1 break-words font-medium text-foreground">
-            {location ? location : "待补充"}
+            {offer.region ? (
+              <Link
+                href={collectionHref("regions", offer.regionSlug ?? offer.region)}
+                className="min-h-11 break-words underline-offset-4 hover:text-primary hover:underline"
+              >
+                {offer.region}
+              </Link>
+            ) : (
+              "待补充"
+            )}
+            {offer.lineType ? (
+              <Link
+                href={collectionHref("lines", offer.lineSlug ?? offer.lineType)}
+                className="ml-1 inline-flex min-h-11 items-center break-words underline-offset-4 hover:text-primary hover:underline"
+              >
+                {offer.lineType}
+              </Link>
+            ) : null}
           </dd>
         </div>
         <div className="min-w-0">
@@ -194,6 +216,20 @@ function OfferMobileCard({
             {specs ? specs : "配置待补充"}
           </dd>
         </div>
+        <div className="min-w-0 sm:col-span-2">
+          <dt className="text-muted-foreground">套餐标签</dt>
+          <dd className="mt-1 flex flex-wrap gap-1.5">
+            {offer.tags.length > 0 ? (
+              offer.tags.map((tag) => (
+                <Badge key={tag.slug} variant="outline" className="break-words">
+                  {tag.label}
+                </Badge>
+              ))
+            ) : (
+              <span className="text-foreground">暂无标签</span>
+            )}
+          </dd>
+        </div>
       </dl>
 
       <div className="mt-3 flex flex-col items-stretch gap-3 border-t border-border/70 pt-3 sm:flex-row sm:items-end sm:justify-between">
@@ -201,6 +237,11 @@ function OfferMobileCard({
           {offer.offerKind === "promotion"
             ? `上次探测：${formatCheckedAt(offer.lastCheckedAt)}`
             : `资料更新：${formatCheckedAt(offer.updatedAt ?? offer.createdAt)}`}
+          {offer.validUntil ? (
+            <span className="mt-1 block break-words">
+              有效期至：{formatCheckedAt(offer.validUntil)}
+            </span>
+          ) : null}
         </div>
         <ServerInventoryOfferActions
           prices={offer.prices}
@@ -249,13 +290,13 @@ export function ServerInventoryResults({
         <span>价格统一折算为美元月价排序</span>
       </div>
 
-      <div className="grid gap-3 lg:hidden">
+      <div className="grid gap-3 xl:hidden">
         {page.items.map((offer) => (
           <OfferMobileCard key={offer.id} offer={offer} />
         ))}
       </div>
 
-      <div className="hidden overflow-x-auto rounded-lg border border-border/70 bg-background shadow-sm lg:block">
+      <div className="hidden overflow-x-auto rounded-lg border border-border/70 bg-background shadow-sm xl:block">
         <table className="w-full min-w-[1120px] table-fixed text-[13px]">
           <thead className="sticky top-0 z-10 border-b border-border/70 bg-muted/95 text-left text-xs text-muted-foreground backdrop-blur">
             <tr>

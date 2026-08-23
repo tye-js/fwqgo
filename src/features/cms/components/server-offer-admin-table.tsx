@@ -1291,8 +1291,8 @@ export function ServerOfferAdminTable({
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-        <Table className="cms-mobile-sticky-actions min-w-[1120px]">
+      <div className="overflow-hidden rounded-md border border-border/70 bg-background">
+        <Table className="cms-mobile-sticky-actions cms-table-sticky-actions min-w-[1120px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-12 p-0">

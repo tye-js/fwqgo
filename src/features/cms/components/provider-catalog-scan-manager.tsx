@@ -307,8 +307,8 @@ export function ProviderCatalogScanManager({
             </Badge>
           ) : null}
         </div>
-        <div className="overflow-x-auto rounded-md border">
-          <Table className="cms-mobile-sticky-actions min-w-[980px]">
+        <div className="overflow-hidden rounded-md border">
+          <Table className="cms-mobile-sticky-actions cms-table-sticky-actions min-w-[980px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-20">ID</TableHead>

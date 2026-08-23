@@ -53,7 +53,15 @@ bun run typecheck
 # 核心测试与部署契约检查
 bun run test
 bun run verify:deploy
+
+# 移动端与 AI 契约
+bun run verify:public-mobile-ui
+bun run verify:cms-mobile-ui
+bun run verify:ai-rewrite-prompts
+bun run smoke:mobile # 需要已启动 Web/CMS；可用 MOBILE_SMOKE_REQUIRE_DATA=1 强制要求样本数据
 ```
+
+响应式 PR 还应说明：涉及路由、视口（含横竖屏）、浏览器、关键控件是否达到 44px、是否新增滚动容器，以及是否提供截图或真实浏览器验收结果。
 
 ## 🐛 报告问题
 
@@ -66,6 +74,9 @@ bun run verify:deploy
    - 期望行为
    - 实际行为
    - 环境信息（浏览器、Node.js版本等）
+   - 路由、视口尺寸和方向
+   - 浏览器与设备类型
+   - 截图、长文本样本以及是否可以稳定复现
 
 ## 💡 功能建议
 

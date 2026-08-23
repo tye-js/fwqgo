@@ -767,8 +767,8 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
         />
       ) : null}
 
-      <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-        <Table className="cms-mobile-sticky-actions min-w-[980px]">
+      <div className="overflow-hidden rounded-md border border-border/70 bg-background">
+        <Table className="cms-mobile-sticky-actions cms-table-sticky-actions min-w-[980px]">
           <TableHeader>
             <TableRow>
               <TableHead>名称</TableHead>

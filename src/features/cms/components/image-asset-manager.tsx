@@ -805,10 +805,24 @@ export function ImageAssetManager({
                             引用 {image.references.length} 条
                           </p>
                           {image.references.slice(0, 2).map((reference) => (
-                            <p key={reference.id} className="line-clamp-1">
+                            <p key={reference.id} className="break-words">
                               {referenceLabel(reference)}
                             </p>
                           ))}
+                          {image.references.length > 2 ? (
+                            <details className="mt-1">
+                              <summary className="inline-flex min-h-11 cursor-pointer items-center text-primary">
+                                查看其余引用（{image.references.length - 2}）
+                              </summary>
+                              <div className="space-y-1 pt-1">
+                                {image.references.slice(2).map((reference) => (
+                                  <p key={reference.id} className="break-words">
+                                    {referenceLabel(reference)}
+                                  </p>
+                                ))}
+                              </div>
+                            </details>
+                          ) : null}
                         </>
                       )}
                     </div>

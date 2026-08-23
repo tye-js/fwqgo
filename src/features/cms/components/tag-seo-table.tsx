@@ -366,8 +366,8 @@ export function TagSeoTable({
       />
 
       {rows.length > 0 ? (
-        <div className="overflow-x-auto rounded-lg border border-border/70">
-          <Table className="cms-mobile-sticky-actions min-w-[1380px]">
+        <div className="overflow-hidden rounded-lg border border-border/70">
+          <Table className="cms-mobile-sticky-actions cms-table-sticky-actions min-w-[1380px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">

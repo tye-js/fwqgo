@@ -94,8 +94,8 @@ export function ShortLinkTable({
           description="发布包含外部链接的文章后，系统会自动生成短链。"
         />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-          <Table className="cms-mobile-sticky-actions min-w-[760px]">
+        <div className="overflow-hidden rounded-md border border-border/70 bg-background">
+          <Table className="cms-mobile-sticky-actions cms-table-sticky-actions min-w-[760px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[140px]">短链</TableHead>

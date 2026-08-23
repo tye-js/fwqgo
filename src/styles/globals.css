@@ -398,7 +398,7 @@
 }
 
 @media (max-width: 1279px) {
-  .cms-mobile-sticky-actions tr > :last-child:not([colspan]) {
+  .cms-table-sticky-actions tr > :last-child:not([colspan]) {
     position: sticky;
     right: 0;
     z-index: 10;
@@ -406,20 +406,20 @@
     box-shadow: -0.75rem 0 1rem -1rem hsl(var(--foreground) / 0.45);
   }
 
-  .cms-mobile-sticky-actions thead tr > :last-child:not([colspan]) {
+  .cms-table-sticky-actions thead tr > :last-child:not([colspan]) {
     z-index: 20;
     background-color: hsl(var(--background));
   }
 
-  .cms-mobile-sticky-actions tbody tr:hover > :last-child:not([colspan]),
-  .cms-mobile-sticky-actions
+  .cms-table-sticky-actions tbody tr:hover > :last-child:not([colspan]),
+  .cms-table-sticky-actions
     tbody
     tr[data-state="selected"]
     > :last-child:not([colspan]) {
     background-color: hsl(var(--muted));
   }
 
-  .cms-mobile-sticky-actions tbody > tr > td:last-child
+  .cms-table-sticky-actions tbody > tr > td:last-child
     :where(button, a, [role="button"]) {
     min-height: 2.75rem;
   }

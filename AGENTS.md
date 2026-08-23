@@ -142,6 +142,21 @@ Node `cluster` fallback for rollback.
 - Preserve mobile interaction quality: navigation sheet links should close the sheet after navigation, tappable controls should be at least 44px high where practical, and data tables should not force horizontal page overflow.
 - Public article and offer tables should preserve real `href` targets when converting or rendering table-cell content; do not reduce linked cells to plain text.
 
+## Mobile Adaptation Contract
+
+- For 320–1024px, interactive controls remain at least 44px high; do not add `md:min-h-8` or `md:min-h-9` to public controls.
+- Use `min-h-dvh`, safe-area insets, and one main scroll container. Page-level horizontal overflow must not be hidden as a workaround.
+- URLs, slugs, errors, task sources, prices, and server specifications must wrap or be expandable; only descriptive summaries may be intentionally line-clamped.
+- Public server inventory uses cards below `xl` and the desktop table from `xl` upward.
+- CMS `Table` owns horizontal scrolling through `TableViewport`; `mobileLabels`/`viewportLabel` are internal UI props and labels must exist in SSR HTML. `cms-mobile-sticky-actions` means card conversion; `cms-table-sticky-actions` means the last column is truly an action column.
+- Static verification is not a substitute for real viewport testing. Use `bun run smoke:mobile`; if Chromium or file-descriptor limits prevent it, report the result as real viewport unverified.
+- The public route count in mobile verification is an audit sentinel. Legitimate route changes must update the sentinel and its rationale.
+
+## Current AI Rewrite Prompt Contract
+
+- Current configurable prompts are six: `basePrompt`, `metadataPrompt`, `englishContentPrompt`, `englishContinuationPrompt`, `englishMetadataPrompt`, and `providerCatalogDiscoveryPrompt`.
+- Chinese body rewriting is one-pass and source-anchored. It does not run independent fact extraction, fact checking, quality repair, or automatic rewrite retries.
+
 ## CMS Notes
 
 - CMS UI should stay Chinese-first, use existing shadcn/Radix patterns, and show readable Sonner toast feedback for user actions.

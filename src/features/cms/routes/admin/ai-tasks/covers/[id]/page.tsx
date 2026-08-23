@@ -95,7 +95,7 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
       title={task.title}
       description="查看封面生成、写回文章、失败原因和可恢复操作。"
       actions={
-        <div className="flex flex-wrap gap-2">
+        <div className="flex w-full flex-wrap gap-2 md:w-auto">
           <Button asChild variant="outline">
             <Link href="/ai-tasks">
               <ArrowLeft className="size-4" />

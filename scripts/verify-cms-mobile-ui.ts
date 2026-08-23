@@ -179,7 +179,10 @@ assert.match(
 );
 
 assert.ok(responsiveTableCount >= 20, "Expected all wide CMS tables to opt in");
-assert.match(table, /useLayoutEffect/);
+assert.match(table, /mobileLabels\?: string\[\]/);
+assert.match(table, /viewportLabel\?: string/);
+assert.match(table, /TableViewport/);
+assert.match(table, /inferMobileLabels/);
 assert.match(table, /data-mobile-label/);
 assert.match(styles, /content: attr\(data-mobile-label\)/);
 assert.match(styles, /:last-child:not\(\[colspan\]\)/);
@@ -196,11 +199,11 @@ const tabletStickyActionsStyles = styles.slice(
 );
 assert.match(
   tabletStickyActionsStyles,
-  /\.cms-mobile-sticky-actions tr > :last-child:not\(\[colspan\]\)/,
+  /\.cms-table-sticky-actions tr > :last-child:not\(\[colspan\]\)/,
 );
 assert.match(
   tabletStickyActionsStyles,
-  /cms-mobile-sticky-actions tbody > tr > td:last-child[\s\S]*:where\(button, a, \[role="button"\]\)[\s\S]*min-height: 2\.75rem/,
+  /cms-table-sticky-actions tbody > tr > td:last-child[\s\S]*:where\(button, a, \[role="button"\]\)[\s\S]*min-height: 2\.75rem/,
 );
 assert.match(
   styles,
@@ -220,6 +223,7 @@ assert.match(switchControl, /size-11/);
 assert.match(dialog, /w-\[calc\(100%-1\.5rem\)\]/);
 assert.match(dialog, /safe-area-inset-bottom/);
 assert.match(sheet, /safe-area-inset-top/);
+assert.match(sheet, /safe-area-inset-right/);
 assert.match(styles, /cms-mobile-save-bar/);
 assert.match(unsavedGuard, /popstate/);
 assert.match(unsavedGuard, /window\.history\.forward\(\)/);
@@ -264,6 +268,9 @@ const imageManager = read(
 );
 assert.match(imageManager, /grid gap-3 xl:hidden/);
 assert.match(imageManager, /hidden overflow-x-auto[^"\n]*xl:block/);
+assert.match(imageManager, /查看其余引用/);
+assert.match(read("src/features/cms/components/admin-page-shell.tsx"), /break-words/);
+assert.match(read("src/features/cms/routes/admin/ai-rewrite/tasks/[id]/page.tsx"), /flex w-full flex-wrap/);
 
 console.log(
   `CMS mobile UI verification passed: ${cmsAppRoutePages.length} app pages mapped to ${cmsFeatureRoutePages.length} feature routes, ${responsiveTableCount} responsive tables, ${labeledNativeCellCount} native cells labeled, and adaptive navigation guards present.`,

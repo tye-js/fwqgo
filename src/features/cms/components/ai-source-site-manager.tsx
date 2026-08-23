@@ -590,8 +590,8 @@ export function AiSourceSiteManager({
         />
       ) : null}
 
-      <div className="overflow-x-auto rounded-md border border-border/70 bg-card">
-        <Table className="cms-mobile-sticky-actions min-w-[980px]">
+      <div className="overflow-hidden rounded-md border border-border/70 bg-card">
+        <Table className="cms-mobile-sticky-actions cms-table-sticky-actions min-w-[980px]">
           <TableHeader>
             <TableRow>
               <TableHead>来源站</TableHead>

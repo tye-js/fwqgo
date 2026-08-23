@@ -93,8 +93,8 @@ export function SiteSeoConfigTable({ data }: { data: SiteSeoConfigRow[] }) {
 
   return (
     <>
-      <div className="overflow-x-auto rounded-md border border-border/70">
-        <Table className="cms-mobile-sticky-actions min-w-[920px]">
+      <div className="overflow-hidden rounded-md border border-border/70">
+        <Table className="cms-mobile-sticky-actions cms-table-sticky-actions min-w-[920px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-24">语言</TableHead>

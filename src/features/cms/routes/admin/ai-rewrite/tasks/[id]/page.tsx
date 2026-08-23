@@ -1088,7 +1088,7 @@ export async function AiRewriteTaskDetailPageContent({
       title={task.resultTitle ?? task.scrapedTitle ?? `任务 #${task.id}`}
       description="查看抓取、清洗、AI 改写、返利链接命中和失败诊断。"
       actions={
-        <div className="flex gap-2">
+        <div className="flex w-full flex-wrap gap-2 md:w-auto">
           <Button asChild variant="outline">
             <Link href={basePath}>
               <ArrowLeft className="size-4" />

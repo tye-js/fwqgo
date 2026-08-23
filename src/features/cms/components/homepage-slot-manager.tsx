@@ -428,8 +428,8 @@ export function HomepageSlotManager({
           新增推广位
         </Button>
       </div>
-      <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-        <Table className="cms-mobile-sticky-actions min-w-[880px]">
+      <div className="overflow-hidden rounded-md border border-border/70 bg-background">
+        <Table className="cms-mobile-sticky-actions cms-table-sticky-actions min-w-[880px]">
           <TableHeader>
             <TableRow>
               <TableHead>位置 / 排序</TableHead>

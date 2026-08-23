@@ -306,14 +306,14 @@ async function PostPageContent({
                 >
                   <Link
                     href="/"
-                    className="inline-flex min-h-11 items-center hover:text-primary md:min-h-8"
+                    className="inline-flex min-h-11 items-center hover:text-primary"
                   >
                     首页
                   </Link>
                   <ChevronRight className="size-3.5 shrink-0" aria-hidden />
                   <Link
                     href={categoryUrl}
-                    className="inline-flex min-h-11 min-w-0 max-w-full items-center break-words hover:text-primary md:min-h-8"
+                    className="inline-flex min-h-11 min-w-0 max-w-full items-center break-words hover:text-primary"
                   >
                     {post.categoryName}
                   </Link>
@@ -335,7 +335,7 @@ async function PostPageContent({
                     <Link
                       href={`/en/fwq/posts/${encodeURIComponent(post.enSlug)}`}
                       prefetch
-                      className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-8"
+                      className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <Languages className="size-4" aria-hidden="true" />
                       English
@@ -395,7 +395,7 @@ async function PostPageContent({
                         key={tag.tag.id}
                         href={`/fwq/tags/${encodeURIComponent(tag.tag.slug)}/page/1`}
                         prefetch
-                        className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-8"
+                        className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
                         #{tag.tag.name}
                       </Link>

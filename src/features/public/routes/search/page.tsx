@@ -155,7 +155,7 @@ async function SearchContent({ searchParams }: SearchPageProps) {
                   key={item}
                   href={getSearchHref(item, language)}
                   prefetch
-                  className="inline-flex min-h-11 items-center rounded-full border border-border bg-background px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-9 md:px-3"
+                  className="inline-flex min-h-11 items-center rounded-full border border-border bg-background px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:px-3"
                 >
                   {item}
                 </Link>

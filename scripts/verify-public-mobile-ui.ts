@@ -165,12 +165,12 @@ assert.match(
   /whitespace-normal break-words px-2 text-center/,
 );
 for (const source of [latestPostsSidebar, serverTopic, serverCollection]) {
-  assert.match(source, /min-h-11[^"\n]*md:min-h-9/);
+  assert.match(source, /min-h-11/);
 }
 for (const source of [zhArticle, enArticle]) {
-  assert.match(source, /min-h-11[^"\n]*md:min-h-8/);
+  assert.match(source, /min-h-11/);
 }
-assert.match(tagContext, /inline-flex min-h-11[^"\n]*xl:min-h-8/);
+assert.match(tagContext, /inline-flex min-h-11/);
 assert.match(scrollToTop, /safe-area-inset-bottom/);
 assert.match(offerTable, /min-w-0 flex-1 break-words text-base/);
 assert.match(offerTable, /max-w-full whitespace-normal break-all/);
@@ -200,11 +200,20 @@ assert.match(header, /max-h-dvh w-\[88vw\]/);
 assert.match(header, /<SheetClose asChild>/);
 
 for (const source of [inventoryResults, offerTable]) {
-  assert.match(source, /grid gap-3 lg:hidden/);
-  assert.match(source, /hidden overflow-x-auto[^"\n]*lg:block/);
-  assert.doesNotMatch(source, /grid gap-3 md:hidden/);
-  assert.doesNotMatch(source, /hidden overflow-x-auto[^"\n]*md:block/);
+  assert.match(source, /grid gap-3 xl:hidden/);
+  assert.match(source, /hidden overflow-x-auto[^"\n]*xl:block/);
+  assert.doesNotMatch(source, /grid gap-3 (?:md|lg):hidden/);
+  assert.doesNotMatch(source, /hidden overflow-x-auto[^"\n]*(?:md|lg):block/);
 }
+assert.doesNotMatch(
+  publicSources.map(({ source }) => source).join("\n"),
+  /md:min-h-(?:8|9)/,
+  "Public interactive controls must not reintroduce tablet touch-target downgrades",
+);
+assert.match(inventoryResults, /href=\{collectionHref\("regions"/);
+assert.match(inventoryResults, /href=\{collectionHref\("lines"/);
+assert.match(inventoryResults, /套餐标签/);
+assert.match(inventoryResults, /有效期至/);
 
 console.log(
   `Public mobile UI verification passed: ${webRoutePages.length} app pages mapped to ${publicRoutePages.length} feature routes, dynamic viewport roots, mobile touch targets, and dedicated server cards present.`,

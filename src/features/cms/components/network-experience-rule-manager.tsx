@@ -154,8 +154,8 @@ export function NetworkExperienceRuleManager({ rules }: { rules: RuleRow[] }) {
           </p>
         ) : null}
       </div>
-      <div className="overflow-x-auto rounded-md border border-border/70">
-        <table className="cms-mobile-sticky-actions w-full min-w-[900px] text-left text-sm">
+      <div className="cms-table-viewport rounded-md border border-border/70">
+        <table className="cms-mobile-sticky-actions cms-table-sticky-actions w-full min-w-[900px] text-left text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th className="px-3 py-2">版本</th>

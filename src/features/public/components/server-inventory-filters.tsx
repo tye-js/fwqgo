@@ -229,7 +229,7 @@ function FacetSelect({
 }) {
   return (
     <Select value={value} disabled={disabled} onValueChange={onValueChange}>
-      <SelectTrigger className="min-h-11 md:min-h-9">
+      <SelectTrigger className="min-h-11">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
@@ -358,7 +358,7 @@ export function ServerInventoryToolbar({
           disabled={isPending}
           onValueChange={(value) => updateFilter("stock", value)}
         >
-          <SelectTrigger className="min-h-11 md:min-h-9">
+          <SelectTrigger className="min-h-11">
             <SelectValue placeholder="库存状态" />
           </SelectTrigger>
           <SelectContent>
@@ -383,7 +383,7 @@ export function ServerInventoryToolbar({
           disabled={isPending}
           onValueChange={(value) => updateFilter("sort", value)}
         >
-          <SelectTrigger className="min-h-11 md:min-h-9">
+          <SelectTrigger className="min-h-11">
             <SelectValue placeholder="排序" />
           </SelectTrigger>
           <SelectContent>
@@ -428,7 +428,7 @@ export function ServerInventoryToolbar({
             disabled={isPending}
             onValueChange={(value) => updateFilter("promo", value)}
           >
-            <SelectTrigger className="min-h-11 md:min-h-9">
+            <SelectTrigger className="min-h-11">
               <SelectValue placeholder="优惠码" />
             </SelectTrigger>
             <SelectContent>
@@ -443,7 +443,7 @@ export function ServerInventoryToolbar({
               disabled={isPending}
               onValueChange={(value) => updateFilter("check", value)}
             >
-              <SelectTrigger className="min-h-11 md:min-h-9">
+              <SelectTrigger className="min-h-11">
                 <SelectValue placeholder="探测状态" />
               </SelectTrigger>
               <SelectContent>
@@ -469,7 +469,7 @@ export function ServerInventoryToolbar({
             placeholder="最低月价 USD"
             aria-label="最低美元月价"
             disabled={isPending}
-            className="min-h-11 md:min-h-9"
+            className="min-h-11"
           />
           <Input
             name="maxPrice"
@@ -481,13 +481,13 @@ export function ServerInventoryToolbar({
             placeholder="最高月价 USD"
             aria-label="最高美元月价"
             disabled={isPending}
-            className="min-h-11 md:min-h-9"
+            className="min-h-11"
           />
           <Button
             type="submit"
             variant="outline"
             size="sm"
-            className="min-h-11 md:min-h-9"
+            className="min-h-11"
             disabled={isPending}
           >
             应用价格

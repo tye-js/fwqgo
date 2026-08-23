@@ -333,7 +333,7 @@ async function EnglishHomeContent() {
                     key={item.href}
                     href={item.href}
                     prefetch
-                    className="inline-flex min-h-11 items-center rounded-full border border-border bg-background px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-9 md:px-3"
+                    className="inline-flex min-h-11 items-center rounded-full border border-border bg-background px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:px-3"
                   >
                     {item.label}
                   </Link>
@@ -376,7 +376,7 @@ async function EnglishHomeContent() {
                           key={name}
                           href={`/servers/providers/${encodeURIComponent(name)}`}
                           prefetch
-                          className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary md:min-h-8"
+                          className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary"
                         >
                           {name}
                         </Link>
@@ -401,7 +401,7 @@ async function EnglishHomeContent() {
                           key={name}
                           href={`/servers/regions/${encodeURIComponent(name)}`}
                           prefetch
-                          className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary md:min-h-8"
+                          className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary"
                         >
                           {name}
                         </Link>

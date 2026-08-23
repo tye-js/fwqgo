@@ -1049,8 +1049,8 @@ export default function AffManTable({
           description="试试更换关键词，或者切换筛选项看看。"
         />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-border/70 bg-background">
-          <Table className="cms-mobile-sticky-actions min-w-[1420px]">
+        <div className="overflow-hidden rounded-md border border-border/70 bg-background">
+          <Table className="cms-mobile-sticky-actions cms-table-sticky-actions min-w-[1420px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[44px]">

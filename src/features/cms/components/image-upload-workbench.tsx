@@ -299,7 +299,7 @@ export function ImageUploadWorkbench() {
             </div>
           </div>
         ) : (
-          <Table className="cms-mobile-sticky-actions min-w-[880px]">
+          <Table className="cms-mobile-sticky-actions cms-table-sticky-actions min-w-[880px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[96px]">预览</TableHead>

@@ -35,17 +35,17 @@ export function AdminPageShell({
           {showHeading ? (
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-semibold tracking-tight text-foreground md:text-xl">
+                <h1 className="min-w-0 break-words text-lg font-semibold tracking-tight text-foreground md:text-xl">
                   {title}
                 </h1>
                 {badge ? (
-                  <span className="inline-flex h-6 items-center rounded-sm border border-border bg-muted/50 px-2 text-xs font-medium text-muted-foreground">
+                  <span className="inline-flex min-h-11 max-w-full items-center break-words rounded-sm border border-border bg-muted/50 px-2 text-xs font-medium text-muted-foreground">
                     {badge}
                   </span>
                 ) : null}
               </div>
               {description ? (
-                <p className="max-w-4xl text-xs leading-5 text-muted-foreground md:text-sm">
+                <p className="max-w-4xl break-words text-xs leading-5 text-muted-foreground md:text-sm">
                   {description}
                 </p>
               ) : null}

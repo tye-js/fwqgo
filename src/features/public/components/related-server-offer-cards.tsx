@@ -119,7 +119,7 @@ export function RelatedServerOfferCards({
                   href={offer.purchaseUrl}
                   target="_blank"
                   rel="nofollow sponsored noopener noreferrer"
-                  className="inline-flex min-h-11 items-center gap-1 text-xs font-semibold text-primary underline underline-offset-4 transition-colors hover:text-primary/80 md:min-h-8"
+                  className="inline-flex min-h-11 items-center gap-1 text-xs font-semibold text-primary underline underline-offset-4 transition-colors hover:text-primary/80"
                 >
                   {copy.buy}
                   <ExternalLink className="size-3" aria-hidden="true" />
@@ -128,7 +128,7 @@ export function RelatedServerOfferCards({
                 <Link
                   href={offer.purchaseUrl}
                   prefetch={false}
-                  className="inline-flex min-h-11 items-center text-xs font-semibold text-primary underline underline-offset-4 transition-colors hover:text-primary/80 md:min-h-8"
+                  className="inline-flex min-h-11 items-center text-xs font-semibold text-primary underline underline-offset-4 transition-colors hover:text-primary/80"
                 >
                   {copy.buy}
                 </Link>
@@ -137,7 +137,7 @@ export function RelatedServerOfferCards({
                 <Link
                   href={offer.articleUrl}
                   prefetch
-                  className="inline-flex min-h-11 items-center text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline md:min-h-8"
+                  className="inline-flex min-h-11 items-center text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                 >
                   {copy.article}
                 </Link>
@@ -146,7 +146,7 @@ export function RelatedServerOfferCards({
                   href={offer.articleUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex min-h-11 items-center text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline md:min-h-8"
+                  className="inline-flex min-h-11 items-center text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                 >
                   {copy.article}
                 </a>

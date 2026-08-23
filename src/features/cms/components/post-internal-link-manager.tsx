@@ -101,8 +101,8 @@ export function PostInternalLinkManager({
           当前没有内链记录，重新生成后正文会优先匹配标签，文章下方再匹配同语言知识和相关文章。
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="cms-mobile-sticky-actions w-full min-w-[760px] text-left text-sm">
+        <div className="cms-table-viewport">
+          <table className="cms-mobile-sticky-actions cms-table-sticky-actions w-full min-w-[760px] text-left text-sm">
             <thead>
               <tr className="border-b border-border/70 text-xs text-muted-foreground">
                 <th className="px-2 py-2 font-medium">目标</th>

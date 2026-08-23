@@ -188,6 +188,8 @@ public/                        # 静态资源
 
 所有 CMS 管理 mutation 都应先通过服务端管理员会话校验，并为操作者返回可读错误。
 
+当前 CMS 导航按“概览 / 内容 / 套餐 / 媒体 / 运营 / 模型与接口”组织；服务器知识库独立维护，文章内容与服务器套餐分离管理。
+
 ## 数据库与迁移
 
 Schema 源文件是 `packages/db/schema.ts`，迁移文件位于 `drizzle/`。
@@ -232,6 +234,10 @@ bun run db:studio         # 打开 Drizzle Studio
 | `bun run verify:security`     | 验证 CMS 鉴权和数据库边界      |
 | `bun run verify:cache`        | 验证公开站关键读取缓存边界     |
 | `bun run smoke:cms`           | 浏览器验证 CMS 登录与核心路由  |
+| `bun run verify:public-mobile-ui` | 验证公开站移动断点、触控区和库存卡片 |
+| `bun run verify:cms-mobile-ui` | 验证 CMS 表格、动态文本和 safe-area |
+| `bun run verify:ai-rewrite-prompts` | 验证当前六个 Prompt 与中文单轮改写 |
+| `bun run smoke:mobile` | 启动服务后验证真实视口和横向溢出 |
 | `bun run secrets:migrate`     | 演练或执行存量密钥加密迁移     |
 | `bun run lint`                | ESLint 检查                    |
 | `bun run typecheck`           | TypeScript 类型检查            |
