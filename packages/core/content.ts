@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import type { Element } from "domhandler";
 
-import { slugify } from "@fwqgo/core/utils";
+import { isOutboundShortLinkHref, slugify } from "@fwqgo/core/utils";
 
 export type ArticleDocumentBlock =
   | { type: "heading"; level: 2 | 3 | 4; text: string }
@@ -297,7 +297,7 @@ function renderArticleLink(href: string, label: string) {
   }
 
   const attrs = isExternalArticleHref(trimmedHref)
-    ? ' target="_blank" rel="nofollow sponsored noopener noreferrer"'
+    ? ` target="_blank" rel="${isOutboundShortLinkHref(trimmedHref) ? "nofollow" : "nofollow sponsored noopener noreferrer"}"`
     : "";
 
   return `<a href="${escapeAttribute(trimmedHref)}"${attrs}>${label}</a>`;
@@ -515,7 +515,10 @@ export function enhanceArticleLinks(html: string) {
     }
 
     $link.attr("target", "_blank");
-    $link.attr("rel", "nofollow sponsored noopener noreferrer");
+    $link.attr(
+      "rel",
+      isOutboundShortLinkHref(href) ? "nofollow" : "nofollow sponsored noopener noreferrer",
+    );
   });
 
   return $.html();

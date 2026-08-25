@@ -21,6 +21,7 @@ export default function robots(): MetadataRoute.Robots {
         "/posts/",
         "/seo/",
         "/settings/",
+        "/go/",
       ],
     },
     sitemap: `${baseUrl}/sitemap.xml`,

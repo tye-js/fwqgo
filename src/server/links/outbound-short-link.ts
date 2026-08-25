@@ -277,7 +277,7 @@ export async function shortenArticleOutboundLinks(html: string) {
     }
 
     $link.attr("href", shortLink.path);
-    $link.attr("rel", "nofollow sponsored noopener");
+    $link.attr("rel", "nofollow");
     $link.attr("target", "_blank");
   }
 
