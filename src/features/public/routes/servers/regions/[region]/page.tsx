@@ -1,5 +1,5 @@
-import { Suspense } from "react";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import type { Metadata } from "next";
 
 import Footer from "@/features/public/components/footer";
@@ -28,6 +28,7 @@ export async function generateMetadata({
   if (!value) return {};
 
   const data = await getServerOfferCollection({ kind: "region", value });
+  if (!data || data.offers.length === 0) notFound();
   const label = data?.value ?? value;
   const slug = data?.slug ?? value;
   const canonicalUrl = `${getSiteUrl()}/servers/regions/${encodeURIComponent(slug)}`;
@@ -86,17 +87,7 @@ export default function ServerRegionPage({ params }: PageProps) {
     <div className="flex min-h-dvh flex-col bg-background">
       <Header />
       <Suspense
-        fallback={
-          <main className="flex-1">
-            <section className="container mx-auto px-4 py-10">
-              <Card className="border-border/70 bg-background shadow-sm">
-                <CardContent className="p-8 text-center text-sm text-muted-foreground">
-                  正在加载地区套餐...
-                </CardContent>
-              </Card>
-            </section>
-          </main>
-        }
+        fallback={<main className="flex-1"><section className="container mx-auto px-4 py-10"><Card className="border-border/70 bg-background shadow-sm"><CardContent className="p-8 text-center text-sm text-muted-foreground">正在加载地区套餐...</CardContent></Card></section></main>}
       >
         <RegionContent params={params} />
       </Suspense>

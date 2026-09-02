@@ -59,6 +59,7 @@ function withPrivateNoStore(response: NextResponse) {
     "Cache-Control",
     "private, no-store, max-age=0, must-revalidate",
   );
+  response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
   response.headers.set("Pragma", "no-cache");
   response.headers.set("Expires", "0");
   return response;
@@ -171,6 +172,7 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    "/:path*",
     "/",
     "/login",
     "/signup",

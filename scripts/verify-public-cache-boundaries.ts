@@ -155,8 +155,10 @@ for (const relativePath of partialRuntimeRouteRequirements) {
   if (!sourceText.includes("connection(")) {
     errors.push(`${relativePath} must postpone runtime data with connection()`);
   }
-  if (!sourceText.includes("<Suspense")) {
-    errors.push(`${relativePath} must place runtime data behind Suspense`);
+  if (!sourceText.includes("<Suspense") && !sourceText.includes("notFound()")) {
+    errors.push(
+      `${relativePath} must place runtime data behind Suspense or resolve notFound() before rendering`,
+    );
   }
 }
 

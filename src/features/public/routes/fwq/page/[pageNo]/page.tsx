@@ -41,13 +41,7 @@ export default function AllArticlesPage(props: {
   params: Promise<{ pageNo: string }>;
 }) {
   return (
-    <Suspense
-      fallback={
-        <div className="px-4 py-6 text-sm text-muted-foreground">
-          正在加载文章...
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="px-4 py-6 text-sm text-muted-foreground">正在加载文章...</div>}>
       <AllArticlesPageContent paramsPromise={props.params} />
     </Suspense>
   );

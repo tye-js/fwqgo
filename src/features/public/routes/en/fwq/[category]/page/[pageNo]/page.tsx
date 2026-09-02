@@ -1,6 +1,6 @@
-import { Suspense } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import { connection } from "next/server";
 import { Compass } from "lucide-react";
 
@@ -48,8 +48,10 @@ export async function generateMetadata(props: {
 }): Promise<Metadata> {
   const params = await props.params;
   const decodedCategory = decodeSlug(params.category);
-  const pageNo = parsePositiveInt(params.pageNo) ?? 1;
-  const { data: category } = await getCategoryBySlug(decodedCategory, "en");
+  const pageNo = parsePositiveInt(params.pageNo);
+  if (!pageNo) notFound();
+  const { data: category, error: categoryError } = await getCategoryBySlug(decodedCategory, "en");
+  if (!category && !categoryError) notFound();
   const title = category?.name ?? decodedCategory.replace(/[-_]+/g, " ");
   const canonicalSlug = category?.slug ?? decodedCategory;
   const zhSlug =
@@ -67,6 +69,12 @@ export async function generateMetadata(props: {
     title: `${title} - fwqgo`,
     description,
     keywords: category?.keywords ?? title,
+    robots: {
+      index: Boolean(
+        category?.publishedPostCount && category.publishedPostCount >= 3,
+      ),
+      follow: true,
+    },
     alternates: {
       canonical: canonicalUrl,
       languages: {
@@ -226,11 +234,7 @@ export default function EnglishCategoryPage(props: {
       <Separator />
       <main className="container mx-auto flex-1 px-4 py-6 md:py-8">
         <Suspense
-          fallback={
-            <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
-              Loading category articles...
-            </div>
-          }
+          fallback={<div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">Loading category articles...</div>}
         >
           <CategoryPageContent paramsPromise={props.params} />
         </Suspense>

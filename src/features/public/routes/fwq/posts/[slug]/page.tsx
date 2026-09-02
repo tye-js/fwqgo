@@ -75,6 +75,7 @@ export async function generateMetadata(props: {
   const canonicalUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`;
   const readableTitle = decodedSlug.replace(/[-_]+/g, " ");
   const { data } = await getPostWithTagsBySlug(decodedSlug);
+  if (!data) notFound();
   const post = data?.post;
   const title = post?.title ?? readableTitle;
   const description =
@@ -453,15 +454,11 @@ async function PostPageContent({
   );
 }
 
-export default function PostPage(props: { params: Promise<{ slug: string }> }) {
+export default function PostPage(props: {
+  params: Promise<{ slug: string }>;
+}) {
   return (
-    <Suspense
-      fallback={
-        <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
-          正在加载文章...
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">正在加载文章...</div>}>
       <PostPageContent paramsPromise={props.params} />
     </Suspense>
   );

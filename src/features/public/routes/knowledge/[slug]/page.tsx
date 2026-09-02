@@ -120,7 +120,7 @@ export async function buildKnowledgeArticleMetadata(
   const slug = normalizeDecodedSlug(params.slug);
   if (!slug) return {};
   const article = await getPublishedKnowledgeArticleBySlug(slug, language);
-  if (!article) return {};
+  if (!article) notFound();
 
   const description = article.summary ?? article.content.slice(0, 150);
   const canonical = articlePath(language, article.slug);
@@ -404,19 +404,8 @@ export function KnowledgeArticlePage(props: {
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <Header language={props.language} />
-      <Suspense
-        fallback={
-          <main className="container mx-auto flex flex-1 items-center px-4 py-12">
-            <div className="w-full rounded-md border border-border/70 p-6 text-sm text-muted-foreground">
-              {copy[props.language].loading}
-            </div>
-          </main>
-        }
-      >
-        <KnowledgeArticleContent
-          language={props.language}
-          params={props.params}
-        />
+      <Suspense fallback={<main className="container mx-auto flex flex-1 items-center px-4 py-12"><div className="w-full rounded-md border border-border/70 p-6 text-sm text-muted-foreground">{copy[props.language].loading}</div></main>}>
+        <KnowledgeArticleContent language={props.language} params={props.params} />
       </Suspense>
       <Footer language={props.language} />
     </div>

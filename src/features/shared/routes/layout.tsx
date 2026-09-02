@@ -16,8 +16,6 @@ const sharedMetadata: Metadata = {
   },
   other: {
     "impact-site-verification": "dd276990-077b-4697-8ee5-2afcb05cdd99",
-    "msvalidate.01": "8E5E155C796CFA9E309BC25A9F87116F",
-    "yandex-verification": "8ddfced2ad91a0f1",
   },
 };
 

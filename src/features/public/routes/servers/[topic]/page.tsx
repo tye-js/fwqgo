@@ -39,9 +39,7 @@ export async function generateMetadata({
   const { topic } = await params;
   const topicInfo = offerTopics.find((item) => item.slug === topic);
 
-  if (!topicInfo) {
-    return {};
-  }
+  if (!topicInfo) notFound();
 
   const canonicalUrl = `${getSiteUrl()}/servers/${topic}`;
 
@@ -277,11 +275,7 @@ export default function ServerTopicPage({
     <div className="flex min-h-dvh flex-col bg-background">
       <Header />
       <Suspense
-        fallback={
-          <main className="flex-1 px-4 py-10 text-center text-sm text-muted-foreground">
-            正在加载专题套餐...
-          </main>
-        }
+        fallback={<main className="flex-1 px-4 py-10 text-center text-sm text-muted-foreground">正在加载专题套餐...</main>}
       >
         <ServerTopicContent params={params} />
       </Suspense>

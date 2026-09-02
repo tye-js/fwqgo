@@ -1,6 +1,6 @@
-import { Suspense } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 
 import {
   getPostsWithTagsByTagSlug,
@@ -46,9 +46,10 @@ export async function generateMetadata(props: {
   const decodedTagSlug = decodeSlug(params.tagSlug);
   const pageNo = parsePositiveInt(params.pageNo);
   if (!pageNo) {
-    return { robots: { index: false, follow: true } };
+    notFound();
   }
-  const { data } = await getTagBySlug(decodedTagSlug, "en");
+  const { data, error: tagError } = await getTagBySlug(decodedTagSlug, "en");
+  if (!data && !tagError) notFound();
   const title = data?.name ?? decodedTagSlug.replace(/[-_]+/g, " ");
   const canonicalSlug = data?.slug ?? decodedTagSlug;
   const zhSlug =
@@ -66,7 +67,7 @@ export async function generateMetadata(props: {
     description,
     keywords: data?.keywords ?? `${title} VPS,${title} server deals`,
     robots: {
-      index: Boolean(data?.indexable),
+      index: Boolean(data?.indexable && (data.publishedPostCount ?? 0) >= 3),
       follow: true,
     },
     alternates: {
@@ -227,11 +228,7 @@ export default function EnglishTagPage(props: {
       <Separator />
       <main className="container mx-auto flex-1 px-4 py-6 md:py-8">
         <Suspense
-          fallback={
-            <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
-              Loading tag articles...
-            </div>
-          }
+          fallback={<div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">Loading tag articles...</div>}
         >
           <TagPageContent paramsPromise={props.params} />
         </Suspense>

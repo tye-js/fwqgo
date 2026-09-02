@@ -69,13 +69,17 @@ export async function getTagBySlug(
         enDescription: tags.enDescription,
         enKeywords: tags.enKeywords,
         indexable: tags.indexable,
+        publishedPostCount: sql<number>`count(${posts.id}) filter (where ${posts.published} = true and ${posts.language} = ${language})::int`,
       })
       .from(tags)
+      .leftJoin(postTags, eq(postTags.tagId, tags.id))
+      .leftJoin(posts, eq(posts.id, postTags.postId))
       .where(
         language === "en"
           ? or(eq(tags.enSlug, tagSlug), eq(tags.slug, tagSlug))
           : eq(tags.slug, tagSlug),
       )
+      .groupBy(tags.id)
       .limit(1);
 
     return { data: tag ? localizeTag(tag, language) : null };

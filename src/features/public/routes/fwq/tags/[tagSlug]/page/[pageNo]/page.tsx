@@ -17,6 +17,7 @@ import {
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getServerOffersByKeywords } from "@/server/offers/server-offers";
+import { Suspense } from "react";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
@@ -41,10 +42,11 @@ export async function generateMetadata(props: {
   const decodedTagSlug = decodeSlug(params.tagSlug);
   const pageNo = parsePositiveInt(params.pageNo);
   if (!pageNo) {
-    return { robots: { index: false, follow: true } };
+    notFound();
   }
   const readableName = decodedTagSlug.replace(/[-_]+/g, " ");
-  const { data: tag } = await getTagBySlug(decodedTagSlug);
+  const { data: tag, error: tagError } = await getTagBySlug(decodedTagSlug);
+  if (!tag && !tagError) notFound();
   const title = tag?.name ?? readableName;
   const description =
     tag?.description ?? `${title}相关服务器、VPS、优惠和测评文章。`;
@@ -59,7 +61,7 @@ export async function generateMetadata(props: {
     description,
     keywords: tag?.keywords ?? `${title}的服务器,${title}的VPS`,
     robots: {
-      index: Boolean(tag?.indexable),
+      index: Boolean(tag?.indexable && (tag.publishedPostCount ?? 0) >= 3),
       follow: true,
     },
     alternates: {
@@ -79,7 +81,6 @@ export async function generateMetadata(props: {
   };
 }
 
-import { Suspense } from "react";
 
 async function TagPageContent({
   paramsPromise,
@@ -212,11 +213,7 @@ export default function TagPage(props: {
 }) {
   return (
     <Suspense
-      fallback={
-        <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
-          正在加载标签文章...
-        </div>
-      }
+      fallback={<div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">正在加载标签文章...</div>}
     >
       <TagPageContent paramsPromise={props.params} />
     </Suspense>

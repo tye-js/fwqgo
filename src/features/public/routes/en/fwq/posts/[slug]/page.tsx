@@ -1,7 +1,7 @@
-import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import { ChevronRight, Clock, Languages, Tags } from "lucide-react";
 
 import { getEnglishPostWithTagsBySlug } from "@/features/public/data/post";
@@ -71,6 +71,7 @@ export async function generateMetadata({
   if (!decodedSlug) return {};
 
   const { data } = await getEnglishPostWithTagsBySlug(decodedSlug);
+  if (!data) notFound();
   const post = data?.post;
   const canonicalSlug = post?.enSlug ?? decodedSlug;
   const canonicalUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(canonicalSlug)}`;
@@ -392,13 +393,7 @@ export default function EnglishPostPage({ params }: PageProps) {
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <Header language="en" />
-      <Suspense
-        fallback={
-          <main className="flex-1 px-4 py-10 text-sm text-muted-foreground">
-            Loading article...
-          </main>
-        }
-      >
+      <Suspense fallback={<main className="flex-1 px-4 py-10 text-sm text-muted-foreground">Loading article...</main>}>
         <EnglishPostContent params={params} />
       </Suspense>
       <Footer language="en" />

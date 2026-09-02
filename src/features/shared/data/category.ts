@@ -126,7 +126,23 @@ export async function getCategoryBySlug(
       )
       .limit(1);
 
-    return { data: category ? localizeCategory(category, language) : null };
+    if (!category) return { data: null };
+
+    const [countResult] = await readDb
+      .select({ count: sql<number>`count(*)::int` })
+      .from(posts)
+      .where(
+        sql`${posts.categoryId} = ${category.id}
+          and ${posts.published} = true
+          and ${posts.language} = ${language}`,
+      );
+
+    return {
+      data: {
+        ...localizeCategory(category, language),
+        publishedPostCount: Number(countResult?.count ?? 0),
+      },
+    };
   } catch (error) {
     console.error("Failed to load public category:", error);
     return { error: "获取分类失败" };

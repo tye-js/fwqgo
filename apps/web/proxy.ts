@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const DEFAULT_CMS_ORIGIN = "https://cms.fwqgo.com";
+const PRIMARY_PUBLIC_HOST = "fwqgo.com";
 const AUTH_PAGES = new Set(["/login", "/signup"]);
 const CMS_ROUTE_PREFIXES = [
   "/ai-rewrite",
@@ -26,7 +27,20 @@ function redirectToCms(request: NextRequest) {
   return NextResponse.redirect(target);
 }
 
+function redirectWwwToPrimary(request: NextRequest) {
+  const target = new URL(
+    request.nextUrl.pathname,
+    `https://${PRIMARY_PUBLIC_HOST}`,
+  );
+  target.search = request.nextUrl.search;
+  return NextResponse.redirect(target, 301);
+}
+
 export function proxy(request: NextRequest) {
+  if (request.nextUrl.hostname.toLowerCase() === `www.${PRIMARY_PUBLIC_HOST}`) {
+    return redirectWwwToPrimary(request);
+  }
+
   const pathname = request.nextUrl.pathname;
 
   if (
@@ -43,6 +57,7 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    "/:path*",
     "/login",
     "/signup",
     "/ai-rewrite/:path*",

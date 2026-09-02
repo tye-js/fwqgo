@@ -48,13 +48,7 @@ export default function EnglishAllArticlesPage(props: {
       <Header language="en" />
       <Separator />
       <main className="container mx-auto flex-1 py-6 md:py-8">
-        <Suspense
-          fallback={
-            <div className="px-4 py-6 text-sm text-muted-foreground">
-              Loading articles...
-            </div>
-          }
-        >
+        <Suspense fallback={<div className="px-4 py-6 text-sm text-muted-foreground">Loading articles...</div>}>
           <AllArticlesPageContent paramsPromise={props.params} language="en" />
         </Suspense>
       </main>

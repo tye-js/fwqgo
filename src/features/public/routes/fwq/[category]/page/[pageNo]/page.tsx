@@ -21,6 +21,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Compass } from "lucide-react";
 import { connection } from "next/server";
+import { Suspense } from "react";
 import { getServerOffersByKeywords } from "@/server/offers/server-offers";
 
 function getSiteUrl() {
@@ -43,10 +44,12 @@ export async function generateMetadata(props: {
   params: Promise<{ category: string; pageNo: string }>;
 }): Promise<Metadata> {
   const params = await props.params;
-  const pageNo = parsePositiveInt(params.pageNo) ?? 1;
+  const pageNo = parsePositiveInt(params.pageNo);
+  if (!pageNo) notFound();
   const decodedCategory = decodeSlug(params.category);
   const readableName = decodedCategory.replace(/[-_]+/g, " ");
-  const { data: category } = await getCategoryBySlug(decodedCategory);
+  const { data: category, error: categoryError } = await getCategoryBySlug(decodedCategory);
+  if (!category && !categoryError) notFound();
   const title = category?.name ?? readableName;
   const description =
     category?.description ?? `${title}相关的服务器优惠、评测与选购文章。`;
@@ -60,6 +63,12 @@ export async function generateMetadata(props: {
     title: `${title}-服务器go`,
     description,
     keywords: category?.keywords ?? readableName,
+    robots: {
+      index: Boolean(
+        category?.publishedPostCount && category.publishedPostCount >= 3,
+      ),
+      follow: true,
+    },
     alternates: {
       canonical,
       languages: {
@@ -77,7 +86,6 @@ export async function generateMetadata(props: {
   };
 }
 
-import { Suspense } from "react";
 
 const CategoryPageContent = async ({
   paramsPromise,
@@ -212,11 +220,7 @@ export default function CategoryPage(props: {
 }) {
   return (
     <Suspense
-      fallback={
-        <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
-          正在加载分类文章...
-        </div>
-      }
+      fallback={<div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">正在加载分类文章...</div>}
     >
       <CategoryPageContent paramsPromise={props.params} />
     </Suspense>
