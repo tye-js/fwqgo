@@ -1612,6 +1612,7 @@ export async function getRelatedServerOffersForPost(input: {
   limit?: number;
 }) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.serverOffers, cacheTags.post(input.postId));
 
   const tagText = input.tagNames.join(" ");

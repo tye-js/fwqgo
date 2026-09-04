@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
 
-interface TocItem {
+export interface TocItem {
   id: string;
   level: number;
   text: string;

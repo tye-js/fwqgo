@@ -1,7 +1,6 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@fwqgo/core/*": ["../../packages/core/*"],
       "@fwqgo/db": ["../../packages/db/index.ts"],

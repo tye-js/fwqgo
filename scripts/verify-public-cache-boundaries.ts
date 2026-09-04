@@ -12,6 +12,8 @@ const requirements = new Map<string, string[]>([
       "getHomepageSidebarData",
       "getPostWithTagsBySlug",
       "getEnglishPostWithTagsBySlug",
+      "getPublicPostSeoBySlug",
+      "getEnglishPostSeoBySlug",
       "getPostsWithTagsByCategoryId",
       "getLatestPostsForSidebar",
     ],
@@ -26,7 +28,7 @@ const requirements = new Map<string, string[]>([
   ],
   [
     "src/features/shared/data/category.ts",
-    ["getCategories", "getCategoryBySlug"],
+    ["getCategories", "getCategoryBySlug", "getNavigationCategories"],
   ],
   ["src/features/shared/data/site-seo.ts", ["getSiteSeoConfig"]],
   [

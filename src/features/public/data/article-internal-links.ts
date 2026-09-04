@@ -1,5 +1,6 @@
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import type { ArticleLinkLanguage } from "@fwqgo/core/article-internal-links";
+import { cacheLife } from "next/cache";
 import { readPublicPostInternalLinks } from "@/server/posts/internal-links";
 
 export async function getPublicPostInternalLinks(
@@ -7,6 +8,7 @@ export async function getPublicPostInternalLinks(
   language: ArticleLinkLanguage,
 ) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(
     cacheTags.internalLinks,
     cacheTags.postInternalLinks(postId),

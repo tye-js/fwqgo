@@ -19,10 +19,49 @@ loadEnvConfig(
 );
 await import("../../src/env.js");
 
+const publicArticleCacheHeaders = [
+  {
+    key: "Cache-Control",
+    value:
+      "public, max-age=0, s-maxage=900, stale-while-revalidate=86400",
+  },
+  {
+    key: "CDN-Cache-Control",
+    value: "public, max-age=900, stale-while-revalidate=86400",
+  },
+  {
+    key: "Cloudflare-CDN-Cache-Control",
+    value: "public, max-age=900, stale-while-revalidate=86400",
+  },
+];
+
 /** @type {import("next").NextConfig} */
 const config = {
   output: "standalone",
   distDir: "../../.next-web",
+  // Dynamic article metadata must be present in the initial <head>. This
+  // trades a small metadata lookup for reliable crawlers and audit tools.
+  htmlLimitedBots: /.*/,
+  async headers() {
+    return [
+      {
+        source: "/fwq/posts/:slug",
+        missing: [
+          { type: "header", key: "RSC" },
+          { type: "header", key: "Next-Router-Prefetch" },
+        ],
+        headers: publicArticleCacheHeaders,
+      },
+      {
+        source: "/en/fwq/posts/:slug",
+        missing: [
+          { type: "header", key: "RSC" },
+          { type: "header", key: "Next-Router-Prefetch" },
+        ],
+        headers: publicArticleCacheHeaders,
+      },
+    ];
+  },
   images: {
     localPatterns: [
       {
@@ -52,7 +91,7 @@ const config = {
   },
   cacheComponents: true,
   experimental: {
-    optimizePackageImports: ["@next/font"],
+    optimizePackageImports: ["lucide-react"],
   },
   compiler: {
     removeConsole:

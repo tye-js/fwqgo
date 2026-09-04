@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import React from "react";
 
 type PublicLanguage = "zh" | "en";
@@ -91,10 +91,6 @@ function findAlternateHref(targetLanguage: PublicLanguage) {
   return match?.href ? toInternalHref(match.href) : undefined;
 }
 
-function getLocationKey(pathname: string, searchParams: URLSearchParams) {
-  return `${pathname}?${searchParams.toString()}`;
-}
-
 export const LanguageSwitchLink = React.forwardRef<
   HTMLAnchorElement,
   LanguageSwitchLinkProps
@@ -104,30 +100,32 @@ export const LanguageSwitchLink = React.forwardRef<
     ref,
   ) => {
     const pathname = usePathname() || "/";
-    const searchParams = useSearchParams();
     const targetLanguage = currentLanguage === "en" ? "zh" : "en";
-    const locationKey = getLocationKey(pathname, searchParams);
     const [alternate, setAlternate] = React.useState<{
-      locationKey: string;
+      pathname: string;
       href?: string;
     } | null>(null);
 
     const fallback = React.useMemo(() => {
       return (
         fallbackHref ??
-        buildFallbackHref(pathname, searchParams, targetLanguage)
+        buildFallbackHref(pathname, new URLSearchParams(), targetLanguage)
       );
-    }, [fallbackHref, pathname, searchParams, targetLanguage]);
+    }, [fallbackHref, pathname, targetLanguage]);
 
     React.useEffect(() => {
+      const searchParams = new URLSearchParams(window.location.search);
       setAlternate({
-        locationKey,
-        href: findAlternateHref(targetLanguage),
+        pathname,
+        href:
+          findAlternateHref(targetLanguage) ??
+          (fallbackHref ??
+            buildFallbackHref(pathname, searchParams, targetLanguage)),
       });
-    }, [locationKey, targetLanguage]);
+    }, [fallbackHref, pathname, targetLanguage]);
 
     const alternateHref =
-      alternate?.locationKey === locationKey ? alternate.href : undefined;
+      alternate?.pathname === pathname ? alternate.href : undefined;
 
     return (
       <Link

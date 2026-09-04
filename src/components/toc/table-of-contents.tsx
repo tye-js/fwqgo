@@ -1,19 +1,19 @@
 "use client";
-import { generateToc } from "@fwqgo/core/toc";
+import type { TocItem } from "@fwqgo/core/toc";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 interface TableOfContentsProps {
-  content: string;
+  items: TocItem[];
   label?: string;
 }
 
 export function TableOfContents({
-  content,
+  items,
   label = "本文目录",
 }: TableOfContentsProps) {
   const [currentId, setCurrentId] = useState<string | null>(null);
-  const toc = useMemo(() => generateToc(content), [content]);
+  const toc = items;
 
   useEffect(() => {
     if (!toc.length) return;
@@ -83,9 +83,9 @@ export function TableOfContents({
             <Link
               href={`#${item.id}`}
               onClick={(e) => handleClick(e, `#${item.id}`)}
-              className={`block rounded-md border-l-2 px-3 py-2 text-sm leading-6 transition-colors ${
+              className={`block min-h-11 rounded-md border-l-2 px-3 py-2 text-sm leading-6 transition-colors ${
                 currentId === item.id
-                  ? "border-primary bg-primary/10 font-medium text-primary"
+                  ? "border-primary bg-primary/10 font-medium text-blue-800 dark:text-blue-300"
                   : "border-transparent text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground"
               }`}
             >

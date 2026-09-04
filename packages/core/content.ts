@@ -70,6 +70,8 @@ const allowedArticleTags = new Set([
   "u",
   "ul",
 ]);
+const articleBlockTags =
+  "address,article,aside,blockquote,div,dl,fieldset,figure,footer,form,h1,h2,h3,h4,h5,h6,header,hr,ol,p,pre,section,table,ul";
 
 function getHeadingId(text: string, usedIds: Map<string, number>) {
   const baseId = slugify(text) || "section";
@@ -82,10 +84,20 @@ function getHeadingId(text: string, usedIds: Map<string, number>) {
 export function normalizeArticleHtml(content: string) {
   const $ = cheerio.load(content, null, false);
   const usedIds = new Map<string, number>();
+  let previousHeadingLevel = 1;
 
   $("h2, h3, h4, h5, h6").each((_, element) => {
     const $heading = $(element);
     const headingText = $heading.text().trim();
+    const rawHeadingLevel = Number(element.name.slice(1));
+    const headingLevel = Math.min(
+      rawHeadingLevel,
+      previousHeadingLevel + 1,
+    );
+    if (headingLevel !== rawHeadingLevel) {
+      element.name = `h${headingLevel}`;
+    }
+    previousHeadingLevel = headingLevel;
 
     if (!headingText) {
       $heading.removeAttr("id");
@@ -210,8 +222,19 @@ function sanitizeArticleHtml(content: string) {
 
       const width = cleanPositiveIntegerAttribute(attrs.width);
       const height = cleanPositiveIntegerAttribute(attrs.height);
-      if (width) $element.attr("width", width);
-      if (height) $element.attr("height", height);
+      if (width && height) {
+        $element.attr("width", width);
+        $element.attr("height", height);
+      } else {
+        // Keep images without source dimensions from expanding the document
+        // after the first paint. A later publish-time pipeline can replace
+        // this conservative 16:9 fallback with the real dimensions.
+        $element.attr("width", "1200");
+        $element.attr("height", "675");
+        $element.attr("data-article-image-dimensions", "fallback");
+      }
+      $element.attr("loading", "lazy");
+      $element.attr("decoding", "async");
       return;
     }
 
@@ -221,6 +244,27 @@ function sanitizeArticleHtml(content: string) {
       if (colspan) $element.attr("colspan", colspan);
       if (rowspan) $element.attr("rowspan", rowspan);
     }
+  });
+
+  // Browser parsers repair invalid phrasing/block nesting before React can
+  // hydrate it. Normalize the common cases in the same Cheerio pass.
+  $("p").each((_, element) => {
+    const $paragraph = $(element);
+    if ($paragraph.find(articleBlockTags).length > 0) {
+      $paragraph.replaceWith($paragraph.contents());
+    }
+  });
+
+  $("a a").each((_, element) => {
+    $(element).replaceWith($(element).contents());
+  });
+
+  $("h1, h2, h3, h4, h5, h6").each((_, element) => {
+    $(element)
+      .find("h1, h2, h3, h4, h5, h6")
+      .each((__, nestedHeading) => {
+        $(nestedHeading).replaceWith($(nestedHeading).contents());
+      });
   });
 
   return $.html();

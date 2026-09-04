@@ -167,6 +167,40 @@ async function checkMetadataImages(origin, service, child, headers = {}) {
   }
 }
 
+/** @param {string} origin @param {import('node:child_process').ChildProcess} child */
+async function checkArticleStream(origin, child) {
+  for (const pathname of [
+    "/fwq/posts/smoke-invalid-article",
+    "/en/fwq/posts/smoke-invalid-article",
+  ]) {
+    const response = await waitForServer(`${origin}${pathname}`, child);
+    const html = await response.text();
+    assert(
+      response.headers.get("content-type")?.includes("text/html"),
+      `${pathname} did not return HTML`,
+    );
+    assert(
+      response.headers.get("cache-control")?.includes("s-maxage=900"),
+      `${pathname} omitted the public article cache policy`,
+    );
+
+    const segmentIds = [
+      ...html.matchAll(/<(?:div|template)[^>]*\bid="(S:\d+)"/g),
+    ].map((match) => match[1]);
+    assert(
+      new Set(segmentIds).size === segmentIds.length,
+      `${pathname} contains duplicate streamed resume segment IDs`,
+    );
+
+    const headEnd = html.indexOf("</head>");
+    const title = html.indexOf("<title");
+    assert(
+      headEnd >= 0 && title >= 0 && title < headEnd,
+      `${pathname} streamed metadata after the initial head`,
+    );
+  }
+}
+
 async function run() {
   verifySharpRuntime();
 
@@ -196,6 +230,7 @@ async function run() {
     checkMetadataImages(webOrigin, "web", webProcess),
     checkMetadataImages(cmsOrigin, "cms", cmsProcess, authHeaders),
   ]);
+  await checkArticleStream(webOrigin, webProcess);
 
   const webAdmin = await fetch(`${webOrigin}/login?from=smoke`, {
     redirect: "manual",

@@ -54,7 +54,7 @@ const headerCopy: Record<
   }
 > = {
   zh: {
-    homeLabel: "服务器GO",
+    homeLabel: "服务器GO Cloud Infra Research",
     languageLabel: "English",
     dealsTitle: "服务器比价",
     allOffers: "全部套餐",
@@ -76,7 +76,7 @@ const headerCopy: Record<
     articleCategories: "服务器分类",
   },
   en: {
-    homeLabel: "Back to fwqgo English homepage",
+    homeLabel: "fwqgo Cloud Infra Research",
     languageLabel: "中文",
     dealsTitle: "Server deals",
     allOffers: "All offers",
@@ -108,63 +108,6 @@ function categoryHref(slug: string, language: PublicLanguage) {
   return `${language === "en" ? "/en" : ""}/fwq/${encodeURIComponent(slug)}/page/1`;
 }
 
-function HeaderFallback({ language }: { language: PublicLanguage }) {
-  const copy = headerCopy[language];
-
-  return (
-    <header className="sticky top-0 z-50 border-b border-border/70 bg-background/95 backdrop-blur-xl">
-      <div className="container mx-auto px-4">
-        <div className="flex min-h-16 items-center justify-between gap-5">
-          <Link
-            href={language === "en" ? "/en" : "/"}
-            prefetch
-            className="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            aria-label={copy.homeLabel}
-          >
-            <BrandLogo compact />
-          </Link>
-          <div className="hidden h-10 w-80 rounded-md border border-border/70 bg-muted/30 lg:block" />
-          <React.Suspense
-            fallback={
-              <Button
-                asChild
-                variant="outline"
-                className="hidden shrink-0 lg:inline-flex"
-              >
-                <Link href={language === "en" ? "/" : "/en"} prefetch>
-                  <Globe2 className="size-4" />
-                  {copy.languageLabel}
-                </Link>
-              </Button>
-            }
-          >
-            <Button
-              asChild
-              variant="outline"
-              className="hidden shrink-0 lg:inline-flex"
-            >
-              <LanguageSwitchLink currentLanguage={language} prefetch>
-                <Globe2 className="size-4" />
-                {copy.languageLabel}
-              </LanguageSwitchLink>
-            </Button>
-          </React.Suspense>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="lg:hidden"
-            aria-label={copy.navigationTitle}
-            disabled
-          >
-            <Menu className="size-5" />
-          </Button>
-        </div>
-      </div>
-    </header>
-  );
-}
-
 const HeaderContent = async ({
   language = "zh",
 }: {
@@ -175,7 +118,7 @@ const HeaderContent = async ({
   const safeCategories = buildArticleNavigation(categories ?? [], language);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/70 bg-background/95 backdrop-blur-xl">
+    <header className="sticky top-0 z-50 border-b border-border/70 bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
       <div className="container mx-auto px-4">
         <div className="flex min-h-16 items-center justify-between gap-5">
           <Link
@@ -409,7 +352,7 @@ const HeaderContent = async ({
                   <MobileNavLink
                     key={category.id}
                     href={categoryHref(category.slug, language)}
-                    prefetch
+                    prefetch={false}
                     className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {category.name}
@@ -429,12 +372,12 @@ const HeaderContent = async ({
   );
 };
 
-function HeaderComponent({ language = "zh" }: { language?: PublicLanguage }) {
-  return (
-    <React.Suspense fallback={<HeaderFallback language={language} />}>
-      <HeaderContent language={language} />
-    </React.Suspense>
-  );
+async function HeaderComponent({
+  language = "zh",
+}: {
+  language?: PublicLanguage;
+}) {
+  return HeaderContent({ language });
 }
 
 function MobileNavLink({
@@ -459,7 +402,7 @@ const ListItem = React.forwardRef<
       <NavigationMenuLink asChild>
         <Link
           href={href}
-          prefetch
+          prefetch={false}
           ref={ref}
           className={cn(
             "block select-none space-y-2 rounded-md border border-transparent p-3.5 leading-none no-underline outline-none transition-colors hover:border-border hover:bg-muted/60 focus:border-border focus:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring",

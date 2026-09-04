@@ -1,4 +1,5 @@
 import {
+  getPublicPostSeoBySlug,
   getPostWithTagsBySlug,
 } from "@/features/public/data/post";
 
@@ -11,6 +12,7 @@ import {
 } from "@fwqgo/core/utils";
 import Link from "next/link";
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import {
   ArrowRight,
   ChevronRight,
@@ -39,7 +41,7 @@ import {
   getRelatedServerOffersForPost,
   offerTopics,
 } from "@/server/offers/server-offers";
-import { addIdsToHeadings } from "@fwqgo/core/toc";
+import { addIdsToHeadings, generateToc } from "@fwqgo/core/toc";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
 import { applyInternalLinksToArticleHtml } from "@fwqgo/core/article-internal-links";
 import {
@@ -64,6 +66,98 @@ function toAbsoluteUrl(value: string | null | undefined) {
   }
 }
 
+async function RelatedOffersSection({
+  postId,
+  tagNames,
+}: {
+  postId: number;
+  tagNames: string[];
+}) {
+  const relatedOffers = await getRelatedServerOffersForPost({
+    postId,
+    tagNames,
+  });
+  const directOffers = relatedOffers.filter(
+    (offer) => offer.sourcePostId === postId,
+  );
+  const inferredOffers = relatedOffers.filter(
+    (offer) => offer.sourcePostId !== postId,
+  );
+  const offerJsonLd = relatedOffers.slice(0, 6).flatMap((offer) => {
+    const purchaseUrl = toAbsoluteHttpUrl(offer.purchaseUrl, getSiteUrl());
+    const price = parseServerOfferAmount(offer.priceAmount);
+    const currency = offer.currency?.trim().toUpperCase();
+    if (
+      !purchaseUrl ||
+      price === null ||
+      price <= 0 ||
+      !isSupportedServerOfferCurrency(currency)
+    ) {
+      return [];
+    }
+
+    return {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      name: offer.title,
+      brand: offer.providerName
+        ? {
+            "@type": "Brand",
+            name: offer.providerName,
+          }
+        : undefined,
+      category: "VPS and Server Hosting",
+      description: [offer.region, offer.lineType, offer.promoCode]
+        .filter(Boolean)
+        .join(" / "),
+      offers: {
+        "@type": "Offer",
+        url: purchaseUrl,
+        price: String(price),
+        priceCurrency: currency,
+        availability:
+          offer.status === "in_stock"
+            ? "https://schema.org/InStock"
+            : offer.status === "preorder"
+              ? "https://schema.org/PreOrder"
+              : "https://schema.org/OutOfStock",
+      },
+    };
+  });
+
+  if (relatedOffers.length === 0) return null;
+
+  return (
+    <>
+      {offerJsonLd.length > 0 ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: jsonLdScriptContent(offerJsonLd),
+          }}
+        />
+      ) : null}
+      <div className="space-y-8">
+        {directOffers.length > 0 ? (
+          <RelatedServerOfferCards
+            title="本文套餐速览"
+            description="正文中提取的套餐，购买前请再次核对库存和续费价格。"
+            offers={directOffers}
+            compact
+          />
+        ) : null}
+        {inferredOffers.length > 0 ? (
+          <RelatedServerOfferCards
+            title="同主题服务器套餐"
+            description="根据本文标签、地区和线路匹配的其他可购买套餐。"
+            offers={inferredOffers}
+          />
+        ) : null}
+      </div>
+    </>
+  );
+}
+
 export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
@@ -73,9 +167,9 @@ export async function generateMetadata(props: {
 
   const canonicalUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`;
   const readableTitle = decodedSlug.replace(/[-_]+/g, " ");
-  const { data } = await getPostWithTagsBySlug(decodedSlug);
+  const { data } = await getPublicPostSeoBySlug(decodedSlug);
   if (!data) notFound();
-  const post = data?.post;
+  const post = data;
   const title = post?.title ?? readableTitle;
   const description =
     post?.description ??
@@ -141,13 +235,7 @@ async function PostPageContent({
   const { post, recommendedPosts } = data;
 
   if (!post) notFound();
-  const [relatedOffers, internalLinks] = await Promise.all([
-    getRelatedServerOffersForPost({
-      postId: post.id,
-      tagNames: post.tags.map((tag) => tag.tag.name),
-    }),
-    getPublicPostInternalLinks(post.id, "zh"),
-  ]);
+  const internalLinks = await getPublicPostInternalLinks(post.id, "zh");
   const renderedContent = renderArticleContentHtml(post.content);
   const linkedContent = applyInternalLinksToArticleHtml(
     renderedContent,
@@ -159,6 +247,7 @@ async function PostPageContent({
     })),
   );
   const contentWithIds = addIdsToHeadings(linkedContent.html);
+  const tocItems = generateToc(contentWithIds);
   const fallbackRecommendedLinks = (recommendedPosts ?? []).map(
     (item, index) => ({
       id: -item.id,
@@ -178,12 +267,6 @@ async function PostPageContent({
     internalLinks.relatedPosts.length > 0
       ? internalLinks.relatedPosts
       : fallbackRecommendedLinks;
-  const directOffers = relatedOffers.filter(
-    (offer) => offer.sourcePostId === post.id,
-  );
-  const inferredOffers = relatedOffers.filter(
-    (offer) => offer.sourcePostId !== post.id,
-  );
   const matchedTopics = offerTopics.filter((topic) => {
     const text = `${post.title} ${post.description ?? ""} ${post.tags
       .map((tag) => tag.tag.name)
@@ -241,51 +324,10 @@ async function PostPageContent({
       },
     ],
   };
-  const offerJsonLd = relatedOffers.slice(0, 6).flatMap((offer) => {
-    const purchaseUrl = toAbsoluteHttpUrl(offer.purchaseUrl, getSiteUrl());
-    const price = parseServerOfferAmount(offer.priceAmount);
-    const currency = offer.currency?.trim().toUpperCase();
-    if (
-      !purchaseUrl ||
-      price === null ||
-      price <= 0 ||
-      !isSupportedServerOfferCurrency(currency)
-    ) {
-      return [];
-    }
-
-    return {
-      "@context": "https://schema.org",
-      "@type": "Product",
-      name: offer.title,
-      brand: offer.providerName
-        ? {
-            "@type": "Brand",
-            name: offer.providerName,
-          }
-        : undefined,
-      category: "VPS and Server Hosting",
-      description: [offer.region, offer.lineType, offer.promoCode]
-        .filter(Boolean)
-        .join(" / "),
-      offers: {
-        "@type": "Offer",
-        url: purchaseUrl,
-        price: String(price),
-        priceCurrency: currency,
-        availability:
-          offer.status === "in_stock"
-            ? "https://schema.org/InStock"
-            : offer.status === "preorder"
-              ? "https://schema.org/PreOrder"
-              : "https://schema.org/OutOfStock",
-      },
-    };
-  });
   return (
     <div className="px-4 pb-10 pt-2 sm:px-6 md:pt-4">
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,800px)_280px] xl:justify-center 2xl:grid-cols-[180px_minmax(0,760px)_260px] 2xl:gap-5">
-        <ArticleTocSidebar content={contentWithIds} label="本文目录" />
+        <ArticleTocSidebar items={tocItems} label="本文目录" />
 
         <div className="mx-auto w-full min-w-0 max-w-[820px] space-y-10 xl:mx-0 xl:max-w-none">
           <article className="min-w-0">
@@ -295,7 +337,6 @@ async function PostPageContent({
                 __html: jsonLdScriptContent([
                   blogPostingJsonLd,
                   breadcrumbJsonLd,
-                  ...offerJsonLd,
                 ]),
               }}
             />
@@ -327,7 +368,7 @@ async function PostPageContent({
               }
               meta={
                 <>
-                  <span className="inline-flex min-h-8 shrink-0 items-center gap-2 tabular-nums">
+                  <span className="inline-flex min-h-11 shrink-0 items-center gap-2 tabular-nums">
                     <Clock className="size-4" aria-hidden="true" />
                     {formatDate(post.createdAt)}
                   </span>
@@ -353,30 +394,18 @@ async function PostPageContent({
               <ArticleCover src={post.imgUrl} alt={post.title} />
             </div>
 
-            {directOffers.length > 0 ? (
-              <div className="mt-5">
-                <RelatedServerOfferCards
-                  title="本文套餐速览"
-                  description="正文中提取的套餐，购买前请再次核对库存和续费价格。"
-                  offers={directOffers}
-                  compact
-                />
-              </div>
-            ) : null}
-
             <div
               className={`${ARTICLE_PROSE_CLASS_NAME} mt-8`}
               dangerouslySetInnerHTML={{ __html: contentWithIds }}
             />
 
             <div className="mt-10 space-y-8">
-              {inferredOffers.length > 0 ? (
-                <RelatedServerOfferCards
-                  title="同主题服务器套餐"
-                  description="根据本文标签、地区和线路匹配的其他可购买套餐。"
-                  offers={inferredOffers}
+              <Suspense fallback={null}>
+                <RelatedOffersSection
+                  postId={post.id}
+                  tagNames={post.tags.map((tag) => tag.tag.name)}
                 />
-              ) : null}
+              </Suspense>
 
               <WebmasterStatement />
 

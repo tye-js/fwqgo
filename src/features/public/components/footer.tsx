@@ -17,7 +17,6 @@ import {
   buildArticleNavigation,
   type ArticleNavigationSource,
 } from "@/features/public/lib/article-navigation";
-import { getNavigationCategories } from "@/features/shared/data/category";
 
 type PublicLanguage = "zh" | "en";
 
@@ -58,7 +57,7 @@ const footerCopy = {
       "服务器go 聚合 VPS、云服务器、独立服务器优惠和测评文章，把文章内容整理成更容易比较的选购入口。",
     navigationLabel: "页脚导航",
     topicTitle: "服务器专题",
-    categoryTitle: "文章分类",
+    categoryTitle: "服务器分类",
     utilityTitle: "常用入口",
     contactTitle: "联系与说明",
     languageLabel: "English",
@@ -211,7 +210,7 @@ function FooterTextLink({ link }: { link: FooterLink }) {
   return (
     <Link
       href={link.href}
-      prefetch
+      prefetch={false}
       className="group flex min-h-11 items-start justify-between gap-3 rounded-md px-2 py-2 text-sm transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
       <span className="min-w-0">
@@ -322,7 +321,7 @@ function FooterView({
 
   return (
     <footer className="border-t border-border/70 bg-muted/20 text-foreground">
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 pb-[max(2rem,calc(env(safe-area-inset-bottom)+2rem))] pt-8 sm:px-6 lg:px-8">
         <div className="grid gap-8 lg:grid-cols-[minmax(260px,0.85fr)_minmax(0,2fr)]">
           <section className="min-w-0 space-y-5">
             <div>
@@ -341,7 +340,7 @@ function FooterView({
                 <Link
                   key={link.href}
                   href={link.href}
-                  prefetch
+                  prefetch={false}
                   className="flex min-h-11 items-center justify-center rounded-md border border-border/70 bg-background px-2 text-center text-xs font-medium text-foreground transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   {link.title}
@@ -355,7 +354,7 @@ function FooterView({
                 fallback={
                   <Link
                     href={language === "en" ? "/" : "/en"}
-                    prefetch
+                    prefetch={false}
                     className="inline-flex min-h-11 w-fit items-center gap-2 rounded-md px-2 transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     <Globe2 className="size-4 text-primary" />
@@ -365,7 +364,7 @@ function FooterView({
               >
                 <LanguageSwitchLink
                   currentLanguage={language}
-                  prefetch
+                  prefetch={false}
                   className="inline-flex min-h-11 w-fit items-center gap-2 rounded-md px-2 transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   <Globe2 className="size-4 text-primary" />
@@ -401,31 +400,13 @@ function FooterView({
   );
 }
 
-async function FooterContent({
-  language = "zh",
-}: {
-  language?: PublicLanguage;
-}) {
-  let categories: ArticleNavigationSource[] | undefined;
-
-  try {
-    const result = await getNavigationCategories();
-    categories = result.data;
-  } catch {
-    categories = undefined;
-  }
-
-  return <FooterView language={language} categories={categories} />;
-}
-
 export default function FooterComponent({
   language = "zh",
 }: {
   language?: PublicLanguage;
 }) {
-  return (
-    <Suspense fallback={<FooterView language={language} />}>
-      <FooterContent language={language} />
-    </Suspense>
-  );
+  // Footer links are intentionally curated and static. They are below the
+  // fold, so a taxonomy query must not delay the article document or create a
+  // second streamed footer tree.
+  return <FooterView language={language} />;
 }

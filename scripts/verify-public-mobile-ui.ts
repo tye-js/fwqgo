@@ -61,6 +61,7 @@ const delegatedPublicShells = new Set([
   "en/knowledge/[slug]/page.tsx",
   "en/knowledge/page.tsx",
   "en/tools/server-sizing/page.tsx",
+  "en/fwq/posts/[slug]/page.tsx",
 ]);
 for (const routePage of publicRoutePages) {
   const routeRelativePath = relative(
@@ -146,7 +147,7 @@ assert.doesNotMatch(
   /flex-nowrap items-center[^"\n]*overflow-hidden/,
 );
 assert.match(articleDetail, /md:line-clamp-2/);
-assert.match(postViewCount, /flex min-h-11 items-center/);
+assert.match(postViewCount, /flex min-h-11 [^"\n]*items-center/);
 assert.match(featuredOffers, /basis-52 break-words/);
 assert.match(featuredOffers, /mt-1 break-words/);
 assert.match(featuredOffers, /flex flex-wrap gap-2/);

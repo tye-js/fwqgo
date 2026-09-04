@@ -8,6 +8,7 @@ import {
   publicArticleCategoryName,
 } from "@/features/shared/lib/public-article-category";
 import { asc, eq, isNull, or, sql } from "drizzle-orm";
+import { cacheLife } from "next/cache";
 
 type PublicLanguage = "zh" | "en";
 
@@ -70,6 +71,7 @@ export async function getCategories() {
 
 export async function getNavigationCategories() {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.categories, cacheTags.posts);
 
   try {

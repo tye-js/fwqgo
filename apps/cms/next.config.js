@@ -54,7 +54,7 @@ const config = {
   cacheComponents: true,
   turbopack: {},
   experimental: {
-    optimizePackageImports: ["@next/font"],
+    optimizePackageImports: ["lucide-react"],
     serverActions: {
       bodySizeLimit: "3mb",
     },

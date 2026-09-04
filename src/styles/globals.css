@@ -284,6 +284,12 @@
     @apply my-6 h-auto max-w-full rounded-lg border border-border/70;
   }
 
+  .article-prose :where(img[data-article-image-dimensions="fallback"]) {
+    aspect-ratio: 16 / 9;
+    object-fit: contain;
+    background: hsl(var(--muted) / 0.2);
+  }
+
   .article-prose :where(hr) {
     @apply my-8 border-border;
   }

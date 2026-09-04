@@ -54,7 +54,7 @@ export function PostViewCount({
   }, [initialViews, slug]);
 
   return (
-    <div className="flex min-h-11 items-center gap-1">
+    <div className="flex min-h-11 min-w-[7rem] items-center gap-1 tabular-nums">
       <Eye className="size-4" />
       {views}次浏览
     </div>

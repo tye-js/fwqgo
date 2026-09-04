@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { BookOpenText, ImageIcon } from "lucide-react";
 
 import { TableOfContents } from "@/components/toc/table-of-contents";
+import type { TocItem } from "@fwqgo/core/toc";
 import {
   getOptimizedImageSrc,
   isRenderableImageSrc,
@@ -46,25 +47,36 @@ export function ArticleDetailHeader({
 export function ArticleCover({
   src,
   alt,
+  width = 1280,
+  height = 720,
 }: {
   src: string | null | undefined;
   alt: string;
+  width?: number;
+  height?: number;
 }) {
+  const isUploadImage = Boolean(src?.startsWith("/uploads/"));
+  const imageSrc = isRenderableImageSrc(src)
+    ? src.startsWith("/uploads/")
+      ? src
+      : getOptimizedImageSrc(src)
+    : null;
+
   return (
     <div className="relative mx-auto aspect-video w-full overflow-hidden rounded-lg border border-border/70 bg-muted/30 md:max-w-[640px]">
-      {isRenderableImageSrc(src) ? (
+      {imageSrc ? (
         <Image
-          src={src.startsWith("/uploads/") ? src : getOptimizedImageSrc(src)}
+          src={imageSrc}
           alt={alt}
-          width={1440}
-          height={810}
-          sizes="(max-width: 767px) calc(100vw - 2rem), (max-width: 1279px) 820px, 760px"
+          width={width}
+          height={height}
+          sizes="(max-width: 767px) calc(100vw - 2rem), (max-width: 1279px) min(820px, calc(100vw - 3rem)), 640px"
           className="h-full w-full object-contain"
           quality={75}
-          priority
+          preload
           fetchPriority="high"
           loading="eager"
-          unoptimized={src.startsWith("/uploads/")}
+          unoptimized={isUploadImage}
         />
       ) : (
         <div className="flex h-full items-center justify-center bg-muted/40 text-muted-foreground">
@@ -76,10 +88,10 @@ export function ArticleCover({
 }
 
 export function ArticleTocSidebar({
-  content,
+  items,
   label,
 }: {
-  content: string;
+  items: TocItem[];
   label: string;
 }) {
   return (
@@ -90,46 +102,61 @@ export function ArticleTocSidebar({
           {label}
         </div>
         <div className="mt-3">
-          <TableOfContents content={content} label={label} />
+          <TableOfContents items={items} label={label} />
         </div>
       </div>
     </aside>
   );
 }
 
-export function ArticlePageSkeleton() {
-  return (
-    <div className="px-4 pb-10 pt-2 sm:px-6 md:pt-4" aria-hidden="true">
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,800px)_280px] 2xl:grid-cols-[180px_minmax(0,760px)_260px] 2xl:gap-5">
-        <div className="hidden space-y-3 pt-2 2xl:block">
-          <div className="h-4 w-24 animate-pulse rounded bg-muted" />
-          <div className="h-8 w-full animate-pulse rounded bg-muted/70" />
-          <div className="h-8 w-11/12 animate-pulse rounded bg-muted/70" />
-          <div className="h-8 w-10/12 animate-pulse rounded bg-muted/70" />
+export function ArticlePageSkeleton({
+  variant = "nested",
+}: {
+  variant?: "nested" | "full";
+}) {
+  const grid = (
+    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,800px)_280px] xl:justify-center 2xl:grid-cols-[180px_minmax(0,760px)_260px] 2xl:gap-5">
+      <div className="hidden space-y-3 pt-2 2xl:block">
+        <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+        <div className="h-8 w-full animate-pulse rounded bg-muted/70" />
+        <div className="h-8 w-11/12 animate-pulse rounded bg-muted/70" />
+        <div className="h-8 w-10/12 animate-pulse rounded bg-muted/70" />
+      </div>
+      <div className="min-w-0 space-y-6">
+        <div className="space-y-4 border-b border-border/70 pb-6">
+          <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+          <div className="h-10 w-11/12 animate-pulse rounded bg-muted/80 md:h-12" />
+          <div className="h-5 w-full animate-pulse rounded bg-muted/60" />
+          <div className="h-5 w-4/5 animate-pulse rounded bg-muted/60" />
+          <div className="h-6 w-64 animate-pulse rounded bg-muted/50" />
         </div>
-        <div className="min-w-0 space-y-6">
-          <div className="space-y-4 border-b border-border/70 pb-6">
-            <div className="h-4 w-40 animate-pulse rounded bg-muted" />
-            <div className="h-10 w-11/12 animate-pulse rounded bg-muted/80 md:h-12" />
-            <div className="h-5 w-full animate-pulse rounded bg-muted/60" />
-            <div className="h-5 w-4/5 animate-pulse rounded bg-muted/60" />
-            <div className="h-6 w-64 animate-pulse rounded bg-muted/50" />
-          </div>
-          <div className="aspect-video w-full animate-pulse rounded-lg bg-muted/60 md:max-w-[640px]" />
-          <div className="space-y-4">
-            <div className="h-5 w-full animate-pulse rounded bg-muted/60" />
-            <div className="h-5 w-11/12 animate-pulse rounded bg-muted/60" />
-            <div className="h-5 w-10/12 animate-pulse rounded bg-muted/60" />
-            <div className="h-32 w-full animate-pulse rounded bg-muted/40" />
-          </div>
-        </div>
-        <div className="hidden space-y-3 border-l border-border/70 pl-4 xl:block">
-          <div className="h-4 w-20 animate-pulse rounded bg-muted" />
-          <div className="h-14 w-full animate-pulse rounded bg-muted/60" />
-          <div className="h-14 w-full animate-pulse rounded bg-muted/60" />
-          <div className="h-14 w-full animate-pulse rounded bg-muted/60" />
+        <div className="aspect-video w-full animate-pulse rounded-lg bg-muted/60 md:max-w-[640px]" />
+        <div className="space-y-4">
+          <div className="h-5 w-full animate-pulse rounded bg-muted/60" />
+          <div className="h-5 w-11/12 animate-pulse rounded bg-muted/60" />
+          <div className="h-5 w-10/12 animate-pulse rounded bg-muted/60" />
+          <div className="h-32 w-full animate-pulse rounded bg-muted/40" />
         </div>
       </div>
+      <div className="hidden space-y-3 border-l border-border/70 pl-4 xl:block">
+        <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+        <div className="h-14 w-full animate-pulse rounded bg-muted/60" />
+        <div className="h-14 w-full animate-pulse rounded bg-muted/60" />
+        <div className="h-14 w-full animate-pulse rounded bg-muted/60" />
+      </div>
+    </div>
+  );
+
+  return variant === "full" ? (
+    <div
+      className="container mx-auto px-4 py-4 sm:px-6 md:py-6"
+      aria-hidden="true"
+    >
+      {grid}
+    </div>
+  ) : (
+    <div className="px-4 pb-10 pt-2 sm:px-6 md:pt-4" aria-hidden="true">
+      {grid}
     </div>
   );
 }

@@ -73,6 +73,97 @@ async function getPublishedEnglishSlugForSourcePost(postId: number) {
   return englishPost?.slug ?? null;
 }
 
+/**
+ * Keep the metadata path smaller than the article render path. Metadata is
+ * requested before the page body, so it should not load tags, recommendations,
+ * or any other below-the-fold relation just to produce the document head.
+ */
+export async function getPublicPostSeoBySlug(slug: string) {
+  "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
+
+  try {
+    const decodedSlug = decodeSlug(slug);
+    tagCache(cacheTags.posts, cacheTags.postSlug(decodedSlug));
+    const [post] = await readDb
+      .select({
+        id: posts.id,
+        title: posts.title,
+        description: posts.description,
+        keywords: posts.keywords,
+        imgUrl: posts.imgUrl,
+      })
+      .from(posts)
+      .where(and(eq(posts.slug, decodedSlug), publishedChinesePostCondition()))
+      .limit(1);
+
+    if (!post) return { data: null };
+
+    return {
+      data: {
+        ...post,
+        enSlug: await getPublishedEnglishSlugForSourcePost(post.id),
+      },
+    };
+  } catch (error) {
+    return { error: "获取文章 SEO 信息失败", message: error };
+  }
+}
+
+export async function getEnglishPostSeoBySlug(slug: string) {
+  "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
+
+  try {
+    const decodedSlug = decodeSlug(slug);
+    tagCache(cacheTags.posts, cacheTags.postSlug(decodedSlug));
+    const [post] = await readDb
+      .select({
+        id: posts.id,
+        title: posts.title,
+        description: posts.description,
+        keywords: posts.keywords,
+        imgUrl: posts.imgUrl,
+        translationSourcePostId: posts.translationSourcePostId,
+      })
+      .from(posts)
+      .where(
+        and(
+          eq(posts.slug, decodedSlug),
+          eq(posts.language, "en"),
+          eq(posts.published, true),
+        ),
+      )
+      .limit(1);
+
+    if (!post) return { data: null };
+
+    const [sourcePost] = post.translationSourcePostId
+      ? await readDb
+          .select({ slug: posts.slug })
+          .from(posts)
+          .where(
+            and(
+              eq(posts.id, post.translationSourcePostId),
+              eq(posts.language, "zh"),
+              eq(posts.published, true),
+            ),
+          )
+          .limit(1)
+      : [];
+
+    return {
+      data: {
+        ...post,
+        enSlug: decodedSlug,
+        chineseSlug: sourcePost?.slug ?? null,
+      },
+    };
+  } catch (error) {
+    return { error: "获取英文文章 SEO 信息失败", message: error };
+  }
+}
+
 export async function getPublishedPostCountByCategoryId(
   categoryId: number,
   language: PublicLanguage = "zh",
@@ -303,6 +394,7 @@ export async function getRecommendedPosts(
 
 export async function getPostWithTagsBySlug(slug: string) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
 
   try {
     const decodedSlug = decodeSlug(slug);
@@ -382,6 +474,7 @@ export async function getPostWithTagsBySlug(slug: string) {
 
 export async function getEnglishPostWithTagsBySlug(slug: string) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
 
   try {
     const decodedSlug = decodeSlug(slug);

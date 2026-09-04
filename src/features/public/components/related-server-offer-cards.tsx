@@ -79,7 +79,7 @@ export function RelatedServerOfferCards({
         </div>
         <Link
           href="/servers"
-          prefetch
+          prefetch={false}
           className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-sm text-sm font-semibold text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           {copy.all}
@@ -136,7 +136,7 @@ export function RelatedServerOfferCards({
               {isInternalHref(offer.articleUrl) ? (
                 <Link
                   href={offer.articleUrl}
-                  prefetch
+                  prefetch={false}
                   className="inline-flex min-h-11 items-center text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                 >
                   {copy.article}
