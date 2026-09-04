@@ -54,7 +54,7 @@ export function ArticleCover({
     <div className="relative mx-auto aspect-video w-full overflow-hidden rounded-lg border border-border/70 bg-muted/30 md:max-w-[640px]">
       {isRenderableImageSrc(src) ? (
         <Image
-          src={getOptimizedImageSrc(src)}
+          src={src.startsWith("/uploads/") ? src : getOptimizedImageSrc(src)}
           alt={alt}
           width={1440}
           height={810}
@@ -62,6 +62,9 @@ export function ArticleCover({
           className="h-full w-full object-contain"
           quality={75}
           priority
+          fetchPriority="high"
+          loading="eager"
+          unoptimized={src.startsWith("/uploads/")}
         />
       ) : (
         <div className="flex h-full items-center justify-center bg-muted/40 text-muted-foreground">
@@ -91,5 +94,42 @@ export function ArticleTocSidebar({
         </div>
       </div>
     </aside>
+  );
+}
+
+export function ArticlePageSkeleton() {
+  return (
+    <div className="px-4 pb-10 pt-2 sm:px-6 md:pt-4" aria-hidden="true">
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,800px)_280px] 2xl:grid-cols-[180px_minmax(0,760px)_260px] 2xl:gap-5">
+        <div className="hidden space-y-3 pt-2 2xl:block">
+          <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+          <div className="h-8 w-full animate-pulse rounded bg-muted/70" />
+          <div className="h-8 w-11/12 animate-pulse rounded bg-muted/70" />
+          <div className="h-8 w-10/12 animate-pulse rounded bg-muted/70" />
+        </div>
+        <div className="min-w-0 space-y-6">
+          <div className="space-y-4 border-b border-border/70 pb-6">
+            <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+            <div className="h-10 w-11/12 animate-pulse rounded bg-muted/80 md:h-12" />
+            <div className="h-5 w-full animate-pulse rounded bg-muted/60" />
+            <div className="h-5 w-4/5 animate-pulse rounded bg-muted/60" />
+            <div className="h-6 w-64 animate-pulse rounded bg-muted/50" />
+          </div>
+          <div className="aspect-video w-full animate-pulse rounded-lg bg-muted/60 md:max-w-[640px]" />
+          <div className="space-y-4">
+            <div className="h-5 w-full animate-pulse rounded bg-muted/60" />
+            <div className="h-5 w-11/12 animate-pulse rounded bg-muted/60" />
+            <div className="h-5 w-10/12 animate-pulse rounded bg-muted/60" />
+            <div className="h-32 w-full animate-pulse rounded bg-muted/40" />
+          </div>
+        </div>
+        <div className="hidden space-y-3 border-l border-border/70 pl-4 xl:block">
+          <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+          <div className="h-14 w-full animate-pulse rounded bg-muted/60" />
+          <div className="h-14 w-full animate-pulse rounded bg-muted/60" />
+          <div className="h-14 w-full animate-pulse rounded bg-muted/60" />
+        </div>
+      </div>
+    </div>
   );
 }

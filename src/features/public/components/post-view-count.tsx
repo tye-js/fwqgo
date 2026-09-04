@@ -26,9 +26,14 @@ export function PostViewCount({
 
     trackedSlugRef.current = slug;
 
-    void fetch(`/api/posts/${encodeURIComponent(slug)}/view`, {
+    const viewUrl = `/api/posts/${encodeURIComponent(slug)}/view`;
+    const beaconPayload = new Blob([], { type: "application/json" });
+    if (navigator.sendBeacon?.(viewUrl, beaconPayload)) {
+      return;
+    }
+
+    void fetch(viewUrl, {
       method: "POST",
-      cache: "no-store",
       keepalive: true,
     })
       .then(async (response) => {

@@ -1,3 +1,4 @@
+import * as cheerio from "cheerio";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
 
 interface TocItem {
@@ -20,7 +21,29 @@ export function generateUniqueId(text: string): string {
 }
 // 为标题添加id
 export function addIdsToHeadings(content: string): string {
-  return renderArticleContentHtml(content);
+  const html = /<h[2-6][^>]*>/i.test(content)
+    ? content
+    : renderArticleContentHtml(content);
+  const $ = cheerio.load(html, null, false);
+  const usedIds = new Set<string>();
+
+  $("h2, h3, h4, h5, h6").each((_, element) => {
+    const $heading = $(element);
+    const existingId = $heading.attr("id")?.trim();
+    const baseId = existingId ?? generateUniqueId($heading.text());
+    if (!baseId) return;
+
+    let id = baseId;
+    let suffix = 2;
+    while (usedIds.has(id)) {
+      id = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    usedIds.add(id);
+    $heading.attr("id", id);
+  });
+
+  return $.html();
 }
 
 export function generateToc(content: string): TocItem[] {

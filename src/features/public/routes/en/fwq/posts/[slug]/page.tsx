@@ -12,6 +12,7 @@ import {
   ArticleCover,
   ArticleDetailHeader,
   ArticleTocSidebar,
+  ArticlePageSkeleton,
 } from "@/features/public/components/article-detail";
 import { ArticleShareActions } from "@/features/public/components/article-share-actions";
 import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
@@ -88,6 +89,7 @@ export async function generateMetadata({
     title: `${title} - fwqgo`,
     description,
     keywords: post?.keywords ?? readableTitle,
+    robots: post ? { index: true, follow: true } : { index: false, follow: true },
     alternates: {
       canonical: canonicalUrl,
       languages: {
@@ -301,7 +303,7 @@ async function EnglishPostContent({ params }: PageProps) {
                 {post.chineseSlug ? (
                   <Link
                     href={`/fwq/posts/${encodeURIComponent(post.chineseSlug)}`}
-                    prefetch
+                    prefetch={false}
                     className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <Languages className="size-4" aria-hidden="true" />
@@ -362,7 +364,7 @@ async function EnglishPostContent({ params }: PageProps) {
                   <Link
                     key={tag.tag.id}
                     href={`/en/fwq/tags/${encodeURIComponent(tag.tag.slug)}/page/1`}
-                    prefetch
+                    prefetch={false}
                     className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     #{tag.tag.name}
@@ -393,7 +395,7 @@ export default function EnglishPostPage({ params }: PageProps) {
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <Header language="en" />
-      <Suspense fallback={<main className="flex-1 px-4 py-10 text-sm text-muted-foreground">Loading article...</main>}>
+      <Suspense fallback={<ArticlePageSkeleton />}>
         <EnglishPostContent params={params} />
       </Suspense>
       <Footer language="en" />

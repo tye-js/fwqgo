@@ -2,6 +2,7 @@ import Header from "@/features/public/components/header";
 import Footer from "@/features/public/components/footer";
 import { Separator } from "@/components/ui/separator";
 import { ScrollToTop } from "@/features/public/components/scroll-to-top";
+import { ArticlePageSkeleton } from "@/features/public/components/article-detail";
 import { Suspense } from "react";
 export default function CreateLayout({
   children,
@@ -13,7 +14,7 @@ export default function CreateLayout({
       <Header />
       <Separator />
       <main className="container mx-auto min-h-0 flex-1 py-2 md:py-4">
-        <Suspense fallback={<div className="p-4">加载中...</div>}>
+        <Suspense fallback={<ArticlePageSkeleton />}>
           {children}
         </Suspense>
       </main>

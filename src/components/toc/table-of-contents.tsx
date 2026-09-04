@@ -85,7 +85,7 @@ export function TableOfContents({
               onClick={(e) => handleClick(e, `#${item.id}`)}
               className={`block rounded-md border-l-2 px-3 py-2 text-sm leading-6 transition-colors ${
                 currentId === item.id
-                  ? "border-accent bg-accent/10 font-medium text-accent"
+                  ? "border-primary bg-primary/10 font-medium text-primary"
                   : "border-transparent text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground"
               }`}
             >

@@ -23,7 +23,7 @@ export function ArticleRelatedKnowledge({
           <Link
             key={link.id}
             href={link.href}
-            prefetch
+            prefetch={false}
             className="group flex min-h-11 items-center justify-between gap-3 py-2 text-sm font-medium text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <span>{link.title}</span>
@@ -58,7 +58,7 @@ export function ArticleRelatedSidebar({
           <Link
             key={link.id}
             href={link.href}
-            prefetch
+            prefetch={false}
             className="group flex min-h-14 items-center justify-between gap-3 py-2.5 text-sm font-medium leading-5 text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <span className="line-clamp-2">{link.title}</span>

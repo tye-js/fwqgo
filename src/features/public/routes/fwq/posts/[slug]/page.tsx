@@ -24,6 +24,7 @@ import {
   ARTICLE_PROSE_CLASS_NAME,
   ArticleCover,
   ArticleDetailHeader,
+  ArticlePageSkeleton,
   ArticleTocSidebar,
 } from "@/features/public/components/article-detail";
 import { PostViewCount } from "@/features/public/components/post-view-count";
@@ -90,6 +91,7 @@ export async function generateMetadata(props: {
     title: `${title} - 服务器go`,
     description,
     keywords: post?.keywords ?? readableTitle,
+    robots: post ? { index: true, follow: true } : { index: false, follow: true },
     alternates: {
       canonical: canonicalUrl,
       languages: {
@@ -335,7 +337,7 @@ async function PostPageContent({
                   {post.enSlug ? (
                     <Link
                       href={`/en/fwq/posts/${encodeURIComponent(post.enSlug)}`}
-                      prefetch
+                      prefetch={false}
                       className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <Languages className="size-4" aria-hidden="true" />
@@ -395,7 +397,7 @@ async function PostPageContent({
                       <Link
                         key={tag.tag.id}
                         href={`/fwq/tags/${encodeURIComponent(tag.tag.slug)}/page/1`}
-                        prefetch
+                        prefetch={false}
                         className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
                         #{tag.tag.name}
@@ -419,7 +421,7 @@ async function PostPageContent({
                       <Link
                         key={topic.slug}
                         href={`/servers/${encodeURIComponent(topic.slug)}`}
-                        prefetch
+                        prefetch={false}
                         className="group flex min-h-11 items-center justify-between gap-3 border-b border-border/60 text-sm font-medium text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
                         {topic.title}
@@ -431,7 +433,7 @@ async function PostPageContent({
                     ))}
                     <Link
                       href="/servers"
-                      prefetch
+                      prefetch={false}
                       className="group flex min-h-11 items-center justify-between gap-3 border-b border-border/60 text-sm font-medium text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     >
                       全部服务器比价
@@ -458,7 +460,7 @@ export default function PostPage(props: {
   params: Promise<{ slug: string }>;
 }) {
   return (
-    <Suspense fallback={<div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">正在加载文章...</div>}>
+    <Suspense fallback={<ArticlePageSkeleton />}>
       <PostPageContent paramsPromise={props.params} />
     </Suspense>
   );

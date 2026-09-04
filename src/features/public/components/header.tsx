@@ -54,7 +54,7 @@ const headerCopy: Record<
   }
 > = {
   zh: {
-    homeLabel: "返回服务器go首页",
+    homeLabel: "服务器GO",
     languageLabel: "English",
     dealsTitle: "服务器比价",
     allOffers: "全部套餐",
