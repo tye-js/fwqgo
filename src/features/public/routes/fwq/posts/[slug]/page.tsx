@@ -19,12 +19,10 @@ import {
   SquareLibrary,
   Tags,
 } from "lucide-react";
-import { Suspense } from "react";
 import {
   ARTICLE_PROSE_CLASS_NAME,
   ArticleCover,
   ArticleDetailHeader,
-  ArticlePageSkeleton,
   ArticleTocSidebar,
 } from "@/features/public/components/article-detail";
 import { PostViewCount } from "@/features/public/components/post-view-count";
@@ -456,12 +454,8 @@ async function PostPageContent({
   );
 }
 
-export default function PostPage(props: {
+export default async function PostPage(props: {
   params: Promise<{ slug: string }>;
 }) {
-  return (
-    <Suspense fallback={<ArticlePageSkeleton />}>
-      <PostPageContent paramsPromise={props.params} />
-    </Suspense>
-  );
+  return <PostPageContent paramsPromise={props.params} />;
 }
