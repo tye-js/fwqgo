@@ -197,4 +197,8 @@ case "$admin_status" in
   *) fail "Unexpected admin route response: $admin_status ${admin_redirect:-none}" ;;
 esac
 
+log "Checking public article ISR document"
+SITE_URL="$SITE_URL" ARTICLE_ISR_RELEASE_ID="manual-$(date +%s)" \
+  node "$ROOT_DIR/scripts/verify-production-article.mjs"
+
 log "Health check complete"

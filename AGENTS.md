@@ -152,6 +152,15 @@ Node `cluster` fallback for rollback.
 - Static verification is not a substitute for real viewport testing. Use `bun run smoke:mobile`; if Chromium or file-descriptor limits prevent it, report the result as real viewport unverified.
 - The public route count in mobile verification is an audit sentinel. Legitimate route changes must update the sentinel and its rationale.
 
+## Public Article ISR Contract
+
+- Public article core content uses Next.js 16 Cache Components/ISR. Keep `cacheComponents` and `partialPrefetching` enabled together.
+- `generateStaticParams` pre-renders a bounded recent/popular set per language; long-tail published articles remain on-demand ISR. Local builds with `SKIP_ENV_VALIDATION=1` must not require a production database.
+- Title, metadata, cover, sanitized body HTML, heading IDs, TOC, and inline links belong to the article core cache. Database failures must throw and must never become a cached HTTP 200 error page.
+- View tracking stays client-side. Server offers remain behind their own cache and Suspense boundary so inventory changes do not rebuild the article body.
+- Public HTML cache headers must not apply to RSC, route-prefetch, segment-prefetch, or `_rsc` responses. Cloudflare Cache Rules must preserve the same boundary.
+- Deploy verification must confirm a recent sitemap article has visible prose in raw HTML, initial-head metadata, unique resume segment IDs, and no public HTML cache policy on RSC prefetches.
+
 ## Current AI Rewrite Prompt Contract
 
 - Current configurable prompts are six: `basePrompt`, `metadataPrompt`, `englishContentPrompt`, `englishContinuationPrompt`, `englishMetadataPrompt`, and `providerCatalogDiscoveryPrompt`.

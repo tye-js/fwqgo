@@ -1,14 +1,15 @@
 import { spawn, spawnSync } from "node:child_process";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:net";
 import path from "node:path";
+import * as cheerio from "cheerio";
 
 const root = process.cwd();
 const runtime = process.env.SMOKE_RUNTIME_BIN?.trim() ?? process.execPath;
 const configuredSmokeDatabaseUrl = process.env.SMOKE_DATABASE_URL?.trim();
-const smokeDatabaseUrl =
-  configuredSmokeDatabaseUrl?.length
-    ? configuredSmokeDatabaseUrl
-    : "postgresql://smoke:smoke@127.0.0.1:5432/fwqgo_smoke";
+const smokeDatabaseUrl = configuredSmokeDatabaseUrl?.length
+  ? configuredSmokeDatabaseUrl
+  : "postgresql://smoke:smoke@127.0.0.1:5432/fwqgo_smoke";
 /** @type {import("node:child_process").ChildProcess[]} */
 const processes = [];
 /** @type {string[]} */
@@ -163,46 +164,127 @@ async function checkMetadataImages(origin, service, child, headers = {}) {
       contentType.toLowerCase().startsWith("image/"),
       `${service} ${pathname} returned ${contentType || "no content type"}`,
     );
-    assert(body.byteLength > 0, `${service} ${pathname} returned an empty body`);
+    assert(
+      body.byteLength > 0,
+      `${service} ${pathname} returned an empty body`,
+    );
+  }
+}
+
+/** @param {string} directory @returns {string[]} */
+function listHtmlFiles(directory) {
+  return readdirSync(directory).flatMap((entry) => {
+    const target = path.join(directory, entry);
+    return statSync(target).isDirectory()
+      ? listHtmlFiles(target)
+      : target.endsWith(".html")
+        ? [target]
+        : [];
+  });
+}
+
+function checkPrerenderedArticleShells() {
+  for (const relativeDirectory of [
+    ".next-web/server/app/fwq/posts",
+    ".next-web/server/app/en/fwq/posts",
+  ]) {
+    let realArticleCount = 0;
+    const directory = path.join(root, relativeDirectory);
+    const htmlFiles = listHtmlFiles(directory).filter(
+      (file) => !file.endsWith(`${path.sep}[slug].html`),
+    );
+    assert(
+      htmlFiles.length > 0,
+      `${relativeDirectory} contains no prerendered article parameter`,
+    );
+
+    for (const file of htmlFiles) {
+      const relativePath = path.relative(root, file);
+      const html = readFileSync(file, "utf8");
+      const isPlaceholder = file.endsWith(
+        `${path.sep}__fwqgo_article_static_shell__.html`,
+      );
+      const segmentIds = [
+        ...html.matchAll(/<(?:div|template)[^>]*\bid="(S:\d+)"/g),
+      ].map((match) => match[1]);
+      assert(
+        new Set(segmentIds).size === segmentIds.length,
+        `${relativePath} contains duplicate streamed resume segment IDs`,
+      );
+
+      const headEnd = html.indexOf("</head>");
+      const title = html.indexOf("<title");
+      assert(
+        headEnd >= 0 && title >= 0 && title < headEnd,
+        `${relativePath} streamed metadata after the initial head`,
+      );
+
+      if (!isPlaceholder) {
+        realArticleCount += 1;
+        const $ = cheerio.load(html);
+        const prose = $("article .article-prose").first();
+        const proseText = prose.text().replace(/\s+/g, " ").trim();
+        assert(
+          ($('head meta[name="description"]').attr("content") ?? "").trim()
+            .length > 0 &&
+            Boolean($('head link[rel="canonical"]').attr("href")),
+          `${relativePath} omitted metadata from its initial head`,
+        );
+        assert(
+          prose.length === 1 && proseText.length >= 200,
+          `${relativePath} omitted article prose from its prerendered HTML`,
+        );
+        assert(
+          prose.parents("[hidden]").length === 0,
+          `${relativePath} kept article prose inside a hidden resume segment`,
+        );
+      }
+    }
+
+    if (process.env.ARTICLE_ISR_REQUIRE_REAL_PRERENDER === "1") {
+      assert(
+        realArticleCount > 0,
+        `${relativeDirectory} contains no real prerendered article`,
+      );
+    }
   }
 }
 
 /** @param {string} origin @param {import('node:child_process').ChildProcess} child */
-async function checkArticleStream(origin, child) {
+async function checkArticleCacheBoundaries(origin, child) {
   for (const pathname of [
-    "/fwq/posts/smoke-invalid-article",
-    "/en/fwq/posts/smoke-invalid-article",
+    "/fwq/posts/__fwqgo_article_static_shell__",
+    "/en/fwq/posts/__fwqgo_article_static_shell__",
   ]) {
     const response = await waitForServer(`${origin}${pathname}`, child);
-    const html = await response.text();
+    assert(response.status === 404, `${pathname} did not return a real 404`);
     assert(
-      response.headers.get("content-type")?.includes("text/html"),
-      `${pathname} did not return HTML`,
+      response.headers.get("x-robots-tag")?.includes("noindex"),
+      `${pathname} omitted its noindex response policy`,
     );
-    assert(
-      response.headers.get("cache-control")?.includes("s-maxage=900"),
-      `${pathname} omitted the public article cache policy`,
-    );
-
-    const segmentIds = [
-      ...html.matchAll(/<(?:div|template)[^>]*\bid="(S:\d+)"/g),
-    ].map((match) => match[1]);
-    assert(
-      new Set(segmentIds).size === segmentIds.length,
-      `${pathname} contains duplicate streamed resume segment IDs`,
-    );
-
-    const headEnd = html.indexOf("</head>");
-    const title = html.indexOf("<title");
-    assert(
-      headEnd >= 0 && title >= 0 && title < headEnd,
-      `${pathname} streamed metadata after the initial head`,
-    );
+    await response.body?.cancel();
   }
+
+  const rscResponse = await fetch(
+    `${origin}/fwq/posts/built-smoke-rsc?_rsc=built-smoke`,
+    {
+      redirect: "manual",
+      headers: {
+        RSC: "1",
+        "Next-Router-Prefetch": "1",
+      },
+    },
+  );
+  assert(
+    !rscResponse.headers.get("cache-control")?.includes("s-maxage=900"),
+    "Article RSC prefetch inherited the public HTML cache policy",
+  );
+  await rscResponse.body?.cancel();
 }
 
 async function run() {
   verifySharpRuntime();
+  checkPrerenderedArticleShells();
 
   const webPort = await getAvailablePort();
   const cmsPort = await getAvailablePort(new Set([webPort]));
@@ -230,7 +312,7 @@ async function run() {
     checkMetadataImages(webOrigin, "web", webProcess),
     checkMetadataImages(cmsOrigin, "cms", cmsProcess, authHeaders),
   ]);
-  await checkArticleStream(webOrigin, webProcess);
+  await checkArticleCacheBoundaries(webOrigin, webProcess);
 
   const webAdmin = await fetch(`${webOrigin}/login?from=smoke`, {
     redirect: "manual",
@@ -279,7 +361,7 @@ async function run() {
   );
 
   console.log(
-    "Built app smoke tests passed: sharp WebP, health, metadata images, redirects, auth boundary, route isolation",
+    "Built app smoke tests passed: sharp WebP, health, metadata images, redirects, auth boundary, route isolation, article ISR and RSC cache isolation",
   );
 }
 

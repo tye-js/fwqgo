@@ -1,6 +1,6 @@
 import {
   getPublicPostSeoBySlug,
-  getPostWithTagsBySlug,
+  getRecommendedPosts,
 } from "@/features/public/data/post";
 
 import { isRenderableImageSrc } from "@fwqgo/core/image-src";
@@ -33,7 +33,6 @@ import {
   ArticleRelatedKnowledge,
   ArticleRelatedSidebar,
 } from "@/features/public/components/article-related-links";
-import { getPublicPostInternalLinks } from "@/features/public/data/article-internal-links";
 import { WebmasterStatement } from "@/features/public/components/webmaster-statement";
 import { ArticleShareActions } from "@/features/public/components/article-share-actions";
 import { notFound } from "next/navigation";
@@ -41,13 +40,16 @@ import {
   getRelatedServerOffersForPost,
   offerTopics,
 } from "@/server/offers/server-offers";
-import { addIdsToHeadings, generateToc } from "@fwqgo/core/toc";
-import { renderArticleContentHtml } from "@fwqgo/core/content";
-import { applyInternalLinksToArticleHtml } from "@fwqgo/core/article-internal-links";
 import {
   isSupportedServerOfferCurrency,
   parseServerOfferAmount,
 } from "@fwqgo/core/server-offer-price";
+import { getChineseArticlePresentation } from "@/features/public/lib/article-presentation";
+import {
+  getPublicArticleStaticParams,
+  isPublicArticleStaticParamsPlaceholder,
+} from "@/features/public/lib/article-static-params";
+import type { PublicArticleInternalLink } from "@/server/posts/internal-links";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
@@ -158,12 +160,47 @@ async function RelatedOffersSection({
   );
 }
 
+function toFallbackRelatedPostLinks(
+  posts: Array<{ id: number; title: string; slug: string }>,
+) {
+  return posts.map((post, index): PublicArticleInternalLink => ({
+    id: -post.id,
+    targetKey: `legacy-post:${post.id}`,
+    targetType: "post",
+    placement: "related_post",
+    title: post.title,
+    description: null,
+    href: `/fwq/posts/${encodeURIComponent(post.slug)}`,
+    anchorText: null,
+    occurrenceIndex: 0,
+    score: Math.max(1, 10 - index),
+    reason: "推荐标签匹配",
+  }));
+}
+
+async function FallbackRelatedPostsSidebar({
+  postId,
+  recommendedTagId,
+}: {
+  postId: number;
+  recommendedTagId: number | null;
+}) {
+  if (!recommendedTagId) return null;
+  const result = await getRecommendedPosts(recommendedTagId, postId);
+  return (
+    <ArticleRelatedSidebar
+      links={toFallbackRelatedPostLinks(result.data ?? [])}
+    />
+  );
+}
+
 export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const params = await props.params;
   const decodedSlug = normalizeDecodedSlug(params.slug);
   if (!decodedSlug) return {};
+  if (isPublicArticleStaticParamsPlaceholder(decodedSlug)) notFound();
 
   const canonicalUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`;
   const readableTitle = decodedSlug.replace(/[-_]+/g, " ");
@@ -183,7 +220,9 @@ export async function generateMetadata(props: {
     title: `${title} - 服务器go`,
     description,
     keywords: post?.keywords ?? readableTitle,
-    robots: post ? { index: true, follow: true } : { index: false, follow: true },
+    robots: post
+      ? { index: true, follow: true }
+      : { index: false, follow: true },
     alternates: {
       canonical: canonicalUrl,
       languages: {
@@ -209,6 +248,10 @@ export async function generateMetadata(props: {
   };
 }
 
+export async function generateStaticParams() {
+  return getPublicArticleStaticParams("zh");
+}
+
 async function PostPageContent({
   paramsPromise,
 }: {
@@ -220,53 +263,11 @@ async function PostPageContent({
     notFound();
   }
 
-  const { data, error } = await getPostWithTagsBySlug(decodedSlug);
-  if (error) {
-    return (
-      <div
-        role="alert"
-        className="mx-4 rounded-lg border border-destructive/30 bg-destructive/5 p-5 text-sm text-destructive sm:mx-6"
-      >
-        文章暂时加载失败，请稍后刷新页面。
-      </div>
-    );
-  }
-  if (!data) notFound();
-  const { post, recommendedPosts } = data;
-
-  if (!post) notFound();
-  const internalLinks = await getPublicPostInternalLinks(post.id, "zh");
-  const renderedContent = renderArticleContentHtml(post.content);
-  const linkedContent = applyInternalLinksToArticleHtml(
-    renderedContent,
-    internalLinks.inline.map((link) => ({
-      targetKey: link.targetKey,
-      anchorText: link.anchorText ?? "",
-      href: link.href,
-      occurrenceIndex: link.occurrenceIndex,
-    })),
-  );
-  const contentWithIds = addIdsToHeadings(linkedContent.html);
-  const tocItems = generateToc(contentWithIds);
-  const fallbackRecommendedLinks = (recommendedPosts ?? []).map(
-    (item, index) => ({
-      id: -item.id,
-      targetKey: `legacy-post:${item.id}`,
-      targetType: "post",
-      placement: "related_post",
-      title: item.title,
-      description: null,
-      href: `/fwq/posts/${encodeURIComponent(item.slug)}`,
-      anchorText: null,
-      occurrenceIndex: 0,
-      score: Math.max(1, 10 - index),
-      reason: "推荐标签匹配",
-    }),
-  );
-  const relatedPostLinks =
-    internalLinks.relatedPosts.length > 0
-      ? internalLinks.relatedPosts
-      : fallbackRecommendedLinks;
+  if (isPublicArticleStaticParamsPlaceholder(decodedSlug)) notFound();
+  const presentation = await getChineseArticlePresentation(decodedSlug);
+  if (!presentation) notFound();
+  const { post, contentHtml, tocItems, internalLinks, relatedPostLinks } =
+    presentation;
   const matchedTopics = offerTopics.filter((topic) => {
     const text = `${post.title} ${post.description ?? ""} ${post.tags
       .map((tag) => tag.tag.name)
@@ -396,7 +397,7 @@ async function PostPageContent({
 
             <div
               className={`${ARTICLE_PROSE_CLASS_NAME} mt-8`}
-              dangerouslySetInnerHTML={{ __html: contentWithIds }}
+              dangerouslySetInnerHTML={{ __html: contentHtml }}
             />
 
             <div className="mt-10 space-y-8">
@@ -409,9 +410,7 @@ async function PostPageContent({
 
               <WebmasterStatement />
 
-              <ArticleRelatedKnowledge
-                links={internalLinks.relatedKnowledge}
-              />
+              <ArticleRelatedKnowledge links={internalLinks.relatedKnowledge} />
 
               {post.tags.length > 0 ? (
                 <section className="border-t border-border/70 pt-5">
@@ -474,10 +473,18 @@ async function PostPageContent({
               ) : null}
             </div>
           </article>
-
         </div>
 
-        <ArticleRelatedSidebar links={relatedPostLinks} />
+        {relatedPostLinks.length > 0 ? (
+          <ArticleRelatedSidebar links={relatedPostLinks} />
+        ) : (
+          <Suspense fallback={null}>
+            <FallbackRelatedPostsSidebar
+              postId={post.id}
+              recommendedTagId={post.recommendedTagId}
+            />
+          </Suspense>
+        )}
       </div>
     </div>
   );

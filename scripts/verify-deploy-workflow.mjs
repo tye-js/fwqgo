@@ -24,6 +24,10 @@ const standaloneRuntimePath = path.resolve(
 const standaloneRuntime = fs.readFileSync(standaloneRuntimePath, "utf8");
 const builtSmokePath = path.resolve("scripts/smoke-built-apps.mjs");
 const builtSmoke = fs.readFileSync(builtSmokePath, "utf8");
+const articleIsrSmokePath = path.resolve(
+  "scripts/verify-production-article.mjs",
+);
+const articleIsrSmoke = fs.readFileSync(articleIsrSmokePath, "utf8");
 const packageSource = fs.readFileSync("package.json", "utf8");
 
 if (
@@ -52,6 +56,35 @@ for (const requiredFragment of [
   }
 }
 
+for (const requiredFragment of [
+  '"smoke:article-isr": "node scripts/verify-production-article.mjs"',
+  "bun run smoke:article-isr",
+  "ARTICLE_ISR_REQUIRE_REAL_PRERENDER=1",
+  "PUBLIC_ARTICLE_PRERENDER_LIMIT: ${{ vars.PUBLIC_ARTICLE_PRERENDER_LIMIT || '50' }}",
+]) {
+  const source = requiredFragment.startsWith('"smoke:article-isr"')
+    ? packageSource
+    : workflow;
+  if (!source.includes(requiredFragment)) {
+    throw new Error(
+      `Article ISR deployment verification is missing: ${requiredFragment}`,
+    );
+  }
+}
+
+for (const requiredFragment of [
+  "sitemap-posts.xml",
+  'prose.parents("[hidden]").length === 0',
+  "duplicate streamed resume segment IDs",
+  "Next-Router-Prefetch",
+]) {
+  if (!articleIsrSmoke.includes(requiredFragment)) {
+    throw new Error(
+      `Production article ISR smoke is missing: ${requiredFragment}`,
+    );
+  }
+}
+
 if (
   !builtSmoke.includes("function verifySharpRuntime()") ||
   !builtSmoke.includes('import("sharp")') ||
@@ -73,6 +106,19 @@ for (const requiredFragment of [
   if (!builtSmoke.includes(requiredFragment)) {
     throw new Error(
       `Built application smoke tests must isolate runtime database access: ${requiredFragment}`,
+    );
+  }
+}
+
+for (const requiredFragment of [
+  "__fwqgo_article_static_shell__",
+  "checkPrerenderedArticleShells",
+  "duplicate streamed resume segment IDs",
+  "Article RSC prefetch inherited the public HTML cache policy",
+]) {
+  if (!builtSmoke.includes(requiredFragment)) {
+    throw new Error(
+      `Built application smoke tests must verify article ISR: ${requiredFragment}`,
     );
   }
 }
@@ -324,7 +370,10 @@ for (const { label, source } of [
   }
 }
 
-if (!smokeTest.includes("probe_cms_http()") || smokeTest.includes("cms_auth_args")) {
+if (
+  !smokeTest.includes("probe_cms_http()") ||
+  smokeTest.includes("cms_auth_args")
+) {
   throw new Error(
     "Deploy smoke test must handle optional CMS Basic Auth without an empty array under set -u",
   );

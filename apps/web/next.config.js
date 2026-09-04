@@ -22,8 +22,7 @@ await import("../../src/env.js");
 const publicArticleCacheHeaders = [
   {
     key: "Cache-Control",
-    value:
-      "public, max-age=0, s-maxage=900, stale-while-revalidate=86400",
+    value: "public, max-age=0, s-maxage=900, stale-while-revalidate=86400",
   },
   {
     key: "CDN-Cache-Control",
@@ -49,6 +48,9 @@ const config = {
         missing: [
           { type: "header", key: "RSC" },
           { type: "header", key: "Next-Router-Prefetch" },
+          { type: "header", key: "Next-Router-Segment-Prefetch" },
+          { type: "header", key: "Next-Router-State-Tree" },
+          { type: "query", key: "_rsc" },
         ],
         headers: publicArticleCacheHeaders,
       },
@@ -57,6 +59,9 @@ const config = {
         missing: [
           { type: "header", key: "RSC" },
           { type: "header", key: "Next-Router-Prefetch" },
+          { type: "header", key: "Next-Router-Segment-Prefetch" },
+          { type: "header", key: "Next-Router-State-Tree" },
+          { type: "query", key: "_rsc" },
         ],
         headers: publicArticleCacheHeaders,
       },
@@ -90,6 +95,7 @@ const config = {
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
   cacheComponents: true,
+  partialPrefetching: true,
   experimental: {
     optimizePackageImports: ["lucide-react"],
   },

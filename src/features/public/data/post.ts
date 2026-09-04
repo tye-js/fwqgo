@@ -106,7 +106,7 @@ export async function getPublicPostSeoBySlug(slug: string) {
       },
     };
   } catch (error) {
-    return { error: "获取文章 SEO 信息失败", message: error };
+    throw new Error("获取文章 SEO 信息失败", { cause: error });
   }
 }
 
@@ -160,7 +160,7 @@ export async function getEnglishPostSeoBySlug(slug: string) {
       },
     };
   } catch (error) {
-    return { error: "获取英文文章 SEO 信息失败", message: error };
+    throw new Error("获取英文文章 SEO 信息失败", { cause: error });
   }
 }
 
@@ -363,6 +363,7 @@ export async function getRecommendedPosts(
   currentPostId: number,
 ) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.posts);
 
   try {
@@ -424,7 +425,7 @@ export async function getPostWithTagsBySlug(slug: string) {
       .limit(1);
 
     if (!postRow) {
-      return { data: { post: null, recommendedPosts: null } };
+      return { data: { post: null } };
     }
     const { recommendedTagSlug, ...post } = postRow;
 
@@ -440,21 +441,14 @@ export async function getPostWithTagsBySlug(slug: string) {
       .innerJoin(tags, eq(postTags.tagId, tags.id))
       .where(eq(postTags.postId, post.id));
 
-    const recommendedPostsPromise = post.recommendedTagId
-      ? getRecommendedPosts(post.recommendedTagId, post.id).then(
-          (recommended) => recommended.data,
-        )
-      : Promise.resolve(null);
     const publishedEnglishSlugPromise = getPublishedEnglishSlugForSourcePost(
       post.id,
     );
 
-    const [postTagsData, recommendedPosts, publishedEnglishSlug] =
-      await Promise.all([
-        postTagsPromise,
-        recommendedPostsPromise,
-        publishedEnglishSlugPromise,
-      ]);
+    const [postTagsData, publishedEnglishSlug] = await Promise.all([
+      postTagsPromise,
+      publishedEnglishSlugPromise,
+    ]);
 
     return {
       data: {
@@ -464,11 +458,10 @@ export async function getPostWithTagsBySlug(slug: string) {
           recommendedTagSlug,
           tags: postTagsData,
         },
-        recommendedPosts,
       },
     };
   } catch (error) {
-    return { error: "通过slug获取文章失败", message: error };
+    throw new Error("通过slug获取文章失败", { cause: error });
   }
 }
 
@@ -564,7 +557,7 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
       },
     };
   } catch (error) {
-    return { error: "通过英文 slug 获取文章失败", message: error };
+    throw new Error("通过英文 slug 获取文章失败", { cause: error });
   }
 }
 

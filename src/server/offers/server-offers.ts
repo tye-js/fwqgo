@@ -1612,8 +1612,9 @@ export async function getRelatedServerOffersForPost(input: {
   limit?: number;
 }) {
   "use cache";
-  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
+  cacheLife({ stale: 60, revalidate: 300, expire: 3_600 });
   tagCache(cacheTags.serverOffers, cacheTags.post(input.postId));
+  const startedAt = performance.now();
 
   const tagText = input.tagNames.join(" ");
   const hasDirectArticleRelation = sql<boolean>`exists (
@@ -1642,7 +1643,7 @@ export async function getRelatedServerOffersForPost(input: {
     ),
   ].filter(Boolean);
 
-  return readDb
+  const offers = await readDb
     .select({
       id: serverOffers.id,
       sourcePostId: sql<number | null>`case
@@ -1683,4 +1684,20 @@ export async function getRelatedServerOffersForPost(input: {
       asc(serverOffers.monthlyPriceUsd),
     )
     .limit(input.limit ?? 6);
+  const durationMs = Math.max(0, Math.round(performance.now() - startedAt));
+  if (durationMs >= 500) {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        event: "public.article_offers.slow",
+        releaseId: process.env.RELEASE_ID ?? null,
+        postId: input.postId,
+        tagCount: input.tagNames.length,
+        resultCount: offers.length,
+        durationMs,
+      }),
+    );
+  }
+
+  return offers;
 }

@@ -52,6 +52,7 @@ jobs:
       WEB_REVALIDATION_URL: ${{ vars.WEB_REVALIDATION_URL || 'http://127.0.0.1:3000/api/internal/revalidate' }}
       NEXT_PUBLIC_URL: ${{ vars.NEXT_PUBLIC_URL || 'https://fwqgo.com' }}
       NEXT_PUBLIC_CMS_URL: ${{ vars.NEXT_PUBLIC_CMS_URL || 'https://cms.fwqgo.com' }}
+      PUBLIC_ARTICLE_PRERENDER_LIMIT: ${{ vars.PUBLIC_ARTICLE_PRERENDER_LIMIT || '50' }}
       CMS_BASIC_AUTH_USERNAME: ${{ secrets.CMS_BASIC_AUTH_USERNAME }}
       CMS_BASIC_AUTH_PASSWORD: ${{ secrets.CMS_BASIC_AUTH_PASSWORD }}
       SECRET_ENCRYPTION_KEYS: ${{ secrets.SECRET_ENCRYPTION_KEYS }}
@@ -165,7 +166,7 @@ jobs:
           cp -R public .next-cms/standalone/public
 
       - name: Smoke test built applications
-        run: SMOKE_RUNTIME_BIN="$(command -v bun)" bun run smoke:built
+        run: ARTICLE_ISR_REQUIRE_REAL_PRERENDER=1 SMOKE_RUNTIME_BIN="$(command -v bun)" bun run smoke:built
 
       - name: Package release
         shell: bash
@@ -588,3 +589,5 @@ jobs:
             echo "::error::Unexpected CMS home auth redirect. Status: $cms_home_status Path: ${cms_home_path:-none} Host: ${cms_home_host:-relative}"
             exit 1
           }
+
+          SITE_URL="$SITE_URL" ARTICLE_ISR_RELEASE_ID="$RELEASE_ID" bun run smoke:article-isr

@@ -3,6 +3,10 @@ import type { NextRequest } from "next/server";
 
 const DEFAULT_CMS_ORIGIN = "https://cms.fwqgo.com";
 const PRIMARY_PUBLIC_HOST = "fwqgo.com";
+const ARTICLE_STATIC_SHELL_PATHS = new Set([
+  "/fwq/posts/__fwqgo_article_static_shell__",
+  "/en/fwq/posts/__fwqgo_article_static_shell__",
+]);
 const AUTH_PAGES = new Set(["/login", "/signup"]);
 const CMS_ROUTE_PREFIXES = [
   "/ai-rewrite",
@@ -39,6 +43,16 @@ function redirectWwwToPrimary(request: NextRequest) {
 export function proxy(request: NextRequest) {
   if (request.nextUrl.hostname.toLowerCase() === `www.${PRIMARY_PUBLIC_HOST}`) {
     return redirectWwwToPrimary(request);
+  }
+
+  if (ARTICLE_STATIC_SHELL_PATHS.has(request.nextUrl.pathname)) {
+    return new NextResponse(null, {
+      status: 404,
+      headers: {
+        "Cache-Control": "public, max-age=0, s-maxage=60",
+        "X-Robots-Tag": "noindex, nofollow, noarchive",
+      },
+    });
   }
 
   const pathname = request.nextUrl.pathname;

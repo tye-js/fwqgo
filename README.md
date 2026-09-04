@@ -238,11 +238,14 @@ bun run db:studio         # 打开 Drizzle Studio
 | `bun run verify:cms-mobile-ui` | 验证 CMS 表格、动态文本和 safe-area |
 | `bun run verify:ai-rewrite-prompts` | 验证当前六个 Prompt 与中文单轮改写 |
 | `bun run smoke:mobile` | 启动服务后验证真实视口和横向溢出 |
+| `bun run smoke:article-isr` | 验证生产文章原始 HTML、metadata、缓存与 RSC 隔离 |
 | `bun run secrets:migrate`     | 演练或执行存量密钥加密迁移     |
 | `bun run lint`                | ESLint 检查                    |
 | `bun run typecheck`           | TypeScript 类型检查            |
 | `bun run check`               | 执行静态、测试、部署和迁移校验 |
 | `bun run healthcheck:prod`    | 检查生产域名、跳转和关键路由   |
+
+公开文章采用 Next.js Cache Components/ISR：构建时默认预渲染中英文各 50 篇最新与高浏览量文章，其余文章在首次访问后按需生成并缓存。可通过 `PUBLIC_ARTICLE_PRERENDER_LIMIT` 将每种语言的构建清单调整为 1–100；文章发布、编辑、封面和内链变更继续通过现有缓存事件主动失效。Cloudflare Cache Rule 与部署验收说明见 [`docs/article-isr.md`](docs/article-isr.md)。
 
 历史数据维护脚本还包括：
 

@@ -4,10 +4,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ChevronRight, Clock, Languages, Tags } from "lucide-react";
 
-import {
-  getEnglishPostSeoBySlug,
-  getEnglishPostWithTagsBySlug,
-} from "@/features/public/data/post";
+import { getEnglishPostSeoBySlug } from "@/features/public/data/post";
 import {
   ARTICLE_PROSE_CLASS_NAME,
   ArticleCover,
@@ -20,11 +17,7 @@ import {
   ArticleRelatedKnowledge,
   ArticleRelatedSidebar,
 } from "@/features/public/components/article-related-links";
-import { getPublicPostInternalLinks } from "@/features/public/data/article-internal-links";
 import { isRenderableImageSrc } from "@fwqgo/core/image-src";
-import { renderArticleContentHtml } from "@fwqgo/core/content";
-import { applyInternalLinksToArticleHtml } from "@fwqgo/core/article-internal-links";
-import { addIdsToHeadings, generateToc } from "@fwqgo/core/toc";
 import {
   formatDate,
   jsonLdScriptContent,
@@ -36,6 +29,11 @@ import {
   isSupportedServerOfferCurrency,
   parseServerOfferAmount,
 } from "@fwqgo/core/server-offer-price";
+import { getEnglishArticlePresentation } from "@/features/public/lib/article-presentation";
+import {
+  getPublicArticleStaticParams,
+  isPublicArticleStaticParamsPlaceholder,
+} from "@/features/public/lib/article-static-params";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
@@ -165,6 +163,7 @@ export async function generateMetadata({
   const { slug } = await params;
   const decodedSlug = normalizeDecodedSlug(slug);
   if (!decodedSlug) return {};
+  if (isPublicArticleStaticParamsPlaceholder(decodedSlug)) notFound();
 
   const { data } = await getEnglishPostSeoBySlug(decodedSlug);
   if (!data) notFound();
@@ -184,7 +183,9 @@ export async function generateMetadata({
     title: `${title} - fwqgo`,
     description,
     keywords: post?.keywords ?? readableTitle,
-    robots: post ? { index: true, follow: true } : { index: false, follow: true },
+    robots: post
+      ? { index: true, follow: true }
+      : { index: false, follow: true },
     alternates: {
       canonical: canonicalUrl,
       languages: {
@@ -210,6 +211,10 @@ export async function generateMetadata({
   };
 }
 
+export async function generateStaticParams() {
+  return getPublicArticleStaticParams("en");
+}
+
 async function EnglishPostContent({ params }: PageProps) {
   const { slug } = await params;
   const decodedSlug = normalizeDecodedSlug(slug);
@@ -217,33 +222,15 @@ async function EnglishPostContent({ params }: PageProps) {
     notFound();
   }
 
-  const { data, error } = await getEnglishPostWithTagsBySlug(decodedSlug);
-
-  if (error || !data?.post) {
-    notFound();
-  }
-
-  const post = data.post;
-  if (!post.title || !post.content) {
-    notFound();
-  }
+  if (isPublicArticleStaticParamsPlaceholder(decodedSlug)) notFound();
+  const presentation = await getEnglishArticlePresentation(decodedSlug);
+  if (!presentation) notFound();
+  const { post, contentHtml, tocItems, internalLinks, relatedPostLinks } =
+    presentation;
   const canonicalSlug = post.enSlug ?? decodedSlug;
   const articleUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(canonicalSlug)}`;
   const absoluteImageUrl = toAbsoluteImageUrl(post.imgUrl);
   const relatedPostId = post.translationSourcePostId ?? post.id;
-  const internalLinks = await getPublicPostInternalLinks(post.id, "en");
-  const renderedContent = renderArticleContentHtml(post.content);
-  const linkedContent = applyInternalLinksToArticleHtml(
-    renderedContent,
-    internalLinks.inline.map((link) => ({
-      targetKey: link.targetKey,
-      anchorText: link.anchorText ?? "",
-      href: link.href,
-      occurrenceIndex: link.occurrenceIndex,
-    })),
-  );
-  const contentWithIds = addIdsToHeadings(linkedContent.html);
-  const tocItems = generateToc(contentWithIds);
   const categorySlug = nonEmptyValue(post.categoryEnSlug) ?? post.categorySlug;
   const categoryName = nonEmptyValue(post.categoryEnName) ?? post.categoryName;
   const categoryUrl = `/en/fwq/${encodeURIComponent(categorySlug)}/page/1`;
@@ -367,7 +354,7 @@ async function EnglishPostContent({ params }: PageProps) {
 
           <div
             className={`${ARTICLE_PROSE_CLASS_NAME} mt-8`}
-            dangerouslySetInnerHTML={{ __html: contentWithIds }}
+            dangerouslySetInnerHTML={{ __html: contentHtml }}
           />
 
           <div className="mt-10">
@@ -408,10 +395,7 @@ async function EnglishPostContent({ params }: PageProps) {
           </div>
         </article>
 
-        <ArticleRelatedSidebar
-          links={internalLinks.relatedPosts}
-          language="en"
-        />
+        <ArticleRelatedSidebar links={relatedPostLinks} language="en" />
       </div>
     </main>
   );

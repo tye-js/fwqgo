@@ -444,12 +444,15 @@ function localizedTagHref(input: {
 export async function readPublicPostInternalLinks(
   postId: number,
   language: ArticleLinkLanguage,
+  sourceSnapshot?: { content: string; language: ArticleLinkLanguage },
 ): Promise<PublicArticleInternalLinks> {
-  const [sourcePost] = await readDb
-    .select({ content: posts.content, language: posts.language })
-    .from(posts)
-    .where(eq(posts.id, postId))
-    .limit(1);
+  const [sourcePost] = sourceSnapshot
+    ? [sourceSnapshot]
+    : await readDb
+        .select({ content: posts.content, language: posts.language })
+        .from(posts)
+        .where(eq(posts.id, postId))
+        .limit(1);
   if (sourcePost?.language !== language) {
     return {
       inline: [],

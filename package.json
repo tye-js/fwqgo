@@ -30,6 +30,7 @@
     "verify:security": "tsx scripts/verify-security-boundaries.ts",
     "verify:cache": "tsx scripts/verify-public-cache-boundaries.ts",
     "smoke:built": "node scripts/smoke-built-apps.mjs",
+    "smoke:article-isr": "node scripts/verify-production-article.mjs",
     "smoke:mobile": "node scripts/smoke-mobile.mjs",
     "smoke:cms": "node scripts/smoke-cms-browser.mjs",
     "db:generate": "drizzle-kit generate",
