@@ -61,6 +61,10 @@ const config = {
   // loopback normalization can otherwise turn them into external self-fetches.
   skipProxyUrlNormalize: true,
   experimental: {
+    // Next 16.3's staged Flight responses can omit runtime slug dependencies.
+    // Do not generalize page cache keys from that incomplete varyParams set:
+    // different article URLs must keep their own client-side cache entries.
+    varyParams: false,
     optimizePackageImports: ["lucide-react"],
   },
   compiler: {

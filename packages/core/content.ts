@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
 import { Marked } from "marked";
-import type { Element } from "domhandler";
+import { isTag, isText, type AnyNode, type Element } from "domhandler";
 
 import { isOutboundShortLinkHref, slugify } from "@fwqgo/core/utils";
 
@@ -92,10 +92,7 @@ export function normalizeArticleHtml(content: string) {
     const $heading = $(element);
     const headingText = $heading.text().trim();
     const rawHeadingLevel = Number(element.name.slice(1));
-    const headingLevel = Math.min(
-      rawHeadingLevel,
-      previousHeadingLevel + 1,
-    );
+    const headingLevel = Math.min(rawHeadingLevel, previousHeadingLevel + 1);
     if (headingLevel !== rawHeadingLevel) {
       element.name = `h${headingLevel}`;
     }
@@ -273,15 +270,37 @@ function sanitizeArticleHtml(content: string) {
 }
 
 export function looksLikeHtmlContent(value: string) {
-  if (!/<(?:article|section|div|p|h[1-6]|blockquote|pre|hr|table|thead|tbody|tfoot|tr|td|th|ul|ol|li)\b/i.test(value)) {
+  if (
+    !/<(?:article|section|div|p|h[1-6]|blockquote|pre|code|hr|table|thead|tbody|tfoot|tr|td|th|ul|ol|li)\b/i.test(
+      value,
+    )
+  ) {
     return false;
   }
 
   // Tokenization keeps Markdown examples inside HTML <pre> blocks literal,
   // and recognizes fenced HTML examples as Markdown rather than live HTML.
-  return !articleMarkdown.lexer(value).some((token) =>
-    ["heading", "blockquote", "list", "code", "hr", "table"].includes(token.type),
-  );
+  let hasMarkdown = false;
+  void articleMarkdown.walkTokens(articleMarkdown.lexer(value), (token) => {
+    if (
+      [
+        "heading",
+        "blockquote",
+        "list",
+        "code",
+        "codespan",
+        "escape",
+        "hr",
+        "table",
+        "strong",
+        "em",
+        "link",
+      ].includes(token.type)
+    ) {
+      hasMarkdown = true;
+    }
+  });
+  return !hasMarkdown;
 }
 
 function escapeHtml(value: string) {
@@ -340,25 +359,27 @@ const legacyCodeLanguage =
 const articleMarkdown = new Marked({
   gfm: true,
   async: false,
-  extensions: [{
-    name: "legacyArticleCodeFence",
-    level: "block",
-    start(source) {
-      return legacyCodeFenceStart.exec(source)?.index;
+  extensions: [
+    {
+      name: "legacyArticleCodeFence",
+      level: "block",
+      start(source) {
+        return legacyCodeFenceStart.exec(source)?.index;
+      },
+      tokenizer(source) {
+        const match = legacyCodeFence.exec(source);
+        if (!match) return undefined;
+        const content = match[1] ?? "";
+        const language = legacyCodeLanguage.exec(content);
+        return {
+          type: "code",
+          raw: match[0],
+          text: language?.[2] ?? content,
+          lang: language?.[1],
+        };
+      },
     },
-    tokenizer(source) {
-      const match = legacyCodeFence.exec(source);
-      if (!match) return undefined;
-      const content = match[1] ?? "";
-      const language = legacyCodeLanguage.exec(content);
-      return {
-        type: "code",
-        raw: match[0],
-        text: language?.[2] ?? content,
-        lang: language?.[1],
-      };
-    },
-  }],
+  ],
   renderer: {
     heading({ depth, tokens }) {
       const level = Math.min(Math.max(depth, 2), 4);
@@ -376,7 +397,9 @@ const articleMarkdown = new Marked({
 });
 
 export function markdownToArticleHtml(markdown: string) {
-  return articleMarkdown.parse(markdown.replace(/\r\n?/g, "\n"), { async: false });
+  return articleMarkdown.parse(markdown.replace(/\r\n?/g, "\n"), {
+    async: false,
+  });
 }
 
 export function enhanceArticleLinks(html: string) {
@@ -393,7 +416,9 @@ export function enhanceArticleLinks(html: string) {
     $link.attr("target", "_blank");
     $link.attr(
       "rel",
-      isOutboundShortLinkHref(href) ? "nofollow" : "nofollow sponsored noopener noreferrer",
+      isOutboundShortLinkHref(href)
+        ? "nofollow"
+        : "nofollow sponsored noopener noreferrer",
     );
   });
 
@@ -658,16 +683,43 @@ export function htmlToArticleDocument(content: string): ArticleDocument {
       return;
     }
 
-    $element.children().each((_, child) => {
-      visitElement(child);
-    });
+    visitNodes($element.contents().toArray());
   };
 
-  $.root()
-    .children()
-    .each((_, element) => {
-      visitElement(element);
-    });
+  // Keep loose text and inline links around an <hr> in their original order.
+  // Without this, recognizing the rule would suppress the old text fallback.
+  const visitNodes = (nodes: AnyNode[]) => {
+    let inlineHtml = "";
+    const flushInline = () => {
+      if (!inlineHtml) return;
+      const wrapper = $("<span></span>").html(inlineHtml).get(0);
+      if (wrapper && isTag(wrapper))
+        pushTextBlock(blocks, {
+          type: "paragraph",
+          text: htmlFragmentToMarkdownText($, wrapper),
+        });
+      inlineHtml = "";
+    };
+    for (const node of nodes) {
+      if (isText(node)) {
+        inlineHtml += $.html(node);
+      } else if (isTag(node)) {
+        const element = $(node);
+        if (
+          element.is(articleBlockTags) ||
+          element.find(articleBlockTags).length > 0
+        ) {
+          flushInline();
+          visitElement(node);
+        } else {
+          inlineHtml += $.html(node);
+        }
+      }
+    }
+    flushInline();
+  };
+
+  visitNodes($.root().contents().toArray());
 
   if (blocks.length === 0) {
     const fallbackText = normalizeArticleText($.root().text());
@@ -806,7 +858,9 @@ export function articleDocumentToMarkdown(
         2,
       );
       const fence = "`".repeat(longestRun + 1);
-      append(`${fence}\n${block.text}${block.text.endsWith("\n") ? "" : "\n"}${fence}`);
+      append(
+        `${fence}\n${block.text}${block.text.endsWith("\n") ? "" : "\n"}${fence}`,
+      );
       continue;
     }
 

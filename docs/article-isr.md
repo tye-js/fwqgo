@@ -1,6 +1,6 @@
 # 公开文章 ISR 与 Cloudflare 缓存
 
-更新日期：2026-09-05
+更新日期：2026-09-06
 
 ## 运行模型
 
@@ -15,6 +15,16 @@
 `PUBLIC_ARTICLE_PRERENDER_LIMIT` 可设置为 1–100，默认 50。当构建环境没有可直连的生产数据库时（例如本地离线构建、PR 检查或 CI 独立构建环境），系统会优雅降级生成由 Web Proxy 明确返回 `404` 和 `X-Robots-Tag: noindex, nofollow, noarchive` 的保留校验参数。正式部署构建产物在服务器激活后由 ISR 自动按需生成并缓存真实文章。
 
 部署工作流在构建产物 smoke 中验证静态壳、resume segment ID、首部元数据与缓存边界隔离；并在服务器激活后以 `bun run smoke:article-isr` 真实校验生产文章的 ISR 正文、元数据与缓存策略。
+
+## 文章切换与客户端缓存
+
+Next.js 16.3.4 的分阶段 Flight 响应可能在运行时读取 `slug` 前就结束参数依赖收集，使完整文章的 `varyParams` 为空或仅含 `?`。客户端据此泛化缓存键时，会将文章 A 的正文复用于文章 B，出现 URL 已改变而正文未更新。
+
+Web 配置显式设置 `experimental.varyParams: false`，使文章缓存保留完整路由参数。常规客户端导航、链接预取、`cacheComponents` 和 `partialPrefetching` 继续工作；不需要修改文章数据或关闭服务端 ISR。
+
+`bun run verify:article-navigation` 使用已安装 Next.js 的实际缓存实现复现旧的跨文章命中，并验证 A→B→C→A、后完成的预取、中文 slug、中英文及查询参数隔离。该检查已接入 `verify:cache`。升级 Next 后，应复核此问题后再考虑开启参数推断。发布时需要重新构建 Web；已打开的旧页面需刷新一次，以加载更新后的客户端代码。
+
+本轮还在隔离数据上通过了中英文各三篇文章的循环 HTTP/RSC 请求，共 24 次文档及导航响应检查。浏览器交互工具因自动审批接口不支持 `codex-auto-review` 而被拒绝，真实点击流程未记为已验证。
 
 ## Cloudflare Cache Rule
 

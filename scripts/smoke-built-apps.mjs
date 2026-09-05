@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:net";
 import path from "node:path";
 import * as cheerio from "cheerio";
+import { checkPrerenderedArticleMetadata } from "./prerendered-article-metadata.mjs";
 
 const root = process.cwd();
 const runtime = process.env.SMOKE_RUNTIME_BIN?.trim() ?? process.execPath;
@@ -201,9 +202,6 @@ function checkPrerenderedArticleShells() {
     for (const file of htmlFiles) {
       const relativePath = path.relative(root, file);
       const html = readFileSync(file, "utf8");
-      const isPlaceholder = file.endsWith(
-        `${path.sep}__fwqgo_article_static_shell__.html`,
-      );
       const segmentIds = [
         ...html.matchAll(/<(?:div|template)[^>]*\bid="(S:\d+)"/g),
       ].map((match) => match[1]);
@@ -212,24 +210,13 @@ function checkPrerenderedArticleShells() {
         `${relativePath} contains duplicate streamed resume segment IDs`,
       );
 
-      const headEnd = html.indexOf("</head>");
-      const title = html.indexOf("<title");
-      assert(
-        headEnd >= 0 && title >= 0 && title < headEnd,
-        `${relativePath} streamed metadata after the initial head`,
-      );
+      const { isPlaceholder } = checkPrerenderedArticleMetadata(relativePath, html);
 
       if (!isPlaceholder) {
         realArticleCount += 1;
         const $ = cheerio.load(html);
         const prose = $("article .article-prose").first();
         const proseText = prose.text().replace(/\s+/g, " ").trim();
-        assert(
-          ($('head meta[name="description"]').attr("content") ?? "").trim()
-            .length > 0 &&
-            Boolean($('head link[rel="canonical"]').attr("href")),
-          `${relativePath} omitted metadata from its initial head`,
-        );
         assert(
           prose.length === 1 && proseText.length >= 200,
           `${relativePath} omitted article prose from its prerendered HTML`,

@@ -9,8 +9,10 @@ import {
 
 const requestText =
   "Hello, Could you please double the monthly bandwidth and assign an IPv6 address for my VPS? Service ID: [填写你的服务ID] Invoice Number: [填写账单号] Thank you!";
-const legacyEscaped = "**&#xA0;\\`\\`****`text " + requestText + "\u00a0`****\\`\\`**";
-const legacyUnescaped = "**&#xA0;``****`text " + requestText + "\u00a0`****``**";
+const legacyEscaped =
+  "**&#xA0;\\`\\`****`text " + requestText + "\u00a0`****\\`\\`**";
+const legacyUnescaped =
+  "**&#xA0;``****`text " + requestText + "\u00a0`****``**";
 
 function render(source: string) {
   return cheerio.load(renderArticleContentHtml(source), null, false);
@@ -20,12 +22,19 @@ void test("standalone Markdown separators render as horizontal rules", () => {
   for (const separator of ["---", "-----", "***", "___", "  - - -  "]) {
     const $ = render(`前一段\n\n${separator}\n\n后一段`);
     assert.equal($("hr").length, 1, separator);
-    assert.deepEqual($("p").map((_, node) => $(node).text()).get(), ["前一段", "后一段"]);
+    assert.deepEqual(
+      $("p")
+        .map((_, node) => $(node).text())
+        .get(),
+      ["前一段", "后一段"],
+    );
   }
 });
 
 void test("separators do not consume list items or Markdown table dividers", () => {
-  const $ = render("- 第一项\n\n---\n\n- 第二项\n\n| 套餐 | 价格 |\n| --- | --- |\n| A | 5 美元 |");
+  const $ = render(
+    "- 第一项\n\n---\n\n- 第二项\n\n| 套餐 | 价格 |\n| --- | --- |\n| A | 5 美元 |",
+  );
   assert.equal($("hr").length, 1);
   assert.equal($("li").length, 2);
   assert.equal($("table tbody td").length, 2);
@@ -38,7 +47,12 @@ void test("plain dashes and escaped separators remain literal text", () => {
 });
 
 void test("the supplied escaped and unescaped legacy code fences retain the entire template", () => {
-  for (const source of [legacyEscaped, legacyUnescaped, legacyEscaped.replace("&#xA0;", "&nbsp;"), legacyEscaped.replace("&#xA0;", "\u00a0")]) {
+  for (const source of [
+    legacyEscaped,
+    legacyUnescaped,
+    legacyEscaped.replace("&#xA0;", "&nbsp;"),
+    legacyEscaped.replace("&#xA0;", "\u00a0"),
+  ]) {
     const $ = render(`申请模板：\n\n${source}\n\n填写信息后提交。`);
     assert.equal($("pre > code").length, 1, source);
     assert.equal($("pre > code").text().trim(), requestText);
@@ -50,7 +64,8 @@ void test("the supplied escaped and unescaped legacy code fences retain the enti
 });
 
 void test("legacy code fence repair preserves line breaks and blank lines", () => {
-  const message = "Hello,\n\nCould you please double the monthly bandwidth?\nService ID: [填写你的服务ID]\nInvoice Number: [填写账单号]\n\nThank you!";
+  const message =
+    "Hello,\n\nCould you please double the monthly bandwidth?\nService ID: [填写你的服务ID]\nInvoice Number: [填写账单号]\n\nThank you!";
   const $ = render("**&#xA0;\\`\\`****`text\n" + message + "`****\\`\\`**");
   assert.equal($("pre code").text().trimEnd(), message);
 });
@@ -61,7 +76,8 @@ void test("a legacy-looking example inside a valid fence is not repaired", () =>
 });
 
 void test("standard code fences preserve Markdown, separators, links and HTML literally", () => {
-  const code = '---\n**literal**\n[购买](https://example.com/buy)\n<script>alert("x")</script>\n&#xA0;';
+  const code =
+    '---\n**literal**\n[购买](https://example.com/buy)\n<script>alert("x")</script>\n&#xA0;';
   for (const delimiter of ["```", "````", "~~~"]) {
     const $ = render(`${delimiter}text\n${code}\n${delimiter}`);
     assert.equal($("pre code").text().trimEnd(), code);
@@ -77,6 +93,24 @@ void test("code spans take precedence over emphasis and links", () => {
   assert.equal($("strong").text(), "正常加粗");
 });
 
+void test("HTML examples inside inline code are not mistaken for stored HTML", () => {
+  const $ = render("示例 `<p>--- **literal**</p>` 和 `<div>content</div>`。");
+  assert.deepEqual(
+    $("code")
+      .map((_, node) => $(node).text())
+      .get(),
+    ["<p>--- **literal**</p>", "<div>content</div>"],
+  );
+  assert.equal($("code p, code div, code strong, hr").length, 0);
+});
+
+void test("stored HTML code and horizontal rules remain HTML", () => {
+  const $ = render("<pre><code>---\n**literal**\n```</code></pre><hr>");
+  assert.equal($("pre code").text(), "---\n**literal**\n```");
+  assert.equal($("hr").length, 1);
+  assert.equal(render("<code>hello</code>")("code").text(), "hello");
+});
+
 void test("multiple-backtick spans and code within bold text render correctly", () => {
   const $ = render("运行 ``echo `Hello` && **literal**``；**复制 `ls -la`**");
   assert.equal($("code").first().text(), "echo `Hello` && **literal**");
@@ -85,7 +119,9 @@ void test("multiple-backtick spans and code within bold text render correctly", 
 });
 
 void test("character references decode as text outside code without becoming HTML", () => {
-  const $ = render("A&#xA0;B &amp; C &lt;label&gt;；`&#xA0;`；&#42;&#42;不是加粗&#42;&#42;");
+  const $ = render(
+    "A&#xA0;B &amp; C &lt;label&gt;；`&#xA0;`；&#42;&#42;不是加粗&#42;&#42;",
+  );
   assert.ok($("p").text().includes("A\u00a0B & C <label>"));
   assert.equal($("code").text(), "&#xA0;");
   assert.equal($("label, strong").length, 0);
@@ -94,23 +130,57 @@ void test("character references decode as text outside code without becoming HTM
 void test("tables retain distinct purchase destinations and paid-link attributes", () => {
   const first = "https://merchant.example/buy/(basic)?plan=1&aff=fwqgo";
   const second = "https://merchant.example/buy?plan=2&aff=fwqgo";
-  const $ = render(`| 套餐 | 购买 |\n| --- | --- |\n| A | [购买 A](<${first}>) |\n| B | [购买 B](${second}) |`);
-  assert.deepEqual($("td a").map((_, node) => $(node).attr("href")).get(), [first, second]);
-  assert.equal($("td a").first().attr("rel"), "nofollow sponsored noopener noreferrer");
+  const $ = render(
+    `| 套餐 | 购买 |\n| --- | --- |\n| A | [购买 A](<${first}>) |\n| B | [购买 B](${second}) |`,
+  );
+  assert.deepEqual(
+    $("td a")
+      .map((_, node) => $(node).attr("href"))
+      .get(),
+    [first, second],
+  );
+  assert.equal(
+    $("td a").first().attr("rel"),
+    "nofollow sponsored noopener noreferrer",
+  );
   assert.equal(render("[购买](/go/test-plan)")("a").attr("rel"), "nofollow");
 });
 
 void test("unsafe links and executable HTML remain blocked", () => {
-  const $ = render("## 正文\n\n[危险](javascript:alert%281%29)\n\n<script>alert(1)</script>");
+  const $ = render(
+    "## 正文\n\n[危险](javascript:alert%281%29)\n\n<script>alert(1)</script>",
+  );
   assert.equal($("a[href], script").length, 0);
   assert.ok($.root().text().includes("正文"));
 });
 
 void test("HTML conversion retains horizontal rules and the indentation of code", () => {
   const originalCode = "  echo hello\n    echo world\n```";
-  const { markdown } = htmlToArticleMarkdown(`<p>上文</p><hr><pre><code>${originalCode}</code></pre><p>下文</p>`);
+  const { markdown } = htmlToArticleMarkdown(
+    `<p>上文</p><hr><pre><code>${originalCode}</code></pre><p>下文</p>`,
+  );
   const $ = render(markdown);
   assert.equal($("hr").length, 1);
   assert.equal($("pre code").text().trimEnd(), originalCode);
-  assert.deepEqual($("p").map((_, node) => $(node).text()).get(), ["上文", "下文"]);
+  assert.deepEqual(
+    $("p")
+      .map((_, node) => $(node).text())
+      .get(),
+    ["上文", "下文"],
+  );
+});
+
+void test("HTML conversion keeps loose text and purchase links around rules", () => {
+  const { markdown } = htmlToArticleMarkdown(
+    '上文<hr><div>请<a href="https://merchant.example/buy?plan=1">购买</a><hr>下文</div>',
+  );
+  const $ = render(markdown);
+  assert.equal($("hr").length, 2);
+  assert.deepEqual(
+    $("p")
+      .map((_, node) => $(node).text())
+      .get(),
+    ["上文", "请购买", "下文"],
+  );
+  assert.equal($("a").attr("href"), "https://merchant.example/buy?plan=1");
 });
