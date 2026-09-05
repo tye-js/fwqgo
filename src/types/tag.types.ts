@@ -3,7 +3,9 @@ import { type tags } from "@fwqgo/db/schema";
 type Tag = typeof tags.$inferSelect;
 
 export interface TagMain {
-  tag: Pick<Tag, "id" | "name" | "slug">;
+  tag: Pick<Tag, "id" | "name" | "slug"> & {
+    publiclyIndexable?: boolean;
+  };
 }
 
 export interface NewTag {

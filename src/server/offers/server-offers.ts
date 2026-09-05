@@ -46,6 +46,13 @@ import {
   serverRegions,
 } from "@fwqgo/db/schema";
 import { ilikeContains } from "@/server/db/search";
+import { publicPurchasableOfferBaseWhere } from "./public-offer-policy";
+import { resolvePublicServerEntity } from "./public-server-entities";
+import {
+  isCanonicalServerEntitySlug,
+  resolveServerEntity,
+} from "@fwqgo/core/server-entity";
+import type { PUBLIC_SERVER_TOPIC_SLUGS } from "@fwqgo/core/public-route-policy";
 
 export const offerStatuses = [
   "in_stock",
@@ -77,7 +84,7 @@ export type OfferReviewStatus = (typeof offerReviewStatuses)[number];
 
 export const MIN_INDEXABLE_SERVER_COLLECTION_OFFERS = 5;
 
-export type OfferTopicSlug = "hong-kong" | "united-states" | "cheap-vps";
+export type OfferTopicSlug = (typeof PUBLIC_SERVER_TOPIC_SLUGS)[number];
 
 export const offerTopics: Array<{
   slug: OfferTopicSlug;
@@ -176,14 +183,6 @@ export const offerTopics: Array<{
     },
   },
 ];
-
-function publicPurchasableOfferBaseWhere() {
-  return and(
-    eq(serverOffers.visible, true),
-    isNotNull(serverOffers.priceAmount),
-    sql`nullif(trim(${serverOffers.purchaseUrl}), '') is not null`,
-  );
-}
 
 async function syncPrimaryOfferPrice(input: {
   offerId: number;
@@ -389,24 +388,16 @@ async function loadServerOfferCollection(
   kind: "provider" | "region" | "line",
   value: string,
 ) {
-  const matchCondition =
+  const entity = await resolvePublicServerEntity(kind, value);
+  if (!entity) return null;
+  const matchCondition = eq(
     kind === "provider"
-      ? or(
-          eq(affServiceProviders.slug, value),
-          eq(affServiceProviders.name, value),
-          eq(serverOffers.providerName, value),
-        )
+      ? serverOffers.providerId
       : kind === "region"
-        ? or(
-            eq(serverRegions.slug, value),
-            eq(serverRegions.name, value),
-            eq(serverOffers.region, value),
-          )
-        : or(
-            eq(serverNetworkLines.slug, value),
-            eq(serverNetworkLines.name, value),
-            eq(serverOffers.lineType, value),
-          );
+        ? serverOffers.regionId
+        : serverOffers.lineId,
+    entity.id,
+  );
   const titlePrefix =
     kind === "provider" ? "商家" : kind === "region" ? "地区" : "线路";
 
@@ -439,19 +430,9 @@ async function loadServerOfferCollection(
       )
       .limit(30);
 
-    const first = rows[0];
-    const label =
-      kind === "provider"
-        ? (first?.canonicalProviderName ?? first?.providerName ?? value)
-        : kind === "region"
-          ? (first?.canonicalRegionName ?? first?.region ?? value)
-          : (first?.canonicalLineName ?? first?.lineType ?? value);
-    const slug =
-      kind === "provider"
-        ? (first?.providerSlug ?? value)
-        : kind === "region"
-          ? (first?.regionSlug ?? value)
-          : (first?.lineSlug ?? value);
+    if (rows.length === 0) return null;
+    const label = entity.name;
+    const slug = entity.slug;
     const offers = rows.map(
       ({
         providerSlug: _providerSlug,
@@ -480,18 +461,7 @@ async function loadServerOfferCollection(
       ),
     };
   } catch (error) {
-    console.error("Failed to load server offer collection:", error);
-    return {
-      title: `${value}${titlePrefix === "商家" ? "" : titlePrefix}服务器套餐`,
-      description: `集中查看${value}相关服务器套餐，按价格、地区、线路、状态和购买入口筛选。`,
-      offers: [],
-      kind,
-      value,
-      slug: value,
-      toolHref: "/servers",
-      indexable: false,
-      updatedAt: null,
-    };
+    throw new Error("服务器套餐集合读取失败", { cause: error });
   }
 }
 
@@ -624,7 +594,7 @@ export async function getServerOfferCollectionIndex(limit = 80) {
     >();
     for (const row of rows) {
       const value = row.value?.trim();
-      if (!value) continue;
+      if (!isCanonicalServerEntitySlug(value)) continue;
       const current = merged.get(value);
       const updatedAt = parseDateValue(row.updatedAt);
       if (current) {
@@ -656,8 +626,8 @@ export async function getServerOfferCollectionIndex(limit = 80) {
     const [providerRows, regionRows, lineRows] = await Promise.all([
       readDb
         .select({
-          value: sql<string>`coalesce(${affServiceProviders.slug}, ${serverOffers.providerName})`,
-          label: sql<string>`coalesce(${affServiceProviders.name}, ${serverOffers.providerName})`,
+          value: affServiceProviders.slug,
+          label: affServiceProviders.name,
           count: sql<number>`count(*)::int`,
           updatedAt: sql<Date | null>`max(coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt}))`,
         })
@@ -669,20 +639,16 @@ export async function getServerOfferCollectionIndex(limit = 80) {
         .where(
           and(
             publicPurchasableOfferBaseWhere(),
-            isNotNull(serverOffers.providerName),
+            isNotNull(affServiceProviders.slug),
           ),
         )
-        .groupBy(
-          affServiceProviders.slug,
-          affServiceProviders.name,
-          serverOffers.providerName,
-        )
+        .groupBy(affServiceProviders.slug, affServiceProviders.name)
         .orderBy(desc(sql`count(*)`))
         .limit(limit * 2),
       readDb
         .select({
-          value: sql<string>`coalesce(${serverRegions.slug}, ${serverOffers.region})`,
-          label: sql<string>`coalesce(${serverRegions.name}, ${serverOffers.region})`,
+          value: serverRegions.slug,
+          label: serverRegions.name,
           count: sql<number>`count(*)::int`,
           updatedAt: sql<Date | null>`max(coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt}))`,
         })
@@ -691,16 +657,17 @@ export async function getServerOfferCollectionIndex(limit = 80) {
         .where(
           and(
             publicPurchasableOfferBaseWhere(),
-            isNotNull(serverOffers.region),
+            isNotNull(serverRegions.slug),
+            eq(serverRegions.active, true),
           ),
         )
-        .groupBy(serverRegions.slug, serverRegions.name, serverOffers.region)
+        .groupBy(serverRegions.slug, serverRegions.name)
         .orderBy(desc(sql`count(*)`))
         .limit(limit * 2),
       readDb
         .select({
-          value: sql<string>`coalesce(${serverNetworkLines.slug}, ${serverOffers.lineType})`,
-          label: sql<string>`coalesce(${serverNetworkLines.name}, ${serverOffers.lineType})`,
+          value: serverNetworkLines.slug,
+          label: serverNetworkLines.name,
           count: sql<number>`count(*)::int`,
           updatedAt: sql<Date | null>`max(coalesce(${serverOffers.updatedAt}, ${serverOffers.createdAt}))`,
         })
@@ -712,14 +679,11 @@ export async function getServerOfferCollectionIndex(limit = 80) {
         .where(
           and(
             publicPurchasableOfferBaseWhere(),
-            isNotNull(serverOffers.lineType),
+            isNotNull(serverNetworkLines.slug),
+            eq(serverNetworkLines.active, true),
           ),
         )
-        .groupBy(
-          serverNetworkLines.slug,
-          serverNetworkLines.name,
-          serverOffers.lineType,
-        )
+        .groupBy(serverNetworkLines.slug, serverNetworkLines.name)
         .orderBy(desc(sql`count(*)`))
         .limit(limit * 2),
     ]);
@@ -730,8 +694,7 @@ export async function getServerOfferCollectionIndex(limit = 80) {
       lines: mergeCollectionRows(lineRows, "line"),
     };
   } catch (error) {
-    console.error("Failed to load server offer collection index:", error);
-    return { providers: [], regions: [], lines: [] };
+    throw new Error("服务器规范集合索引读取失败", { cause: error });
   }
 }
 
@@ -1237,17 +1200,6 @@ export type ServerOfferPriceUpdateInput = {
   validUntil?: Date | null;
 };
 
-function taxonomyMatches(
-  value: string,
-  item: { name: string; aliases: string | null },
-) {
-  const needle = value.trim().toLocaleLowerCase();
-  if (!needle) return false;
-  return [item.name, ...(item.aliases?.split(",") ?? [])].some(
-    (candidate) => candidate.trim().toLocaleLowerCase() === needle,
-  );
-}
-
 async function resolveServerOfferTaxonomy(input: {
   region?: string | null;
   lineType?: string | null;
@@ -1257,6 +1209,8 @@ async function resolveServerOfferTaxonomy(input: {
       .select({
         id: serverRegions.id,
         name: serverRegions.name,
+        slug: serverRegions.slug,
+        enName: serverRegions.enName,
         aliases: serverRegions.aliases,
       })
       .from(serverRegions)
@@ -1265,6 +1219,8 @@ async function resolveServerOfferTaxonomy(input: {
       .select({
         id: serverNetworkLines.id,
         name: serverNetworkLines.name,
+        slug: serverNetworkLines.slug,
+        enName: serverNetworkLines.enName,
         aliases: serverNetworkLines.aliases,
       })
       .from(serverNetworkLines)
@@ -1273,12 +1229,10 @@ async function resolveServerOfferTaxonomy(input: {
 
   return {
     regionId: input.region
-      ? (regions.find((item) => taxonomyMatches(input.region!, item))?.id ??
-        null)
+      ? (resolveServerEntity(regions, input.region)?.id ?? null)
       : null,
     lineId: input.lineType
-      ? (lines.find((item) => taxonomyMatches(input.lineType!, item))?.id ??
-        null)
+      ? (resolveServerEntity(lines, input.lineType)?.id ?? null)
       : null,
   };
 }

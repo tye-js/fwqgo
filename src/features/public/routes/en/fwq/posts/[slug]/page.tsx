@@ -1,10 +1,10 @@
+import { PublicTaxonomyLink } from "@/features/public/components/public-taxonomy-link";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ChevronRight, Clock, Languages, Tags } from "lucide-react";
 
-import { getEnglishPostSeoBySlug } from "@/features/public/data/post";
 import {
   ARTICLE_PROSE_CLASS_NAME,
   ArticleCover,
@@ -165,9 +165,9 @@ export async function generateMetadata({
   if (!decodedSlug) return {};
   if (isPublicArticleStaticParamsPlaceholder(decodedSlug)) notFound();
 
-  const { data } = await getEnglishPostSeoBySlug(decodedSlug);
-  if (!data) notFound();
-  const post = data;
+  const presentation = await getEnglishArticlePresentation(decodedSlug);
+  if (!presentation) notFound();
+  const post = presentation.post;
   const canonicalSlug = post?.enSlug ?? decodedSlug;
   const canonicalUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(canonicalSlug)}`;
   const chineseUrl = post?.chineseSlug
@@ -266,15 +266,19 @@ async function EnglishPostContent({ params }: PageProps) {
         name: "Home",
         item: `${getSiteUrl()}/en`,
       },
+      ...(post.categoryPubliclyIndexable
+        ? [
+            {
+              "@type": "ListItem",
+              position: 2,
+              name: categoryName,
+              item: `${getSiteUrl()}${categoryUrl}`,
+            },
+          ]
+        : []),
       {
         "@type": "ListItem",
-        position: 2,
-        name: categoryName,
-        item: `${getSiteUrl()}${categoryUrl}`,
-      },
-      {
-        "@type": "ListItem",
-        position: 3,
+        position: post.categoryPubliclyIndexable ? 3 : 2,
         name: post.title,
         item: articleUrl,
       },
@@ -308,12 +312,13 @@ async function EnglishPostContent({ params }: PageProps) {
                   Home
                 </Link>
                 <ChevronRight className="size-3.5 shrink-0" aria-hidden />
-                <Link
+                <PublicTaxonomyLink
+                  indexable={post.categoryPubliclyIndexable}
                   href={categoryUrl}
                   className="inline-flex min-h-11 min-w-0 max-w-full items-center break-words hover:text-primary"
                 >
                   {categoryName}
-                </Link>
+                </PublicTaxonomyLink>
               </nav>
             }
             title={post.title}
@@ -373,16 +378,25 @@ async function EnglishPostContent({ params }: PageProps) {
                 Tags
               </div>
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-                {post.tags.map((tag) => (
-                  <Link
-                    key={tag.tag.id}
-                    href={`/en/fwq/tags/${encodeURIComponent(tag.tag.slug)}/page/1`}
-                    prefetch={false}
-                    className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  >
-                    #{tag.tag.name}
-                  </Link>
-                ))}
+                {post.tags.map((tag) =>
+                  tag.tag.publiclyIndexable ? (
+                    <Link
+                      key={tag.tag.id}
+                      href={`/en/fwq/tags/${encodeURIComponent(tag.tag.slug)}/page/1`}
+                      prefetch={false}
+                      className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      #{tag.tag.name}
+                    </Link>
+                  ) : (
+                    <span
+                      key={tag.tag.id}
+                      className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground"
+                    >
+                      #{tag.tag.name}
+                    </span>
+                  ),
+                )}
               </div>
             </section>
           ) : null}

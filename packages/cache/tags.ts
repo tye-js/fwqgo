@@ -1,4 +1,5 @@
 import { cacheTag, revalidatePath, revalidateTag, updateTag } from "next/cache";
+import { knowledgeIndexRenderPath } from "@fwqgo/core/knowledge-index";
 
 export const cacheTags = {
   categories: "categories",
@@ -86,6 +87,9 @@ export function getPublicCacheEventTargets(
       "/sitemap.xml",
       "/sitemap-posts.xml",
       "/sitemap-en.xml",
+      "/sitemap-core.xml",
+      "/sitemap-categories.xml",
+      "/sitemap-tags.xml",
     ].forEach((path) => paths.add(path));
     uniquePositiveIds(payload.postIds).forEach((id) =>
       tags.add(cacheTags.post(id)),
@@ -135,6 +139,7 @@ export function getPublicCacheEventTargets(
       "/sitemap-categories.xml",
       "/sitemap-tags.xml",
       "/sitemap-en.xml",
+      "/sitemap-core.xml",
     ].forEach((path) => paths.add(path));
     uniquePositiveIds(payload.categoryIds).forEach((id) =>
       tags.add(cacheTags.category(id)),
@@ -157,6 +162,8 @@ export function getPublicCacheEventTargets(
     [
       "/knowledge",
       "/en/knowledge",
+      knowledgeIndexRenderPath("zh"),
+      knowledgeIndexRenderPath("en"),
       "/sitemap.xml",
       "/sitemap-knowledge.xml",
     ].forEach((path) => paths.add(path));
@@ -246,6 +253,8 @@ function legacyPathsForTags(tags: Set<string>) {
   if (tags.has(cacheTags.knowledge)) {
     paths.add("/knowledge");
     paths.add("/en/knowledge");
+    paths.add(knowledgeIndexRenderPath("zh"));
+    paths.add(knowledgeIndexRenderPath("en"));
     paths.add("/sitemap-knowledge.xml");
   }
   if (

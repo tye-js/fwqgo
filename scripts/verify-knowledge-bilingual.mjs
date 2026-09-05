@@ -127,9 +127,13 @@ requireText("src/features/cms/actions/knowledge.ts", [
   "slugify(normalized, 160)",
 ]);
 requireText("src/features/public/data/knowledge.ts", [
-  "eq(knowledgeArticles.language, input.language)",
-  "eq(knowledgeArticles.language, language)",
+  "publicKnowledgeCondition(language)",
+  "normalizeKnowledgeQuery(input)",
   "desc(knowledgeArticles.contentUpdatedAt)",
+]);
+requireText("src/server/knowledge/public-knowledge-policy.ts", [
+  "eq(knowledgeArticles.language, language)",
+  "eq(knowledgeArticles.published, true)",
 ]);
 requireText("packages/ai/knowledge-retrieval.ts", [
   'language: "zh" | "en"',
@@ -171,7 +175,7 @@ const publicationWorkflow = requireText(
   ".github/workflows/publish-initial-knowledge.yml",
   [
     "workflow_dispatch:",
-    "revise-v2) expected=\"REVISE_KNOWLEDGE_CONTENT_V2\"",
+    'revise-v2) expected="REVISE_KNOWLEDGE_CONTENT_V2"',
     "bun build scripts/publish-initial-bilingual-knowledge.ts",
     '--env-file="$env_file"',
     "trap 'rm -f \"$remote_publisher\"' EXIT",

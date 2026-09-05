@@ -37,6 +37,7 @@ import {
   getLatestServerOffers,
   getPublicServerOfferCount,
   getServerOfferTopicCounts,
+  getServerOfferCollectionIndex,
   offerTopics,
 } from "@/server/offers/server-offers";
 import { getActiveHomepageSlots } from "@/server/homepage/homepage-slots";
@@ -121,20 +122,6 @@ function formatCount(value: number) {
   return value.toLocaleString("en-US");
 }
 
-function topValues(values: Array<string | null>, limit = 5) {
-  const counts = new Map<string, number>();
-  for (const value of values) {
-    const key = value?.trim();
-    if (!key) continue;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-
-  return [...counts.entries()]
-    .sort((left, right) => right[1] - left[1])
-    .slice(0, limit)
-    .map(([name]) => name);
-}
-
 function PromoCodeLink({ offer }: { offer: FeaturedOffer }) {
   const providerName = offer.providerName?.trim();
   const articleHref = offer.articleUrl?.trim();
@@ -144,8 +131,10 @@ function PromoCodeLink({ offer }: { offer: FeaturedOffer }) {
     "flex min-h-11 items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm transition-colors hover:border-primary/35 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
   const content = (
     <>
-      <span className="min-w-0 flex-1 break-words text-foreground">{label}</span>
-      <Badge className="max-w-[45%] shrink-0 break-all text-right font-mono bg-primary/10 text-primary hover:bg-primary/10">
+      <span className="min-w-0 flex-1 break-words text-foreground">
+        {label}
+      </span>
+      <Badge className="max-w-[45%] shrink-0 break-all bg-primary/10 text-right font-mono text-primary hover:bg-primary/10">
         {offer.promoCode}
       </Badge>
     </>
@@ -237,6 +226,7 @@ async function EnglishHomeContent() {
     latestOffers,
     totalOfferCount,
     homepageSlots,
+    collections,
   ] = await Promise.all([
     getHomepagePostsWithTags("en"),
     getHomepageSidebarData("en"),
@@ -244,6 +234,7 @@ async function EnglishHomeContent() {
     getLatestServerOffers(24),
     getPublicServerOfferCount(),
     getActiveHomepageSlots("en"),
+    getServerOfferCollectionIndex(5),
   ]);
 
   const safePosts = posts ?? [];
@@ -262,10 +253,8 @@ async function EnglishHomeContent() {
   const promoOffers = latestOffers
     .filter((offer) => offer.promoCode?.trim())
     .slice(0, 4);
-  const topProviders = topValues(
-    latestOffers.map((offer) => offer.providerName),
-  );
-  const topRegions = topValues(latestOffers.map((offer) => offer.region));
+  const topProviders = collections.providers;
+  const topRegions = collections.regions;
   const latestOfferUpdatedAt = latestOffers
     .map((offer) => offer.updatedAt ?? offer.createdAt)
     .filter((value): value is Date => Boolean(value))
@@ -371,14 +360,14 @@ async function EnglishHomeContent() {
                   </p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {topProviders.length > 0 ? (
-                      topProviders.map((name) => (
+                      topProviders.map((entity) => (
                         <Link
-                          key={name}
-                          href={`/servers/providers/${encodeURIComponent(name)}`}
+                          key={entity.value}
+                          href={`/servers/providers/${encodeURIComponent(entity.value)}`}
                           prefetch
                           className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary"
                         >
-                          {name}
+                          {entity.label}
                         </Link>
                       ))
                     ) : (
@@ -396,14 +385,14 @@ async function EnglishHomeContent() {
                   </p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {topRegions.length > 0 ? (
-                      topRegions.map((name) => (
+                      topRegions.map((entity) => (
                         <Link
-                          key={name}
-                          href={`/servers/regions/${encodeURIComponent(name)}`}
+                          key={entity.value}
+                          href={`/servers/regions/${encodeURIComponent(entity.value)}`}
                           prefetch
                           className="inline-flex min-h-11 items-center rounded-md border border-border bg-muted/40 px-2.5 text-xs text-foreground transition-colors hover:border-primary/40 hover:text-primary"
                         >
-                          {name}
+                          {entity.label}
                         </Link>
                       ))
                     ) : (

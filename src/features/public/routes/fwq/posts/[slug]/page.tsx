@@ -1,7 +1,5 @@
-import {
-  getPublicPostSeoBySlug,
-  getRecommendedPosts,
-} from "@/features/public/data/post";
+import { PublicTaxonomyLink } from "@/features/public/components/public-taxonomy-link";
+import { getRecommendedPosts } from "@/features/public/data/post";
 
 import { isRenderableImageSrc } from "@fwqgo/core/image-src";
 import {
@@ -204,9 +202,9 @@ export async function generateMetadata(props: {
 
   const canonicalUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`;
   const readableTitle = decodedSlug.replace(/[-_]+/g, " ");
-  const { data } = await getPublicPostSeoBySlug(decodedSlug);
-  if (!data) notFound();
-  const post = data;
+  const presentation = await getChineseArticlePresentation(decodedSlug);
+  if (!presentation) notFound();
+  const post = presentation.post;
   const title = post?.title ?? readableTitle;
   const description =
     post?.description ??
@@ -311,15 +309,19 @@ async function PostPageContent({
         name: "首页",
         item: getSiteUrl(),
       },
+      ...(post.categoryPubliclyIndexable
+        ? [
+            {
+              "@type": "ListItem",
+              position: 2,
+              name: post.categoryName,
+              item: `${getSiteUrl()}${categoryUrl}`,
+            },
+          ]
+        : []),
       {
         "@type": "ListItem",
-        position: 2,
-        name: post.categoryName,
-        item: `${getSiteUrl()}${categoryUrl}`,
-      },
-      {
-        "@type": "ListItem",
-        position: 3,
+        position: post.categoryPubliclyIndexable ? 3 : 2,
         name: post.title,
         item: articleUrl,
       },
@@ -354,12 +356,13 @@ async function PostPageContent({
                     首页
                   </Link>
                   <ChevronRight className="size-3.5 shrink-0" aria-hidden />
-                  <Link
+                  <PublicTaxonomyLink
+                    indexable={post.categoryPubliclyIndexable}
                     href={categoryUrl}
                     className="inline-flex min-h-11 min-w-0 max-w-full items-center break-words hover:text-primary"
                   >
                     {post.categoryName}
-                  </Link>
+                  </PublicTaxonomyLink>
                 </nav>
               }
               title={post.title}
@@ -419,16 +422,25 @@ async function PostPageContent({
                     本文标签
                   </div>
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-                    {post.tags.map((tag) => (
-                      <Link
-                        key={tag.tag.id}
-                        href={`/fwq/tags/${encodeURIComponent(tag.tag.slug)}/page/1`}
-                        prefetch={false}
-                        className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      >
-                        #{tag.tag.name}
-                      </Link>
-                    ))}
+                    {post.tags.map((tag) =>
+                      tag.tag.publiclyIndexable ? (
+                        <Link
+                          key={tag.tag.id}
+                          href={`/fwq/tags/${encodeURIComponent(tag.tag.slug)}/page/1`}
+                          prefetch={false}
+                          className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          #{tag.tag.name}
+                        </Link>
+                      ) : (
+                        <span
+                          key={tag.tag.id}
+                          className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground"
+                        >
+                          #{tag.tag.name}
+                        </span>
+                      ),
+                    )}
                   </div>
                 </section>
               ) : null}

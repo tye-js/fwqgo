@@ -3,6 +3,7 @@ import {
   publicArticleCategoryName,
   type PublicArticleCategoryLanguage,
 } from "@/features/shared/lib/public-article-category";
+import { isPublicCategoryIndexable } from "@fwqgo/core/public-content-policy";
 
 export type PublicNavigationLanguage = PublicArticleCategoryLanguage;
 
@@ -65,13 +66,15 @@ export function buildArticleNavigation(
   language: PublicNavigationLanguage,
 ): ArticleNavigationItem[] {
   return categories
-    .filter((category) => publishedCount(category, language) > 0)
+    .filter((category) =>
+      isPublicCategoryIndexable(publishedCount(category, language)),
+    )
     .map((category) => ({
       id: category.id,
       name: publicArticleCategoryName(category, language),
       slug:
         language === "en"
-          ? nonEmptyTrim(category.enSlug) ?? category.slug
+          ? (nonEmptyTrim(category.enSlug) ?? category.slug)
           : category.slug,
       description: publicArticleCategoryDescription(category, language),
       canonicalSlug: category.slug,

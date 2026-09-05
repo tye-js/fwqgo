@@ -5,6 +5,7 @@ import {
   normalizeArticleHtml,
 } from "@fwqgo/core/content";
 import { slugify } from "@fwqgo/core/utils";
+import { isPublicArticleSourceRenderable } from "@fwqgo/core/public-content-policy";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { db } from "@fwqgo/db";
 import { categories, postTags, posts, tags } from "@fwqgo/db/schema";
@@ -208,6 +209,16 @@ export async function createPostRecordInTransaction(
   );
   if (!normalizedContent) {
     return { error: "文章正文不能为空" };
+  }
+  if (
+    postInput.published &&
+    !isPublicArticleSourceRenderable({
+      title: normalizedTitle,
+      slug,
+      content: normalizedContent,
+    })
+  ) {
+    return { error: "正文不足，发布需要至少 200 个字符的正文" };
   }
 
   const [existingPost] = await tx

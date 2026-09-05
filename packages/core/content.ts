@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { Marked } from "marked";
 import type { Element } from "domhandler";
 
 import { isOutboundShortLinkHref, slugify } from "@fwqgo/core/utils";
@@ -9,7 +10,8 @@ export type ArticleDocumentBlock =
   | { type: "list"; ordered: boolean; items: string[] }
   | { type: "table"; rows: string[][] }
   | { type: "quote"; text: string }
-  | { type: "code"; text: string };
+  | { type: "code"; text: string }
+  | { type: "thematic-break" };
 
 export type ArticleDocument = {
   blocks: ArticleDocumentBlock[];
@@ -271,17 +273,14 @@ function sanitizeArticleHtml(content: string) {
 }
 
 export function looksLikeHtmlContent(value: string) {
-  const hasMarkdownBlocks = value
-    .replace(/\r\n/g, "\n")
-    .split("\n")
-    .some((line) => isMarkdownBlockStart(line));
-
-  if (hasMarkdownBlocks) {
+  if (!/<(?:article|section|div|p|h[1-6]|blockquote|pre|hr|table|thead|tbody|tfoot|tr|td|th|ul|ol|li)\b/i.test(value)) {
     return false;
   }
 
-  return /<(?:article|section|div|p|h[1-6]|blockquote|pre|table|thead|tbody|tfoot|tr|td|th|ul|ol|li)\b/i.test(
-    value,
+  // Tokenization keeps Markdown examples inside HTML <pre> blocks literal,
+  // and recognizes fenced HTML examples as Markdown rather than live HTML.
+  return !articleMarkdown.lexer(value).some((token) =>
+    ["heading", "blockquote", "list", "code", "hr", "table"].includes(token.type),
   );
 }
 
@@ -292,25 +291,6 @@ function escapeHtml(value: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-function isBlankLine(value: string | undefined) {
-  return typeof value === "undefined" || value.trim().length === 0;
-}
-
-function isMarkdownBlockStart(value: string | undefined) {
-  if (typeof value === "undefined") {
-    return false;
-  }
-
-  return (
-    /^#{1,6}\s+/.test(value) ||
-    /^>\s?/.test(value) ||
-    /^[-*+]\s+/.test(value) ||
-    /^\d+[.)]\s+/.test(value) ||
-    value.startsWith("```") ||
-    /^\|.+\|$/.test(value.trim())
-  );
 }
 
 function escapeAttribute(value: string) {
@@ -336,7 +316,7 @@ function isExternalArticleHref(href: string) {
 
 function renderArticleLink(href: string, label: string) {
   const trimmedHref = href.trim();
-  if (!safeHrefPattern.test(trimmedHref)) {
+  if (!isSafeArticleHref(trimmedHref)) {
     return label;
   }
 
@@ -347,204 +327,56 @@ function renderArticleLink(href: string, label: string) {
   return `<a href="${escapeAttribute(trimmedHref)}"${attrs}>${label}</a>`;
 }
 
-function unescapeMarkdownInlineText(value: string) {
-  return value.replace(/\\([\\*_[\]\|])/g, "$1");
-}
+// Some imported rich-text content split a fenced block into three bold spans:
+// **&#xA0;\`\`****`text ...`****\`\`**. Recognize only this block shape;
+// standard fenced code is tokenized separately and its contents stay literal.
+const legacyCodeFenceStart =
+  /^ {0,3}\*\*(?:[ \t\u00a0]|&nbsp;|&#0*160;|&#x0*a0;)*(?:\\?`){2}\*\*[ \t]*\*\*`/im;
+const legacyCodeFence =
+  /^ {0,3}\*\*(?:[ \t\u00a0]|&nbsp;|&#0*160;|&#x0*a0;)*(?:\\?`){2}\*\*[ \t]*\*\*`([\s\S]*?)`\*\*[ \t]*\*\*(?:\\?`){2}\*\*[ \t]*(?:\n|$)/i;
+const legacyCodeLanguage =
+  /^(text|txt|plaintext|bash|sh|shell|console|powershell|json|yaml|yml|ini|toml|conf|nginx|javascript|js|typescript|ts|html|css|python|py|sql)(?:[ \t]+|\n)([\s\S]*)$/i;
 
-function renderMarkdownInline(value: string) {
-  const links: string[] = [];
-  const tokenized = value.replace(
-    markdownLinkPattern,
-    (_, label: string, rawHref: string, angledHref: string | undefined) => {
-      const href = angledHref ?? rawHref;
-      const token = `@@ARTICLE_LINK_${links.length}@@`;
-      links.push(
-        renderArticleLink(href, escapeHtml(unescapeMarkdownInlineText(label))),
-      );
-      return token;
+const articleMarkdown = new Marked({
+  gfm: true,
+  async: false,
+  extensions: [{
+    name: "legacyArticleCodeFence",
+    level: "block",
+    start(source) {
+      return legacyCodeFenceStart.exec(source)?.index;
     },
-  );
-
-  let rendered = escapeHtml(tokenized)
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\\([\\*_[\]\|])/g, "$1");
-
-  links.forEach((link, index) => {
-    rendered = rendered.replace(`@@ARTICLE_LINK_${index}@@`, link);
-  });
-
-  return rendered;
-}
-
-function splitMarkdownTableRow(row: string) {
-  const trimmed = row.trim().replace(/^\|/, "").replace(/\|$/, "");
-  const cells: string[] = [];
-  let current = "";
-  let escaped = false;
-
-  for (const char of trimmed) {
-    if (char === "|" && !escaped) {
-      cells.push(current);
-      current = "";
-      continue;
-    }
-
-    current += char;
-    escaped = !escaped && char === "\\";
-  }
-
-  cells.push(current);
-  return cells;
-}
-
-function unescapeMarkdownTableCell(value: string) {
-  return value.replace(/\\\|/g, "|");
-}
-
-function renderMarkdownTable(rows: string[]) {
-  const parsedRows = rows
-    .filter(
-      (row, index) =>
-        index !== 1 || !/^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(row),
-    )
-    .map((row) =>
-      splitMarkdownTableRow(row).map((cell) =>
-        renderMarkdownInline(unescapeMarkdownTableCell(cell.trim())),
-      ),
-    )
-    .filter((row) => row.length > 0);
-
-  if (parsedRows.length === 0) {
-    return "";
-  }
-
-  const [headRow, ...bodyRows] = parsedRows;
-  const head = `<thead><tr>${headRow
-    ?.map((cell) => `<th>${cell}</th>`)
-    .join("")}</tr></thead>`;
-  const body = `<tbody>${bodyRows
-    .map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`)
-    .join("")}</tbody>`;
-
-  return `<table>${head}${body}</table>`;
-}
+    tokenizer(source) {
+      const match = legacyCodeFence.exec(source);
+      if (!match) return undefined;
+      const content = match[1] ?? "";
+      const language = legacyCodeLanguage.exec(content);
+      return {
+        type: "code",
+        raw: match[0],
+        text: language?.[2] ?? content,
+        lang: language?.[1],
+      };
+    },
+  }],
+  renderer: {
+    heading({ depth, tokens }) {
+      const level = Math.min(Math.max(depth, 2), 4);
+      return `<h${level}>${this.parser.parseInline(tokens)}</h${level}>\n`;
+    },
+    link({ href, tokens }) {
+      return renderArticleLink(href, this.parser.parseInline(tokens));
+    },
+    html({ text }) {
+      // Retain the existing Markdown contract: literal HTML examples do not
+      // become executable markup. Stored HTML follows the sanitizer path.
+      return escapeHtml(text);
+    },
+  },
+});
 
 export function markdownToArticleHtml(markdown: string) {
-  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
-  const output: string[] = [];
-  let index = 0;
-
-  while (index < lines.length) {
-    const line = lines[index] ?? "";
-
-    if (isBlankLine(line)) {
-      index += 1;
-      continue;
-    }
-
-    const fenceMatch = /^```\s*([a-z0-9-]+)?\s*$/i.exec(line);
-    if (fenceMatch) {
-      const codeLines: string[] = [];
-      index += 1;
-
-      while (index < lines.length && !/^```\s*$/.test(lines[index] ?? "")) {
-        codeLines.push(lines[index] ?? "");
-        index += 1;
-      }
-
-      if (index < lines.length) {
-        index += 1;
-      }
-
-      output.push(
-        `<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`,
-      );
-      continue;
-    }
-
-    const headingMatch = /^(#{1,6})\s+(.+)$/.exec(line);
-    if (headingMatch) {
-      const rawLevel = headingMatch[1]?.length ?? 2;
-      const level = Math.min(Math.max(rawLevel, 2), 4);
-      output.push(
-        `<h${level}>${renderMarkdownInline(headingMatch[2] ?? "")}</h${level}>`,
-      );
-      index += 1;
-      continue;
-    }
-
-    if (
-      /^\|.+\|$/.test(line.trim()) &&
-      /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(lines[index + 1] ?? "")
-    ) {
-      const tableLines: string[] = [];
-
-      while (
-        index < lines.length &&
-        /^\|.+\|$/.test((lines[index] ?? "").trim())
-      ) {
-        tableLines.push(lines[index] ?? "");
-        index += 1;
-      }
-
-      const table = renderMarkdownTable(tableLines);
-      if (table) {
-        output.push(table);
-      }
-      continue;
-    }
-
-    if (/^>\s?/.test(line)) {
-      const quoteLines: string[] = [];
-      while (index < lines.length && /^>\s?/.test(lines[index] ?? "")) {
-        quoteLines.push((lines[index] ?? "").replace(/^>\s?/, ""));
-        index += 1;
-      }
-      output.push(
-        `<blockquote>${renderMarkdownInline(quoteLines.join(" "))}</blockquote>`,
-      );
-      continue;
-    }
-
-    if (/^[-*+]\s+/.test(line) || /^\d+[.)]\s+/.test(line)) {
-      const ordered = /^\d+[.)]\s+/.test(line);
-      const items: string[] = [];
-      const itemPattern = ordered ? /^\d+[.)]\s+/ : /^[-*+]\s+/;
-
-      while (index < lines.length && itemPattern.test(lines[index] ?? "")) {
-        items.push((lines[index] ?? "").replace(itemPattern, "").trim());
-        index += 1;
-      }
-
-      const tag = ordered ? "ol" : "ul";
-      output.push(
-        `<${tag}>${items
-          .map((item) => `<li>${renderMarkdownInline(item)}</li>`)
-          .join("")}</${tag}>`,
-      );
-      continue;
-    }
-
-    const paragraphLines: string[] = [];
-    while (
-      index < lines.length &&
-      !isBlankLine(lines[index]) &&
-      !isMarkdownBlockStart(lines[index])
-    ) {
-      paragraphLines.push(lines[index] ?? "");
-      index += 1;
-    }
-
-    if (paragraphLines.length === 0) {
-      paragraphLines.push(line);
-      index += 1;
-    }
-
-    output.push(`<p>${renderMarkdownInline(paragraphLines.join(" "))}</p>`);
-  }
-
-  return output.join("\n");
+  return articleMarkdown.parse(markdown.replace(/\r\n?/g, "\n"), { async: false });
 }
 
 export function enhanceArticleLinks(html: string) {
@@ -784,10 +616,15 @@ export function htmlToArticleDocument(content: string): ArticleDocument {
       return;
     }
 
+    if (tagName === "hr") {
+      pushTextBlock(blocks, { type: "thematic-break" });
+      return;
+    }
+
     if (tagName === "pre") {
       pushTextBlock(blocks, {
         type: "code",
-        text: $element.text().trim(),
+        text: $element.text().replace(/\r\n?/g, "\n"),
       });
       return;
     }
@@ -851,7 +688,7 @@ export function htmlToArticleDocument(content: string): ArticleDocument {
         return length + block.rows.flat().join(" ").length;
       }
 
-      return length + block.text.length;
+      return length + ("text" in block ? block.text.length : 0);
     }, 0),
   };
 }
@@ -957,8 +794,19 @@ export function articleDocumentToMarkdown(
       continue;
     }
 
+    if (block.type === "thematic-break") {
+      append("---");
+      continue;
+    }
+
     if (block.type === "code") {
-      append(`\`\`\`\n${block.text}\n\`\`\``);
+      // A longer fence keeps embedded backticks from terminating the block.
+      const longestRun = [...block.text.matchAll(/`+/g)].reduce(
+        (length, match) => Math.max(length, match[0].length),
+        2,
+      );
+      const fence = "`".repeat(longestRun + 1);
+      append(`${fence}\n${block.text}${block.text.endsWith("\n") ? "" : "\n"}${fence}`);
       continue;
     }
 

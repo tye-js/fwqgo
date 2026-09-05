@@ -19,21 +19,6 @@ loadEnvConfig(
 );
 await import("../../src/env.js");
 
-const publicArticleCacheHeaders = [
-  {
-    key: "Cache-Control",
-    value: "public, max-age=0, s-maxage=900, stale-while-revalidate=86400",
-  },
-  {
-    key: "CDN-Cache-Control",
-    value: "public, max-age=900, stale-while-revalidate=86400",
-  },
-  {
-    key: "Cloudflare-CDN-Cache-Control",
-    value: "public, max-age=900, stale-while-revalidate=86400",
-  },
-];
-
 /** @type {import("next").NextConfig} */
 const config = {
   output: "standalone",
@@ -41,32 +26,8 @@ const config = {
   // Dynamic article metadata must be present in the initial <head>. This
   // trades a small metadata lookup for reliable crawlers and audit tools.
   htmlLimitedBots: /.*/,
-  async headers() {
-    return [
-      {
-        source: "/fwq/posts/:slug",
-        missing: [
-          { type: "header", key: "RSC" },
-          { type: "header", key: "Next-Router-Prefetch" },
-          { type: "header", key: "Next-Router-Segment-Prefetch" },
-          { type: "header", key: "Next-Router-State-Tree" },
-          { type: "query", key: "_rsc" },
-        ],
-        headers: publicArticleCacheHeaders,
-      },
-      {
-        source: "/en/fwq/posts/:slug",
-        missing: [
-          { type: "header", key: "RSC" },
-          { type: "header", key: "Next-Router-Prefetch" },
-          { type: "header", key: "Next-Router-Segment-Prefetch" },
-          { type: "header", key: "Next-Router-State-Tree" },
-          { type: "query", key: "_rsc" },
-        ],
-        headers: publicArticleCacheHeaders,
-      },
-    ];
-  },
+  // Let Next.js set cache policy after resolving the response status.
+  // Path-only headers also cache 404/5xx and must not be used for article HTML.
   images: {
     localPatterns: [
       {
@@ -96,6 +57,9 @@ const config = {
   },
   cacheComponents: true,
   partialPrefetching: true,
+  // Preserve the server's request origin for internal rewrites. NextURL's
+  // loopback normalization can otherwise turn them into external self-fetches.
+  skipProxyUrlNormalize: true,
   experimental: {
     optimizePackageImports: ["lucide-react"],
   },

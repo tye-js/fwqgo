@@ -372,8 +372,7 @@ async function requeueAiTaskWithNextConfig(
   const currentIndex = configs.findIndex(
     (config) => config.id === task.rewriteStyleId,
   );
-  const nextConfig =
-    currentIndex >= 0 ? configs[currentIndex + 1] : configs[0];
+  const nextConfig = currentIndex >= 0 ? configs[currentIndex + 1] : configs[0];
 
   if (!nextConfig || nextConfig.id === task.rewriteStyleId) {
     return false;
@@ -1588,6 +1587,8 @@ async function runSeoMetadataTask(
         id: posts.id,
         title: posts.title,
         slug: posts.slug,
+        published: posts.published,
+        slugLocked: posts.slugLocked,
         description: posts.description,
         keywords: posts.keywords,
         content: posts.content,
@@ -1671,15 +1672,18 @@ async function runSeoMetadataTask(
             rewriteExecutionOptions,
           );
           await renewAiTaskLease(claimedTask);
-          const nextSlug = await getUniqueEnglishArticleSlug(
-            metadata.enSlug || metadata.enTitle,
-            post.id,
-          );
+          const nextSlug =
+            post.slugLocked || post.published
+              ? post.slug
+              : await getUniqueEnglishArticleSlug(
+                  metadata.enSlug || metadata.enTitle,
+                  post.id,
+                );
           const [updatedPost] = await db
             .update(posts)
             .set({
               title: metadata.enTitle,
-              slug: nextSlug,
+              slug: sql`case when ${posts.slugLocked} or ${posts.published} then ${posts.slug} else ${nextSlug} end`,
               description: metadata.enDescription,
               keywords: metadata.enKeywords.join(","),
               updatedAt: new Date(),
@@ -1702,7 +1706,7 @@ async function runSeoMetadataTask(
           return {
             updatedPost,
             title: metadata.enTitle,
-            slug: nextSlug,
+            slug: updatedPost?.slug ?? nextSlug,
             description: metadata.enDescription,
             keywords: metadata.enKeywords,
             tagCount: taxonomy?.tags.length ?? null,
@@ -1714,10 +1718,10 @@ async function runSeoMetadataTask(
             rewriteExecutionOptions,
           );
           await renewAiTaskLease(claimedTask);
-          const nextSlug = await getUniqueEnglishArticleSlug(
-            metadata.title,
-            post.id,
-          );
+          const nextSlug =
+            post.slugLocked || post.published
+              ? post.slug
+              : await getUniqueEnglishArticleSlug(metadata.title, post.id);
           const tagRows = await replacePostTagsByNames(post.id, [
             metadata.recommendTagName,
             ...metadata.tagsName,
@@ -1729,7 +1733,7 @@ async function runSeoMetadataTask(
             .update(posts)
             .set({
               title: metadata.title,
-              slug: nextSlug,
+              slug: sql`case when ${posts.slugLocked} or ${posts.published} then ${posts.slug} else ${nextSlug} end`,
               description: metadata.description,
               keywords: metadata.keywords.join(","),
               recommendedTagName:
@@ -1748,7 +1752,7 @@ async function runSeoMetadataTask(
           return {
             updatedPost,
             title: metadata.title,
-            slug: nextSlug,
+            slug: updatedPost?.slug ?? nextSlug,
             description: metadata.description,
             keywords: metadata.keywords,
             tagCount: tagRows.length,
@@ -2967,7 +2971,9 @@ export async function runAiRewriteTask(taskId: number) {
       });
       if (!finalized) throw new TaskLeaseLostError();
     } catch (error) {
-      if (!(await requeueAiTaskWithNextConfig(claimedTask, error, activeStep))) {
+      if (
+        !(await requeueAiTaskWithNextConfig(claimedTask, error, activeStep))
+      ) {
         await failTask(claimedTask, error, activeStep);
       }
     }

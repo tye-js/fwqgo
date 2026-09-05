@@ -76,7 +76,7 @@ import { type posts } from "@fwqgo/db/schema";
 type Post = typeof posts.$inferSelect;
 type PostListProp = Pick<
   Post,
-  "id" | "title" | "published" | "imgUrl" | "slug" | "language"
+  "id" | "title" | "published" | "imgUrl" | "slug" | "language" | "slugLocked"
 >;
 type PostStatusFilter = "all" | "published" | "draft";
 type BulkAction = "publish" | "draft" | "cover" | "english" | "seo" | "delete";
@@ -778,6 +778,12 @@ export function PostList({
                             className="min-h-11"
                             aria-label="文章 slug"
                             value={editPostData?.slug ?? ""}
+                            readOnly={post.slugLocked || post.published}
+                            title={
+                              post.slugLocked || post.published
+                                ? "已锁定；如需改名，请进入文章编辑页"
+                                : undefined
+                            }
                             onChange={(e) =>
                               handleInputChange("slug", e.target.value)
                             }
@@ -1003,6 +1009,12 @@ export function PostList({
                           className="min-h-11"
                           aria-label={`修改 slug：${post.title}`}
                           value={editPostData?.slug ?? ""}
+                          readOnly={post.slugLocked || post.published}
+                          title={
+                            post.slugLocked || post.published
+                              ? "已锁定；如需改名，请进入文章编辑页"
+                              : undefined
+                          }
                           onChange={(e) =>
                             handleInputChange("slug", e.target.value)
                           }

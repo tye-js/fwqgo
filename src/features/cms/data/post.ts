@@ -167,6 +167,7 @@ export async function getPostBySlug(slug: string) {
         title: posts.title,
         slug: posts.slug,
         published: posts.published,
+        slugLocked: posts.slugLocked,
       })
       .from(posts)
       .where(eq(posts.slug, decodedSlug))
@@ -229,6 +230,7 @@ export async function getPostProductionContext(postId: number) {
       description: posts.description,
       keywords: posts.keywords,
       published: posts.published,
+      slugLocked: posts.slugLocked,
       affiliateReviewStatus: posts.affiliateReviewStatus,
       affiliateReviewDetails: posts.affiliateReviewDetails,
       affiliateReviewUpdatedAt: posts.affiliateReviewUpdatedAt,
@@ -252,6 +254,7 @@ export async function getPostProductionContext(postId: number) {
           language: posts.language,
           imgUrl: posts.imgUrl,
           published: posts.published,
+          slugLocked: posts.slugLocked,
           updatedAt: posts.updatedAt,
         })
         .from(posts)
@@ -267,6 +270,7 @@ export async function getPostProductionContext(postId: number) {
       language: posts.language,
       imgUrl: posts.imgUrl,
       published: posts.published,
+      slugLocked: posts.slugLocked,
       updatedAt: posts.updatedAt,
     })
     .from(posts)
@@ -408,6 +412,7 @@ export async function getPosts({
         slug: posts.slug,
         imgUrl: posts.imgUrl,
         published: posts.published,
+        slugLocked: posts.slugLocked,
         language: posts.language,
       })
       .from(posts)
@@ -454,6 +459,7 @@ export async function getDraftPosts({
         slug: posts.slug,
         imgUrl: posts.imgUrl,
         published: posts.published,
+        slugLocked: posts.slugLocked,
         language: posts.language,
       })
       .from(posts)
@@ -631,6 +637,7 @@ export async function getDashboardStats() {
         views: posts.views,
         createdAt: posts.createdAt,
         published: posts.published,
+        slugLocked: posts.slugLocked,
       })
       .from(posts)
       .innerJoin(categories, eq(posts.categoryId, categories.id))

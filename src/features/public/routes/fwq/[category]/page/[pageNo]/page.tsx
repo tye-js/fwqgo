@@ -1,8 +1,10 @@
-import { getCategoryBySlug } from "@/features/shared/data/category";
+import {
+  resolveCategoryPage,
+  taxonomyPageMetadata,
+} from "@/features/public/lib/taxonomy-page";
 import {
   getPostsWithTagsByCategoryId,
   getLatestPostsForSidebar,
-  getPublishedPostCountByCategoryId,
 } from "@/features/public/data/post";
 import ArticleCard from "@/features/public/components/article-card";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
@@ -11,11 +13,7 @@ import { RelatedServerOfferCards } from "@/features/public/components/related-se
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  decodeSlug,
-  jsonLdScriptContent,
-  parsePositiveInt,
-} from "@fwqgo/core/utils";
+import { jsonLdScriptContent } from "@fwqgo/core/utils";
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -44,48 +42,9 @@ export async function generateMetadata(props: {
   params: Promise<{ category: string; pageNo: string }>;
 }): Promise<Metadata> {
   const params = await props.params;
-  const pageNo = parsePositiveInt(params.pageNo);
-  if (!pageNo) notFound();
-  const decodedCategory = decodeSlug(params.category);
-  const readableName = decodedCategory.replace(/[-_]+/g, " ");
-  const { data: category, error: categoryError } = await getCategoryBySlug(decodedCategory);
-  if (!category && !categoryError) notFound();
-  const title = category?.name ?? readableName;
-  const description =
-    category?.description ?? `${title}相关的服务器优惠、评测与选购文章。`;
-  const canonicalSlug = category?.slug ?? decodedCategory;
-  const canonical = `${getSiteUrl()}/fwq/${encodeURIComponent(canonicalSlug)}/page/${pageNo}`;
-  const englishSlug = category?.enSlug?.trim();
-  const englishUrl = englishSlug
-    ? `${getSiteUrl()}/en/fwq/${encodeURIComponent(englishSlug)}/page/${pageNo}`
-    : undefined;
-  return {
-    title: `${title}-服务器go`,
-    description,
-    keywords: category?.keywords ?? readableName,
-    robots: {
-      index: Boolean(
-        category?.publishedPostCount && category.publishedPostCount >= 3,
-      ),
-      follow: true,
-    },
-    alternates: {
-      canonical,
-      languages: {
-        "zh-CN": canonical,
-        ...(englishUrl ? { en: englishUrl } : {}),
-        "x-default": canonical,
-      },
-    },
-    openGraph: {
-      title: `${title}-服务器go`,
-      description,
-      url: canonical,
-      siteName: "服务器go",
-    },
-  };
+  const state = await resolveCategoryPage(params.category, params.pageNo, "zh");
+  return taxonomyPageMetadata({ ...state, kind: "category", language: "zh" });
 }
-
 
 const CategoryPageContent = async ({
   paramsPromise,
@@ -95,24 +54,12 @@ const CategoryPageContent = async ({
   await connection();
 
   const params = await paramsPromise;
-  const pageNo = parsePositiveInt(params.pageNo);
-  if (!pageNo) {
-    notFound();
-  }
-
-  const { data: category, error: categoryError } = await CategoryInfo(
-    params.category,
-  );
-  if (categoryError) return <div>加载失败: {categoryError}</div>;
-  if (!category) notFound();
-  const { data: totalCount } = await getPublishedPostCountByCategoryId(
-    category.id,
-  );
-  const totalPage = Math.ceil((totalCount ?? 0) / 10);
-
-  if (pageNo > Math.max(totalPage, 1)) {
-    notFound();
-  }
+  const {
+    taxonomy: category,
+    pageNo,
+    totalCount,
+    totalPage,
+  } = await resolveCategoryPage(params.category, params.pageNo, "zh");
 
   const [
     { data: posts, error: postsError },
@@ -136,7 +83,7 @@ const CategoryPageContent = async ({
     totalCount: totalCount ?? 0,
     pageNo,
   };
-  if (postsError) return <div>加载失败: {postsError}</div>;
+  if (postsError) throw new Error(postsError);
   if (!posts) notFound();
   const pageUrl = `${getSiteUrl()}/fwq/${encodeURIComponent(category.slug)}/page/${pageNo}`;
   const collectionJsonLd = {
@@ -211,16 +158,16 @@ const CategoryPageContent = async ({
   );
 };
 
-async function CategoryInfo(slug: string) {
-  return await getCategoryBySlug(slug);
-}
-
 export default function CategoryPage(props: {
   params: Promise<{ category: string; pageNo: string }>;
 }) {
   return (
     <Suspense
-      fallback={<div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">正在加载分类文章...</div>}
+      fallback={
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
+          正在加载分类文章...
+        </div>
+      }
     >
       <CategoryPageContent paramsPromise={props.params} />
     </Suspense>

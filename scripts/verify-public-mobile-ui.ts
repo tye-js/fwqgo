@@ -58,6 +58,8 @@ assert.equal(
   "Every public feature page must have exactly one app route entry",
 );
 const delegatedPublicShells = new Set([
+  "knowledge/index-render/[variant]/page.tsx",
+  "en/knowledge/index-render/[variant]/page.tsx",
   "en/knowledge/[slug]/page.tsx",
   "en/knowledge/page.tsx",
   "en/tools/server-sizing/page.tsx",
@@ -86,8 +88,9 @@ const publicSources = listFiles(join(root, "src/features/public"))
 
 assert.equal(
   webRoutePages.length,
-  26,
-  "Expected the complete public page route set",
+  28,
+  // Two guarded ISR render entries preserve the existing public knowledge URLs.
+  "Expected 26 public page entries plus two internal knowledge ISR entries",
 );
 
 for (const file of publicSources) {

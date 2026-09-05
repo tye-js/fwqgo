@@ -5,6 +5,10 @@ import ts from "typescript";
 const root = process.cwd();
 const requirements = new Map<string, string[]>([
   [
+    "src/features/public/data/knowledge.ts",
+    ["getPublicKnowledgeCategories", "getCachedKnowledgeBrowseItems"],
+  ],
+  [
     "src/features/public/data/post.ts",
     [
       "getPublishedPostCountByCategoryId",
@@ -232,7 +236,9 @@ if (
   !articlePresentationSource.includes("readPublicPostInternalLinks") ||
   !articlePresentationSource.includes("content: post.content")
 ) {
-  errors.push("Article presentation must reuse the loaded body for link hashing");
+  errors.push(
+    "Article presentation must reuse the loaded body for link hashing",
+  );
 }
 for (const errorMessage of [
   "获取文章 SEO 信息失败",
@@ -292,16 +298,32 @@ if (
 ) {
   errors.push("The article build placeholder must return a real noindex 404");
 }
+const routePolicy = fs.readFileSync(
+  path.join(root, "packages/core/public-route-policy.ts"),
+  "utf8",
+);
 for (const bypass of [
-  'key: "RSC"',
-  'key: "Next-Router-Prefetch"',
-  'key: "Next-Router-Segment-Prefetch"',
-  'key: "Next-Router-State-Tree"',
-  'key: "_rsc"',
+  "rsc",
+  "next-router-prefetch",
+  "next-router-segment-prefetch",
+  "next-router-state-tree",
+  "cookie",
+  "authorization",
 ]) {
-  if (!webNextConfig.includes(bypass)) {
-    errors.push(`Public article CDN headers must bypass ${bypass}`);
+  if (!routePolicy.includes(`"${bypass}"`)) {
+    errors.push(`Public article cache policy must bypass ${bypass}`);
   }
+}
+if (!webProxySource.includes("isPublicHtmlRequest(request)")) {
+  errors.push("The proxy must apply the shared HTML cache boundary");
+}
+if (
+  webNextConfig.includes("publicArticleCacheHeaders") ||
+  webNextConfig.includes('key: "CDN-Cache-Control"')
+) {
+  errors.push(
+    "Path-only headers must never cache article 404 or 5xx responses",
+  );
 }
 
 if (errors.length > 0) {

@@ -173,7 +173,10 @@ async function saveCategorySeo(
     return { error: "分类不存在" };
   }
 
-  let normalizedEnSlug = normalizeOptionalSlug(input.enSlug);
+  let normalizedEnSlug =
+    options.makeEnSlugUnique && currentCategory.enSlug
+      ? currentCategory.enSlug
+      : normalizeOptionalSlug(input.enSlug);
 
   if (normalizedEnSlug) {
     if (options.makeEnSlugUnique) {

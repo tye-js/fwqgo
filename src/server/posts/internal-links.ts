@@ -1,6 +1,12 @@
+import {
+  publicPostCondition,
+  publicCategoryPostCountSql,
+  publicTagPostCountSql,
+} from "./public-post-policy";
+import { publicKnowledgeCondition } from "@/server/knowledge/public-knowledge-policy";
 import { createHash } from "node:crypto";
 
-import { and, eq, inArray, ne, or } from "drizzle-orm";
+import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
 
 import {
   findTagAnchorInContent,
@@ -12,6 +18,12 @@ import {
   type RelatedPostRelevanceCandidate,
   type TagRelevanceCandidate,
 } from "@fwqgo/core/article-internal-links";
+import {
+  isPublicCategoryIndexable,
+  isPublicArticleSourceRenderable,
+  isPublicTagIndexable,
+  MIN_INDEXABLE_TAXONOMY_POSTS,
+} from "@fwqgo/core/public-content-policy";
 import { resolveEnglishTagIdentity } from "@fwqgo/core/taxonomy";
 import { db, readDb } from "@fwqgo/db";
 import {
@@ -167,8 +179,7 @@ async function loadGenerationContext(
     .from(posts)
     .where(
       and(
-        eq(posts.language, sourcePost.language),
-        eq(posts.published, true),
+        publicPostCondition(sourcePost.language),
         ne(posts.id, sourcePost.id),
       ),
     )
@@ -214,9 +225,9 @@ async function loadGenerationContext(
         .from(knowledgeArticles)
         .where(
           and(
-            eq(knowledgeArticles.language, sourcePost.language),
-            eq(knowledgeArticles.published, true),
-            ne(knowledgeArticles.contentRole, "post_purchase_guide"),
+            publicKnowledgeCondition(
+              sourcePost.language === "en" ? "en" : "zh",
+            ),
           ),
         )
         .limit(300)
@@ -245,6 +256,23 @@ export async function regeneratePostInternalLinks(input: {
   const generatedBy = input.generatedBy ?? "rule";
   const sourceLanguage: ArticleLinkLanguage =
     context.sourcePost.language === "en" ? "en" : "zh";
+  const eligibleTags =
+    context.sourceTags.length > 0
+      ? await db
+          .select({ id: tags.id })
+          .from(tags)
+          .where(
+            and(
+              inArray(
+                tags.id,
+                context.sourceTags.map((tag) => tag.id),
+              ),
+              eq(tags.indexable, true),
+              sql`${publicTagPostCountSql(sourceLanguage, tags.id)} >= ${MIN_INDEXABLE_TAXONOMY_POSTS}`,
+            ),
+          )
+      : [];
+  const eligibleTagIds = new Set(eligibleTags.map((tag) => tag.id));
   const sourceContentHash = contentHash(context.sourcePost.content);
   const existingProtected = await db
     .select({
@@ -300,6 +328,7 @@ export async function regeneratePostInternalLinks(input: {
     );
 
   const scoredTags = context.sourceTags
+    .filter((tag) => eligibleTagIds.has(tag.id))
     .filter(
       (candidate) =>
         sourceLanguage !== "en" ||
@@ -479,6 +508,7 @@ export async function readPublicPostInternalLinks(
       postTitle: posts.title,
       postDescription: posts.description,
       postSlug: posts.slug,
+      postContent: posts.content,
       postLanguage: posts.language,
       postPublished: posts.published,
       knowledgeTitle: knowledgeArticles.title,
@@ -491,10 +521,16 @@ export async function readPublicPostInternalLinks(
       categoryEnName: categories.enName,
       categorySlug: categories.slug,
       categoryEnSlug: categories.enSlug,
+      categoryPublishedPostCount: publicCategoryPostCountSql(
+        language,
+        categories.id,
+      ),
       tagName: tags.name,
       tagEnName: tags.enName,
       tagSlug: tags.slug,
       tagEnSlug: tags.enSlug,
+      tagIndexable: tags.indexable,
+      tagPublishedPostCount: publicTagPostCountSql(language, tags.id),
     })
     .from(postInternalLinks)
     .leftJoin(posts, eq(postInternalLinks.targetPostId, posts.id))
@@ -526,7 +562,12 @@ export async function readPublicPostInternalLinks(
       row.postPublished &&
       row.postLanguage === language &&
       row.postTitle &&
-      row.postSlug
+      row.postSlug &&
+      isPublicArticleSourceRenderable({
+        title: row.postTitle,
+        slug: row.postSlug,
+        content: row.postContent,
+      })
     ) {
       return [
         {
@@ -568,7 +609,12 @@ export async function readPublicPostInternalLinks(
         },
       ];
     }
-    if (row.targetType === "category" && row.categoryName && row.categorySlug) {
+    if (
+      row.targetType === "category" &&
+      row.categoryName &&
+      row.categorySlug &&
+      isPublicCategoryIndexable(Number(row.categoryPublishedPostCount ?? 0))
+    ) {
       return [
         {
           id: row.id,
@@ -592,7 +638,15 @@ export async function readPublicPostInternalLinks(
         },
       ];
     }
-    if (row.targetType === "tag" && row.tagName && row.tagSlug) {
+    if (
+      row.targetType === "tag" &&
+      row.tagName &&
+      row.tagSlug &&
+      isPublicTagIndexable({
+        indexable: row.tagIndexable,
+        publishedPostCount: Number(row.tagPublishedPostCount ?? 0),
+      })
+    ) {
       return [
         {
           id: row.id,

@@ -33,24 +33,6 @@ type FooterGroup = {
   links: FooterLink[];
 };
 
-const fallbackQuickCategories: Record<
-  PublicLanguage,
-  Array<{ id: number; name: string; slug: string }>
-> = {
-  zh: [
-    { id: 0, name: "香港服务器", slug: "hk-vps" },
-    { id: -1, name: "出海服务器", slug: "export-vps" },
-    { id: -2, name: "高防服务器", slug: "ddos-vps" },
-    { id: -3, name: "原生 IP 服务器", slug: "isp-vps" },
-  ],
-  en: [
-    { id: 0, name: "Hong Kong VPS", slug: "hk-vps" },
-    { id: -1, name: "Global Business Servers", slug: "export-vps" },
-    { id: -2, name: "DDoS Protected Servers", slug: "ddos-vps" },
-    { id: -3, name: "Native IP Servers", slug: "isp-vps" },
-  ],
-};
-
 const footerCopy = {
   zh: {
     description:
@@ -100,21 +82,6 @@ const footerCopy = {
         title: "站内搜索",
         href: "/search",
         description: "搜索商家、地区和优惠码",
-      },
-      {
-        title: "高防服务器",
-        href: "/fwq/ddos-vps/page/1",
-        description: "防护、线路和应用场景",
-      },
-      {
-        title: "出海服务器",
-        href: "/fwq/export-vps/page/1",
-        description: "海外业务与访问线路",
-      },
-      {
-        title: "原生 IP 服务器",
-        href: "/fwq/isp-vps/page/1",
-        description: "住宅 IP、原生 IP 相关内容",
       },
     ],
   },
@@ -167,21 +134,6 @@ const footerCopy = {
         href: "/search?lang=en",
         description: "Find providers, regions, and coupons",
       },
-      {
-        title: "DDoS protected servers",
-        href: "/en/fwq/ddos-vps/page/1",
-        description: "Protection, routes, and use cases",
-      },
-      {
-        title: "Offshore servers",
-        href: "/en/fwq/export-vps/page/1",
-        description: "International hosting and routes",
-      },
-      {
-        title: "Native IP servers",
-        href: "/en/fwq/isp-vps/page/1",
-        description: "Native IP and residential IP topics",
-      },
     ],
   },
 } satisfies Record<
@@ -228,11 +180,7 @@ function FooterTextLink({ link }: { link: FooterLink }) {
   );
 }
 
-function ContactEmailLink({
-  email,
-}: {
-  email: string;
-}) {
+function ContactEmailLink({ email }: { email: string }) {
   const atIndex = email.indexOf("@");
   const localPart = atIndex >= 0 ? email.slice(0, atIndex) : email;
   const domain = atIndex >= 0 ? email.slice(atIndex + 1) : "";
@@ -291,10 +239,6 @@ function FooterView({
     language,
   ).slice(0, 6);
 
-  const visibleQuickCategories =
-    quickCategories.length > 0
-      ? quickCategories
-      : fallbackQuickCategories[language];
   const groups: FooterGroup[] = [
     {
       id: "topics",
@@ -302,15 +246,19 @@ function FooterView({
       icon: Server,
       links: copy.topics,
     },
-    {
-      id: "categories",
-      title: copy.categoryTitle,
-      icon: Tags,
-      links: visibleQuickCategories.map((category) => ({
-        title: category.name,
-        href: categoryHref(category.slug, language),
-      })),
-    },
+    ...(quickCategories.length > 0
+      ? [
+          {
+            id: "categories",
+            title: copy.categoryTitle,
+            icon: Tags,
+            links: quickCategories.map((category) => ({
+              title: category.name,
+              href: categoryHref(category.slug, language),
+            })),
+          } satisfies FooterGroup,
+        ]
+      : []),
     {
       id: "utilities",
       title: copy.utilityTitle,

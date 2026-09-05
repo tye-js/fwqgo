@@ -1,3 +1,5 @@
 sandbox_mode = "workspace-write"
 
 approval_policy = "on-failure"
+model_reasoning_summary = "concise"
+web_search = "live"

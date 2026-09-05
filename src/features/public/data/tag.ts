@@ -7,12 +7,13 @@ import { attachTagsToPosts } from "@/features/public/data/post-tags";
 import { postTags, posts, tags } from "@fwqgo/db/schema";
 import { resolveEnglishTagIdentity } from "@fwqgo/core/taxonomy";
 import { ilikeContains } from "@/server/db/search";
+import {
+  publicPostCondition,
+  publicTagPostCountSql,
+} from "@/server/posts/public-post-policy";
+import { MIN_INDEXABLE_TAXONOMY_POSTS } from "@fwqgo/core/public-content-policy";
 
 type PublicLanguage = "zh" | "en";
-
-function publishedPostCondition(language: PublicLanguage = "zh") {
-  return and(eq(posts.published, true), eq(posts.language, language));
-}
 
 function nonEmptyTrim(value: string | null | undefined) {
   const trimmed = value?.trim();
@@ -46,7 +47,7 @@ function localizeTag<
     };
   }
 
-  return tag;
+  return { ...tag, zhSlug: tag.slug };
 }
 
 export async function getTagBySlug(
@@ -54,7 +55,7 @@ export async function getTagBySlug(
   language: PublicLanguage = "zh",
 ) {
   "use cache";
-  tagCache(cacheTags.tags, cacheTags.tagSlug(tagSlug));
+  tagCache(cacheTags.posts, cacheTags.tags, cacheTags.tagSlug(tagSlug));
 
   try {
     const [tag] = await readDb
@@ -69,7 +70,8 @@ export async function getTagBySlug(
         enDescription: tags.enDescription,
         enKeywords: tags.enKeywords,
         indexable: tags.indexable,
-        publishedPostCount: sql<number>`count(${posts.id}) filter (where ${posts.published} = true and ${posts.language} = ${language})::int`,
+        zhPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${publicPostCondition("zh")})::int`,
+        enPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${publicPostCondition("en")})::int`,
       })
       .from(tags)
       .leftJoin(postTags, eq(postTags.tagId, tags.id))
@@ -82,10 +84,21 @@ export async function getTagBySlug(
       .groupBy(tags.id)
       .limit(1);
 
-    return { data: tag ? localizeTag(tag, language) : null };
+    const localizedTag = tag ? localizeTag(tag, language) : null;
+    return {
+      error: undefined,
+      data: localizedTag
+        ? {
+            ...localizedTag,
+            publishedPostCount:
+              language === "en"
+                ? localizedTag.enPublishedPostCount
+                : localizedTag.zhPublishedPostCount,
+          }
+        : null,
+    };
   } catch (error) {
-    console.error("Failed to load public tag:", error);
-    return { error: "通过标签 slug 查询标签信息失败" };
+    throw new Error("通过标签 slug 查询标签信息失败", { cause: error });
   }
 }
 
@@ -123,18 +136,18 @@ export async function getPostsWithTagsByTagSlug(
       .limit(1);
 
     if (!tag) {
-      return { data: null };
+      return { data: null, error: undefined };
     }
     const localizedTag = localizeTag(tag, language);
     if (!localizedTag) {
-      return { data: null };
+      return { data: null, error: undefined };
     }
 
     const [countResult] = await readDb
       .select({ count: count() })
       .from(postTags)
       .innerJoin(posts, eq(posts.id, postTags.postId))
-      .where(and(eq(postTags.tagId, tag.id), publishedPostCondition(language)));
+      .where(and(eq(postTags.tagId, tag.id), publicPostCondition(language)));
     const totalCount = countResult?.count ?? 0;
     const totalPage = Math.ceil(totalCount / 10);
     const tagPosts =
@@ -152,7 +165,7 @@ export async function getPostsWithTagsByTagSlug(
             .from(posts)
             .innerJoin(postTags, eq(posts.id, postTags.postId))
             .where(
-              and(eq(postTags.tagId, tag.id), publishedPostCondition(language)),
+              and(eq(postTags.tagId, tag.id), publicPostCondition(language)),
             )
             .orderBy(desc(posts.createdAt), desc(posts.id))
             .offset((currentPage - 1) * 10)
@@ -167,10 +180,9 @@ export async function getPostsWithTagsByTagSlug(
       posts: postsWithTags.map((post) => ({ post })),
     };
 
-    return { data: result };
+    return { data: result, error: undefined };
   } catch (error) {
-    console.error("Failed to load public tag posts:", error);
-    return { error: "通过标签获取文章信息失败" };
+    throw new Error("通过标签获取文章信息失败", { cause: error });
   }
 }
 
@@ -191,9 +203,13 @@ export async function findBestTagMatch(keyword: string) {
     })
     .from(tags)
     .where(
-      or(
-        ilikeContains(tags.name, normalizedKeyword),
-        ilikeContains(tags.slug, normalizedSlug),
+      and(
+        eq(tags.indexable, true),
+        sql`${publicTagPostCountSql("zh", tags.id)} >= ${MIN_INDEXABLE_TAXONOMY_POSTS}`,
+        or(
+          ilikeContains(tags.name, normalizedKeyword),
+          ilikeContains(tags.slug, normalizedSlug),
+        ),
       ),
     )
     .orderBy(

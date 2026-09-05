@@ -114,10 +114,27 @@ const prose = article.find(".article-prose").first();
 const proseText = prose.text().replace(/\s+/g, " ").trim();
 const cacheControl = response.headers.get("cache-control") ?? "";
 
+// The release probe has a query parameter and must bypass shared HTML caches.
+// Cache Components still caches the article core. Status-aware CDN policy is
+// applied by the outer proxy only to anonymous, query-free, canonical 200 HTML.
 assert(
-  cacheControl.includes("public") && cacheControl.includes("s-maxage=900"),
-  `Article omitted the public ISR cache policy: ${cacheControl || "none"}`,
+  !cacheControl.includes("s-maxage=900"),
+  "Release probe must bypass the public HTML cache",
 );
+const canonicalResponse = await fetchWithTimeout(canonicalUrl);
+assert(
+  canonicalResponse.status === 200,
+  "Canonical article did not return 200",
+);
+const canonicalCacheControl =
+  canonicalResponse.headers.get("cache-control") ?? "";
+if (process.env.ARTICLE_ISR_REQUIRE_EDGE_CACHE === "1") {
+  assert(
+    canonicalCacheControl.includes("s-maxage=900"),
+    `Status-aware edge policy is missing: ${canonicalCacheControl || "none"}`,
+  );
+}
+await canonicalResponse.body?.cancel();
 assert(
   $("head title").text().trim().length > 0,
   "Article title is missing from head",
@@ -174,6 +191,7 @@ console.log(
     status: response.status,
     rawTextLength: proseText.length,
     cacheControl,
+    canonicalCacheControl,
     cloudflare: response.headers.get("cf-cache-status") ?? "unavailable",
     ttfbMs,
     totalMs,

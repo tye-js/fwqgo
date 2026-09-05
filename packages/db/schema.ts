@@ -37,6 +37,7 @@ export const posts = pgTable(
     affiliateReviewDetails: text("affiliateReviewDetails"),
     affiliateReviewUpdatedAt: timestamp("affiliateReviewUpdatedAt"),
     published: boolean("published").default(false).notNull(),
+    slugLocked: boolean("slugLocked").default(false).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt"),
     views: integer("views").default(0).notNull(),
@@ -185,6 +186,49 @@ export const tags = pgTable(
   (table) => ({
     indexableIdx: index("tags_indexable_idx").on(table.indexable),
     enSlugUnique: unique("tags_enSlug_unique").on(table.enSlug),
+  }),
+);
+
+// Historical public URLs point to an entity, never to another redirect. The
+// database records changes in the same transaction as the canonical slug.
+export const publicSlugRedirects = pgTable(
+  "public_slug_redirects",
+  {
+    id: serial("id").primaryKey(),
+    kind: varchar("kind", { length: 16 }).notNull(),
+    language: varchar("language", { length: 8 }).notNull(),
+    oldSlug: text("oldSlug").notNull(),
+    newSlug: text("newSlug").notNull(),
+    postId: integer("postId").references(() => posts.id, {
+      onDelete: "cascade",
+    }),
+    categoryId: integer("categoryId").references(() => categories.id, {
+      onDelete: "cascade",
+    }),
+    tagId: integer("tagId").references(() => tags.id, { onDelete: "cascade" }),
+    changedAt: timestamp("changedAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    oldSlugUnique: uniqueIndex(
+      "public_slug_redirects_kind_language_oldSlug_unique",
+    ).on(table.kind, table.language, table.oldSlug),
+    postIdx: index("public_slug_redirects_postId_idx").on(table.postId),
+    categoryIdx: index("public_slug_redirects_categoryId_idx").on(
+      table.categoryId,
+    ),
+    tagIdx: index("public_slug_redirects_tagId_idx").on(table.tagId),
+    languageCheck: check(
+      "public_slug_redirects_language_check",
+      sql`${table.language} in ('zh', 'en')`,
+    ),
+    targetCheck: check(
+      "public_slug_redirects_target_check",
+      sql`
+      (${table.kind} = 'post' and ${table.postId} is not null and ${table.categoryId} is null and ${table.tagId} is null)
+      or (${table.kind} = 'category' and ${table.categoryId} is not null and ${table.postId} is null and ${table.tagId} is null)
+      or (${table.kind} = 'tag' and ${table.tagId} is not null and ${table.postId} is null and ${table.categoryId} is null)
+    `,
+    ),
   }),
 );
 

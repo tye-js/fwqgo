@@ -4,6 +4,50 @@ import { ArrowRight, CalendarDays } from "lucide-react";
 import { type PostWithTags } from "@/types";
 import { SafePostImage } from "@/features/public/components/safe-post-image";
 
+type ArticleCardTag = PostWithTags["tags"][number]["tag"];
+
+function ArticleTagLabel({
+  tag,
+  tagPrefix,
+  primary = false,
+}: {
+  tag: ArticleCardTag;
+  tagPrefix: string;
+  primary?: boolean;
+}) {
+  const content = primary ? (
+    <>
+      <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
+      {tag.name}
+    </>
+  ) : (
+    <>#{tag.name}</>
+  );
+  const className = primary
+    ? "relative z-10 inline-flex min-h-11 items-center gap-1.5 rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    : "relative z-10 inline-flex min-h-11 items-center text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
+
+  if (!tag.publiclyIndexable) {
+    return (
+      <span
+        className={primary ? className : `${className} pointer-events-none`}
+      >
+        {content}
+      </span>
+    );
+  }
+
+  return (
+    <Link
+      href={`${tagPrefix}/${encodeURIComponent(tag.slug)}/page/1`}
+      prefetch
+      className={className}
+    >
+      {content}
+    </Link>
+  );
+}
+
 function formatArticleDate(value: Date | string, locale: string) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -69,17 +113,7 @@ function ArticleCard({
         <div className="flex min-w-0 flex-col px-4 py-4 md:min-h-[150px] md:px-5 md:py-4">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
             {primaryTag ? (
-              <Link
-                href={`${tagPrefix}/${encodeURIComponent(primaryTag.slug)}/page/1`}
-                prefetch
-                className="relative z-10 inline-flex min-h-11 items-center gap-1.5 rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <span
-                  className="size-1.5 rounded-full bg-primary"
-                  aria-hidden="true"
-                />
-                {primaryTag.name}
-              </Link>
+              <ArticleTagLabel tag={primaryTag} tagPrefix={tagPrefix} primary />
             ) : null}
             <span className="inline-flex min-h-8 items-center gap-1.5 tabular-nums">
               <CalendarDays className="size-3.5" aria-hidden="true" />
@@ -107,14 +141,11 @@ function ArticleCard({
           <div className="mt-auto flex min-w-0 flex-wrap items-end justify-between gap-x-4 gap-y-2 pt-3">
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
               {secondaryTags.map((tag) => (
-                <Link
+                <ArticleTagLabel
                   key={tag.tag.id}
-                  href={`${tagPrefix}/${encodeURIComponent(tag.tag.slug)}/page/1`}
-                  prefetch
-                  className="relative z-10 inline-flex min-h-11 items-center text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
-                  #{tag.tag.name}
-                </Link>
+                  tag={tag.tag}
+                  tagPrefix={tagPrefix}
+                />
               ))}
             </div>
 

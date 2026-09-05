@@ -1,9 +1,13 @@
+import { getPublishedPostCount } from "@/features/public/data/post";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
-import { AllArticlesPageContent } from "@/features/public/components/all-articles-page";
+import {
+  AllArticlesPageContent,
+  resolveAllArticlesPage,
+} from "@/features/public/components/all-articles-page";
 import { Separator } from "@/components/ui/separator";
 
 function getSiteUrl() {
@@ -16,20 +20,26 @@ function getSiteUrl() {
 export async function generateMetadata(props: {
   params: Promise<{ pageNo: string }>;
 }): Promise<Metadata> {
-  const { pageNo } = await props.params;
-  const canonical = `${getSiteUrl()}/en/fwq/page/${encodeURIComponent(pageNo)}`;
-  const chineseUrl = `${getSiteUrl()}/fwq/page/${encodeURIComponent(pageNo)}`;
+  const { pageNo, totalCount } = await resolveAllArticlesPage(
+    props.params,
+    "en",
+  );
+  const { data: siblingCount } = await getPublishedPostCount("zh");
+  const canonical = `${getSiteUrl()}/en/fwq/page/${pageNo}`;
+  const chineseUrl = `${getSiteUrl()}/fwq/page/${pageNo}`;
+  const englishUrl = `${getSiteUrl()}/en/fwq/page/${pageNo}`;
+  const languages =
+    pageNo === 1 && totalCount > 0 && siblingCount > 0
+      ? { "zh-CN": chineseUrl, en: englishUrl, "x-default": chineseUrl }
+      : undefined;
 
   return {
     title: "All Articles - fwqgo",
     description: "Browse all fwqgo server deals, reviews, and buying guides.",
+    robots: { index: pageNo === 1 && totalCount > 0, follow: true },
     alternates: {
       canonical,
-      languages: {
-        "zh-CN": chineseUrl,
-        en: canonical,
-        "x-default": chineseUrl,
-      },
+      languages,
     },
     openGraph: {
       title: "All Articles - fwqgo",
@@ -48,7 +58,13 @@ export default function EnglishAllArticlesPage(props: {
       <Header language="en" />
       <Separator />
       <main className="container mx-auto flex-1 py-6 md:py-8">
-        <Suspense fallback={<div className="px-4 py-6 text-sm text-muted-foreground">Loading articles...</div>}>
+        <Suspense
+          fallback={
+            <div className="px-4 py-6 text-sm text-muted-foreground">
+              Loading articles...
+            </div>
+          }
+        >
           <AllArticlesPageContent paramsPromise={props.params} language="en" />
         </Suspense>
       </main>

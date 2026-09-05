@@ -1,7 +1,8 @@
 import {
-  getPostsWithTagsByTagSlug,
-  getTagBySlug,
-} from "@/features/public/data/tag";
+  resolveTagPage,
+  taxonomyPageMetadata,
+} from "@/features/public/lib/taxonomy-page";
+import { getPostsWithTagsByTagSlug } from "@/features/public/data/tag";
 import { getLatestPostsForSidebar } from "@/features/public/data/post";
 import ArticleCard from "@/features/public/components/article-card";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
@@ -9,11 +10,7 @@ import { TagContextSidebar } from "@/features/public/components/tag-context-side
 import PageCard from "@/features/public/components/page-card";
 import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
 import { PaginationComponent } from "@/features/shared/components/pagination";
-import {
-  decodeSlug,
-  jsonLdScriptContent,
-  parsePositiveInt,
-} from "@fwqgo/core/utils";
+import { decodeSlug, jsonLdScriptContent } from "@fwqgo/core/utils";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getServerOffersByKeywords } from "@/server/offers/server-offers";
@@ -39,48 +36,9 @@ export async function generateMetadata(props: {
   params: Promise<{ tagSlug: string; pageNo: string }>;
 }): Promise<Metadata> {
   const params = await props.params;
-  const decodedTagSlug = decodeSlug(params.tagSlug);
-  const pageNo = parsePositiveInt(params.pageNo);
-  if (!pageNo) {
-    notFound();
-  }
-  const readableName = decodedTagSlug.replace(/[-_]+/g, " ");
-  const { data: tag, error: tagError } = await getTagBySlug(decodedTagSlug);
-  if (!tag && !tagError) notFound();
-  const title = tag?.name ?? readableName;
-  const description =
-    tag?.description ?? `${title}相关服务器、VPS、优惠和测评文章。`;
-  const canonicalSlug = tag?.slug ?? decodedTagSlug;
-  const canonical = `${getSiteUrl()}/fwq/tags/${encodeURIComponent(canonicalSlug)}/page/${pageNo}`;
-  const englishSlug = tag?.enSlug?.trim();
-  const englishUrl = englishSlug
-    ? `${getSiteUrl()}/en/fwq/tags/${encodeURIComponent(englishSlug)}/page/${pageNo}`
-    : undefined;
-  return {
-    title: `${title}-服务器`,
-    description,
-    keywords: tag?.keywords ?? `${title}的服务器,${title}的VPS`,
-    robots: {
-      index: Boolean(tag?.indexable && (tag.publishedPostCount ?? 0) >= 3),
-      follow: true,
-    },
-    alternates: {
-      canonical,
-      languages: {
-        "zh-CN": canonical,
-        ...(englishUrl ? { en: englishUrl } : {}),
-        "x-default": canonical,
-      },
-    },
-    openGraph: {
-      title: `${title}-服务器`,
-      description,
-      url: canonical,
-      siteName: "服务器go",
-    },
-  };
+  const state = await resolveTagPage(params.tagSlug, params.pageNo, "zh");
+  return taxonomyPageMetadata({ ...state, kind: "tag", language: "zh" });
 }
-
 
 async function TagPageContent({
   paramsPromise,
@@ -88,27 +46,14 @@ async function TagPageContent({
   paramsPromise: Promise<{ tagSlug: string; pageNo: string }>;
 }) {
   const params = await paramsPromise;
+  const { pageNo } = await resolveTagPage(params.tagSlug, params.pageNo, "zh");
   const decodedTagSlug = decodeSlug(params.tagSlug);
-  const pageNo = parsePositiveInt(params.pageNo);
-
-  if (!pageNo) {
-    notFound();
-  }
 
   const { data: postsWithTag, error } = await getPostsWithTagsByTagSlug(
     decodedTagSlug,
     pageNo,
   );
-  if (error) {
-    return (
-      <div
-        role="alert"
-        className="mx-4 rounded-lg border border-destructive/30 bg-destructive/5 p-5 text-sm text-destructive sm:mx-6"
-      >
-        标签内容暂时加载失败，请稍后刷新页面。
-      </div>
-    );
-  }
+  if (error) throw new Error(error);
   if (!postsWithTag?.posts) {
     notFound();
   }
@@ -125,7 +70,7 @@ async function TagPageContent({
   const posts = postsWithTag.posts;
   const totalPage = Math.ceil((postsWithTag.totalCount ?? 0) / 10);
 
-  if (postsWithTag.pageNo > Math.max(totalPage, 1)) {
+  if (postsWithTag.pageNo > totalPage) {
     notFound();
   }
   const [{ data: latestPosts }, relatedOffers] = await Promise.all([
@@ -213,7 +158,11 @@ export default function TagPage(props: {
 }) {
   return (
     <Suspense
-      fallback={<div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">正在加载标签文章...</div>}
+      fallback={
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
+          正在加载标签文章...
+        </div>
+      }
     >
       <TagPageContent paramsPromise={props.params} />
     </Suspense>

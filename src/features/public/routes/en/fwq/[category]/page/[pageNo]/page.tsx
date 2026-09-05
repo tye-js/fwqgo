@@ -1,14 +1,16 @@
+import {
+  resolveCategoryPage,
+  taxonomyPageMetadata,
+} from "@/features/public/lib/taxonomy-page";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { Compass } from "lucide-react";
 
-import { getCategoryBySlug } from "@/features/shared/data/category";
 import {
   getLatestPostsForSidebar,
   getPostsWithTagsByCategoryId,
-  getPublishedPostCountByCategoryId,
 } from "@/features/public/data/post";
 import ArticleCard from "@/features/public/components/article-card";
 import Footer from "@/features/public/components/footer";
@@ -20,11 +22,7 @@ import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import {
-  decodeSlug,
-  jsonLdScriptContent,
-  parsePositiveInt,
-} from "@fwqgo/core/utils";
+import { jsonLdScriptContent } from "@fwqgo/core/utils";
 import { getServerOffersByKeywords } from "@/server/offers/server-offers";
 
 function getSiteUrl() {
@@ -47,49 +45,8 @@ export async function generateMetadata(props: {
   params: Promise<{ category: string; pageNo: string }>;
 }): Promise<Metadata> {
   const params = await props.params;
-  const decodedCategory = decodeSlug(params.category);
-  const pageNo = parsePositiveInt(params.pageNo);
-  if (!pageNo) notFound();
-  const { data: category, error: categoryError } = await getCategoryBySlug(decodedCategory, "en");
-  if (!category && !categoryError) notFound();
-  const title = category?.name ?? decodedCategory.replace(/[-_]+/g, " ");
-  const canonicalSlug = category?.slug ?? decodedCategory;
-  const zhSlug =
-    category && "zhSlug" in category && typeof category.zhSlug === "string"
-      ? category.zhSlug
-      : decodedCategory;
-  const canonicalUrl = `${getSiteUrl()}/en/fwq/${encodeURIComponent(canonicalSlug)}/page/${pageNo}`;
-  const zhUrl = `${getSiteUrl()}/fwq/${encodeURIComponent(zhSlug)}/page/${pageNo}`;
-
-  const description =
-    category?.description ??
-    `${title} server deals, VPS reviews, coupons, and buying guides.`;
-
-  return {
-    title: `${title} - fwqgo`,
-    description,
-    keywords: category?.keywords ?? title,
-    robots: {
-      index: Boolean(
-        category?.publishedPostCount && category.publishedPostCount >= 3,
-      ),
-      follow: true,
-    },
-    alternates: {
-      canonical: canonicalUrl,
-      languages: {
-        "zh-CN": zhUrl,
-        en: canonicalUrl,
-        "x-default": zhUrl,
-      },
-    },
-    openGraph: {
-      title: `${title} - fwqgo`,
-      description,
-      url: canonicalUrl,
-      siteName: "fwqgo",
-    },
-  };
+  const state = await resolveCategoryPage(params.category, params.pageNo, "en");
+  return taxonomyPageMetadata({ ...state, kind: "category", language: "en" });
 }
 
 async function CategoryPageContent({
@@ -100,26 +57,12 @@ async function CategoryPageContent({
   await connection();
 
   const params = await paramsPromise;
-  const decodedCategory = decodeSlug(params.category);
-  const pageNo = parsePositiveInt(params.pageNo);
-  if (!pageNo) notFound();
-
-  const { data: category, error: categoryError } = await getCategoryBySlug(
-    decodedCategory,
-    "en",
-  );
-  if (categoryError) return <div>Failed to load category.</div>;
-  if (!category) notFound();
-
-  const { data: totalCount } = await getPublishedPostCountByCategoryId(
-    category.id,
-    "en",
-  );
-  const totalPage = Math.ceil((totalCount ?? 0) / 10);
-
-  if (pageNo > Math.max(totalPage, 1)) {
-    notFound();
-  }
+  const {
+    taxonomy: category,
+    pageNo,
+    totalCount,
+    totalPage,
+  } = await resolveCategoryPage(params.category, params.pageNo, "en");
 
   const [
     { data: posts, error: postsError },
@@ -134,7 +77,7 @@ async function CategoryPageContent({
     }),
   ]);
 
-  if (postsError) return <div>Failed to load articles.</div>;
+  if (postsError) throw new Error(postsError);
   if (!posts) notFound();
   const pageDescription =
     category.description ??
@@ -234,7 +177,11 @@ export default function EnglishCategoryPage(props: {
       <Separator />
       <main className="container mx-auto flex-1 px-4 py-6 md:py-8">
         <Suspense
-          fallback={<div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">Loading category articles...</div>}
+          fallback={
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
+              Loading category articles...
+            </div>
+          }
         >
           <CategoryPageContent paramsPromise={props.params} />
         </Suspense>

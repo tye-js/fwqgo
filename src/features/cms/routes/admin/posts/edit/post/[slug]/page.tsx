@@ -85,6 +85,7 @@ export default async function EditPostPage(props: {
           slug: post.slug,
           language: post.language,
           published: post.published,
+          slugLocked: post.slugLocked,
         }}
         productionContext={productionContext}
         internalLinks={internalLinks}

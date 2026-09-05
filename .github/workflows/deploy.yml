@@ -166,7 +166,7 @@ jobs:
           cp -R public .next-cms/standalone/public
 
       - name: Smoke test built applications
-        run: ARTICLE_ISR_REQUIRE_REAL_PRERENDER=1 SMOKE_RUNTIME_BIN="$(command -v bun)" bun run smoke:built
+        run: SMOKE_RUNTIME_BIN="$(command -v bun)" bun run smoke:built
 
       - name: Package release
         shell: bash

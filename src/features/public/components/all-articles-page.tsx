@@ -1,5 +1,4 @@
-import { connection } from "next/server";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 
 import ArticleCard from "@/features/public/components/article-card";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
@@ -10,7 +9,12 @@ import {
   getPublishedPostsPage,
 } from "@/features/public/data/post";
 import { PaginationComponent } from "@/features/shared/components/pagination";
-import { jsonLdScriptContent, parsePositiveInt } from "@fwqgo/core/utils";
+import { jsonLdScriptContent } from "@fwqgo/core/utils";
+import {
+  getPublicPageCount,
+  parsePublicPageNumber,
+  PUBLIC_ARTICLE_PAGE_SIZE,
+} from "@fwqgo/core/public-content-policy";
 
 type PublicLanguage = "zh" | "en";
 
@@ -48,26 +52,60 @@ function getSiteUrl() {
   );
 }
 
+export type AllArticlesPageState = {
+  pageNo: number;
+  totalCount: number;
+  totalPage: number;
+  canonical: boolean;
+};
+
+export async function resolveAllArticlesPage(
+  paramsPromise: Promise<{ pageNo: string }>,
+  language: PublicLanguage,
+): Promise<AllArticlesPageState> {
+  const params = await paramsPromise;
+  const parsedPage = parsePublicPageNumber(params.pageNo);
+  if (!parsedPage) notFound();
+
+  const { data: totalCount } = await getPublishedPostCount(language);
+  const normalizedTotalCount = Number(totalCount ?? 0);
+  const totalPage = getPublicPageCount(
+    normalizedTotalCount,
+    PUBLIC_ARTICLE_PAGE_SIZE,
+  );
+  if (parsedPage.value > Math.max(totalPage, 1)) notFound();
+  await getPublishedPostsPage(parsedPage.value, language);
+
+  return {
+    pageNo: parsedPage.value,
+    totalCount: normalizedTotalCount,
+    totalPage,
+    canonical: parsedPage.canonical,
+  };
+}
+
 export async function AllArticlesPageContent({
   paramsPromise,
+  pageState: providedPageState,
   language = "zh",
 }: {
-  paramsPromise: Promise<{ pageNo: string }>;
+  paramsPromise?: Promise<{ pageNo: string }>;
+  pageState?: AllArticlesPageState;
   language?: PublicLanguage;
 }) {
-  await connection();
+  const pageState =
+    providedPageState ??
+    (paramsPromise
+      ? await resolveAllArticlesPage(paramsPromise, language)
+      : null);
+  if (!pageState) notFound();
+  if (!pageState.canonical) {
+    const basePath = language === "en" ? "/en/fwq" : "/fwq";
+    permanentRedirect(`${basePath}/page/${pageState.pageNo}`);
+  }
 
-  const params = await paramsPromise;
-  const pageNo = parsePositiveInt(params.pageNo);
-  if (!pageNo) notFound();
-
-  const [{ data: totalCount }, { data: latestPosts }] = await Promise.all([
-    getPublishedPostCount(language),
-    getLatestPostsForSidebar(language),
-  ]);
-  const totalPage = Math.ceil((totalCount ?? 0) / 10);
-
-  if (pageNo > Math.max(totalPage, 1)) notFound();
+  const { pageNo, totalCount, totalPage } = pageState;
+  const { data: latestPosts } = await getLatestPostsForSidebar(language);
 
   const { data: articles, error } = await getPublishedPostsPage(
     pageNo,
@@ -75,13 +113,7 @@ export async function AllArticlesPageContent({
   );
 
   const copy = pageCopy[language];
-  if (error) {
-    return (
-      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-sm text-destructive">
-        {copy.error}
-      </div>
-    );
-  }
+  if (error) throw new Error(copy.error);
   if (!articles) notFound();
 
   const basePath = language === "en" ? "/en/fwq" : "/fwq";

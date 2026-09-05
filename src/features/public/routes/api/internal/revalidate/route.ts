@@ -1,11 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import {
   publicCacheEvents,
   revalidatePublicCacheEventFromRouteHandler,
 } from "@fwqgo/cache/tags";
+import { purgePublicEdgeCache } from "@/server/cache/public-edge-cache";
 
 const MAX_BODY_BYTES = 16 * 1024;
 const requestSchema = z.object({
@@ -83,6 +84,21 @@ export async function POST(request: Request) {
       input.event,
       input.payload,
     );
+    after(async () => {
+      try {
+        const result = await purgePublicEdgeCache(input.event, input.payload);
+        if (result.configured)
+          console.info("public.edge_cache.purged", {
+            event: input.event,
+            urls: result.purgedUrls,
+          });
+      } catch (error) {
+        console.error("public.edge_cache.purge_failed", {
+          event: input.event,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    });
     return NextResponse.json({
       ok: true,
       event: input.event,

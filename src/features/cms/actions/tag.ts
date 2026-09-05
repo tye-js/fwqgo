@@ -295,7 +295,10 @@ async function saveTagSeo(
     return { error: "没有找到这个标签" };
   }
 
-  let normalizedEnSlug = normalizeOptionalSlug(input.enSlug);
+  let normalizedEnSlug =
+    options.makeEnSlugUnique && currentTag.enSlug
+      ? currentTag.enSlug
+      : normalizeOptionalSlug(input.enSlug);
 
   if (normalizedEnSlug) {
     if (options.makeEnSlugUnique) {

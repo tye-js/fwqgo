@@ -1,0 +1,116 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import path from "node:path";
+
+const nginx = process.env.NGINX_BIN ?? "nginx";
+const root = process.cwd();
+mkdirSync(path.join(root, "output/performance"), { recursive: true });
+const temp = mkdtempSync(path.join(root, "output/performance/nginx-check-"));
+mkdirSync(path.join(temp, "logs"));
+
+const upstream = createServer((request, response) => {
+  const status = Number(request.headers["x-fixture-status"] ?? 200);
+  /** @type {Record<string, string>} */
+  const headers = {
+    "Content-Type": String(request.headers["x-fixture-type"] ?? "text/html; charset=utf-8"),
+    "Cache-Control": "private, no-cache, no-store, max-age=0, must-revalidate",
+  };
+  if (request.headers["x-fixture-marker"] !== "0") headers["X-Fwqgo-Cacheable-Knowledge"] = "1";
+  if (request.headers["x-fixture-cookie"] === "1") headers["Set-Cookie"] = "fixture=1; HttpOnly";
+  response.writeHead(status, headers).end("fixture");
+});
+
+/** @param {ReturnType<typeof createServer>} server */
+async function listen(server) {
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  return address.port;
+}
+
+/** @type {ReturnType<typeof spawn> | undefined} */
+let child;
+try {
+  const upstreamPort = await listen(upstream);
+  const reservation = createServer();
+  const proxyPort = await listen(reservation);
+  await new Promise((resolve) => reservation.close(resolve));
+  const configFile = path.join(temp, "nginx.conf");
+  writeFileSync(configFile, `
+daemon off;
+master_process off;
+pid "${temp}/nginx.pid";
+error_log stderr warn;
+events { worker_connections 64; }
+http {
+  access_log off;
+  client_body_temp_path "${temp}/client-body";
+  proxy_temp_path "${temp}/proxy";
+  include "${root}/deploy/nginx/fwqgo-knowledge-cache-maps.conf";
+  server {
+    listen 127.0.0.1:${proxyPort};
+    location / {
+      proxy_pass http://127.0.0.1:${upstreamPort};
+      include "${root}/deploy/nginx/fwqgo-knowledge-cache-headers.conf";
+    }
+  }
+}
+`);
+  child = spawn(nginx, ["-p", `${temp}/`, "-c", configFile], { stdio: ["ignore", "pipe", "pipe"] });
+  let startupError = "";
+  child.on("error", (error) => { startupError = error.message; });
+  child.stderr?.on("data", (chunk) => { startupError += String(chunk); });
+  const proxyUrl = `http://127.0.0.1:${proxyPort}/knowledge`;
+  let ready = false;
+  const deadline = Date.now() + 10_000;
+  while (!ready && Date.now() < deadline) {
+    if (child.exitCode !== null || startupError.includes("ENOENT")) throw new Error(startupError || "nginx exited");
+    try { const response = await fetch(proxyUrl); await response.arrayBuffer(); ready = true; }
+    catch { await new Promise((resolve) => setTimeout(resolve, 100)); }
+  }
+  assert.ok(ready, `nginx did not start: ${startupError}`);
+
+  /** @type {Array<{name: string; shared: boolean; method?: string; query?: string; headers?: Record<string, string>}>} */
+  const cases = [
+    { name: "anonymous 200 HTML", shared: true },
+    { name: "HEAD", method: "HEAD", shared: true },
+    { name: "unmarked response", headers: { "x-fixture-marker": "0" }, shared: false },
+    { name: "404", headers: { "x-fixture-status": "404" }, shared: false },
+    { name: "500", headers: { "x-fixture-status": "500" }, shared: false },
+    { name: "503", headers: { "x-fixture-status": "503" }, shared: false },
+    { name: "JSON", headers: { "x-fixture-type": "application/json" }, shared: false },
+    { name: "Flight content", headers: { "x-fixture-type": "text/x-component" }, shared: false },
+    { name: "Set-Cookie", headers: { "x-fixture-cookie": "1" }, shared: false },
+    { name: "request Cookie", headers: { Cookie: "session=fixture" }, shared: false },
+    { name: "Authorization", headers: { Authorization: "Bearer fixture" }, shared: false },
+    { name: "RSC", headers: { RSC: "1" }, shared: false },
+    { name: "route prefetch", headers: { "Next-Router-Prefetch": "1" }, shared: false },
+    { name: "segment prefetch", headers: { "Next-Router-Segment-Prefetch": "/_tree" }, shared: false },
+    { name: "router state", headers: { "Next-Router-State-Tree": "[]" }, shared: false },
+    { name: "search", query: "?q=fixture", shared: false },
+    { name: "_rsc", query: "?_rsc=fixture", shared: false },
+    { name: "POST", method: "POST", shared: false },
+  ];
+  for (const item of cases) {
+    const response = await fetch(proxyUrl + (item.query ?? ""), { method: item.method ?? "GET", headers: item.headers });
+    await response.arrayBuffer();
+    const cacheControl = response.headers.get("cache-control") ?? "";
+    if (item.shared) assert.match(cacheControl, /s-maxage=300\b/, item.name);
+    else assert.match(cacheControl, /private, no-store/, item.name);
+    for (const header of ["cdn-cache-control", "cloudflare-cdn-cache-control"]) {
+      assert.equal(response.headers.get(header), item.shared ? "public, max-age=300, stale-while-revalidate=60" : "no-store", `${item.name}: ${header}`);
+    }
+  }
+  console.log(`Knowledge Nginx policy verified with a real nginx process: ${cases.length} response/request combinations`);
+} finally {
+  if (child?.pid && child.exitCode === null) {
+    child.kill("SIGTERM");
+    await once(child, "exit");
+  }
+  await new Promise((resolve) => upstream.close(resolve));
+  rmSync(temp, { recursive: true, force: true });
+}

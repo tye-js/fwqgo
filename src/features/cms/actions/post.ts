@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@fwqgo/db";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
 import { slugify } from "@fwqgo/core/utils";
+import { isPublicArticleSourceRenderable } from "@fwqgo/core/public-content-policy";
 import { type CreatePostParams } from "@/types/post.types";
 import { type NewTag, type TagMain } from "@/types";
 import { requireAdminSession } from "@fwqgo/auth/session";
@@ -27,7 +28,7 @@ import {
   syncImageReferencesForPost,
 } from "@/server/images/assets";
 import { posts, categories, tags, postTags } from "@fwqgo/db/schema";
-import { desc, eq, and, inArray, ne, or } from "drizzle-orm";
+import { desc, eq, and, inArray, ne, or, sql } from "drizzle-orm";
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 import { markPostInternalLinksStale } from "@/server/posts/internal-links";
 
@@ -172,6 +173,9 @@ async function runPostSaveMaintenance(input: {
     }
     schedulePublicWebCache("post.changed", {
       postIds: [input.postId],
+      postSlugs: input.revalidationTags
+        .filter((tag) => tag.startsWith("post-slug:"))
+        .map((tag) => tag.slice("post-slug:".length)),
     });
   } catch (error) {
     console.error("文章已保存，但缓存刷新失败:", error);
@@ -453,6 +457,7 @@ export async function updatePost(input: {
   slug: string;
   imgUrl: string | null;
   published: boolean;
+  allowSlugChange?: boolean;
   routeHandler?: boolean;
 }) {
   try {
@@ -480,8 +485,8 @@ export async function updatePost(input: {
       return { error: "文章 slug 不能为空" };
     }
 
-    if (normalizedSlug.length > 360) {
-      return { error: "文章 slug 不能超过 360 个字符" };
+    if (normalizedSlug.length > 320) {
+      return { error: "文章 slug 不能超过 320 个字符" };
     }
 
     if (/[\s/?#]/.test(normalizedSlug)) {
@@ -499,6 +504,7 @@ export async function updatePost(input: {
         categoryId: posts.categoryId,
         content: posts.content,
         published: posts.published,
+        slugLocked: posts.slugLocked,
         affiliateReviewStatus: posts.affiliateReviewStatus,
         affiliateReviewDetails: posts.affiliateReviewDetails,
         translationSourcePostId: posts.translationSourcePostId,
@@ -509,6 +515,32 @@ export async function updatePost(input: {
 
     if (!currentPost) {
       return { error: "文章不存在" };
+    }
+
+    if (
+      (currentPost.published || currentPost.slugLocked) &&
+      currentPost.slug !== normalizedSlug &&
+      input.allowSlugChange !== true
+    ) {
+      return {
+        error: "已发布文章的 slug 已锁定",
+        message:
+          "请在文章编辑页启用修改地址；保存时会自动保留历史地址的永久跳转。",
+      };
+    }
+    if (
+      input.published &&
+      !isPublicArticleSourceRenderable({
+        title: normalizedTitle,
+        slug: normalizedSlug,
+        content: currentPost.content,
+      })
+    ) {
+      return {
+        error: "正文不足，无法发布",
+        message:
+          "公开文章需要标题、slug 和至少 200 个字符的正文。请补充正文或保存为草稿。",
+      };
     }
 
     const [duplicatedSlugPost] = await db
@@ -538,7 +570,7 @@ export async function updatePost(input: {
           .update(posts)
           .set({
             title: normalizedTitle,
-            slug: normalizedSlug,
+            slug: currentPost.slug,
             imgUrl: normalizedImgUrl,
             published: false,
             affiliateReviewStatus: "manual_required",
@@ -576,26 +608,33 @@ export async function updatePost(input: {
       }
     }
 
-    const [post] = await db
-      .update(posts)
-      .set({
-        title: normalizedTitle,
-        slug: normalizedSlug,
-        imgUrl: normalizedImgUrl,
-        published: input.published,
-        affiliateReviewStatus: input.published ? "passed" : "pending",
-        affiliateReviewDetails:
-          input.published && publishAudit
-            ? serializeAffiliateReviewDetails(
-                publishAudit,
-                publishAudit.manualRequired ? manualApproval : null,
-              )
-            : null,
-        affiliateReviewUpdatedAt: input.published ? new Date() : null,
-        updatedAt: new Date(),
-      })
-      .where(eq(posts.id, parsedPostId))
-      .returning();
+    const [post] = await db.transaction(async (tx) => {
+      if (input.allowSlugChange === true) {
+        await tx.execute(
+          sql`select set_config('fwqgo.allow_slug_change', 'on', true)`,
+        );
+      }
+      return tx
+        .update(posts)
+        .set({
+          title: normalizedTitle,
+          slug: normalizedSlug,
+          imgUrl: normalizedImgUrl,
+          published: input.published,
+          affiliateReviewStatus: input.published ? "passed" : "pending",
+          affiliateReviewDetails:
+            input.published && publishAudit
+              ? serializeAffiliateReviewDetails(
+                  publishAudit,
+                  publishAudit.manualRequired ? manualApproval : null,
+                )
+              : null,
+          affiliateReviewUpdatedAt: input.published ? new Date() : null,
+          updatedAt: new Date(),
+        })
+        .where(eq(posts.id, parsedPostId))
+        .returning();
+    });
 
     if (!post) {
       return { error: "文章不存在或已被删除" };
@@ -825,6 +864,14 @@ export async function bulkUpdatePostsPublishedAction(input: {
     let blocked = 0;
 
     for (const post of postRows) {
+      if (input.published && !isPublicArticleSourceRenderable(post)) {
+        errors.push({
+          id: post.id,
+          title: post.title,
+          reason: "正文不足，发布需要至少 200 个字符的正文",
+        });
+        continue;
+      }
       if (post.published === input.published) {
         unchanged += 1;
         continue;
@@ -950,6 +997,7 @@ export async function updatePostContent(input: {
   categoryId: number;
   recommendTagName: string;
   keywords: string;
+  saveAsDraft?: boolean;
 }) {
   try {
     await requireAdminSession();
@@ -964,6 +1012,8 @@ export async function updatePostContent(input: {
         slug: posts.slug,
         categoryId: posts.categoryId,
         language: posts.language,
+        title: posts.title,
+        published: posts.published,
       })
       .from(posts)
       .where(eq(posts.id, parsedPostId))
@@ -1034,12 +1084,26 @@ export async function updatePostContent(input: {
     const normalizedImgUrl = input.imgUrl?.trim() ?? "";
     const preparedContent =
       await prepareEditedArticleContent(normalizedContent);
+    if (
+      currentPost.published &&
+      !input.saveAsDraft &&
+      !isPublicArticleSourceRenderable({
+        title: currentPost.title,
+        slug: currentPost.slug,
+        content: preparedContent.content,
+      })
+    ) {
+      return {
+        error: "正文不足，请补充至至少 200 个字符或关闭发布状态后保存草稿",
+      };
+    }
 
     const [post] = await db
       .update(posts)
       .set({
         description: normalizedDescription,
         content: preparedContent.content,
+        ...(input.saveAsDraft ? { published: false } : {}),
         imgUrl: normalizedImgUrl.length > 0 ? normalizedImgUrl : null,
         categoryId: parsedCategoryId,
         recommendedTagName: recommendedTag?.name ?? null,

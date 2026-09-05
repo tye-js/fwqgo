@@ -9,6 +9,7 @@ import {
 } from "@/features/shared/lib/public-article-category";
 import { asc, eq, isNull, or, sql } from "drizzle-orm";
 import { cacheLife } from "next/cache";
+import { publicPostCondition } from "@/server/posts/public-post-policy";
 
 type PublicLanguage = "zh" | "en";
 
@@ -43,6 +44,7 @@ function localizeCategory<
 
   return {
     ...category,
+    zhSlug: category.slug,
     name: publicArticleCategoryName(category, language),
     description: publicArticleCategoryDescription(category, language),
   };
@@ -85,8 +87,8 @@ export async function getNavigationCategories() {
         enSlug: categories.enSlug,
         enDescription: categories.enDescription,
         parentId: categories.parentId,
-        zhPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${posts.published} = true and ${posts.language} = 'zh')::int`,
-        enPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${posts.published} = true and ${posts.language} = 'en')::int`,
+        zhPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${publicPostCondition("zh")})::int`,
+        enPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${publicPostCondition("en")})::int`,
       })
       .from(categories)
       .leftJoin(posts, eq(posts.categoryId, categories.id))
@@ -115,7 +117,7 @@ export async function getCategoryBySlug(
   language: PublicLanguage = "zh",
 ) {
   "use cache";
-  tagCache(cacheTags.categories, cacheTags.categorySlug(slug));
+  tagCache(cacheTags.categories, cacheTags.posts, cacheTags.categorySlug(slug));
 
   try {
     const [category] = await readDb
@@ -128,26 +130,31 @@ export async function getCategoryBySlug(
       )
       .limit(1);
 
-    if (!category) return { data: null };
+    if (!category) return { data: null, error: undefined };
 
     const [countResult] = await readDb
-      .select({ count: sql<number>`count(*)::int` })
+      .select({
+        zhPublishedPostCount: sql<number>`count(*) filter (where ${publicPostCondition("zh")})::int`,
+        enPublishedPostCount: sql<number>`count(*) filter (where ${publicPostCondition("en")})::int`,
+      })
       .from(posts)
-      .where(
-        sql`${posts.categoryId} = ${category.id}
-          and ${posts.published} = true
-          and ${posts.language} = ${language}`,
-      );
+      .where(eq(posts.categoryId, category.id));
+
+    const zhPublishedPostCount = Number(countResult?.zhPublishedPostCount ?? 0);
+    const enPublishedPostCount = Number(countResult?.enPublishedPostCount ?? 0);
 
     return {
+      error: undefined,
       data: {
         ...localizeCategory(category, language),
-        publishedPostCount: Number(countResult?.count ?? 0),
+        zhPublishedPostCount,
+        enPublishedPostCount,
+        publishedPostCount:
+          language === "en" ? enPublishedPostCount : zhPublishedPostCount,
       },
     };
   } catch (error) {
-    console.error("Failed to load public category:", error);
-    return { error: "获取分类失败" };
+    throw new Error("获取分类失败", { cause: error });
   }
 }
 

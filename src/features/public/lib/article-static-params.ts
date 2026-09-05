@@ -2,7 +2,8 @@ import "server-only";
 
 import { readDb } from "@fwqgo/db";
 import { posts } from "@fwqgo/db/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { desc } from "drizzle-orm";
+import { publicPostCondition } from "@/server/posts/public-post-policy";
 
 export type PublicArticleLanguage = "zh" | "en";
 
@@ -48,10 +49,7 @@ export async function getPublicArticleStaticParams(
   const latestLimit = Math.max(1, Math.ceil(limit / 2));
 
   try {
-    const condition = and(
-      eq(posts.published, true),
-      eq(posts.language, language),
-    );
+    const condition = publicPostCondition(language);
     const [latest, popular] = await Promise.all([
       readDb
         .select({ slug: posts.slug })

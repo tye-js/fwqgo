@@ -112,9 +112,15 @@ export async function buildKnowledgeIndexMetadata(
   searchParams: Promise<KnowledgeSearchParams>,
 ): Promise<Metadata> {
   const params = await searchParams;
+  return getKnowledgeIndexMetadata(language, hasIndexParameters(params));
+}
+
+export function getKnowledgeIndexMetadata(
+  language: PublicKnowledgeLanguage,
+  parameterized = false,
+): Metadata {
   const languageCopy = copy[language];
   const canonical = language === "en" ? "/en/knowledge" : "/knowledge";
-  const parameterized = hasIndexParameters(params);
 
   return {
     title: languageCopy.metadataTitle,
@@ -167,14 +173,11 @@ function localizeCategories(
 
 async function KnowledgeIndexContent(props: {
   language: PublicKnowledgeLanguage;
-  searchParams: Promise<KnowledgeSearchParams>;
+  query: string;
+  category: string;
+  page: number;
 }) {
-  await connection();
-  const params = await props.searchParams;
-  const query = firstSearchParam(params.q)?.trim().slice(0, 120) ?? "";
-  const category =
-    firstSearchParam(params.category)?.trim().slice(0, 160) ?? "";
-  const page = parsePositiveInt(params.page) ?? 1;
+  const { query, category, page } = props;
   const [categoryRows, result] = await Promise.all([
     getPublicKnowledgeCategories(),
     listPublishedKnowledgeArticles({
@@ -362,6 +365,42 @@ async function KnowledgeIndexContent(props: {
   );
 }
 
+async function KnowledgeSearchContent(props: {
+  language: PublicKnowledgeLanguage;
+  searchParams: Promise<KnowledgeSearchParams>;
+}) {
+  await connection();
+  const params = await props.searchParams;
+  return (
+    <KnowledgeIndexContent
+      language={props.language}
+      query={firstSearchParam(params.q)?.trim().slice(0, 120) ?? ""}
+      category={firstSearchParam(params.category)?.trim().slice(0, 160) ?? ""}
+      page={parsePositiveInt(params.page) ?? 1}
+    />
+  );
+}
+
+/** Only cached reads: the default index can be generated and revalidated by ISR. */
+export function KnowledgeLandingPage({
+  language,
+}: {
+  language: PublicKnowledgeLanguage;
+}) {
+  return (
+    <div className="flex min-h-dvh flex-col bg-background">
+      <Header language={language} />
+      <KnowledgeIndexContent
+        language={language}
+        query=""
+        category=""
+        page={1}
+      />
+      <Footer language={language} />
+    </div>
+  );
+}
+
 export function KnowledgeIndexPage(props: {
   language: PublicKnowledgeLanguage;
   searchParams: Promise<KnowledgeSearchParams>;
@@ -378,7 +417,7 @@ export function KnowledgeIndexPage(props: {
           </main>
         }
       >
-        <KnowledgeIndexContent
+        <KnowledgeSearchContent
           language={props.language}
           searchParams={props.searchParams}
         />

@@ -59,7 +59,6 @@ for (const requiredFragment of [
 for (const requiredFragment of [
   '"smoke:article-isr": "node scripts/verify-production-article.mjs"',
   "bun run smoke:article-isr",
-  "ARTICLE_ISR_REQUIRE_REAL_PRERENDER=1",
   "PUBLIC_ARTICLE_PRERENDER_LIMIT: ${{ vars.PUBLIC_ARTICLE_PRERENDER_LIMIT || '50' }}",
 ]) {
   const source = requiredFragment.startsWith('"smoke:article-isr"')

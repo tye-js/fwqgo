@@ -1,6 +1,11 @@
+import { resolveEnglishTagIdentity } from "@fwqgo/core/taxonomy";
 import { readDb } from "@fwqgo/db";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { cacheLife } from "next/cache";
+import {
+  isPublicTagIndexable,
+  MIN_INDEXABLE_TAXONOMY_POSTS,
+} from "@fwqgo/core/public-content-policy";
 import { decodeSlug } from "@fwqgo/core/utils";
 import { attachTagsToPosts } from "@/features/public/data/post-tags";
 import {
@@ -22,17 +27,19 @@ import {
   isNull,
   lte,
   or,
+  sql,
 } from "drizzle-orm";
 import { ilikeContains } from "@/server/db/search";
+import {
+  publicPostCondition,
+  publicTagPostCountSql,
+  publicCategoryPostCountSql,
+} from "@/server/posts/public-post-policy";
 
 type PublicLanguage = "zh" | "en";
 
-function publishedPostCondition(language: PublicLanguage = "zh") {
-  return and(eq(posts.published, true), eq(posts.language, language));
-}
-
 function publishedChinesePostCondition() {
-  return publishedPostCondition("zh");
+  return publicPostCondition("zh");
 }
 
 function localizeEnglishTag(tag: {
@@ -41,19 +48,21 @@ function localizeEnglishTag(tag: {
   slug: string;
   enName: string | null;
   enSlug: string | null;
+  indexable: boolean;
+  publishedPostCount: number;
 }) {
-  const enName = tag.enName?.trim();
-  const enSlug = tag.enSlug?.trim();
-
-  if (enName && enSlug) {
-    return { id: tag.id, name: enName, slug: enSlug };
-  }
-
-  if (!/\p{Script=Han}/u.test(tag.name) && /^[a-z0-9-]+$/i.test(tag.slug)) {
-    return { id: tag.id, name: tag.name, slug: tag.slug };
-  }
-
-  return null;
+  const identity = resolveEnglishTagIdentity(tag);
+  return identity
+    ? {
+        id: tag.id,
+        name: identity.name,
+        slug: identity.slug,
+        publiclyIndexable: isPublicTagIndexable({
+          indexable: tag.indexable,
+          publishedPostCount: tag.publishedPostCount,
+        }),
+      }
+    : null;
 }
 
 async function getPublishedEnglishSlugForSourcePost(postId: number) {
@@ -61,11 +70,7 @@ async function getPublishedEnglishSlugForSourcePost(postId: number) {
     .select({ slug: posts.slug })
     .from(posts)
     .where(
-      and(
-        eq(posts.translationSourcePostId, postId),
-        eq(posts.language, "en"),
-        eq(posts.published, true),
-      ),
+      and(eq(posts.translationSourcePostId, postId), publicPostCondition("en")),
     )
     .orderBy(desc(posts.updatedAt), desc(posts.createdAt), desc(posts.id))
     .limit(1);
@@ -127,13 +132,7 @@ export async function getEnglishPostSeoBySlug(slug: string) {
         translationSourcePostId: posts.translationSourcePostId,
       })
       .from(posts)
-      .where(
-        and(
-          eq(posts.slug, decodedSlug),
-          eq(posts.language, "en"),
-          eq(posts.published, true),
-        ),
-      )
+      .where(and(eq(posts.slug, decodedSlug), publicPostCondition("en")))
       .limit(1);
 
     if (!post) return { data: null };
@@ -145,8 +144,7 @@ export async function getEnglishPostSeoBySlug(slug: string) {
           .where(
             and(
               eq(posts.id, post.translationSourcePostId),
-              eq(posts.language, "zh"),
-              eq(posts.published, true),
+              publicPostCondition("zh"),
             ),
           )
           .limit(1)
@@ -175,7 +173,7 @@ export async function getPublishedPostCountByCategoryId(
     .select({ count: count() })
     .from(posts)
     .where(
-      and(eq(posts.categoryId, categoryId), publishedPostCondition(language)),
+      and(eq(posts.categoryId, categoryId), publicPostCondition(language)),
     );
 
   return { data: result?.count ?? 0 };
@@ -190,7 +188,7 @@ export async function getPostsWithTags(
 
   try {
     const postsData = await readDb.query.posts.findMany({
-      where: publishedPostCondition(language),
+      where: publicPostCondition(language),
       orderBy: (postTable, { desc: orderByDesc }) => [
         orderByDesc(postTable.createdAt),
         orderByDesc(postTable.id),
@@ -234,7 +232,7 @@ export async function searchPublishedPosts(input: {
       .from(posts)
       .where(
         and(
-          publishedPostCondition(language),
+          publicPostCondition(language),
           or(
             ilikeContains(posts.title, query),
             ilikeContains(posts.description, query),
@@ -303,7 +301,7 @@ export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
               isNull(homepageSlots.endsAt),
               gt(homepageSlots.endsAt, new Date()),
             ),
-            publishedPostCondition(language),
+            publicPostCondition(language),
           ),
         )
         .orderBy(
@@ -331,7 +329,7 @@ export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
           createdAt: posts.createdAt,
         })
         .from(posts)
-        .where(publishedPostCondition(language))
+        .where(publicPostCondition(language))
         .orderBy(desc(posts.views), desc(posts.createdAt), desc(posts.id))
         .limit(6);
     } catch (error) {
@@ -417,6 +415,7 @@ export async function getPostWithTagsBySlug(slug: string) {
         categoryId: categories.id,
         categoryName: categories.name,
         categorySlug: categories.slug,
+        categoryPubliclyIndexable: sql<boolean>`${publicCategoryPostCountSql("zh", categories.id)} >= ${MIN_INDEXABLE_TAXONOMY_POSTS}`,
       })
       .from(posts)
       .leftJoin(tags, eq(posts.recommendedTagId, tags.id))
@@ -435,6 +434,7 @@ export async function getPostWithTagsBySlug(slug: string) {
           id: tags.id,
           name: tags.name,
           slug: tags.slug,
+          publiclyIndexable: sql<boolean>`${tags.indexable} and ${publicTagPostCountSql("zh", tags.id)} >= ${MIN_INDEXABLE_TAXONOMY_POSTS}`,
         },
       })
       .from(postTags)
@@ -493,18 +493,13 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
         categoryId: categories.id,
         categoryName: categories.name,
         categorySlug: categories.slug,
+        categoryPubliclyIndexable: sql<boolean>`${publicCategoryPostCountSql("en", categories.id)} >= ${MIN_INDEXABLE_TAXONOMY_POSTS}`,
         categoryEnName: categories.enName,
         categoryEnSlug: categories.enSlug,
       })
       .from(posts)
       .innerJoin(categories, eq(posts.categoryId, categories.id))
-      .where(
-        and(
-          eq(posts.slug, decodedSlug),
-          eq(posts.language, "en"),
-          eq(posts.published, true),
-        ),
-      )
+      .where(and(eq(posts.slug, decodedSlug), publicPostCondition("en")))
       .limit(1);
 
     const postRow = englishPostRow;
@@ -520,8 +515,7 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
           .where(
             and(
               eq(posts.id, englishPostRow.translationSourcePostId),
-              eq(posts.language, "zh"),
-              eq(posts.published, true),
+              publicPostCondition("zh"),
             ),
           )
           .limit(1)
@@ -536,6 +530,8 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
           slug: tags.slug,
           enName: tags.enName,
           enSlug: tags.enSlug,
+          indexable: tags.indexable,
+          publishedPostCount: publicTagPostCountSql("en", tags.id),
         },
       })
       .from(postTags)
@@ -580,16 +576,16 @@ export async function getPostsWithTagsByCategoryId(
         slug: posts.slug,
       })
       .from(posts)
-      .where(and(eq(posts.categoryId, id), publishedPostCondition(language)))
+      .where(and(eq(posts.categoryId, id), publicPostCondition(language)))
       .orderBy(desc(posts.createdAt), desc(posts.id))
       .offset((pageNo - 1) * 10)
       .limit(10);
 
     const postsWithTags = await attachTagsToPosts(postsData, language);
 
-    return { data: postsWithTags };
+    return { data: postsWithTags, error: undefined };
   } catch (error) {
-    return { error: "通过分类id获取文章列表失败", message: error };
+    throw new Error("通过分类id获取文章列表失败", { cause: error });
   }
 }
 
@@ -597,12 +593,16 @@ export async function getPublishedPostCount(language: PublicLanguage = "zh") {
   "use cache";
   tagCache(cacheTags.posts);
 
-  const [result] = await readDb
-    .select({ count: count() })
-    .from(posts)
-    .where(publishedPostCondition(language));
+  try {
+    const [result] = await readDb
+      .select({ count: count() })
+      .from(posts)
+      .where(publicPostCondition(language));
 
-  return { data: result?.count ?? 0 };
+    return { data: result?.count ?? 0 };
+  } catch (error) {
+    throw error;
+  }
 }
 
 export async function getPublishedPostsPage(
@@ -623,14 +623,17 @@ export async function getPublishedPostsPage(
         slug: posts.slug,
       })
       .from(posts)
-      .where(publishedPostCondition(language))
+      .where(publicPostCondition(language))
       .orderBy(desc(posts.createdAt), desc(posts.id))
       .offset((pageNo - 1) * 10)
       .limit(10);
 
-    return { data: await attachTagsToPosts(postsData, language) };
+    return {
+      data: await attachTagsToPosts(postsData, language),
+      error: undefined,
+    };
   } catch (error) {
-    return { error: "获取全部文章列表失败", message: error };
+    throw new Error("获取全部文章列表失败", { cause: error });
   }
 }
 
@@ -680,7 +683,7 @@ export async function getLatestPostsForSidebar(
       createdAt: posts.createdAt,
     })
     .from(posts)
-    .where(publishedPostCondition(language))
+    .where(publicPostCondition(language))
     .orderBy(desc(posts.createdAt), desc(posts.id))
     .limit(5);
 

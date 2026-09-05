@@ -73,6 +73,7 @@ export default function EditPost({
     slug: string;
     language: string;
     published: boolean;
+    slugLocked?: boolean;
   };
   productionContext: ProductionContext | null;
   internalLinks: AdminPostInternalLink[];
@@ -85,6 +86,8 @@ export default function EditPost({
       : `/fwq/posts/${postMeta.slug}`;
   const [title, setTitle] = useState(postMeta.title);
   const [slug, setSlug] = useState(postMeta.slug);
+  const [allowSlugChange, setAllowSlugChange] = useState(false);
+  const slugIsLocked = Boolean(postMeta.published || postMeta.slugLocked);
   const [published, setPublished] = useState(postMeta.published);
   const [description, setDescription] = useState(post.post.description);
   const [content, setContent] = useState(post.post.content);
@@ -218,6 +221,7 @@ export default function EditPost({
         body: JSON.stringify({
           title: normalizedTitle,
           slug: normalizedSlug,
+          allowSlugChange,
           published,
           description: normalizedDescription,
           content: normalizedContent,
@@ -449,13 +453,32 @@ export default function EditPost({
                 <Input
                   id="post-slug"
                   value={slug}
+                  readOnly={slugIsLocked && !allowSlugChange}
                   onChange={(event) => setSlug(event.target.value)}
-                  maxLength={360}
+                  maxLength={320}
                   required
                   spellCheck={false}
                   className="min-h-11 font-mono"
                   placeholder="article-url-slug"
                 />
+                {slugIsLocked ? (
+                  <div className="space-y-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="min-h-11"
+                      onClick={() => {
+                        if (allowSlugChange) setSlug(postMeta.slug);
+                        setAllowSlugChange(!allowSlugChange);
+                      }}
+                    >
+                      {allowSlugChange ? "取消修改地址" : "修改已发布地址"}
+                    </Button>
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      文章地址默认锁定。修改后，旧地址会永久跳转到最新地址。
+                    </p>
+                  </div>
+                ) : null}
                 <p className="break-all text-xs leading-5 text-muted-foreground">
                   前台路径：
                   {postLanguage === "en" ? "/en/fwq/posts/" : "/fwq/posts/"}

@@ -36,11 +36,12 @@ const payloadSchema = z.object({
     .string()
     .trim()
     .min(1, "文章 slug 不能为空")
-    .max(360, "文章 slug 不能超过 360 个字符")
+    .max(320, "文章 slug 不能超过 320 个字符")
     .refine((value) => !/[\s/?#]/.test(value), {
       message: "文章 slug 不能包含空格、斜杠、问号或井号",
     }),
   published: z.boolean(),
+  allowSlugChange: z.boolean().optional(),
   description: z.string().trim().min(1, "文章简述不能为空"),
   content: z.string().trim().min(1, "文章正文不能为空"),
   imgUrl: z.string().nullable().optional(),
@@ -148,6 +149,7 @@ export async function POST(
       id: postId,
       description: payload.description,
       content: payload.content,
+      saveAsDraft: !payload.published,
       imgUrl: payload.imgUrl,
       categoryId: payload.categoryId,
       recommendTagName: payload.recommendTagName,
@@ -186,6 +188,7 @@ export async function POST(
       id: postId,
       title: payload.title,
       slug: payload.slug,
+      allowSlugChange: payload.allowSlugChange,
       imgUrl: payload.imgUrl ?? null,
       published: payload.published,
       routeHandler: true,

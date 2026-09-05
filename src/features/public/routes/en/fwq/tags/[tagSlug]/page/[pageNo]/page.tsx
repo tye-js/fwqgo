@@ -1,11 +1,12 @@
+import {
+  resolveTagPage,
+  taxonomyPageMetadata,
+} from "@/features/public/lib/taxonomy-page";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
-import {
-  getPostsWithTagsByTagSlug,
-  getTagBySlug,
-} from "@/features/public/data/tag";
+import { getPostsWithTagsByTagSlug } from "@/features/public/data/tag";
 import { getLatestPostsForSidebar } from "@/features/public/data/post";
 import ArticleCard from "@/features/public/components/article-card";
 import Footer from "@/features/public/components/footer";
@@ -16,11 +17,7 @@ import PageCard from "@/features/public/components/page-card";
 import { RelatedServerOfferCards } from "@/features/public/components/related-server-offer-cards";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import { Separator } from "@/components/ui/separator";
-import {
-  decodeSlug,
-  jsonLdScriptContent,
-  parsePositiveInt,
-} from "@fwqgo/core/utils";
+import { decodeSlug, jsonLdScriptContent } from "@fwqgo/core/utils";
 import { getServerOffersByKeywords } from "@/server/offers/server-offers";
 
 function getSiteUrl() {
@@ -43,48 +40,8 @@ export async function generateMetadata(props: {
   params: Promise<{ tagSlug: string; pageNo: string }>;
 }): Promise<Metadata> {
   const params = await props.params;
-  const decodedTagSlug = decodeSlug(params.tagSlug);
-  const pageNo = parsePositiveInt(params.pageNo);
-  if (!pageNo) {
-    notFound();
-  }
-  const { data, error: tagError } = await getTagBySlug(decodedTagSlug, "en");
-  if (!data && !tagError) notFound();
-  const title = data?.name ?? decodedTagSlug.replace(/[-_]+/g, " ");
-  const canonicalSlug = data?.slug ?? decodedTagSlug;
-  const zhSlug =
-    data && "zhSlug" in data && typeof data.zhSlug === "string"
-      ? data.zhSlug
-      : decodedTagSlug;
-  const canonicalUrl = `${getSiteUrl()}/en/fwq/tags/${encodeURIComponent(canonicalSlug)}/page/${pageNo}`;
-  const zhUrl = `${getSiteUrl()}/fwq/tags/${encodeURIComponent(zhSlug)}/page/${pageNo}`;
-
-  const description =
-    data?.description ?? `${title} server deals, VPS reviews, and coupons.`;
-
-  return {
-    title: `${title} - fwqgo`,
-    description,
-    keywords: data?.keywords ?? `${title} VPS,${title} server deals`,
-    robots: {
-      index: Boolean(data?.indexable && (data.publishedPostCount ?? 0) >= 3),
-      follow: true,
-    },
-    alternates: {
-      canonical: canonicalUrl,
-      languages: {
-        "zh-CN": zhUrl,
-        en: canonicalUrl,
-        "x-default": zhUrl,
-      },
-    },
-    openGraph: {
-      title: `${title} - fwqgo`,
-      description,
-      url: canonicalUrl,
-      siteName: "fwqgo",
-    },
-  };
+  const state = await resolveTagPage(params.tagSlug, params.pageNo, "en");
+  return taxonomyPageMetadata({ ...state, kind: "tag", language: "en" });
 }
 
 async function TagPageContent({
@@ -93,9 +50,8 @@ async function TagPageContent({
   paramsPromise: Promise<{ tagSlug: string; pageNo: string }>;
 }) {
   const params = await paramsPromise;
+  const { pageNo } = await resolveTagPage(params.tagSlug, params.pageNo, "en");
   const decodedTagSlug = decodeSlug(params.tagSlug);
-  const pageNo = parsePositiveInt(params.pageNo);
-  if (!pageNo) notFound();
 
   const { data: postsWithTag, error } = await getPostsWithTagsByTagSlug(
     decodedTagSlug,
@@ -103,16 +59,7 @@ async function TagPageContent({
     "en",
   );
 
-  if (error) {
-    return (
-      <div
-        role="alert"
-        className="rounded-lg border border-destructive/30 bg-destructive/5 p-5 text-sm text-destructive"
-      >
-        Tag content is temporarily unavailable. Please refresh this page later.
-      </div>
-    );
-  }
+  if (error) throw new Error(error);
   if (!postsWithTag?.posts) {
     notFound();
   }
@@ -120,7 +67,7 @@ async function TagPageContent({
   const posts = postsWithTag.posts;
   const totalPage = Math.ceil((postsWithTag.totalCount ?? 0) / 10);
 
-  if (postsWithTag.pageNo > Math.max(totalPage, 1)) {
+  if (postsWithTag.pageNo > totalPage) {
     notFound();
   }
   const [{ data: latestPosts }, relatedOffers] = await Promise.all([
@@ -228,7 +175,11 @@ export default function EnglishTagPage(props: {
       <Separator />
       <main className="container mx-auto flex-1 px-4 py-6 md:py-8">
         <Suspense
-          fallback={<div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">Loading tag articles...</div>}
+          fallback={
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
+              Loading tag articles...
+            </div>
+          }
         >
           <TagPageContent paramsPromise={props.params} />
         </Suspense>

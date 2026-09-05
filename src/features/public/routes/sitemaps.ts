@@ -1,6 +1,12 @@
 import { readDb } from "@fwqgo/db";
 import { renderSitemapLastmod } from "@fwqgo/core/sitemap-lastmod";
 import { getLatestDateValue } from "@fwqgo/core/date-value";
+import {
+  isPublicCategoryIndexable,
+  isPublicTagIndexable,
+  publicTaxonomyAlternates,
+} from "@fwqgo/core/public-content-policy";
+import { publicKnowledgeCondition } from "@/server/knowledge/public-knowledge-policy";
 import { resolveEnglishTagIdentity } from "@fwqgo/core/taxonomy";
 import { unstable_cache } from "next/cache";
 import { connection } from "next/server";
@@ -13,21 +19,18 @@ import {
   serverOffers,
   tags,
 } from "@fwqgo/db/schema";
-import { and, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   getServerOfferCollectionIndex,
   offerTopics,
 } from "@/server/offers/server-offers";
+import { publicPostCondition } from "@/server/posts/public-post-policy";
 
 function getBaseUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
     /\/+$/,
     "",
   );
-}
-
-function publishedChinesePostCondition() {
-  return and(eq(posts.published, true), eq(posts.language, "zh"));
 }
 
 function escapeXml(value: string) {
@@ -43,13 +46,12 @@ function xmlResponse(xml: string) {
   return new Response(xml, {
     headers: {
       "Content-Type": "application/xml; charset=utf-8",
-      "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=43200",
+      "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
     },
   });
 }
 
 const SITEMAP_CACHE_REVALIDATE_SECONDS = 60 * 60;
-const MIN_INDEXABLE_TAXONOMY_POSTS = 3;
 
 function cachedSitemapXml(
   name: string,
@@ -125,6 +127,9 @@ ${[
     loc: `${baseUrl}/sitemap-en.xml`,
   }),
   sitemapEntry({
+    loc: `${baseUrl}/sitemap-core.xml`,
+  }),
+  sitemapEntry({
     loc: `${baseUrl}/sitemap-categories.xml`,
   }),
   sitemapEntry({
@@ -141,6 +146,87 @@ ${[
   }),
 ].join("")}
 </sitemapindex>`;
+}
+
+export async function sitemapCoreGET() {
+  await connection();
+  return xmlResponse(
+    await cachedSitemapXml("core", [cacheTags.posts], buildSitemapCoreXml),
+  );
+}
+
+async function buildSitemapCoreXml() {
+  const baseUrl = getBaseUrl();
+  const [
+    zhStats = { count: 0, latestAt: null },
+    enStats = { count: 0, latestAt: null },
+  ] = await Promise.all(
+    (["zh", "en"] as const).map(async (language) => {
+      const [row] = await readDb
+        .select({
+          count: sql<number>`count(*)::int`,
+          latestAt: sql<Date | null>`max(coalesce(${posts.updatedAt}, ${posts.createdAt}))`,
+        })
+        .from(posts)
+        .where(publicPostCondition(language));
+      return {
+        count: Number(row?.count ?? 0),
+        latestAt: row?.latestAt ?? null,
+      };
+    }),
+  );
+  const homeAlternates = [
+    { hreflang: "zh-CN", href: `${baseUrl}/` },
+    { hreflang: "en", href: `${baseUrl}/en` },
+    { hreflang: "x-default", href: `${baseUrl}/` },
+  ];
+  const archiveAlternates =
+    zhStats.count > 0 && enStats.count > 0
+      ? [
+          { hreflang: "zh-CN", href: `${baseUrl}/fwq/page/1` },
+          { hreflang: "en", href: `${baseUrl}/en/fwq/page/1` },
+          { hreflang: "x-default", href: `${baseUrl}/fwq/page/1` },
+        ]
+      : undefined;
+
+  return renderUrlset([
+    urlEntry({
+      loc: `${baseUrl}/`,
+      lastmod: zhStats.latestAt,
+      changefreq: "daily",
+      priority: "1.0",
+      alternates: homeAlternates,
+    }),
+    urlEntry({
+      loc: `${baseUrl}/en`,
+      lastmod: enStats.latestAt,
+      changefreq: "daily",
+      priority: "0.9",
+      alternates: homeAlternates,
+    }),
+    ...(zhStats.count > 0
+      ? [
+          urlEntry({
+            loc: `${baseUrl}/fwq/page/1`,
+            lastmod: zhStats.latestAt,
+            changefreq: "daily",
+            priority: "0.85",
+            alternates: archiveAlternates,
+          }),
+        ]
+      : []),
+    ...(enStats.count > 0
+      ? [
+          urlEntry({
+            loc: `${baseUrl}/en/fwq/page/1`,
+            lastmod: enStats.latestAt,
+            changefreq: "daily",
+            priority: "0.75",
+            alternates: archiveAlternates,
+          }),
+        ]
+      : []),
+  ]);
 }
 
 export async function sitemapToolsGET() {
@@ -215,7 +301,7 @@ async function buildSitemapPostsXml() {
         createdAt: posts.createdAt,
       })
       .from(posts)
-      .where(publishedChinesePostCondition())
+      .where(publicPostCondition("zh"))
       .orderBy(desc(posts.createdAt), desc(posts.id)),
     readDb
       .select({
@@ -225,9 +311,8 @@ async function buildSitemapPostsXml() {
       .from(posts)
       .where(
         and(
-          eq(posts.published, true),
-          eq(posts.language, "en"),
           isNotNull(posts.translationSourcePostId),
+          publicPostCondition("en"),
         ),
       ),
   ]);
@@ -270,7 +355,11 @@ async function buildSitemapPostsXml() {
 export async function sitemapEnglishGET() {
   await connection();
   return xmlResponse(
-    await cachedSitemapXml("english", [cacheTags.posts], buildSitemapEnglishXml),
+    await cachedSitemapXml(
+      "english",
+      [cacheTags.posts],
+      buildSitemapEnglishXml,
+    ),
   );
 }
 
@@ -285,7 +374,7 @@ async function buildSitemapEnglishXml() {
       translationSourcePostId: posts.translationSourcePostId,
     })
     .from(posts)
-    .where(and(eq(posts.published, true), eq(posts.language, "en")))
+    .where(publicPostCondition("en"))
     .orderBy(desc(posts.updatedAt), desc(posts.createdAt));
   const sourcePostIds = [
     ...new Set(
@@ -300,10 +389,7 @@ async function buildSitemapEnglishXml() {
           .select({ id: posts.id, slug: posts.slug })
           .from(posts)
           .where(
-            and(
-              inArray(posts.id, sourcePostIds),
-              publishedChinesePostCondition(),
-            ),
+            and(inArray(posts.id, sourcePostIds), publicPostCondition("zh")),
           )
       : [];
   const sourceSlugById = new Map(
@@ -370,12 +456,7 @@ async function buildSitemapKnowledgeXml() {
       contentUpdatedAt: knowledgeArticles.contentUpdatedAt,
     })
     .from(knowledgeArticles)
-    .where(
-      and(
-        eq(knowledgeArticles.published, true),
-        ne(knowledgeArticles.contentRole, "post_purchase_guide"),
-      ),
-    )
+    .where(publicKnowledgeCondition())
     .orderBy(
       desc(knowledgeArticles.contentUpdatedAt),
       desc(knowledgeArticles.id),
@@ -473,8 +554,10 @@ async function buildSitemapCategoriesXml() {
       slug: categories.slug,
       enSlug: categories.enSlug,
       updatedAt: categories.updatedAt,
-      zhPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${posts.published} = true and ${posts.language} = 'zh')::int`,
-      enPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${posts.published} = true and ${posts.language} = 'en')::int`,
+      zhPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${publicPostCondition("zh")})::int`,
+      enPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${publicPostCondition("en")})::int`,
+      latestZhPostAt: sql<Date | null>`max(coalesce(${posts.updatedAt}, ${posts.createdAt})) filter (where ${publicPostCondition("zh")})`,
+      latestEnPostAt: sql<Date | null>`max(coalesce(${posts.updatedAt}, ${posts.createdAt})) filter (where ${publicPostCondition("en")})`,
     })
     .from(categories)
     .leftJoin(posts, eq(posts.categoryId, categories.id))
@@ -483,28 +566,44 @@ async function buildSitemapCategoriesXml() {
 
   return renderUrlset(
     rows.flatMap((category) => {
-      const enSlug = category.enSlug?.trim();
+      const enSlug = category.enSlug?.trim()
+        ? category.enSlug.trim()
+        : category.slug;
       const zhUrl = `${baseUrl}/fwq/${encodeURIComponent(category.slug)}/page/1`;
       const enUrl = enSlug
         ? `${baseUrl}/en/fwq/${encodeURIComponent(enSlug)}/page/1`
         : null;
-      const zhEligible =
-        category.zhPublishedPostCount >= MIN_INDEXABLE_TAXONOMY_POSTS;
+      const zhEligible = isPublicCategoryIndexable(
+        category.zhPublishedPostCount,
+      );
       const enEligible =
         Boolean(enUrl) &&
-        category.enPublishedPostCount >= MIN_INDEXABLE_TAXONOMY_POSTS;
-      const alternates = [
-        ...(zhEligible ? [{ hreflang: "zh-CN", href: zhUrl }] : []),
-        ...(enEligible && enUrl ? [{ hreflang: "en", href: enUrl }] : []),
-        ...(zhEligible ? [{ hreflang: "x-default", href: zhUrl }] : []),
-      ];
+        isPublicCategoryIndexable(category.enPublishedPostCount);
+      const languages = publicTaxonomyAlternates({
+        baseUrl,
+        kind: "category",
+        zhSlug: category.slug,
+        enSlug: enSlug,
+        zhPublishedPostCount: category.zhPublishedPostCount,
+        enPublishedPostCount: category.enPublishedPostCount,
+        page: 1,
+      });
+      const alternates = languages
+        ? Object.entries(languages).map(([hreflang, href]) => ({
+            hreflang,
+            href,
+          }))
+        : undefined;
 
       return [
         ...(zhEligible
           ? [
               urlEntry({
                 loc: zhUrl,
-                lastmod: category.updatedAt,
+                lastmod: getLatestDateValue([
+                  category.updatedAt,
+                  category.latestZhPostAt,
+                ]),
                 changefreq: "weekly",
                 priority: "0.7",
                 alternates,
@@ -515,7 +614,10 @@ async function buildSitemapCategoriesXml() {
           ? [
               urlEntry({
                 loc: enUrl,
-                lastmod: category.updatedAt,
+                lastmod: getLatestDateValue([
+                  category.updatedAt,
+                  category.latestEnPostAt,
+                ]),
                 changefreq: "weekly",
                 priority: "0.65",
                 alternates,
@@ -547,8 +649,10 @@ async function buildSitemapTagsXml() {
       enName: tags.enName,
       enSlug: tags.enSlug,
       updatedAt: tags.updatedAt,
-      zhPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${posts.published} = true and ${posts.language} = 'zh')::int`,
-      enPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${posts.published} = true and ${posts.language} = 'en')::int`,
+      zhPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${publicPostCondition("zh")})::int`,
+      enPublishedPostCount: sql<number>`count(${posts.id}) filter (where ${publicPostCondition("en")})::int`,
+      latestZhPostAt: sql<Date | null>`max(coalesce(${posts.updatedAt}, ${posts.createdAt})) filter (where ${publicPostCondition("zh")})`,
+      latestEnPostAt: sql<Date | null>`max(coalesce(${posts.updatedAt}, ${posts.createdAt})) filter (where ${publicPostCondition("en")})`,
     })
     .from(tags)
     .leftJoin(postTags, eq(postTags.tagId, tags.id))
@@ -564,23 +668,42 @@ async function buildSitemapTagsXml() {
       const enUrl = englishIdentity
         ? `${baseUrl}/en/fwq/tags/${encodeURIComponent(englishIdentity.slug)}/page/1`
         : null;
-      const zhEligible =
-        tag.zhPublishedPostCount >= MIN_INDEXABLE_TAXONOMY_POSTS;
+      const zhEligible = isPublicTagIndexable({
+        indexable: true,
+        publishedPostCount: tag.zhPublishedPostCount,
+      });
       const enEligible =
         Boolean(enUrl) &&
-        tag.enPublishedPostCount >= MIN_INDEXABLE_TAXONOMY_POSTS;
-      const alternates = [
-        ...(zhEligible ? [{ hreflang: "zh-CN", href: zhUrl }] : []),
-        ...(enEligible && enUrl ? [{ hreflang: "en", href: enUrl }] : []),
-        ...(zhEligible ? [{ hreflang: "x-default", href: zhUrl }] : []),
-      ];
+        isPublicTagIndexable({
+          indexable: true,
+          publishedPostCount: tag.enPublishedPostCount,
+        });
+      const languages = publicTaxonomyAlternates({
+        baseUrl,
+        kind: "tag",
+        zhSlug: tag.slug,
+        enSlug: englishIdentity?.slug,
+        zhPublishedPostCount: tag.zhPublishedPostCount,
+        enPublishedPostCount: tag.enPublishedPostCount,
+        explicitlyIndexable: true,
+        page: 1,
+      });
+      const alternates = languages
+        ? Object.entries(languages).map(([hreflang, href]) => ({
+            hreflang,
+            href,
+          }))
+        : undefined;
 
       return [
         ...(zhEligible
           ? [
               urlEntry({
                 loc: zhUrl,
-                lastmod: tag.updatedAt,
+                lastmod: getLatestDateValue([
+                  tag.updatedAt,
+                  tag.latestZhPostAt,
+                ]),
                 changefreq: "weekly",
                 priority: "0.6",
                 alternates,
@@ -591,7 +714,10 @@ async function buildSitemapTagsXml() {
           ? [
               urlEntry({
                 loc: enUrl,
-                lastmod: tag.updatedAt,
+                lastmod: getLatestDateValue([
+                  tag.updatedAt,
+                  tag.latestEnPostAt,
+                ]),
                 changefreq: "weekly",
                 priority: "0.55",
                 alternates,
