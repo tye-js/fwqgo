@@ -212,3 +212,19 @@ export function parsePublicInventoryFilters(
   }
   return data;
 }
+
+export function buildPublicInventoryHref(filters: PublicInventoryFilters) {
+  const defaults = filterSchema.parse({});
+  const params = new URLSearchParams();
+
+  for (const key of Object.keys(filterSchema.shape) as Array<
+    keyof PublicInventoryFilters
+  >) {
+    const value = filters[key];
+    if (value === undefined || value === "" || value === defaults[key])
+      continue;
+    params.set(key === "query" ? "q" : key, String(value));
+  }
+
+  return params.size ? `/servers?${params.toString()}` : "/servers";
+}

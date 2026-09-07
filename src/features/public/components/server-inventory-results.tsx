@@ -9,6 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ServerInventoryOfferActions } from "@/features/public/components/server-inventory-offer-actions";
+import { buildPublicInventoryHref } from "@fwqgo/core/public-inventory-filters";
 import type {
   PublicInventoryFilters,
   PublicInventoryPage,
@@ -71,26 +72,7 @@ function collectionHref(
 }
 
 function buildPageHref(filters: PublicInventoryFilters, cursor: string) {
-  const params = new URLSearchParams();
-  if (filters.query) params.set("q", filters.query);
-  if (filters.kind === "promotion") params.set("kind", "promotion");
-  if (filters.provider !== "all") params.set("provider", filters.provider);
-  if (filters.group !== "all") params.set("group", filters.group);
-  if (filters.stock !== "in_stock") params.set("stock", filters.stock);
-  if (filters.check !== "all") params.set("check", filters.check);
-  if (filters.region !== "all") params.set("region", filters.region);
-  if (filters.line !== "all") params.set("line", filters.line);
-  if (filters.feature !== "all") params.set("feature", filters.feature);
-  if (filters.promo !== "all") params.set("promo", filters.promo);
-  if (filters.minPrice !== undefined) {
-    params.set("minPrice", String(filters.minPrice));
-  }
-  if (filters.maxPrice !== undefined) {
-    params.set("maxPrice", String(filters.maxPrice));
-  }
-  if (filters.sort !== "price-asc") params.set("sort", filters.sort);
-  params.set("cursor", cursor);
-  return `/servers?${params.toString()}#inventory-results`;
+  return `${buildPublicInventoryHref({ ...filters, cursor })}#inventory-results`;
 }
 
 function StatusCell({
@@ -268,7 +250,10 @@ export function ServerInventoryResults({
 }) {
   if (page.items.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border bg-muted/20 px-6 py-14 text-center">
+      <div
+        id="inventory-results"
+        className="scroll-mt-24 rounded-lg border border-dashed border-border bg-muted/20 px-6 py-14 text-center"
+      >
         <PackageSearch className="mx-auto size-8 text-muted-foreground" />
         <p className="mt-3 text-sm font-medium text-foreground">
           没有匹配的库存套餐
@@ -425,9 +410,7 @@ export function ServerInventoryResults({
       {page.hasMore && page.nextCursor ? (
         <div className="flex justify-center pt-2">
           <Button asChild variant="outline" size="lg">
-            <Link href={buildPageHref(filters, page.nextCursor)}>
-              查看下一页
-            </Link>
+            <a href={buildPageHref(filters, page.nextCursor)}>查看下一页</a>
           </Button>
         </div>
       ) : null}

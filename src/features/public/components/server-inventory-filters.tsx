@@ -1,136 +1,37 @@
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
-import type { FormEvent, ReactNode } from "react";
+import { useMemo, useState } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 import { Filter, RotateCcw, Search, Store } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import type {
-  PublicInventoryFacets,
-  PublicInventoryFilters,
-} from "@/server/offers/public-inventory-query";
+  buildPublicInventoryHref,
+  parsePublicInventoryFilters,
+  type PublicInventoryFilters,
+  type PublicInventorySearchParams,
+} from "@fwqgo/core/public-inventory-filters";
+import type { PublicInventoryFacets } from "@/server/offers/public-inventory-query";
 
-type FilterKey =
-  | "kind"
-  | "provider"
-  | "group"
-  | "stock"
-  | "check"
-  | "region"
-  | "line"
-  | "feature"
-  | "promo"
-  | "sort";
+const selectClassName =
+  "min-h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-function getFormDataText(formData: FormData, key: string) {
-  const value = formData.get(key);
-  return typeof value === "string" ? value : "";
+function submitSelect(event: ChangeEvent<HTMLSelectElement>) {
+  event.currentTarget.form?.requestSubmit();
 }
 
-function isDefaultValue(key: FilterKey, value: string) {
-  if (key === "kind") return value === "regular";
-  if (key === "stock") return value === "in_stock";
-  if (key === "sort") return value === "price-asc";
-  return value === "all";
-}
-
-type InventoryNavigation = {
-  isPending: boolean;
-  navigate: (updates: Record<string, string | null>) => void;
-  resetFilters: () => void;
-  updateFilter: (key: FilterKey, value: string) => void;
-};
-
-const InventoryNavigationContext = createContext<InventoryNavigation | null>(
-  null,
-);
-
-function useInventoryNavigationController(): InventoryNavigation {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [isPending, startTransition] = useTransition();
-  const navigationLockRef = useRef(false);
-  const serializedSearchParams = searchParams.toString();
-  const currentHref = serializedSearchParams
-    ? `${pathname}?${serializedSearchParams}`
-    : pathname;
-
-  useEffect(() => {
-    navigationLockRef.current = false;
-  }, [pathname, serializedSearchParams]);
-
-  useEffect(() => {
-    if (!isPending) navigationLockRef.current = false;
-  }, [isPending]);
-
-  function replace(href: string) {
-    if (href === currentHref || navigationLockRef.current) return;
-    navigationLockRef.current = true;
-    startTransition(() => router.replace(href, { scroll: false }));
+function submitFilters(event: FormEvent<HTMLFormElement>) {
+  event.preventDefault();
+  const params: PublicInventorySearchParams = {};
+  for (const [key, value] of new FormData(event.currentTarget)) {
+    if (typeof value === "string") params[key] = value;
   }
 
-  function navigate(updates: Record<string, string | null>) {
-    const params = new URLSearchParams(serializedSearchParams);
-    params.delete("cursor");
-
-    for (const [key, value] of Object.entries(updates)) {
-      if (!value) params.delete(key);
-      else params.set(key, value);
-    }
-
-    const href = params.size ? `${pathname}?${params.toString()}` : pathname;
-    replace(href);
-  }
-
-  function updateFilter(key: FilterKey, value: string) {
-    navigate({ [key]: isDefaultValue(key, value) ? null : value });
-  }
-
-  function resetFilters() {
-    replace(pathname);
-  }
-
-  return { isPending, navigate, resetFilters, updateFilter };
-}
-
-function useInventoryNavigation() {
-  const navigation = useContext(InventoryNavigationContext);
-  if (!navigation) {
-    throw new Error(
-      "Server inventory controls require ServerInventoryNavigationProvider",
-    );
-  }
-  return navigation;
-}
-
-export function ServerInventoryNavigationProvider({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  const navigation = useInventoryNavigationController();
-  return (
-    <InventoryNavigationContext.Provider value={navigation}>
-      {children}
-    </InventoryNavigationContext.Provider>
+  // Submit a fresh document request so the controls and results always use the
+  // same server-parsed filters. The GET form also works before hydration.
+  window.location.assign(
+    buildPublicInventoryHref(parsePublicInventoryFilters(params)),
   );
 }
 
@@ -142,7 +43,6 @@ export function ServerInventoryProviderNav({
   filters: PublicInventoryFilters;
 }) {
   const [providerSearch, setProviderSearch] = useState("");
-  const { isPending, updateFilter } = useInventoryNavigation();
   const visibleProviders = useMemo(() => {
     const needle = providerSearch.trim().toLowerCase();
     return facets.providers
@@ -165,16 +65,21 @@ export function ServerInventoryProviderNav({
           onChange={(event) => setProviderSearch(event.target.value)}
           placeholder="搜索厂商"
           aria-label="搜索库存厂商"
-          className="h-9"
+          className="min-h-11"
         />
       </div>
-      <div className="max-h-[calc(100dvh-12rem)] overflow-y-auto p-2">
-        <button
-          type="button"
-          onClick={() => updateFilter("provider", "all")}
-          disabled={isPending}
-          aria-pressed={filters.provider === "all"}
-          className={`flex min-h-11 w-full items-center justify-between rounded-md px-3 text-left text-sm transition-colors disabled:opacity-50 ${
+      <nav
+        aria-label="按厂商筛选套餐"
+        className="max-h-[calc(100dvh-12rem)] overflow-y-auto p-2"
+      >
+        <a
+          href={buildPublicInventoryHref({
+            ...filters,
+            provider: "all",
+            cursor: "",
+          })}
+          aria-current={filters.provider === "all" ? "true" : undefined}
+          className={`flex min-h-11 w-full items-center justify-between rounded-md px-3 text-left text-sm transition-colors ${
             filters.provider === "all"
               ? "bg-primary text-primary-foreground"
               : "hover:bg-muted"
@@ -182,65 +87,72 @@ export function ServerInventoryProviderNav({
         >
           <span>全部厂商</span>
           <span className="text-xs tabular-nums opacity-75">{total}</span>
-        </button>
+        </a>
         {visibleProviders.map((provider) => (
-          <button
+          <a
             key={provider.key}
-            type="button"
-            onClick={() => updateFilter("provider", provider.key)}
-            disabled={isPending}
-            aria-pressed={filters.provider === provider.key}
-            className={`mt-1 flex min-h-11 w-full items-center justify-between gap-2 rounded-md px-3 text-left text-sm transition-colors disabled:opacity-50 ${
+            href={buildPublicInventoryHref({
+              ...filters,
+              provider: provider.key,
+              cursor: "",
+            })}
+            aria-current={
+              filters.provider === provider.key ? "true" : undefined
+            }
+            className={`mt-1 flex min-h-11 w-full items-center justify-between gap-2 rounded-md px-3 text-left text-sm transition-colors ${
               filters.provider === provider.key
                 ? "bg-primary text-primary-foreground"
                 : "hover:bg-muted"
             }`}
           >
-            <span className="min-w-0 truncate">{provider.label}</span>
+            <span className="min-w-0 break-words">{provider.label}</span>
             <span className="shrink-0 text-xs tabular-nums opacity-75">
               {provider.count}
             </span>
-          </button>
+          </a>
         ))}
         {visibleProviders.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">
             没有匹配的厂商
           </p>
         ) : null}
-      </div>
+      </nav>
     </aside>
   );
 }
 
 function FacetSelect({
+  name,
   value,
-  placeholder,
+  label,
   allLabel,
   items,
-  disabled,
-  onValueChange,
 }: {
+  name: "provider" | "group" | "region" | "line" | "feature";
   value: string;
-  placeholder: string;
+  label: string;
   allLabel: string;
   items: Array<{ key: string; label: string; count: number }>;
-  disabled?: boolean;
-  onValueChange: (value: string) => void;
 }) {
   return (
-    <Select value={value} disabled={disabled} onValueChange={onValueChange}>
-      <SelectTrigger className="min-h-11">
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="all">{allLabel}</SelectItem>
-        {items.map((item) => (
-          <SelectItem key={item.key} value={item.key}>
-            {item.label} · {item.count}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <select
+      key={value}
+      name={name}
+      defaultValue={value}
+      aria-label={label}
+      onChange={submitSelect}
+      className={selectClassName}
+    >
+      <option value="all">{allLabel}</option>
+      {value !== "all" && !items.some((item) => item.key === value) ? (
+        <option value={value}>{value}</option>
+      ) : null}
+      {items.map((item) => (
+        <option key={item.key} value={item.key}>
+          {item.label} · {item.count}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -251,48 +163,39 @@ export function ServerInventoryToolbar({
   facets: PublicInventoryFacets;
   filters: PublicInventoryFilters;
 }) {
-  const { isPending, navigate, resetFilters, updateFilter } =
-    useInventoryNavigation();
-
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const query = getFormDataText(formData, "q").trim();
-    navigate({ q: query ? query : null });
-  }
-
-  function submitPrice(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const minPrice = getFormDataText(formData, "minPrice").trim();
-    const maxPrice = getFormDataText(formData, "maxPrice").trim();
-    navigate({
-      minPrice: minPrice ? minPrice : null,
-      maxPrice: maxPrice ? maxPrice : null,
-    });
-  }
+  const hasAdvancedFilters =
+    filters.region !== "all" ||
+    filters.line !== "all" ||
+    filters.feature !== "all" ||
+    filters.promo !== "all" ||
+    (filters.kind === "promotion" && filters.check !== "all") ||
+    filters.minPrice !== undefined ||
+    filters.maxPrice !== undefined;
 
   return (
-    <div className="rounded-lg border border-border/70 bg-background p-3 shadow-sm">
+    <form
+      action="/servers"
+      method="get"
+      onSubmit={submitFilters}
+      aria-label="筛选服务器套餐"
+      className="rounded-lg border border-border/70 bg-background p-3 shadow-sm"
+    >
+      <input type="hidden" name="kind" value={filters.kind} />
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm font-medium">
           <Filter className="size-4 text-primary" />
           筛选套餐
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="min-h-11"
-          onClick={resetFilters}
-          disabled={isPending}
-        >
-          <RotateCcw className="size-4" />
-          重置
+        <Button asChild size="sm" variant="ghost" className="min-h-11">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Reset uses a fresh document request, like the filter form. */}
+          <a href="/servers">
+            <RotateCcw className="size-4" />
+            重置
+          </a>
         </Button>
       </div>
 
-      <div
+      <nav
         className="mb-3 grid grid-cols-2 rounded-md border border-border/70 bg-muted/30 p-1"
         aria-label="套餐属性"
       >
@@ -302,185 +205,170 @@ export function ServerInventoryToolbar({
             ["promotion", "活动款"],
           ] as const
         ).map(([value, label]) => (
-          <button
+          <a
             key={value}
-            type="button"
-            aria-pressed={filters.kind === value}
-            disabled={isPending}
-            onClick={() =>
-              navigate({
-                kind: value === "regular" ? null : value,
-                check: null,
-              })
-            }
-            className={`min-h-11 rounded-sm px-3 text-sm font-medium transition-colors disabled:opacity-50 ${
+            aria-current={filters.kind === value ? "true" : undefined}
+            href={buildPublicInventoryHref({
+              ...filters,
+              kind: value,
+              check: "all",
+              cursor: "",
+            })}
+            className={`flex min-h-11 items-center justify-center rounded-sm px-3 text-sm font-medium transition-colors ${
               filters.kind === value
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
             {label}
-          </button>
+          </a>
         ))}
-      </div>
+      </nav>
 
-      <form
-        onSubmit={submitSearch}
-        className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]"
-      >
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
         <Input
+          key={filters.query}
           name="q"
           defaultValue={filters.query}
+          maxLength={80}
           placeholder="搜索名称、厂商、机房、线路或规格"
           aria-label="搜索服务器套餐"
-          disabled={isPending}
           className="min-h-11"
         />
-        <Button type="submit" className="min-h-11" disabled={isPending}>
+        <Button type="submit" className="min-h-11">
           <Search className="size-4" />
           搜索
         </Button>
-      </form>
+      </div>
 
       <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <div className="lg:hidden">
           <FacetSelect
+            name="provider"
             value={filters.provider}
-            placeholder="厂商"
+            label="厂商"
             allLabel="全部厂商"
             items={facets.providers}
-            disabled={isPending}
-            onValueChange={(value) => updateFilter("provider", value)}
           />
         </div>
-        <Select
-          value={filters.stock}
-          disabled={isPending}
-          onValueChange={(value) => updateFilter("stock", value)}
+        <select
+          name="stock"
+          key={filters.stock}
+          defaultValue={filters.stock}
+          aria-label="库存状态"
+          onChange={submitSelect}
+          className={selectClassName}
         >
-          <SelectTrigger className="min-h-11">
-            <SelectValue placeholder="库存状态" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部库存</SelectItem>
-            <SelectItem value="in_stock">有货</SelectItem>
-            <SelectItem value="out_of_stock">缺货</SelectItem>
-            <SelectItem value="restocking">补货中</SelectItem>
-            <SelectItem value="preorder">预售</SelectItem>
-            <SelectItem value="discontinued">停售</SelectItem>
-          </SelectContent>
-        </Select>
+          <option value="all">全部库存</option>
+          <option value="in_stock">有货</option>
+          <option value="out_of_stock">缺货</option>
+          <option value="restocking">补货中</option>
+          <option value="preorder">预售</option>
+          <option value="discontinued">停售</option>
+        </select>
         <FacetSelect
+          name="group"
           value={filters.group}
-          placeholder="产品组"
+          label="产品组"
           allLabel="全部产品组"
           items={facets.groups}
-          disabled={isPending}
-          onValueChange={(value) => updateFilter("group", value)}
         />
-        <Select
-          value={filters.sort}
-          disabled={isPending}
-          onValueChange={(value) => updateFilter("sort", value)}
+        <select
+          name="sort"
+          key={filters.sort}
+          defaultValue={filters.sort}
+          aria-label="排序"
+          onChange={submitSelect}
+          className={selectClassName}
         >
-          <SelectTrigger className="min-h-11">
-            <SelectValue placeholder="排序" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="price-asc">月价从低到高</SelectItem>
-            <SelectItem value="price-desc">月价从高到低</SelectItem>
-            <SelectItem value="latest">最近更新</SelectItem>
-          </SelectContent>
-        </Select>
+          <option value="price-asc">月价从低到高</option>
+          <option value="price-desc">月价从高到低</option>
+          <option value="latest">最近更新</option>
+        </select>
       </div>
 
-      <details className="mt-2 rounded-md border border-border/60 bg-muted/15 px-3 py-2">
+      <details
+        open={hasAdvancedFilters}
+        className="mt-2 rounded-md border border-border/60 bg-muted/15 px-3 py-2"
+      >
         <summary className="flex min-h-11 cursor-pointer select-none items-center text-sm font-medium text-foreground">
           更多筛选
         </summary>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           <FacetSelect
+            name="region"
             value={filters.region}
-            placeholder="地区"
+            label="地区"
             allLabel="全部地区"
             items={facets.regions}
-            disabled={isPending}
-            onValueChange={(value) => updateFilter("region", value)}
           />
           <FacetSelect
+            name="line"
             value={filters.line}
-            placeholder="线路"
+            label="线路"
             allLabel="全部线路"
             items={facets.lines}
-            disabled={isPending}
-            onValueChange={(value) => updateFilter("line", value)}
           />
           <FacetSelect
+            name="feature"
             value={filters.feature}
-            placeholder="特征"
+            label="特征"
             allLabel="全部特征"
             items={facets.features}
-            disabled={isPending}
-            onValueChange={(value) => updateFilter("feature", value)}
           />
-          <Select
-            value={filters.promo}
-            disabled={isPending}
-            onValueChange={(value) => updateFilter("promo", value)}
+          <select
+            name="promo"
+            key={filters.promo}
+            defaultValue={filters.promo}
+            aria-label="优惠码"
+            onChange={submitSelect}
+            className={selectClassName}
           >
-            <SelectTrigger className="min-h-11">
-              <SelectValue placeholder="优惠码" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部优惠码</SelectItem>
-              <SelectItem value="with">有优惠码</SelectItem>
-              <SelectItem value="without">无优惠码</SelectItem>
-            </SelectContent>
-          </Select>
+            <option value="all">全部优惠码</option>
+            <option value="with">有优惠码</option>
+            <option value="without">无优惠码</option>
+          </select>
           {filters.kind === "promotion" ? (
-            <Select
-              value={filters.check}
-              disabled={isPending}
-              onValueChange={(value) => updateFilter("check", value)}
+            <select
+              name="check"
+              key={filters.check}
+              defaultValue={filters.check}
+              aria-label="探测状态"
+              onChange={submitSelect}
+              className={selectClassName}
             >
-              <SelectTrigger className="min-h-11">
-                <SelectValue placeholder="探测状态" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部探测状态</SelectItem>
-                <SelectItem value="ok">探测正常</SelectItem>
-                <SelectItem value="failed">探测失败</SelectItem>
-                <SelectItem value="unknown">尚未探测</SelectItem>
-              </SelectContent>
-            </Select>
+              <option value="all">全部探测状态</option>
+              <option value="ok">探测正常</option>
+              <option value="failed">探测失败</option>
+              <option value="unknown">尚未探测</option>
+            </select>
           ) : null}
         </div>
-        <form
-          onSubmit={submitPrice}
-          className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,160px)_minmax(0,160px)_auto]"
-        >
+        <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,160px)_minmax(0,160px)_auto]">
           <Input
+            key={`min-${filters.minPrice ?? ""}`}
             name="minPrice"
             type="number"
             inputMode="decimal"
             min="0"
+            max="1000000"
             step="0.01"
             defaultValue={filters.minPrice}
             placeholder="最低月价 USD"
             aria-label="最低美元月价"
-            disabled={isPending}
             className="min-h-11"
           />
           <Input
+            key={`max-${filters.maxPrice ?? ""}`}
             name="maxPrice"
             type="number"
             inputMode="decimal"
             min="0"
+            max="1000000"
             step="0.01"
             defaultValue={filters.maxPrice}
             placeholder="最高月价 USD"
             aria-label="最高美元月价"
-            disabled={isPending}
             className="min-h-11"
           />
           <Button
@@ -488,12 +376,11 @@ export function ServerInventoryToolbar({
             variant="outline"
             size="sm"
             className="min-h-11"
-            disabled={isPending}
           >
             应用价格
           </Button>
-        </form>
+        </div>
       </details>
-    </div>
+    </form>
   );
 }

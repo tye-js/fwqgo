@@ -7,6 +7,7 @@ const webOrigin = (process.env.MOBILE_WEB_URL ?? "http://127.0.0.1:3000").replac
 const cmsOrigin = (process.env.MOBILE_CMS_URL ?? "http://127.0.0.1:3100").replace(/\/$/, "");
 const requireData = process.env.MOBILE_SMOKE_REQUIRE_DATA === "1";
 const knowledgeOnly = process.env.MOBILE_SMOKE_SCOPE === "knowledge";
+const inventoryOnly = process.env.MOBILE_SMOKE_SCOPE === "inventory";
 /** @type {Array<[number, number]>} */
 const viewports = [
   [320, 568],
@@ -28,7 +29,8 @@ async function checkPage(page, url, name, { expectInventory = false } = {}) {
       (node) => node.scrollWidth > node.clientWidth + 1,
     );
     const allowed = regions.every((node) =>
-      node.matches(".cms-table-viewport, .cms-table-viewport *"),
+      node.matches(".cms-table-viewport, .cms-table-viewport *") ||
+      (window.innerWidth >= 1280 && node.matches("#inventory-results .overflow-x-auto, #inventory-results .overflow-x-auto *")),
     );
     return {
       overflowing,
@@ -56,6 +58,88 @@ async function checkPage(page, url, name, { expectInventory = false } = {}) {
   return result;
 }
 
+/** @param {Page} page @param {string} selector @param {string} text */
+async function clickText(page, selector, text) {
+  for (const element of await page.$$(selector)) {
+    if ((await element.evaluate((node) => node.textContent?.trim())) === text) {
+      await element.click();
+      return;
+    }
+  }
+  throw new Error(`Missing ${selector}: ${text}`);
+}
+
+/** @param {Page} page @param {() => Promise<unknown>} action */
+async function navigateInventory(page, action) {
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30_000 }),
+    action(),
+  ]);
+  await page.waitForSelector('form[aria-label="筛选服务器套餐"]');
+}
+
+/** @param {Page} page */
+async function checkInventoryFilters(page) {
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await page.goto(`${webOrigin}/servers`, { waitUntil: "networkidle2", timeout: 30_000 });
+  await page.waitForSelector('input[name="q"]');
+  const initialCards = await page.$$eval("#inventory-results article", (cards) => cards.length);
+  if (requireData) assert.ok(initialCards > 0, "Inventory interaction checks require offer data");
+
+  const missingQuery = "__fwqgo_inventory_smoke_no_match__";
+  await page.type('input[name="q"]', missingQuery);
+  await navigateInventory(page, () => clickText(page, 'button[type="submit"]', "搜索"));
+  assert.equal(new URL(page.url()).searchParams.get("q"), missingQuery);
+  assert.match(await page.$eval("#inventory-results", (element) => element.textContent ?? ""), /没有匹配的库存套餐/);
+
+  await navigateInventory(page, () => clickText(page, "a", "重置"));
+  assert.equal(new URL(page.url()).search, "");
+  assert.equal(await page.$eval('input[name="q"]', (input) => input.value), "");
+  assert.equal(await page.$$eval("#inventory-results article", (cards) => cards.length), initialCards, "Reset must restore the unfiltered results");
+
+  await navigateInventory(page, () => page.select('select[name="sort"]', "price-desc"));
+  assert.equal(new URL(page.url()).searchParams.get("sort"), "price-desc");
+  assert.equal(await page.$eval('select[name="sort"]', (select) => select.value), "price-desc");
+
+  await page.click("form details > summary");
+  await page.type('input[name="maxPrice"]', "3");
+  await navigateInventory(page, () => clickText(page, 'button[type="submit"]', "应用价格"));
+  assert.equal(new URL(page.url()).searchParams.get("maxPrice"), "3");
+  assert.equal(new URL(page.url()).searchParams.get("sort"), "price-desc", "Price filtering must preserve sorting");
+  const monthlyPrices = await page.$$eval("#inventory-results article", (cards) => cards.map((card) => {
+    const match = /约 \$([\d.]+) \/ 月/.exec(card.textContent ?? "");
+    return match ? Number(match[1]) : null;
+  }));
+  assert.ok(monthlyPrices.every((price) => price !== null && price <= 3), "The visible offers must respect the selected maximum price");
+  assert.deepEqual(monthlyPrices, [...monthlyPrices].sort((a, b) => (b ?? 0) - (a ?? 0)), "The visible offers must respect descending price order");
+  assert.equal(await page.$eval("form details", (element) => element.open), true, "More filters must stay open after applying a condition");
+  await navigateInventory(page, () => clickText(page, "a", "重置"));
+  assert.equal(new URL(page.url()).search, "");
+
+  // Streaming HTML still needs its inline resume scripts; block only the
+  // external hydration bundles to exercise native form submission.
+  /** @param {import('puppeteer').HTTPRequest} request */
+  function withoutHydration(request) {
+    if (request.resourceType() === "script" && new URL(request.url()).pathname.startsWith("/_next/")) {
+      void request.abort();
+    } else {
+      void request.continue();
+    }
+  }
+  await page.setRequestInterception(true);
+  page.on("request", withoutHydration);
+  try {
+    await page.reload({ waitUntil: "networkidle2" });
+    await page.type('input[name="q"]', missingQuery);
+    await navigateInventory(page, () => clickText(page, 'button[type="submit"]', "搜索"));
+    assert.equal(new URL(page.url()).searchParams.get("q"), missingQuery);
+    assert.match(await page.$eval("#inventory-results", (element) => element.textContent ?? ""), /没有匹配的库存套餐/);
+  } finally {
+    page.off("request", withoutHydration);
+    await page.setRequestInterception(false);
+  }
+}
+
 async function run() {
   let browser;
   try {
@@ -76,6 +160,10 @@ async function run() {
     });
     for (const [width, height] of viewports) {
       await page.setViewport({ width, height, deviceScaleFactor: 1 });
+      if (inventoryOnly) {
+        await checkPage(page, `${webOrigin}/servers`, "服务器库存", { expectInventory: true });
+        continue;
+      }
       if (!knowledgeOnly) {
         await checkPage(page, `${webOrigin}/`, `公开首页`);
         await checkPage(page, `${webOrigin}/servers`, `服务器库存`, { expectInventory: true });
@@ -83,6 +171,13 @@ async function run() {
       }
       await checkPage(page, `${webOrigin}/knowledge`, "中文知识库");
       await checkPage(page, `${webOrigin}/en/knowledge`, "英文知识库");
+    }
+
+    if (inventoryOnly) {
+      await checkInventoryFilters(page);
+      assert.deepEqual(browserErrors, [], "Browser application/hydration errors occurred");
+      console.log(`Mobile inventory smoke passed: ${viewports.length} viewports, search, reset, sorting, combined price filtering and overflow probes.`);
+      return;
     }
 
     await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
