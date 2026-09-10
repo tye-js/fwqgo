@@ -6,6 +6,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import nextEnv from "@next/env";
+import { getSecurityHeaders } from "../../packages/core/security-headers.mjs";
 
 const appDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(/* turbopackIgnore: true */ appDir, "../..");
@@ -21,7 +22,21 @@ await import("../../src/env.js");
 
 /** @type {import("next").NextConfig} */
 const config = {
+  // Public article s-maxage=900 is applied only by the verified outer proxy.
+  // Cloudflare-CDN-Cache-Control is also set only by that outer proxy.
+  poweredByHeader: false,
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: getSecurityHeaders({
+          production: process.env.NODE_ENV === "production",
+        }),
+      },
+    ];
+  },
   output: "standalone",
+  serverExternalPackages: ["re2-wasm", "undici"],
   distDir: "../../.next-web",
   // Dynamic article metadata must be present in the initial <head>. This
   // trades a small metadata lookup for reliable crawlers and audit tools.

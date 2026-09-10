@@ -483,8 +483,7 @@ export async function getServerOfferTopicCounts() {
 
     return result;
   } catch (error) {
-    console.error("Failed to load server offer topic counts:", error);
-    return offerTopics.map((topic) => ({ slug: topic.slug, count: 0 }));
+    throw new Error("获取套餐主题数量失败", { cause: error });
   }
 }
 
@@ -501,8 +500,7 @@ export async function getPublicServerOfferCount() {
 
     return Number(row?.count ?? 0);
   } catch (error) {
-    console.error("Failed to count public server offers:", error);
-    return 0;
+    throw new Error("获取公开套餐数量失败", { cause: error });
   }
 }
 
@@ -540,8 +538,7 @@ export async function getLatestServerOffers(limit = 8) {
       .orderBy(desc(serverOffers.featured), desc(serverOffers.createdAt))
       .limit(limit);
   } catch (error) {
-    console.error("Failed to load latest server offers:", error);
-    return [];
+    throw new Error("获取最新套餐失败", { cause: error });
   }
 }
 
@@ -561,8 +558,7 @@ export async function getPublicServerOffers(limit = 120) {
       )
       .limit(limit);
   } catch (error) {
-    console.error("Failed to load public server offers:", error);
-    return [];
+    throw new Error("获取公开套餐失败", { cause: error });
   }
 }
 
@@ -774,8 +770,7 @@ export async function getServerOffersByKeywords(input: {
       )
       .limit(input.limit ?? 6);
   } catch (error) {
-    console.error("Failed to load keyword server offers:", error);
-    return [];
+    throw new Error("获取相关套餐失败", { cause: error });
   }
 }
 

@@ -1,6 +1,7 @@
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import {
   assertPublicHttpUrl,
+  fetchPublicHttpUrlOnce,
   requirePublicHttpUrl,
 } from "@fwqgo/core/network-url";
 import { normalizeServerOfferBillingCycle } from "@fwqgo/core/server-offer-price";
@@ -65,11 +66,14 @@ export async function fetchWhmcsProductPage(input: {
     const cookies = cookieHeader(cookieJar);
     if (cookies) headers.set("Cookie", cookies);
 
-    const response = await fetch(currentUrl, {
-      headers,
-      redirect: "manual",
-      signal,
-    });
+    const response = input.allowInterceptedDns
+      ? await fetch(currentUrl, { headers, redirect: "manual", signal })
+      : await fetchPublicHttpUrlOnce(
+          currentUrl,
+          { headers, signal },
+          "WHMCS 产品配置地址",
+          initialUrl.origin,
+        );
     updateCookieJar(response.headers, cookieJar);
 
     if (redirectStatuses.has(response.status)) {

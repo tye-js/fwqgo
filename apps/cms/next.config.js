@@ -6,6 +6,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import nextEnv from "@next/env";
+import { getSecurityHeaders } from "../../packages/core/security-headers.mjs";
 
 const appDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(/* turbopackIgnore: true */ appDir, "../..");
@@ -21,7 +22,20 @@ await import("../../src/env.js");
 
 /** @type {import("next").NextConfig} */
 const config = {
+  poweredByHeader: false,
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: getSecurityHeaders({
+          cms: true,
+          production: process.env.NODE_ENV === "production",
+        }),
+      },
+    ];
+  },
   output: "standalone",
+  serverExternalPackages: ["re2-wasm", "undici"],
   distDir: "../../.next-cms",
   allowedDevOrigins: ["localhost", "127.0.0.1"],
   images: {

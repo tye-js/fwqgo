@@ -1,4 +1,5 @@
 import { connection } from "next/server";
+import { requireAdminSession } from "@fwqgo/auth/session";
 import { Suspense } from "react";
 
 import { AdminLoading } from "@/features/cms/components/admin-loading";
@@ -44,6 +45,7 @@ async function loadServerOfferManageData(
   filters: ServerOfferManageSearchParams,
 ) {
   try {
+    await requireAdminSession();
     const [offerPage, providers, relationPosts] = await Promise.all([
       getAdminServerOffers({
         page: parsePageNo(filters.pageNo),

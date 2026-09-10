@@ -1,4 +1,4 @@
-import { assertPublicHttpUrl } from "@fwqgo/core/network-url";
+import { assertPublicHttpUrl, fetchPublicHttpUrlOnce } from "@fwqgo/core/network-url";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 
 import { getAiRewriteConfigForStatusCheck } from "@fwqgo/ai/rewrite-config";
@@ -219,13 +219,12 @@ export async function checkAiRewriteConfigStatus(
 
   try {
     const signal = AbortSignal.timeout(15_000);
-    const response = await fetch(endpoint, {
+    const response = await fetchPublicHttpUrlOnce(endpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
       },
-      redirect: "error",
       signal,
       body: JSON.stringify({
         model: config.model,
@@ -242,7 +241,7 @@ export async function checkAiRewriteConfigStatus(
           },
         ],
       }),
-    });
+    }, "AI 接口地址");
     const bodyText = await readResponseTextWithLimit(
       response,
       MAX_STATUS_RESPONSE_BYTES,

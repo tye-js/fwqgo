@@ -98,6 +98,8 @@ CMS_BASIC_AUTH_PASSWORD=change-this-password
 
 # 默认关闭；仅在确实需要公开注册时开启
 ENABLE_PUBLIC_SIGNUP=false
+TRUST_PROXY_HEADERS=false
+ENABLE_BROWSER_SCRAPING=false
 
 # 保存 AI API Key 和供应商秘密请求头前必须配置；值为 32 字节密钥
 SECRET_ENCRYPTION_KEYS=2026-07:replace-with-base64url-key
@@ -216,34 +218,36 @@ bun run db:studio         # 打开 Drizzle Studio
 
 ## 常用命令
 
-| 命令                          | 用途                           |
-| ----------------------------- | ------------------------------ |
-| `bun run dev:web`             | 启动 Web 开发服务，端口 3000   |
-| `bun run dev:cms`             | 启动 CMS 开发服务，端口 3100   |
-| `bun run build:web`           | 构建 Web                       |
-| `bun run build:cms`           | 构建 CMS                       |
-| `bun run build`               | 依次构建双应用并检查应用边界   |
-| `bun run start:web`           | 启动 Web 生产构建              |
-| `bun run start:cms`           | 启动 CMS 生产构建              |
-| `bun run test`                | 运行本地私有测试，无目录时跳过 |
-| `bun run verify:repository`   | 拒绝跟踪本地配置和工具目录     |
-| `bun run verify:architecture` | 验证 package 与应用层依赖边界  |
-| `bun run verify:apps`         | 验证 Web/CMS 路由和产物边界    |
-| `bun run verify:deploy`       | 验证 Actions 远端激活脚本      |
-| `bun run verify:migrations`   | 验证迁移 journal 与 SQL 文件   |
-| `bun run verify:security`     | 验证 CMS 鉴权和数据库边界      |
-| `bun run verify:cache`        | 验证公开站关键读取缓存边界     |
-| `bun run smoke:cms`           | 浏览器验证 CMS 登录与核心路由  |
-| `bun run verify:public-mobile-ui` | 验证公开站移动断点、触控区和库存卡片 |
-| `bun run verify:cms-mobile-ui` | 验证 CMS 表格、动态文本和 safe-area |
-| `bun run verify:ai-rewrite-prompts` | 验证当前六个 Prompt 与中文单轮改写 |
-| `bun run smoke:mobile` | 启动服务后验证真实视口和横向溢出 |
-| `bun run smoke:article-isr` | 验证生产文章原始 HTML、metadata、缓存与 RSC 隔离 |
-| `bun run secrets:migrate`     | 演练或执行存量密钥加密迁移     |
-| `bun run lint`                | ESLint 检查                    |
-| `bun run typecheck`           | TypeScript 类型检查            |
-| `bun run check`               | 执行静态、测试、部署和迁移校验 |
-| `bun run healthcheck:prod`    | 检查生产域名、跳转和关键路由   |
+| 命令                                | 用途                                             |
+| ----------------------------------- | ------------------------------------------------ |
+| `bun run dev:web`                   | 启动 Web 开发服务，端口 3000                     |
+| `bun run dev:cms`                   | 启动 CMS 开发服务，端口 3100                     |
+| `bun run build:web`                 | 构建 Web                                         |
+| `bun run build:cms`                 | 构建 CMS                                         |
+| `bun run build`                     | 依次构建双应用并检查应用边界                     |
+| `bun run start:web`                 | 启动 Web 生产构建                                |
+| `bun run start:cms`                 | 启动 CMS 生产构建                                |
+| `bun run test`                      | 运行本地私有测试，无目录时跳过                   |
+| `bun run verify:repository`         | 拒绝跟踪本地配置和工具目录                       |
+| `bun run verify:architecture`       | 验证 package 与应用层依赖边界                    |
+| `bun run verify:apps`               | 验证 Web/CMS 路由和产物边界                      |
+| `bun run verify:deploy`             | 验证 Actions 远端激活脚本                        |
+| `bun run verify:migrations`         | 验证迁移 journal 与 SQL 文件                     |
+| `bun run verify:security`           | 验证 CMS 鉴权和数据库边界                        |
+| `bun run verify:security-runtime`   | 在 Node 与 Bun 验证出站、限流、上传和密钥隔离      |
+| `bun run smoke:security-migrations` | 在独立测试库验证账号权限迁移                     |
+| `bun run verify:cache`              | 验证公开站关键读取缓存边界                       |
+| `bun run smoke:cms`                 | 浏览器验证 CMS 登录与核心路由                    |
+| `bun run verify:public-mobile-ui`   | 验证公开站移动断点、触控区和库存卡片             |
+| `bun run verify:cms-mobile-ui`      | 验证 CMS 表格、动态文本和 safe-area              |
+| `bun run verify:ai-rewrite-prompts` | 验证当前六个 Prompt 与中文单轮改写               |
+| `bun run smoke:mobile`              | 启动服务后验证真实视口和横向溢出                 |
+| `bun run smoke:article-isr`         | 验证生产文章原始 HTML、metadata、缓存与 RSC 隔离 |
+| `bun run secrets:migrate`           | 演练或执行存量密钥加密迁移                       |
+| `bun run lint`                      | ESLint 检查                                      |
+| `bun run typecheck`                 | TypeScript 类型检查                              |
+| `bun run check`                     | 执行静态、测试、部署和迁移校验                   |
+| `bun run healthcheck:prod`          | 检查生产域名、跳转和关键路由                     |
 
 公开文章采用 Next.js Cache Components/ISR：构建时默认预渲染中英文各 50 篇最新与高浏览量文章，其余文章在首次访问后按需生成并缓存。可通过 `PUBLIC_ARTICLE_PRERENDER_LIMIT` 将每种语言的构建清单调整为 1–100；文章发布、编辑、封面和内链变更继续通过现有缓存事件主动失效。Cloudflare Cache Rule 与部署验收说明见 [`docs/article-isr.md`](docs/article-isr.md)。
 
@@ -308,7 +312,13 @@ READ_DATABASE_URL
 ANALYTICS_DATABASE_URL
 CMS_BASIC_AUTH_USERNAME
 CMS_BASIC_AUTH_PASSWORD
+DEPLOY_KNOWN_HOSTS
 ```
+
+生产环境由可信 Nginx 覆盖 `X-Real-IP`/`X-Forwarded-For` 后，将
+GitHub Variable `TRUST_PROXY_HEADERS` 设为 `true`。SSH 公钥固定、Nginx 片段安装、
+账号迁移与上线验收步骤见 [安全修复与发布检查](docs/security-remediation.md)。
+发布预检会在切换版本前检查这些运行配置，主 CMS 不允许启用浏览器抓取。
 
 生产环境需要保存 AI 或供应商密钥时，另行配置：
 
@@ -338,6 +348,7 @@ REMOTE_UPLOAD_DIR=/var/www/uploads
 NEXT_PUBLIC_URL=https://fwqgo.com
 NEXT_PUBLIC_CMS_URL=https://cms.fwqgo.com
 WEB_REVALIDATION_URL=http://127.0.0.1:3000/api/internal/revalidate
+TRUST_PROXY_HEADERS=true
 ```
 
 `WEB_REVALIDATION_SECRET` 可作为 GitHub Secret 固定配置；未配置时，Actions 会为本次发布生成随机密钥并进行日志掩码。Actions 会把该密钥、`WEB_REVALIDATION_URL` 和四个数据库 URL 合并进服务器共享 `.env.production`，保证 Web 与 CMS 使用同一组连接配置。其他运行时配置仍由服务器文件维护。所有真实凭据都不能提交到仓库。

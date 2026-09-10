@@ -23,6 +23,8 @@ export const env = createEnv({
     SECRET_ENCRYPTION_KEY: z.string().min(1).optional(),
     SECRET_ENCRYPTION_ACTIVE_KEY_ID: z.string().min(1).optional(),
     ENABLE_CMS_BACKGROUND_WORKERS: z.enum(["true", "false"]).optional(),
+    TRUST_PROXY_HEADERS: z.enum(["true", "false"]).optional(),
+    ENABLE_BROWSER_SCRAPING: z.enum(["true", "false"]).optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -57,6 +59,8 @@ export const env = createEnv({
     SECRET_ENCRYPTION_ACTIVE_KEY_ID:
       process.env.SECRET_ENCRYPTION_ACTIVE_KEY_ID,
     ENABLE_CMS_BACKGROUND_WORKERS: process.env.ENABLE_CMS_BACKGROUND_WORKERS,
+    TRUST_PROXY_HEADERS: process.env.TRUST_PROXY_HEADERS,
+    ENABLE_BROWSER_SCRAPING: process.env.ENABLE_BROWSER_SCRAPING,
     NODE_ENV: process.env.NODE_ENV,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },

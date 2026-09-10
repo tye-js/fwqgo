@@ -53,6 +53,7 @@ jobs:
       NEXT_PUBLIC_URL: ${{ vars.NEXT_PUBLIC_URL || 'https://fwqgo.com' }}
       NEXT_PUBLIC_CMS_URL: ${{ vars.NEXT_PUBLIC_CMS_URL || 'https://cms.fwqgo.com' }}
       PUBLIC_ARTICLE_PRERENDER_LIMIT: ${{ vars.PUBLIC_ARTICLE_PRERENDER_LIMIT || '50' }}
+      TRUST_PROXY_HEADERS: ${{ vars.TRUST_PROXY_HEADERS }}
       CMS_BASIC_AUTH_USERNAME: ${{ secrets.CMS_BASIC_AUTH_USERNAME }}
       CMS_BASIC_AUTH_PASSWORD: ${{ secrets.CMS_BASIC_AUTH_PASSWORD }}
       SECRET_ENCRYPTION_KEYS: ${{ secrets.SECRET_ENCRYPTION_KEYS }}
@@ -108,6 +109,14 @@ jobs:
       - name: Verify security boundaries
         run: bun run verify:security
 
+      - name: Verify security behavior on Node and Bun
+        run: bun run verify:security-runtime
+
+      - name: Smoke test account permission migrations
+        run: bun run smoke:security-migrations
+        env:
+          SECURITY_MIGRATION_SMOKE_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55432/fwqgo_knowledge_smoke
+
       - name: Verify public cache boundaries
         run: bun run verify:cache
 
@@ -136,6 +145,7 @@ jobs:
             DEPLOY_HOST
             DEPLOY_USER
             SSH_PRIVATE_KEY
+            DEPLOY_KNOWN_HOSTS
             DATABASE_URL
             CMS_DATABASE_URL
             READ_DATABASE_URL
@@ -149,10 +159,15 @@ jobs:
               exit 1
             fi
           done
+          if [[ "$TRUST_PROXY_HEADERS" != "true" ]]; then
+            echo "::error::Verify Nginx overwrites X-Real-IP, then set repository variable TRUST_PROXY_HEADERS=true before deploying."
+            exit 1
+          fi
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
 
       - name: Build standalone
         run: |
@@ -179,9 +194,11 @@ jobs:
           ln -sfn "../../.next-web" ".deploy/payload-$RELEASE_ID/apps/web/.next"
           ln -sfn "../../.next-cms" ".deploy/payload-$RELEASE_ID/apps/cms/.next"
           cp -R drizzle ".deploy/payload-$RELEASE_ID/drizzle"
+          cp -R deploy ".deploy/payload-$RELEASE_ID/deploy"
           cp scripts/migrate-prod.mjs ".deploy/payload-$RELEASE_ID/scripts/migrate-prod.mjs"
           cp scripts/migration-manifest.mjs ".deploy/payload-$RELEASE_ID/scripts/migration-manifest.mjs"
           cp scripts/merge-runtime-env.mjs ".deploy/payload-$RELEASE_ID/scripts/merge-runtime-env.mjs"
+          cp scripts/verify-runtime-config.mjs ".deploy/payload-$RELEASE_ID/scripts/verify-runtime-config.mjs"
           cp scripts/secure-db-backup.sh ".deploy/payload-$RELEASE_ID/scripts/secure-db-backup.sh"
           cp scripts/secure-pg-dump.mjs ".deploy/payload-$RELEASE_ID/scripts/secure-pg-dump.mjs"
           cp "$(command -v bun)" ".deploy/payload-$RELEASE_ID/bin/bun"
@@ -199,10 +216,19 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/fwqgo_deploy_key
           chmod 600 ~/.ssh/fwqgo_deploy_key
-          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          known_host="$DEPLOY_HOST"
+          if [[ "$DEPLOY_PORT" != "22" ]]; then known_host="[$DEPLOY_HOST]:$DEPLOY_PORT"; fi
+          ssh-keygen -F "$known_host" -f ~/.ssh/known_hosts >/dev/null || {
+            echo "::error::DEPLOY_KNOWN_HOSTS has no pinned key for the configured host and port."
+            exit 1
+          }
+          ssh-keygen -lf ~/.ssh/known_hosts >/dev/null
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
 
       - name: Upload release
         shell: bash
@@ -220,8 +246,9 @@ jobs:
             "$SECRET_ENCRYPTION_KEYS" \
             "$SECRET_ENCRYPTION_KEY" \
             "$SECRET_ENCRYPTION_ACTIVE_KEY_ID" > "$runtime_env"
-          scp -P "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key ".deploy/fwqgo-$RELEASE_ID.tar.gz" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/fwqgo-$RELEASE_ID.tar.gz"
-          scp -P "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key "$runtime_env" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/fwqgo-$RELEASE_ID.runtime.env"
+          printf 'TRUST_PROXY_HEADERS=%s\n' "$TRUST_PROXY_HEADERS" >> "$runtime_env"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key ".deploy/fwqgo-$RELEASE_ID.tar.gz" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/fwqgo-$RELEASE_ID.tar.gz"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key "$runtime_env" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/fwqgo-$RELEASE_ID.runtime.env"
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
@@ -389,6 +416,9 @@ jobs:
             "$runtime_env_override"
           rm -f "$runtime_env_override"
 
+          deployment_stage="verify runtime security configuration"
+          "$release_dir/bin/bun" "$release_dir/scripts/verify-runtime-config.mjs" "$release_dir/ecosystem.config.cjs"
+
           [[ -f "$release_dir/apps/web/server.js" && -f "$release_dir/apps/cms/server.js" ]] || {
             echo "Artifact is missing web or cms standalone server.js" >&2
             exit 1
@@ -476,7 +506,7 @@ jobs:
           find "$releases_dir" -mindepth 1 -maxdepth 1 -type d | sort -r | tail -n +"$((keep_releases + 1))" | xargs -r rm -rf
           REMOTE_SCRIPT
 
-          ssh -p "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" -i ~/.ssh/fwqgo_deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
             "bash -s -- '$DEPLOY_PATH' '$RELEASE_ID' '/tmp/fwqgo-$RELEASE_ID.tar.gz' '$KEEP_RELEASES' '$REMOTE_UPLOAD_DIR' '$RUN_MIGRATIONS' '/tmp/fwqgo-$RELEASE_ID.runtime.env' '$KEEP_DB_BACKUPS' '$DB_BACKUP_RETENTION_DAYS'" < "$remote_script"
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}

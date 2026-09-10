@@ -3,11 +3,8 @@ import path from "node:path";
 
 const root = process.cwd();
 const sourceNodeModules = path.join(root, "node_modules");
-const standaloneTargets = [
-  ".next-web/standalone",
-  ".next-cms/standalone",
-];
-const runtimePackages = ["sharp", "@img", "detect-libc", "semver"];
+const standaloneTargets = [".next-web/standalone", ".next-cms/standalone"];
+const runtimePackages = ["sharp", "@img", "detect-libc", "semver", "re2-wasm"];
 
 /** @param {string} directory */
 function listFiles(directory) {
@@ -57,6 +54,11 @@ for (const relativeTarget of standaloneTargets) {
   }
 
   assertSharpNativeRuntime(targetNodeModules);
+  if (
+    !fs.existsSync(path.join(targetNodeModules, "re2-wasm/build/wasm/re2.wasm"))
+  ) {
+    throw new Error("Standalone runtime is missing the RE2 WebAssembly binary");
+  }
 }
 
 console.log(

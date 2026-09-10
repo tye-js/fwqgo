@@ -1,8 +1,8 @@
 import { Toaster } from "sonner";
 import { type Metadata } from "next";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
+import { isUnauthorizedError, requireAdminSession } from "@fwqgo/auth/session";
 
 import { AppSidebar } from "@/components/endpoint/app-sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -12,8 +12,8 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import AppBreadcrumb from "@/components/endpoint/app-breadcrumb";
-import { validateSession } from "@/features/cms/actions/validate-session";
 import { CmsReleaseGuard } from "@/features/cms/components/cms-release-guard";
+import { AdminLoading } from "@/features/cms/components/admin-loading";
 
 export const metadata: Metadata = {
   title: "后台系统",
@@ -21,33 +21,26 @@ export const metadata: Metadata = {
   icons: [{ rel: "icon", url: "/icon.svg" }],
 };
 
-async function SessionGuard() {
-  const headersList = await headers();
-  const sessionId = headersList.get("x-session-id");
-  if (!sessionId) redirect("/login");
-
-  let isValid = false;
+async function requireAdminPageSession() {
   try {
-    isValid = await validateSession(sessionId);
+    await requireAdminSession();
   } catch (error) {
-    console.error("Session validation failed:", error);
-    redirect("/login?reason=session_check_failed");
+    if (isUnauthorizedError(error)) redirect("/api/auth/session-expired");
+    // Next.js prerender interruptions and database errors must keep their
+    // original semantics instead of being converted into authentication errors.
+    throw error;
   }
-
-  if (!isValid) redirect("/api/auth/session-expired");
-  return null;
 }
 
-export default function CreateLayout({
+async function AuthenticatedAdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  await requireAdminPageSession();
+
   return (
     <div className="cms-theme min-h-dvh bg-background [&_input]:text-sm max-sm:[&_input]:text-base [&_textarea]:text-sm max-sm:[&_textarea]:text-base">
-      <Suspense fallback={null}>
-        <SessionGuard />
-      </Suspense>
       <CmsReleaseGuard releaseId={process.env.RELEASE_ID ?? "local"} />
       <Toaster
         position="top-center"
@@ -91,5 +84,17 @@ export default function CreateLayout({
         </SidebarProvider>
       </main>
     </div>
+  );
+}
+
+export default function CreateLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <Suspense fallback={<AdminLoading title="正在验证登录状态" />}>
+      <AuthenticatedAdminLayout>{children}</AuthenticatedAdminLayout>
+    </Suspense>
   );
 }

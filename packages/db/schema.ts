@@ -257,16 +257,31 @@ export const postTags = pgTable(
 );
 
 // User table
-export const users = pgTable("users", {
-  id: text("id").primaryKey(),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
-  email: text("email").unique(),
-  emailVerified: timestamp("emailVerified"),
-  image: text("image"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").notNull(),
-});
+export const users = pgTable(
+  "users",
+  {
+    id: text("id").primaryKey(),
+    username: text("username").notNull().unique(),
+    password: text("password").notNull(),
+    email: text("email").unique(),
+    emailVerified: timestamp("emailVerified"),
+    image: text("image"),
+    role: varchar("role", { length: 24 }).default("viewer").notNull(),
+    status: varchar("status", { length: 24 }).default("active").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").notNull(),
+  },
+  (table) => ({
+    roleCheck: check(
+      "users_role_check",
+      sql`${table.role} in ('admin', 'editor', 'viewer')`,
+    ),
+    statusCheck: check(
+      "users_status_check",
+      sql`${table.status} in ('active', 'disabled')`,
+    ),
+  }),
+);
 
 export const adminAuditLogs = pgTable(
   "admin_audit_logs",

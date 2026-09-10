@@ -15,6 +15,13 @@ function normalizeIp(value: string | null | undefined) {
 }
 
 export function getTrustedClientIp(headers: HeaderReader) {
+  if (process.env.NODE_ENV === "production") {
+    // Production ingress must overwrite this single header. Never fall back to
+    // a client-supplied Cloudflare or forwarded-for header when it is missing.
+    return process.env.TRUST_PROXY_HEADERS === "true"
+      ? normalizeIp(headers.get("x-real-ip"))
+      : null;
+  }
   const realIp = normalizeIp(headers.get("x-real-ip"));
   if (realIp) return realIp;
 

@@ -136,7 +136,20 @@ function createApp({
   const analyticsDatabaseUrl =
     process.env.ANALYTICS_DATABASE_URL ??
     productionEnv.ANALYTICS_DATABASE_URL ??
-    writeDatabaseUrl;
+    "";
+  if (
+    !process.env.READ_DATABASE_URL &&
+    !productionEnv.READ_DATABASE_URL &&
+    !process.env.READ_USERNAME &&
+    !productionEnv.READ_USERNAME
+  ) {
+    throw new Error(
+      "Production runtime requires READ_DATABASE_URL or READ_USERNAME",
+    );
+  }
+  if (!analyticsDatabaseUrl) {
+    throw new Error("Production runtime requires ANALYTICS_DATABASE_URL");
+  }
   const roleDatabaseEnv =
     role === "web"
       ? {
@@ -146,12 +159,93 @@ function createApp({
           CMS_DATABASE_URL: "",
           CMS_USERNAME: "",
           CMS_PASSWORD: "",
+          READ_USERNAME: "",
+          READ_PASSWORD: "",
         }
       : {
           DATABASE_URL: writeDatabaseUrl,
           CMS_DATABASE_URL: writeDatabaseUrl,
+          READ_DATABASE_URL: readDatabaseUrl,
           ANALYTICS_DATABASE_URL: analyticsDatabaseUrl,
         };
+
+  /** @type {Record<string, string | undefined>} */
+  const sharedRuntimeEnv = {
+    NEXT_PUBLIC_URL:
+      process.env.NEXT_PUBLIC_URL ?? productionEnv.NEXT_PUBLIC_URL,
+    NEXT_PUBLIC_CMS_URL:
+      process.env.NEXT_PUBLIC_CMS_URL ?? productionEnv.NEXT_PUBLIC_CMS_URL,
+    WEB_REVALIDATION_SECRET:
+      process.env.WEB_REVALIDATION_SECRET ??
+      productionEnv.WEB_REVALIDATION_SECRET,
+    WEB_REVALIDATION_URL:
+      process.env.WEB_REVALIDATION_URL ?? productionEnv.WEB_REVALIDATION_URL,
+    // Empty values also override secrets inherited from the PM2 launcher.
+    SECRET_ENCRYPTION_KEYS: "",
+    SECRET_ENCRYPTION_KEY: "",
+    SECRET_ENCRYPTION_ACTIVE_KEY_ID: "",
+    CMS_BASIC_AUTH_USERNAME: "",
+    CMS_BASIC_AUTH_PASSWORD: "",
+    ENABLE_PUBLIC_SIGNUP: "false",
+    CLOUDFLARE_ZONE_ID:
+      process.env.CLOUDFLARE_ZONE_ID ?? productionEnv.CLOUDFLARE_ZONE_ID,
+    CLOUDFLARE_CACHE_PURGE_TOKEN:
+      process.env.CLOUDFLARE_CACHE_PURGE_TOKEN ??
+      productionEnv.CLOUDFLARE_CACHE_PURGE_TOKEN,
+    ENABLE_CMS_BACKGROUND_WORKERS: "false",
+    TRUST_PROXY_HEADERS:
+      process.env.TRUST_PROXY_HEADERS ??
+      productionEnv.TRUST_PROXY_HEADERS ??
+      "false",
+    ENABLE_BROWSER_SCRAPING: "false",
+    WEB_PORT: process.env.WEB_PORT ?? productionEnv.WEB_PORT ?? "3000",
+    DB_MAX_CONNECTIONS:
+      process.env.DB_MAX_CONNECTIONS ?? productionEnv.DB_MAX_CONNECTIONS,
+    PUBLIC_ARTICLE_PRERENDER_LIMIT:
+      process.env.PUBLIC_ARTICLE_PRERENDER_LIMIT ??
+      productionEnv.PUBLIC_ARTICLE_PRERENDER_LIMIT,
+    PUBLIC_ARTICLE_SLOW_LOG_MS:
+      process.env.PUBLIC_ARTICLE_SLOW_LOG_MS ??
+      productionEnv.PUBLIC_ARTICLE_SLOW_LOG_MS,
+    PUBLIC_KNOWLEDGE_SLOW_LOG_MS:
+      process.env.PUBLIC_KNOWLEDGE_SLOW_LOG_MS ??
+      productionEnv.PUBLIC_KNOWLEDGE_SLOW_LOG_MS,
+    UPLOAD_DIR:
+      process.env.UPLOAD_DIR ?? productionEnv.UPLOAD_DIR ?? "/var/www/uploads",
+    PORT: resolvedPort,
+    HOSTNAME: "127.0.0.1",
+    NODE_ENV: "production",
+    TZ: "UTC",
+    RELEASE_ID: process.env.RELEASE_ID ?? productionEnv.RELEASE_ID ?? "unknown",
+    BUN_BIN: bunInterpreter,
+  };
+  if (role === "cms") {
+    sharedRuntimeEnv.SECRET_ENCRYPTION_KEYS =
+      process.env.SECRET_ENCRYPTION_KEYS ??
+      productionEnv.SECRET_ENCRYPTION_KEYS;
+    sharedRuntimeEnv.SECRET_ENCRYPTION_KEY =
+      process.env.SECRET_ENCRYPTION_KEY ?? productionEnv.SECRET_ENCRYPTION_KEY;
+    sharedRuntimeEnv.SECRET_ENCRYPTION_ACTIVE_KEY_ID =
+      process.env.SECRET_ENCRYPTION_ACTIVE_KEY_ID ??
+      productionEnv.SECRET_ENCRYPTION_ACTIVE_KEY_ID;
+    sharedRuntimeEnv.ENABLE_CMS_BACKGROUND_WORKERS =
+      process.env.ENABLE_CMS_BACKGROUND_WORKERS ??
+      productionEnv.ENABLE_CMS_BACKGROUND_WORKERS;
+    sharedRuntimeEnv.ENABLE_BROWSER_SCRAPING =
+      process.env.ENABLE_BROWSER_SCRAPING ??
+      productionEnv.ENABLE_BROWSER_SCRAPING ??
+      "false";
+    sharedRuntimeEnv.CMS_BASIC_AUTH_USERNAME =
+      process.env.CMS_BASIC_AUTH_USERNAME ??
+      productionEnv.CMS_BASIC_AUTH_USERNAME;
+    sharedRuntimeEnv.CMS_BASIC_AUTH_PASSWORD =
+      process.env.CMS_BASIC_AUTH_PASSWORD ??
+      productionEnv.CMS_BASIC_AUTH_PASSWORD;
+    sharedRuntimeEnv.ENABLE_PUBLIC_SIGNUP =
+      process.env.ENABLE_PUBLIC_SIGNUP ??
+      productionEnv.ENABLE_PUBLIC_SIGNUP ??
+      "false";
+  }
 
   return {
     name,
@@ -163,19 +257,11 @@ function createApp({
     autorestart: true,
     watch: false,
     max_memory_restart: "1G",
+    filter_env:
+      role === "web" ? ["SECRET_ENCRYPTION_", "CMS_", "ENABLE_CMS_"] : [],
     env: {
-      ...productionEnv,
+      ...sharedRuntimeEnv,
       ...roleDatabaseEnv,
-      PORT: resolvedPort,
-      NODE_ENV: "production",
-      TZ: "UTC",
-      RELEASE_ID:
-        process.env.RELEASE_ID ?? productionEnv.RELEASE_ID ?? "unknown",
-      BUN_BIN: bunInterpreter,
-      UPLOAD_DIR:
-        process.env.UPLOAD_DIR ??
-        productionEnv.UPLOAD_DIR ??
-        "/var/www/uploads",
     },
   };
 }

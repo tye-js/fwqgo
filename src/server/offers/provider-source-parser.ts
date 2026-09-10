@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { load } from "cheerio";
 import type { Cheerio } from "cheerio";
 import type { AnyNode } from "domhandler";
+import { matchProviderFieldPattern } from "@/server/offers/provider-field-pattern";
 
 import type {
   PROVIDER_AVAILABILITY_STATUSES,
@@ -679,13 +680,7 @@ function htmlFieldValue(
     : target.text();
   const text = toText(raw);
   if (!field.pattern || !text) return text;
-  let pattern: RegExp;
-  try {
-    pattern = new RegExp(field.pattern, "i");
-  } catch {
-    throw new Error(`HTML 字段正则无效：${field.pattern}`);
-  }
-  return toText(pattern.exec(text)?.[field.group] ?? "");
+  return toText(matchProviderFieldPattern(text, field.pattern, field.group));
 }
 
 function parseHtmlCandidates(

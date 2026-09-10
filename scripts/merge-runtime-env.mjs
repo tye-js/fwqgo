@@ -18,6 +18,7 @@ const allowedKeys = new Set([
   "SECRET_ENCRYPTION_KEYS",
   "WEB_REVALIDATION_SECRET",
   "WEB_REVALIDATION_URL",
+  "TRUST_PROXY_HEADERS",
 ]);
 
 /** @param {string} filePath */

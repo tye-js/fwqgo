@@ -102,7 +102,12 @@ export function parsePostgresIntegerId(
 export function isInternalHref(
   href: string | null | undefined,
 ): href is string {
-  return Boolean(href?.startsWith("/") && !href.startsWith("//"));
+  return Boolean(
+    href &&
+      href.startsWith("/") &&
+      !href.startsWith("//") &&
+      !/[\\\u0000-\u001f\u007f]/.test(href),
+  );
 }
 
 export function isOutboundShortLinkHref(

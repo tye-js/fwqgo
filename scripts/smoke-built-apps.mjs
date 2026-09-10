@@ -129,6 +129,32 @@ import("sharp")
   );
 }
 
+function verifyRe2Runtime() {
+  const result = spawnSync(
+    runtime,
+    [
+      "-e",
+      `
+const { RE2 } = require("re2-wasm");
+if (new RE2("^(a|aa)+$", "iu").exec("a".repeat(32000) + "!") !== null) {
+  throw new Error("Unexpected RE2 result");
+}
+process.stdout.write("re2-runtime-ok");
+`,
+    ],
+    {
+      cwd: path.join(root, ".next-cms", "standalone", "apps", "cms"),
+      env: process.env,
+      encoding: "utf8",
+      timeout: 5000,
+    },
+  );
+  assert(
+    result.status === 0 && result.stdout.includes("re2-runtime-ok"),
+    `Standalone RE2 check failed:\n${result.stderr || result.stdout}`,
+  );
+}
+
 /** @param {string} origin @param {string} service @param {import("node:child_process").ChildProcess} child @param {Record<string, string>} [headers] */
 async function checkHealth(origin, service, child, headers = {}) {
   const response = await waitForServer(`${origin}/api/health`, child, headers);
@@ -210,7 +236,10 @@ function checkPrerenderedArticleShells() {
         `${relativePath} contains duplicate streamed resume segment IDs`,
       );
 
-      const { isPlaceholder } = checkPrerenderedArticleMetadata(relativePath, html);
+      const { isPlaceholder } = checkPrerenderedArticleMetadata(
+        relativePath,
+        html,
+      );
 
       if (!isPlaceholder) {
         realArticleCount += 1;
@@ -271,6 +300,7 @@ async function checkArticleCacheBoundaries(origin, child) {
 
 async function run() {
   verifySharpRuntime();
+  verifyRe2Runtime();
   checkPrerenderedArticleShells();
 
   const webPort = await getAvailablePort();
@@ -348,7 +378,7 @@ async function run() {
   );
 
   console.log(
-    "Built app smoke tests passed: sharp WebP, health, metadata images, redirects, auth boundary, route isolation, article ISR and RSC cache isolation",
+    "Built app smoke tests passed: sharp WebP, RE2 WASM, health, metadata images, redirects, auth boundary, route isolation, article ISR and RSC cache isolation",
   );
 }
 

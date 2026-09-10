@@ -7,7 +7,7 @@ export class RequestBodyTooLargeError extends Error {
   }
 }
 
-export async function readRequestTextWithLimit(
+export async function readRequestBodyWithLimit(
   request: RequestBodySource,
   maxBytes: number,
 ) {
@@ -21,12 +21,11 @@ export async function readRequestTextWithLimit(
     throw new RequestBodyTooLargeError(limit);
   }
 
-  if (!request.body) return "";
+  if (!request.body) return new Uint8Array();
 
   const reader = request.body.getReader();
-  const decoder = new TextDecoder();
+  const chunks: Uint8Array[] = [];
   let total = 0;
-  let text = "";
 
   try {
     while (true) {
@@ -41,11 +40,38 @@ export async function readRequestTextWithLimit(
         throw new RequestBodyTooLargeError(limit);
       }
 
-      text += decoder.decode(value, { stream: true });
+      chunks.push(value);
     }
 
-    return text + decoder.decode();
+    const body = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      body.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return body;
   } finally {
     reader.releaseLock();
   }
+}
+
+export async function readRequestTextWithLimit(
+  request: RequestBodySource,
+  maxBytes: number,
+) {
+  return new TextDecoder().decode(
+    await readRequestBodyWithLimit(request, maxBytes),
+  );
+}
+
+/** Bound the entire multipart envelope, including fields and unused files. */
+export async function readRequestFormDataWithLimit(
+  request: RequestBodySource,
+  maxBytes: number,
+) {
+  const body = await readRequestBodyWithLimit(request, maxBytes);
+  const headers = new Headers();
+  const contentType = request.headers.get("content-type");
+  if (contentType) headers.set("content-type", contentType);
+  return new Response(body, { headers }).formData();
 }

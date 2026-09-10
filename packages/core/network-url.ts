@@ -1,5 +1,9 @@
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
+import {
+  fetchPinnedHttpUrl,
+  type PinnedHttpRequestInit,
+} from "@fwqgo/core/pinned-http";
 
 const blockedHostnames = new Set([
   "localhost",
@@ -17,14 +21,24 @@ const blockedHostnameSuffixes = [
   ".lan",
 ];
 
+const globalIpv6 = new BlockList();
+globalIpv6.addSubnet("2000::", 3, "ipv6");
+const reservedIpv6 = new BlockList();
+reservedIpv6.addSubnet("2001::", 23, "ipv6"); // Protocol assignments, including Teredo.
+reservedIpv6.addSubnet("2001:db8::", 32, "ipv6");
+reservedIpv6.addSubnet("2002::", 16, "ipv6"); // 6to4 can embed a private IPv4 address.
+reservedIpv6.addSubnet("3fff::", 20, "ipv6");
+
 const redirectStatuses = new Set([301, 302, 303, 307, 308]);
 
-type SafeFetchInit = RequestInit & {
+type SafeFetchInit = PinnedHttpRequestInit & {
   maxRedirects?: number;
 };
 
+type ResolvedAddress = { address: string; family: number };
+
 function normalizeHostname(hostname: string) {
-  const lower = hostname.trim().toLowerCase();
+  const lower = hostname.trim().toLowerCase().replace(/\.$/, "");
   return lower.startsWith("[") && lower.endsWith("]")
     ? lower.slice(1, -1)
     : lower;
@@ -66,46 +80,11 @@ function isBlockedIpv4(address: string) {
   );
 }
 
-function getFirstIpv6Group(address: string) {
-  const normalized = address.replace(/^\[|\]$/g, "").toLowerCase();
-  const firstGroup = normalized.split(":").find((part) => part.length > 0);
-  if (!firstGroup || !/^[0-9a-f]{1,4}$/.test(firstGroup)) {
-    return null;
-  }
-
-  return Number.parseInt(firstGroup, 16);
-}
-
-function getMappedIpv4Address(address: string) {
-  const normalized = address.replace(/^\[|\]$/g, "").toLowerCase();
-  const match = /(?:^|:)ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(normalized);
-  return match?.[1] ?? null;
-}
-
 function isBlockedIpv6(address: string) {
-  const normalized = address.replace(/^\[|\]$/g, "").toLowerCase();
-  const mappedIpv4 = getMappedIpv4Address(normalized);
-  if (mappedIpv4) return isBlockedIpv4(mappedIpv4);
-
-  if (
-    normalized === "::" ||
-    normalized === "::1" ||
-    normalized === "0:0:0:0:0:0:0:0" ||
-    normalized === "0:0:0:0:0:0:0:1"
-  ) {
-    return true;
-  }
-
-  const firstGroup = getFirstIpv6Group(normalized);
-  if (firstGroup === null) return false;
-
+  // Binary subnet matching covers compressed, expanded and embedded IPv4
+  // spellings, and excludes NAT64, local, mapped and other non-global ranges.
   return (
-    (firstGroup & 0xfe00) === 0xfc00 ||
-    (firstGroup & 0xffc0) === 0xfe80 ||
-    (firstGroup & 0xff00) === 0xff00 ||
-    (firstGroup >= 0x2001 &&
-      firstGroup <= 0x2001 &&
-      normalized.startsWith("2001:db8"))
+    !globalIpv6.check(address, "ipv6") || reservedIpv6.check(address, "ipv6")
   );
 }
 
@@ -140,6 +119,10 @@ export function parsePublicHttpUrl(value: string, baseUrl?: string | URL) {
     return null;
   }
 
+  if (url.username || url.password || /[\\\u0000-\u001f\u007f]/.test(value)) {
+    return null;
+  }
+
   if (isBlockedNetworkHostname(url.hostname)) {
     return null;
   }
@@ -166,11 +149,11 @@ export function requirePublicHttpUrl(
   return url;
 }
 
-async function assertResolvedToPublicAddress(url: URL, label: string) {
+async function resolvePublicAddresses(url: URL, label: string) {
   const hostname = normalizeHostname(url.hostname);
-  if (isIP(hostname)) return;
+  if (isIP(hostname)) return [{ address: hostname, family: isIP(hostname) }];
 
-  let addresses: Array<{ address: string; family: number }>;
+  let addresses: ResolvedAddress[];
   try {
     addresses = await lookup(hostname, { all: true, verbatim: true });
   } catch (error) {
@@ -198,6 +181,8 @@ async function assertResolvedToPublicAddress(url: URL, label: string) {
       `${label} 解析到了非公网地址 ${blockedAddress.address}，已阻止请求`,
     );
   }
+
+  return addresses;
 }
 
 export async function assertPublicHttpUrl(
@@ -206,7 +191,7 @@ export async function assertPublicHttpUrl(
   baseUrl?: string | URL,
 ) {
   const url = requirePublicHttpUrl(value, label, baseUrl);
-  await assertResolvedToPublicAddress(url, label);
+  await resolvePublicAddresses(url, label);
   return url;
 }
 
@@ -219,23 +204,64 @@ function getRedirectUrl(response: Response, currentUrl: URL, label: string) {
   return new URL(location, currentUrl);
 }
 
+function getRequestHeadersForUrl(
+  headers: HeadersInit | undefined,
+  currentUrl: URL,
+  initialOrigin: string,
+) {
+  const result = new Headers(headers);
+  if (currentUrl.origin !== initialOrigin) {
+    for (const name of [
+      "authorization",
+      "cookie",
+      "proxy-authorization",
+      "x-api-key",
+    ]) {
+      result.delete(name);
+    }
+  }
+  return result;
+}
+
+export async function fetchPublicHttpUrlOnce(
+  value: string | URL,
+  init: PinnedHttpRequestInit = {},
+  label = "URL",
+  initialOrigin?: string,
+) {
+  const url = requirePublicHttpUrl(value, label);
+  const addresses = await resolvePublicAddresses(url, label);
+  return fetchPinnedHttpUrl(url, addresses, {
+    ...init,
+    headers: getRequestHeadersForUrl(
+      init.headers,
+      url,
+      initialOrigin ?? url.origin,
+    ),
+    redirect: "manual",
+  });
+}
+
 export async function fetchPublicHttpUrl(
   value: string | URL,
   init: SafeFetchInit = {},
   label = "URL",
 ) {
   const { maxRedirects = 5, ...fetchInit } = init;
-  let url = await assertPublicHttpUrl(value, label);
+  let url = requirePublicHttpUrl(value, label);
+  const initialOrigin = url.origin;
 
   for (
     let redirectCount = 0;
     redirectCount <= maxRedirects;
     redirectCount += 1
   ) {
-    const response = await fetch(url, {
-      ...fetchInit,
-      redirect: "manual",
-    });
+    const response = await fetchPublicHttpUrlOnce(
+      url,
+      fetchInit,
+      label,
+      initialOrigin,
+    );
 
     if (!redirectStatuses.has(response.status)) {
       return response;
@@ -246,9 +272,14 @@ export async function fetchPublicHttpUrl(
       throw new Error(`${label} 跳转次数过多，已停止请求`);
     }
 
-    const nextUrl = getRedirectUrl(response, url, label);
-    await response.body?.cancel();
-    url = await assertPublicHttpUrl(nextUrl, `${label} 跳转地址`);
+    try {
+      url = requirePublicHttpUrl(
+        getRedirectUrl(response, url, label),
+        `${label} 跳转地址`,
+      );
+    } finally {
+      await response.body?.cancel();
+    }
   }
 
   throw new Error(`${label} 跳转次数过多，已停止请求`);

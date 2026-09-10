@@ -27,11 +27,20 @@ export async function getValidSessionById(
       user: {
         id: users.id,
         username: users.username,
+        role: users.role,
+        status: users.status,
       },
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
-    .where(and(eq(sessions.id, sessionId), gt(sessions.expires, new Date())))
+    .where(
+      and(
+        eq(sessions.id, sessionId),
+        gt(sessions.expires, new Date()),
+        eq(users.role, "admin"),
+        eq(users.status, "active"),
+      ),
+    )
     .limit(1);
 
   return session ?? null;
@@ -45,7 +54,7 @@ export async function getCurrentSession() {
 export async function requireAdminSession() {
   const session = await getCurrentSession();
 
-  if (!session) {
+  if (session?.user.status !== "active" || session.user.role !== "admin") {
     throw new UnauthorizedError();
   }
 

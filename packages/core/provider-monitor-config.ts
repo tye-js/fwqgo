@@ -91,7 +91,9 @@ const jsonMonitorConfigSchema = z.object({
 const htmlFieldSchema = z.object({
   selector: z.string().trim().default(""),
   attribute: z.string().trim().optional(),
-  pattern: z.string().max(500).optional(),
+  // Syntax is validated and evaluated by RE2 on the server. A heuristic over
+  // the pattern text cannot establish a safe JavaScript backtracking bound.
+  pattern: z.string().max(200).optional(),
   group: z.number().int().min(0).max(20).default(1),
 });
 

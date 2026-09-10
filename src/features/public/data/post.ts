@@ -206,7 +206,7 @@ export async function getPostsWithTags(
 
     return { data: postsData };
   } catch (error) {
-    return { error: "获取文章列表失败", message: error };
+    throw new Error("获取文章列表失败", { cause: error });
   }
 }
 
@@ -259,12 +259,10 @@ export async function getHomepagePostsWithTags(
   tagCache(cacheTags.homepage, cacheTags.posts, cacheTags.tags);
 
   try {
-    const { data, error } = await getPostsWithTags(40, language);
-    if (error || !data) return { data: [], error };
+    const { data } = await getPostsWithTags(40, language);
     return { data: await attachTagsToPosts(data, language) };
   } catch (error) {
-    console.error("Failed to load homepage posts:", error);
-    return { data: [] };
+    throw new Error("获取首页文章失败", { cause: error });
   }
 }
 
@@ -311,8 +309,7 @@ export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
         )
         .limit(6);
     } catch (error) {
-      console.error("Failed to load homepage promoted posts:", error);
-      return [];
+      throw new Error("获取首页推广文章失败", { cause: error });
     }
   })();
 
@@ -333,8 +330,7 @@ export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
         .orderBy(desc(posts.views), desc(posts.createdAt), desc(posts.id))
         .limit(6);
     } catch (error) {
-      console.error("Failed to load homepage popular posts:", error);
-      return [];
+      throw new Error("获取首页热门文章失败", { cause: error });
     }
   })();
 
@@ -387,7 +383,7 @@ export async function getRecommendedPosts(
 
     return { data: postsData };
   } catch (error) {
-    return { error: "获取推荐文章失败", message: error };
+    throw new Error("获取推荐文章失败", { cause: error });
   }
 }
 
@@ -664,7 +660,7 @@ export async function getPostsByPostId(id: number) {
 
     return { data: [prevRows[0] ?? null, nextRows[0] ?? null] };
   } catch (error) {
-    return { error: "获取上下篇文章失败", message: error };
+    throw new Error("获取上下篇文章失败", { cause: error });
   }
 }
 

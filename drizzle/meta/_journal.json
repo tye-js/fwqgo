@@ -484,6 +484,20 @@
       "when": 1788611424709,
       "tag": "0068_public_slug_history",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1789008679704,
+      "tag": "0069_skinny_tomas",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1789020692801,
+      "tag": "0070_default_new_users_to_viewer",
+      "breakpoints": true
     }
   ]
 }

@@ -53,6 +53,9 @@ function validateCanonicalUrl(value: string) {
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new Error("来源 URL 只允许 HTTP 或 HTTPS");
   }
+  if (url.username || url.password || /[\\\u0000-\u001f\u007f]/.test(value)) {
+    throw new Error("来源 URL 不能包含用户名、密码或控制字符");
+  }
   return url.toString();
 }
 

@@ -3,7 +3,7 @@ import { compare } from "bcryptjs";
 import { z } from "zod";
 import { users } from "@fwqgo/db/schema";
 import { eq } from "drizzle-orm";
-import { getTrustedClientIp } from "@fwqgo/core/client-ip";
+import { getAuthRateLimitKeys } from "@fwqgo/auth/rate-limit";
 import { BoundedAttemptTracker } from "@fwqgo/core/bounded-attempt-tracker";
 import {
   readRequestTextWithLimit,
@@ -51,8 +51,7 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 function getLoginAttemptKeys(request: Request, username: string) {
-  const ip = getTrustedClientIp(request.headers) ?? "unknown";
-  return [`ip:${ip}`, `ip-user:${ip}:${username.toLowerCase()}`];
+  return getAuthRateLimitKeys(request.headers, username);
 }
 
 function getLoginRetryAfterSeconds(keys: string[]) {
@@ -120,7 +119,13 @@ export async function POST(request: Request) {
     }
 
     const [user] = await db
-      .select()
+      .select({
+        id: users.id,
+        username: users.username,
+        password: users.password,
+        role: users.role,
+        status: users.status,
+      })
       .from(users)
       .where(eq(users.username, username))
       .limit(1);
@@ -130,7 +135,12 @@ export async function POST(request: Request) {
       user?.password ?? INVALID_PASSWORD_HASH,
     );
 
-    if (!user || !isValidPassword) {
+    if (
+      !user ||
+      !isValidPassword ||
+      user.status !== "active" ||
+      user.role !== "admin"
+    ) {
       recordFailedLoginAttempt(attemptKeys);
       return respond(
         adminApiFailure("用户名或密码错误", {

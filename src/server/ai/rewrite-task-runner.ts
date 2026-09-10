@@ -63,6 +63,7 @@ import { canFailoverAiProviderError } from "@fwqgo/ai/openai-compatible";
 import { applyEnglishTaxonomyToPost } from "@fwqgo/ai/english-taxonomy";
 import {
   getActiveAiRewriteConfig,
+  getActiveAiRewriteConfigWithFallback,
   getEnabledAiRewriteConfigs,
 } from "@fwqgo/ai/rewrite-config";
 import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
@@ -492,7 +493,7 @@ async function getTaskAiInputMaxLength(styleId?: number | null) {
 
 async function bindTaskConfigs(task: typeof aiRewriteTasks.$inferSelect) {
   const rewriteConfig = task.rewriteStyleId
-    ? await getActiveAiRewriteConfig(task.rewriteStyleId)
+    ? await getActiveAiRewriteConfigWithFallback(task.rewriteStyleId)
     : task.rewriteConfigName || task.rewriteProvider || task.rewriteModel
       ? null
       : await getActiveAiRewriteConfig();
@@ -603,6 +604,13 @@ async function createEnglishSeoTask(input: {
     throw new Error("英文 SEO 任务缺少改写后的中文正文");
   }
 
+  const rewriteConfig = await getActiveAiRewriteConfigWithFallback(
+    input.parentTask.rewriteStyleId ?? undefined,
+  );
+  if (!rewriteConfig) {
+    throw new Error("当前没有已启用的 AI 改写配置，无法创建英文任务");
+  }
+
   const task = await upsertDerivedAiTask({
     sourceUrl,
     sourceType: "english",
@@ -612,11 +620,11 @@ async function createEnglishSeoTask(input: {
     initialPostId: input.post.id,
     currentStep: "等待根据已保存的中文正文生成英文 SEO",
     rewriteConfig: {
-      id: input.parentTask.rewriteStyleId,
-      name: input.parentTask.rewriteConfigName,
-      provider: input.parentTask.rewriteProvider,
-      model: input.parentTask.rewriteModel,
-      maxTokens: input.parentTask.rewriteMaxTokens,
+      id: rewriteConfig.id,
+      name: rewriteConfig.name,
+      provider: rewriteConfig.provider,
+      model: rewriteConfig.model,
+      maxTokens: rewriteConfig.maxTokens,
     },
     imageConfig: {
       id: input.parentTask.imageConfigId,

@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
+import { requireAdminSession } from "@fwqgo/auth/session";
 
 import { AdminLoading } from "@/features/cms/components/admin-loading";
 import {
@@ -26,6 +27,7 @@ type ProviderMonitorSearchParams = {
 
 async function loadProviderMonitorData(requestedCandidatePage: number) {
   try {
+    await requireAdminSession();
     const [monitors, providers, runs, candidatePage, checks, scans] =
       await Promise.all([
         getProviderMonitorList(),

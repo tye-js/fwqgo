@@ -120,7 +120,11 @@ function isSafeArticleHref(href: string) {
     return true;
   }
 
-  if (trimmedHref.startsWith("/") && !trimmedHref.startsWith("//")) {
+  if (
+    trimmedHref.startsWith("/") &&
+    !trimmedHref.startsWith("//") &&
+    !/[\\\u0000-\u001f\u007f]/.test(trimmedHref)
+  ) {
     return true;
   }
 
@@ -321,7 +325,11 @@ function isExternalArticleHref(href: string) {
     return true;
   }
 
-  if (href.startsWith("/") && !href.startsWith("//")) {
+  if (
+    href.startsWith("/") &&
+    !href.startsWith("//") &&
+    !/[\\\u0000-\u001f\u007f]/.test(href)
+  ) {
     return false;
   }
 

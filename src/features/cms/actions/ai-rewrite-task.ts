@@ -19,7 +19,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
-import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
+import {
+  getActiveAiRewriteConfig,
+  getActiveAiRewriteConfigWithFallback,
+} from "@fwqgo/ai/rewrite-config";
 import {
   boundOffsetPaginationByTotal,
   normalizeOffsetPagination,
@@ -808,13 +811,13 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
       .orderBy(desc(aiRewriteTasks.createdAt))
       .limit(1);
 
-    const rewriteConfig = await getActiveAiRewriteConfig(
+    const rewriteConfig = await getActiveAiRewriteConfigWithFallback(
       latestSourceTask?.rewriteStyleId ?? undefined,
     );
     if (!rewriteConfig) {
       return {
         error: latestSourceTask?.rewriteStyleId
-          ? `来源任务绑定的 AI 改写配置 #${latestSourceTask.rewriteStyleId} 已停用或不存在`
+          ? `来源任务绑定的 AI 改写配置 #${latestSourceTask.rewriteStyleId} 已停用或不存在，且当前没有其他启用配置`
           : "当前没有已启用的默认 AI 改写配置",
       };
     }
@@ -997,13 +1000,13 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
         .orderBy(desc(aiRewriteTasks.createdAt))
         .limit(1);
       const rewriteConfig = latestSourceTask?.rewriteStyleId
-        ? await getActiveAiRewriteConfig(latestSourceTask.rewriteStyleId)
+        ? await getActiveAiRewriteConfigWithFallback(latestSourceTask.rewriteStyleId)
         : defaultRewriteConfig;
       if (!rewriteConfig) {
         errors.push({
           postId: post.id,
           reason: latestSourceTask?.rewriteStyleId
-            ? `来源任务绑定的 AI 改写配置 #${latestSourceTask.rewriteStyleId} 已停用或不存在`
+            ? `来源任务绑定的 AI 改写配置 #${latestSourceTask.rewriteStyleId} 已停用或不存在，且当前没有其他启用配置`
             : "当前没有已启用的默认 AI 改写配置",
         });
         continue;

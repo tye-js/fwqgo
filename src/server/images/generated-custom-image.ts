@@ -18,6 +18,7 @@ import {
 import {
   assertPublicHttpUrl,
   fetchPublicHttpUrl,
+  fetchPublicHttpUrlOnce,
 } from "@fwqgo/core/network-url";
 import {
   createImageAssetFromBuffer,
@@ -213,13 +214,12 @@ export async function generateCustomImage(
     const safeEndpoint = await assertPublicHttpUrl(endpoint, "生图接口地址");
     await input.onRequestStarted?.();
     requestStarted = true;
-    response = await fetch(safeEndpoint, {
+    response = await fetchPublicHttpUrlOnce(safeEndpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
       },
-      redirect: "error",
       body: JSON.stringify(
         buildRequestBody({
           provider: config.provider as ImageGenerationProvider,
@@ -235,7 +235,7 @@ export async function generateCustomImage(
             AbortSignal.timeout(config.timeoutSeconds * 1000),
           ])
         : AbortSignal.timeout(config.timeoutSeconds * 1000),
-    });
+    }, "生图接口地址");
   } catch (error) {
     throwIfAborted(input.signal);
     const message = error instanceof Error ? error.message : "未知错误";

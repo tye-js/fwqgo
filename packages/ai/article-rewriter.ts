@@ -5,7 +5,7 @@ import {
   interpolatePromptTemplate,
 } from "@fwqgo/core/ai-rewrite-prompts";
 import { contentToArticleMarkdown } from "@fwqgo/core/content";
-import { assertPublicHttpUrl } from "@fwqgo/core/network-url";
+import { fetchPublicHttpUrlOnce } from "@fwqgo/core/network-url";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 
 import {
@@ -725,16 +725,14 @@ async function requestChatCompletionResult(input: {
   let timeout: ReturnType<typeof setTimeout> | undefined;
 
   try {
-    const endpoint = await assertPublicHttpUrl(input.endpoint, "AI 接口地址");
     await input.onRequestStage?.("request_started");
     const request = async () => {
-      const response = await fetch(endpoint, {
+      const response = await fetchPublicHttpUrlOnce(input.endpoint, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${input.config.apiKey}`,
           "Content-Type": "application/json",
         },
-        redirect: "error",
         signal: controller.signal,
         body: JSON.stringify({
           model: input.config.model,
@@ -745,7 +743,7 @@ async function requestChatCompletionResult(input: {
             : {}),
           messages: [{ role: "user", content: input.userPrompt }],
         }),
-      });
+      }, "AI 接口地址");
       const responseText = await readResponseTextWithLimit(
         response,
         MAX_AI_RESPONSE_BYTES,

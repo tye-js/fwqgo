@@ -165,8 +165,7 @@ export async function getActiveHomepageSlots(
       };
     });
   } catch (error) {
-    console.error("Failed to load homepage slots:", error);
-    return [];
+    throw new Error("获取首页推广内容失败", { cause: error });
   }
 }
 

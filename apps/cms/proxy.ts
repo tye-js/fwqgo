@@ -13,6 +13,7 @@ const ADMIN_PAGE_PREFIXES = [
   "/seo",
   "/servers",
   "/settings",
+  "/knowledge",
 ];
 const PROTECTED_API_PATHS = new Set(["/api/tags/search", "/api/upload"]);
 const DEFAULT_PUBLIC_ORIGIN = "https://fwqgo.com";
@@ -184,6 +185,7 @@ export const config = {
     "/seo/:path*",
     "/servers/:path*",
     "/settings/:path*",
+    "/knowledge/:path*",
     "/fwq/:path*",
     "/en/fwq/:path*",
     "/go/:path*",

@@ -1,6 +1,6 @@
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
-import { assertPublicHttpUrl } from "@fwqgo/core/network-url";
+import { fetchPublicHttpUrlOnce } from "@fwqgo/core/network-url";
 import { slugify } from "@fwqgo/core/utils";
 
 import {
@@ -220,14 +220,12 @@ async function requestCategorySeoJson(input: {
 
   try {
     const request = async () => {
-      const endpoint = await assertPublicHttpUrl(input.endpoint, "AI 接口地址");
-      const response = await fetch(endpoint, {
+      const response = await fetchPublicHttpUrlOnce(input.endpoint, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${input.config.apiKey}`,
           "Content-Type": "application/json",
         },
-        redirect: "error",
         signal: controller.signal,
         body: JSON.stringify({
           model: input.config.model,
@@ -246,7 +244,7 @@ async function requestCategorySeoJson(input: {
             },
           ],
         }),
-      });
+      }, "AI 接口地址");
       const responseText = await readResponseTextWithLimit(
         response,
         MAX_AI_RESPONSE_BYTES,

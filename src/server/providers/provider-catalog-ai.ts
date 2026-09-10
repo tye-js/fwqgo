@@ -1,5 +1,5 @@
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
-import { assertPublicHttpUrl } from "@fwqgo/core/network-url";
+import { fetchPublicHttpUrlOnce } from "@fwqgo/core/network-url";
 import {
   validateProviderCatalogAiOutput,
   type ProviderCatalogSourceMapping,
@@ -65,21 +65,17 @@ export async function mapProviderCatalogPagesWithAi(input: {
     throw new Error("默认 AI 配置没有 API Key，无法执行套餐源映射");
   }
 
-  const endpoint = await assertPublicHttpUrl(
-    buildOpenAiChatCompletionsEndpoint(input.config.baseUrl),
-    "AI 接口地址",
-  );
+  const endpoint = buildOpenAiChatCompletionsEndpoint(input.config.baseUrl);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
 
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetchPublicHttpUrlOnce(endpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${input.config.apiKey}`,
         "Content-Type": "application/json",
       },
-      redirect: "error",
       signal: controller.signal,
       body: JSON.stringify({
         model: input.config.model,
@@ -89,7 +85,7 @@ export async function mapProviderCatalogPagesWithAi(input: {
         // The configurable prompt is the complete instruction. No system message is added.
         messages: [{ role: "user", content: input.prompt }],
       }),
-    });
+    }, "AI 接口地址");
     const responseText = await readResponseTextWithLimit(
       response,
       MAX_AI_RESPONSE_BYTES,

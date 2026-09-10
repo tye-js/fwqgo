@@ -430,9 +430,13 @@ function selectContentHtml(
 }
 
 async function fetchWithPuppeteer(url: string, rule: SiteRule) {
+  if (process.env.ENABLE_BROWSER_SCRAPING !== "true") {
+    throw new Error(
+      "动态浏览器抓取默认关闭；仅可在隔离 worker 中设置 ENABLE_BROWSER_SCRAPING=true",
+    );
+  }
   await assertPublicHttpUrl(url, "抓取页面");
   const browser = await puppeteer.launch({
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
     headless: true,
   });
 
@@ -568,11 +572,20 @@ async function scrapeByRule(input: {
   let browser: Browser | null = null;
   let page$: cheerio.CheerioAPI;
 
-  if (input.rule.usePuppeteer) {
+  if (
+    input.rule.usePuppeteer &&
+    process.env.ENABLE_BROWSER_SCRAPING === "true"
+  ) {
     const result = await fetchWithPuppeteer(input.url, input.rule);
     page$ = cheerio.load(result.$.html());
     browser = result.browser;
   } else {
+    if (input.rule.usePuppeteer) {
+      diagnostics.usedPuppeteer = false;
+      diagnostics.warnings.push(
+        "动态浏览器抓取未启用，本次使用静态网页抓取；需要 JavaScript 的页面须交由隔离抓取环境处理。",
+      );
+    }
     page$ = await fetchWithCheerio(input.url);
   }
 

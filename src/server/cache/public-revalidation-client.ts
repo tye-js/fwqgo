@@ -1,5 +1,6 @@
 import "server-only";
 import { after } from "next/server";
+import { resolveWebRevalidationUrl } from "@fwqgo/core/web-revalidation-url";
 
 import type {
   PublicCacheEvent,
@@ -14,13 +15,7 @@ function wait(ms: number) {
 }
 
 function getWebRevalidationUrl() {
-  const explicit = process.env.WEB_REVALIDATION_URL?.trim();
-  if (explicit) return explicit;
-  const configuredPort = process.env.WEB_PORT?.trim();
-  if (!configuredPort) {
-    return "http://127.0.0.1:3000/api/internal/revalidate";
-  }
-  return `http://127.0.0.1:${configuredPort}/api/internal/revalidate`;
+  return resolveWebRevalidationUrl(process.env);
 }
 
 export async function notifyPublicWebCache(
@@ -46,6 +41,7 @@ export async function notifyPublicWebCache(
         },
         body: JSON.stringify({ event, payload }),
         cache: "no-store",
+        redirect: "error",
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (response.ok) {

@@ -72,7 +72,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const clientIp = getTrustedClientIp(request.headers) ?? "unknown";
+    const clientIp = getTrustedClientIp(request.headers);
+    if (!clientIp) {
+      return respond(
+        adminApiFailure("当前入口暂不支持注册", {
+          status: 503,
+          title: "注册暂不可用",
+          suggestion: "请联系管理员检查注册入口配置。",
+        }),
+      );
+    }
     const attemptKey = `signup:${clientIp}`;
     const retryAfterSeconds = signupAttemptTracker.getRetryAfterSeconds([
       attemptKey,
@@ -130,6 +139,8 @@ export async function POST(request: Request) {
         id: randomUUID(),
         username,
         password: hashedPassword,
+        role: "viewer",
+        status: "active",
         updatedAt: new Date(),
       })
       .onConflictDoNothing({ target: users.username })

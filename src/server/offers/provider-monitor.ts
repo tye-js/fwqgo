@@ -23,6 +23,8 @@ import {
 } from "@/server/admin/background-jobs";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import { fetchPublicHttpUrl } from "@fwqgo/core/network-url";
+import { validateProviderFieldPatterns } from "@/server/offers/provider-field-pattern";
+import { requireAdminSession } from "@fwqgo/auth/session";
 import {
   boundOffsetPaginationByTotal,
   normalizeOffsetPagination,
@@ -305,6 +307,7 @@ export async function runProviderMonitor(
 
   const adapter = monitor.adapter as ProviderSourceAdapter;
   const parsedConfig = parseProviderMonitorConfig(monitor.config, adapter);
+  validateProviderFieldPatterns(parsedConfig);
   const resolvedSecrets = resolveProviderMonitorSecrets(parsedConfig);
   const config = resolvedSecrets.config;
   const affiliateHtmlListing =
@@ -1222,6 +1225,7 @@ export async function ensureProviderMonitorWorkers() {
 }
 
 export async function getProviderMonitorList() {
+  await requireAdminSession();
   const rows = await db
     .select({
       id: providerMonitors.id,
@@ -1314,6 +1318,7 @@ export type ProviderMonitorMutationInput = {
 export async function createProviderMonitor(
   input: ProviderMonitorMutationInput,
 ) {
+  validateProviderFieldPatterns(input.config);
   const now = new Date();
   const created = await db.transaction(async (tx) => {
     if (input.enabled) {
@@ -1384,6 +1389,7 @@ export async function updateProviderMonitor(
   id: number,
   input: ProviderMonitorMutationInput,
 ) {
+  validateProviderFieldPatterns(input.config);
   const { providerId, affiliateLink, ...mutableInput } = input;
   const now = new Date();
   const updated = await db.transaction(async (tx) => {
@@ -1810,6 +1816,7 @@ export async function getProviderMonitorCheckHistory(
   monitorId?: number,
   limit = 80,
 ) {
+  await requireAdminSession();
   return db
     .select({
       id: serverOfferChecks.id,
@@ -1841,6 +1848,7 @@ export async function getProviderMonitorCheckHistory(
 }
 
 export async function getProviderOptionsForMonitoring() {
+  await requireAdminSession();
   return db
     .select({
       id: affServiceProviders.id,
@@ -1858,6 +1866,7 @@ export async function getProviderMonitorRunHistory(
   monitorId?: number,
   limit = 80,
 ) {
+  await requireAdminSession();
   return db
     .select({
       id: providerMonitorRuns.id,
@@ -1903,7 +1912,7 @@ type ProviderOfferCandidateStatus =
 
 type ProviderMonitorQueryExecutor = typeof db | AdminBackgroundJobTransaction;
 
-export async function getProviderOfferCandidateList(
+async function readProviderOfferCandidateList(
   status: ProviderOfferCandidateStatus = "pending",
   limit = 100,
   offset = 0,
@@ -1955,7 +1964,7 @@ export async function getProviderOfferCandidateList(
     .offset(normalizedOffset);
 }
 
-export async function getProviderOfferCandidateCount(
+async function readProviderOfferCandidateCount(
   status: ProviderOfferCandidateStatus = "pending",
   executor: ProviderMonitorQueryExecutor = db,
 ) {
@@ -1977,11 +1986,28 @@ export async function getProviderOfferCandidateCount(
   return result?.count ?? 0;
 }
 
+export async function getProviderOfferCandidateList(
+  status: ProviderOfferCandidateStatus = "pending",
+  limit = 100,
+  offset = 0,
+) {
+  await requireAdminSession();
+  return readProviderOfferCandidateList(status, limit, offset);
+}
+
+export async function getProviderOfferCandidateCount(
+  status: ProviderOfferCandidateStatus = "pending",
+) {
+  await requireAdminSession();
+  return readProviderOfferCandidateCount(status);
+}
+
 export async function getProviderOfferCandidatePage(
   status: ProviderOfferCandidateStatus = "pending",
   pageNo = 1,
   pageSize = 50,
 ) {
+  await requireAdminSession();
   const requestedPagination = normalizeOffsetPagination({
     pageNo,
     pageSize,
@@ -1990,12 +2016,12 @@ export async function getProviderOfferCandidatePage(
 
   return db.transaction(
     async (tx) => {
-      const totalCount = await getProviderOfferCandidateCount(status, tx);
+      const totalCount = await readProviderOfferCandidateCount(status, tx);
       const pagination = boundOffsetPaginationByTotal(
         requestedPagination,
         totalCount,
       );
-      const candidates = await getProviderOfferCandidateList(
+      const candidates = await readProviderOfferCandidateList(
         status,
         pagination.pageSize,
         pagination.offset,
@@ -2042,6 +2068,7 @@ export async function previewProviderMonitorSource(input: {
     existingConfig,
   );
   const config = resolveProviderMonitorSecrets(mergedConfig).config;
+  validateProviderFieldPatterns(config);
   const affiliateHtmlListing =
     input.adapter === "affiliate_link" && isAffiliateHtmlListingConfig(config);
   let httpStatus: number;

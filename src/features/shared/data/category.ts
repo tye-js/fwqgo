@@ -9,6 +9,7 @@ import {
 } from "@/features/shared/lib/public-article-category";
 import { asc, eq, isNull, or, sql } from "drizzle-orm";
 import { cacheLife } from "next/cache";
+import { isDatabaseFreeBuild } from "@fwqgo/core/build-verification";
 import { publicPostCondition } from "@/server/posts/public-post-policy";
 
 type PublicLanguage = "zh" | "en";
@@ -53,6 +54,7 @@ function localizeCategory<
 export async function getCategories() {
   "use cache";
   tagCache(cacheTags.categories);
+  if (isDatabaseFreeBuild()) return { data: [] };
 
   try {
     const categoriesWithChildren = await readDb.query.categories.findMany({
@@ -67,7 +69,7 @@ export async function getCategories() {
 
     return { data: categoriesWithChildren };
   } catch (error) {
-    return { error: "获取分类列表失败", message: error };
+    throw new Error("获取分类列表失败", { cause: error });
   }
 }
 
@@ -75,6 +77,7 @@ export async function getNavigationCategories() {
   "use cache";
   cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.categories, cacheTags.posts);
+  if (isDatabaseFreeBuild()) return { data: [], error: undefined };
 
   try {
     const rows = await readDb
@@ -102,13 +105,13 @@ export async function getNavigationCategories() {
     );
 
     return {
+      error: undefined,
       data: rows
         .filter((category) => !parentIds.has(category.id))
         .map(({ parentId: _parentId, ...category }) => category),
     };
   } catch (error) {
-    console.error("Failed to load navigation categories:", error);
-    return { error: "获取导航分类失败" };
+    throw new Error("获取导航分类失败", { cause: error });
   }
 }
 

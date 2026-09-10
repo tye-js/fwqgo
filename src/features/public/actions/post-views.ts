@@ -1,4 +1,4 @@
-"use server";
+import "server-only";
 
 import { analyticsDb } from "@fwqgo/db";
 import { posts } from "@fwqgo/db/schema";

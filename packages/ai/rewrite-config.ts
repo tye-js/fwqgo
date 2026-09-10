@@ -187,6 +187,19 @@ export async function getActiveAiRewriteConfig(styleId?: number) {
     : null;
 }
 
+/**
+ * A task snapshot is a historical preference, not a reason to block a later
+ * pipeline stage. When that preference was disabled or deleted, continue with
+ * the first currently enabled rewrite configuration.
+ */
+export async function getActiveAiRewriteConfigWithFallback(styleId?: number) {
+  const preferred = await getActiveAiRewriteConfig(styleId);
+  if (preferred || !styleId) return preferred;
+
+  const [fallback] = await getEnabledAiRewriteConfigs();
+  return fallback ?? null;
+}
+
 export async function getEnabledAiRewriteConfigs() {
   const rows = await db
     .select(activeAiRewriteConfigColumns)

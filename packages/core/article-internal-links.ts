@@ -288,7 +288,7 @@ function escapeHtml(value: string) {
 
 function safeInternalHref(value: string) {
   const href = value.trim();
-  return href.startsWith("/") && !href.startsWith("//") && !/[\u0000-\u001f]/.test(href)
+  return href.startsWith("/") && !href.startsWith("//") && !/[\\\u0000-\u001f\u007f]/.test(href)
     ? href
     : null;
 }

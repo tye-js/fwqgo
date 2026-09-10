@@ -124,12 +124,14 @@ function isGenericMarkdownLinkLabel(label: string) {
   );
 }
 
-function getReadableFallbackLabel(url: URL, label: string) {
+export function normalizeOutboundLinkLabel(label: string) {
   if (!isGenericMarkdownLinkLabel(label)) {
     return label;
   }
 
-  return normalizeHost(url.hostname);
+  // Keep generic anchor text stable when normalizing a short link. The target
+  // host belongs in the URL and should not replace an editor's visible label.
+  return "链接";
 }
 
 function isShortLink(url: URL) {
@@ -328,11 +330,10 @@ export async function shortenMarkdownOutboundLinks(markdown: string) {
         continue;
       }
 
-      const target = new URL(targetUrl);
       replacements.push({
         start: match.index,
         end: match.index + original.length,
-        replacement: `[${getReadableFallbackLabel(target, label)}](${url.pathname})`,
+        replacement: `[${normalizeOutboundLinkLabel(label)}](${url.pathname})`,
       });
       continue;
     }
@@ -347,11 +348,10 @@ export async function shortenMarkdownOutboundLinks(markdown: string) {
       continue;
     }
 
-    const affiliateUrl = new URL(affiliateTargetUrl);
     replacements.push({
       start: match.index,
       end: match.index + original.length,
-      replacement: `[${getReadableFallbackLabel(affiliateUrl, label)}](${shortLink.path})`,
+      replacement: `[${normalizeOutboundLinkLabel(label)}](${shortLink.path})`,
     });
   }
 

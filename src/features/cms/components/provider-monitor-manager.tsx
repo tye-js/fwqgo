@@ -363,7 +363,13 @@ function readNewMonitorDraft() {
     if (!value) return null;
 
     const draft: unknown = JSON.parse(value);
-    return isNewMonitorDraft(draft) ? draft : null;
+    if (!isNewMonitorDraft(draft)) return null;
+    const sanitizedDraft = { ...draft, configText: "" };
+    window.localStorage.setItem(
+      newMonitorDraftStorageKey,
+      JSON.stringify(sanitizedDraft),
+    );
+    return sanitizedDraft;
   } catch {
     return null;
   }
@@ -373,7 +379,7 @@ function writeNewMonitorDraft(draft: NewMonitorDraft) {
   try {
     window.localStorage.setItem(
       newMonitorDraftStorageKey,
-      JSON.stringify(draft),
+      JSON.stringify({ ...draft, configText: "" }),
     );
   } catch {
     // Browser storage is an optional convenience and must not block saving.
@@ -2658,6 +2664,8 @@ export function ProviderMonitorManager({
           onNewMonitorSaved={(draft) => {
             const disabledDraft = {
               ...draft,
+              // Never persist request headers or other secrets in browser storage.
+              configText: "",
               enabled: false,
               autoPublish: false,
             };

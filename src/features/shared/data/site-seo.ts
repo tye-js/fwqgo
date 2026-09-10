@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { readDb } from "@fwqgo/db";
 import { siteSeoConfigs } from "@fwqgo/db/schema";
+import { isDatabaseFreeBuild } from "@fwqgo/core/build-verification";
 
 export type SiteSeoLanguage = "zh" | "en";
 
@@ -41,6 +42,7 @@ export async function getSiteSeoConfig(language: SiteSeoLanguage = "zh") {
   tagCache(cacheTags.siteSeo);
 
   const fallback = defaultSiteSeoConfigs[language];
+  if (isDatabaseFreeBuild()) return { data: fallback };
 
   try {
     const [config] = await readDb
@@ -75,7 +77,7 @@ export async function getSiteSeoConfig(language: SiteSeoLanguage = "zh") {
       },
     };
   } catch (error) {
-    return { data: fallback, error: "获取站点 SEO 配置失败", message: error };
+    throw new Error("获取站点 SEO 配置失败", { cause: error });
   }
 }
 

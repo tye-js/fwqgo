@@ -3,6 +3,7 @@ import * as cheerio from "cheerio";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 import {
   assertPublicHttpUrl,
+  fetchPublicHttpUrlOnce,
   parsePublicHttpUrl,
 } from "@fwqgo/core/network-url";
 import { isOfficialProviderUrl } from "@/server/providers/provider-profile-scraper";
@@ -420,11 +421,10 @@ async function fetchOfficialResource(input: {
     }
 
     for (let redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
-      const response = await fetch(currentUrl, {
+      const response = await fetchPublicHttpUrlOnce(currentUrl, {
         headers: browserHeaders,
-        redirect: "manual",
         signal: controller.signal,
-      });
+      }, "供应商官网");
       if (redirectStatuses.has(response.status)) {
         if (redirectCount >= 5) {
           await response.body?.cancel();

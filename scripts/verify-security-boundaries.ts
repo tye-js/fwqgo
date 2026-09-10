@@ -243,11 +243,43 @@ function verifyPublicRevalidationRoute(errors: string[]) {
   return 1;
 }
 
+function verifyProviderCmsLoaders(errors: string[]) {
+  const sourceFile = readSourceFile(
+    path.join(root, "src/server/offers/provider-monitor.ts"),
+  );
+  const loaders = new Set([
+    "getProviderMonitorList",
+    "getProviderMonitorCheckHistory",
+    "getProviderOptionsForMonitoring",
+    "getProviderMonitorRunHistory",
+    "getProviderOfferCandidateList",
+    "getProviderOfferCandidateCount",
+    "getProviderOfferCandidatePage",
+  ]);
+  let checked = 0;
+  for (const fn of exportedAsyncFunctions(sourceFile)) {
+    if (!loaders.has(fn.name?.text ?? "")) continue;
+    checked++;
+    if (
+      !fn.body?.statements[0]
+        ?.getText(sourceFile)
+        .includes("requireAdminSession(")
+    ) {
+      errors.push(
+        `Provider CMS loader ${fn.name?.text} must authenticate before querying`,
+      );
+    }
+  }
+  if (checked !== loaders.size)
+    errors.push("A protected provider CMS loader is missing");
+}
+
 const errors: string[] = [];
 const actionCount = verifyCmsActions(errors);
 const apiCount = verifyCmsApiRoutes(errors);
 const publicFileCount = verifyPublicDatabaseImports(errors);
 const internalRouteCount = verifyPublicRevalidationRoute(errors);
+verifyProviderCmsLoaders(errors);
 
 if (errors.length > 0) fail(errors);
 

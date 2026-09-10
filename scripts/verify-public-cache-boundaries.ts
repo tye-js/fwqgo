@@ -12,6 +12,7 @@ const requirements = new Map<string, string[]>([
     "src/features/public/data/post.ts",
     [
       "getPublishedPostCountByCategoryId",
+      "getPostsWithTags",
       "getHomepagePostsWithTags",
       "getHomepageSidebarData",
       "getPostWithTagsBySlug",
@@ -164,6 +165,37 @@ for (const [relativePath, functionNames] of requirements) {
       errors.push(
         `${relativePath}:${functionName} unstable_cache() must declare revalidate`,
       );
+    }
+    // These core caches must preserve the last successful value on DB errors.
+    // A returned fallback from a catch block would itself become cacheable data.
+    const strictFailures = new Set([
+      "getPostsWithTags",
+      "getHomepagePostsWithTags",
+      "getHomepageSidebarData",
+      "getRecommendedPosts",
+      "getCategories",
+      "getNavigationCategories",
+      "getSiteSeoConfig",
+      "getActiveHomepageSlots",
+      "getServerOfferTopicCounts",
+      "getPublicServerOfferCount",
+      "getLatestServerOffers",
+      "getPublicServerOffers",
+      "getServerOffersByKeywords",
+    ]);
+    if (strictFailures.has(functionName)) {
+      const visit = (node: ts.Node) => {
+        if (ts.isCatchClause(node)) {
+          const last = node.block.statements.at(-1);
+          if (!last || !ts.isThrowStatement(last)) {
+            errors.push(
+              `${relativePath}:${functionName} must throw from cache failure handlers`,
+            );
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(fn.body);
     }
   }
 }
