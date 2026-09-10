@@ -170,6 +170,8 @@ jobs:
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
 
       - name: Build standalone
+        env:
+          SKIP_ENV_VALIDATION: "1"
         run: |
           bun run build
           mkdir -p .next-web/standalone/.next-web .next-cms/standalone/.next-cms
