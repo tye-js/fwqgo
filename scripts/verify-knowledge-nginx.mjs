@@ -3,13 +3,17 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 const nginx = process.env.NGINX_BIN ?? "nginx";
-const root = process.cwd();
-mkdirSync(path.join(root, "output/performance"), { recursive: true });
-const temp = mkdtempSync(path.join(root, "output/performance/nginx-check-"));
+const root = process.env.NGINX_POLICY_ROOT ?? process.cwd();
+const temp = mkdtempSync(path.join(tmpdir(), "fwqgo-nginx-check-"));
 mkdirSync(path.join(temp, "logs"));
+const policies = [
+  { path: "/knowledge", name: "knowledge", ttl: 300, stale: 60 },
+  { path: "/fwq/posts/fixture", name: "public", ttl: 900, stale: 86400 },
+];
 
 const upstream = createServer((request, response) => {
   const status = Number(request.headers["x-fixture-status"] ?? 200);
@@ -18,7 +22,11 @@ const upstream = createServer((request, response) => {
     "Content-Type": String(request.headers["x-fixture-type"] ?? "text/html; charset=utf-8"),
     "Cache-Control": "private, no-cache, no-store, max-age=0, must-revalidate",
   };
-  if (request.headers["x-fixture-marker"] !== "0") headers["X-Fwqgo-Cacheable-Knowledge"] = "1";
+  if (request.headers["x-fixture-marker"] !== "0") {
+    headers[request.url?.startsWith("/fwq/posts/")
+      ? "X-Fwqgo-Cacheable-Article"
+      : "X-Fwqgo-Cacheable-Knowledge"] = "1";
+  }
   if (request.headers["x-fixture-cookie"] === "1") headers["Set-Cookie"] = "fixture=1; HttpOnly";
   response.writeHead(status, headers).end("fixture");
 });
@@ -51,12 +59,14 @@ http {
   client_body_temp_path "${temp}/client-body";
   proxy_temp_path "${temp}/proxy";
   include "${root}/deploy/nginx/fwqgo-knowledge-cache-maps.conf";
+  include "${root}/deploy/nginx/fwqgo-public-cache-maps.conf";
   server {
     listen 127.0.0.1:${proxyPort};
-    location / {
+    ${policies.map((policy) => `location = ${policy.path} {
       proxy_pass http://127.0.0.1:${upstreamPort};
-      include "${root}/deploy/nginx/fwqgo-knowledge-cache-headers.conf";
-    }
+      include "${root}/deploy/nginx/fwqgo-${policy.name}-cache-headers.conf";
+      include "${root}/deploy/nginx/fwqgo-security-headers.conf";
+    }`).join("\n")}
   }
 }
 `);
@@ -78,6 +88,9 @@ http {
   const cases = [
     { name: "anonymous 200 HTML", shared: true },
     { name: "HEAD", method: "HEAD", shared: true },
+    { name: "201", headers: { "x-fixture-status": "201" }, shared: false },
+    { name: "302", headers: { "x-fixture-status": "302" }, shared: false },
+    { name: "206", headers: { "x-fixture-status": "206" }, shared: false },
     { name: "unmarked response", headers: { "x-fixture-marker": "0" }, shared: false },
     { name: "404", headers: { "x-fixture-status": "404" }, shared: false },
     { name: "500", headers: { "x-fixture-status": "500" }, shared: false },
@@ -95,17 +108,24 @@ http {
     { name: "_rsc", query: "?_rsc=fixture", shared: false },
     { name: "POST", method: "POST", shared: false },
   ];
-  for (const item of cases) {
-    const response = await fetch(proxyUrl + (item.query ?? ""), { method: item.method ?? "GET", headers: item.headers });
-    await response.arrayBuffer();
-    const cacheControl = response.headers.get("cache-control") ?? "";
-    if (item.shared) assert.match(cacheControl, /s-maxage=300\b/, item.name);
-    else assert.match(cacheControl, /private, no-store/, item.name);
-    for (const header of ["cdn-cache-control", "cloudflare-cdn-cache-control"]) {
-      assert.equal(response.headers.get(header), item.shared ? "public, max-age=300, stale-while-revalidate=60" : "no-store", `${item.name}: ${header}`);
+  for (const policy of policies) {
+    for (const item of cases) {
+      const url = `http://127.0.0.1:${proxyPort}${policy.path}${item.query ?? ""}`;
+      const response = await fetch(url, { method: item.method ?? "GET", headers: item.headers, redirect: "manual" });
+      await response.arrayBuffer();
+      const label = `${policy.name}: ${item.name}`;
+      const cacheControl = response.headers.get("cache-control") ?? "";
+      if (item.shared) assert.equal(cacheControl, `public, max-age=0, s-maxage=${policy.ttl}, stale-while-revalidate=${policy.stale}`, label);
+      else assert.match(cacheControl, /private, no-store/, label);
+      for (const header of ["cdn-cache-control", "cloudflare-cdn-cache-control"]) {
+        assert.equal(response.headers.get(header), item.shared ? `public, max-age=${policy.ttl}, stale-while-revalidate=${policy.stale}` : "no-store", `${label}: ${header}`);
+      }
+      assert.equal(response.headers.get("x-content-type-options"), "nosniff", label);
+      assert.equal(response.headers.get("x-frame-options"), "DENY", label);
+      assert.match(response.headers.get("strict-transport-security") ?? "", /max-age=/, label);
     }
   }
-  console.log(`Knowledge Nginx policy verified with a real nginx process: ${cases.length} response/request combinations`);
+  console.log(`Public HTML Nginx policies verified with a real nginx process: ${cases.length * policies.length} combinations, including security headers`);
 } finally {
   if (child?.pid && child.exitCode === null) {
     child.kill("SIGTERM");

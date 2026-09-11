@@ -64,7 +64,11 @@ async function waitForServer(url, child, headers = {}) {
       throw new Error(`Server process exited before becoming ready: ${url}`);
     }
     try {
-      return await fetch(url, { headers, redirect: "manual" });
+      return await fetch(url, {
+        headers,
+        redirect: "manual",
+        signal: AbortSignal.timeout(30_000),
+      });
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
@@ -302,6 +306,75 @@ async function checkArticleCacheBoundaries(origin, child) {
   await rscResponse.body?.cancel();
 }
 
+/** @param {string} origin @param {import('node:child_process').ChildProcess} child */
+async function checkHomepageCacheBoundaries(origin, child) {
+  /** @type {unknown} */
+  const manifest = JSON.parse(readFileSync(path.join(root, ".next-web/prerender-manifest.json"), "utf8"));
+  if (!manifest || typeof manifest !== "object" || !("routes" in manifest) ||
+    !manifest.routes || typeof manifest.routes !== "object") {
+    throw new Error("Homepage prerender manifest is invalid");
+  }
+  const routes = /** @type {Record<string, unknown>} */ (manifest.routes);
+  for (const pathname of ["/", "/en"]) {
+    const route = routes[pathname];
+    // ISR lifetime and CDN eligibility are different layers: Next may keep
+    // the HTTP document private even when its rendered content is cached.
+    assert(route !== null && typeof route === "object" &&
+      "initialRevalidateSeconds" in route && route.initialRevalidateSeconds === 300,
+    `${pathname} homepage did not use its bounded ISR render cache`);
+  }
+  if (!configuredSmokeDatabaseUrl) {
+    console.log("Homepage ISR manifest verified; live content/private requests require SMOKE_DATABASE_URL");
+    return;
+  }
+  for (const pathname of ["/", "/en"]) {
+    const page = await waitForServer(`${origin}${pathname}`, child);
+    assert(page.status === 200, `${pathname} homepage is unavailable`);
+    const $ = cheerio.load(await page.text());
+    assert($("main h1").length === 1, `${pathname} lacks a homepage heading`);
+    assert(
+      $("main h1").parents("[hidden]").length === 0,
+      `${pathname} homepage body is hidden until client scripts execute`,
+    );
+    assert(
+      $('[data-testid="article-card"]').length > 0,
+      `${pathname} homepage omitted real published articles`,
+    );
+    for (const headers of [
+      new Headers({ Cookie: "homepage-smoke=1" }),
+      new Headers({ Authorization: "Bearer homepage-smoke" }),
+      new Headers({ RSC: "1" }),
+      new Headers({ "Next-Router-Prefetch": "1" }),
+      new Headers({ "Next-Router-Segment-Prefetch": "/_tree" }),
+      new Headers({ "Next-Router-State-Tree": "[]" }),
+    ]) {
+      const response = await fetch(`${origin}${pathname}`, {
+        headers,
+        redirect: "manual",
+        signal: AbortSignal.timeout(15_000),
+      });
+      assert(
+        response.headers.get("cache-control")?.includes("no-store"),
+        `${pathname} private/prefetch request inherited HTML caching`,
+      );
+      assert(
+        response.headers.get("cdn-cache-control") === "no-store",
+        `${pathname} private/prefetch request permits edge caching`,
+      );
+      await response.body?.cancel();
+    }
+    const queried = await fetch(`${origin}${pathname}?homepage-smoke=1`, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    assert(
+      queried.headers.get("cache-control")?.includes("no-store"),
+      `${pathname} query request inherited shared HTML caching`,
+    );
+    await queried.body?.cancel();
+  }
+  console.log("Homepage content and private cache boundaries verified with a configured database");
+}
+
 async function run() {
   verifySharpRuntime();
   verifyRe2Runtime();
@@ -334,6 +407,7 @@ async function run() {
     checkMetadataImages(cmsOrigin, "cms", cmsProcess, authHeaders),
   ]);
   await checkArticleCacheBoundaries(webOrigin, webProcess);
+  await checkHomepageCacheBoundaries(webOrigin, webProcess);
 
   const webAdmin = await fetch(`${webOrigin}/login?from=smoke`, {
     redirect: "manual",
@@ -382,7 +456,7 @@ async function run() {
   );
 
   console.log(
-    "Built app smoke tests passed: sharp WebP, RE2JS, health, metadata images, redirects, auth boundary, route isolation, article ISR and RSC cache isolation",
+    "Built app smoke tests passed: sharp WebP, RE2JS, health, metadata images, redirects, auth boundary, route isolation, article ISR, homepage render caching and private/RSC cache isolation",
   );
 }
 

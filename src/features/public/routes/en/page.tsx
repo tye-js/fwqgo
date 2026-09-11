@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { connection } from "next/server";
-import { Suspense } from "react";
+import { cacheLife } from "next/cache";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -41,6 +40,8 @@ import {
   offerTopics,
 } from "@/server/offers/server-offers";
 import { getActiveHomepageSlots } from "@/server/homepage/homepage-slots";
+import { cacheTags, tagCache } from "@fwqgo/cache/tags";
+import { isDatabaseFreeBuild } from "@fwqgo/core/build-verification";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
@@ -218,7 +219,19 @@ function SectionHeading({
 }
 
 async function EnglishHomeContent() {
-  await connection();
+  "use cache";
+  cacheLife({ stale: 60, revalidate: 300, expire: 3_600 });
+  tagCache(
+    cacheTags.homepage,
+    cacheTags.homepageSlots,
+    cacheTags.posts,
+    cacheTags.tags,
+    cacheTags.sidebar,
+    cacheTags.serverOffers,
+  );
+  // Verification artifacts are not deployed; production builds load real data.
+  if (isDatabaseFreeBuild()) return null;
+
   const [
     { data: posts },
     { data: sidebarData },
@@ -571,19 +584,13 @@ async function EnglishHomeContent() {
   );
 }
 
-export default function EnglishHomePage() {
+export default async function EnglishHomePage() {
+  // Resolve the cached body before rendering so it is visible in raw HTML.
+  const content = await EnglishHomeContent();
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <Header language="en" />
-      <Suspense
-        fallback={
-          <main className="flex-1 px-4 py-10 text-center text-sm text-muted-foreground">
-            Loading English homepage...
-          </main>
-        }
-      >
-        <EnglishHomeContent />
-      </Suspense>
+      {content}
       <Footer language="en" />
     </div>
   );

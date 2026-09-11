@@ -4,6 +4,8 @@ import ts from "typescript";
 
 const root = process.cwd();
 const requirements = new Map<string, string[]>([
+  ["src/features/public/routes/page.tsx", ["HomeContent"]],
+  ["src/features/public/routes/en/page.tsx", ["EnglishHomeContent"]],
   [
     "src/features/public/data/knowledge.ts",
     ["getPublicKnowledgeCategories", "getCachedKnowledgeBrowseItems"],
@@ -58,13 +60,13 @@ const requirements = new Map<string, string[]>([
   ["src/server/homepage/homepage-slots.ts", ["getActiveHomepageSlots"]],
 ]);
 const staticRouteRequirements = [
+  "src/features/public/routes/page.tsx",
+  "src/features/public/routes/en/page.tsx",
   "src/features/public/routes/servers/providers/[provider]/page.tsx",
   "src/features/public/routes/servers/regions/[region]/page.tsx",
   "src/features/public/routes/servers/lines/[line]/page.tsx",
 ];
 const partialRuntimeRouteRequirements = [
-  "src/features/public/routes/page.tsx",
-  "src/features/public/routes/en/page.tsx",
   "src/features/public/routes/servers/page.tsx",
   "src/features/public/routes/servers/[topic]/page.tsx",
 ];
@@ -222,6 +224,28 @@ for (const relativePath of partialRuntimeRouteRequirements) {
   }
 }
 
+for (const [relativePath, name] of [
+  ["src/features/public/routes/page.tsx", "HomeContent"],
+  ["src/features/public/routes/en/page.tsx", "EnglishHomeContent"],
+] as const) {
+  const source = readSourceFile(relativePath);
+  const body = findFunction(source, name)?.body?.getText(source) ?? "";
+  if (!body.includes("isDatabaseFreeBuild()")) {
+    errors.push(`${relativePath} must keep verification builds database-free`);
+  }
+  for (const tag of ["homepage", "homepageSlots", "posts", "tags", "sidebar", "serverOffers"]) {
+    if (!body.includes(`cacheTags.${tag}`)) {
+      errors.push(`${relativePath} must invalidate its rendered content with ${tag}`);
+    }
+  }
+  if (!/revalidate:\s*300\b/.test(body) || !/expire:\s*3_600\b/.test(body)) {
+    errors.push(`${relativePath} must keep a bounded homepage render lifetime`);
+  }
+  if (!source.getFullText().includes(`await ${name}()`)) {
+    errors.push(`${relativePath} must resolve its cached body before rendering`);
+  }
+}
+
 const articleStaticParamsSource = fs.readFileSync(
   path.join(root, "src/features/public/lib/article-static-params.ts"),
   "utf8",
@@ -284,6 +308,9 @@ for (const errorMessage of [
 }
 
 for (const requirement of articleRouteRequirements) {
+  if (fs.existsSync(path.join(root, path.dirname(requirement.app), "loading.tsx"))) {
+    errors.push(`${requirement.app} must not hide its entire article behind loading.tsx`);
+  }
   const appSource = fs.readFileSync(path.join(root, requirement.app), "utf8");
   const routeSource = fs.readFileSync(
     path.join(root, requirement.route),
@@ -348,6 +375,9 @@ for (const bypass of [
 }
 if (!webProxySource.includes("isPublicHtmlRequest(request)")) {
   errors.push("The proxy must apply the shared HTML cache boundary");
+}
+if (!webProxySource.includes("CACHED_HOMEPAGE_PATHS.has(pathname)")) {
+  errors.push("Cached homepages must also bypass shared caching for private/RSC requests");
 }
 if (
   webNextConfig.includes("publicArticleCacheHeaders") ||

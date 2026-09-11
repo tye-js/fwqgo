@@ -12,6 +12,7 @@ import {
 import { resolvePublicResourcePath } from "@/server/seo/public-route-guard";
 
 const DEFAULT_CMS_ORIGIN = "https://cms.fwqgo.com";
+const CACHED_HOMEPAGE_PATHS = new Set(["/", "/en"]);
 const ARTICLE_STATIC_SHELL_PATHS = new Set([
   "/fwq/posts/__fwqgo_article_static_shell__",
   "/en/fwq/posts/__fwqgo_article_static_shell__",
@@ -108,6 +109,19 @@ export async function proxy(request: NextRequest) {
   }
 
   if (request.method === "GET" || request.method === "HEAD") {
+    if (
+      CACHED_HOMEPAGE_PATHS.has(pathname) &&
+      !isPublicHtmlRequest(request)
+    ) {
+      // Static homepage documents must not share their policy with Flight,
+      // prefetches, queries, or requests carrying authentication state.
+      const response = NextResponse.next();
+      response.headers.set("Cache-Control", "private, no-store, max-age=0");
+      response.headers.set("CDN-Cache-Control", "no-store");
+      response.headers.set("Cloudflare-CDN-Cache-Control", "no-store");
+      return response;
+    }
+
     const knowledgeRenderPath = getKnowledgeIndexRewritePath(request.nextUrl);
     if (knowledgeRenderPath) {
       // NextURL normalizes loopback hostnames to localhost. Keep the original
