@@ -95,6 +95,7 @@ import type {
   getProviderOptionsForMonitoring,
 } from "@/server/offers/provider-monitor";
 import { formatServerOfferAmount } from "@fwqgo/core/server-offer-price";
+import { sanitizeProviderMonitorDraftConfig } from "@fwqgo/core/provider-monitor-config";
 
 type Monitor = Awaited<ReturnType<typeof getProviderMonitorList>>[number];
 type Provider = Awaited<
@@ -357,6 +358,16 @@ function isNewMonitorDraft(value: unknown): value is NewMonitorDraft {
   );
 }
 
+function sanitizeNewMonitorDraft(draft: NewMonitorDraft): NewMonitorDraft {
+  return {
+    ...draft,
+    configText: sanitizeProviderMonitorDraftConfig(
+      draft.configText,
+      draft.adapter,
+    ),
+  };
+}
+
 function readNewMonitorDraft() {
   try {
     const value = window.localStorage.getItem(newMonitorDraftStorageKey);
@@ -364,7 +375,7 @@ function readNewMonitorDraft() {
 
     const draft: unknown = JSON.parse(value);
     if (!isNewMonitorDraft(draft)) return null;
-    const sanitizedDraft = { ...draft, configText: "" };
+    const sanitizedDraft = sanitizeNewMonitorDraft(draft);
     window.localStorage.setItem(
       newMonitorDraftStorageKey,
       JSON.stringify(sanitizedDraft),
@@ -379,7 +390,7 @@ function writeNewMonitorDraft(draft: NewMonitorDraft) {
   try {
     window.localStorage.setItem(
       newMonitorDraftStorageKey,
-      JSON.stringify({ ...draft, configText: "" }),
+      JSON.stringify(sanitizeNewMonitorDraft(draft)),
     );
   } catch {
     // Browser storage is an optional convenience and must not block saving.
@@ -551,10 +562,12 @@ function MonitorFormDialog({
     String(monitor?.providerId ?? draft?.providerId ?? ""),
   );
   const [providerQuery, setProviderQuery] = useState("");
+  const draftConfigText =
+    draft?.configText === "" ? undefined : draft?.configText;
   const [configText, setConfigText] = useState(
     monitor?.config
       ? JSON.stringify(monitor.config, null, 2)
-      : (draft?.configText ??
+      : (draftConfigText ??
           getDefaultConfigText(draft?.adapter ?? "affiliate_link")),
   );
   const [externalProductId, setExternalProductId] = useState(
@@ -2663,9 +2676,7 @@ export function ProviderMonitorManager({
           onOpenChange={setDialogOpen}
           onNewMonitorSaved={(draft) => {
             const disabledDraft = {
-              ...draft,
-              // Never persist request headers or other secrets in browser storage.
-              configText: "",
+              ...sanitizeNewMonitorDraft(draft),
               enabled: false,
               autoPublish: false,
             };

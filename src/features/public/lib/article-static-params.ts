@@ -3,6 +3,7 @@ import "server-only";
 import { readDb } from "@fwqgo/db";
 import { posts } from "@fwqgo/db/schema";
 import { desc } from "drizzle-orm";
+import { isDatabaseFreeBuild } from "@fwqgo/core/build-verification";
 import { publicPostCondition } from "@/server/posts/public-post-policy";
 
 export type PublicArticleLanguage = "zh" | "en";
@@ -41,7 +42,7 @@ export function isPublicArticleStaticParamsPlaceholder(value: string) {
 export async function getPublicArticleStaticParams(
   language: PublicArticleLanguage,
 ) {
-  if (process.env.SKIP_ENV_VALIDATION === "1") {
+  if (isDatabaseFreeBuild()) {
     return [{ slug: PUBLIC_ARTICLE_STATIC_PARAMS_PLACEHOLDER }];
   }
 

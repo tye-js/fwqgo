@@ -1,6 +1,6 @@
 /**
- * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially useful
- * for Docker builds.
+ * Database-free verification builds may set SKIP_ENV_VALIDATION=1.
+ * Production release builds and runtime starts must validate their environment.
  */
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,7 +36,7 @@ const config = {
     ];
   },
   output: "standalone",
-  serverExternalPackages: ["re2-wasm", "undici"],
+  serverExternalPackages: ["re2js", "undici"],
   distDir: "../../.next-web",
   // Dynamic article metadata must be present in the initial <head>. This
   // trades a small metadata lookup for reliable crawlers and audit tools.

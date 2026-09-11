@@ -13,6 +13,10 @@ const web = config.apps.find((app) => app.name === "fwqgo-web");
 const cms = config.apps.find((app) => app.name === "fwqgo-cms");
 assert.ok(web && cms, "Both runtime applications must be configured");
 for (const app of [web, cms]) {
+  assert.ok(
+    !app.env.SKIP_ENV_VALIDATION,
+    `${app.name}: runtime environment validation must remain enabled`,
+  );
   assert.equal(
     app.env.TRUST_PROXY_HEADERS,
     "true",

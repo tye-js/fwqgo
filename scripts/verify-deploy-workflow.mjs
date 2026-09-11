@@ -5,6 +5,20 @@ import path from "node:path";
 
 const workflowPath = path.resolve(".github/workflows/deploy.yml");
 const workflow = fs.readFileSync(workflowPath, "utf8");
+if (/\bSKIP_ENV_VALIDATION\b/.test(workflow)) {
+  throw new Error(
+    "Production releases must build with complete environment validation",
+  );
+}
+if (
+  !workflow.includes("node scripts/build-release.mjs") ||
+  workflow.indexOf("- name: Prepare SSH") >
+    workflow.indexOf("- name: Build standalone")
+) {
+  throw new Error(
+    "Release builds must prepare pinned SSH access before opening the read database tunnel",
+  );
+}
 const localDeployPath = path.resolve("scripts/deploy-local-build.sh");
 const localDeploy = fs.readFileSync(localDeployPath, "utf8");
 const productionHealthcheckPath = path.resolve(

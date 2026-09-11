@@ -135,11 +135,15 @@ function verifyRe2Runtime() {
     [
       "-e",
       `
-const { RE2 } = require("re2-wasm");
-if (new RE2("^(a|aa)+$", "iu").exec("a".repeat(32000) + "!") !== null) {
-  throw new Error("Unexpected RE2 result");
-}
-process.stdout.write("re2-runtime-ok");
+import("re2js").then(({ RE2JS }) => {
+  if (RE2JS.compile("^(a|aa)+$", RE2JS.CASE_INSENSITIVE).exec("a".repeat(32000) + "!") !== null) {
+    throw new Error("Unexpected RE2 result");
+  }
+  process.stdout.write("re2-runtime-ok");
+}).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
 `,
     ],
     {
@@ -378,7 +382,7 @@ async function run() {
   );
 
   console.log(
-    "Built app smoke tests passed: sharp WebP, RE2 WASM, health, metadata images, redirects, auth boundary, route isolation, article ISR and RSC cache isolation",
+    "Built app smoke tests passed: sharp WebP, RE2JS, health, metadata images, redirects, auth boundary, route isolation, article ISR and RSC cache isolation",
   );
 }
 

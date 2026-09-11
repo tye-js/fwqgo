@@ -252,7 +252,7 @@ if (
     "Public article ISR must keep builds safe when the database is absent",
   );
 }
-if (!articleStaticParamsSource.includes('SKIP_ENV_VALIDATION === "1"')) {
+if (!articleStaticParamsSource.includes("isDatabaseFreeBuild()")) {
   errors.push("Local builds must not wait for a production article database");
 }
 for (const timingField of [

@@ -1,5 +1,6 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
+import { isDatabaseFreeBuild } from "../packages/core/build-verification.ts";
 
 const databaseUrl = process.env.DATABASE_URL ?? process.env.READ_DATABASE_URL;
 
@@ -64,11 +65,9 @@ export const env = createEnv({
     NODE_ENV: process.env.NODE_ENV,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
-  /**
-   * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially
-   * useful for Docker builds.
-   */
-  skipValidation: !!process.env.SKIP_ENV_VALIDATION,
+  // Only an explicit database-free verification build may skip validation.
+  // Runtime starts and values such as "0" or "false" must still validate.
+  skipValidation: isDatabaseFreeBuild(),
   /**
    * Makes it so that empty strings are treated as undefined. `SOME_VAR: z.string()` and
    * `SOME_VAR=''` will throw an error.

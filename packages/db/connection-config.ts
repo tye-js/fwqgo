@@ -1,7 +1,9 @@
+import { isDatabaseFreeBuild } from "@fwqgo/core/build-verification";
+
 type Environment = Readonly<Record<string, string | undefined>>;
 
 export function resolveDatabaseUrls(environment: Environment) {
-  const buildOnly = environment.SKIP_ENV_VALIDATION === "1";
+  const buildOnly = isDatabaseFreeBuild(environment);
   const production = environment.NODE_ENV === "production" && !buildOnly;
   const value = (name: string) => {
     const configured = environment[name]?.trim();

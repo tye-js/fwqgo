@@ -241,3 +241,25 @@ export function parseProviderMonitorConfig(
   assertSafeHeaders(parsed.headers);
   return parsed;
 }
+
+/** Reuse collection rules, but never persist request headers in browser storage. */
+export function sanitizeProviderMonitorDraftConfig(
+  configText: string,
+  adapter: ProviderSourceAdapter,
+) {
+  if (!configText.trim()) return "";
+  try {
+    const value: unknown = JSON.parse(configText);
+    if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+    // Strip all headers, including custom credential names, before validating.
+    // The schema also drops unknown properties that might contain secrets.
+    const config = parseProviderMonitorConfig(
+      { ...value, headers: {} },
+      adapter,
+    );
+    return JSON.stringify(config, null, 2);
+  } catch {
+    // Partial/invalid JSON cannot be safely redacted; keep it out of storage.
+    return "";
+  }
+}

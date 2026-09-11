@@ -70,8 +70,34 @@ function withCredentials(baseUrl, username, password) {
   return url.toString();
 }
 
-const productionEnv = parseEnvFile(path.join(__dirname, ".env.production"));
-const bunInterpreter = process.env.BUN_BIN ?? productionEnv.BUN_BIN ?? "";
+// Resolve precedence once; each role only receives its declared runtime keys.
+const runtimeEnvironment = {
+  ...parseEnvFile(path.join(__dirname, ".env.production")),
+  ...process.env,
+};
+const sharedRuntimeKeys = [
+  "NEXT_PUBLIC_URL",
+  "NEXT_PUBLIC_CMS_URL",
+  "WEB_REVALIDATION_SECRET",
+  "WEB_REVALIDATION_URL",
+  "CLOUDFLARE_ZONE_ID",
+  "CLOUDFLARE_CACHE_PURGE_TOKEN",
+  "DB_MAX_CONNECTIONS",
+  "PUBLIC_ARTICLE_PRERENDER_LIMIT",
+  "PUBLIC_ARTICLE_SLOW_LOG_MS",
+  "PUBLIC_KNOWLEDGE_SLOW_LOG_MS",
+];
+const cmsRuntimeKeys = [
+  "SECRET_ENCRYPTION_KEYS",
+  "SECRET_ENCRYPTION_KEY",
+  "SECRET_ENCRYPTION_ACTIVE_KEY_ID",
+  "CMS_BASIC_AUTH_USERNAME",
+  "CMS_BASIC_AUTH_PASSWORD",
+  "AI_REWRITE_TIMEOUT_MS",
+  "ADMIN_BACKGROUND_JOB_CONCURRENCY",
+  "ADMIN_BACKGROUND_JOB_RETENTION_DAYS",
+];
+const bunInterpreter = runtimeEnvironment.BUN_BIN ?? "";
 const useBun = Boolean(bunInterpreter);
 const webAppDir =
   process.env.WEB_APP_DIR ?? process.env.APP_DIR ?? path.join(__dirname, "web");
@@ -104,10 +130,9 @@ function createApp({
   defaultInstances,
   role,
 }) {
-  const resolvedPort =
-    process.env[portEnvName] ?? productionEnv[portEnvName] ?? String(port);
+  const resolvedPort = runtimeEnvironment[portEnvName] ?? String(port);
   const requestedInstances = parsePositiveInteger(
-    process.env[instancesEnvName] ?? productionEnv[instancesEnvName],
+    runtimeEnvironment[instancesEnvName],
     defaultInstances,
   );
   // PM2 cluster mode is implemented through Node's cluster primary process.
@@ -115,33 +140,25 @@ function createApp({
   // is the actual runtime and both apps keep their single listening port.
   const instances = useBun ? 1 : requestedInstances;
 
-  const primaryDatabaseUrl =
-    process.env.DATABASE_URL ?? productionEnv.DATABASE_URL ?? "";
+  const primaryDatabaseUrl = runtimeEnvironment.DATABASE_URL ?? "";
   const readDatabaseUrl =
-    process.env.READ_DATABASE_URL ??
-    productionEnv.READ_DATABASE_URL ??
+    runtimeEnvironment.READ_DATABASE_URL ??
     withCredentials(
       primaryDatabaseUrl,
-      process.env.READ_USERNAME ?? productionEnv.READ_USERNAME,
-      process.env.READ_PASSWORD ?? productionEnv.READ_PASSWORD,
+      runtimeEnvironment.READ_USERNAME,
+      runtimeEnvironment.READ_PASSWORD,
     );
   const writeDatabaseUrl =
-    process.env.CMS_DATABASE_URL ??
-    productionEnv.CMS_DATABASE_URL ??
+    runtimeEnvironment.CMS_DATABASE_URL ??
     withCredentials(
-      process.env.DATABASE_URL ?? productionEnv.DATABASE_URL ?? "",
-      process.env.CMS_USERNAME ?? productionEnv.CMS_USERNAME,
-      process.env.CMS_PASSWORD ?? productionEnv.CMS_PASSWORD,
+      primaryDatabaseUrl,
+      runtimeEnvironment.CMS_USERNAME,
+      runtimeEnvironment.CMS_PASSWORD,
     );
-  const analyticsDatabaseUrl =
-    process.env.ANALYTICS_DATABASE_URL ??
-    productionEnv.ANALYTICS_DATABASE_URL ??
-    "";
+  const analyticsDatabaseUrl = runtimeEnvironment.ANALYTICS_DATABASE_URL ?? "";
   if (
-    !process.env.READ_DATABASE_URL &&
-    !productionEnv.READ_DATABASE_URL &&
-    !process.env.READ_USERNAME &&
-    !productionEnv.READ_USERNAME
+    !runtimeEnvironment.READ_DATABASE_URL &&
+    !runtimeEnvironment.READ_USERNAME
   ) {
     throw new Error(
       "Production runtime requires READ_DATABASE_URL or READ_USERNAME",
@@ -169,83 +186,41 @@ function createApp({
           ANALYTICS_DATABASE_URL: analyticsDatabaseUrl,
         };
 
-  /** @type {Record<string, string | undefined>} */
-  const sharedRuntimeEnv = {
-    NEXT_PUBLIC_URL:
-      process.env.NEXT_PUBLIC_URL ?? productionEnv.NEXT_PUBLIC_URL,
-    NEXT_PUBLIC_CMS_URL:
-      process.env.NEXT_PUBLIC_CMS_URL ?? productionEnv.NEXT_PUBLIC_CMS_URL,
-    WEB_REVALIDATION_SECRET:
-      process.env.WEB_REVALIDATION_SECRET ??
-      productionEnv.WEB_REVALIDATION_SECRET,
-    WEB_REVALIDATION_URL:
-      process.env.WEB_REVALIDATION_URL ?? productionEnv.WEB_REVALIDATION_URL,
-    // Empty values also override secrets inherited from the PM2 launcher.
-    SECRET_ENCRYPTION_KEYS: "",
-    SECRET_ENCRYPTION_KEY: "",
-    SECRET_ENCRYPTION_ACTIVE_KEY_ID: "",
-    CMS_BASIC_AUTH_USERNAME: "",
-    CMS_BASIC_AUTH_PASSWORD: "",
-    ENABLE_PUBLIC_SIGNUP: "false",
-    CLOUDFLARE_ZONE_ID:
-      process.env.CLOUDFLARE_ZONE_ID ?? productionEnv.CLOUDFLARE_ZONE_ID,
-    CLOUDFLARE_CACHE_PURGE_TOKEN:
-      process.env.CLOUDFLARE_CACHE_PURGE_TOKEN ??
-      productionEnv.CLOUDFLARE_CACHE_PURGE_TOKEN,
-    ENABLE_CMS_BACKGROUND_WORKERS: "false",
-    TRUST_PROXY_HEADERS:
-      process.env.TRUST_PROXY_HEADERS ??
-      productionEnv.TRUST_PROXY_HEADERS ??
-      "false",
-    ENABLE_BROWSER_SCRAPING: "false",
-    WEB_PORT: process.env.WEB_PORT ?? productionEnv.WEB_PORT ?? "3000",
-    DB_MAX_CONNECTIONS:
-      process.env.DB_MAX_CONNECTIONS ?? productionEnv.DB_MAX_CONNECTIONS,
-    PUBLIC_ARTICLE_PRERENDER_LIMIT:
-      process.env.PUBLIC_ARTICLE_PRERENDER_LIMIT ??
-      productionEnv.PUBLIC_ARTICLE_PRERENDER_LIMIT,
-    PUBLIC_ARTICLE_SLOW_LOG_MS:
-      process.env.PUBLIC_ARTICLE_SLOW_LOG_MS ??
-      productionEnv.PUBLIC_ARTICLE_SLOW_LOG_MS,
-    PUBLIC_KNOWLEDGE_SLOW_LOG_MS:
-      process.env.PUBLIC_KNOWLEDGE_SLOW_LOG_MS ??
-      productionEnv.PUBLIC_KNOWLEDGE_SLOW_LOG_MS,
-    UPLOAD_DIR:
-      process.env.UPLOAD_DIR ?? productionEnv.UPLOAD_DIR ?? "/var/www/uploads",
+  const runtimeEnv = {
+    ...Object.fromEntries(
+      sharedRuntimeKeys.map((key) => [key, runtimeEnvironment[key]]),
+    ),
+    // Explicit empty values also clear CMS secrets inherited from the launcher.
+    ...Object.fromEntries(
+      cmsRuntimeKeys.map((key) => [
+        key,
+        role === "cms" ? runtimeEnvironment[key] : "",
+      ]),
+    ),
+    ENABLE_PUBLIC_SIGNUP:
+      role === "cms"
+        ? (runtimeEnvironment.ENABLE_PUBLIC_SIGNUP ?? "false")
+        : "false",
+    ENABLE_CMS_BACKGROUND_WORKERS:
+      role === "cms"
+        ? runtimeEnvironment.ENABLE_CMS_BACKGROUND_WORKERS
+        : "false",
+    ENABLE_BROWSER_SCRAPING:
+      role === "cms"
+        ? (runtimeEnvironment.ENABLE_BROWSER_SCRAPING ?? "false")
+        : "false",
+    TRUST_PROXY_HEADERS: runtimeEnvironment.TRUST_PROXY_HEADERS ?? "false",
+    // This build-only escape hatch must never survive a PM2 start/restart.
+    SKIP_ENV_VALIDATION: "",
+    WEB_PORT: runtimeEnvironment.WEB_PORT ?? "3000",
+    UPLOAD_DIR: runtimeEnvironment.UPLOAD_DIR ?? "/var/www/uploads",
     PORT: resolvedPort,
     HOSTNAME: "127.0.0.1",
     NODE_ENV: "production",
     TZ: "UTC",
-    RELEASE_ID: process.env.RELEASE_ID ?? productionEnv.RELEASE_ID ?? "unknown",
+    RELEASE_ID: runtimeEnvironment.RELEASE_ID ?? "unknown",
     BUN_BIN: bunInterpreter,
   };
-  if (role === "cms") {
-    sharedRuntimeEnv.SECRET_ENCRYPTION_KEYS =
-      process.env.SECRET_ENCRYPTION_KEYS ??
-      productionEnv.SECRET_ENCRYPTION_KEYS;
-    sharedRuntimeEnv.SECRET_ENCRYPTION_KEY =
-      process.env.SECRET_ENCRYPTION_KEY ?? productionEnv.SECRET_ENCRYPTION_KEY;
-    sharedRuntimeEnv.SECRET_ENCRYPTION_ACTIVE_KEY_ID =
-      process.env.SECRET_ENCRYPTION_ACTIVE_KEY_ID ??
-      productionEnv.SECRET_ENCRYPTION_ACTIVE_KEY_ID;
-    sharedRuntimeEnv.ENABLE_CMS_BACKGROUND_WORKERS =
-      process.env.ENABLE_CMS_BACKGROUND_WORKERS ??
-      productionEnv.ENABLE_CMS_BACKGROUND_WORKERS;
-    sharedRuntimeEnv.ENABLE_BROWSER_SCRAPING =
-      process.env.ENABLE_BROWSER_SCRAPING ??
-      productionEnv.ENABLE_BROWSER_SCRAPING ??
-      "false";
-    sharedRuntimeEnv.CMS_BASIC_AUTH_USERNAME =
-      process.env.CMS_BASIC_AUTH_USERNAME ??
-      productionEnv.CMS_BASIC_AUTH_USERNAME;
-    sharedRuntimeEnv.CMS_BASIC_AUTH_PASSWORD =
-      process.env.CMS_BASIC_AUTH_PASSWORD ??
-      productionEnv.CMS_BASIC_AUTH_PASSWORD;
-    sharedRuntimeEnv.ENABLE_PUBLIC_SIGNUP =
-      process.env.ENABLE_PUBLIC_SIGNUP ??
-      productionEnv.ENABLE_PUBLIC_SIGNUP ??
-      "false";
-  }
 
   return {
     name,
@@ -258,9 +233,11 @@ function createApp({
     watch: false,
     max_memory_restart: "1G",
     filter_env:
-      role === "web" ? ["SECRET_ENCRYPTION_", "CMS_", "ENABLE_CMS_"] : [],
+      role === "web"
+        ? ["SECRET_ENCRYPTION_", "CMS_", "ENABLE_CMS_", ...cmsRuntimeKeys]
+        : [],
     env: {
-      ...sharedRuntimeEnv,
+      ...runtimeEnv,
       ...roleDatabaseEnv,
     },
   };

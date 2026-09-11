@@ -234,7 +234,7 @@ bun run db:studio         # 打开 Drizzle Studio
 | `bun run verify:deploy`             | 验证 Actions 远端激活脚本                        |
 | `bun run verify:migrations`         | 验证迁移 journal 与 SQL 文件                     |
 | `bun run verify:security`           | 验证 CMS 鉴权和数据库边界                        |
-| `bun run verify:security-runtime`   | 在 Node 与 Bun 验证出站、限流、上传和密钥隔离      |
+| `bun run verify:security-runtime`   | 在 Node 与 Bun 验证出站、限流、上传和密钥隔离    |
 | `bun run smoke:security-migrations` | 在独立测试库验证账号权限迁移                     |
 | `bun run verify:cache`              | 验证公开站关键读取缓存边界                       |
 | `bun run smoke:cms`                 | 浏览器验证 CMS 登录与核心路由                    |
@@ -271,7 +271,7 @@ bun run check
 SKIP_ENV_VALIDATION=1 bun run build
 ```
 
-`SKIP_ENV_VALIDATION=1` 只用于本地缺少真实环境变量时验证构建。生产构建必须提供完整环境变量。
+`SKIP_ENV_VALIDATION=1` 只用于不发布产物的本地或无密钥 PR 验证构建，普通启动不会跳过校验。生产构建必须提供完整环境变量，不得设置该变量；`0`、`false` 等字符串也不会开启跳过。
 
 ## 部署
 

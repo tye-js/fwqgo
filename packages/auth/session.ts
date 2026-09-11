@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { and, eq, gt } from "drizzle-orm";
+import { cache } from "react";
 
 import { getCmsSessionId } from "@fwqgo/auth/session-cookie";
 import { db } from "@fwqgo/db";
@@ -46,10 +47,12 @@ export async function getValidSessionById(
   return session ?? null;
 }
 
-export async function getCurrentSession() {
+// React only memoizes inside the current server render, never across requests.
+// Layouts, pages and protected loaders can keep their own authorization boundary.
+export const getCurrentSession = cache(async () => {
   const sessionId = getCmsSessionId(await cookies());
   return getValidSessionById(sessionId);
-}
+});
 
 export async function requireAdminSession() {
   const session = await getCurrentSession();

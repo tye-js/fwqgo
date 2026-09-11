@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 import { resolveDatabaseUrls } from "./connection-config";
+import { isBuildProcess } from "@fwqgo/core/build-verification";
 
 const databaseUrls = resolveDatabaseUrls(process.env);
 
@@ -14,13 +15,6 @@ const globalForDb = globalThis as unknown as {
   readConn: postgres.Sql | undefined;
   analyticsConn: postgres.Sql | undefined;
 };
-
-function isBuildProcess() {
-  return (
-    process.env.NEXT_PHASE === "phase-production-build" ||
-    process.env.npm_lifecycle_event?.startsWith("build")
-  );
-}
 
 function resolveMaxConnections() {
   const fallback = isBuildProcess() ? 1 : 4;

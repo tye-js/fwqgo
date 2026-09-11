@@ -108,32 +108,6 @@ async function getAffiliateTargetUrl(url: URL) {
   );
 }
 
-function isGenericMarkdownLinkLabel(label: string) {
-  return [
-    "链接",
-    "点击链接",
-    "点击这里",
-    "查看详情",
-    "点此查看",
-    "link",
-    "here",
-    "click here",
-    "learn more",
-  ].includes(
-    label.replace(/[*_`]/g, "").replace(/\s+/g, " ").trim().toLowerCase(),
-  );
-}
-
-export function normalizeOutboundLinkLabel(label: string) {
-  if (!isGenericMarkdownLinkLabel(label)) {
-    return label;
-  }
-
-  // Keep generic anchor text stable when normalizing a short link. The target
-  // host belongs in the URL and should not replace an editor's visible label.
-  return "链接";
-}
-
 function isShortLink(url: URL) {
   return isInternalUrl(url) && /^\/go\/[a-z0-9-]+$/i.test(url.pathname);
 }
@@ -319,22 +293,6 @@ export async function shortenMarkdownOutboundLinks(markdown: string) {
     }
 
     if (isShortLink(url)) {
-      if (!isGenericMarkdownLinkLabel(label)) {
-        continue;
-      }
-
-      const targetUrl = await readOutboundShortTarget(
-        url.pathname.replace(/^\/go\//, ""),
-      );
-      if (!targetUrl) {
-        continue;
-      }
-
-      replacements.push({
-        start: match.index,
-        end: match.index + original.length,
-        replacement: `[${normalizeOutboundLinkLabel(label)}](${url.pathname})`,
-      });
       continue;
     }
 
@@ -351,7 +309,7 @@ export async function shortenMarkdownOutboundLinks(markdown: string) {
     replacements.push({
       start: match.index,
       end: match.index + original.length,
-      replacement: `[${normalizeOutboundLinkLabel(label)}](${shortLink.path})`,
+      replacement: `[${label}](${shortLink.path})`,
     });
   }
 
