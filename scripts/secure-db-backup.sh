@@ -25,9 +25,13 @@ retention_days=$((10#$retention_days))
 
 command -v pg_dump >/dev/null 2>&1 || fail "pg_dump is required when database migrations are enabled"
 command -v pg_restore >/dev/null 2>&1 || fail "pg_restore is required to verify the database backup"
-command -v node >/dev/null 2>&1 || fail "node is required to prepare a secure database backup"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+bun_bin="${BUN_BIN:-$script_dir/../bin/bun}"
+if [[ -z "${BUN_BIN:-}" && ! -x "$bun_bin" ]]; then
+  bun_bin="$(command -v bun || true)"
+fi
+[[ -n "$bun_bin" && -x "$bun_bin" ]] || fail "An executable Bun runtime is required for database backups"
 pg_dump_runner="$script_dir/secure-pg-dump.mjs"
 [[ -f "$pg_dump_runner" ]] || fail "Secure pg_dump runner is missing"
 
@@ -62,7 +66,7 @@ trap 'exit 1' HUP INT TERM
 echo "Creating verified database backup before migrations: $backup_file"
 if ! (
   umask 077
-  node "$pg_dump_runner" "$database_env_file" "$backup_tmp"
+  "$bun_bin" "$pg_dump_runner" "$database_env_file" "$backup_tmp"
 ); then
   fail "Database backup failed; migrations were not started"
 fi

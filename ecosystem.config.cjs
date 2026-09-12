@@ -97,48 +97,21 @@ const cmsRuntimeKeys = [
   "ADMIN_BACKGROUND_JOB_CONCURRENCY",
   "ADMIN_BACKGROUND_JOB_RETENTION_DAYS",
 ];
-const bunInterpreter = runtimeEnvironment.BUN_BIN ?? "";
-const useBun = Boolean(bunInterpreter);
+const configuredBun = runtimeEnvironment.BUN_BIN?.trim();
+const bunInterpreter = configuredBun?.length
+  ? configuredBun
+  : path.join(__dirname, "bin", "bun");
 const webAppDir =
-  process.env.WEB_APP_DIR ?? process.env.APP_DIR ?? path.join(__dirname, "web");
+  process.env.WEB_APP_DIR ?? path.join(__dirname, "apps", "web");
 const cmsAppDir =
-  process.env.CMS_APP_DIR ?? process.env.APP_DIR ?? path.join(__dirname, "cms");
+  process.env.CMS_APP_DIR ?? path.join(__dirname, "apps", "cms");
 
 /**
- * @param {string | undefined} value
- * @param {number} fallback
- * @returns {number}
+ * @param {{ name: string; appDir: string; port: number; portEnvName: string; role: "web" | "cms" }} options
  */
-function parsePositiveInteger(value, fallback) {
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-/**
- * @param {{ name: string; appDir: string; port: number; portEnvName: string; instancesEnvName: string; defaultInstances: number; role: "web" | "cms" }} options
- */
-function createApp({
-  name,
-  appDir,
-  port,
-  portEnvName,
-  instancesEnvName,
-  defaultInstances,
-  role,
-}) {
+function createApp({ name, appDir, port, portEnvName, role }) {
   const resolvedPort = runtimeEnvironment[portEnvName] ?? String(port);
-  const requestedInstances = parsePositiveInteger(
-    runtimeEnvironment[instancesEnvName],
-    defaultInstances,
-  );
-  // PM2 cluster mode is implemented through Node's cluster primary process.
-  // Bun releases therefore use one forked process so the configured interpreter
-  // is the actual runtime and both apps keep their single listening port.
-  const instances = useBun ? 1 : requestedInstances;
+  // Bun applications use one forked process per listening port.
 
   const primaryDatabaseUrl = runtimeEnvironment.DATABASE_URL ?? "";
   const readDatabaseUrl =
@@ -226,9 +199,9 @@ function createApp({
     name,
     cwd: appDir,
     script: path.join(appDir, "server.js"),
-    interpreter: bunInterpreter || "node",
-    instances,
-    exec_mode: useBun ? "fork" : "cluster",
+    interpreter: bunInterpreter,
+    instances: 1,
+    exec_mode: "fork",
     autorestart: true,
     watch: false,
     max_memory_restart: "1G",
@@ -250,8 +223,6 @@ module.exports = {
       appDir: webAppDir,
       port: 3000,
       portEnvName: "WEB_PORT",
-      instancesEnvName: "WEB_INSTANCES",
-      defaultInstances: 1,
       role: "web",
     }),
     createApp({
@@ -259,8 +230,6 @@ module.exports = {
       appDir: cmsAppDir,
       port: 3100,
       portEnvName: "CMS_PORT",
-      instancesEnvName: "CMS_INSTANCES",
-      defaultInstances: 1,
       role: "cms",
     }),
   ],

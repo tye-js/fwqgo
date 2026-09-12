@@ -47,11 +47,11 @@ probe_http() {
 }
 
 redirect_path() {
-  node -e 'const value = process.argv[1] || ""; if (!value) process.exit(0); try { const url = new URL(value, "https://placeholder.local"); console.log(url.pathname.replace(/\/+$/, "") || "/"); } catch { process.exit(0); }' "$1"
+  "$bun_bin" -e 'const value = process.argv[1] || ""; if (!value) process.exit(0); try { const url = new URL(value, "https://placeholder.local"); console.log(url.pathname.replace(/\/+$/, "") || "/"); } catch { process.exit(0); }' "$1"
 }
 
 redirect_host() {
-  node -e 'const value = process.argv[1] || ""; if (!value || !value.includes("://")) process.exit(0); try { console.log(new URL(value).host); } catch { process.exit(0); }' "$1"
+  "$bun_bin" -e 'const value = process.argv[1] || ""; if (!value || !value.includes("://")) process.exit(0); try { console.log(new URL(value).host); } catch { process.exit(0); }' "$1"
 }
 
 if [[ -f "$DEPLOY_ENV_FILE" ]]; then
@@ -61,10 +61,16 @@ if [[ -f "$DEPLOY_ENV_FILE" ]]; then
   set +a
 fi
 
+bun_bin="${BUN_BIN:-$ROOT_DIR/bin/bun}"
+if [[ -z "${BUN_BIN:-}" && ! -x "$bun_bin" ]]; then
+  bun_bin="$(command -v bun || true)"
+fi
+[[ -n "$bun_bin" && -x "$bun_bin" ]] || fail "An executable Bun runtime is required for health checks"
+
 CMS_URL="${CMS_URL:-${NEXT_PUBLIC_CMS_URL:-https://cms.fwqgo.com}}"
 SITE_URL="${SITE_URL%/}"
 CMS_URL="${CMS_URL%/}"
-CMS_HOST="$(node -e 'const value = process.argv[1] || "https://cms.fwqgo.com"; const url = new URL(value.includes("://") ? value : `https://${value}`); console.log(url.host);' "$CMS_URL")"
+CMS_HOST="$("$bun_bin" -e 'const value = process.argv[1] || "https://cms.fwqgo.com"; const url = new URL(value.includes("://") ? value : `https://${value}`); console.log(url.host);' "$CMS_URL")"
 CMS_BASIC_AUTH_ENABLED=0
 if [[ -n "${CMS_BASIC_AUTH_USERNAME:-}" && -n "${CMS_BASIC_AUTH_PASSWORD:-}" ]]; then
   CMS_BASIC_AUTH_ENABLED=1
@@ -122,7 +128,7 @@ for app in fwqgo-web fwqgo-cms; do
   if pm2 describe "$app" >/dev/null 2>&1; then
     printf "\n[%s]\n" "$app"
     pm2 describe "$app" | awk "
-      /status/ || /script path/ || /exec cwd/ || /node.js version/ || /unstable restarts/ { print }
+      /status/ || /script path/ || /exec cwd/ || /interpreter/ || /exec mode/ || /unstable restarts/ { print }
     "
   else
     echo "Missing PM2 process: $app" >&2
@@ -199,6 +205,6 @@ esac
 
 log "Checking public article ISR document"
 SITE_URL="$SITE_URL" ARTICLE_ISR_RELEASE_ID="manual-$(date +%s)" \
-  node "$ROOT_DIR/scripts/verify-production-article.mjs"
+  "$bun_bin" "$ROOT_DIR/scripts/verify-production-article.mjs"
 
 log "Health check complete"

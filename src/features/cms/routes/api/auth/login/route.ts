@@ -20,6 +20,7 @@ import {
   getCmsSessionCookieOptions,
 } from "@fwqgo/auth/session-cookie";
 import { createCmsSession } from "@fwqgo/auth/session-store";
+import { isSameOriginRequest } from "@fwqgo/core/same-origin-request";
 
 import { adminApiFailure, adminApiSuccess } from "@/lib/admin-api-response";
 
@@ -67,6 +68,9 @@ function clearFailedLoginAttempts(keys: string[]) {
 }
 
 export async function POST(request: Request) {
+  if (!isSameOriginRequest(request, process.env.NEXT_PUBLIC_CMS_URL)) {
+    return adminApiFailure("请求来源无效，请从后台登录页重试", { status: 403 });
+  }
   const requestId = getRequestId(request.headers);
   const respond = <T extends Response>(response: T) =>
     attachRequestId(response, requestId);
@@ -118,6 +122,10 @@ export async function POST(request: Request) {
       );
     }
 
+    // Reserve the attempt before yielding to the database or bcrypt. Otherwise
+    // concurrent requests all pass the limit before the first failure finishes.
+    recordFailedLoginAttempt(attemptKeys);
+
     const [user] = await db
       .select({
         id: users.id,
@@ -141,7 +149,6 @@ export async function POST(request: Request) {
       user.status !== "active" ||
       user.role !== "admin"
     ) {
-      recordFailedLoginAttempt(attemptKeys);
       return respond(
         adminApiFailure("用户名或密码错误", {
           status: 401,

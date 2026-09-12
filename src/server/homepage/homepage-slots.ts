@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, asc, desc, eq, gt, isNull, lte, or } from "drizzle-orm";
 import { cacheLife } from "next/cache";
+import { versionUploadImageReferences } from "@fwqgo/core/upload-image-version";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
@@ -68,6 +69,7 @@ const activeHomepageSlotSelection = {
   offerStatus: serverOffers.status,
   imageAssetId: homepageSlots.imageAssetId,
   imagePath: imageAssets.path,
+  imageHash: imageAssets.hash,
   imageThumbPath: imageAssets.thumbPath,
   imageLargePath: imageAssets.largePath,
   imageAltZh: imageAssets.altZh,
@@ -153,7 +155,15 @@ export async function getActiveHomepageSlots(
           row.description ??
           row.postDescription ??
           (offerDescription ? offerDescription : null),
-        resolvedImageUrl: fallbackImage,
+        resolvedImageUrl:
+          fallbackImage && row.imagePath && row.imageHash
+            ? versionUploadImageReferences(
+                fallbackImage,
+                row.imagePath,
+                row.imageHash.slice(0, 16),
+                process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com",
+              )
+            : fallbackImage,
         resolvedTargetUrl: row.targetUrl ?? defaultTarget,
         resolvedAltText:
           row.altText ??

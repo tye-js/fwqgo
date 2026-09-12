@@ -155,6 +155,7 @@ export async function getPostBySlug(slug: string) {
       .select({
         id: posts.id,
         content: posts.content,
+        updatedAt: posts.updatedAt,
         views: posts.views,
         description: posts.description,
         imgUrl: posts.imgUrl,

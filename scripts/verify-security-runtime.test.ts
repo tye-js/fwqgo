@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import vm from "node:vm";
@@ -34,7 +35,7 @@ import {
   validateProviderFieldPatterns,
 } from "@/server/offers/provider-field-pattern";
 
-void test("the installed HTTP transport pins DNS and retains the original host on Bun and Node", async () => {
+void test("the installed HTTP transport pins DNS and retains the original host on Bun", async () => {
   const hosts: string[] = [];
   const server = createServer((request, response) => {
     hosts.push(request.headers.host ?? "");
@@ -364,6 +365,11 @@ void test("environment schema validation cannot be disabled by runtime or false-
 
 type App = {
   name: string;
+  interpreter: string;
+  instances: number;
+  exec_mode: string;
+  cwd: string;
+  script: string;
   env: Record<string, string | undefined>;
   filter_env: string[];
 };
@@ -400,6 +406,108 @@ const databaseFixture = {
   READ_DATABASE_URL: "postgresql://reader:fixture@localhost/db",
   ANALYTICS_DATABASE_URL: "postgresql://analytics:fixture@localhost/db",
 };
+
+void test("package CLIs with a Node shebang execute under Bun without a Node binary", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "fwqgo-bun-cli-"));
+  try {
+    fs.writeFileSync(path.join(directory, "node"), "#!/bin/sh\nexit 97\n", {
+      mode: 0o755,
+    });
+    fs.writeFileSync(
+      path.join(directory, "fwqgo-runtime-probe"),
+      [
+        "#!/usr/bin/env node",
+        "if (!process.versions.bun) process.exit(98);",
+        "console.log(process.versions.bun);",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    const result = spawnSync(
+      process.execPath,
+      ["--no-env-file", "run", "fwqgo-runtime-probe"],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${directory}${path.delimiter}${process.env.PATH ?? ""}`,
+        },
+        encoding: "utf8",
+        timeout: 10_000,
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), process.versions.bun);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+void test("release preflight rejects another interpreter or clustered application processes", () => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "fwqgo-bun-preflight-"),
+  );
+  try {
+    const apps = runtimeApps(databaseFixture, {
+      BUN_BIN: process.execPath,
+      TRUST_PROXY_HEADERS: "true",
+    });
+    const filename = path.join(directory, "ecosystem.config.cjs");
+    for (const [override, expectedStatus] of [
+      [{}, 0],
+      [{ interpreter: process.cwd() }, 1],
+      [{ exec_mode: "cluster" }, 1],
+      [{ instances: 2 }, 1],
+    ] as const) {
+      fs.writeFileSync(
+        filename,
+        `module.exports = ${JSON.stringify({ apps: apps.map((app) => ({ ...app, ...override })) })};`,
+      );
+      const result = spawnSync(
+        process.execPath,
+        ["--no-env-file", "scripts/verify-runtime-config.mjs", filename],
+        {
+          encoding: "utf8",
+          timeout: 10_000,
+        },
+      );
+      assert.equal(result.status, expectedStatus, result.stderr);
+    }
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+void test("PM2 uses bundled Bun without launcher settings and honors an explicit Bun path", () => {
+  for (const [fileEnv, launcherEnv, expected] of [
+    [{}, {}, "/fixture/bin/bun"],
+    [{ BUN_BIN: "  " }, {}, "/fixture/bin/bun"],
+    [{ BUN_BIN: "/file/bin/bun" }, {}, "/file/bin/bun"],
+    [
+      { BUN_BIN: "/file/bin/bun" },
+      { BUN_BIN: " /release/bin/bun " },
+      "/release/bin/bun",
+    ],
+  ] as const) {
+    const apps = runtimeApps(
+      { ...databaseFixture, ...fileEnv },
+      {
+        WEB_INSTANCES: "4",
+        CMS_INSTANCES: "8",
+        ...launcherEnv,
+      },
+    );
+    assert.equal(apps.length, 2);
+    for (const app of apps) {
+      assert.equal(app.interpreter, expected);
+      assert.equal(app.env.BUN_BIN, expected);
+      assert.equal(app.exec_mode, "fork");
+      assert.equal(app.instances, 1);
+      const appName = app.name === "fwqgo-web" ? "web" : "cms";
+      assert.equal(app.cwd, `/fixture/apps/${appName}`);
+      assert.equal(app.script, `/fixture/apps/${appName}/server.js`);
+    }
+  }
+});
 
 void test("Web receives no CMS secrets even when the PM2 launcher has them", () => {
   const apps = runtimeApps(
@@ -627,8 +735,8 @@ void test("monitor drafts retain collection rules without headers or unknown sec
 
 void test("RSC authorization shares one lookup per request and rechecks revoked sessions", () => {
   const result = spawnSync(
-    "node",
-    ["--conditions=react-server", "--import", "tsx", "--input-type=module"],
+    process.execPath,
+    ["--no-env-file", "--conditions=react-server", "-"],
     {
       cwd: process.cwd(),
       env: { ...process.env, ...databaseFixture },
@@ -636,20 +744,21 @@ void test("RSC authorization shares one lookup per request and rechecks revoked 
       timeout: 10000,
       input: String.raw`
 import assert from "node:assert/strict";
-import { registerHooks } from "node:module";
+import { mock } from "bun:test";
 import { Writable } from "node:stream";
 import { createElement } from "react";
 import { renderToPipeableStream } from "next/dist/compiled/react-server-dom-turbopack/server.node.js";
 const fixture = { reads: 0, cookies: 0, session: { id: "fixture-session", userId: "fixture-user", user: { id: "fixture-user", username: "admin", role: "admin", status: "active" } } };
-globalThis.sessionCacheFixture = fixture;
-const modules = {
-  "next/headers": 'export async function cookies(){globalThis.sessionCacheFixture.cookies++;return {get:()=>({value:"fixture-session"})};}',
-  "@fwqgo/db": 'export const db={select(){const f=globalThis.sessionCacheFixture;f.reads++;const chain={from:()=>chain,innerJoin:()=>chain,where:()=>chain,limit:async()=>f.session?[f.session]:[]};return chain;}};',
-};
-registerHooks({ resolve(specifier, context, nextResolve) {
-  const source = modules[specifier];
-  return source ? {url: "data:text/javascript," + encodeURIComponent(source), shortCircuit: true} : nextResolve(specifier, context);
-} });
+mock.module("next/headers", () => ({
+  async cookies() { fixture.cookies++; return {get: () => ({value: "fixture-session"})}; },
+}));
+mock.module("@fwqgo/db", () => ({db: {
+  select() {
+    fixture.reads++;
+    const chain = {from: () => chain, innerJoin: () => chain, where: () => chain, limit: async () => fixture.session ? [fixture.session] : []};
+    return chain;
+  },
+}}));
 const { requireAdminSession, isUnauthorizedError } = await import("./packages/auth/session.ts");
 const outcomes = [];
 async function View() {
@@ -684,25 +793,22 @@ console.log("session-request-cache-ok");
 });
 
 void test("outbound short links preserve Chinese and English labels without re-reading existing links", () => {
-  const result = spawnSync("node", ["--import", "tsx", "--input-type=module"], {
+  const result = spawnSync(process.execPath, ["--no-env-file", "-"], {
     cwd: process.cwd(),
     env: { ...process.env, ...databaseFixture },
     encoding: "utf8",
     timeout: 10000,
     input: String.raw`
 import assert from "node:assert/strict";
-import { registerHooks } from "node:module";
-const databaseModule = [
-  'const provider = { officialUrl: "https://merchant.example", affUrl: "https://merchant.example/?aff=42", affParam: "aff", affValue: "42" };',
-  'export const db = { select() { return {from(table) {',
-  'if (table[Symbol.for("drizzle:Name")] === "aff_service_providers") return Promise.resolve([provider]);',
-  'return {where: () => ({limit: async () => [{id: 1, slug: "safe123"}]})};',
-  '}}; }};',
-  'export const readDb = { select() { throw new Error("Existing short links must not query the database"); } };',
-].join(" ");
-registerHooks({ resolve(specifier, context, nextResolve) {
-  return specifier === "@fwqgo/db" ? {url: "data:text/javascript," + encodeURIComponent(databaseModule), shortCircuit: true} : nextResolve(specifier, context);
-} });
+import { mock } from "bun:test";
+const provider = {officialUrl: "https://merchant.example", affUrl: "https://merchant.example/?aff=42", affParam: "aff", affValue: "42"};
+mock.module("@fwqgo/db", () => ({
+  db: {select() {return {from(table) {
+    if (table[Symbol.for("drizzle:Name")] === "aff_service_providers") return Promise.resolve([provider]);
+    return {where: () => ({limit: async () => [{id: 1, slug: "safe123"}]})};
+  }};}},
+  readDb: {select() {throw new Error("Existing short links must not query the database");}},
+}));
 const { shortenMarkdownOutboundLinks } = await import("./src/server/links/outbound-short-link.ts");
 for (const label of ["链接", "**点击链接**", "购买套餐", "link", "click here", "learn more", "Buy VPS"]) {
   const existing = "[" + label + "](/go/safe123)";
@@ -769,7 +875,7 @@ void test("release runner closes its temporary tunnel on success and build, data
     "database-failure",
     "tunnel-failure",
   ]) {
-    const result = spawnSync("node", ["--input-type=module"], {
+    const result = spawnSync(process.execPath, ["--no-env-file", "-"], {
       cwd: process.cwd(),
       env: {
         ...process.env,
@@ -781,25 +887,50 @@ void test("release runner closes its temporary tunnel on success and build, data
       input: String.raw`
 import assert from "node:assert/strict";
 import path from "node:path";
-import { registerHooks } from "node:module";
+import fs from "node:fs";
+import * as childProcess from "node:child_process";
+import { mock, spyOn } from "bun:test";
 const fixture = { calls: [], scenario: process.env.RELEASE_BUILD_TEST_SCENARIO };
-globalThis.releaseBuildFixture = fixture;
-const modules = {
-  "node:fs": 'export default {mkdtempSync(){globalThis.releaseBuildFixture.calls.push("directory");return "/fixture/build-db";},rmSync(directory){if(directory!=="/fixture/build-db")throw new Error("unexpected cleanup");globalThis.releaseBuildFixture.calls.push("directory.close");}};',
-  "node:child_process": [
-    'import assert from "node:assert/strict";',
-    'export function spawnSync(command,args,options){const f=globalThis.releaseBuildFixture;',
-    'if(command==="ssh"){const closing=args.includes("-O");f.calls.push(closing?"tunnel.close":"tunnel.open");',
-    'if(!closing){assert.ok(args.includes("StrictHostKeyChecking=yes"));assert.ok(args.includes("ExitOnForwardFailure=yes"));assert.ok(args.includes("127.0.0.1:55433:localhost:5432"));}',
-    'return {status:!closing&&f.scenario==="tunnel-failure"?1:0};}',
-    'assert.equal(command,"bun");f.calls.push("build");assert.deepEqual(args,["run","build"]);',
-    'assert.equal(options.env.SKIP_ENV_VALIDATION,undefined);',
-    'for(const key of ["DATABASE_URL","READ_DATABASE_URL","CMS_DATABASE_URL","ANALYTICS_DATABASE_URL"]){assert.equal(new URL(options.env[key]).username,"reader");assert.equal(new URL(options.env[key]).port,"55433");}',
-    'return {status:f.scenario==="build-failure"?1:0};}',
-  ].join(" "),
-  "postgres": 'export default function(url){const f=globalThis.releaseBuildFixture;if(new URL(url).username!=="reader")throw new Error("writer used");const sql=async()=>{f.calls.push("database.probe");if(f.scenario==="database-failure")throw new Error("fixture database down");};sql.end=async()=>{f.calls.push("database.close");};return sql;}',
+const fixtureFs = {
+  mkdtempSync() {fixture.calls.push("directory");return "/fixture/build-db";},
+  rmSync(directory) {assert.equal(directory,"/fixture/build-db");fixture.calls.push("directory.close");},
 };
-registerHooks({resolve(specifier,context,nextResolve){const source=modules[specifier];return source?{url:"data:text/javascript,"+encodeURIComponent(source),shortCircuit:true}:nextResolve(specifier,context);}});
+function fixtureSpawn(command,args,options) {
+  if(command==="ssh") {
+    const closing=args.includes("-O");
+    fixture.calls.push(closing?"tunnel.close":"tunnel.open");
+    if(!closing) {
+      assert.ok(args.includes("StrictHostKeyChecking=yes"));
+      assert.ok(args.includes("ExitOnForwardFailure=yes"));
+      assert.ok(args.includes("127.0.0.1:55433:localhost:5432"));
+    }
+    return {status:!closing&&fixture.scenario==="tunnel-failure"?1:0};
+  }
+  assert.equal(command,"bun");
+  fixture.calls.push("build");
+  assert.deepEqual(args,["run","build"]);
+  assert.equal(options.env.SKIP_ENV_VALIDATION,undefined);
+  for(const key of ["DATABASE_URL","READ_DATABASE_URL","CMS_DATABASE_URL","ANALYTICS_DATABASE_URL"]) {
+    assert.equal(new URL(options.env[key]).username,"reader");
+    assert.equal(new URL(options.env[key]).port,"55433");
+  }
+  return {status:fixture.scenario==="build-failure"?1:0};
+}
+function fixturePostgres(url) {
+  assert.equal(new URL(url).username,"reader");
+  const sql=async()=>{fixture.calls.push("database.probe");if(fixture.scenario==="database-failure")throw new Error("fixture database down");};
+  sql.end=async()=>{fixture.calls.push("database.close");};
+  return sql;
+}
+const spawn = spyOn(childProcess, "spawnSync").mockImplementation(fixtureSpawn);
+const makeDirectory = spyOn(fs, "mkdtempSync").mockImplementation(fixtureFs.mkdtempSync);
+const removeDirectory = spyOn(fs, "rmSync").mockImplementation(fixtureFs.rmSync);
+mock.module("postgres", () => ({default: fixturePostgres}));
+// Fail before importing the runner if any external side effect is not isolated.
+assert.equal((await import("node:child_process")).spawnSync, spawn);
+assert.equal((await import("node:fs")).default.mkdtempSync, makeDirectory);
+assert.equal((await import("node:fs")).default.rmSync, removeDirectory);
+assert.equal((await import("postgres")).default, fixturePostgres);
 Object.assign(process.env,{READ_DATABASE_URL:"postgresql://reader:fixture@localhost/fwqgo",DEPLOY_HOST:"deploy.example",DEPLOY_USER:"deployer",SKIP_ENV_VALIDATION:"1"});
 process.argv[1]=path.resolve("scripts/build-release.mjs");
 await import("./scripts/build-release.mjs");

@@ -148,9 +148,12 @@ export function getPublicCacheEventTargets(
       tags.add(cacheTags.tag(id)),
     );
   } else if (event === "image.changed") {
-    [cacheTags.posts, cacheTags.homepage, cacheTags.homepageSlots].forEach(
-      (tag) => tags.add(tag),
-    );
+    [
+      cacheTags.posts,
+      cacheTags.homepage,
+      cacheTags.homepageSlots,
+      cacheTags.knowledge,
+    ].forEach((tag) => tags.add(tag));
     ["/", "/en"].forEach((path) => paths.add(path));
     uniquePositiveIds(payload.postIds).forEach((id) =>
       tags.add(cacheTags.post(id)),

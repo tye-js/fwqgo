@@ -4,7 +4,7 @@ import path from "node:path";
 const [targetPath, overridePath] = process.argv.slice(2);
 if (!targetPath || !overridePath) {
   throw new Error(
-    "Usage: node merge-runtime-env.mjs <target-env> <override-env>",
+    "Usage: bun merge-runtime-env.mjs <target-env> <override-env>",
   );
 }
 

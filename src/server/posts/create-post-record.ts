@@ -13,6 +13,7 @@ import { syncImageReferencesForPost } from "@/server/images/assets";
 import {
   shortenArticleOutboundLinks,
   shortenMarkdownOutboundLinks,
+  type OutboundLinkExecutor,
 } from "@/server/links/outbound-short-link";
 import { type CreatePostParams } from "@/types/post.types";
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
@@ -49,7 +50,10 @@ export function getErrorMessage(error: unknown) {
   return typeof error === "string" ? error : "未知错误";
 }
 
-export async function prepareArticleContentForStorage(content: string) {
+export async function prepareArticleContentForStorage(
+  content: string,
+  database: OutboundLinkExecutor = db,
+) {
   const trimmedContent = content.trim();
 
   if (!trimmedContent) {
@@ -58,11 +62,11 @@ export async function prepareArticleContentForStorage(content: string) {
 
   if (looksLikeHtmlContent(trimmedContent)) {
     return normalizeArticleHtml(
-      await shortenArticleOutboundLinks(trimmedContent),
+      await shortenArticleOutboundLinks(trimmedContent, database),
     );
   }
 
-  return shortenMarkdownOutboundLinks(trimmedContent);
+  return shortenMarkdownOutboundLinks(trimmedContent, database);
 }
 
 function normalizeTagName(name: string) {
@@ -206,6 +210,7 @@ export async function createPostRecordInTransaction(
 
   const normalizedContent = await prepareArticleContentForStorage(
     postInput.content,
+    tx,
   );
   if (!normalizedContent) {
     return { error: "文章正文不能为空" };

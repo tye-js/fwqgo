@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { isSameOriginRequest } from "@fwqgo/core/same-origin-request";
 
 import {
   clearCmsSessionCookies,
@@ -9,7 +10,10 @@ import {
 import { db } from "@fwqgo/db";
 import { sessions } from "@fwqgo/db/schema";
 
-export async function POST() {
+export async function POST(request: Request) {
+  if (!isSameOriginRequest(request, process.env.NEXT_PUBLIC_CMS_URL)) {
+    return NextResponse.json({ error: "请求来源无效" }, { status: 403 });
+  }
   const sessionId = getCmsSessionId(await cookies());
   let revoked = true;
 

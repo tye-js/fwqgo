@@ -1,6 +1,7 @@
 "use server";
 
 import * as cheerio from "cheerio";
+import { ZodError } from "zod";
 import { revalidatePath } from "next/cache";
 
 import { db } from "@fwqgo/db";
@@ -8,8 +9,12 @@ import { renderArticleContentHtml } from "@fwqgo/core/content";
 import { slugify } from "@fwqgo/core/utils";
 import { isPublicArticleSourceRenderable } from "@fwqgo/core/public-content-policy";
 import { type CreatePostParams } from "@/types/post.types";
-import { type NewTag, type TagMain } from "@/types";
-import { requireAdminSession } from "@fwqgo/auth/session";
+import { type NewTag } from "@/types";
+import { isUnauthorizedError, requireAdminSession } from "@fwqgo/auth/session";
+import {
+  postEditSchema,
+  PostEditValidationError,
+} from "@/features/cms/lib/post-edit";
 import {
   cacheTags,
   revalidateSiteContent,
@@ -344,12 +349,6 @@ function affiliateAuditMessage(
   return `发现 ${audit.details.invalidCount} 条无效链接。${unmatchedNote}请修复无效链接；也可以先保存为草稿，再到发布质检中人工确认。`;
 }
 
-interface UpdatePostTagsParams {
-  postId: number;
-  oldTags: TagMain[];
-  newTags: NewTag[];
-}
-
 export async function createPost(input: CreatePostInput | CreatePostParams) {
   try {
     await requireAdminSession();
@@ -579,7 +578,14 @@ export async function updatePost(input: {
             affiliateReviewUpdatedAt: new Date(),
             updatedAt: new Date(),
           })
-          .where(eq(posts.id, parsedPostId))
+          .where(
+            and(
+              eq(posts.id, parsedPostId),
+              eq(posts.content, currentPost.content),
+              eq(posts.slug, currentPost.slug),
+              eq(posts.published, currentPost.published),
+            ),
+          )
           .returning({
             id: posts.id,
             slug: posts.slug,
@@ -632,12 +638,19 @@ export async function updatePost(input: {
           affiliateReviewUpdatedAt: input.published ? new Date() : null,
           updatedAt: new Date(),
         })
-        .where(eq(posts.id, parsedPostId))
+        .where(
+          and(
+            eq(posts.id, parsedPostId),
+            eq(posts.content, currentPost.content),
+            eq(posts.slug, currentPost.slug),
+            eq(posts.published, currentPost.published),
+          ),
+        )
         .returning();
     });
 
     if (!post) {
-      return { error: "文章不存在或已被删除" };
+      return { error: "文章已被其他操作更新，请刷新后重试" };
     }
 
     if (currentPost.title !== post.title) {
@@ -897,7 +910,14 @@ export async function bulkUpdatePostsPublishedAction(input: {
                 affiliateReviewUpdatedAt: new Date(),
                 updatedAt: new Date(),
               })
-              .where(eq(posts.id, post.id))
+              .where(
+                and(
+                  eq(posts.id, post.id),
+                  eq(posts.content, post.content),
+                  eq(posts.slug, post.slug),
+                  eq(posts.published, post.published),
+                ),
+              )
               .returning({
                 id: posts.id,
                 slug: posts.slug,
@@ -938,7 +958,14 @@ export async function bulkUpdatePostsPublishedAction(input: {
             affiliateReviewUpdatedAt: input.published ? new Date() : null,
             updatedAt: new Date(),
           })
-          .where(eq(posts.id, post.id))
+          .where(
+            and(
+              eq(posts.id, post.id),
+              eq(posts.content, post.content),
+              eq(posts.slug, post.slug),
+              eq(posts.published, post.published),
+            ),
+          )
           .returning({
             id: posts.id,
             slug: posts.slug,
@@ -950,7 +977,7 @@ export async function bulkUpdatePostsPublishedAction(input: {
           errors.push({
             id: post.id,
             title: post.title,
-            reason: "文章不存在或已被删除",
+            reason: "文章不存在或已被其他操作更新，请刷新后重试",
           });
           continue;
         }
@@ -989,160 +1016,198 @@ export async function bulkUpdatePostsPublishedAction(input: {
   }
 }
 
-export async function updatePostContent(input: {
-  id: number;
-  description: string;
-  content: string;
-  imgUrl?: string | null;
-  categoryId: number;
-  recommendTagName: string;
-  keywords: string;
-  saveAsDraft?: boolean;
-}) {
+export async function savePostEdits(input: unknown) {
   try {
     await requireAdminSession();
-
-    const parsedPostId = parseIntegerId(input.id);
-    const parsedCategoryId = parseIntegerId(input.categoryId);
-    if (parsedPostId === null) return { error: "文章 ID 不正确" };
-    if (parsedCategoryId === null) return { error: "文章分类不正确" };
-
-    const [currentPost] = await db
-      .select({
-        slug: posts.slug,
-        categoryId: posts.categoryId,
-        language: posts.language,
-        title: posts.title,
-        published: posts.published,
-      })
-      .from(posts)
-      .where(eq(posts.id, parsedPostId))
-      .limit(1);
-
-    if (!currentPost) {
-      return { error: "文章不存在" };
-    }
-
-    const normalizedDescription = input.description.trim();
-    const normalizedContent = input.content.trim();
-    const normalizedRecommendTagName = input.recommendTagName.trim();
-
-    if (!normalizedDescription || !normalizedContent) {
-      return { error: "文章简述和正文不能为空" };
-    }
-
-    const [category] = await db
-      .select({ id: categories.id })
-      .from(categories)
-      .where(eq(categories.id, parsedCategoryId))
-      .limit(1);
-
-    if (!category) {
-      return { error: "文章分类不存在，请重新选择分类" };
-    }
-
-    let recommendedTag: { id: number; name: string } | null = null;
-    if (normalizedRecommendTagName) {
-      const [existingTag] = await db
-        .select({ id: tags.id, name: tags.name, enName: tags.enName })
-        .from(tags)
-        .where(
-          currentPost.language === "en"
-            ? or(
-                eq(tags.enName, normalizedRecommendTagName),
-                eq(tags.name, normalizedRecommendTagName),
-              )
-            : eq(tags.name, normalizedRecommendTagName),
-        )
-        .limit(1);
-
-      if (!existingTag) {
-        return {
-          error:
-            currentPost.language === "en"
-              ? "英文推荐标签不存在，请先添加该英文标签"
-              : "推荐标签不存在，请先创建该标签",
-        };
-      }
-
-      const displayName =
-        currentPost.language === "en"
-          ? existingTag.enName?.trim()
-            ? existingTag.enName.trim()
-            : existingTag.name
-          : existingTag.name;
-      if (
-        currentPost.language === "en" &&
-        /\p{Script=Han}/u.test(displayName)
-      ) {
-        return { error: "推荐标签缺少英文名称，请先配置英文标签" };
-      }
-
-      recommendedTag = { id: existingTag.id, name: displayName };
-    }
-
-    const normalizedImgUrl = input.imgUrl?.trim() ?? "";
-    const preparedContent =
-      await prepareEditedArticleContent(normalizedContent);
+    const payload = postEditSchema.parse(input);
+    const preparedContent = await prepareEditedArticleContent(payload.content);
     if (
-      currentPost.published &&
-      !input.saveAsDraft &&
+      payload.published &&
       !isPublicArticleSourceRenderable({
-        title: currentPost.title,
-        slug: currentPost.slug,
+        title: payload.title,
+        slug: payload.slug,
         content: preparedContent.content,
       })
     ) {
-      return {
-        error: "正文不足，请补充至至少 200 个字符或关闭发布状态后保存草稿",
-      };
+      throw new PostEditValidationError(
+        "正文不足，发布需要至少 200 个字符的正文",
+      );
     }
+    const publishAudit = payload.published
+      ? await auditAffiliateLinksForPublish(preparedContent.content)
+      : null;
 
-    const [post] = await db
-      .update(posts)
-      .set({
-        description: normalizedDescription,
-        content: preparedContent.content,
-        ...(input.saveAsDraft ? { published: false } : {}),
-        imgUrl: normalizedImgUrl.length > 0 ? normalizedImgUrl : null,
-        categoryId: parsedCategoryId,
-        recommendedTagName: recommendedTag?.name ?? null,
-        recommendedTagId: recommendedTag?.id ?? null,
-        keywords: normalizeSeoKeywords(input.keywords),
-        affiliateReviewStatus: "pending",
-        affiliateReviewDetails: null,
-        affiliateReviewUpdatedAt: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(posts.id, parsedPostId))
-      .returning();
+    const { post, previous } = await db.transaction(async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(posts)
+        .where(eq(posts.id, payload.id))
+        .limit(1)
+        .for("update");
+      if (!current) throw new PostEditValidationError("文章不存在或已被删除");
+      if (
+        payload.expectedUpdatedAt !== undefined &&
+        payload.expectedUpdatedAt !== (current.updatedAt?.toISOString() ?? null)
+      ) {
+        throw new PostEditValidationError(
+          "文章已被其他操作更新，请刷新页面并确认最新内容后再保存",
+          409,
+        );
+      }
+      if (
+        (current.published || current.slugLocked) &&
+        current.slug !== payload.slug &&
+        !payload.allowSlugChange
+      ) {
+        throw new PostEditValidationError(
+          "已发布文章的 slug 已锁定，请先启用修改地址",
+        );
+      }
+      const [duplicate] = await tx
+        .select({ id: posts.id })
+        .from(posts)
+        .where(and(eq(posts.slug, payload.slug), ne(posts.id, payload.id)))
+        .limit(1);
+      if (duplicate)
+        throw new PostEditValidationError("文章 slug 已被其他文章使用");
+      const [category] = await tx
+        .select({ id: categories.id })
+        .from(categories)
+        .where(eq(categories.id, payload.categoryId))
+        .limit(1);
+      if (!category)
+        throw new PostEditValidationError("文章分类不存在，请重新选择分类");
 
-    if (!post) {
-      return { error: "文章不存在或已被删除" };
-    }
+      // A previous manual approval applies only to exactly the approved body.
+      const manualApproval =
+        current.content === preparedContent.content &&
+        current.affiliateReviewStatus === "passed"
+          ? getManualAffiliateApproval(current.affiliateReviewDetails)
+          : null;
+      if (publishAudit?.manualRequired && !manualApproval) {
+        throw new PostEditValidationError(affiliateAuditMessage(publishAudit));
+      }
 
-    await markPostInternalLinksStale(post.id);
-
-    const maintenanceWarnings = await runPostSaveMaintenance({
-      postId: post.id,
-      routeHandler: true,
-      revalidationTags: [
-        cacheTags.post(post.id),
-        cacheTags.postSlug(post.slug),
-        cacheTags.category(post.categoryId),
-        ...(currentPost.categoryId !== post.categoryId
-          ? [cacheTags.category(currentPost.categoryId)]
-          : []),
-      ],
+      await replacePostTagsInTransaction(tx, payload.id, payload.newTags);
+      let recommendedTag: { id: number; name: string } | null = null;
+      if (payload.recommendTagName) {
+        const [tag] = await tx
+          .select({ id: tags.id, name: tags.name, enName: tags.enName })
+          .from(tags)
+          .where(
+            current.language === "en"
+              ? or(
+                  eq(tags.enName, payload.recommendTagName),
+                  eq(tags.name, payload.recommendTagName),
+                )
+              : eq(tags.name, payload.recommendTagName),
+          )
+          .limit(1);
+        if (!tag)
+          throw new PostEditValidationError("推荐标签不存在，请先创建该标签");
+        const englishName = tag.enName?.trim();
+        const name =
+          current.language === "en" && englishName ? englishName : tag.name;
+        if (current.language === "en" && /\p{Script=Han}/u.test(name)) {
+          throw new PostEditValidationError(
+            "推荐标签缺少英文名称，请先配置英文标签",
+          );
+        }
+        recommendedTag = { id: tag.id, name };
+      }
+      if (payload.allowSlugChange) {
+        await tx.execute(
+          sql`select set_config('fwqgo.allow_slug_change', 'on', true)`,
+        );
+      }
+      const [updated] = await tx
+        .update(posts)
+        .set({
+          title: payload.title,
+          slug: payload.slug,
+          description: payload.description,
+          content: preparedContent.content,
+          published: payload.published,
+          imgUrl: payload.imgUrl?.length ? payload.imgUrl : null,
+          categoryId: payload.categoryId,
+          recommendedTagName: recommendedTag?.name ?? null,
+          recommendedTagId: recommendedTag?.id ?? null,
+          keywords: normalizeSeoKeywords(payload.keywords),
+          affiliateReviewStatus: payload.published ? "passed" : "pending",
+          affiliateReviewDetails: publishAudit
+            ? serializeAffiliateReviewDetails(publishAudit, manualApproval)
+            : null,
+          affiliateReviewUpdatedAt: payload.published ? new Date() : null,
+          updatedAt: new Date(
+            Math.max(Date.now(), (current.updatedAt?.getTime() ?? 0) + 1),
+          ),
+        })
+        .where(eq(posts.id, payload.id))
+        .returning();
+      if (!updated) throw new PostEditValidationError("文章不存在或已被删除");
+      return { post: updated, previous: current };
     });
 
+    // No published content or cache changes until the complete edit commits.
+    const warnings = [...preparedContent.warnings];
+    try {
+      await markPostInternalLinksStale(post.id);
+    } catch (error) {
+      console.error("文章已保存，但内链索引更新失败:", error);
+      warnings.push("文章内链索引更新延迟");
+    }
+    warnings.push(
+      ...(await runPostSaveMaintenance({
+        postId: post.id,
+        routeHandler: true,
+        revalidationTags: [
+          cacheTags.post(post.id),
+          cacheTags.postSlug(post.slug),
+          cacheTags.postSlug(previous.slug),
+          cacheTags.category(post.categoryId),
+          cacheTags.category(previous.categoryId),
+          cacheTags.tags,
+          ...(post.translationSourcePostId
+            ? [cacheTags.post(post.translationSourcePostId)]
+            : []),
+        ],
+      })),
+    );
     return {
-      success: true,
-      warnings: [...preparedContent.warnings, ...maintenanceWarnings],
+      success: true as const,
+      data: {
+        saved: true,
+        slug: post.slug,
+        published: post.published,
+        updatedAt: post.updatedAt?.toISOString() ?? null,
+        warnings,
+      },
     };
   } catch (error) {
-    console.error("更新文章正文失败:", error);
-    return { error: "更新文章失败", message: getErrorMessage(error) };
+    if (isUnauthorizedError(error))
+      return {
+        error: "文章保存失败",
+        message: "未登录或登录已过期",
+        status: 401,
+      };
+    if (error instanceof ZodError)
+      return {
+        error: "文章信息校验失败",
+        message: error.issues[0]?.message ?? "文章信息不正确",
+        status: 400,
+      };
+    if (error instanceof PostEditValidationError)
+      return {
+        error: "文章保存失败",
+        message: error.message,
+        status: error.status,
+      };
+    console.error("文章原子保存失败:", error);
+    return {
+      error: "文章保存失败",
+      message: "文章未保存，请稍后重试；如果持续失败，请查看服务器日志",
+      status: 500,
+    };
   }
 }
 
@@ -1426,177 +1491,136 @@ export async function deletePostsByIds(ids: number[]) {
   }
 }
 
-export async function updatePostTags({
-  postId,
-  newTags,
-}: UpdatePostTagsParams) {
-  try {
-    await requireAdminSession();
-    const parsedPostId = parseIntegerId(postId);
-    if (parsedPostId === null) return { error: "文章 ID 不正确" };
+async function replacePostTagsInTransaction(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  parsedPostId: number,
+  newTags: NewTag[],
+) {
+  const uniqueNewTags = Array.from(
+    new Map(
+      newTags
+        .map((tag) => {
+          const name = normalizeTagName(tag.tag.name);
+          const slug = (tag.tag.slug || slugify(name)).trim().toLowerCase();
 
-    const uniqueNewTags = Array.from(
-      new Map(
-        newTags
-          .map((tag) => {
-            const name = normalizeTagName(tag.tag.name);
-            const slug = (tag.tag.slug || slugify(name)).trim().toLowerCase();
+          if (!name || !slug) {
+            return null;
+          }
 
-            if (!name || !slug) {
-              return null;
-            }
-
-            return [
-              slug.toLowerCase(),
-              {
-                tag: {
-                  ...tag.tag,
-                  name,
-                  slug,
-                },
+          return [
+            slug.toLowerCase(),
+            {
+              tag: {
+                ...tag.tag,
+                name,
+                slug,
               },
-            ] as const;
-          })
-          .filter((tag): tag is NonNullable<typeof tag> => tag !== null),
-      ).values(),
-    );
-    await db.transaction(async (tx) => {
-      const [targetPost] = await tx
-        .select({ id: posts.id, language: posts.language })
-        .from(posts)
-        .where(eq(posts.id, parsedPostId))
-        .limit(1);
+            },
+          ] as const;
+        })
+        .filter((tag): tag is NonNullable<typeof tag> => tag !== null),
+    ).values(),
+  );
+  if (uniqueNewTags.length === 0)
+    throw new PostEditValidationError("请至少保留一个有效标签");
+  const [targetPost] = await tx
+    .select({ id: posts.id, language: posts.language })
+    .from(posts)
+    .where(eq(posts.id, parsedPostId))
+    .limit(1);
 
-      if (!targetPost) {
-        throw new Error("文章不存在或已被删除");
-      }
+  if (!targetPost) {
+    throw new PostEditValidationError("文章不存在或已被删除");
+  }
 
-      const isEnglishPost = targetPost.language === "en";
-      const tagIds: number[] = [];
+  const isEnglishPost = targetPost.language === "en";
+  const tagIds: number[] = [];
 
-      for (const tag of uniqueNewTags) {
-        const { id, name, slug } = tag.tag;
-        const parsedTagId = id === undefined ? null : parseIntegerId(id);
-        if (id !== undefined && parsedTagId === null) {
-          throw new Error(`标签 ID 无效：${name}`);
-        }
-        if (
-          isEnglishPost &&
-          (/\p{Script=Han}/u.test(name) || !/^[a-z0-9-]+$/.test(slug))
-        ) {
-          throw new Error(`英文文章不能使用中文标签：${name}`);
-        }
-
-        const [existingById] = parsedTagId
-          ? await tx
-              .select({ id: tags.id })
-              .from(tags)
-              .where(eq(tags.id, parsedTagId))
-              .limit(1)
-          : [];
-        if (existingById) {
-          tagIds.push(existingById.id);
-          continue;
-        }
-
-        const tagLookupCondition = isEnglishPost
-          ? or(
-              eq(tags.enSlug, slug),
-              eq(tags.slug, slug),
-              eq(tags.enName, name),
-              eq(tags.name, name),
-            )
-          : or(eq(tags.slug, slug), eq(tags.name, name));
-        const [existingTag] = await tx
-          .select({ id: tags.id })
-          .from(tags)
-          .where(tagLookupCondition)
-          .limit(1);
-
-        if (existingTag) {
-          tagIds.push(existingTag.id);
-          continue;
-        }
-
-        const [newTagResult] = await tx
-          .insert(tags)
-          .values(
-            isEnglishPost
-              ? { name, slug, enName: name, enSlug: slug, indexable: false }
-              : { name, slug, indexable: false },
-          )
-          .onConflictDoNothing()
-          .returning({ id: tags.id });
-
-        if (newTagResult) {
-          tagIds.push(newTagResult.id);
-          continue;
-        }
-
-        const [createdByConcurrentRequest] = await tx
-          .select({ id: tags.id })
-          .from(tags)
-          .where(tagLookupCondition)
-          .limit(1);
-
-        if (!createdByConcurrentRequest) {
-          throw new Error(`标签创建失败：${name}`);
-        }
-
-        tagIds.push(createdByConcurrentRequest.id);
-      }
-
-      const uniqueTagIds = Array.from(new Set(tagIds));
-
-      await tx.delete(postTags).where(eq(postTags.postId, parsedPostId));
-
-      if (uniqueTagIds.length > 0) {
-        await tx
-          .insert(postTags)
-          .values(
-            uniqueTagIds.map((tagId) => ({
-              postId: parsedPostId,
-              tagId,
-            })),
-          )
-          .onConflictDoNothing();
-      }
-    });
-
-    const [post] = await db
-      .select({
-        id: posts.id,
-        slug: posts.slug,
-        categoryId: posts.categoryId,
-      })
-      .from(posts)
-      .where(eq(posts.id, parsedPostId))
-      .limit(1);
-
-    const warnings: string[] = [];
-    if (post) {
-      await markPostInternalLinksStale(post.id);
-      try {
-        revalidateSiteContentFromRouteHandler([
-          cacheTags.post(post.id),
-          cacheTags.postSlug(post.slug),
-          cacheTags.category(post.categoryId),
-          cacheTags.tags,
-        ]);
-        schedulePublicWebCache("post.changed", {
-          postIds: [post.id],
-          postSlugs: [post.slug],
-          categoryIds: [post.categoryId],
-        });
-      } catch (error) {
-        console.error("文章标签已保存，但缓存刷新失败:", error);
-        warnings.push("标签已保存，但页面缓存刷新延迟");
-      }
+  for (const tag of uniqueNewTags) {
+    const { id, name, slug } = tag.tag;
+    const parsedTagId = id === undefined ? null : parseIntegerId(id);
+    if (id !== undefined && parsedTagId === null) {
+      throw new PostEditValidationError(`标签 ID 无效：${name}`);
+    }
+    if (
+      isEnglishPost &&
+      (/\p{Script=Han}/u.test(name) || !/^[a-z0-9-]+$/.test(slug))
+    ) {
+      throw new PostEditValidationError(`英文文章不能使用中文标签：${name}`);
     }
 
-    return { success: true, warnings };
-  } catch (error) {
-    console.error("更新文章标签失败:", error);
-    return { error: "更新文章标签失败", message: getErrorMessage(error) };
+    const [existingById] = parsedTagId
+      ? await tx
+          .select({ id: tags.id })
+          .from(tags)
+          .where(eq(tags.id, parsedTagId))
+          .limit(1)
+      : [];
+    if (existingById) {
+      tagIds.push(existingById.id);
+      continue;
+    }
+
+    const tagLookupCondition = isEnglishPost
+      ? or(
+          eq(tags.enSlug, slug),
+          eq(tags.slug, slug),
+          eq(tags.enName, name),
+          eq(tags.name, name),
+        )
+      : or(eq(tags.slug, slug), eq(tags.name, name));
+    const [existingTag] = await tx
+      .select({ id: tags.id })
+      .from(tags)
+      .where(tagLookupCondition)
+      .limit(1);
+
+    if (existingTag) {
+      tagIds.push(existingTag.id);
+      continue;
+    }
+
+    const [newTagResult] = await tx
+      .insert(tags)
+      .values(
+        isEnglishPost
+          ? { name, slug, enName: name, enSlug: slug, indexable: false }
+          : { name, slug, indexable: false },
+      )
+      .onConflictDoNothing()
+      .returning({ id: tags.id });
+
+    if (newTagResult) {
+      tagIds.push(newTagResult.id);
+      continue;
+    }
+
+    const [createdByConcurrentRequest] = await tx
+      .select({ id: tags.id })
+      .from(tags)
+      .where(tagLookupCondition)
+      .limit(1);
+
+    if (!createdByConcurrentRequest) {
+      throw new PostEditValidationError(`标签创建失败：${name}`);
+    }
+
+    tagIds.push(createdByConcurrentRequest.id);
+  }
+
+  const uniqueTagIds = Array.from(new Set(tagIds));
+
+  await tx.delete(postTags).where(eq(postTags.postId, parsedPostId));
+
+  if (uniqueTagIds.length > 0) {
+    await tx
+      .insert(postTags)
+      .values(
+        uniqueTagIds.map((tagId) => ({
+          postId: parsedPostId,
+          tagId,
+        })),
+      )
+      .onConflictDoNothing();
   }
 }

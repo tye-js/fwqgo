@@ -55,6 +55,7 @@ export interface PostEditFormData {
     | "categoryId"
     | "language"
     | "translationSourcePostId"
+    | "updatedAt"
   >;
   tags: TagMain[];
 }

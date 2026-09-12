@@ -231,7 +231,7 @@ export async function GET(request: NextRequest) {
           new NextResponse(null, {
             status: 304,
             headers: {
-              "Cache-Control": "public, max-age=31536000, immutable",
+              "Cache-Control": "public, max-age=0, must-revalidate",
               ETag: etag,
               "Last-Modified": fileStat.mtime.toUTCString(),
               "X-Content-Type-Options": "nosniff",
@@ -244,7 +244,7 @@ export async function GET(request: NextRequest) {
       return respond(
         new NextResponse(file, {
           headers: imageHeaders({
-            cacheControl: "public, max-age=31536000, immutable",
+            cacheControl: "public, max-age=0, must-revalidate",
             contentLength: file.byteLength,
             contentType,
             etag,

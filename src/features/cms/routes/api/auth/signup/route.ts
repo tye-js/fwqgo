@@ -3,6 +3,7 @@ import { hash } from "bcryptjs";
 import { z } from "zod";
 import { users } from "@fwqgo/db/schema";
 import { randomUUID } from "crypto";
+import { isSameOriginRequest } from "@fwqgo/core/same-origin-request";
 import { BoundedAttemptTracker } from "@fwqgo/core/bounded-attempt-tracker";
 import { getTrustedClientIp } from "@fwqgo/core/client-ip";
 import {
@@ -56,6 +57,9 @@ const registerSchema = z
   });
 
 export async function POST(request: Request) {
+  if (!isSameOriginRequest(request, process.env.NEXT_PUBLIC_CMS_URL)) {
+    return adminApiFailure("请求来源无效，请从后台注册页重试", { status: 403 });
+  }
   const requestId = getRequestId(request.headers);
   const respond = <T extends Response>(response: T) =>
     attachRequestId(response, requestId);

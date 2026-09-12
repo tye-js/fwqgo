@@ -4,7 +4,7 @@
 
 ## HTTP 与文章缓存
 
-- Web Node Proxy 在 PPR/流式 HTML 开始前检查文章、知识库、分类、标签、归档和服务器集合。缺失、未发布、正文不足、空 taxonomy 和越界页返回真实 404；读取异常返回 503 + `Retry-After: 60`。错误页只有 noindex，没有 canonical，所有缓存头均为 no-store。
+- Web 服务端 Proxy 在 PPR/流式 HTML 开始前检查文章、知识库、分类、标签、归档和服务器集合。缺失、未发布、正文不足、空 taxonomy 和越界页返回真实 404；读取异常返回 503 + `Retry-After: 60`。错误页只有 noindex，没有 canonical，所有缓存头均为 no-store。
 - 两种语言的文章移除了整页 `loading.tsx`。标题、正文、TOC 和内链沿用 Cache Components；套餐仍处于独立 Suspense 边界。元数据等待同一份文章核心，正文不再位于隐藏的恢复节点中。
 - 页码前导零、英文 taxonomy 旧别名、商家/地区/线路名称别名在进入页面前一次 301 到规范路径，保留查询参数。
 - Next 配置不再按路径强制设置公开缓存头。无 Cookie、Authorization、查询参数和 RSC/预取头的规范文章响应可带 `X-Fwqgo-Cacheable-Article: 1`，这只是外层缓存的资格标记；最终状态、类型与 `Set-Cookie` 仍由 Nginx 检查。

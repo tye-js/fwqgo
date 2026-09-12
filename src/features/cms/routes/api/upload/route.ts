@@ -3,12 +3,16 @@ import { createImageAssetFromUpload } from "@/server/images/assets";
 import { type NextRequest } from "next/server";
 import { revalidatePath } from "next/cache";
 import { adminApiFailure, adminApiSuccess } from "@/lib/admin-api-response";
+import { isSameOriginRequest } from "@fwqgo/core/same-origin-request";
 import {
   readRequestFormDataWithLimit,
   RequestBodyTooLargeError,
 } from "@fwqgo/core/bounded-request-body";
 
 export async function POST(request: NextRequest) {
+  if (!isSameOriginRequest(request, process.env.NEXT_PUBLIC_CMS_URL)) {
+    return adminApiFailure("请求来源无效，请从后台重新上传", { status: 403 });
+  }
   try {
     const session = await requireAdminSession();
     const formData = await readRequestFormDataWithLimit(

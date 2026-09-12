@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import packageManifest from "../package.json" with { type: "json" };
 
 const workflowPath = path.resolve(".github/workflows/deploy.yml");
 const workflow = fs.readFileSync(workflowPath, "utf8");
@@ -11,7 +12,7 @@ if (/\bSKIP_ENV_VALIDATION\b/.test(workflow)) {
   );
 }
 if (
-  !workflow.includes("node scripts/build-release.mjs") ||
+  !workflow.includes("bun scripts/build-release.mjs") ||
   workflow.indexOf("- name: Prepare SSH") >
     workflow.indexOf("- name: Build standalone")
 ) {
@@ -43,11 +44,44 @@ const articleIsrSmokePath = path.resolve(
 );
 const articleIsrSmoke = fs.readFileSync(articleIsrSmokePath, "utf8");
 const packageSource = fs.readFileSync("package.json", "utf8");
+const packageScripts = packageManifest.scripts;
+/** @type {{run?: {bun?: boolean}}} */
+const bunConfig = Bun.TOML.parse(fs.readFileSync("bunfig.toml", "utf8"));
+if (bunConfig.run?.bun !== true) {
+  throw new Error("Package CLIs with Node shebangs must run under Bun");
+}
+for (const [name, command] of Object.entries(packageScripts)) {
+  if (/(?:^|[\s;&|])(?:node|tsx)(?:\s|$)/.test(command)) {
+    throw new Error(`Project script ${name} must use Bun`);
+  }
+}
+for (const source of [
+  workflow,
+  localDeploy,
+  fs.readFileSync(".github/workflows/ci.yml", "utf8"),
+]) {
+  if (source.includes("actions/setup-node@")) {
+    throw new Error(
+      "Application CI must install Bun without a separate Node setup step",
+    );
+  }
+}
+for (const source of [workflow, localDeploy]) {
+  if (
+    !source.includes(
+      'BUN_BIN="$release_dir/bin/bun" "$release_dir/bin/bun" "$release_dir/scripts/verify-runtime-config.mjs"',
+    )
+  ) {
+    throw new Error(
+      "Release checks must use the same Bun binary as application startup",
+    );
+  }
+}
 
 if (
   !packageSource.includes("bun run prepare:standalone") ||
   !packageSource.includes(
-    '"prepare:standalone": "node scripts/prepare-standalone-runtime.mjs"',
+    '"prepare:standalone": "bun scripts/prepare-standalone-runtime.mjs"',
   )
 ) {
   throw new Error(
@@ -71,7 +105,7 @@ for (const requiredFragment of [
 }
 
 for (const requiredFragment of [
-  '"smoke:article-isr": "node scripts/verify-production-article.mjs"',
+  '"smoke:article-isr": "bun scripts/verify-production-article.mjs"',
   "bun run smoke:article-isr",
   "PUBLIC_ARTICLE_PRERENDER_LIMIT: ${{ vars.PUBLIC_ARTICLE_PRERENDER_LIMIT || '50' }}",
 ]) {
@@ -254,24 +288,17 @@ for (const { label, filePath } of [
   }
 }
 
-const pgDumpRunnerSyntax = spawnSync("node", ["--check", pgDumpRunnerPath], {
-  encoding: "utf8",
-});
-if (pgDumpRunnerSyntax.status !== 0) {
-  throw new Error(
-    `Secure pg_dump runner failed node --check:\n${pgDumpRunnerSyntax.stderr.trim()}`,
-  );
-}
-
-const standaloneRuntimeSyntax = spawnSync(
-  "node",
-  ["--check", standaloneRuntimePath],
-  { encoding: "utf8" },
-);
-if (standaloneRuntimeSyntax.status !== 0) {
-  throw new Error(
-    `Standalone runtime preparation failed node --check:\n${standaloneRuntimeSyntax.stderr.trim()}`,
-  );
+for (const { label, filePath } of [
+  { label: "Secure pg_dump runner", filePath: pgDumpRunnerPath },
+  { label: "Standalone runtime preparation", filePath: standaloneRuntimePath },
+]) {
+  try {
+    new Bun.Transpiler({ loader: "js" }).transformSync(
+      fs.readFileSync(filePath, "utf8"),
+    );
+  } catch (error) {
+    throw new Error(`${label} failed Bun syntax validation`, { cause: error });
+  }
 }
 
 for (const source of [workflow, localDeploy]) {
@@ -292,7 +319,7 @@ for (const source of [workflow, localDeploy]) {
 for (const requiredFragment of [
   'chmod 700 "$backup_dir"',
   "umask 077",
-  'node "$pg_dump_runner" "$database_env_file" "$backup_tmp"',
+  '"$bun_bin" "$pg_dump_runner" "$database_env_file" "$backup_tmp"',
   'pg_restore --list "$backup_tmp"',
   'chmod 600 "$backup_tmp"',
   'mv -f "$backup_tmp" "$backup_file"',
@@ -454,6 +481,7 @@ set -euo pipefail
   });
   const backupEnvironment = {
     ...process.env,
+    BUN_BIN: process.execPath,
     PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
     DATABASE_URL: "postgresql://stale:stale@invalid.invalid/stale",
   };

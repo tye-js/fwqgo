@@ -1,0 +1,4 @@
+[run]
+# Next, ESLint, TypeScript and other package CLIs must use Bun even when their
+# entry point has a Node shebang.
+bun = true

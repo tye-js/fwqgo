@@ -2,11 +2,10 @@
 
 FWQGO 是一个面向服务器、VPS 和云产品优惠内容的双应用平台。公开站负责中文/英文内容、服务器套餐专题和 SEO，独立 CMS 负责采集、AI 改写、文章审核、媒体资产、返利链接与运营配置。
 
-[![Next.js](https://img.shields.io/badge/Next.js-16.3.4-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16.3.5-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.2-149ECA?style=flat-square&logo=react)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.3.14-f9f1e1?style=flat-square&logo=bun)](https://bun.sh/)
-[![Node.js](https://img.shields.io/badge/Node.js-24-5FA04E?style=flat-square&logo=node.js)](https://nodejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-4169E1?style=flat-square&logo=postgresql)](https://www.postgresql.org/)
 
 ## 应用架构
@@ -53,10 +52,11 @@ CMS 路由直接从根路径开始，例如 `/ai-rewrite/tasks`、`/posts/edit` 
 
 ### 环境要求
 
-- Bun 1.3.14（本地开发、构建和生产 standalone 应用运行时）
-- Node.js 24（PM2、迁移脚本和旧 release 回滚兼容；最低建议 Node.js 20.9）
+- Bun 1.3.14（依赖安装、开发、构建、测试、迁移及生产 standalone 应用运行时）
 - PostgreSQL 14+
 - macOS 或 Linux；涉及网页抓取时需满足 Puppeteer 的运行依赖
+
+`bunfig.toml` 的 `run.bun = true` 让 Next.js、ESLint、TypeScript 等带有 Node shebang 的命令也由 Bun 执行。代码里的 `node:*` 导入、`NodeJS` 类型和 `node_modules` 是 Bun 兼容的接口与依赖目录，仍需保留。
 
 ### 安装
 
@@ -234,7 +234,7 @@ bun run db:studio         # 打开 Drizzle Studio
 | `bun run verify:deploy`             | 验证 Actions 远端激活脚本                        |
 | `bun run verify:migrations`         | 验证迁移 journal 与 SQL 文件                     |
 | `bun run verify:security`           | 验证 CMS 鉴权和数据库边界                        |
-| `bun run verify:security-runtime`   | 在 Node 与 Bun 验证出站、限流、上传和密钥隔离    |
+| `bun run verify:security-runtime`   | 在 Bun 验证出站、限流、上传、事务和密钥隔离     |
 | `bun run smoke:security-migrations` | 在独立测试库验证账号权限迁移                     |
 | `bun run verify:cache`              | 验证公开站关键读取缓存边界                       |
 | `bun run smoke:cms`                 | 浏览器验证 CMS 登录与核心路由                    |
@@ -285,20 +285,18 @@ SKIP_ENV_VALIDATION=1 bun run build
 4. 可选执行数据库备份与 Drizzle 迁移。
 5. 切换 `current` 软链接并使用 release 内置 Bun 重启 `fwqgo-web`、`fwqgo-cms`，随后校验 PM2 的解释器和执行模式确实为 Bun `fork`。
 6. 通过 `/api/health` 验证 Web 只读角色和 CMS 写角色权限，再检查公开域名、CMS 登录跳转和 PM2 状态。
-7. 激活失败时尝试回滚到上一份有效 release。
+7. 激活失败时尝试回滚到上一份含 Bun 和双应用产物的有效 release。
 
 ### 服务器前置条件
 
-- Node.js 24、PM2、Nginx；新 release 自带 Bun 1.3.14，旧 release 回滚使用 Node.js。
+- PM2、Nginx；每份 release 自带 Bun 1.3.14。Node.js 24 仅供 PM2 管理器自身使用，项目脚本与应用均由 Bun 运行。
 - PostgreSQL 连接；执行迁移的 `DATABASE_URL` 需要迁移权限。
 - Nginx 将公开站转发到 `127.0.0.1:3000`，CMS 转发到 `127.0.0.1:3100`。
 - `/var/www/fwqgo/shared/.env.production` 保存运行时环境变量。
 - `/var/www/uploads` 持久化用户图片，并由 Nginx 暴露为 `/uploads/`。
 - 建议安装 `pg_dump`，以便迁移前自动备份。
 - 建议为迁移角色启用 PostgreSQL `pg_trgm` 扩展；无法启用时会回退到普通文本搜索。
-- Bun release 通过 PM2 `fork` 模式运行 Web/CMS 各一个实例；PM2 `cluster` 会走 Node
-  cluster 主进程，因此不能用于让 Bun 成为实际 worker。`WEB_INSTANCES` / `CMS_INSTANCES`
-  只对旧 Node release 的回滚路径生效，且未部署共享 Redis 前应保持 `1`。
+- PM2 固定以 `fork` 模式运行 Web/CMS 各一个实例；解释器默认指向当前 release 的 `bin/bun`，也可通过 `BUN_BIN` 显式指定。发布前检查和启动后检查都会验证 Bun 解释器及执行模式，缺少 Bun 的产物不会自动改用 Node。
 
 GitHub Actions Secrets：
 

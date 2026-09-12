@@ -6,7 +6,11 @@ import {
   type PublicCacheEventPayload,
 } from "@fwqgo/cache/tags";
 import { readDb } from "@fwqgo/db";
-import { posts, publicSlugRedirects } from "@fwqgo/db/schema";
+import {
+  knowledgeArticles,
+  posts,
+  publicSlugRedirects,
+} from "@fwqgo/db/schema";
 
 /** Optional URL purging; never performs a zone-wide purge. */
 export async function purgePublicEdgeCache(
@@ -28,6 +32,7 @@ export async function purgePublicEdgeCache(
   // Purge article documents when those shared dependencies change as well.
   const sharedArticleEvent = [
     "post.changed",
+    "image.changed",
     "taxonomy.changed",
     "knowledge.changed",
     "offer.changed",
@@ -57,6 +62,18 @@ export async function purgePublicEdgeCache(
   const affectedIds = [
     ...new Set([...postIds, ...rows.map((post) => post.id)]),
   ];
+  if (event === "image.changed") {
+    const articles = await readDb
+      .select({
+        slug: knowledgeArticles.slug,
+        language: knowledgeArticles.language,
+      })
+      .from(knowledgeArticles);
+    for (const article of articles)
+      paths.add(
+        `${article.language === "en" ? "/en" : ""}/knowledge/${encodeURIComponent(article.slug)}`,
+      );
+  }
   if (affectedIds.length > 0) {
     const aliases = await readDb
       .select({

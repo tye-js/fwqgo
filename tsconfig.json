@@ -12,6 +12,7 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "checkJs": true,
+    "types": ["bun", "react", "react-dom"],
     /* Bundled projects */
     "lib": [
       "dom",

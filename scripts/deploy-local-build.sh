@@ -38,7 +38,7 @@ Common optional variables:
   NEXT_PUBLIC_CMS_URL=https://cms.fwqgo.com
   CMS_BASIC_AUTH_USERNAME=...
   CMS_BASIC_AUTH_PASSWORD=...
-  DOCKER_IMAGE=node:24-bookworm-slim
+  DOCKER_IMAGE=oven/bun:1.3.14-debian
   DOCKER_PLATFORM=linux/amd64
   LOCAL_BUILD_ENV_FILE=...   # override env file used only during local build
 EOF
@@ -102,7 +102,7 @@ KEEP_DB_BACKUPS="${KEEP_DB_BACKUPS:-10}"
 DB_BACKUP_RETENTION_DAYS="${DB_BACKUP_RETENTION_DAYS:-30}"
 REMOTE_UPLOAD_DIR="${REMOTE_UPLOAD_DIR:-/var/www/uploads}"
 RUN_SMOKE_TEST="${RUN_SMOKE_TEST:-1}"
-DOCKER_IMAGE="${DOCKER_IMAGE:-node:24-bookworm-slim}"
+DOCKER_IMAGE="${DOCKER_IMAGE:-oven/bun:1.3.14-debian}"
 DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
 LOCAL_BUILD_ENV_FILE="${LOCAL_BUILD_ENV_FILE:-}"
 RELEASE_ID="${RELEASE_ID:-$(date +%Y%m%d%H%M%S)}"
@@ -184,7 +184,7 @@ docker run --rm \
   -v "$STAGE_DIR:/workspace" \
   -w /workspace \
   "$DOCKER_IMAGE" \
-  bash -lc 'export npm_config_prefix=/tmp/npm-global PATH="/tmp/npm-global/bin:$PATH"; npm install --global bun@1.3.14 && bun install --frozen-lockfile && bun run build && mkdir -p .deploy-runtime && cp "$(command -v bun)" .deploy-runtime/bun && mkdir -p .next-web/standalone/.next-web .next-cms/standalone/.next-cms && rm -rf .next-web/standalone/.next-web/static .next-web/standalone/public .next-cms/standalone/.next-cms/static .next-cms/standalone/public && cp -R .next-web/static .next-web/standalone/.next-web/static && cp -R .next-cms/static .next-cms/standalone/.next-cms/static && cp -R public .next-web/standalone/public && cp -R public .next-cms/standalone/public'
+  bash -lc 'export BUN_INSTALL_CACHE_DIR=/tmp/bun-cache; bun install --frozen-lockfile && bun run build && mkdir -p .deploy-runtime && cp "$(command -v bun)" .deploy-runtime/bun && mkdir -p .next-web/standalone/.next-web .next-cms/standalone/.next-cms && rm -rf .next-web/standalone/.next-web/static .next-web/standalone/public .next-cms/standalone/.next-cms/static .next-cms/standalone/public && cp -R .next-web/static .next-web/standalone/.next-web/static && cp -R .next-cms/static .next-cms/standalone/.next-cms/static && cp -R public .next-web/standalone/public && cp -R public .next-cms/standalone/public'
 
 [[ -f "$STAGE_DIR/.next-web/standalone/apps/web/server.js" ]] || fail "Docker build did not produce web standalone server.js"
 [[ -f "$STAGE_DIR/.next-cms/standalone/apps/cms/server.js" ]] || fail "Docker build did not produce cms standalone server.js"
@@ -199,6 +199,7 @@ ln -sfn "../../.next-cms" "$PAYLOAD_DIR/apps/cms/.next"
 cp -R "$ROOT_DIR/drizzle" "$PAYLOAD_DIR/drizzle"
 cp "$ROOT_DIR/scripts/migrate-prod.mjs" "$PAYLOAD_DIR/scripts/migrate-prod.mjs"
 cp "$ROOT_DIR/scripts/migration-manifest.mjs" "$PAYLOAD_DIR/scripts/migration-manifest.mjs"
+cp "$ROOT_DIR/scripts/verify-runtime-config.mjs" "$PAYLOAD_DIR/scripts/verify-runtime-config.mjs"
 cp "$ROOT_DIR/scripts/secure-db-backup.sh" "$PAYLOAD_DIR/scripts/secure-db-backup.sh"
 cp "$ROOT_DIR/scripts/secure-pg-dump.mjs" "$PAYLOAD_DIR/scripts/secure-pg-dump.mjs"
 cp "$STAGE_DIR/.deploy-runtime/bun" "$PAYLOAD_DIR/bin/bun"
@@ -207,6 +208,7 @@ mkdir -p "$PAYLOAD_DIR/node_modules"
 cp -R "$STAGE_DIR/node_modules/drizzle-orm" "$STAGE_DIR/node_modules/postgres" "$PAYLOAD_DIR/node_modules/" 2>/dev/null || true
 cp "$STAGE_DIR/ecosystem.config.cjs" "$PAYLOAD_DIR/ecosystem.config.cjs"
 cp "$STAGE_DIR/package.json" "$PAYLOAD_DIR/package.json"
+cp "$STAGE_DIR/bunfig.toml" "$PAYLOAD_DIR/bunfig.toml"
 
 tar -czf "$ARTIFACT" -C "$PAYLOAD_DIR" .
 printf 'Created artifact: %s\n' "$ARTIFACT"
@@ -268,7 +270,7 @@ EOF
 fi
 
 if ! command -v pm2 >/dev/null 2>&1; then
-  echo "pm2 is not installed on the server. Install it with: npm install -g pm2" >&2
+  echo "pm2 is not installed on the server. Install the PM2 process manager before deploying" >&2
   exit 1
 fi
 
@@ -285,22 +287,18 @@ start_release() {
   resolved_release="$(readlink -f "$target_release" 2>/dev/null || printf "%s" "$target_release")"
   target_release_id="${resolved_release##*/}"
 
-  if [[ -f "$target_release/apps/web/server.js" && -f "$target_release/apps/cms/server.js" ]]; then
-    if [[ -x "$target_release/bin/bun" ]]; then
-      BUN_BIN="$target_release/bin/bun" RELEASE_ID="$target_release_id" WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
-    else
-      RELEASE_ID="$target_release_id" WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
-    fi
+  if [[ -x "$target_release/bin/bun" && -f "$target_release/apps/web/server.js" && -f "$target_release/apps/cms/server.js" ]]; then
+    BUN_BIN="$target_release/bin/bun" RELEASE_ID="$target_release_id" WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
     return
   fi
 
-  echo "Invalid standalone release: $target_release" >&2
+  echo "Invalid Bun standalone release (bundled Bun and both apps are required): $target_release" >&2
   return 1
 }
 
 verify_bun_processes() {
   local expected_bun="$1"
-  PM2_RUNTIME_JSON="$(pm2 jlist)" EXPECTED_BUN_BIN="$expected_bun" node - <<'NODE'
+  PM2_RUNTIME_JSON="$(pm2 jlist)" EXPECTED_BUN_BIN="$expected_bun" "$expected_bun" - <<'BUN'
 const fs = require("node:fs");
 
 const expectedBun = fs.realpathSync(process.env.EXPECTED_BUN_BIN);
@@ -327,7 +325,7 @@ for (const name of ["fwqgo-web", "fwqgo-cms"]) {
     );
   }
 }
-NODE
+BUN
 }
 
 rollback_previous() {
@@ -369,8 +367,10 @@ ln -sfn "$shared_dir/.env.production" "$release_dir/.env.production"
   exit 1
 }
 
+BUN_BIN="$release_dir/bin/bun" "$release_dir/bin/bun" "$release_dir/scripts/verify-runtime-config.mjs" "$release_dir/ecosystem.config.cjs"
+
 if [[ "$run_migrations" == "1" || "$run_migrations" == "true" ]]; then
-  bash "$release_dir/scripts/secure-db-backup.sh" \
+  BUN_BIN="$release_dir/bin/bun" bash "$release_dir/scripts/secure-db-backup.sh" \
     "$shared_dir/backups/db" \
     "$release_id" \
     "$keep_db_backups" \

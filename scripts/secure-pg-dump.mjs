@@ -50,7 +50,7 @@ function decodeUrlCredential(value, label) {
 
 const [envFile, outputFile] = process.argv.slice(2);
 if (!envFile || !outputFile) {
-  fail("Usage: node secure-pg-dump.mjs <env-file> <output-file>");
+  fail("Usage: bun secure-pg-dump.mjs <env-file> <output-file>");
 }
 if (!path.isAbsolute(envFile) || !path.isAbsolute(outputFile)) {
   fail("Database environment and backup output paths must be absolute");

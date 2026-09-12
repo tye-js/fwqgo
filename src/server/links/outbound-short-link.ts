@@ -12,6 +12,8 @@ const siteBaseUrl = "https://fwqgo.com";
 const slugAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
 const markdownLinkPattern =
   /\[([^\]]+)\]\((<([^>]+)>|[^)\s]+)(?:\s+"[^"]*")?\)/g;
+export type OutboundLinkExecutor = Pick<typeof db, "select" | "insert">;
+type AffiliateProvider = typeof affServiceProviders.$inferSelect;
 let providerCache: Promise<
   Array<typeof affServiceProviders.$inferSelect>
 > | null = null;
@@ -20,7 +22,13 @@ export function clearOutboundAffiliateProviderCache() {
   providerCache = null;
 }
 
-function getAffiliateProviders() {
+function getAffiliateProviders(database: OutboundLinkExecutor = db) {
+  if (database !== db) {
+    return database
+      .select()
+      .from(affServiceProviders)
+      .then((providers) => providers.filter(hasCompleteArticleAffiliateConfig));
+  }
   if (!providerCache) {
     const request = db
       .select()
@@ -82,8 +90,7 @@ function normalizeProviderDomain(value: string) {
   }
 }
 
-async function getAffiliateTargetUrl(url: URL) {
-  const providers = await getAffiliateProviders();
+function getAffiliateTargetUrl(url: URL, providers: AffiliateProvider[]) {
   const targetHost = normalizeHost(url.hostname);
   const matchedProvider = providers.find((provider) => {
     const officialDomain = normalizeProviderDomain(provider.officialUrl);
@@ -129,8 +136,11 @@ function formatOutboundShortLink(
   };
 }
 
-async function findOutboundShortLink(targetUrl: string) {
-  const [existing] = await db
+async function findOutboundShortLink(
+  targetUrl: string,
+  database: OutboundLinkExecutor,
+) {
+  const [existing] = await database
     .select({ id: outboundLinks.id, slug: outboundLinks.slug })
     .from(outboundLinks)
     .where(eq(outboundLinks.targetUrl, targetUrl))
@@ -139,14 +149,17 @@ async function findOutboundShortLink(targetUrl: string) {
   return existing;
 }
 
-export async function getOrCreateOutboundShortLink(targetUrl: string) {
+export async function getOrCreateOutboundShortLink(
+  targetUrl: string,
+  database: OutboundLinkExecutor = db,
+) {
   const normalizedTargetUrl = normalizeTargetUrl(targetUrl);
 
   if (!normalizedTargetUrl) {
     return null;
   }
 
-  const existing = await findOutboundShortLink(normalizedTargetUrl);
+  const existing = await findOutboundShortLink(normalizedTargetUrl, database);
 
   if (existing) {
     return formatOutboundShortLink(existing, normalizedTargetUrl);
@@ -156,33 +169,27 @@ export async function getOrCreateOutboundShortLink(targetUrl: string) {
     const seed = Date.now() + Math.floor(Math.random() * 1_000_000) + attempt;
     const slug = makeSlug(seed).slice(-6);
 
-    try {
-      const [created] = await db
-        .insert(outboundLinks)
-        .values({ slug, targetUrl: normalizedTargetUrl })
-        .onConflictDoNothing({ target: outboundLinks.targetUrl })
-        .returning({ id: outboundLinks.id, slug: outboundLinks.slug });
+    const [created] = await database
+      .insert(outboundLinks)
+      .values({ slug, targetUrl: normalizedTargetUrl })
+      .onConflictDoNothing()
+      .returning({ id: outboundLinks.id, slug: outboundLinks.slug });
 
-      if (!created) {
-        const existingAfterConflict =
-          await findOutboundShortLink(normalizedTargetUrl);
-        if (existingAfterConflict) {
-          return formatOutboundShortLink(
-            existingAfterConflict,
-            normalizedTargetUrl,
-          );
-        }
-        continue;
+    if (!created) {
+      const existingAfterConflict = await findOutboundShortLink(
+        normalizedTargetUrl,
+        database,
+      );
+      if (existingAfterConflict) {
+        return formatOutboundShortLink(
+          existingAfterConflict,
+          normalizedTargetUrl,
+        );
       }
-
-      return formatOutboundShortLink(created, normalizedTargetUrl);
-    } catch {
-      const raceExisting = await findOutboundShortLink(normalizedTargetUrl);
-
-      if (raceExisting) {
-        return formatOutboundShortLink(raceExisting, normalizedTargetUrl);
-      }
+      continue;
     }
+
+    return formatOutboundShortLink(created, normalizedTargetUrl);
   }
 
   throw new Error("短链生成失败");
@@ -214,9 +221,13 @@ function isInternalUrl(url: URL) {
   return targetHost === siteHost || targetHost.endsWith(`.${siteHost}`);
 }
 
-export async function shortenArticleOutboundLinks(html: string) {
+export async function shortenArticleOutboundLinks(
+  html: string,
+  database: OutboundLinkExecutor = db,
+) {
   const $ = cheerio.load(html, null, false);
   const links = $("a[href]").toArray();
+  let providers: AffiliateProvider[] | undefined;
 
   for (const element of links) {
     const $link = $(element);
@@ -242,12 +253,16 @@ export async function shortenArticleOutboundLinks(html: string) {
       continue;
     }
 
-    const affiliateTargetUrl = await getAffiliateTargetUrl(url);
+    providers ??= await getAffiliateProviders(database);
+    const affiliateTargetUrl = getAffiliateTargetUrl(url, providers);
     if (!affiliateTargetUrl) {
       continue;
     }
 
-    const shortLink = await getOrCreateOutboundShortLink(affiliateTargetUrl);
+    const shortLink = await getOrCreateOutboundShortLink(
+      affiliateTargetUrl,
+      database,
+    );
     if (!shortLink) {
       continue;
     }
@@ -260,7 +275,11 @@ export async function shortenArticleOutboundLinks(html: string) {
   return $.html();
 }
 
-export async function shortenMarkdownOutboundLinks(markdown: string) {
+export async function shortenMarkdownOutboundLinks(
+  markdown: string,
+  database: OutboundLinkExecutor = db,
+) {
+  let providers: AffiliateProvider[] | undefined;
   const replacements: Array<{
     start: number;
     end: number;
@@ -296,12 +315,16 @@ export async function shortenMarkdownOutboundLinks(markdown: string) {
       continue;
     }
 
-    const affiliateTargetUrl = await getAffiliateTargetUrl(url);
+    providers ??= await getAffiliateProviders(database);
+    const affiliateTargetUrl = getAffiliateTargetUrl(url, providers);
     if (!affiliateTargetUrl) {
       continue;
     }
 
-    const shortLink = await getOrCreateOutboundShortLink(affiliateTargetUrl);
+    const shortLink = await getOrCreateOutboundShortLink(
+      affiliateTargetUrl,
+      database,
+    );
     if (!shortLink) {
       continue;
     }

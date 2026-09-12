@@ -324,8 +324,7 @@ export async function getServerOfferTopic(slug: string) {
 
     return { topic, offers };
   } catch (error) {
-    console.error("Failed to load server offer topic:", error);
-    return { topic, offers: [] };
+    throw new Error("获取套餐专题失败", { cause: error });
   }
 }
 

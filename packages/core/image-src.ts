@@ -4,6 +4,7 @@ export function isRenderableImageSrc(
   src: string | null | undefined,
 ): src is string {
   if (!src) return false;
+  if (/[\\\u0000-\u001f\u007f]/.test(src)) return false;
 
   if (src.startsWith("/")) {
     return !src.startsWith("//");
@@ -28,10 +29,10 @@ export function getImageSrc(src: string) {
   return `${baseUrl}${src}`;
 }
 
-export function getOptimizedImageSrc(src: string) {
+export function getOptimizedImageSrc(src: string, revision?: string | null) {
   if (!src.startsWith("/uploads/")) {
     return src;
   }
 
-  return `/api/images/source?path=${encodeURIComponent(src)}`;
+  return `/api/images/source?path=${encodeURIComponent(src)}${revision ? `&v=${encodeURIComponent(revision)}` : ""}`;
 }

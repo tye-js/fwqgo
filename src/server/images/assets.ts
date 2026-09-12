@@ -5,6 +5,7 @@ import {
   mkdir,
   readdir,
   readFile,
+  rename,
   stat,
   unlink,
   writeFile,
@@ -13,6 +14,8 @@ import path from "node:path";
 
 import {
   and,
+  asc,
+  or,
   eq,
   inArray,
   notExists,
@@ -25,11 +28,13 @@ import { db } from "@fwqgo/db";
 import {
   imageAssetReferences,
   imageAssets,
+  knowledgeArticles,
   posts,
   users,
 } from "@fwqgo/db/schema";
 import { withAsyncRollback } from "@fwqgo/core/async-rollback";
 import { sanitizeFileName } from "@fwqgo/core/utils";
+import { versionUploadImageReferences } from "@fwqgo/core/upload-image-version";
 import {
   getUploadDir,
   normalizeUploadPath,
@@ -127,14 +132,18 @@ function fallbackImageAlt(originalName: string) {
   return base || "server deal image";
 }
 
-function buildVariantName(publicPath: string, variant: "thumb" | "large") {
+function buildVariantName(
+  publicPath: string,
+  variant: "thumb" | "large",
+  revision?: string,
+) {
   const parsed = path.parse(path.basename(publicPath));
-  return `${parsed.name}_${variant}.webp`;
+  return `${parsed.name}_${variant}${revision ? `-${revision}` : ""}.webp`;
 }
 
 function isGeneratedVariantFileName(fileName: string) {
   const parsed = path.parse(fileName);
-  return /_(thumb|large)$/i.test(parsed.name);
+  return /_(thumb|large)(?:-[a-f0-9]{16}(?:-\d+)?)?$/i.test(parsed.name);
 }
 
 async function getAvailablePublicPath(fileName: string) {
@@ -312,11 +321,19 @@ async function createResponsiveVariants(input: {
 
   const [thumbResult, largeResult] = await Promise.allSettled([
     createAvailableUploadFile(
-      buildVariantName(input.publicPath, "thumb"),
+      buildVariantName(
+        input.publicPath,
+        "thumb",
+        hashBuffer(input.buffer).slice(0, 16),
+      ),
       thumbBuffer,
     ),
     createAvailableUploadFile(
-      buildVariantName(input.publicPath, "large"),
+      buildVariantName(
+        input.publicPath,
+        "large",
+        hashBuffer(input.buffer).slice(0, 16),
+      ),
       largeBuffer,
     ),
   ]);
@@ -354,6 +371,23 @@ async function writeNewUploadFile(publicPath: string, buffer: Buffer) {
   await writeFile(uploadPathToFilePath(publicPath), buffer, { flag: "wx" });
 }
 
+async function replaceUploadFileAtomically(publicPath: string, buffer: Buffer) {
+  const target = uploadPathToFilePath(publicPath);
+  const temporary = path.join(
+    getUploadDir(),
+    `.fwqgo-${crypto.randomUUID()}.tmp`,
+  );
+  try {
+    await writeFile(temporary, buffer, { flag: "wx" });
+    await rename(temporary, target);
+  } finally {
+    await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT")
+        console.warn("Image temporary file cleanup failed", error);
+    });
+  }
+}
+
 type UploadFileSnapshot = {
   publicPath: string;
   buffer: Buffer | null;
@@ -383,7 +417,7 @@ async function restoreUploadFileSnapshot(snapshot: UploadFileSnapshot) {
     return;
   }
 
-  await writeFile(uploadPathToFilePath(snapshot.publicPath), snapshot.buffer);
+  await replaceUploadFileAtomically(snapshot.publicPath, snapshot.buffer);
 }
 
 async function removeVariantFiles(asset: {
@@ -563,83 +597,143 @@ export async function createImageAssetFromBuffer(input: {
 }
 
 export async function replaceImageAssetFile(input: { id: number; file: File }) {
-  if (!ALLOWED_UPLOAD_TYPES.has(input.file.type)) {
+  if (!ALLOWED_UPLOAD_TYPES.has(input.file.type))
     throw new Error("Invalid file type");
-  }
-
-  if (input.file.size > MAX_UPLOAD_SIZE) {
-    throw new Error("Image is too large");
-  }
-
-  const [asset] = await db
-    .select()
-    .from(imageAssets)
-    .where(eq(imageAssets.id, input.id))
-    .limit(1);
-
-  if (!asset) {
-    throw new Error("Image asset not found");
-  }
-
+  if (input.file.size > MAX_UPLOAD_SIZE) throw new Error("Image is too large");
   const originalBuffer = Buffer.from(await input.file.arrayBuffer());
-  const optimized = await optimizeReplacementUpload({
-    buffer: originalBuffer,
-    sourceMime: input.file.type,
-    targetPath: asset.path,
-  });
-  const dimensions = await getDimensions(optimized.buffer);
-  const filePath = uploadPathToFilePath(asset.path);
 
-  await mkdir(getUploadDir(), { recursive: true });
-  const snapshots = (
-    await Promise.all(
-      [asset.path, asset.thumbPath, asset.largePath].map(snapshotUploadFile),
-    )
-  ).filter((snapshot): snapshot is UploadFileSnapshot => snapshot !== null);
-  const snapshotPaths = new Set(
-    snapshots.map((snapshot) => snapshot.publicPath),
-  );
-
-  return withAsyncRollback(async (defer) => {
-    for (const snapshot of snapshots) {
-      defer(() => restoreUploadFileSnapshot(snapshot));
-    }
-
-    await writeFile(filePath, optimized.buffer);
-    await removeVariantFiles(asset);
-    const variants = await createResponsiveVariants({
-      buffer: optimized.buffer,
-      mime: optimized.mime,
-      publicPath: asset.path,
-    });
-    for (const variantPath of [variants.thumbPath, variants.largePath]) {
-      if (variantPath && !snapshotPaths.has(variantPath)) {
-        defer(() => removeCreatedUploadFile(variantPath));
-      }
-    }
-
-    const [updated] = await db
-      .update(imageAssets)
-      .set({
-        thumbPath: variants.thumbPath,
-        largePath: variants.largePath,
-        originalName: input.file.name,
+  return withAsyncRollback(async (defer) =>
+    db.transaction(async (tx) => {
+      // Serialize replacements of the same file before taking rollback snapshots.
+      const [asset] = await tx
+        .select()
+        .from(imageAssets)
+        .where(eq(imageAssets.id, input.id))
+        .limit(1)
+        .for("update");
+      if (!asset) throw new Error("Image asset not found");
+      const optimized = await optimizeReplacementUpload({
+        buffer: originalBuffer,
+        sourceMime: input.file.type,
+        targetPath: asset.path,
+      });
+      const dimensions = await getDimensions(optimized.buffer);
+      const hash = hashBuffer(optimized.buffer);
+      await mkdir(getUploadDir(), { recursive: true });
+      const snapshots = (
+        await Promise.all(
+          [asset.path, asset.thumbPath, asset.largePath].map(
+            snapshotUploadFile,
+          ),
+        )
+      ).filter((snapshot): snapshot is UploadFileSnapshot => snapshot !== null);
+      const snapshotPaths = new Set(
+        snapshots.map((snapshot) => snapshot.publicPath),
+      );
+      for (const snapshot of snapshots)
+        defer(() => restoreUploadFileSnapshot(snapshot));
+      await replaceUploadFileAtomically(asset.path, optimized.buffer);
+      await removeVariantFiles(asset);
+      const variants = await createResponsiveVariants({
+        buffer: optimized.buffer,
         mime: optimized.mime,
-        size: optimized.buffer.length,
-        width: dimensions.width,
-        height: dimensions.height,
-        hash: hashBuffer(optimized.buffer),
-        updatedAt: new Date(),
-      })
-      .where(eq(imageAssets.id, asset.id))
-      .returning();
+        publicPath: asset.path,
+      });
+      for (const variantPath of [variants.thumbPath, variants.largePath]) {
+        if (variantPath && !snapshotPaths.has(variantPath))
+          defer(() => removeCreatedUploadFile(variantPath));
+      }
+      const [updated] = await tx
+        .update(imageAssets)
+        .set({
+          thumbPath: variants.thumbPath,
+          largePath: variants.largePath,
+          originalName: input.file.name,
+          mime: optimized.mime,
+          size: optimized.buffer.length,
+          width: dimensions.width,
+          height: dimensions.height,
+          hash,
+          updatedAt: new Date(),
+        })
+        .where(eq(imageAssets.id, asset.id))
+        .returning();
+      if (!updated)
+        throw new Error("Image asset was deleted while replacing its file");
 
-    if (!updated) {
-      throw new Error("Image asset was deleted while replacing its file");
-    }
-
-    return updated;
-  });
+      // The file's base URL stays valid. Published references use a new version
+      // so browser, CDN and Next image caches cannot keep the replaced bytes.
+      const siteUrl = process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com";
+      const absolutePath = new URL(asset.path, siteUrl).href;
+      const version = (value: string) =>
+        versionUploadImageReferences(
+          value,
+          asset.path,
+          hash.slice(0, 16),
+          siteUrl,
+        );
+      const affectedPosts = await tx
+        .select({ id: posts.id, imgUrl: posts.imgUrl, content: posts.content })
+        .from(posts)
+        .where(
+          or(
+            imagePathContains(posts.imgUrl, asset.path, absolutePath),
+            imagePathContains(posts.content, asset.path, absolutePath),
+          ),
+        )
+        .orderBy(asc(posts.id))
+        .for("update");
+      for (const post of affectedPosts) {
+        const imgUrl = post.imgUrl ? version(post.imgUrl) : post.imgUrl;
+        const content = version(post.content);
+        if (imgUrl !== post.imgUrl || content !== post.content) {
+          await tx
+            .update(posts)
+            .set({ imgUrl, content, updatedAt: new Date() })
+            .where(eq(posts.id, post.id));
+        }
+      }
+      const affectedKnowledge = await tx
+        .select({
+          id: knowledgeArticles.id,
+          content: knowledgeArticles.content,
+        })
+        .from(knowledgeArticles)
+        .where(
+          imagePathContains(
+            knowledgeArticles.content,
+            asset.path,
+            absolutePath,
+          ),
+        )
+        .orderBy(asc(knowledgeArticles.id))
+        .for("update");
+      for (const article of affectedKnowledge) {
+        const content = version(article.content);
+        if (content !== article.content) {
+          // A cache revision on an image URL does not change translated prose.
+          await tx
+            .update(knowledgeArticles)
+            .set({ content, updatedAt: new Date() })
+            .where(eq(knowledgeArticles.id, article.id));
+        }
+      }
+      const affectedUsers = await tx
+        .select({ id: users.id, image: users.image })
+        .from(users)
+        .where(imagePathContains(users.image, asset.path, absolutePath))
+        .orderBy(asc(users.id))
+        .for("update");
+      for (const user of affectedUsers) {
+        if (user.image)
+          await tx
+            .update(users)
+            .set({ image: version(user.image), updatedAt: new Date() })
+            .where(eq(users.id, user.id));
+      }
+      return updated;
+    }),
+  );
 }
 
 export async function updateImageAssetMetadata(input: {
@@ -756,10 +850,10 @@ export async function renameImageAssetFile(input: {
   }
 
   const nextThumbPath = asset.thumbPath
-    ? `${UPLOAD_PUBLIC_PREFIX}${buildVariantName(nextPath, "thumb")}`
+    ? `${UPLOAD_PUBLIC_PREFIX}${buildVariantName(nextPath, "thumb", asset.hash?.slice(0, 16))}`
     : null;
   const nextLargePath = asset.largePath
-    ? `${UPLOAD_PUBLIC_PREFIX}${buildVariantName(nextPath, "large")}`
+    ? `${UPLOAD_PUBLIC_PREFIX}${buildVariantName(nextPath, "large", asset.hash?.slice(0, 16))}`
     : null;
 
   const renamedFiles: Array<{

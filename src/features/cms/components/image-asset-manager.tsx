@@ -686,6 +686,7 @@ export function ImageAssetManager({
                         <Image
                           src={getOptimizedImageSrc(
                             image.thumbPath ?? image.path,
+                            image.hash,
                           )}
                           alt={image.originalName}
                           fill
@@ -954,6 +955,7 @@ export function ImageAssetManager({
                             <Image
                               src={getOptimizedImageSrc(
                                 image.thumbPath ?? image.path,
+                                image.hash,
                               )}
                               alt={image.originalName}
                               fill

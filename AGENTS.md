@@ -34,7 +34,7 @@ Core stack:
 
 ## Commands
 
-Use Bun 1.3.14 for dependency installation, project scripts, and the production standalone runtime. Keep Node.js 24 for PM2, explicit `node` scripts, and rollback compatibility with legacy Node releases.
+Use Bun 1.3.14 for dependency installation, development, builds, tests, maintenance scripts, migrations, and the production standalone runtime. `bunfig.toml` forces package CLIs to run with Bun even when they have a Node shebang. Node.js 24 is only a host dependency of the PM2 process manager; do not add project commands or application fallbacks that execute Node. Preserve Bun-compatible `node:*` imports, `NodeJS` types, and native addons.
 
 ```bash
 bun run dev
@@ -103,8 +103,10 @@ GitHub Actions includes the production migration step. Keep `scripts/migrate-pro
 
 Production releases include Bun 1.3.14 at `bin/bun`. PM2 starts releases with that binary in
 `fork` mode and one instance per app; do not switch Bun releases to PM2 `cluster` mode because
-PM2's cluster primary is Node-based. Releases without `bin/bun` remain compatible with the
-Node `cluster` fallback for rollback.
+PM2's cluster primary is Node-based. The interpreter defaults to the release's `bin/bun`
+even when `BUN_BIN` is absent. Deployment and rollback require bundled Bun and both app
+artifacts; never silently fall back to Node. Runtime verification must use the same Bun
+binary as PM2 will use to launch the applications.
 
 ## Coding Rules
 

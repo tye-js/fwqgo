@@ -64,11 +64,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: "24"
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -109,7 +104,10 @@ jobs:
       - name: Verify security boundaries
         run: bun run verify:security
 
-      - name: Verify security behavior on Node and Bun
+      - name: Audit locked dependencies
+        run: bun run verify:dependencies
+
+      - name: Verify security behavior on Bun
         run: bun run verify:security-runtime
 
       - name: Smoke test account permission migrations
@@ -195,7 +193,7 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          node scripts/build-release.mjs
+          bun scripts/build-release.mjs
           mkdir -p .next-web/standalone/.next-web .next-cms/standalone/.next-cms
           rm -rf .next-web/standalone/.next-web/static .next-web/standalone/public
           rm -rf .next-cms/standalone/.next-cms/static .next-cms/standalone/public
@@ -231,6 +229,7 @@ jobs:
           cp -R node_modules/drizzle-orm node_modules/postgres ".deploy/payload-$RELEASE_ID/node_modules/"
           cp ecosystem.config.cjs ".deploy/payload-$RELEASE_ID/ecosystem.config.cjs"
           cp package.json ".deploy/payload-$RELEASE_ID/package.json"
+          cp bunfig.toml ".deploy/payload-$RELEASE_ID/bunfig.toml"
           tar --format=gnu -czf ".deploy/fwqgo-$RELEASE_ID.tar.gz" -C ".deploy/payload-$RELEASE_ID" .
 
       - name: Upload release
@@ -314,27 +313,18 @@ jobs:
               return 1
             fi
 
-            if [[ -f "$target_release/apps/web/server.js" && -f "$target_release/apps/cms/server.js" ]]; then
-              if [[ -x "$target_release/bin/bun" ]]; then
-                BUN_BIN="$target_release/bin/bun" RELEASE_ID="$target_release_id" WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
-              else
-                RELEASE_ID="$target_release_id" WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
-              fi
+            if [[ -x "$target_release/bin/bun" && -f "$target_release/apps/web/server.js" && -f "$target_release/apps/cms/server.js" ]]; then
+              BUN_BIN="$target_release/bin/bun" RELEASE_ID="$target_release_id" WEB_APP_DIR="$target_release/apps/web" CMS_APP_DIR="$target_release/apps/cms" pm2 start "$target_release/ecosystem.config.cjs" --update-env
               return
             fi
 
-            if [[ -f "$target_release/.next/standalone/server.js" ]]; then
-              RELEASE_ID="$target_release_id" APP_DIR="$target_release/.next/standalone" pm2 start "$target_release/ecosystem.config.cjs" --update-env
-              return
-            fi
-
-            echo "Invalid standalone release: $target_release" >&2
+            echo "Invalid Bun standalone release (bundled Bun and both apps are required): $target_release" >&2
             return 1
           }
 
           verify_bun_processes() {
             local expected_bun="$1"
-            PM2_RUNTIME_JSON="$(pm2 jlist)" EXPECTED_BUN_BIN="$expected_bun" node - <<'NODE'
+            PM2_RUNTIME_JSON="$(pm2 jlist)" EXPECTED_BUN_BIN="$expected_bun" "$expected_bun" - <<'BUN'
           const fs = require("node:fs");
 
           const expectedBun = fs.realpathSync(process.env.EXPECTED_BUN_BIN);
@@ -363,7 +353,7 @@ jobs:
               );
             }
           }
-          NODE
+          BUN
           }
 
           rollback_previous() {
@@ -420,7 +410,7 @@ jobs:
           rm -f "$runtime_env_override"
 
           deployment_stage="verify runtime security configuration"
-          "$release_dir/bin/bun" "$release_dir/scripts/verify-runtime-config.mjs" "$release_dir/ecosystem.config.cjs"
+          BUN_BIN="$release_dir/bin/bun" "$release_dir/bin/bun" "$release_dir/scripts/verify-runtime-config.mjs" "$release_dir/ecosystem.config.cjs"
 
           [[ -f "$release_dir/apps/web/server.js" && -f "$release_dir/apps/cms/server.js" ]] || {
             echo "Artifact is missing web or cms standalone server.js" >&2
@@ -429,7 +419,7 @@ jobs:
 
           if [[ "$run_migrations" != "false" ]]; then
             deployment_stage="database backup"
-            bash "$release_dir/scripts/secure-db-backup.sh" \
+            BUN_BIN="$release_dir/bin/bun" bash "$release_dir/scripts/secure-db-backup.sh" \
               "$shared_dir/backups/db" \
               "$release_id" \
               "$keep_db_backups" \
@@ -522,7 +512,7 @@ jobs:
           set -euo pipefail
           SITE_URL="${NEXT_PUBLIC_URL%/}"
           CMS_URL="${NEXT_PUBLIC_CMS_URL%/}"
-          CMS_HOST="$(node -e 'const value = process.env.NEXT_PUBLIC_CMS_URL || "https://cms.fwqgo.com"; const url = new URL(value.includes("://") ? value : `https://${value}`); console.log(url.host);')"
+          CMS_HOST="$(bun -e 'const value = process.env.NEXT_PUBLIC_CMS_URL || "https://cms.fwqgo.com"; const url = new URL(value.includes("://") ? value : `https://${value}`); console.log(url.host);')"
           CURL_RETRY_ARGS=(--retry 3 --retry-delay 2 --retry-connrefused --retry-all-errors)
 
           probe_http() {
@@ -556,11 +546,11 @@ jobs:
           }
 
           redirect_path() {
-            node -e 'const value = process.argv[1] || ""; if (!value) process.exit(0); try { const url = new URL(value, "https://placeholder.local"); console.log(url.pathname.replace(/\/+$/, "") || "/"); } catch { process.exit(0); }' "$1"
+            bun -e 'const value = process.argv[1] || ""; if (!value) process.exit(0); try { const url = new URL(value, "https://placeholder.local"); console.log(url.pathname.replace(/\/+$/, "") || "/"); } catch { process.exit(0); }' "$1"
           }
 
           redirect_host() {
-            node -e 'const value = process.argv[1] || ""; if (!value || !value.includes("://")) process.exit(0); try { console.log(new URL(value).host); } catch { process.exit(0); }' "$1"
+            bun -e 'const value = process.argv[1] || ""; if (!value || !value.includes("://")) process.exit(0); try { console.log(new URL(value).host); } catch { process.exit(0); }' "$1"
           }
 
           is_cms_login_redirect() {

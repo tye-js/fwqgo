@@ -34,7 +34,7 @@ SECRET_ENCRYPTION_ACTIVE_KEY_ID=2026-07
 也可以把 `SECRET_ENCRYPTION_KEYS` 写成 JSON 对象。`SECRET_ENCRYPTION_KEY` 是单密钥兼容配置，key ID 固定为 `default`；密钥环存在时优先使用密钥环。每把密钥必须解码为 32 字节，可用下面的命令生成：
 
 ```bash
-node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+bun -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
 轮换步骤：
