@@ -20,7 +20,7 @@
 ## 发布前必须完成
 
 1. 在可信服务器控制台或现有已验证连接中取得 SSH 主机公钥，并独立核对指纹。把匹配 `DEPLOY_HOST` 与端口的完整 known_hosts 行保存为 GitHub Secret `DEPLOY_KNOWN_HOSTS`。非 22 端口的主机字段需要 `[host]:port`，不能只填 `SHA256:...` 指纹。
-2. 安装 `deploy/nginx/fwqgo-security-rate-zones.conf` 到 Nginx 的 `http` 上下文。把其余安全片段放到 `/etc/nginx/snippets/`，在现有 HTTPS server 中分别引入 CMS、公开浏览量限制和安全响应头片段。所有代理 location 都要覆盖 `fwqgo-proxy-headers.conf` 中的请求头；若现有 location 定义过代理头，需要逐项检查继承关系。不要重复创建同路径的 location。自定义端口要同步调整 upstream。
+2. 安装 `deploy/nginx/fwqgo-security-rate-zones.conf` 和 `fwqgo-http-tuning.conf` 到 Nginx 的 `http` 上下文。把代理和安全片段放到 `/etc/nginx/snippets/`，在现有 HTTPS server 中分别引入 CMS、公开浏览量限制和安全响应头片段。代理 location 通过 `fwqgo-proxy.conf` 引入可信请求头和连接设置；若现有 location 定义过代理头，需要逐项检查继承关系。不要重复创建同路径的 location。自定义端口在 `fwqgo_web`、`fwqgo_cms` upstream 中调整。
 3. 使用 Cloudflare 等上游代理时，仅对其真实、经过核验的 CIDR 设置 `set_real_ip_from`，再设置对应 `real_ip_header`；不得信任所有来源。检查源站入口和防火墙，避免所有用户被识别为同一 CDN 地址。运行 `nginx -t` 后按现有运维流程加载配置。
 4. 确认 Nginx 已覆盖真实 IP 后，把 GitHub Variable `TRUST_PROXY_HEADERS` 设置为 `true`。CI 会合并该值，且在切换版本前检查运行配置。两个 PM2 应用绑定 `127.0.0.1`，通过反向代理访问。
 5. 常规部署由用户提交并推送 `main` 后交给 GitHub Actions。发布包包含 `0069` 与 `0070`，由已有生产迁移步骤执行。上线前仍需确认生产 schema 和 Drizzle 迁移记录一致，不手工重跑已有迁移。

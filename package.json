@@ -36,6 +36,7 @@
     "verify:cache": "bun scripts/verify-public-cache-boundaries.ts && bun run verify:knowledge-performance && bun run verify:article-navigation",
     "verify:knowledge-performance": "bun scripts/verify-knowledge-performance.ts",
     "verify:knowledge-nginx": "bun scripts/verify-knowledge-nginx.mjs",
+    "verify:nginx-transport": "bun scripts/verify-nginx-transport.ts",
     "smoke:knowledge": "bun scripts/smoke-knowledge-performance.mjs",
     "audit:performance": "bun scripts/audit-public-performance.mjs",
     "smoke:built": "bun test ./scripts/verify-prerendered-article-metadata.mjs && bun scripts/smoke-built-apps.mjs",
