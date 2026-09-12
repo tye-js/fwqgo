@@ -34,7 +34,7 @@ Core stack:
 
 ## Commands
 
-Use Bun 1.3.14 for dependency installation, development, builds, tests, maintenance scripts, migrations, and the production standalone runtime. `bunfig.toml` forces package CLIs to run with Bun even when they have a Node shebang. Node.js 24 is only a host dependency of the PM2 process manager; do not add project commands or application fallbacks that execute Node. Preserve Bun-compatible `node:*` imports, `NodeJS` types, and native addons.
+Use Bun 1.4.2, pinned by `packageManager` in `package.json`, for dependency installation, development, builds, tests, maintenance scripts, migrations, and the production standalone runtime. Workflows read that pin and run `verify:bun` before installation. Bun 1.3.14 has a native NAPI worker shutdown crash with Next.js 16.3/Turbopack and must not be used for builds. `bunfig.toml` forces package CLIs to run with Bun even when they have a Node shebang. Node.js 24 is only a host dependency of the PM2 process manager; do not add project commands or application fallbacks that execute Node. Preserve Bun-compatible `node:*` imports, `NodeJS` types, and native addons.
 
 ```bash
 bun run dev
@@ -101,7 +101,7 @@ For database changes, create migrations with `bun run db:generate` and apply the
 
 GitHub Actions includes the production migration step. Keep `scripts/migrate-prod.mjs` and the `drizzle` folder in release payloads. `scripts/deploy-local-build.sh` is retained only for an explicitly requested local Docker deployment.
 
-Production releases include Bun 1.3.14 at `bin/bun`. PM2 starts releases with that binary in
+Production releases include Bun 1.4.2 at `bin/bun`. PM2 starts releases with that binary in
 `fork` mode and one instance per app; do not switch Bun releases to PM2 `cluster` mode because
 PM2's cluster primary is Node-based. The interpreter defaults to the release's `bin/bun`
 even when `BUN_BIN` is absent. Deployment and rollback require bundled Bun and both app

@@ -38,7 +38,7 @@ Common optional variables:
   NEXT_PUBLIC_CMS_URL=https://cms.fwqgo.com
   CMS_BASIC_AUTH_USERNAME=...
   CMS_BASIC_AUTH_PASSWORD=...
-  DOCKER_IMAGE=oven/bun:1.3.14-debian
+  DOCKER_IMAGE=oven/bun:1.4.2-debian
   DOCKER_PLATFORM=linux/amd64
   LOCAL_BUILD_ENV_FILE=...   # override env file used only during local build
 EOF
@@ -102,7 +102,7 @@ KEEP_DB_BACKUPS="${KEEP_DB_BACKUPS:-10}"
 DB_BACKUP_RETENTION_DAYS="${DB_BACKUP_RETENTION_DAYS:-30}"
 REMOTE_UPLOAD_DIR="${REMOTE_UPLOAD_DIR:-/var/www/uploads}"
 RUN_SMOKE_TEST="${RUN_SMOKE_TEST:-1}"
-DOCKER_IMAGE="${DOCKER_IMAGE:-oven/bun:1.3.14-debian}"
+DOCKER_IMAGE="${DOCKER_IMAGE:-oven/bun:1.4.2-debian}"
 DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
 LOCAL_BUILD_ENV_FILE="${LOCAL_BUILD_ENV_FILE:-}"
 RELEASE_ID="${RELEASE_ID:-$(date +%Y%m%d%H%M%S)}"

@@ -6,7 +6,7 @@
 
 1. Fork 本仓库
 2. 克隆您的 fork: `git clone https://github.com/your-username/fwqgo.git`
-3. 安装 Bun 1.3.14，并执行: `bun install --frozen-lockfile`
+3. 安装 `package.json` 固定的 Bun 1.4.2，先执行 `bun run verify:bun`，再执行 `bun install --frozen-lockfile`
 4. 创建分支: `git checkout -b feature/your-feature-name`
 5. 进行更改并测试
 6. 提交更改: `git commit -m 'feat: add some feature'`

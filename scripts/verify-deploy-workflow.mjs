@@ -3,6 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import packageManifest from "../package.json" with { type: "json" };
+import { requiredBunVersion, verifyBunRuntime } from "./verify-bun-version.mjs";
+
+verifyBunRuntime();
 
 const workflowPath = path.resolve(".github/workflows/deploy.yml");
 const workflow = fs.readFileSync(workflowPath, "utf8");
@@ -57,14 +60,33 @@ for (const [name, command] of Object.entries(packageScripts)) {
 }
 for (const source of [
   workflow,
-  localDeploy,
   fs.readFileSync(".github/workflows/ci.yml", "utf8"),
+  fs.readFileSync(".github/workflows/publish-initial-knowledge.yml", "utf8"),
 ]) {
+  if (
+    !source.includes('bun-version-file: "package.json"') ||
+    /\bbun-version:\s/.test(source) ||
+    !source.includes("run: bun run verify:bun")
+  ) {
+    throw new Error(
+      "Every workflow must install and verify the Bun version pinned in package.json",
+    );
+  }
   if (source.includes("actions/setup-node@")) {
     throw new Error(
       "Application CI must install Bun without a separate Node setup step",
     );
   }
+}
+if (
+  packageManifest.devDependencies["@types/bun"] !== requiredBunVersion ||
+  !localDeploy.includes(
+    `DOCKER_IMAGE="\${DOCKER_IMAGE:-oven/bun:${requiredBunVersion}-debian}"`,
+  )
+) {
+  throw new Error(
+    "Bun types and the optional Docker build image must match packageManager",
+  );
 }
 for (const source of [workflow, localDeploy]) {
   if (

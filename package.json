@@ -2,9 +2,9 @@
   "name": "fwqgo",
   "version": "0.1.0",
   "type": "module",
-  "packageManager": "bun@1.3.14",
+  "packageManager": "bun@1.4.2",
   "scripts": {
-    "build": "bun run build:web && bun run build:cms && bun run prepare:standalone && bun run verify:apps",
+    "build": "bun run verify:bun && bun run build:web && bun run build:cms && bun run prepare:standalone && bun run verify:apps",
     "build:web": "next build apps/web --turbopack",
     "build:cms": "next build apps/cms --turbopack",
     "prepare:standalone": "bun scripts/prepare-standalone-runtime.mjs",
@@ -12,6 +12,7 @@
     "deploy:local": "bash scripts/deploy-local-build.sh",
     "healthcheck:prod": "bash scripts/production-healthcheck.sh",
     "verify:apps": "bun scripts/verify-app-boundaries.mjs",
+    "verify:bun": "bun scripts/verify-bun-version.mjs",
     "verify:public-mobile-ui": "bun scripts/verify-public-mobile-ui.ts",
     "verify:cms-mobile-ui": "bun scripts/verify-cms-mobile-ui.ts",
     "verify:table-mobile-labels": "bun scripts/verify-table-mobile-labels.tsx",
@@ -119,7 +120,7 @@
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.15",
-    "@types/bun": "1.3.14",
+    "@types/bun": "1.4.2",
     "@types/react": "19.2.15",
     "@types/react-dom": "19.2.3",
     "drizzle-kit": "^0.31.10",

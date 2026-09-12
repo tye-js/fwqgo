@@ -868,12 +868,14 @@ void test("release builds use read-only credentials and forward server loopback 
   );
 });
 
-void test("release runner closes its temporary tunnel on success and build, database or SSH failures", () => {
+void test("release runner rejects the old Bun runtime and closes its tunnel on later failures", () => {
   for (const scenario of [
     "success",
     "build-failure",
+    "build-crash",
     "database-failure",
     "tunnel-failure",
+    "old-runtime",
   ]) {
     const result = spawnSync(process.execPath, ["--no-env-file", "-"], {
       cwd: process.cwd(),
@@ -891,6 +893,13 @@ import fs from "node:fs";
 import * as childProcess from "node:child_process";
 import { mock, spyOn } from "bun:test";
 const fixture = { calls: [], scenario: process.env.RELEASE_BUILD_TEST_SCENARIO };
+const { verifyBunRuntime: verifyActualRuntime } = await import("./scripts/verify-bun-version.mjs");
+mock.module("./scripts/verify-bun-version.mjs", () => ({
+  verifyBunRuntime() {
+    fixture.calls.push("runtime");
+    return verifyActualRuntime(fixture.scenario === "old-runtime" ? "1.3.14" : process.versions.bun);
+  },
+}));
 const fixtureFs = {
   mkdtempSync() {fixture.calls.push("directory");return "/fixture/build-db";},
   rmSync(directory) {assert.equal(directory,"/fixture/build-db");fixture.calls.push("directory.close");},
@@ -906,7 +915,7 @@ function fixtureSpawn(command,args,options) {
     }
     return {status:!closing&&fixture.scenario==="tunnel-failure"?1:0};
   }
-  assert.equal(command,"bun");
+  assert.equal(command,process.execPath);
   fixture.calls.push("build");
   assert.deepEqual(args,["run","build"]);
   assert.equal(options.env.SKIP_ENV_VALIDATION,undefined);
@@ -914,7 +923,9 @@ function fixtureSpawn(command,args,options) {
     assert.equal(new URL(options.env[key]).username,"reader");
     assert.equal(new URL(options.env[key]).port,"55433");
   }
-  return {status:fixture.scenario==="build-failure"?1:0};
+  return fixture.scenario==="build-crash"
+    ? {status:null,signal:"SIGILL"}
+    : {status:fixture.scenario==="build-failure"?1:0};
 }
 function fixturePostgres(url) {
   assert.equal(new URL(url).username,"reader");
@@ -934,9 +945,11 @@ assert.equal((await import("postgres")).default, fixturePostgres);
 Object.assign(process.env,{READ_DATABASE_URL:"postgresql://reader:fixture@localhost/fwqgo",DEPLOY_HOST:"deploy.example",DEPLOY_USER:"deployer",SKIP_ENV_VALIDATION:"1"});
 process.argv[1]=path.resolve("scripts/build-release.mjs");
 await import("./scripts/build-release.mjs");
-const expected=fixture.scenario==="tunnel-failure"
-  ? ["directory","tunnel.open","directory.close"]
-  : ["directory","tunnel.open","database.probe","database.close",...(fixture.scenario==="database-failure"?[]:["build"]),"tunnel.close","directory.close"];
+const expected=fixture.scenario==="old-runtime"
+  ? ["runtime"]
+  : fixture.scenario==="tunnel-failure"
+    ? ["runtime","directory","tunnel.open","directory.close"]
+    : ["runtime","directory","tunnel.open","database.probe","database.close",...(fixture.scenario==="database-failure"?[]:["build"]),"tunnel.close","directory.close"];
 assert.deepEqual(fixture.calls,expected);
 assert.equal(process.exitCode ?? 0,fixture.scenario==="success"?0:1);
 assert.equal(process.env.SKIP_ENV_VALIDATION,"1");

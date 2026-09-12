@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import postgres from "postgres";
+import { verifyBunRuntime } from "./verify-bun-version.mjs";
 
 // The CI PostgreSQL fixture already occupies 55432.
 const tunnelPort = 55433;
@@ -52,6 +53,7 @@ export function getReleaseBuildConfig(environment) {
 }
 
 async function buildRelease() {
+  verifyBunRuntime();
   const { buildEnvironment, databaseUrl, forwardTarget } =
     getReleaseBuildConfig(process.env);
   if (process.env.GITHUB_ACTIONS === "true") {
@@ -131,7 +133,7 @@ async function buildRelease() {
     console.log(
       "Release read database verified; building with environment validation enabled",
     );
-    const result = spawnSync("bun", ["run", "build"], {
+    const result = spawnSync(process.execPath, ["run", "build"], {
       env: buildEnvironment,
       stdio: "inherit",
     });

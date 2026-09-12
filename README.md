@@ -5,7 +5,7 @@ FWQGO 是一个面向服务器、VPS 和云产品优惠内容的双应用平台�
 [![Next.js](https://img.shields.io/badge/Next.js-16.3.5-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.2-149ECA?style=flat-square&logo=react)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
-[![Bun](https://img.shields.io/badge/Bun-1.3.14-f9f1e1?style=flat-square&logo=bun)](https://bun.sh/)
+[![Bun](https://img.shields.io/badge/Bun-1.4.2-f9f1e1?style=flat-square&logo=bun)](https://bun.sh/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-4169E1?style=flat-square&logo=postgresql)](https://www.postgresql.org/)
 
 ## 应用架构
@@ -52,7 +52,7 @@ CMS 路由直接从根路径开始，例如 `/ai-rewrite/tasks`、`/posts/edit` 
 
 ### 环境要求
 
-- Bun 1.3.14（依赖安装、开发、构建、测试、迁移及生产 standalone 应用运行时）
+- Bun 1.4.2（由 `package.json` 的 `packageManager` 固定，覆盖依赖安装、开发、构建、测试、迁移及生产 standalone 应用运行时）
 - PostgreSQL 14+
 - macOS 或 Linux；涉及网页抓取时需满足 Puppeteer 的运行依赖
 
@@ -63,6 +63,7 @@ CMS 路由直接从根路径开始，例如 `/ai-rewrite/tasks`、`/posts/edit` 
 ```bash
 git clone git@github.com:tye-js/fwqgo.git
 cd fwqgo
+bun run verify:bun
 bun install --frozen-lockfile
 ```
 
@@ -274,13 +275,15 @@ SKIP_ENV_VALIDATION=1 bun run build
 
 `SKIP_ENV_VALIDATION=1` 只用于不发布产物的本地或无密钥 PR 验证构建，普通启动不会跳过校验。生产构建必须提供完整环境变量，不得设置该变量；`0`、`false` 等字符串也不会开启跳过。
 
+Bun 1.3.14 在 Next.js 16.3/Turbopack 构建退出阶段存在原生崩溃，项目固定使用包含修复的 Bun 1.4.2。原因、版本检查和锁文件迁移见 [Bun 构建崩溃修复](docs/bun-build-crash.md)。
+
 ## 部署
 
 默认部署方式是 GitHub Actions。用户手动提交并推送到 `main` 后，`.github/workflows/deploy.yml` 会构建并发布。普通的“部署”请求只表示准备并验证发布，不授权自动提交、推送或执行本地部署脚本。
 
 发布流程：
 
-1. 使用 Bun 1.3.14 安装依赖，执行 typecheck、lint、部署脚本和迁移完整性校验。
+1. 使用 `packageManager` 固定的 Bun 1.4.2，先验证版本，再安装依赖，执行 typecheck、lint、部署脚本和迁移完整性校验。
 2. 构建 Web/CMS standalone 产物并验证应用边界。
 3. 上传 release，保留共享生产环境文件和 `/var/www/uploads`，并安全合并缓存刷新与埋点连接配置。
 4. 可选执行数据库备份与 Drizzle 迁移。
@@ -290,7 +293,7 @@ SKIP_ENV_VALIDATION=1 bun run build
 
 ### 服务器前置条件
 
-- PM2、Nginx；每份 release 自带 Bun 1.3.14。Node.js 24 仅供 PM2 管理器自身使用，项目脚本与应用均由 Bun 运行。
+- PM2、Nginx；每份 release 自带 Bun 1.4.2。Node.js 24 仅供 PM2 管理器自身使用，项目脚本与应用均由 Bun 运行。
 - PostgreSQL 连接；执行迁移的 `DATABASE_URL` 需要迁移权限。
 - Nginx 将公开站转发到 `127.0.0.1:3000`，CMS 转发到 `127.0.0.1:3100`。
 - `/var/www/fwqgo/shared/.env.production` 保存运行时环境变量。
