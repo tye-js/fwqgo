@@ -163,10 +163,14 @@ binary as PM2 will use to launch the applications.
 - Public HTML cache headers must not apply to RSC, route-prefetch, segment-prefetch, or `_rsc` responses. Cloudflare Cache Rules must preserve the same boundary.
 - Deploy verification must confirm a recent sitemap article has visible prose in raw HTML, initial-head metadata, unique resume segment IDs, and no public HTML cache policy on RSC prefetches.
 
-## Current AI Rewrite Prompt Contract
+## Article Production Contract
 
-- Current configurable prompts are six: `basePrompt`, `metadataPrompt`, `englishContentPrompt`, `englishContinuationPrompt`, `englishMetadataPrompt`, and `providerCatalogDiscoveryPrompt`.
-- Chinese body rewriting is one-pass and source-anchored. It does not run independent fact extraction, fact checking, quality repair, or automatic rewrite retries.
+- Article collection only fetches and cleans source content. Never call text AI models or require an enabled rewrite configuration to collect an article.
+- Chinese and English article bodies, titles, slugs, descriptions, keywords and tags are entered manually. Collection tasks stop at `manual_required`; the task detail form saves the operator's input to a draft atomically.
+- Keep complete cleaned source snapshots separate from manually entered content. Do not truncate them to historical AI token/input limits.
+- New manual-task drafts use `/img/placeholders/fwq-placeholder.png` immediately. Saving must not enqueue image generation or require image credentials. Operators explicitly click the cover generation button to start a background task.
+- A manually started cover task replaces the default/empty cover on success; preserve a cover set manually while that job was running. Failed generation keeps the current cover. Revalidate public article caches after replacement.
+- Historical AI artifacts and configuration fields remain readable. Retrying old article, English or SEO tasks must use the manual workflow and must never resume text model calls.
 
 ## CMS Notes
 
@@ -175,7 +179,7 @@ binary as PM2 will use to launch the applications.
 - SEO management includes Chinese and English site SEO, category SEO, and tag SEO. Keep language filters and bilingual fields intact when changing these screens.
 - Chinese and English generated posts are separate articles in drafts and article lists. Preserve language filters in list/workbench UI.
 - `正文预览` is for the cleaned original body after scraping and cleaning. Do not overwrite it with rewritten output.
-- English article generation should translate from the rewritten Chinese article, while English SEO fields should be generated separately.
+- English editing tasks retain the Chinese article as a reference. English content and SEO are entered manually; existing English articles must not be overwritten automatically.
 - Long operational descriptions in CMS headers/workbenches should wrap instead of being line-clamped when they contain instructions.
 - Wide admin tables should use internal horizontal scrolling and stable min widths rather than squeezing columns on tablet or desktop.
 - Long SEO descriptions should use textareas, not single-line inputs.
@@ -190,8 +194,7 @@ binary as PM2 will use to launch the applications.
 
 ## AI And Image Notes
 
-- AI rewrite configuration Max Tokens should apply to both Chinese and English generation paths.
-- English generation should not be blocked or truncated by state from a previous Chinese rewrite process; treat long-running generation steps as separate tasks with clear readable errors.
+- Article collection and manual saves must work without text AI credentials. Keep model configuration for independent AI features and historical records separate from the manual article workflow.
 - AI cover generation should run in the background when used by automation, with operator-readable error messages.
 - Cover naming: Chinese article covers use a `-zh` suffix such as `some-slug-zh-cover.webp`; English article covers use an `-en` suffix such as `some-slug-en-cover.webp`.
 

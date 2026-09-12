@@ -5,6 +5,8 @@ import {
   normalizeArticleHtml,
 } from "@fwqgo/core/content";
 import { slugify } from "@fwqgo/core/utils";
+import { DEFAULT_ARTICLE_COVER } from "@fwqgo/core/article-cover";
+import { resolveEnglishTagIdentity } from "@fwqgo/core/taxonomy";
 import { isPublicArticleSourceRenderable } from "@fwqgo/core/public-content-policy";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { db } from "@fwqgo/db";
@@ -16,10 +18,14 @@ import {
   type OutboundLinkExecutor,
 } from "@/server/links/outbound-short-link";
 import { type CreatePostParams } from "@/types/post.types";
+import { PostEditValidationError } from "@/features/cms/lib/post-edit";
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 
 export interface CreatePostInput {
   title: string;
+  slug?: string;
+  language?: "zh" | "en";
+  translationSourcePostId?: number | null;
   description: string;
   content: string;
   imgUrl?: string;
@@ -104,39 +110,76 @@ function uniqueTagsBySlug<T extends { name: string }>(tagList: T[]) {
 
 async function getOrCreateTagByName(
   tx: PostRecordExecutor,
-  input: { name: string; slug: string },
+  input: { name: string; slug: string; language: "zh" | "en" },
 ) {
+  const english = input.language === "en";
+  const fields = {
+    id: tags.id,
+    name: tags.name,
+    slug: tags.slug,
+    enName: tags.enName,
+    enSlug: tags.enSlug,
+  };
+  const lookup = english
+    ? or(
+        eq(tags.enName, input.name),
+        eq(tags.enSlug, input.slug),
+        eq(tags.name, input.name),
+        eq(tags.slug, input.slug),
+      )
+    : or(eq(tags.slug, input.slug), eq(tags.name, input.name));
+  function localizedTag(tag: {
+    id: number;
+    name: string;
+    slug: string;
+    enName: string | null;
+    enSlug: string | null;
+  }) {
+    if (!english) return { id: tag.id, name: tag.name };
+    const identity = resolveEnglishTagIdentity(tag);
+    if (!identity) {
+      throw new PostEditValidationError(
+        `标签“${input.name}”缺少英文名称或 slug，请先在标签管理中补全`,
+      );
+    }
+    return { id: tag.id, name: identity.name };
+  }
   const [existingTag] = await tx
-    .select({ id: tags.id, name: tags.name })
+    .select(fields)
     .from(tags)
-    .where(or(eq(tags.slug, input.slug), eq(tags.name, input.name)))
+    .where(lookup)
     .limit(1);
 
   if (existingTag) {
-    return existingTag;
+    return localizedTag(existingTag);
   }
 
   const [insertedTag] = await tx
     .insert(tags)
-    .values({ name: input.name, slug: input.slug, indexable: false })
+    .values({
+      name: input.name,
+      slug: input.slug,
+      ...(english ? { enName: input.name, enSlug: input.slug } : {}),
+      indexable: false,
+    })
     .onConflictDoNothing()
-    .returning({ id: tags.id, name: tags.name });
+    .returning(fields);
 
   if (insertedTag) {
-    return insertedTag;
+    return localizedTag(insertedTag);
   }
 
   const [createdByConcurrentRequest] = await tx
-    .select({ id: tags.id, name: tags.name })
+    .select(fields)
     .from(tags)
-    .where(or(eq(tags.slug, input.slug), eq(tags.name, input.name)))
+    .where(lookup)
     .limit(1);
 
   if (!createdByConcurrentRequest) {
     throw new Error(`标签创建失败：${input.name}`);
   }
 
-  return createdByConcurrentRequest;
+  return localizedTag(createdByConcurrentRequest);
 }
 
 export async function createPostRecord(
@@ -184,6 +227,23 @@ export async function createPostRecordInTransaction(
   const inputTags = uniqueTagsBySlug("tags" in input ? input.tags : []);
   const normalizedTitle = postInput.title.trim();
   const normalizedDescription = postInput.description?.trim() ?? "";
+  const normalizedCover = postInput.imgUrl?.trim();
+  const language = postInput.language === "en" ? "en" : "zh";
+  const recommendedTagName = normalizeTagName(
+    postInput.recommendedTagName ?? "",
+  );
+
+  if (
+    language === "en" &&
+    [...inputTags.map((tag) => tag.name), recommendedTagName]
+      .filter(Boolean)
+      .some(
+        (name) =>
+          /\p{Script=Han}/u.test(name) || !/^[a-z0-9-]+$/.test(slugify(name)),
+      )
+  ) {
+    return { error: "英文文章只能使用英文标签，请填写英文标签名称" };
+  }
 
   if (!normalizedTitle) {
     return { error: "文章标题不能为空" };
@@ -203,9 +263,13 @@ export async function createPostRecordInTransaction(
     return { error: "分类不存在" };
   }
 
-  const slug = slugify(normalizedTitle);
+  const requestedSlug = postInput.slug?.trim();
+  const slug = requestedSlug?.length ? requestedSlug : slugify(normalizedTitle);
   if (!slug) {
     return { error: "文章标题需要包含中文、英文或数字" };
+  }
+  if (/[\s/?#\\\u0000-\u001f\u007f]/.test(slug) || slug.length > 320) {
+    return { error: "文章 slug 含有无效字符或长度超过限制" };
   }
 
   const normalizedContent = await prepareArticleContentForStorage(
@@ -239,11 +303,12 @@ export async function createPostRecordInTransaction(
   const tagRows = await Promise.all(
     inputTags.map(async (tag) => {
       const tagSlug = slugify(tag.name);
-      return getOrCreateTagByName(tx, { name: tag.name, slug: tagSlug });
+      return getOrCreateTagByName(tx, {
+        name: tag.name,
+        slug: tagSlug,
+        language,
+      });
     }),
-  );
-  const recommendedTagName = normalizeTagName(
-    postInput.recommendedTagName ?? "",
   );
   const recommendedTagSlug = recommendedTagName
     ? slugify(recommendedTagName)
@@ -251,16 +316,10 @@ export async function createPostRecordInTransaction(
   const recommendedTag =
     recommendedTagName && recommendedTagSlug
       ? (tagRows.find((tag) => tag.name === recommendedTagName) ??
-        (
-          await tx
-            .select({ id: tags.id, name: tags.name })
-            .from(tags)
-            .where(eq(tags.slug, recommendedTagSlug))
-            .limit(1)
-        )[0] ??
         (await getOrCreateTagByName(tx, {
           name: recommendedTagName,
           slug: recommendedTagSlug,
+          language,
         })))
       : null;
 
@@ -272,6 +331,7 @@ export async function createPostRecordInTransaction(
       description: normalizedDescription,
       slug,
       content: normalizedContent,
+      imgUrl: normalizedCover?.length ? normalizedCover : DEFAULT_ARTICLE_COVER,
       keywords: normalizeSeoKeywords(postInput.keywords),
       recommendedTagName: recommendedTag?.name ?? null,
       recommendedTagId: recommendedTag?.id ?? null,
@@ -287,7 +347,7 @@ export async function createPostRecordInTransaction(
 
   if (post && tagRows.length > 0) {
     await tx.insert(postTags).values(
-      tagRows.map((tag) => ({
+      [...new Map(tagRows.map((tag) => [tag.id, tag])).values()].map((tag) => ({
         postId: post.id,
         tagId: tag.id,
       })),

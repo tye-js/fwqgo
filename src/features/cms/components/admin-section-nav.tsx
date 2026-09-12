@@ -58,6 +58,6 @@ export const seoManagementNavItems: AdminSectionNavItem[] = [
 ];
 
 export const modelSettingsNavItems: AdminSectionNavItem[] = [
-  { label: "AI 改写", href: "/collect/ai-rewrite" },
+  { label: "AI 服务", href: "/collect/ai-rewrite" },
   { label: "生图接口", href: "/settings/image-generation" },
 ];

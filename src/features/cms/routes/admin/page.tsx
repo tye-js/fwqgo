@@ -448,7 +448,7 @@ export default async function Page() {
 
         <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
           <QueueItem
-            title="AI 改写需处理"
+            title="文章采集需处理"
             count={taskOverview.ai.attention}
             detail={`${taskOverview.ai.manualRequired} 个人工确认 · ${taskOverview.ai.failed} 个失败`}
             href={aiAttentionHref}
@@ -529,7 +529,7 @@ export default async function Page() {
           description="AI、封面、供应商采集和后台 worker 的累计状态。"
         >
           <TaskHealthRow
-            title="AI 改写"
+            title="文章采集"
             summary={taskOverview.ai}
             href="/ai-tasks?type=ai"
             icon={Bot}

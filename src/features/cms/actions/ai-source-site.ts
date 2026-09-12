@@ -4,7 +4,6 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { isPublicHttpUrl } from "@fwqgo/core/network-url";
 import { getAiSourceSiteJobKey } from "@fwqgo/core/ai-source-site-job-key";
@@ -85,18 +84,6 @@ async function assertCategoryExists(categoryId: number) {
   }
 }
 
-async function assertRewriteStyleAvailable(rewriteStyleId?: number | null) {
-  const style = await getActiveAiRewriteConfig(rewriteStyleId ?? undefined);
-
-  if (!style) {
-    throw new Error(
-      rewriteStyleId
-        ? "AI 改写配置不存在或已停用"
-        : "当前没有已启用的默认 AI 改写配置",
-    );
-  }
-}
-
 export async function getAiSourceSiteList() {
   await requireAdminSession();
 
@@ -136,7 +123,6 @@ export async function createAiSourceSiteAction(formData: FormData) {
     const input = parseSourceSiteFormData(formData);
 
     await assertCategoryExists(input.categoryId);
-    await assertRewriteStyleAvailable(input.rewriteStyleId);
 
     await db.insert(aiSourceSites).values({
       ...input,
@@ -159,7 +145,6 @@ export async function updateAiSourceSiteAction(id: number, formData: FormData) {
     const input = parseSourceSiteFormData(formData);
 
     await assertCategoryExists(input.categoryId);
-    await assertRewriteStyleAvailable(input.rewriteStyleId);
 
     const now = new Date();
     const updated = await db.transaction(async (tx) => {
@@ -299,7 +284,6 @@ export async function runAiSourceSiteAction(id: number) {
     }
 
     await assertCategoryExists(site.categoryId);
-    await assertRewriteStyleAvailable(site.rewriteStyleId);
 
     const queuedAt = new Date();
     const [queuedSite] = await db

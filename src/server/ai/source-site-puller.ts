@@ -3,8 +3,6 @@ import type { Element } from "domhandler";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { enqueueAiRewriteTask } from "@/server/ai/rewrite-task-runner";
-import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
-import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
 import {
   fetchPublicHttpUrl,
   parsePublicHttpUrl,
@@ -359,18 +357,6 @@ function normalizePullLimit(limit: number) {
 }
 
 export async function pullSourceSiteToAiTasks(input: SourceSitePullInput) {
-  const rewriteConfig = await getActiveAiRewriteConfig(
-    input.rewriteStyleId ?? undefined,
-  );
-  if (!rewriteConfig) {
-    throw new Error(
-      input.rewriteStyleId
-        ? "来源站指定的 AI 改写配置不存在或已停用"
-        : "当前没有已启用的 AI 改写配置",
-    );
-  }
-  const imageConfig = await getActiveImageGenerationConfig();
-
   const limit = normalizePullLimit(input.limit);
   const discoveredUrls = [
     ...new Set(await discoverSourceSiteUrls(input)),
@@ -432,7 +418,7 @@ export async function pullSourceSiteToAiTasks(input: SourceSitePullInput) {
           materialType: "url",
           sourceUrl,
           categoryId: input.categoryId,
-          rewriteStyleId: rewriteConfig.id,
+          rewriteStyleId: null,
           status: "queued",
           metadata: JSON.stringify({
             sourceSiteUrl: input.siteUrl,
@@ -451,15 +437,7 @@ export async function pullSourceSiteToAiTasks(input: SourceSitePullInput) {
           sourceMaterialId: material.id,
           sourceUrl,
           categoryId: input.categoryId,
-          rewriteStyleId: rewriteConfig.id,
-          rewriteConfigName: rewriteConfig.name,
-          rewriteProvider: rewriteConfig.provider,
-          rewriteModel: rewriteConfig.model,
-          rewriteMaxTokens: rewriteConfig.maxTokens,
-          imageConfigId: imageConfig?.id ?? null,
-          imageConfigName: imageConfig?.name ?? null,
-          imageProvider: imageConfig?.provider ?? null,
-          imageModel: imageConfig?.model ?? null,
+          rewriteStyleId: null,
           status: "pending",
           progress: 0,
           currentStep: "来源站发现，等待处理",

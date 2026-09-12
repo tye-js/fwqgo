@@ -31,6 +31,10 @@ import {
   ImageGenerationRateLimitError,
 } from "@fwqgo/core/image-generation-endpoint";
 import { structuredLog } from "@fwqgo/core/structured-log";
+import {
+  DEFAULT_ARTICLE_COVER,
+  isDefaultArticleCover,
+} from "@fwqgo/core/article-cover";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
@@ -49,17 +53,10 @@ import {
 } from "@/server/images/generation-config";
 
 export type CoverTaskStatus =
-  | "pending"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "uncertain"
-  | "cancelled";
+  "pending" | "running" | "succeeded" | "failed" | "uncertain" | "cancelled";
 
 export type ImageGenerationTaskType =
-  | "article_cover"
-  | "standalone_cover"
-  | "custom";
+  "article_cover" | "standalone_cover" | "custom";
 
 type CoverTaskInputSnapshot = {
   title: string;
@@ -71,6 +68,7 @@ type CoverTaskInputSnapshot = {
   knownBrands?: string[];
   visualBrief?: CoverVisualBrief;
   visualBriefOverrides?: CoverVisualBriefOverrides | null;
+  replaceDefaultCoverOnly?: boolean;
 };
 
 type CustomTaskInputSnapshot = {
@@ -196,6 +194,7 @@ export async function enqueueArticleCoverGenerationTask(
         content: posts.content,
         slug: posts.slug,
         language: posts.language,
+        imgUrl: posts.imgUrl,
       })
       .from(posts)
       .where(eq(posts.id, input.postId))
@@ -215,6 +214,7 @@ export async function enqueueArticleCoverGenerationTask(
     content: post.content,
     fileSlug: post.slug,
     language: post.language === "en" ? "en" : "zh",
+    replaceDefaultCoverOnly: isDefaultArticleCover(post.imgUrl),
     knownBrands: brandRows.flatMap((row) => [
       row.name,
       ...(row.aliases?.split(/[,，\n]/) ?? []),
@@ -754,60 +754,61 @@ async function processCoverGenerationTask(
       }
 
       try {
-      const callbacks = {
-        onPrompt: async (prompt: string) => {
-          activeTask = await persistCoverTaskPrompt(activeTask, prompt);
-        },
-        onRequestStarted: async () => {
-          activeTask = await persistCoverTaskCheckpoint(activeTask, {
-            requestStage: "request_started",
+        const callbacks = {
+          onPrompt: async (prompt: string) => {
+            activeTask = await persistCoverTaskPrompt(activeTask, prompt);
+          },
+          onRequestStarted: async () => {
+            activeTask = await persistCoverTaskCheckpoint(activeTask, {
+              requestStage: "request_started",
+            });
+          },
+          onResponseReceived: async () => {
+            activeTask = await persistCoverTaskCheckpoint(activeTask, {
+              requestStage: "response_received",
+            });
+          },
+          onAssetPersisted: async (asset: { id: number; path: string }) => {
+            activeTask = await persistCoverTaskCheckpoint(activeTask, {
+              requestStage: "asset_persisted",
+              assetId: asset.id,
+              outputUrl: asset.path,
+            });
+          },
+        };
+        if (taskType === "custom") {
+          const snapshot = activeTask.inputSnapshot as CustomTaskInputSnapshot;
+          if (!snapshot.prompt?.trim())
+            throw new Error("自定义生图任务缺少 Prompt");
+          generated = await generateCustomImage({
+            ...snapshot,
+            configId: config.id,
+            uploadedBy: activeTask.createdBy,
+            allowFailover: false,
+            signal,
+            ...callbacks,
           });
-        },
-        onResponseReceived: async () => {
-          activeTask = await persistCoverTaskCheckpoint(activeTask, {
-            requestStage: "response_received",
+        } else {
+          const snapshot = activeTask.inputSnapshot as CoverTaskInputSnapshot;
+          const coverInput: CoverTaskInputSnapshot = snapshot.title?.trim()
+            ? snapshot
+            : {
+                title: post?.title ?? activeTask.title,
+                description: post?.description,
+                keywords: post?.keywords,
+                content: post?.content,
+                fileSlug: post?.slug,
+                language: post?.language === "en" ? "en" : "zh",
+              };
+          generated = await generateArticleCoverImage({
+            ...coverInput,
+            configId: config.id,
+            uploadedBy: activeTask.createdBy,
+            signal,
+            ...callbacks,
           });
-        },
-        onAssetPersisted: async (asset: { id: number; path: string }) => {
-          activeTask = await persistCoverTaskCheckpoint(activeTask, {
-            requestStage: "asset_persisted",
-            assetId: asset.id,
-            outputUrl: asset.path,
-          });
-        },
-      };
-      if (taskType === "custom") {
-        const snapshot = activeTask.inputSnapshot as CustomTaskInputSnapshot;
-        if (!snapshot.prompt?.trim()) throw new Error("自定义生图任务缺少 Prompt");
-        generated = await generateCustomImage({
-          ...snapshot,
-          configId: config.id,
-          uploadedBy: activeTask.createdBy,
-          allowFailover: false,
-          signal,
-          ...callbacks,
-        });
-      } else {
-        const snapshot = activeTask.inputSnapshot as CoverTaskInputSnapshot;
-        const coverInput: CoverTaskInputSnapshot = snapshot.title?.trim()
-          ? snapshot
-          : {
-              title: post?.title ?? activeTask.title,
-              description: post?.description,
-              keywords: post?.keywords,
-              content: post?.content,
-              fileSlug: post?.slug,
-              language: post?.language === "en" ? "en" : "zh",
-            };
-        generated = await generateArticleCoverImage({
-          ...coverInput,
-          configId: config.id,
-          uploadedBy: activeTask.createdBy,
-          signal,
-          ...callbacks,
-        });
-      }
-      break;
+        }
+        break;
       } catch (error) {
         const hasFallback = index < candidates.length - 1;
         if (!hasFallback || !canFailoverImageGenerationError(error)) {
@@ -842,7 +843,21 @@ async function processCoverGenerationTask(
       imgUrl: generated.asset.path,
       updatedAt: new Date(),
     })
-    .where(eq(posts.id, post.id))
+    .where(
+      and(
+        eq(posts.id, post.id),
+        (activeTask.inputSnapshot as CoverTaskInputSnapshot)
+          .replaceDefaultCoverOnly
+          ? or(
+              eq(posts.imgUrl, DEFAULT_ARTICLE_COVER),
+              eq(posts.imgUrl, ""),
+              isNull(posts.imgUrl),
+              // A retry may need to finish references/cache after the cover was written.
+              eq(posts.imgUrl, generated.asset.path),
+            )
+          : undefined,
+      ),
+    )
     .returning({
       id: posts.id,
       slug: posts.slug,
@@ -850,6 +865,13 @@ async function processCoverGenerationTask(
     });
 
   if (!updatedPost) {
+    if (
+      (activeTask.inputSnapshot as CoverTaskInputSnapshot)
+        .replaceDefaultCoverOnly
+    ) {
+      // The generated asset stays available, but an editor's cover takes priority.
+      return generated;
+    }
     throw new Error("封面写入文章失败");
   }
 
@@ -1080,10 +1102,7 @@ async function runCoverGenerationWorker() {
               and(
                 eq(imageCoverGenerationTasks.id, task.id),
                 eq(imageCoverGenerationTasks.status, "running"),
-                eq(
-                  imageCoverGenerationTasks.leaseOwner,
-                  task.leaseOwner ?? "",
-                ),
+                eq(imageCoverGenerationTasks.leaseOwner, task.leaseOwner ?? ""),
               ),
             )
             .returning({ id: imageCoverGenerationTasks.id });

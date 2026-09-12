@@ -7,14 +7,8 @@ import {
   scrapeArticleWithOptions,
   type ScrapedArticle,
 } from "@/server/scrape/article-scraper";
-import { getAiRewriteContentLimit } from "@fwqgo/ai/article-rewriter";
 import { reserveBoundedMapCapacity } from "@fwqgo/core/bounded-map";
 import { isPublicHttpUrl } from "@fwqgo/core/network-url";
-import { formPostgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
-import {
-  getActiveAiRewriteConfig,
-  getAiRewriteConfigs,
-} from "@fwqgo/ai/rewrite-config";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import {
   createAdminActionError,
@@ -28,7 +22,6 @@ const urlSchema = z.object({
     message:
       "抓取 URL 只允许公网 http/https 地址，不能使用 localhost 或内网地址",
   }),
-  rewriteStyleId: formPostgresIntegerIdSchema.optional(),
 });
 const SCRAPE_ACTION_TIMEOUT_MS = 330_000;
 
@@ -49,7 +42,6 @@ type ScrapeJob = {
   id: string;
   status: ScrapeJobStatus;
   url: string;
-  rewriteStyleId?: number;
   data: ScrapedArticle | null;
   error: string | null;
   actionError?: AdminActionError;
@@ -77,7 +69,7 @@ function withTimeout<T>(promise: Promise<T>, message: string) {
 
 function createScrapeFailure(
   message: string,
-  suggestion = "请检查来源 URL 是否可访问，或改用 AI 任务中心后台生成文章。",
+  suggestion = "请检查来源 URL 是否可访问，或改用文章生产台准备素材。",
 ): ScrapeActionState {
   return {
     success: false,
@@ -105,16 +97,9 @@ async function runScrapeJob(jobId: string) {
   });
 
   try {
-    const config = await getActiveAiRewriteConfig(job.rewriteStyleId);
     const article = await withTimeout(
-      scrapeArticleWithOptions({
-        url: job.url,
-        rewriteStyleId: job.rewriteStyleId,
-        aiInputMaxLength: config
-          ? getAiRewriteContentLimit(config.maxTokens)
-          : undefined,
-      }),
-      "抓取改写超时，请稍后重试或换一个内容更短的来源",
+      scrapeArticleWithOptions({ url: job.url }),
+      "抓取超时，请稍后重试或检查来源网页",
     );
 
     scrapeJobs.set(jobId, {
@@ -134,8 +119,7 @@ async function runScrapeJob(jobId: string) {
       actionError: createAdminActionError({
         title: "抓取失败",
         message,
-        suggestion:
-          "请检查来源 URL 是否可访问，或改用 AI 任务中心后台生成文章。",
+        suggestion: "请检查来源 URL 是否可访问，或改用文章生产台准备素材。",
       }),
       updatedAt: Date.now(),
     });
@@ -149,15 +133,7 @@ export async function scrapeArticleAction(
   try {
     await requireAdminSession();
 
-    const urlString = formData.get("url") as string;
-    const rewriteStyleIdString = formData.get("rewriteStyleId");
-    const { url, rewriteStyleId } = urlSchema.parse({
-      url: urlString,
-      rewriteStyleId:
-        typeof rewriteStyleIdString === "string" && rewriteStyleIdString
-          ? rewriteStyleIdString
-          : undefined,
-    });
+    const { url } = urlSchema.parse({ url: formData.get("url") });
     const hasCapacity = reserveBoundedMapCapacity(scrapeJobs, {
       maxEntries: MAX_SCRAPE_JOBS,
       isEvictable: (job) => job.status === "success" || job.status === "failed",
@@ -175,7 +151,6 @@ export async function scrapeArticleAction(
       id: jobId,
       status: "queued",
       url,
-      rewriteStyleId,
       data: null,
       error: null,
       createdAt: Date.now(),
@@ -185,7 +160,7 @@ export async function scrapeArticleAction(
     try {
       await enqueueAdminBackgroundJob({
         key: `scrape-article:${jobId}`,
-        label: `抓取并改写文章：${url}`,
+        label: `抓取并清洗文章：${url}`,
         maxAttempts: 1,
         run: () => runScrapeJob(jobId),
       });
@@ -244,24 +219,7 @@ export async function getScrapeArticleJobStatusAction(
       job.status === "success"
         ? "文章抓取完成"
         : job.status === "running"
-          ? "正在后台抓取并改写文章"
+          ? "正在后台抓取并清洗文章"
           : "抓取任务排队中",
   };
-}
-
-export async function getAiRewriteStyleOptions() {
-  await requireAdminSession();
-
-  const configs = await getAiRewriteConfigs();
-  return configs
-    .filter((config) => config.enabled)
-    .map((config) => ({
-      id: config.id,
-      name: config.name,
-      provider: config.provider,
-      model: config.model,
-      styleName: config.styleName,
-      isDefault: config.isDefault,
-      hasApiKey: config.hasApiKey,
-    }));
 }

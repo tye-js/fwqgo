@@ -14,17 +14,9 @@ import {
   requirePublicHttpUrl,
 } from "@fwqgo/core/network-url";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
-import type {
-  AiRewriteAuditEvent,
-  AiRequestStage,
-  ArticleRewriteProgress,
-  ArticleRewriteQuality,
-} from "@fwqgo/ai/article-rewriter";
-import { AiRequestConnectionInterruptedError } from "@fwqgo/ai/article-rewriter";
-import RewriteArticle from "@/langchain/rewrite-article";
+import type { ArticleRewriteQuality } from "@fwqgo/ai/article-rewriter";
 import {
   mergeAffiliateReports,
-  repairMarkdownAffiliateLinks,
   rewriteAffiliateLinks,
   type AffiliateRewriteReport,
 } from "@/server/links/affiliate-link-rewriter";
@@ -70,31 +62,10 @@ export interface ArticleProcessingSnapshot {
   diagnostics: ScrapeDiagnostics;
 }
 
-export type ArticleProcessingProgress =
-  | {
-      stage: "content_prepared";
-      snapshot: ArticleProcessingSnapshot;
-    }
-  | {
-      stage: "ai_progress";
-      snapshot: ArticleProcessingSnapshot;
-      ai: ArticleRewriteProgress;
-    }
-  | {
-      stage: "ai_failed";
-      snapshot: ArticleProcessingSnapshot;
-      error: string;
-    }
-  | {
-      stage: "ai_audit";
-      snapshot: ArticleProcessingSnapshot;
-      audit: AiRewriteAuditEvent;
-    }
-  | {
-      stage: "ai_request_stage";
-      snapshot: ArticleProcessingSnapshot;
-      requestStage: AiRequestStage;
-    };
+export type ArticleProcessingProgress = {
+  stage: "content_prepared";
+  snapshot: ArticleProcessingSnapshot;
+};
 
 type SiteRule = {
   host: string;
@@ -122,7 +93,6 @@ const browserHeaders = {
 };
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_SCRAPED_HTML_BYTES = 8 * 1024 * 1024;
-const MAX_AI_INPUT_MARKDOWN_LENGTH = 14_000;
 
 const commonRemoveSelectors = [
   "script",
@@ -553,12 +523,7 @@ function shouldResolveRedirectHref(input: {
 async function scrapeByRule(input: {
   url: string;
   rule: SiteRule;
-  rewriteStyleId?: number;
-  allowAiFallback?: boolean;
-  aiInputMaxLength?: number;
-  categoryName?: string | null;
   onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>;
-  onRequestStage?: (stage: AiRequestStage) => void | Promise<void>;
 }) {
   const parsedUrl = requirePublicHttpUrl(input.url, "抓取 URL");
   const diagnostics = createEmptyDiagnostics({
@@ -652,17 +617,13 @@ async function scrapeByRule(input: {
     diagnostics.affiliateReport = affiliateReport;
 
     let rawHtml = $content.html() ?? "";
-    let preparedAiInput = htmlToArticleMarkdown(rawHtml, {
-      maxLength: input.aiInputMaxLength ?? MAX_AI_INPUT_MARKDOWN_LENGTH,
-    });
-    if (!preparedAiInput.markdown.trim()) {
+    let preparedContent = htmlToArticleMarkdown(rawHtml);
+    if (!preparedContent.markdown.trim()) {
       const visibleText = $content.root().text().replace(/\s+/g, " ").trim();
       if (visibleText) {
         rawHtml = normalizeArticleHtml(textToHtml(visibleText));
         $content = cheerio.load(rawHtml, null, false);
-        preparedAiInput = htmlToArticleMarkdown(rawHtml, {
-          maxLength: input.aiInputMaxLength ?? MAX_AI_INPUT_MARKDOWN_LENGTH,
-        });
+        preparedContent = htmlToArticleMarkdown(rawHtml);
         diagnostics.warnings.push(
           "正文结构无法转换为 Markdown，已使用可读纯文本回退",
         );
@@ -680,8 +641,6 @@ async function scrapeByRule(input: {
     diagnostics.scrapedDescription = scrapedDescription;
     diagnostics.contentLength = rawHtml.length;
     diagnostics.cleanedHtmlLength = rawHtml.length;
-    diagnostics.aiInputLength = preparedAiInput.markdown.length;
-    diagnostics.aiInputTruncated = preparedAiInput.truncated;
     const progressSnapshot = (): ArticleProcessingSnapshot => ({
       title: scrapedTitle,
       description: scrapedDescription,
@@ -689,107 +648,20 @@ async function scrapeByRule(input: {
       diagnostics,
     });
 
-    if (preparedAiInput.truncated) {
-      diagnostics.warnings.push(
-        "AI Markdown 输入过长，已按正文结构截取前半部分核心内容改写",
-      );
-    }
-
     await input.onProgress?.({
       stage: "content_prepared",
       snapshot: progressSnapshot(),
     });
 
-    if (!preparedAiInput.markdown.trim()) {
+    if (!preparedContent.markdown.trim()) {
       throw new Error(
         "正文提取失败：未找到可读正文，请检查正文选择器、页面访问权限或登录状态",
       );
     }
 
-    if (preparedAiInput.markdown.trim()) {
-      try {
-        const rewritten = await RewriteArticle(preparedAiInput.markdown, {
-          styleId: input.rewriteStyleId,
-          sourceTitle: scrapedTitle,
-          categoryName: input.categoryName,
-          onProgress: async (ai) => {
-            await input.onProgress?.({
-              stage: "ai_progress",
-              snapshot: progressSnapshot(),
-              ai,
-            });
-          },
-          onAudit: async (audit) => {
-            await input.onProgress?.({
-              stage: "ai_audit",
-              snapshot: progressSnapshot(),
-              audit,
-            });
-          },
-          onRequestStage: async (requestStage) => {
-            await input.onProgress?.({
-              stage: "ai_request_stage",
-              snapshot: progressSnapshot(),
-              requestStage,
-            });
-            await input.onRequestStage?.(requestStage);
-          },
-        });
-        const repairedMarkdown = repairMarkdownAffiliateLinks(
-          rewritten.markdownContent,
-          affiliateReport,
-        );
-        const finalMarkdown =
-          repairedMarkdown.trim() || preparedAiInput.markdown;
-        if (!repairedMarkdown.trim()) {
-          diagnostics.warnings.push("AI 返回空正文，已回退到清洗后的原始正文");
-        }
-        diagnostics.usedAiRewrite = true;
-        diagnostics.rewriteOutputLength = finalMarkdown.length;
-        diagnostics.rewriteQuality = rewritten.quality;
-        return createArticle({
-          htmlContent: finalMarkdown,
-          cleanedHtmlContent: rawHtml,
-          title: rewritten.title,
-          description: rewritten.description,
-          keywords: rewritten.keywords,
-          tagsName: rewritten.tagsName,
-          recommendTagName: rewritten.recommendTagName,
-          diagnostics,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "AI 改写失败";
-        console.error("AI rewrite failed:", error);
-        diagnostics.usedAiRewrite = false;
-        diagnostics.aiRewriteError = message;
-        await input.onProgress?.({
-          stage: "ai_failed",
-          snapshot: progressSnapshot(),
-          error: message,
-        });
-
-        if (error instanceof AiRequestConnectionInterruptedError) {
-          // An interrupted request may already have been accepted upstream.
-          // Never hide that uncertain result behind an original-content fallback.
-          throw error;
-        }
-
-        if (!input.allowAiFallback) {
-          // Preserve the typed interruption error so the durable AI task can
-          // enter manual-required instead of treating an unknown upstream
-          // result as an ordinary retryable failure.
-          throw error;
-        }
-
-        diagnostics.warnings.push(
-          `AI 改写失败，已回退为原始采集内容：${message}`,
-        );
-      }
-    }
-
     return createArticle({
       title: scrapedTitle,
-      htmlContent: rawHtml,
+      htmlContent: preparedContent.markdown,
       cleanedHtmlContent: rawHtml,
       description: scrapedDescription,
       tagsName: collectTags(page$, input.rule.tagSelector),
@@ -810,23 +682,13 @@ export async function scrapeArticle(url: string) {
 
 export async function scrapeArticleWithOptions(input: {
   url: string;
-  rewriteStyleId?: number;
-  allowAiFallback?: boolean;
-  aiInputMaxLength?: number;
-  categoryName?: string | null;
   onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>;
-  onRequestStage?: (stage: AiRequestStage) => void | Promise<void>;
 }) {
   const parsedUrl = requirePublicHttpUrl(input.url, "抓取 URL");
   const rule = findRule(parsedUrl);
   return scrapeByRule({
     url: input.url,
     rule,
-    rewriteStyleId: input.rewriteStyleId,
-    allowAiFallback: input.allowAiFallback,
-    aiInputMaxLength: input.aiInputMaxLength,
-    categoryName: input.categoryName,
     onProgress: input.onProgress,
-    onRequestStage: input.onRequestStage,
   });
 }

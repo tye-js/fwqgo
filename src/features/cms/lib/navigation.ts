@@ -33,7 +33,7 @@ export const cmsNavigation: CmsNavigationItem[] = [
     url: "/ai-rewrite/tasks",
     icon: Bot,
     items: [
-      { title: "AI 生产台", url: "/ai-rewrite/tasks" },
+      { title: "文章生产台", url: "/ai-rewrite/tasks" },
       {
         title: "文章库",
         url: "/posts/edit",
@@ -132,7 +132,7 @@ export const cmsBreadcrumbSegmentTitles: Record<string, string> = {
   sources: "来源工作台",
   "server-sizing": "配置规则工作台",
   "network-lines": "线路经验工作台",
-  tasks: "AI 生产台",
+  tasks: "文章生产台",
   collect: "运营",
   "aff-man": "供应商档案",
   "short-links": "短链跳转",
@@ -158,7 +158,7 @@ export const cmsBreadcrumbSegmentTitles: Record<string, string> = {
 };
 
 export const cmsBreadcrumbPathTitles: Record<string, string> = {
-  "/collect/ai-rewrite": "AI 改写配置",
+  "/collect/ai-rewrite": "AI 服务配置",
 };
 
 export const cmsBreadcrumbPathHrefs: Record<string, string> = {

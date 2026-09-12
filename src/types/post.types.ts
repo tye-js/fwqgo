@@ -72,7 +72,8 @@ export type CreatePostParams = {
     | "categoryId"
     | "recommendedTagName"
     | "keywords"
-  >;
+  > &
+    Partial<Pick<Post, "slug" | "language" | "translationSourcePostId">>;
   tags: TagName[];
 };
 

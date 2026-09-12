@@ -185,7 +185,7 @@ async function verifyAiRewriteInternalLinkScope() {
       "utf8",
     ),
     readFile(
-      new URL("../src/server/ai/rewrite-task-runner.ts", import.meta.url),
+      new URL("../src/server/posts/manual-article-task.ts", import.meta.url),
       "utf8",
     ),
   ]);
@@ -198,7 +198,7 @@ async function verifyAiRewriteInternalLinkScope() {
   );
   assert.equal(
     (rewriteRunner.match(/includeKnowledge: false/g) ?? []).length,
-    3,
+    1,
   );
   assert.doesNotMatch(
     rewriteRunner,

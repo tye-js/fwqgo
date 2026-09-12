@@ -1,3 +1,6 @@
+import { contentToArticleMarkdown } from "@fwqgo/core/content";
+import { isDefaultArticleCover } from "@fwqgo/core/article-cover";
+import { ManualArticleTaskEditor } from "@/features/cms/components/manual-article-task-editor";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -48,14 +51,6 @@ const statusLabels: Record<string, string> = {
   cancelled: "已取消",
 };
 
-const requestStageLabels: Record<string, string> = {
-  queued: "等待请求",
-  request_started: "请求已发出",
-  response_received: "响应已收到",
-  checkpointed: "结果已保存",
-  manual_required: "需人工确认",
-};
-
 const stepStatusLabels = {
   pending: "等待中",
   running: "处理中",
@@ -78,6 +73,9 @@ const stepStatusVariants: Record<
 };
 
 type StepStatus = keyof typeof stepStatusLabels;
+type DbTaskStep = NonNullable<
+  Awaited<ReturnType<typeof getAiRewriteTaskDetail>>
+>["steps"][number];
 
 type TaskStep = {
   key?: string;
@@ -419,21 +417,14 @@ function sourceTypeLabel(value: string) {
     text: "手动文本",
     email: "邮件素材",
     file: "文件导入",
-    english: "英文 SEO 生成",
-    seo: "文章 SEO 更新",
+    english: "英文人工编辑",
+    seo: "人工 SEO 编辑",
   };
 
   return labels[value] ?? value;
 }
 
-function buildTaskSteps({
-  status,
-  sourceType,
-  currentStep,
-  postId,
-  scrapedHtml,
-  diagnostics,
-}: {
+function buildTaskSteps(input: {
   status: string;
   sourceType: string;
   currentStep: string | null;
@@ -441,111 +432,32 @@ function buildTaskSteps({
   scrapedHtml: string | null;
   diagnostics: ScrapeDiagnostics | null;
 }): TaskStep[] {
-  const isEnglishTask = sourceType === "english";
-  const hasDiagnostics = Boolean(diagnostics);
-  const hasCleanHtml = Boolean(scrapedHtml);
-  const report = diagnostics?.affiliateReport;
-  const hasInvalidLinks = (report?.invalidLinks.length ?? 0) > 0;
-  const isFailed = status === "failed";
-  const isRunning = status === "running";
-
   return [
     {
-      name: isEnglishTask ? "读取中文草稿" : "抓取素材",
-      status: hasDiagnostics
+      name: input.sourceType === "english" ? "读取中文来源" : "读取并清洗素材",
+      status: input.scrapedHtml
         ? "success"
-        : isFailed
-          ? "failed"
-          : isRunning
-            ? "running"
-            : "pending",
-      description: hasDiagnostics
-        ? `使用 ${diagnostics?.strategy ?? "未知"} 策略，正文 ${diagnostics?.contentLength ?? 0} 字`
-        : isEnglishTask
-          ? (currentStep ?? "等待读取改写后的中文正文")
-          : (currentStep ?? "等待抓取来源内容"),
-    },
-    {
-      name: isEnglishTask ? "准备翻译输入" : "清洗正文",
-      status: hasCleanHtml
-        ? "success"
-        : isFailed
-          ? "failed"
-          : hasDiagnostics
-            ? "running"
-            : "pending",
-      description: hasCleanHtml
-        ? isEnglishTask
-          ? `中文改写正文 ${scrapedHtml?.length ?? 0} 字符，等待翻译为英文正文`
-          : `清洗后正文 ${diagnostics?.cleanedHtmlLength ?? scrapedHtml?.length ?? 0} 字符，AI Markdown 输入 ${diagnostics?.aiInputLength ?? "-"} 字符`
-        : isEnglishTask
-          ? "等待中文改写正文快照"
-          : "等待正文清洗结果",
-    },
-    {
-      name: "识别商户与返利链接",
-      status: report
-        ? hasInvalidLinks
-          ? "manual_required"
-          : "success"
-        : hasDiagnostics
-          ? "skipped"
+        : input.status === "running"
+          ? "running"
           : "pending",
-      description: report
-        ? `命中 ${report.matchedLinks.length} 条，未命中 ${report.unmatchedLinks.length} 条（保留原链），无效 ${report.invalidLinks.length} 条`
-        : isEnglishTask
-          ? "英文任务复用中文草稿中的链接，不重复做采集诊断"
-          : "暂无返利链接诊断",
+      description: "保留原始素材，供人工编辑参考",
     },
     {
-      name: isEnglishTask ? "翻译英文正文" : "AI 改写文章",
-      status: diagnostics?.usedAiRewrite
+      name: "人工填写正文与 SEO",
+      status: input.postId
         ? "success"
-        : diagnostics?.aiRewriteError
-          ? "failed"
-          : hasDiagnostics
-            ? "skipped"
-            : "pending",
-      description: diagnostics?.usedAiRewrite
-        ? diagnostics.rewriteQuality
-          ? `输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符，原创度 ${diagnostics.rewriteQuality.originalityScore}%，原文约束模式（不执行事实核查），共 ${diagnostics.rewriteQuality.attempts} 轮`
-          : `输入 ${diagnostics.aiInputLength ?? "-"} 字符，输出 ${diagnostics.rewriteOutputLength ?? "-"} 字符`
-        : isEnglishTask
-          ? "等待从中文改写正文翻译英文正文，SEO 字段会单独生成"
-          : (diagnostics?.aiRewriteError ?? "等待 AI 改写"),
-    },
-    {
-      name: "保存草稿",
-      status: postId
-        ? "success"
-        : isFailed
-          ? "failed"
-          : isRunning
-            ? "running"
-            : "pending",
-      description: postId
-        ? `已生成草稿文章 #${postId}`
-        : (currentStep ?? "成功后才会写入草稿"),
-    },
-    {
-      name: "等待人工审核",
-      status: postId
-        ? hasInvalidLinks
+        : input.status === "manual_required"
           ? "manual_required"
-          : "success"
-        : "pending",
-      description: hasInvalidLinks
-        ? "存在无效链接，发布前需要修复或人工确认"
-        : postId
-          ? "可以进入文章编辑页继续校对并发布；未命中外链会保留原 URL"
-          : "草稿生成后进入人工审核",
+          : "pending",
+      description: "填写最终正文、标题、slug、摘要、关键词和标签",
+    },
+    {
+      name: "保存草稿与默认封面",
+      status: input.postId ? "success" : "pending",
+      description: "人工保存后创建草稿，使用默认封面，需要时手动点击生成封面",
     },
   ];
 }
-
-type DbTaskStep = NonNullable<
-  Awaited<ReturnType<typeof getAiRewriteTaskDetail>>
->["steps"][number];
 
 function normalizeStepStatus(value: string): StepStatus {
   if (value in stepStatusLabels) {
@@ -774,165 +686,63 @@ function SeoKeywordPlanPanel({ plan }: { plan: ValidatedSeoKeywordPlan }) {
 
 function ProductionChain({
   task,
-  diagnostics,
-  report,
 }: {
   task: NonNullable<Awaited<ReturnType<typeof getAiRewriteTaskDetail>>>;
-  diagnostics: ScrapeDiagnostics | null;
-  report: ScrapeDiagnostics["affiliateReport"] | undefined;
 }) {
-  const isEnglishTask = task.sourceType === "english";
-  const latestAttempt = task.steps.reduce(
-    (maxAttempt, step) => Math.max(maxAttempt, step.attempt),
-    0,
-  );
-  const latestSteps = new Map(
-    task.steps
-      .filter((step) => step.attempt === latestAttempt)
-      .map((step) => [step.stepKey, step]),
-  );
-  const storedStatus = (...keys: string[]): StepStatus | undefined => {
-    for (const key of keys) {
-      const step = latestSteps.get(key);
-      if (step) return normalizeStepStatus(step.status);
-    }
-    return undefined;
-  };
-  const legacyAiFailure =
-    isAiRewriteStageError(task.error) && !latestSteps.has("ai_rewrite");
-  const hasSeo =
-    Boolean(task.postTitle) ||
-    Boolean(task.postDescription) ||
-    Boolean(task.postKeywords);
-  const sourceStatus: StepStatus = legacyAiFailure
-    ? "success"
-    : (storedStatus("source_collect", "english_source", "seo_prepare") ??
-      (task.sourceContent || task.scrapedTitle ? "success" : "pending"));
-  const cleanStatus: StepStatus = legacyAiFailure
-    ? "success"
-    : (storedStatus("html_clean") ??
-      (task.scrapedHtml ? "success" : "pending"));
-  const rewriteStatus: StepStatus = isEnglishTask
-    ? task.scrapedHtml
+  const manualStep = [...task.steps]
+    .reverse()
+    .find((step) => step.stepKey === "manual_input");
+  const manualStatus: StepStatus = manualStep
+    ? normalizeStepStatus(manualStep.status)
+    : task.postId
       ? "success"
-      : task.status === "running" && task.progress >= 30
-        ? "running"
-        : "pending"
-    : legacyAiFailure
-      ? "failed"
-      : (storedStatus("ai_rewrite") ??
-        (task.rewriteOutputLength
-          ? "success"
-          : task.status === "running" && task.progress >= 50
-            ? "running"
-            : "pending"));
-  const affiliateStatus: StepStatus = legacyAiFailure
-    ? "success"
-    : (storedStatus("affiliate_check") ??
-      (report
-        ? report.invalidLinks.length > 0
-          ? "manual_required"
-          : "success"
-        : "pending"));
-  const items = [
+      : "manual_required";
+  const items: Array<{ title: string; status: StepStatus; detail: string }> = [
     {
-      title: "原文 / 素材",
-      status: sourceStatus,
-      detail:
-        task.sourceTitle ??
-        task.scrapedTitle ??
-        (isHttpHref(task.sourceUrl) ? task.sourceUrl : "等待读取素材"),
-    },
-    {
-      title: "清洗后正文",
-      status: cleanStatus,
+      title: task.sourceType === "english" ? "中文来源正文" : "原文与清洗",
+      status: task.scrapedHtml ? "success" : "pending",
       detail: task.scrapedHtml
-        ? `${task.scrapedHtml.length} 字符，AI 输入 ${formatMaybeNumber(task.aiInputLength)}`
-        : legacyAiFailure
-          ? "正文已清洗；旧任务未在失败前保存正文快照"
-          : "暂无正文快照",
+        ? `已保留完整正文 ${task.scrapedHtml.length} 个字符`
+        : "等待读取素材",
     },
     {
-      title: isEnglishTask ? "中文改写输入" : "改写中文",
-      status: rewriteStatus,
-      detail: isEnglishTask
-        ? task.scrapedHtml
-          ? `中文正文 ${task.scrapedHtml.length} 字符，AI 输入 ${formatMaybeNumber(task.aiInputLength)}`
-          : "等待读取中文改写正文"
-        : task.rewriteOutputLength
-          ? `输出 ${task.rewriteOutputLength} 字符`
-          : rewriteStatus === "failed"
-            ? (task.error ?? "AI 改写失败")
-            : task.currentStep?.startsWith("AI 改写：")
-              ? task.currentStep
-              : "等待模型输出",
+      title: "人工正文",
+      status: manualStatus,
+      detail: task.postId
+        ? "打开文章编辑页维护正文"
+        : "在下方填写或粘贴最终正文",
     },
     {
-      title: "翻译英文",
+      title: "人工 SEO",
+      status: manualStatus,
+      detail: "人工填写标题、slug、摘要、关键词和标签",
+    },
+    {
+      title: "封面",
       status:
-        storedStatus("english_generate", "english_enqueue") ??
-        (task.sourceType === "english" && task.postId
+        task.postImgUrl && !isDefaultArticleCover(task.postImgUrl)
           ? "success"
-          : task.sourceType === "english" && task.status === "running"
-            ? "running"
-            : "pending"),
+          : "pending",
       detail:
-        task.sourceType === "english"
-          ? task.postId
-            ? `英文草稿 #${task.postId}`
-            : "正在从中文正文翻译英文"
-          : "中文草稿完成后需人工修改并保存，再从文章生产面板生成英文",
+        task.postImgUrl && !isDefaultArticleCover(task.postImgUrl)
+          ? task.postImgUrl
+          : "使用默认封面，手动点击生成后，后台图片任务成功时替换",
     },
-    {
-      title: "SEO 字段",
-      status:
-        storedStatus("english_metadata", "seo_metadata") ??
-        (hasSeo ? "success" : "pending"),
-      detail: hasSeo
-        ? [task.postTitle, task.postDescription, task.postKeywords]
-            .filter(Boolean)
-            .join(" / ")
-            .slice(0, 160)
-        : "等待标题、摘要、关键词写入草稿",
-    },
-    {
-      title: "封面图",
-      status:
-        storedStatus("cover_generate", "english_cover") ??
-        (task.postImgUrl ? "success" : "pending"),
-      detail: task.postImgUrl ?? "暂无封面或自动生图未完成",
-    },
-    {
-      title: "返利审计",
-      status: affiliateStatus,
-      detail: report
-        ? `命中 ${report.matchedLinks.length}，未命中 ${report.unmatchedLinks.length}（保留原链），无效 ${report.invalidLinks.length}`
-        : legacyAiFailure
-          ? "已在进入 AI 审查前完成；旧任务未保存链接诊断"
-          : diagnostics?.usedAiRewrite
-            ? "英文任务不重复采集返利诊断"
-            : "等待链接替换记录",
-    },
-  ] satisfies Array<{
-    title: string;
-    status: StepStatus;
-    detail: string;
-  }>;
-
+  ];
   return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+    <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
       {items.map((item) => (
         <div
           key={item.title}
-          className="rounded-md border border-border/70 bg-background p-3"
+          className="min-w-0 space-y-2 rounded-md border border-border/70 p-3"
         >
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium">{item.title}</p>
             <Badge variant={stepStatusVariants[item.status]}>
               {stepStatusLabels[item.status]}
             </Badge>
           </div>
-          <p className="mt-2 line-clamp-3 break-all text-xs leading-5 text-muted-foreground">
+          <p className="break-words text-sm leading-6 text-muted-foreground">
             {item.detail}
           </p>
         </div>
@@ -1086,7 +896,7 @@ export async function AiRewriteTaskDetailPageContent({
     <AdminPageShell
       badge="任务详情"
       title={task.resultTitle ?? task.scrapedTitle ?? `任务 #${task.id}`}
-      description="查看抓取、清洗、AI 改写、返利链接命中和失败诊断。"
+      description="查看素材、清洗结果和人工编辑状态；正文与文章 SEO 均由人工填写。"
       actions={
         <div className="flex w-full flex-wrap gap-2 md:w-auto">
           <Button asChild variant="outline">
@@ -1101,7 +911,9 @@ export async function AiRewriteTaskDetailPageContent({
             status={task.status}
             canRetry={task.status === "failed" || task.status === "cancelled"}
             canCancel={task.status === "pending"}
-            canResolve={task.status === "manual_required"}
+            canResolve={
+              task.status === "manual_required" && Boolean(task.postId)
+            }
             afterDeleteHref={basePath}
             size="default"
           />
@@ -1120,32 +932,29 @@ export async function AiRewriteTaskDetailPageContent({
       <TaskDetailAutoRefresh
         enabled={task.status === "pending" || task.status === "running"}
       />
-      <div className="grid gap-4 md:grid-cols-4 xl:grid-cols-6">
+      <div className="grid gap-4 md:grid-cols-4">
         <Stat label="状态" value={statusLabels[task.status] ?? task.status} />
+        <Stat label="内容方式" value="人工输入" />
+        <Stat label="素材读取次数" value={task.attempts} />
         <Stat
-          label="请求阶段"
-          value={
-            requestStageLabels[task.requestStage] ?? task.requestStage ?? "-"
-          }
-        />
-        <Stat label="尝试次数" value={task.attempts} />
-        <Stat label="改写配置" value={task.rewriteStyleName ?? "-"} />
-        <Stat label="模型" value={task.model ?? "-"} />
-        <Stat
-          label="生图配置"
-          value={task.imageConfigName ?? "未绑定 / 已跳过"}
-        />
-        <Stat label="生图模型" value={task.imageModel ?? "-"} />
-        <Stat label="Max Tokens" value={formatMaybeNumber(task.maxTokens)} />
-        <Stat
-          label="AI 输入长度"
-          value={formatMaybeNumber(task.aiInputLength)}
-        />
-        <Stat
-          label="改写输出长度"
+          label="已保存正文字数"
           value={formatMaybeNumber(task.rewriteOutputLength)}
         />
       </div>
+      {task.status === "manual_required" &&
+      !task.postId &&
+      task.sourceType !== "seo" ? (
+        <ManualArticleTaskEditor
+          taskId={task.id}
+          expectedUpdatedAt={(task.updatedAt ?? task.createdAt).toISOString()}
+          sourceMarkdown={
+            contentToArticleMarkdown(
+              task.scrapedHtml ?? task.sourceContent ?? "",
+            ).markdown
+          }
+          language={task.sourceType === "english" ? "en" : "zh"}
+        />
+      ) : null}
 
       <AdminSectionCard
         title="进度"
@@ -1165,19 +974,17 @@ export async function AiRewriteTaskDetailPageContent({
               {task.error}
             </p>
           ) : null}
-          <TruncationHint task={task} diagnostics={diagnostics} />
+          {task.artifacts.length > 0 ? (
+            <TruncationHint task={task} diagnostics={diagnostics} />
+          ) : null}
         </div>
       </AdminSectionCard>
 
       <AdminSectionCard
         title="文章生产链路"
-        description="按抓取、清洗、改写、翻译、SEO、封面和返利审计查看每一步产物。"
+        description="素材准备后填写正文与 SEO，保存草稿并使用默认封面；需要时手动点击生成封面。"
       >
-        <ProductionChain
-          task={task}
-          diagnostics={diagnostics}
-          report={report}
-        />
+        <ProductionChain task={task} />
       </AdminSectionCard>
 
       {diagnostics?.rewriteQuality?.seoKeywordPlan ? (
@@ -1195,18 +1002,20 @@ export async function AiRewriteTaskDetailPageContent({
         <TaskStepTimeline steps={steps} />
       </AdminSectionCard>
 
-      <AdminSectionCard
-        title="改写过程与候选正文"
-        description="保存每次模型调用的实际提示词、原始响应和人工可读正文；失败或因完整性问题重试的候选也会保留。"
-      >
-        <AiRewriteAuditViewer artifacts={task.artifacts} />
-      </AdminSectionCard>
+      {task.artifacts.length > 0 ? (
+        <AdminSectionCard
+          title="历史 AI 调用与候选正文"
+          description="保存每次模型调用的实际提示词、原始响应和人工可读正文；失败或因完整性问题重试的候选也会保留。"
+        >
+          <AiRewriteAuditViewer artifacts={task.artifacts} />
+        </AdminSectionCard>
+      ) : null}
 
       <ManualReviewHints diagnostics={diagnostics} postSlug={task.postSlug} />
 
       <AdminSectionCard
         title="来源与结果"
-        description="素材来源、分类、风格和草稿入口。"
+        description="素材来源、分类和文章编辑入口。"
       >
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-2 text-sm">
@@ -1234,10 +1043,12 @@ export async function AiRewriteTaskDetailPageContent({
               <p className="text-muted-foreground">分类</p>
               <p className="font-medium">{task.categoryName ?? "-"}</p>
             </div>
-            <div>
-              <p className="text-muted-foreground">改写风格</p>
-              <p className="font-medium">{task.rewriteStyleName ?? "默认"}</p>
-            </div>
+            {task.rewriteStyleName ? (
+              <div>
+                <p className="text-muted-foreground">历史改写风格</p>
+                <p className="font-medium">{task.rewriteStyleName}</p>
+              </div>
+            ) : null}
           </div>
         </div>
         {task.sourceType !== "url" &&
@@ -1284,7 +1095,7 @@ export async function AiRewriteTaskDetailPageContent({
               {diagnostics.usedAiRewrite ? (
                 <Badge variant="secondary">AI 已改写</Badge>
               ) : (
-                <Badge variant="destructive">AI 回退</Badge>
+                <Badge variant="outline">原始素材 · 人工编辑</Badge>
               )}
             </div>
             {diagnostics.rewriteQuality ? (
@@ -1370,11 +1181,11 @@ export async function AiRewriteTaskDetailPageContent({
       </AdminSectionCard>
 
       <AdminSectionCard
-        title={task.sourceType === "english" ? "中文改写正文预览" : "正文预览"}
+        title={task.sourceType === "english" ? "中文来源正文预览" : "正文预览"}
         description={
           task.sourceType === "english"
-            ? "英文正文会从这份已改写的中文正文翻译生成；标题、slug、摘要和关键词会在后续 SEO 步骤单独生成。"
-            : "清洗后的原始正文片段，便于排查抓取和清洗结果。"
+            ? "此处保留中文来源供参考，英文正文、标题、slug、摘要和关键词均需人工输入。"
+            : "清洗后的完整原始正文，供人工编辑参考。"
         }
       >
         <pre className="max-h-[500px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-4 font-mono text-xs leading-6">

@@ -65,12 +65,6 @@ type Option = {
   name: string;
 };
 
-type RewriteStyleOption = {
-  id: number;
-  styleName: string;
-  isDefault: boolean;
-};
-
 type LastRunResult = {
   siteId: number;
   runAt?: string;
@@ -263,28 +257,19 @@ function SourceRunResultPanel({
 function SourceSiteForm({
   site,
   categories,
-  rewriteStyles,
   onDone,
 }: {
   site?: SourceSite;
   categories: Option[];
-  rewriteStyles: RewriteStyleOption[];
   onDone?: () => void;
 }) {
   const [enabled, setEnabled] = useState(site?.enabled ?? true);
   const [isSaving, setIsSaving] = useState(false);
   const defaultCategoryId = site?.categoryId ?? categories[0]?.id;
-  const defaultRewriteStyleId = site?.rewriteStyleId
-    ? String(site.rewriteStyleId)
-    : "__default";
 
   async function handleSubmit(formData: FormData) {
     setIsSaving(true);
     formData.set("enabled", enabled ? "true" : "false");
-
-    if (formData.get("rewriteStyleId") === "__default") {
-      formData.delete("rewriteStyleId");
-    }
 
     try {
       const result = site
@@ -297,7 +282,7 @@ function SourceSiteForm({
           description: describeAdminResult([
             inputNameFromForm(formData),
             result.error,
-            "请检查站点 URL、Feed URL、分类和改写风格配置",
+            "请检查站点 URL、Feed URL、分类配置",
           ]),
         });
         return;
@@ -308,7 +293,7 @@ function SourceSiteForm({
         description: describeAdminResult([
           inputNameFromForm(formData),
           `每次抓取 ${inputLimitFromForm(formData)} 条`,
-          "保存后可点击抓取新页面创建 AI 改写任务",
+          "保存后可点击抓取新页面创建 文章采集任务",
         ]),
       });
       onDone?.();
@@ -318,7 +303,7 @@ function SourceSiteForm({
         description: describeAdminResult([
           inputNameFromForm(formData),
           error instanceof Error ? error.message : "保存失败",
-          "请检查站点 URL、Feed URL、分类和改写风格配置",
+          "请检查站点 URL、Feed URL、分类配置",
         ]),
       });
     } finally {
@@ -382,23 +367,7 @@ function SourceSiteForm({
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2">
-          <Label>改写风格</Label>
-          <Select name="rewriteStyleId" defaultValue={defaultRewriteStyleId}>
-            <SelectTrigger className="min-h-11">
-              <SelectValue placeholder="使用默认改写风格" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__default">使用默认改写风格</SelectItem>
-              {rewriteStyles.map((style) => (
-                <SelectItem key={style.id} value={String(style.id)}>
-                  {style.styleName}
-                  {style.isDefault ? "（默认）" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+
         <div className="space-y-2">
           <Label>单次数量</Label>
           <Input
@@ -432,11 +401,9 @@ function SourceSiteForm({
 export function AiSourceSiteManager({
   sites,
   categories,
-  rewriteStyles,
 }: {
   sites: SourceSite[];
   categories: Option[];
-  rewriteStyles: RewriteStyleOption[];
 }) {
   const router = useRouter();
   const [showCreate, setShowCreate] = useState(sites.length === 0);
@@ -460,7 +427,7 @@ export function AiSourceSiteManager({
           description: describeAdminResult([
             site?.name,
             result.error,
-            "没有创建新的 AI 改写任务",
+            "没有创建新的 文章采集任务",
           ]),
         });
         return;
@@ -483,7 +450,7 @@ export function AiSourceSiteManager({
           title: "来源站抓取已进入后台",
           description: describeAdminResult([
             site?.name,
-            "系统会后台发现新链接并创建 AI 改写任务",
+            "系统会后台发现新链接并创建 文章采集任务",
             "稍后刷新可查看最近一次抓取结果",
           ]),
         });
@@ -494,7 +461,7 @@ export function AiSourceSiteManager({
       notifySuccess({
         title:
           result.data.createdCount > 0
-            ? "来源站抓取完成，已创建改写任务"
+            ? "来源站抓取完成，已创建采集任务"
             : "来源站抓取完成，没有新的文章",
         description: describeAdminResult([
           site?.name,
@@ -511,7 +478,7 @@ export function AiSourceSiteManager({
         description: describeAdminResult([
           site?.name,
           error instanceof Error ? error.message : "抓取任务执行失败",
-          "没有创建新的 AI 改写任务",
+          "没有创建新的 文章采集任务",
         ]),
       });
     } finally {
@@ -575,7 +542,6 @@ export function AiSourceSiteManager({
       {showCreate ? (
         <SourceSiteForm
           categories={categories}
-          rewriteStyles={rewriteStyles}
           onDone={() => {
             setShowCreate(false);
             router.refresh();
@@ -633,8 +599,7 @@ export function AiSourceSiteManager({
                       <div className="space-y-1 text-sm">
                         <p>{site.categoryName ?? "-"}</p>
                         <p className="text-muted-foreground">
-                          {site.rewriteStyleName ?? "默认改写风格"} · 每次{" "}
-                          {site.limit} 条
+                          人工填写正文与 SEO · 每次 {site.limit} 条
                         </p>
                       </div>
                     </TableCell>
@@ -772,7 +737,6 @@ export function AiSourceSiteManager({
                         <SourceSiteForm
                           site={site}
                           categories={categories}
-                          rewriteStyles={rewriteStyles}
                           onDone={() => {
                             setEditId(null);
                             router.refresh();

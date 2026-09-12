@@ -206,8 +206,8 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
     return {
       error:
         normalizedData.affParam === "href"
-          ? "AI 改写整条替换需要填写返利链接，或清空该组配置"
-          : "AI 改写返利链接、返利参数和返利值需全部填写，或全部留空",
+          ? "文章整条替换需要填写返利链接，或清空该组配置"
+          : "文章返利链接、返利参数和返利值需全部填写，或全部留空",
       data: normalizedData,
     };
   }
@@ -264,7 +264,7 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
   }
 
   for (const [configState, affUrl, label] of [
-    [articleAffiliateConfigState, normalizedData.affUrl, "AI 改写返利链接"],
+    [articleAffiliateConfigState, normalizedData.affUrl, "文章返利链接"],
     [offerAffiliateConfigState, normalizedData.offerAffUrl, "套餐采集返利链接"],
   ] as const) {
     if (configState !== "complete") continue;
@@ -296,7 +296,7 @@ function validateAffProviderInput(data: Omit<AffManData, "id">) {
       normalizedData.affParam !== "href" &&
       !isAffiliateParameterName(normalizedData.affParam)
     ) {
-      return { error: "AI 改写返利参数格式不正确", data: normalizedData };
+      return { error: "文章返利参数格式不正确", data: normalizedData };
     }
   }
   if (offerAffiliateConfigState === "complete") {

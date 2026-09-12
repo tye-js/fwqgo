@@ -538,6 +538,7 @@ export default function EditPost({
                     content={content}
                     fileSlug={slug}
                     language={postLanguage}
+                    currentCoverUrl={imageUrl}
                     onGenerated={setImageUrl}
                   />
                 </div>

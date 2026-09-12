@@ -168,8 +168,8 @@ function validateAffProviderForm(input: Omit<AffManData, "id">) {
     return {
       error:
         normalizedInput.affParam === "href"
-          ? "AI 改写整条替换需要填写返利链接，或清空该组配置"
-          : "AI 改写返利链接、返利参数和返利值需全部填写，或全部留空",
+          ? "文章整条替换需要填写返利链接，或清空该组配置"
+          : "文章返利链接、返利参数和返利值需全部填写，或全部留空",
       data: normalizedInput,
     };
   }
@@ -187,7 +187,7 @@ function validateAffProviderForm(input: Omit<AffManData, "id">) {
   }
 
   for (const [configState, affUrl, label] of [
-    [articleConfigState, normalizedInput.affUrl, "AI 改写返利链接"],
+    [articleConfigState, normalizedInput.affUrl, "文章返利链接"],
     [offerConfigState, normalizedInput.offerAffUrl, "套餐采集返利链接"],
   ] as const) {
     if (configState !== "complete") continue;
@@ -219,7 +219,7 @@ function validateAffProviderForm(input: Omit<AffManData, "id">) {
       normalizedInput.affParam !== "href" &&
       !isAffiliateParameterName(normalizedInput.affParam)
     ) {
-      return { error: "AI 改写返利参数格式不正确", data: normalizedInput };
+      return { error: "文章返利参数格式不正确", data: normalizedInput };
     }
   }
   if (offerConfigState === "complete") {
@@ -257,9 +257,9 @@ function validateAffProviderForm(input: Omit<AffManData, "id">) {
 
 function getArticleAffiliateConfigSummary(input: Omit<AffManData, "id">) {
   if (getArticleAffiliateConfigState(input) !== "complete") {
-    return "AI 改写未配置";
+    return "文章未配置";
   }
-  if (input.affParam.trim() === "href") return "AI 改写：整条替换";
+  if (input.affParam.trim() === "href") return "文章：整条替换";
   return `${input.affParam}=${input.affValue}`;
 }
 
@@ -327,10 +327,10 @@ function AffiliateConfigurationFields({
     <div className="grid gap-4 lg:grid-cols-2">
       <fieldset className="min-w-0 rounded-md border border-border/70 bg-background p-4">
         <legend className="px-1 text-sm font-semibold text-foreground">
-          AI 改写返利配置
+          文章返利配置
         </legend>
         <p className="mb-4 text-sm leading-6 text-muted-foreground">
-          仅用于 AI 改写、正文链接替换和文章短链，不影响套餐采集。
+          用于文章采集、正文链接替换和文章短链。
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
@@ -1068,7 +1068,7 @@ export default function AffManTable({
                 </TableHead>
                 <TableHead>ID</TableHead>
                 <TableHead className="text-nowrap">商家名</TableHead>
-                <TableHead className="text-nowrap">AI 改写返利</TableHead>
+                <TableHead className="text-nowrap">文章返利</TableHead>
                 <TableHead className="text-nowrap">套餐采集返利</TableHead>
                 <TableHead>商家官网</TableHead>
                 <TableHead className="text-nowrap">档案</TableHead>

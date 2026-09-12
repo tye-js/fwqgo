@@ -11,10 +11,7 @@ type DerivedTaskConfigSnapshot = {
   maxTokens: number | null;
 };
 
-type DerivedImageConfigSnapshot = Omit<
-  DerivedTaskConfigSnapshot,
-  "maxTokens"
->;
+type DerivedImageConfigSnapshot = Omit<DerivedTaskConfigSnapshot, "maxTokens">;
 
 export async function upsertDerivedAiTask(input: {
   sourceUrl: string;
@@ -22,9 +19,9 @@ export async function upsertDerivedAiTask(input: {
   sourceTitle: string;
   sourceContent: string;
   categoryId: number;
-  initialPostId: number;
+  initialPostId: number | null;
   currentStep: string;
-  rewriteConfig: DerivedTaskConfigSnapshot;
+  rewriteConfig?: DerivedTaskConfigSnapshot;
   imageConfig?: DerivedImageConfigSnapshot | null;
 }) {
   return db.transaction(async (tx) => {
@@ -73,11 +70,11 @@ export async function upsertDerivedAiTask(input: {
       requestStage: "queued",
       error: null,
       categoryId: input.categoryId,
-      rewriteStyleId: input.rewriteConfig.id,
-      rewriteConfigName: input.rewriteConfig.name,
-      rewriteProvider: input.rewriteConfig.provider,
-      rewriteModel: input.rewriteConfig.model,
-      rewriteMaxTokens: input.rewriteConfig.maxTokens,
+      rewriteStyleId: input.rewriteConfig?.id ?? null,
+      rewriteConfigName: input.rewriteConfig?.name ?? null,
+      rewriteProvider: input.rewriteConfig?.provider ?? null,
+      rewriteModel: input.rewriteConfig?.model ?? null,
+      rewriteMaxTokens: input.rewriteConfig?.maxTokens ?? null,
       imageConfigId: input.imageConfig?.id ?? null,
       imageConfigName: input.imageConfig?.name ?? null,
       imageProvider: input.imageConfig?.provider ?? null,

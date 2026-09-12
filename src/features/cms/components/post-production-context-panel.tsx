@@ -189,10 +189,10 @@ function GenerateEnglishButton({ postId }: { postId: number }) {
           const result = await enqueueEnglishVersionForPostAction(postId);
           if (result.error) {
             notifyError({
-              title: "英文生成任务创建失败",
+              title: "英文编辑任务创建失败",
               description: describeAdminResult([
                 result.error,
-                "请确认中文文章正文和 AI 改写配置可用",
+                "请确认中文文章已保存且正文不为空",
               ]),
             });
             return;
@@ -200,25 +200,25 @@ function GenerateEnglishButton({ postId }: { postId: number }) {
 
           if (!result.data) {
             notifyError({
-              title: "英文生成任务创建失败",
+              title: "英文编辑任务创建失败",
               description: "服务端没有返回任务 ID，请刷新后重试。",
             });
             return;
           }
 
           notifySuccess({
-            title: "英文生成任务已加入队列",
+            title: "英文人工编辑任务已创建",
             description: describeAdminResult([
               `任务 ID ${result.data.taskId}`,
-              "会从当前已保存的中文文章正文翻译英文，并单独生成 SEO 字段",
+              "中文来源供参考，请在任务详情中人工填写英文正文与 SEO",
             ]),
           });
-          router.refresh();
+          router.push(`/ai-tasks/${result.data.taskId}`);
         });
       }}
     >
       <RotateCcw className="size-4" />
-      {isPending ? "提交中..." : "根据当前中文生成英文"}
+      {isPending ? "提交中..." : "填写英文稿"}
     </Button>
   );
 }
@@ -248,7 +248,7 @@ export function PostProductionContextPanel({
     <div className="space-y-4">
       <AdminSectionCard
         title="生产链路与中英文关系"
-        description="英文不会随中文改写自动生成；请先手动修改并保存中文文章，再从这里根据最新中文正文生成英文。"
+        description="中英文正文与 SEO 均由人工填写。创建英文编辑任务后可参考已保存的中文正文，已有英文稿会保留并提供编辑入口。"
       >
         <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
           <div className="space-y-3">

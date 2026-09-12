@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ImagePlus } from "lucide-react";
 
 import {
@@ -37,6 +38,7 @@ export function ArticleCoverGenerator({
   content,
   fileSlug,
   language = "zh",
+  currentCoverUrl,
   onGenerated,
 }: {
   postId?: number;
@@ -46,8 +48,10 @@ export function ArticleCoverGenerator({
   content?: string | null;
   fileSlug?: string | null;
   language?: "zh" | "en";
+  currentCoverUrl: string;
   onGenerated: (url: string) => void;
 }) {
+  const router = useRouter();
   const [isGenerating, setIsGenerating] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [batchId, setBatchId] = useState<string | null>(null);
@@ -59,88 +63,124 @@ export function ArticleCoverGenerator({
   const [promotionThemes, setPromotionThemes] = useState("");
   const [forbiddenElements, setForbiddenElements] = useState("");
   const finalizedBatchIdsRef = useRef(new Set<string>());
+  const currentCoverRef = useRef(currentCoverUrl);
+  const requestedCoverRef = useRef(currentCoverUrl);
+
+  useEffect(() => {
+    currentCoverRef.current = currentCoverUrl;
+  }, [currentCoverUrl]);
 
   useEffect(() => {
     if (!batchId) return;
 
     let stopped = false;
+    let timer: number | undefined;
     const poll = async () => {
-      const result = await getCoverGenerationBatchStatusAction(batchId);
-      if (stopped) return;
-
-      if (!result.success) {
-        setIsGenerating(false);
-        setBatchId(null);
-        notifyActionError(
-          {
-            errorTitle: result.errorTitle ?? "读取封面生成状态失败",
-            message: result.error ?? "请刷新页面后重试。",
-          },
-          { fallbackSuggestion: "可以稍后到 AI 生图或文章编辑页查看结果。" },
-        );
-        return;
-      }
-
-      if (!result.done) {
-        return;
-      }
-
-      setIsGenerating(false);
-      setBatchId(null);
-      if (!finalizedBatchIdsRef.current.has(batchId)) {
-        const finalizeResult =
-          await finalizeCoverGenerationBatchAction(batchId);
+      let done = false;
+      try {
+        const result = await getCoverGenerationBatchStatusAction(batchId);
         if (stopped) return;
 
-        if (!finalizeResult.success) {
+        if (!result.success) {
+          done = true;
           notifyActionError(
             {
-              errorTitle:
-                finalizeResult.errorTitle ?? "封面图已生成，但刷新缓存失败",
-              message: finalizeResult.error ?? "请刷新页面后确认文章封面。",
+              errorTitle: result.errorTitle ?? "读取封面生成状态失败",
+              message: result.error ?? "请刷新页面后重试。",
             },
-            {
-              fallbackSuggestion: "可以刷新页面，或到图片管理里确认图片资产。",
-            },
+            { fallbackSuggestion: "可以稍后到 AI 生图或文章编辑页查看结果。" },
           );
-        } else {
-          finalizedBatchIdsRef.current.add(batchId);
+          return;
+        }
+
+        if (!result.done) return;
+        done = true;
+        if (!finalizedBatchIdsRef.current.has(batchId)) {
+          const finalizeResult =
+            await finalizeCoverGenerationBatchAction(batchId);
+          if (stopped) return;
+
+          if (!finalizeResult.success) {
+            notifyActionError(
+              {
+                errorTitle:
+                  finalizeResult.errorTitle ?? "封面图已生成，但刷新缓存失败",
+                message: finalizeResult.error ?? "请刷新页面后确认文章封面。",
+              },
+              {
+                fallbackSuggestion:
+                  "可以刷新页面，或到图片管理里确认图片资产。",
+              },
+            );
+          } else {
+            finalizedBatchIdsRef.current.add(batchId);
+          }
+        }
+
+        const generated = result.results?.find(
+          (item) =>
+            item.success && item.url && (!postId || item.postId === postId),
+        );
+        if (generated?.url) {
+          if (
+            (postId && !generated.appliedToPost) ||
+            currentCoverRef.current !== requestedCoverRef.current
+          ) {
+            notifyInfo({
+              title: "封面图已生成，已保留当前选择的封面",
+              description: "生成图片已存入图片管理，可按需选择使用。",
+            });
+          } else {
+            onGenerated(generated.url);
+            if (postId) router.refresh();
+            notifySuccess({
+              title: "封面图已生成",
+              description: describeAdminResult([
+                generated.url,
+                generated.assetId ? `图片资产 ID：${generated.assetId}` : null,
+              ]),
+            });
+          }
+          return;
+        }
+
+        const failed = result.results?.find(
+          (item) => item.error && (!postId || item.postId === postId),
+        );
+        notifyActionError(
+          {
+            errorTitle: failed?.errorTitle ?? "封面图生成失败",
+            message: failed?.error ?? failed?.errorDetail ?? "请检查生图配置。",
+          },
+          { fallbackSuggestion: "修正配置后可以重新提交生成任务。" },
+        );
+      } catch {
+        done = true;
+        if (!stopped) {
+          notifyError({
+            title: "读取封面生成状态失败",
+            description: "后台任务会继续运行，请稍后到任务中心查看结果。",
+          });
+        }
+      } finally {
+        if (!stopped) {
+          if (done) {
+            setIsGenerating(false);
+            setBatchId(null);
+          } else {
+            timer = window.setTimeout(() => void poll(), 3000);
+          }
         }
       }
-
-      const generated = result.results?.find((item) => item.url);
-      if (generated?.url) {
-        onGenerated(generated.url);
-        notifySuccess({
-          title: "封面图已生成",
-          description: describeAdminResult([
-            generated.url,
-            generated.assetId ? `图片资产 ID：${generated.assetId}` : null,
-          ]),
-        });
-        return;
-      }
-
-      const failed = result.results?.find((item) => item.error);
-      notifyActionError(
-        {
-          errorTitle: failed?.errorTitle ?? "封面图生成失败",
-          message: failed?.error ?? failed?.errorDetail ?? "请检查生图配置。",
-        },
-        { fallbackSuggestion: "修正配置后可以重新提交生成任务。" },
-      );
     };
 
     void poll();
-    const timer = window.setInterval(() => {
-      void poll();
-    }, 3000);
 
     return () => {
       stopped = true;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
     };
-  }, [batchId, onGenerated]);
+  }, [batchId, onGenerated, postId, router]);
 
   async function handleGenerate() {
     if (!title.trim()) {
@@ -151,6 +191,7 @@ export function ArticleCoverGenerator({
       return;
     }
 
+    requestedCoverRef.current = currentCoverUrl;
     setIsGenerating(true);
     let queued = false;
     try {
@@ -222,7 +263,12 @@ export function ArticleCoverGenerator({
       }}
     >
       <DialogTrigger asChild>
-        <Button type="button" variant="outline" size="sm" disabled={isGenerating}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isGenerating}
+        >
           <ImagePlus className="size-4" />
           {isGenerating ? "后台生成中..." : "生成封面图"}
         </Button>
@@ -235,12 +281,28 @@ export function ArticleCoverGenerator({
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2 md:grid-cols-2">
-          <BriefField label="标题（核心主题）" value={briefTitle} onChange={setBriefTitle} />
+          <BriefField
+            label="标题（核心主题）"
+            value={briefTitle}
+            onChange={setBriefTitle}
+          />
           <BriefField label="品牌" value={brands} onChange={setBrands} />
           <BriefField label="地区" value={regions} onChange={setRegions} />
-          <BriefField label="产品类型" value={productTypes} onChange={setProductTypes} />
-          <BriefField label="关键规格" value={specifications} onChange={setSpecifications} />
-          <BriefField label="促销主题" value={promotionThemes} onChange={setPromotionThemes} />
+          <BriefField
+            label="产品类型"
+            value={productTypes}
+            onChange={setProductTypes}
+          />
+          <BriefField
+            label="关键规格"
+            value={specifications}
+            onChange={setSpecifications}
+          />
+          <BriefField
+            label="促销主题"
+            value={promotionThemes}
+            onChange={setPromotionThemes}
+          />
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="cover-brief-forbidden">附加禁用元素</Label>
             <Textarea
@@ -255,7 +317,11 @@ export function ArticleCoverGenerator({
           </div>
         </div>
         <DialogFooter>
-          <Button type="button" onClick={handleGenerate} disabled={isGenerating}>
+          <Button
+            type="button"
+            onClick={handleGenerate}
+            disabled={isGenerating}
+          >
             <ImagePlus className="size-4" />
             {isGenerating ? "正在创建任务..." : "确认并后台生成"}
           </Button>

@@ -292,7 +292,7 @@ export function CmsTaskOperationsOverview({
       <div className="grid divide-y divide-border/70 overflow-hidden rounded-md border border-border/70 bg-background sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         <QueueSummaryLink
           type="ai"
-          title="AI 改写"
+          title="文章采集"
           summary={summary.queues.ai}
         />
         <QueueSummaryLink

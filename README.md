@@ -1,6 +1,6 @@
 # FWQGO（服务器go）
 
-FWQGO 是一个面向服务器、VPS 和云产品优惠内容的双应用平台。公开站负责中文/英文内容、服务器套餐专题和 SEO，独立 CMS 负责采集、AI 改写、文章审核、媒体资产、返利链接与运营配置。
+FWQGO 是一个面向服务器、VPS 和云产品优惠内容的双应用平台。公开站负责中文/英文内容、服务器套餐专题和 SEO，独立 CMS 负责采集、人工文章编辑、文章审核、媒体资产、返利链接与运营配置。
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.3.5-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.2-149ECA?style=flat-square&logo=react)](https://react.dev/)
@@ -35,8 +35,8 @@ CMS 路由直接从根路径开始，例如 `/ai-rewrite/tasks`、`/posts/edit` 
 
 ### CMS
 
-- AI 内容生产台、统一任务中心、任务步骤、失败原因、重试、取消和人工处理。
-- 网页抓取与正文清洗，按 Markdown 管线生成中文草稿和英文 SEO 草稿。
+- 人工文章生产台、统一任务中心、任务步骤、失败原因、重试、取消和人工处理。
+- 网页抓取与完整正文清洗，人工输入中英文正文与文章 SEO，再保存为草稿。
 - Markdown 文章编辑、草稿箱、文章列表、发布质检和中英文分类/标签。
 - 返利商家、链接命中诊断、短链跳转和首页文章/套餐/推广图片运营位。
 - 供应商套餐采集、去重、多周期价格、人工锁定字段、库存监控、检测历史和状态管理。
@@ -44,9 +44,9 @@ CMS 路由直接从根路径开始，例如 `/ai-rewrite/tasks`、`/posts/edit` 
 - 中文/英文主页 SEO、分类 SEO 和标签 SEO。
 - DeepSeek、OpenAI 及第三方 OpenAI 兼容改写接口；OpenAI Images、Image2 及兼容生图接口。
 
-### AI 内容管线
+### 文章生产链路
 
-正文改写与 SEO 生成使用独立步骤和风格配置。后台任务会记录输入、输出、进度和可读错误，避免单个失败任务阻塞整个队列。
+采集完成后，在任务详情人工填写正文、标题、slug、摘要、关键词与标签。保存的草稿使用默认封面；需要 AI 封面时，在文章编辑页手动点击“生成封面图”，后台生成成功后替换默认图。采集和人工保存无需文本或生图模型配置，历史任务重试也采用人工流程。见 [`docs/manual-article-workflow.md`](docs/manual-article-workflow.md)。
 
 ## 本地开发
 
@@ -180,13 +180,13 @@ public/                        # 静态资源
 | 一级菜单   | 子功能                                |
 | ---------- | ------------------------------------- |
 | 数据面板   | 内容、任务、草稿、流量和运行状态概览  |
-| 内容生产   | AI 生产台、AI 任务中心、草稿箱        |
+| 内容生产   | 文章生产台、任务中心、草稿箱          |
 | 文章管理   | 文章列表、发布质检                    |
 | 媒体中心   | 图片资产、上传图片、AI 生图、封面生图 |
 | 服务器套餐 | 套餐管理、供应商采集与人工审核        |
 | SEO 运营   | 主页 SEO、分类 SEO、标签 SEO          |
 | 推广链接   | 返利商家、短链跳转、首页推荐          |
-| 系统设置   | AI 改写配置、生图接口配置             |
+| 系统设置   | AI 服务配置、生图接口配置             |
 
 所有 CMS 管理 mutation 都应先通过服务端管理员会话校验，并为操作者返回可读错误。
 
@@ -240,7 +240,8 @@ bun run db:studio         # 打开 Drizzle Studio
 | `bun run smoke:cms`                 | 浏览器验证 CMS 登录与核心路由                    |
 | `bun run verify:public-mobile-ui`   | 验证公开站移动断点、触控区和库存卡片             |
 | `bun run verify:cms-mobile-ui`      | 验证 CMS 表格、动态文本和 safe-area              |
-| `bun run verify:ai-rewrite-prompts` | 验证当前六个 Prompt 与中文单轮改写               |
+| `bun run verify:ai-rewrite-prompts` | 验证人工文章链路与历史 Prompt 配置兼容           |
+| `bun run verify:article-workflow`   | 验证人工保存、完整原文和默认封面替换             |
 | `bun run smoke:mobile`              | 启动服务后验证真实视口和横向溢出                 |
 | `bun run smoke:article-isr`         | 验证生产文章原始 HTML、metadata、缓存与 RSC 隔离 |
 | `bun run secrets:migrate`           | 演练或执行存量密钥加密迁移                       |

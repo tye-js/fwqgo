@@ -21,15 +21,14 @@ export function AiRewriteTaskRetryButton({ taskId }: { taskId: number }) {
         description: `任务 ID ${taskId}`,
       },
       successMessage: {
-        title: "AI 改写任务已重新加入队列",
+        title: "文章采集任务已重新加入队列",
         description: describeAdminResult([
           `任务 ID ${taskId}`,
-          "系统会重新抓取、清洗、改写，成功后再保存草稿",
+          "系统会重新准备素材，正文和 SEO 需人工填写",
         ]),
       },
-      errorTitle: "AI 改写任务重试失败",
-      errorSuggestion:
-        "请确认任务仍存在，并检查 AI 配置、来源链接和服务器日志。",
+      errorTitle: "文章采集任务重试失败",
+      errorSuggestion: "请确认任务仍存在，并检查来源链接和服务器日志。",
     });
   };
 

@@ -112,7 +112,7 @@ export function UnifiedTaskActionButtons({
   const pending = isPending(mutationKey);
   const taskLabel =
     type === "ai"
-      ? "AI 改写任务"
+      ? "文章采集任务"
       : type === "cover"
         ? "封面生成任务"
         : "供应商采集任务";

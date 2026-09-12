@@ -2,6 +2,10 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  DEFAULT_ARTICLE_COVER,
+  isDefaultArticleCover,
+} from "@fwqgo/core/article-cover";
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,7 +50,7 @@ export function CreatePostWorkbench({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
+  const [imageUrl, setImageUrl] = useState(DEFAULT_ARTICLE_COVER);
   const [categoryId, setCategoryId] = useState(
     categories[0] ? String(categories[0].id) : "",
   );
@@ -82,7 +86,7 @@ export function CreatePostWorkbench({
     title.trim() ||
     description.trim() ||
     content.trim() ||
-    imageUrl.trim() ||
+    !isDefaultArticleCover(imageUrl) ||
     recommendTag.name.trim() ||
     tags.length ||
     normalizedKeywords.length,
@@ -229,14 +233,7 @@ export function CreatePostWorkbench({
         title="采集辅助"
         description="可以先通过采集工具生成初始内容，再进入下方编辑区完成排版和 SEO 信息。"
       >
-        <ScraperForm
-          setContent={setContent}
-          setTitle={setTitle}
-          setDescription={setDescription}
-          setKeywords={setKeywords}
-          setRecommendTag={setRecommendTag}
-          setTags={setTags}
-        />
+        <ScraperForm setContent={setContent} />
       </AdminSectionCard>
       <form
         className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]"
@@ -439,6 +436,7 @@ export function CreatePostWorkbench({
                   content={content}
                   fileSlug={title}
                   language="zh"
+                  currentCoverUrl={imageUrl}
                   onGenerated={setImageUrl}
                 />
               </div>

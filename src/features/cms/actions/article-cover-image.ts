@@ -546,13 +546,34 @@ export async function getCoverGenerationBatchStatusAction(batchId: string) {
       await ensureCoverGenerationWorker();
     }
 
+    const succeededPostIds = tasks.flatMap((task) =>
+      task.status === "succeeded" && task.postId ? [task.postId] : [],
+    );
+    const currentCovers = succeededPostIds.length
+      ? await db
+          .select({ id: posts.id, imgUrl: posts.imgUrl })
+          .from(posts)
+          .where(inArray(posts.id, succeededPostIds))
+      : [];
+    const coverByPostId = new Map(
+      currentCovers.map((post) => [post.id, post.imgUrl]),
+    );
+
     return {
       success: true,
       batchId: normalizedBatchId,
-      results: tasks.map(serializeCoverTask),
+      results: tasks.map((task) => ({
+        ...serializeCoverTask(task),
+        appliedToPost: task.postId
+          ? task.status === "succeeded" &&
+            Boolean(task.outputUrl) &&
+            coverByPostId.get(task.postId) === task.outputUrl
+          : null,
+      })),
       successCount: tasks.filter((task) => task.status === "succeeded").length,
       failedCount: tasks.filter((task) => task.status === "failed").length,
-      uncertainCount: tasks.filter((task) => task.status === "uncertain").length,
+      uncertainCount: tasks.filter((task) => task.status === "uncertain")
+        .length,
       pendingCount: tasks.filter((task) => task.status === "pending").length,
       runningCount: tasks.filter((task) => task.status === "running").length,
       done: tasks.every((task) =>
@@ -599,9 +620,7 @@ export async function finalizeCoverGenerationBatchAction(batchId: string) {
     }
 
     const succeededPostIds = tasks
-      .map((task) =>
-        task.status === "succeeded" ? task.postId : null,
-      )
+      .map((task) => (task.status === "succeeded" ? task.postId : null))
       .filter((postId): postId is number => postId !== null);
     const tags = await getPostCoverRevalidationTags(succeededPostIds);
 

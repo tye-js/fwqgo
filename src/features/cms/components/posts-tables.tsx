@@ -394,25 +394,25 @@ export function PostList({
         await bulkEnqueueEnglishVersionsForPostsAction(selectedIds);
 
       if (result.error) {
-        toast.error("批量生成英文失败", {
+        toast.error("批量创建英文编辑任务失败", {
           description: result.error,
         });
         return;
       }
 
       if (!result.data) {
-        toast.error("批量生成英文没有返回结果", {
+        toast.error("批量创建英文编辑任务没有返回结果", {
           description: "请到 AI 任务中心确认任务是否已创建。",
         });
         return;
       }
 
       const stats = result.data;
-      toast.success("英文生成任务已加入 AI 任务中心", {
+      toast.success("英文人工编辑任务已加入任务中心", {
         description: describeAdminResult([
           `处理 ${stats.requested} 篇`,
           `排队 ${stats.queued} 个任务`,
-          "任务会读取当前已保存的中文正文，请确认中文修改已完成",
+          "任务提供中文正文作为参考，请逐篇人工填写英文正文和 SEO",
           stats.skipped > 0 ? `跳过 ${stats.skipped} 篇` : null,
           stats.failed > 0 ? `失败 ${stats.failed} 个` : null,
         ]),
@@ -422,7 +422,7 @@ export function PostList({
       }
       router.refresh();
     } catch (error) {
-      toast.error("批量生成英文失败", {
+      toast.error("批量创建英文编辑任务失败", {
         description: error instanceof Error ? error.message : "请稍后重试。",
       });
     } finally {
@@ -441,21 +441,21 @@ export function PostList({
       const result = await enqueueSeoUpdateForPostsAction(selectedIds);
 
       if (result.error) {
-        toast.error("批量更新 SEO 失败", {
+        toast.error("创建人工 SEO 编辑任务 失败", {
           description: result.error,
         });
         return;
       }
 
       if (!result.data) {
-        toast.error("批量更新 SEO 没有返回结果", {
+        toast.error("创建人工 SEO 编辑任务 没有返回结果", {
           description: "请到 AI 任务中心确认任务是否已创建。",
         });
         return;
       }
 
       const stats = result.data;
-      toast.success("SEO 更新任务已加入 AI 任务中心", {
+      toast.success("人工 SEO 编辑任务已加入任务中心", {
         description: describeAdminResult([
           `处理 ${stats.requested} 篇`,
           `排队 ${stats.queued} 个任务`,
@@ -469,7 +469,7 @@ export function PostList({
       }
       router.refresh();
     } catch (error) {
-      toast.error("批量更新 SEO 失败", {
+      toast.error("创建人工 SEO 编辑任务 失败", {
         description: error instanceof Error ? error.message : "请稍后重试。",
       });
     } finally {
@@ -621,7 +621,7 @@ export function PostList({
               className="min-h-11 w-full sm:w-auto"
             >
               <Languages className="size-4" />
-              {bulkAction === "english" ? "排队中..." : "根据中文生成英文"}
+              {bulkAction === "english" ? "排队中..." : "填写英文稿"}
             </Button>
             <Button
               variant="outline"
@@ -630,7 +630,7 @@ export function PostList({
               className="min-h-11 w-full sm:w-auto"
             >
               <SearchCheck className="size-4" />
-              {bulkAction === "seo" ? "排队中..." : "更新 SEO"}
+              {bulkAction === "seo" ? "排队中..." : "人工编辑 SEO"}
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>

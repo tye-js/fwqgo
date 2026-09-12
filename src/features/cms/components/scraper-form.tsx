@@ -5,18 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
-  getAiRewriteStyleOptions,
   getScrapeArticleJobStatusAction,
   scrapeArticleAction,
   type ScrapeActionState,
 } from "@/features/cms/actions/scrape";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { notifyActionError, notifyInfo } from "@/lib/admin-toast";
 
@@ -26,30 +18,13 @@ const initialState: ScrapeActionState = {
   error: null,
 };
 
-type ScraperTag = {
-  name: string;
-};
-
 type ScrapeDiagnostics = NonNullable<ScrapeActionState["data"]>["diagnostics"];
 
 export function ScraperForm({
   setContent,
-  setTitle,
-  setDescription,
-  setKeywords,
-  setRecommendTag,
-  setTags,
 }: {
   setContent: (content: string) => void;
-  setTitle: (title: string) => void;
-  setDescription: (description: string) => void;
-  setKeywords: (keywords: string[]) => void;
-  setRecommendTag: (recommendTag: ScraperTag) => void;
-  setTags: (tags: ScraperTag[]) => void;
 }) {
-  const [rewriteStyles, setRewriteStyles] = useState<
-    Awaited<ReturnType<typeof getAiRewriteStyleOptions>>
-  >([]);
   const [completedJobId, setCompletedJobId] = useState<string | null>(null);
   const [lastDiagnostics, setLastDiagnostics] =
     useState<ScrapeDiagnostics | null>(null);
@@ -66,30 +41,10 @@ export function ScraperForm({
   const applyScrapedArticle = useCallback(
     (article: NonNullable<ScrapeActionState["data"]>) => {
       setContent(article.htmlContent);
-      setTitle(article.title);
-      setDescription(article.description);
-      setKeywords(article.keywords.slice(0, 6));
-      setRecommendTag({ name: article.recommendTagName });
-      setTags(article.tagsName.map((name: string) => ({ name })));
       setLastDiagnostics(article.diagnostics);
     },
-    [
-      setContent,
-      setDescription,
-      setKeywords,
-      setRecommendTag,
-      setTags,
-      setTitle,
-    ],
+    [setContent],
   );
-
-  useEffect(() => {
-    getAiRewriteStyleOptions()
-      .then(setRewriteStyles)
-      .catch((error) => {
-        console.error("Failed to load AI rewrite styles:", error);
-      });
-  }, []);
 
   useEffect(() => {
     if (state.queued && state.jobId) {
@@ -106,7 +61,7 @@ export function ScraperForm({
         {
           title: "抓取失败",
           fallbackSuggestion:
-            "请检查来源 URL 是否可访问，或改用 AI 任务中心后台生成文章。",
+            "请检查来源 URL 是否可访问，或改用文章生产台准备素材。",
         },
       );
     }
@@ -127,7 +82,7 @@ export function ScraperForm({
           applyScrapedArticle(result.data);
           setCompletedJobId(jobId);
           toast.success("文章抓取成功", {
-            description: "抓取、清洗和改写结果已填入表单。",
+            description: "清洗后的原文已填入正文；请人工填写标题和 SEO。",
           });
           return;
         }
@@ -139,7 +94,7 @@ export function ScraperForm({
             {
               title: "抓取失败",
               fallbackSuggestion:
-                "请检查来源 URL 是否可访问，或改用 AI 任务中心后台生成文章。",
+                "请检查来源 URL 是否可访问，或改用文章生产台准备素材。",
             },
           );
         }
@@ -174,7 +129,7 @@ export function ScraperForm({
     <div className="mx-auto max-w-4xl space-y-4 p-4">
       <form
         action={formAction}
-        className="grid gap-2 md:grid-cols-[minmax(0,1fr)_220px_auto]"
+        className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]"
       >
         <Input
           type="url"
@@ -182,26 +137,9 @@ export function ScraperForm({
           placeholder="输入要抓取的网页 URL"
           required
         />
-        <Select
-          name="rewriteStyleId"
-          disabled={rewriteStyles.length === 0 || isScraping}
-        >
-          <SelectTrigger>
-            <SelectValue
-              placeholder={rewriteStyles.length > 0 ? "改写风格" : "未配置 AI"}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {rewriteStyles.map((style) => (
-              <SelectItem key={style.id} value={String(style.id)}>
-                {style.styleName}
-                {style.isDefault ? "（默认）" : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+
         <Button type="submit" disabled={isScraping}>
-          {isScraping ? "后台抓取中..." : "开始抓取并改写"}
+          {isScraping ? "后台抓取中..." : "开始抓取正文"}
         </Button>
       </form>
       {activeJobId ? (

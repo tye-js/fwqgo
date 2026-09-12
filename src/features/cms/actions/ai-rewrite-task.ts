@@ -20,10 +20,6 @@ import { z } from "zod";
 
 import { requireAdminSession } from "@fwqgo/auth/session";
 import {
-  getActiveAiRewriteConfig,
-  getActiveAiRewriteConfigWithFallback,
-} from "@fwqgo/ai/rewrite-config";
-import {
   boundOffsetPaginationByTotal,
   normalizeOffsetPagination,
 } from "@fwqgo/core/pagination";
@@ -33,7 +29,6 @@ import {
 } from "@fwqgo/core/postgres-id";
 import { enqueueAiRewriteTask } from "@/server/ai/rewrite-task-runner";
 import { upsertDerivedAiTask } from "@/server/ai/derived-task";
-import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
 import { db } from "@fwqgo/db";
 import {
   aiRewriteConfigs,
@@ -50,6 +45,7 @@ import {
   type AiRewriteTaskListFilters,
 } from "@/features/cms/lib/ai-rewrite-task-filters";
 import { ilikeContains } from "@/server/db/search";
+import { getManualEnglishSourceId } from "@/features/cms/lib/manual-article";
 
 const taskInputSchema = z.object({
   sourceUrl: z.string().url("请输入有效 URL"),
@@ -228,13 +224,6 @@ async function validateCategoryAndStyle(input: {
     return "分类不存在";
   }
 
-  const config = await getActiveAiRewriteConfig(input.rewriteStyleId);
-  if (!config) {
-    return input.rewriteStyleId
-      ? "指定的 AI 改写配置不存在或已停用"
-      : "当前没有已启用的 AI 改写配置";
-  }
-
   return null;
 }
 
@@ -251,18 +240,6 @@ async function createSourceMaterialAndTask(input: {
   createdBy?: string | null;
   currentStep: string;
 }) {
-  const rewriteConfig = await getActiveAiRewriteConfig(
-    input.rewriteStyleId ?? undefined,
-  );
-  if (!rewriteConfig) {
-    throw new Error(
-      input.rewriteStyleId
-        ? "指定的 AI 改写配置不存在或已停用"
-        : "当前没有已启用的 AI 改写配置",
-    );
-  }
-  const imageConfig = await getActiveImageGenerationConfig();
-
   return db.transaction(async (tx) => {
     const [material] = await tx
       .insert(sourceMaterials)
@@ -275,7 +252,7 @@ async function createSourceMaterialAndTask(input: {
         mime: input.sourceFileType ?? null,
         size: input.sourceFileSize ?? null,
         categoryId: input.categoryId,
-        rewriteStyleId: rewriteConfig.id,
+        rewriteStyleId: null,
         status: "queued",
         createdBy: input.createdBy ?? null,
       })
@@ -295,15 +272,7 @@ async function createSourceMaterialAndTask(input: {
         sourceContent: input.sourceContent ?? null,
         sourceFileName: input.sourceFileName ?? null,
         categoryId: input.categoryId,
-        rewriteStyleId: rewriteConfig.id,
-        rewriteConfigName: rewriteConfig.name,
-        rewriteProvider: rewriteConfig.provider,
-        rewriteModel: rewriteConfig.model,
-        rewriteMaxTokens: rewriteConfig.maxTokens,
-        imageConfigId: imageConfig?.id ?? null,
-        imageConfigName: imageConfig?.name ?? null,
-        imageProvider: imageConfig?.provider ?? null,
-        imageModel: imageConfig?.model ?? null,
+        rewriteStyleId: null,
         status: "pending",
         progress: 0,
         currentStep: input.currentStep,
@@ -495,7 +464,7 @@ export async function createAiRewriteTaskAction(formData: FormData) {
 
     return { data: tasks[0], count: tasks.length };
   } catch (error) {
-    console.error("创建 AI 改写任务失败:", error);
+    console.error("创建文章采集任务失败:", error);
     return { error: getErrorMessage(error) };
   }
 }
@@ -528,33 +497,6 @@ export async function retryAiRewriteTaskAction(taskId: number) {
       return { error: "任务不存在，或当前状态不能重试" };
     }
 
-    const canResumeChineseDraft =
-      retryCandidate.postId !== null &&
-      ["url", "text", "email", "file"].includes(retryCandidate.sourceType);
-    const hasDeletedConfigSnapshot =
-      !retryCandidate.rewriteStyleId &&
-      [
-        retryCandidate.rewriteConfigName,
-        retryCandidate.rewriteProvider,
-        retryCandidate.rewriteModel,
-      ].some((value) => Boolean(value));
-    const rewriteConfig = canResumeChineseDraft
-      ? null
-      : hasDeletedConfigSnapshot
-        ? null
-        : await getActiveAiRewriteConfig(
-            retryCandidate.rewriteStyleId ?? undefined,
-          );
-    if (!rewriteConfig && !canResumeChineseDraft) {
-      return {
-        error: retryCandidate.rewriteStyleId
-          ? `任务绑定的 AI 改写配置 #${retryCandidate.rewriteStyleId} 已停用或不存在，请启用原配置后重试`
-          : hasDeletedConfigSnapshot
-            ? "任务绑定的 AI 改写配置已被删除，请重新创建任务"
-            : "当前没有可用的默认 AI 改写配置",
-      };
-    }
-
     const task = await db.transaction(async (tx) => {
       const [updatedTask] = await tx
         .update(aiRewriteTasks)
@@ -570,15 +512,6 @@ export async function retryAiRewriteTaskAction(taskId: number) {
           leaseOwner: null,
           leaseExpiresAt: null,
           heartbeatAt: null,
-          ...(rewriteConfig
-            ? {
-                rewriteStyleId: rewriteConfig.id,
-                rewriteConfigName: rewriteConfig.name,
-                rewriteProvider: rewriteConfig.provider,
-                rewriteModel: rewriteConfig.model,
-                rewriteMaxTokens: rewriteConfig.maxTokens,
-              }
-            : {}),
         })
         .where(
           and(
@@ -616,7 +549,7 @@ export async function retryAiRewriteTaskAction(taskId: number) {
 
     return { data: task };
   } catch (error) {
-    console.error("重试 AI 改写任务失败:", error);
+    console.error("重试文章采集任务失败:", error);
     return { error: getErrorMessage(error) };
   }
 }
@@ -678,7 +611,7 @@ export async function deleteAiRewriteTaskAction(taskId: number) {
       },
     };
   } catch (error) {
-    console.error("删除 AI 改写任务失败:", error);
+    console.error("删除文章采集任务失败:", error);
     return { error: getErrorMessage(error) };
   }
 }
@@ -738,7 +671,7 @@ export async function cancelAiRewriteTaskAction(taskId: number) {
 
     return { data: task };
   } catch (error) {
-    console.error("取消 AI 改写任务失败:", error);
+    console.error("取消文章采集任务失败:", error);
     return { error: getErrorMessage(error) };
   }
 }
@@ -787,72 +720,23 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
         : post;
 
     if (!parentPost) {
-      return { error: "英文文章缺少对应的中文来源，无法重新生成英文" };
+      return { error: "英文文章缺少对应的中文来源，无法创建英文稿" };
     }
 
-    const sourceSnapshot = parentPost.content.trim().slice(0, 60_000);
+    const sourceSnapshot = parentPost.content.trim();
     if (!sourceSnapshot) {
-      return { error: "中文文章正文为空，无法生成英文文章" };
+      return { error: "中文文章正文为空，无法创建英文稿" };
     }
 
     const sourceUrl = englishSourceUrl(parentPost.id);
-    const [latestSourceTask] = await db
-      .select({
-        rewriteStyleId: aiRewriteTasks.rewriteStyleId,
-        imageConfigId: aiRewriteTasks.imageConfigId,
-      })
-      .from(aiRewriteTasks)
-      .where(
-        and(
-          eq(aiRewriteTasks.postId, parentPost.id),
-          inArray(aiRewriteTasks.sourceType, ["url", "text", "email", "file"]),
-        ),
-      )
-      .orderBy(desc(aiRewriteTasks.createdAt))
-      .limit(1);
-
-    const rewriteConfig = await getActiveAiRewriteConfigWithFallback(
-      latestSourceTask?.rewriteStyleId ?? undefined,
-    );
-    if (!rewriteConfig) {
-      return {
-        error: latestSourceTask?.rewriteStyleId
-          ? `来源任务绑定的 AI 改写配置 #${latestSourceTask.rewriteStyleId} 已停用或不存在，且当前没有其他启用配置`
-          : "当前没有已启用的默认 AI 改写配置",
-      };
-    }
-    const imageConfig = await getActiveImageGenerationConfig(
-      latestSourceTask?.imageConfigId ?? undefined,
-    );
-    if (latestSourceTask?.imageConfigId && !imageConfig) {
-      return {
-        error: `来源任务绑定的生图配置 #${latestSourceTask.imageConfigId} 已停用或不存在`,
-      };
-    }
-
     const task = await upsertDerivedAiTask({
       sourceUrl,
       sourceType: "english",
       sourceTitle: parentPost.title,
       sourceContent: sourceSnapshot,
       categoryId: parentPost.categoryId,
-      initialPostId: parentPost.id,
-      currentStep: "等待根据已保存的中文正文生成英文 SEO",
-      rewriteConfig: {
-        id: rewriteConfig.id,
-        name: rewriteConfig.name,
-        provider: rewriteConfig.provider,
-        model: rewriteConfig.model,
-        maxTokens: rewriteConfig.maxTokens,
-      },
-      imageConfig: imageConfig
-        ? {
-            id: imageConfig.id,
-            name: imageConfig.name,
-            provider: imageConfig.provider,
-            model: imageConfig.model,
-          }
-        : null,
+      initialPostId: null,
+      currentStep: "等待人工填写英文正文与 SEO",
     });
 
     if (task.status !== "running") {
@@ -871,7 +755,7 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
       },
     };
   } catch (error) {
-    console.error("创建英文文章生成任务失败:", error);
+    console.error("创建英文人工编辑任务失败:", error);
     return { error: getErrorMessage(error) };
   }
 }
@@ -970,7 +854,6 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
       .from(posts)
       .where(inArray(posts.id, validIds));
     const foundIds = new Set(postRows.map((post) => post.id));
-    const defaultRewriteConfig = await getActiveAiRewriteConfig();
 
     let queued = 0;
     let running = 0;
@@ -979,38 +862,13 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
     const errors: Array<{ postId: number; reason: string }> = [];
 
     for (const post of postRows) {
-      const sourceSnapshot = post.content.trim().slice(0, 60_000);
+      const sourceSnapshot = post.content.trim();
       if (!sourceSnapshot) {
         skipped += 1;
         errors.push({ postId: post.id, reason: "文章正文为空" });
         continue;
       }
 
-      const [latestSourceTask] = await db
-        .select({
-          rewriteStyleId: aiRewriteTasks.rewriteStyleId,
-        })
-        .from(aiRewriteTasks)
-        .where(
-          and(
-            eq(aiRewriteTasks.postId, post.id),
-            inArray(aiRewriteTasks.sourceType, ["url", "text", "email", "file"]),
-          ),
-        )
-        .orderBy(desc(aiRewriteTasks.createdAt))
-        .limit(1);
-      const rewriteConfig = latestSourceTask?.rewriteStyleId
-        ? await getActiveAiRewriteConfigWithFallback(latestSourceTask.rewriteStyleId)
-        : defaultRewriteConfig;
-      if (!rewriteConfig) {
-        errors.push({
-          postId: post.id,
-          reason: latestSourceTask?.rewriteStyleId
-            ? `来源任务绑定的 AI 改写配置 #${latestSourceTask.rewriteStyleId} 已停用或不存在，且当前没有其他启用配置`
-            : "当前没有已启用的默认 AI 改写配置",
-        });
-        continue;
-      }
       const sourceUrl = seoSourceUrl(post.id);
       const task = await upsertDerivedAiTask({
         sourceUrl,
@@ -1019,14 +877,7 @@ export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
         sourceContent: sourceSnapshot,
         categoryId: post.categoryId,
         initialPostId: post.id,
-        currentStep: "等待更新文章 SEO",
-        rewriteConfig: {
-          id: rewriteConfig.id,
-          name: rewriteConfig.name,
-          provider: rewriteConfig.provider,
-          model: rewriteConfig.model,
-          maxTokens: rewriteConfig.maxTokens,
-        },
+        currentStep: "等待人工编辑文章 SEO",
       });
 
       taskIds.push(task.id);
@@ -1071,6 +922,8 @@ export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
         status: aiRewriteTasks.status,
         postId: aiRewriteTasks.postId,
         sourceMaterialId: aiRewriteTasks.sourceMaterialId,
+        sourceType: aiRewriteTasks.sourceType,
+        sourceUrl: aiRewriteTasks.sourceUrl,
       })
       .from(aiRewriteTasks)
       .where(eq(aiRewriteTasks.id, parsedTaskId))
@@ -1088,6 +941,26 @@ export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
       return { error: "任务还没有生成草稿，不能标记完成" };
     }
 
+    let resolvedPostId = task.postId;
+    if (task.sourceType === "english") {
+      const parentId = getManualEnglishSourceId(task.sourceUrl);
+      const [englishPost] = await db
+        .select({ id: posts.id })
+        .from(posts)
+        .where(
+          and(
+            eq(posts.language, "en"),
+            parentId
+              ? eq(posts.translationSourcePostId, parentId)
+              : eq(posts.id, task.postId),
+          ),
+        )
+        .limit(1);
+      if (!englishPost)
+        return { error: "请先人工填写英文正文和 SEO 并保存英文稿" };
+      resolvedPostId = englishPost.id;
+    }
+
     const updated = await db.transaction(async (tx) => {
       const now = new Date();
       const [updatedTask] = await tx
@@ -1096,6 +969,7 @@ export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
           status: "succeeded",
           progress: 100,
           currentStep: "人工审核已完成",
+          postId: resolvedPostId,
           error: null,
           finishedAt: now,
           leaseOwner: null,
@@ -1131,7 +1005,7 @@ export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
 
     return { data: updated };
   } catch (error) {
-    console.error("标记 AI 改写任务人工处理完成失败:", error);
+    console.error("标记文章采集任务人工处理完成失败:", error);
     return { error: getErrorMessage(error) };
   }
 }
@@ -1323,6 +1197,44 @@ export async function getAiRewriteTaskDetail(id: number) {
 
   if (!task) {
     return null;
+  }
+
+  if (task.sourceType === "english" && task.postLanguage !== "en") {
+    const parentId = getManualEnglishSourceId(task.sourceUrl);
+    const [translation] = parentId
+      ? await db
+          .select({
+            postId: posts.id,
+            postSlug: posts.slug,
+            postTitle: posts.title,
+            postLanguage: posts.language,
+            postImgUrl: posts.imgUrl,
+            postDescription: posts.description,
+            postKeywords: posts.keywords,
+            postTranslationSourcePostId: posts.translationSourcePostId,
+          })
+          .from(posts)
+          .where(
+            and(
+              eq(posts.translationSourcePostId, parentId),
+              eq(posts.language, "en"),
+            ),
+          )
+          .limit(1)
+      : [];
+    Object.assign(
+      task,
+      translation ?? {
+        postId: null,
+        postSlug: null,
+        postTitle: null,
+        postLanguage: null,
+        postImgUrl: null,
+        postDescription: null,
+        postKeywords: null,
+        postTranslationSourcePostId: null,
+      },
+    );
   }
 
   const steps = await db

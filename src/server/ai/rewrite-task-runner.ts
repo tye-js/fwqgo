@@ -1,196 +1,61 @@
 import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import * as cheerio from "cheerio";
 
-import RewriteArticle from "@/langchain/rewrite-article";
+import { cleanArticleNoise } from "@fwqgo/core/article-noise-cleaner";
 import {
   contentToArticleMarkdown,
-  htmlToArticleMarkdown,
   normalizeArticleHtml,
 } from "@fwqgo/core/content";
-import { cleanArticleNoise } from "@fwqgo/core/article-noise-cleaner";
-import { MAX_AI_REWRITE_MAX_ATTEMPTS } from "@fwqgo/core/ai-rewrite-limits";
-import { parsePostgresIntegerId, slugify } from "@fwqgo/core/utils";
+import { getManualEnglishSourceId } from "@/features/cms/lib/manual-article";
+import { structuredLog } from "@fwqgo/core/structured-log";
 import {
   createTaskLeaseOwner,
   getTaskLeaseExpiry,
-  TASK_LEASE_HEARTBEAT_MS,
   TaskLeaseLostError,
+  withTaskLeaseHeartbeat,
 } from "@fwqgo/core/task-lease";
-import { structuredLog } from "@fwqgo/core/structured-log";
-import {
-  createPostRecordInTransaction,
-  getErrorMessage,
-  prepareArticleContentForStorage,
-} from "@/server/posts/create-post-record";
 import { db } from "@fwqgo/db";
 import {
-  aiRewriteArtifacts,
   aiRewriteTasks,
   aiTaskSteps,
-  categories,
-  postTags,
   posts,
   sourceMaterials,
-  tags,
 } from "@fwqgo/db/schema";
-import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
-import { syncImageReferencesForPost } from "@/server/images/assets";
-import { enqueueArticleCoverGenerationTask } from "@/server/images/cover-generation-task-runner";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
-import { upsertDerivedAiTask } from "@/server/ai/derived-task";
+import { rewriteAffiliateLinks } from "@/server/links/affiliate-link-rewriter";
 import {
   scrapeArticleWithOptions,
-  type ArticleProcessingProgress,
   type ScrapedArticle,
   type ScrapeDiagnostics,
 } from "@/server/scrape/article-scraper";
-import {
-  repairMarkdownAffiliateLinks,
-  rewriteAffiliateLinks,
-} from "@/server/links/affiliate-link-rewriter";
-import {
-  generateEnglishArticleContent,
-  generateEnglishMetadata,
-  generateArticleMetadata,
-  getAiRewriteContentLimit,
-  AiRequestConnectionInterruptedError,
-  type AiRewriteAuditEvent,
-  type AiRequestStage,
-  type ArticleRewriteProgress,
-  type EnglishMetadataOutput,
-} from "@fwqgo/ai/article-rewriter";
-import { canFailoverAiProviderError } from "@fwqgo/ai/openai-compatible";
-import { applyEnglishTaxonomyToPost } from "@fwqgo/ai/english-taxonomy";
-import {
-  getActiveAiRewriteConfig,
-  getActiveAiRewriteConfigWithFallback,
-  getEnabledAiRewriteConfigs,
-} from "@fwqgo/ai/rewrite-config";
-import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
-import { shortenMarkdownOutboundLinks } from "@/server/links/outbound-short-link";
-import { regeneratePostInternalLinks } from "@/server/posts/internal-links";
 
-const MAX_AI_MARKDOWN_INPUT_LENGTH = 14_000;
-const MAX_AI_AUDIT_PROMPT_LENGTH = 1_000_000;
-const MAX_AI_AUDIT_RESPONSE_LENGTH = 512_000;
-const MAX_AI_AUDIT_READABLE_CONTENT_LENGTH = 512_000;
-const MAX_AI_AUDIT_METADATA_LENGTH = 200_000;
-
-function normalizeCoverUrlForLanguageCheck(value: string | null | undefined) {
-  if (!value) return "";
-
-  try {
-    return decodeURIComponent(value).toLowerCase();
-  } catch {
-    return value.toLowerCase();
-  }
-}
-
-function isGeneratedCoverForLanguage(
-  value: string | null | undefined,
-  language: "zh" | "en",
-) {
-  return normalizeCoverUrlForLanguageCheck(value).includes(
-    `-${language}-cover.`,
-  );
-}
-
-function getReusableEnglishCoverUrl(
-  existingImgUrl: string | null,
-  parentImgUrl: string | null,
-) {
-  if (!existingImgUrl) return null;
-  if (parentImgUrl && existingImgUrl === parentImgUrl) return null;
-  if (isGeneratedCoverForLanguage(existingImgUrl, "zh")) return null;
-
-  return existingImgUrl;
-}
-
-function shouldForceEnglishCoverGeneration(input: {
-  englishImgUrl: string | null;
-  parentImgUrl: string | null;
-}) {
-  if (!input.englishImgUrl) return true;
-  if (input.parentImgUrl && input.englishImgUrl === input.parentImgUrl) {
-    return true;
-  }
-
-  return isGeneratedCoverForLanguage(input.englishImgUrl, "zh");
-}
-
-type TaskStatus =
-  "pending" | "running" | "succeeded" | "failed" | "manual_required";
-
+type Task = typeof aiRewriteTasks.$inferSelect;
 type StepStatus =
   "pending" | "running" | "success" | "failed" | "skipped" | "manual_required";
 
-type ActiveTaskStep = {
-  key: string;
-  name: string;
-  attempt: number;
-  progress: number;
-  payload?: unknown;
-};
-
-function getArticleRewriteProgress(input: {
-  stage: ArticleRewriteProgress["stage"];
-  status: ArticleRewriteProgress["status"];
-  attempt?: ArticleRewriteProgress["attempt"];
-  maxAttempts?: ArticleRewriteProgress["maxAttempts"];
-}) {
-  if (input.stage === "metadata_generation") {
-    return input.status === "running" ? 78 : 80;
-  }
-
-  const maxAttempts = Math.max(
-    1,
-    Math.min(Math.trunc(input.maxAttempts ?? 1), MAX_AI_REWRITE_MAX_ATTEMPTS),
-  );
-  const attempt = Math.max(
-    1,
-    Math.min(Math.trunc(input.attempt ?? 1), maxAttempts),
-  );
-  const attemptStart = 54 + Math.floor(((attempt - 1) * 22) / maxAttempts);
-  const attemptEnd = 54 + Math.floor((attempt * 22) / maxAttempts);
-  return input.status === "running"
-    ? attemptStart
-    : Math.min(attemptEnd, attemptStart + 1);
-}
-
 async function updateTask(
-  task: Pick<typeof aiRewriteTasks.$inferSelect, "id" | "leaseOwner">,
+  task: Task,
   values: Partial<typeof aiRewriteTasks.$inferInsert>,
 ) {
-  const leaseOwner = task.leaseOwner;
-  if (!leaseOwner) throw new TaskLeaseLostError();
-
-  const updated = await db
+  if (!task.leaseOwner) throw new TaskLeaseLostError();
+  const rows = await db
     .update(aiRewriteTasks)
     .set({ ...values, updatedAt: new Date() })
     .where(
       and(
         eq(aiRewriteTasks.id, task.id),
         eq(aiRewriteTasks.status, "running"),
-        eq(aiRewriteTasks.leaseOwner, leaseOwner),
+        eq(aiRewriteTasks.leaseOwner, task.leaseOwner),
       ),
     )
     .returning({ id: aiRewriteTasks.id });
-
-  if (updated.length === 0) throw new TaskLeaseLostError();
+  if (!rows.length) throw new TaskLeaseLostError();
 }
 
-function createAiRequestStageHandler(
-  task: Pick<typeof aiRewriteTasks.$inferSelect, "id" | "leaseOwner">,
-) {
-  return async (requestStage: AiRequestStage) => {
-    await updateTask(task, { requestStage });
-  };
-}
-
-async function renewAiTaskLease(task: typeof aiRewriteTasks.$inferSelect) {
+async function renewAiTaskLease(task: Task) {
   if (!task.leaseOwner) throw new TaskLeaseLostError();
   const now = new Date();
-  const renewed = await db
+  const rows = await db
     .update(aiRewriteTasks)
     .set({
       heartbeatAt: now,
@@ -205,28 +70,29 @@ async function renewAiTaskLease(task: typeof aiRewriteTasks.$inferSelect) {
       ),
     )
     .returning({ id: aiRewriteTasks.id });
-  if (renewed.length === 0) throw new TaskLeaseLostError();
+  if (!rows.length) throw new TaskLeaseLostError();
 }
 
 async function finalizeTask(
-  task: typeof aiRewriteTasks.$inferSelect,
-  status: Exclude<TaskStatus, "pending" | "running">,
+  task: Task,
+  status: "manual_required" | "failed",
   values: Partial<typeof aiRewriteTasks.$inferInsert>,
 ) {
+  if (!task.leaseOwner) throw new TaskLeaseLostError();
   const leaseOwner = task.leaseOwner;
-  if (!leaseOwner) return false;
-
-  const now = new Date();
-  return db.transaction(async (tx) => {
-    const [updatedTask] = await tx
+  await db.transaction(async (tx) => {
+    const now = new Date();
+    const [updated] = await tx
       .update(aiRewriteTasks)
       .set({
         ...values,
         status,
+        progress: 100,
+        finishedAt: now,
+        updatedAt: now,
         leaseOwner: null,
         leaseExpiresAt: null,
         heartbeatAt: null,
-        updatedAt: now,
       })
       .where(
         and(
@@ -236,33 +102,27 @@ async function finalizeTask(
         ),
       )
       .returning({ id: aiRewriteTasks.id });
-
-    if (!updatedTask) return false;
-
+    if (!updated) throw new TaskLeaseLostError();
     if (task.sourceMaterialId) {
       await tx
         .update(sourceMaterials)
         .set({ status, updatedAt: now })
         .where(eq(sourceMaterials.id, task.sourceMaterialId));
     }
-
-    return true;
   });
 }
 
-async function upsertTaskStep(input: {
-  taskId: number;
-  attempt: number;
-  stepKey: string;
-  stepName: string;
-  status: StepStatus;
-  progress: number;
-  message?: string | null;
-  error?: string | null;
-  payload?: unknown;
-  startedAt?: Date | null;
-  finishedAt?: Date | null;
-}) {
+async function upsertTaskStep(
+  task: Task,
+  input: {
+    key: string;
+    name: string;
+    status: StepStatus;
+    progress: number;
+    message: string;
+    error?: string;
+  },
+) {
   const now = new Date();
   const isTerminal = [
     "success",
@@ -270,1612 +130,41 @@ async function upsertTaskStep(input: {
     "skipped",
     "manual_required",
   ].includes(input.status);
-  const startedAt =
-    input.startedAt ?? (input.status === "running" ? now : null);
-  const finishedAt = isTerminal ? (input.finishedAt ?? now) : null;
-  const payload =
-    typeof input.payload === "undefined" ? null : JSON.stringify(input.payload);
-
+  const finishedAt = isTerminal ? now : null;
+  const startedAt = input.status === "running" ? now : null;
+  const values = {
+    stepName: input.name,
+    status: input.status,
+    progress: input.progress,
+    message: input.message,
+    error: input.error ?? null,
+    finishedAt,
+    updatedAt: now,
+  };
   await db
     .insert(aiTaskSteps)
     .values({
-      taskId: input.taskId,
-      attempt: input.attempt,
-      stepKey: input.stepKey,
-      stepName: input.stepName,
-      status: input.status,
-      progress: input.progress,
-      message: input.message ?? null,
-      error: input.error ?? null,
-      payload,
+      ...values,
+      taskId: task.id,
+      attempt: task.attempts,
+      stepKey: input.key,
       startedAt,
-      finishedAt,
-      updatedAt: now,
     })
     .onConflictDoUpdate({
       target: [aiTaskSteps.taskId, aiTaskSteps.stepKey, aiTaskSteps.attempt],
       set: {
-        stepName: input.stepName,
-        status: input.status,
-        progress: input.progress,
-        message: input.message ?? null,
-        error: input.error ?? null,
-        payload,
+        ...values,
         startedAt: sql`coalesce(${aiTaskSteps.startedAt}, excluded."startedAt")`,
-        finishedAt,
-        updatedAt: now,
       },
     });
 }
 
-async function failTask(
-  task: typeof aiRewriteTasks.$inferSelect,
-  error: unknown,
-  failedStep?: ActiveTaskStep,
-) {
-  const requiresManualConfirmation =
-    error instanceof AiRequestConnectionInterruptedError;
-  const terminalStatus = requiresManualConfirmation
-    ? ("manual_required" as const)
-    : ("failed" as const);
-
-  if (failedStep) {
-    try {
-      await upsertTaskStep({
-        taskId: task.id,
-        attempt: failedStep.attempt,
-        stepKey: failedStep.key,
-        stepName: failedStep.name,
-        status: requiresManualConfirmation ? "manual_required" : "failed",
-        progress: failedStep.progress,
-        error: getErrorMessage(error),
-        payload: failedStep.payload,
-      });
-    } catch (stepError) {
-      structuredLog("error", "ai.task_failure_step_persist_failed", {
-        taskId: task.id,
-        stepKey: failedStep.key,
-        attempt: failedStep.attempt,
-        error: stepError,
-      });
-    }
-  }
-
-  const finalized = await finalizeTask(task, terminalStatus, {
-    progress: 100,
-    currentStep: requiresManualConfirmation
-      ? `需要人工确认：${getErrorMessage(error)}`
-      : "处理失败",
-    error: getErrorMessage(error),
-    requestStage: requiresManualConfirmation ? "manual_required" : undefined,
-    finishedAt: new Date(),
-  });
-
-  if (!finalized) {
-    structuredLog("warn", "ai.task_failure_ignored_after_lease_loss", {
-      taskId: task.id,
-      leaseOwner: task.leaseOwner,
-      error,
-    });
-  }
-}
-
-async function requeueAiTaskWithNextConfig(
-  task: typeof aiRewriteTasks.$inferSelect,
-  error: unknown,
-  failedStep?: ActiveTaskStep,
-) {
-  if (!canFailoverAiProviderError(error) || !task.leaseOwner) {
-    return false;
-  }
-
-  const configs = await getEnabledAiRewriteConfigs();
-  const currentIndex = configs.findIndex(
-    (config) => config.id === task.rewriteStyleId,
-  );
-  const nextConfig = currentIndex >= 0 ? configs[currentIndex + 1] : configs[0];
-
-  if (!nextConfig || nextConfig.id === task.rewriteStyleId) {
-    return false;
-  }
-
-  const errorMessage = getErrorMessage(error);
-  if (failedStep) {
-    await upsertTaskStep({
-      taskId: task.id,
-      attempt: failedStep.attempt,
-      stepKey: failedStep.key,
-      stepName: failedStep.name,
-      status: "failed",
-      progress: failedStep.progress,
-      error: errorMessage,
-      payload: {
-        ...(failedStep.payload && typeof failedStep.payload === "object"
-          ? failedStep.payload
-          : {}),
-        failover: {
-          fromConfigId: task.rewriteStyleId,
-          toConfigId: nextConfig.id,
-          toConfigName: nextConfig.name,
-        },
-      },
-    });
-  }
-
-  const now = new Date();
-  const [requeued] = await db
-    .update(aiRewriteTasks)
-    .set({
-      status: "pending",
-      progress: 10,
-      currentStep: `AI 服务异常，已切换到配置「${nextConfig.name}」，重新计时排队`,
-      error: null,
-      requestStage: "queued",
-      rewriteStyleId: nextConfig.id,
-      rewriteConfigName: nextConfig.name,
-      rewriteProvider: nextConfig.provider,
-      rewriteModel: nextConfig.model,
-      rewriteMaxTokens: nextConfig.maxTokens,
-      startedAt: null,
-      finishedAt: null,
-      leaseOwner: null,
-      leaseExpiresAt: null,
-      heartbeatAt: null,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(aiRewriteTasks.id, task.id),
-        eq(aiRewriteTasks.status, "running"),
-        eq(aiRewriteTasks.leaseOwner, task.leaseOwner),
-      ),
-    )
-    .returning({ id: aiRewriteTasks.id });
-
-  if (!requeued) throw new TaskLeaseLostError();
-
-  structuredLog("warn", "ai.task_config_failover", {
-    taskId: task.id,
-    failedConfigId: task.rewriteStyleId,
-    failedConfigName: task.rewriteConfigName,
-    nextConfigId: nextConfig.id,
-    nextConfigName: nextConfig.name,
-    error,
-  });
-  return true;
-}
-
-function needsManualAffiliateReview(diagnostics: ScrapeDiagnostics) {
-  const report = diagnostics.affiliateReport;
-  return (report?.invalidLinks.length ?? 0) > 0;
-}
-
-function finishedStepText(input: { manualRequired: boolean }) {
-  const reviewText = input.manualRequired ? "，存在无效链接，需人工审核" : "";
-  return `已保存草稿${reviewText}`;
-}
-
-function looksLikeHtml(value: string) {
-  return /<\/?[a-z][\s\S]*>/i.test(value);
-}
-
-function textToHtml(value: string) {
-  const escapeHtml = (text: string) =>
-    text
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-
-  return value
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean)
-    .map(
-      (paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`,
-    )
-    .join("");
-}
-
-function firstNonEmptyContent(
-  ...values: Array<string | null | undefined>
-): string {
-  return values.find((value) => value?.trim())?.trim() ?? "";
-}
-
-async function getTaskAiInputMaxLength(styleId?: number | null) {
-  const config = await getActiveAiRewriteConfig(styleId ?? undefined);
-  return config
-    ? getAiRewriteContentLimit(config.maxTokens)
-    : MAX_AI_MARKDOWN_INPUT_LENGTH;
-}
-
-async function bindTaskConfigs(task: typeof aiRewriteTasks.$inferSelect) {
-  const rewriteConfig = task.rewriteStyleId
-    ? await getActiveAiRewriteConfigWithFallback(task.rewriteStyleId)
-    : task.rewriteConfigName || task.rewriteProvider || task.rewriteModel
-      ? null
-      : await getActiveAiRewriteConfig();
-
-  if (!rewriteConfig) {
-    throw new Error(
-      task.rewriteStyleId
-        ? `任务绑定的 AI 改写配置 #${task.rewriteStyleId} 已停用或不存在，请启用原配置后重试`
-        : task.rewriteConfigName || task.rewriteProvider || task.rewriteModel
-          ? "任务绑定的 AI 改写配置已被删除，请重新创建任务"
-          : "当前没有可用的默认 AI 改写配置",
-    );
-  }
-
-  const needsImageConfig = task.sourceType !== "seo";
-  const imageConfig = !needsImageConfig
-    ? null
-    : task.imageConfigId
-      ? await getActiveImageGenerationConfig(task.imageConfigId)
-      : task.imageConfigName || task.imageProvider || task.imageModel
-        ? null
-        : await getActiveImageGenerationConfig();
-
-  if (
-    needsImageConfig &&
-    !imageConfig &&
-    (task.imageConfigId ||
-      task.imageConfigName ||
-      task.imageProvider ||
-      task.imageModel)
-  ) {
-    throw new Error(
-      task.imageConfigId
-        ? `任务绑定的生图配置 #${task.imageConfigId} 已停用或不存在，请启用原配置后重试`
-        : "任务绑定的生图配置已被删除，请重新创建任务",
-    );
-  }
-
-  const [boundTask] = await db
-    .update(aiRewriteTasks)
-    .set({
-      rewriteStyleId: rewriteConfig.id,
-      rewriteConfigName: rewriteConfig.name,
-      rewriteProvider: rewriteConfig.provider,
-      rewriteModel: rewriteConfig.model,
-      rewriteMaxTokens: rewriteConfig.maxTokens,
-      imageConfigId: imageConfig?.id ?? null,
-      imageConfigName: imageConfig?.name ?? null,
-      imageProvider: imageConfig?.provider ?? null,
-      imageModel: imageConfig?.model ?? null,
-      updatedAt: new Date(),
-    })
-    .where(
-      task.leaseOwner
-        ? and(
-            eq(aiRewriteTasks.id, task.id),
-            eq(aiRewriteTasks.leaseOwner, task.leaseOwner),
-          )
-        : eq(aiRewriteTasks.id, task.id),
-    )
-    .returning();
-
-  if (!boundTask) {
-    throw new Error("AI 任务配置绑定失败");
-  }
-
-  return boundTask;
-}
-
-async function getUniqueEnglishArticleSlug(
-  baseSlug: string,
-  excludePostId?: number,
-) {
-  const normalizedBaseSlug = slugify(baseSlug) || "server-deal";
-
-  for (let index = 0; index < 20; index += 1) {
-    const candidate =
-      index === 0 ? normalizedBaseSlug : `${normalizedBaseSlug}-${index + 1}`;
-    const [existing] = await db
-      .select({ id: posts.id })
-      .from(posts)
-      .where(
-        and(
-          eq(posts.slug, candidate),
-          excludePostId ? sql`${posts.id} <> ${excludePostId}` : sql`true`,
-        ),
-      )
-      .limit(1);
-
-    if (!existing) {
-      return candidate;
-    }
-  }
-
-  return excludePostId
-    ? `${normalizedBaseSlug}-${excludePostId}`
-    : `${normalizedBaseSlug}-${Date.now()}`;
-}
-
-async function createEnglishSeoTask(input: {
-  parentTask: typeof aiRewriteTasks.$inferSelect;
-  post: { id: number; title: string };
-  rewrittenChineseContent: string;
-}) {
-  const sourceUrl = `post://${input.post.id}/english`;
-  const sourceSnapshot = input.rewrittenChineseContent.trim().slice(0, 60_000);
-  if (!sourceSnapshot) {
-    throw new Error("英文 SEO 任务缺少改写后的中文正文");
-  }
-
-  const rewriteConfig = await getActiveAiRewriteConfigWithFallback(
-    input.parentTask.rewriteStyleId ?? undefined,
-  );
-  if (!rewriteConfig) {
-    throw new Error("当前没有已启用的 AI 改写配置，无法创建英文任务");
-  }
-
-  const task = await upsertDerivedAiTask({
-    sourceUrl,
-    sourceType: "english",
-    sourceTitle: input.post.title,
-    sourceContent: sourceSnapshot,
-    categoryId: input.parentTask.categoryId,
-    initialPostId: input.post.id,
-    currentStep: "等待根据已保存的中文正文生成英文 SEO",
-    rewriteConfig: {
-      id: rewriteConfig.id,
-      name: rewriteConfig.name,
-      provider: rewriteConfig.provider,
-      model: rewriteConfig.model,
-      maxTokens: rewriteConfig.maxTokens,
-    },
-    imageConfig: {
-      id: input.parentTask.imageConfigId,
-      name: input.parentTask.imageConfigName,
-      provider: input.parentTask.imageProvider,
-      model: input.parentTask.imageModel,
-    },
-  });
-
-  return task.id;
-}
-
-// Retain this task-shape helper for legacy task recovery compatibility. New
-// Chinese rewrite runs deliberately do not call it automatically.
-void createEnglishSeoTask;
-
-async function getEnglishSourceContent(
-  claimedTask: typeof aiRewriteTasks.$inferSelect,
-  postContent: string | null,
-) {
-  // The linked Chinese post is the source of truth. A queued task may have
-  // been created before the editor made the final manual changes.
-  for (const value of [
-    postContent,
-    claimedTask.sourceContent,
-    claimedTask.scrapedHtml,
-  ]) {
-    const trimmed = value?.trim();
-    if (trimmed) {
-      return trimmed;
-    }
-  }
-
-  return null;
-}
-
-function getEnglishParentPostId(
-  claimedTask: typeof aiRewriteTasks.$inferSelect,
-) {
-  const match = /^post:\/\/(\d+)\/english$/.exec(claimedTask.sourceUrl);
-  const parsed = parsePostgresIntegerId(match?.[1]);
-
-  return parsed ?? claimedTask.postId;
-}
-
-function uniqueTagNames(tagNames: string[]) {
-  const seenSlugs = new Set<string>();
-  const result: Array<{ name: string; slug: string }> = [];
-
-  for (const value of tagNames) {
-    const name = value.trim();
-    const slug = slugify(name);
-
-    if (!name || !slug || seenSlugs.has(slug)) {
-      continue;
-    }
-
-    seenSlugs.add(slug);
-    result.push({ name, slug });
-  }
-
-  return result;
-}
-
-async function ensureTagRowsByName(tagNames: string[]) {
-  const normalizedTags = uniqueTagNames(tagNames);
-  const tagRows: Array<{ id: number; name: string; slug: string }> = [];
-
-  for (const tag of normalizedTags) {
-    const [existingTag] = await db
-      .select({ id: tags.id, name: tags.name, slug: tags.slug })
-      .from(tags)
-      .where(or(eq(tags.slug, tag.slug), eq(tags.name, tag.name)))
-      .limit(1);
-
-    if (existingTag) {
-      tagRows.push(existingTag);
-      continue;
-    }
-
-    const [insertedTag] = await db
-      .insert(tags)
-      .values({ name: tag.name, slug: tag.slug, indexable: false })
-      .onConflictDoNothing()
-      .returning({ id: tags.id, name: tags.name, slug: tags.slug });
-
-    if (insertedTag) {
-      tagRows.push(insertedTag);
-      continue;
-    }
-
-    const [createdByConcurrentTask] = await db
-      .select({ id: tags.id, name: tags.name, slug: tags.slug })
-      .from(tags)
-      .where(or(eq(tags.slug, tag.slug), eq(tags.name, tag.name)))
-      .limit(1);
-
-    if (createdByConcurrentTask) {
-      tagRows.push(createdByConcurrentTask);
-    }
-  }
-
-  return tagRows;
-}
-
-async function replacePostTagsByNames(postId: number, tagNames: string[]) {
-  const tagRows = await ensureTagRowsByName(tagNames);
-
-  await db.transaction(async (tx) => {
-    await tx.delete(postTags).where(eq(postTags.postId, postId));
-
-    if (tagRows.length > 0) {
-      await tx
-        .insert(postTags)
-        .values(
-          tagRows.map((tag) => ({
-            postId,
-            tagId: tag.id,
-          })),
-        )
-        .onConflictDoNothing();
-    }
-  });
-
-  return tagRows;
-}
-
-async function enqueueCoverForDraftPost(input: {
-  taskId: number;
-  attempt: number;
-  stepKey: string;
-  stepName: string;
-  progress: number;
-  postId: number;
-  language: "zh" | "en";
-  configId?: number | null;
-  force?: boolean;
-}) {
-  if (!input.configId) {
-    await upsertTaskStep({
-      taskId: input.taskId,
-      attempt: input.attempt,
-      stepKey: input.stepKey,
-      stepName: input.stepName,
-      status: "skipped",
-      progress: input.progress,
-      message: "任务创建时没有可用的生图配置，已跳过自动封面",
-    });
-    return { status: "skipped" as const, url: null };
-  }
-
-  const [post] = await db
-    .select({
-      id: posts.id,
-      title: posts.title,
-      imgUrl: posts.imgUrl,
-    })
-    .from(posts)
-    .where(eq(posts.id, input.postId))
-    .limit(1);
-
-  if (!post) {
-    await upsertTaskStep({
-      taskId: input.taskId,
-      attempt: input.attempt,
-      stepKey: input.stepKey,
-      stepName: input.stepName,
-      status: "failed",
-      progress: input.progress,
-      message: "草稿已保存，但没有找到文章记录，无法生成封面图",
-    });
-    return { status: "failed" as const, url: null };
-  }
-
-  if (post.imgUrl && !input.force) {
-    await upsertTaskStep({
-      taskId: input.taskId,
-      attempt: input.attempt,
-      stepKey: input.stepKey,
-      stepName: input.stepName,
-      status: "skipped",
-      progress: input.progress,
-      message: "文章已有封面图，跳过自动生图",
-      payload: { postId: post.id, url: post.imgUrl },
-    });
-    return { status: "skipped" as const, url: post.imgUrl };
-  }
-
-  try {
-    const { task, reused } = await enqueueArticleCoverGenerationTask({
-      batchId: `ai-rewrite-${input.taskId}-${input.language}-cover`,
-      postId: post.id,
-      title: post.title,
-      configId: input.configId,
-      createdBy: null,
-      restartTerminal:
-        input.force === true || post.imgUrl == null || post.imgUrl.length === 0,
-    });
-
-    await upsertTaskStep({
-      taskId: input.taskId,
-      attempt: input.attempt,
-      stepKey: input.stepKey,
-      stepName: input.stepName,
-      status: "success",
-      progress: input.progress,
-      message:
-        input.language === "en"
-          ? `英文封面任务已${reused ? "复用" : "加入"}独立队列 #${task.id}`
-          : `中文封面任务已${reused ? "复用" : "加入"}独立队列 #${task.id}`,
-      payload: {
-        postId: post.id,
-        language: input.language,
-        coverTaskId: task.id,
-        batchId: task.batchId,
-        status: task.status,
-        reused,
-      },
-    });
-
-    return {
-      status: "queued" as const,
-      coverTaskId: task.id,
-      batchId: task.batchId,
-    };
-  } catch (error) {
-    structuredLog("error", "ai.cover_enqueue_failed", {
-      taskId: input.taskId,
-      postId: input.postId,
-      error,
-    });
-    await upsertTaskStep({
-      taskId: input.taskId,
-      attempt: input.attempt,
-      stepKey: input.stepKey,
-      stepName: input.stepName,
-      status: "manual_required",
-      progress: input.progress,
-      message: "草稿已保存，但自动封面任务入队失败",
-      error: getErrorMessage(error),
-      payload: {
-        postId: post.id,
-        language: input.language,
-      },
-    });
-
-    return { status: "failed" as const, coverTaskId: null, batchId: null };
-  }
-}
-
-function readStoredDiagnostics(value: string | null) {
-  if (!value) return null;
-  try {
-    return JSON.parse(value) as ScrapeDiagnostics;
-  } catch {
-    return null;
-  }
-}
-
-async function resumeChineseTaskFromDraft(
-  claimedTask: typeof aiRewriteTasks.$inferSelect,
-) {
-  if (!claimedTask.postId) throw new Error("断点续跑缺少草稿文章 ID");
-  const [post] = await db
-    .select({
-      id: posts.id,
-      title: posts.title,
-      content: posts.content,
-    })
-    .from(posts)
-    .where(eq(posts.id, claimedTask.postId))
-    .limit(1);
-  if (!post) throw new Error("上次保存的草稿文章已被删除，无法断点续跑");
-  if (!post.content?.trim())
-    throw new Error("上次保存的草稿正文为空，无法断点续跑");
-
-  const attempt = claimedTask.attempts;
-  const diagnostics = readStoredDiagnostics(claimedTask.diagnostics);
-  let manualRequired = diagnostics
-    ? needsManualAffiliateReview(diagnostics)
-    : false;
-  const warnings: string[] = [];
-
-  await updateTask(claimedTask, {
-    progress: 88,
-    currentStep: "检测到已保存草稿，跳过抓取和 AI 改写并继续后处理",
-    resultTitle: post.title,
-  });
-  for (const step of [
-    ["source_collect", "抓取/读取素材", "草稿 checkpoint 已存在，跳过重新抓取"],
-    ["html_clean", "清洗正文结构", "保留已保存草稿，不重新清洗正文"],
-    ["affiliate_check", "识别商户与返利链接", "保留上次诊断结果"],
-    ["ai_rewrite", "AI 改写文章", "草稿 checkpoint 已存在，跳过再次调用模型"],
-  ] as const) {
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: step[0],
-      stepName: step[1],
-      status: "skipped",
-      progress: 88,
-      message: step[2],
-      payload: { resumedFromPostId: post.id },
-    });
-  }
-  await upsertTaskStep({
-    taskId: claimedTask.id,
-    attempt,
-    stepKey: "save_draft",
-    stepName: "保存草稿",
-    status: "success",
-    progress: 90,
-    message: `复用现有草稿文章 #${post.id}，未覆盖人工编辑`,
-    payload: { postId: post.id, title: post.title, checkpoint: true },
-  });
-
-  try {
-    const result = await regeneratePostInternalLinks({
-      postId: post.id,
-      mode: "activate-high-confidence",
-      generatedBy: "rule",
-      includeKnowledge: false,
-    });
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "internal_link_plan",
-      stepName: "生成文章内链",
-      status: "success",
-      progress: 91,
-      message: `生成 ${result.generated} 条内链，其中 ${result.active} 条已启用`,
-      payload: result,
-    });
-  } catch (error) {
-    manualRequired = true;
-    warnings.push("文章内链规划失败");
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "internal_link_plan",
-      stepName: "生成文章内链",
-      status: "manual_required",
-      progress: 91,
-      message: "草稿已保留，但内链规划失败",
-      error: getErrorMessage(error),
-    });
-  }
-
-  const coverResult = await enqueueCoverForDraftPost({
-    taskId: claimedTask.id,
-    attempt,
-    stepKey: "cover_generate",
-    stepName: "自动生成中文封面",
-    progress: 91,
-    postId: post.id,
-    language: "zh",
-    configId: claimedTask.imageConfigId,
-  });
-  if (coverResult.status === "failed") {
-    manualRequired = true;
-    warnings.push("中文封面任务入队失败");
-  }
-
-  try {
-    await syncImageReferencesForPost(post.id);
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "image_references",
-      stepName: "同步图片引用",
-      status: "success",
-      progress: 94,
-      message: "图片引用同步完成",
-    });
-  } catch (error) {
-    manualRequired = true;
-    warnings.push("图片引用索引同步失败");
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "image_references",
-      stepName: "同步图片引用",
-      status: "manual_required",
-      progress: 94,
-      message: "草稿已保留，但图片引用索引同步失败",
-      error: getErrorMessage(error),
-    });
-  }
-
-  await upsertTaskStep({
-    taskId: claimedTask.id,
-    attempt,
-    stepKey: "offer_source",
-    stepName: "套餐数据来源",
-    status: "success",
-    progress: 96,
-    message: "文章不再提取套餐；套餐由供应商官网采集并单独审核",
-    payload: { source: "provider_catalog", postId: post.id },
-  });
-  await upsertTaskStep({
-    taskId: claimedTask.id,
-    attempt,
-    stepKey: "english_enqueue",
-    stepName: "等待人工确认后生成英文",
-    status: "skipped",
-    progress: 98,
-    message: "中文草稿已保留。请确认人工修改后再生成英文。",
-    payload: { requiresManualChineseEdit: true, postId: post.id },
-  });
-
-  const completionParts = [finishedStepText({ manualRequired })];
-  completionParts.push("已从草稿 checkpoint 恢复，未重新调用 AI");
-  completionParts.push(...warnings);
-  const finalized = await finalizeTask(
-    claimedTask,
-    manualRequired ? "manual_required" : "succeeded",
-    {
-      progress: 100,
-      currentStep: completionParts.join("；"),
-      postId: post.id,
-      resultTitle: post.title,
-      diagnostics: claimedTask.diagnostics,
-      finishedAt: new Date(),
-    },
-  );
-  if (!finalized) throw new TaskLeaseLostError();
-}
-
-async function upsertEnglishDraftPost(input: {
-  parentPost: {
-    id: number;
-    categoryId: number;
-    imgUrl: string | null;
-  };
-  existingPostId: number | null;
-  title: string;
-  slug: string;
-  description: string;
-  keywords: string[];
-  content: string;
-  metadata: EnglishMetadataOutput;
-}) {
-  const [existingByTask] = input.existingPostId
-    ? await db
-        .select({ id: posts.id, imgUrl: posts.imgUrl, slug: posts.slug })
-        .from(posts)
-        .where(
-          and(eq(posts.id, input.existingPostId), eq(posts.language, "en")),
-        )
-        .limit(1)
-    : [];
-  const [existingBySource] = existingByTask
-    ? []
-    : await db
-        .select({ id: posts.id, imgUrl: posts.imgUrl, slug: posts.slug })
-        .from(posts)
-        .where(
-          and(
-            eq(posts.translationSourcePostId, input.parentPost.id),
-            eq(posts.language, "en"),
-          ),
-        )
-        .limit(1);
-  const [existingBySlug] =
-    existingByTask || existingBySource
-      ? []
-      : await db
-          .select({ id: posts.id, imgUrl: posts.imgUrl, slug: posts.slug })
-          .from(posts)
-          .where(and(eq(posts.slug, input.slug), eq(posts.language, "en")))
-          .limit(1);
-  const existingPost = existingByTask ?? existingBySource ?? existingBySlug;
-  const existingPostId = existingPost?.id ?? null;
-  const existingImgUrl = existingPost?.imgUrl ?? null;
-  const reusableEnglishImgUrl = getReusableEnglishCoverUrl(
-    existingImgUrl,
-    input.parentPost.imgUrl,
-  );
-  const slug = await getUniqueEnglishArticleSlug(
-    input.slug,
-    existingPostId ?? undefined,
-  );
-  const storedContent = await prepareArticleContentForStorage(input.content);
-  const keywords = input.keywords.join(",");
-
-  const [post] = existingPostId
-    ? await db
-        .update(posts)
-        .set({
-          title: input.title,
-          slug,
-          description: input.description,
-          keywords,
-          content: storedContent,
-          imgUrl: reusableEnglishImgUrl,
-          language: "en",
-          translationSourcePostId: input.parentPost.id,
-          categoryId: input.parentPost.categoryId,
-          recommendedTagName: null,
-          recommendedTagId: null,
-          published: false,
-          updatedAt: new Date(),
-        })
-        .where(eq(posts.id, existingPostId))
-        .returning({
-          id: posts.id,
-          title: posts.title,
-          slug: posts.slug,
-          imgUrl: posts.imgUrl,
-        })
-    : await db
-        .insert(posts)
-        .values({
-          title: input.title,
-          slug,
-          description: input.description,
-          keywords,
-          content: storedContent,
-          imgUrl: null,
-          language: "en",
-          translationSourcePostId: input.parentPost.id,
-          categoryId: input.parentPost.categoryId,
-          recommendedTagName: null,
-          recommendedTagId: null,
-          published: false,
-          affiliateReviewStatus: "pending",
-        })
-        .returning({
-          id: posts.id,
-          title: posts.title,
-          slug: posts.slug,
-          imgUrl: posts.imgUrl,
-        });
-
-  if (!post) {
-    throw new Error("英文草稿保存失败");
-  }
-
-  await applyEnglishTaxonomyToPost({
-    postId: post.id,
-    categoryId: input.parentPost.categoryId,
-    metadata: input.metadata,
-  });
-
-  return { ...post, previousSlug: existingPost?.slug ?? null };
-}
-
-async function runEnglishSeoTask(
-  claimedTask: typeof aiRewriteTasks.$inferSelect,
-) {
-  const attempt = claimedTask.attempts;
-  const rewriteExecutionOptions = {
-    styleId: claimedTask.rewriteStyleId ?? undefined,
-    onRequestStage: createAiRequestStageHandler(claimedTask),
-    onAudit: (audit: AiRewriteAuditEvent) =>
-      persistAiRewriteArtifactBestEffort({
-        taskId: claimedTask.id,
-        taskAttempt: attempt,
-        audit,
-      }),
-  };
-  let activeStep = {
-    key: "english_generate",
-    name: "生成英文正文",
-    attempt,
-    progress: 20,
-  };
-
-  try {
-    if (!claimedTask.postId) {
-      throw new Error("英文 SEO 任务缺少关联草稿文章");
-    }
-
-    const parentPostId = getEnglishParentPostId(claimedTask);
-    if (!parentPostId) {
-      throw new Error("英文 SEO 任务缺少关联中文草稿");
-    }
-
-    const [post] = await db
-      .select({
-        id: posts.id,
-        title: posts.title,
-        description: posts.description,
-        keywords: posts.keywords,
-        content: posts.content,
-        imgUrl: posts.imgUrl,
-        categoryId: posts.categoryId,
-        categoryName: categories.name,
-        categorySlug: categories.slug,
-        categoryEnName: categories.enName,
-        categoryEnSlug: categories.enSlug,
-      })
-      .from(posts)
-      .innerJoin(categories, eq(posts.categoryId, categories.id))
-      .where(eq(posts.id, parentPostId))
-      .limit(1);
-
-    if (!post) {
-      throw new Error("关联草稿文章不存在");
-    }
-
-    const englishSourceContent = await getEnglishSourceContent(
-      claimedTask,
-      post.content,
-    );
-    if (!englishSourceContent) {
-      throw new Error(
-        "英文 SEO 任务缺少已保存的中文正文，请先保存中文文章后重试",
-      );
-    }
-
-    const markdownInput = contentToArticleMarkdown(englishSourceContent, {
-      maxLength: await getTaskAiInputMaxLength(claimedTask.rewriteStyleId),
-    });
-
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "english_generate",
-      stepName: "生成英文正文",
-      status: "running",
-      progress: 25,
-      message: markdownInput.truncated
-        ? `正在翻译中文改写正文，Markdown 输入 ${markdownInput.markdown.length} 字符，已截断`
-        : `正在翻译中文改写正文，Markdown 输入 ${markdownInput.markdown.length} 字符`,
-    });
-    await updateTask(claimedTask, {
-      progress: 35,
-      currentStep: "生成英文正文",
-      resultTitle: post.title,
-      scrapedTitle: post.title,
-      scrapedDescription: post.description,
-      scrapedHtml: englishSourceContent.slice(0, 60_000),
-      aiInputLength: markdownInput.markdown.length,
-    });
-
-    const generatedEnglishContent = await generateEnglishArticleContent(
-      {
-        title: post.title,
-        description: post.description,
-        keywords: post.keywords,
-        markdownContent: markdownInput.markdown,
-      },
-      rewriteExecutionOptions,
-    );
-    const enContent = await shortenMarkdownOutboundLinks(
-      generatedEnglishContent,
-    );
-
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "english_generate",
-      stepName: "生成英文正文",
-      status: "success",
-      progress: 58,
-      message: `英文输出 ${enContent.length} 字符`,
-      payload: {
-        markdownInputLength: markdownInput.markdown.length,
-        markdownInputTruncated: markdownInput.truncated,
-      },
-    });
-
-    activeStep = {
-      key: "english_metadata",
-      name: "生成英文 SEO 信息",
-      attempt,
-      progress: 68,
-    };
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "english_metadata",
-      stepName: "生成英文 SEO 信息",
-      status: "running",
-      progress: 68,
-      message: "正在生成英文标题、分类、标签和 SEO 元信息",
-    });
-    await updateTask(claimedTask, {
-      progress: 68,
-      currentStep: "生成英文 SEO 信息",
-      rewriteOutputLength: enContent.length,
-    });
-
-    const english = await generateEnglishMetadata(
-      {
-        title: post.title,
-        description: post.description,
-        keywords: post.keywords,
-        enContent,
-        category: {
-          name: post.categoryName,
-          slug: post.categorySlug,
-          enName: post.categoryEnName,
-          enSlug: post.categoryEnSlug,
-        },
-      },
-      rewriteExecutionOptions,
-    );
-    const existingEnglishPostId =
-      claimedTask.postId && claimedTask.postId !== post.id
-        ? claimedTask.postId
-        : null;
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "english_metadata",
-      stepName: "生成英文 SEO 信息",
-      status: "success",
-      progress: 78,
-      message: `英文标题：${english.enTitle}`,
-      payload: {
-        enTitle: english.enTitle,
-        enSlug: english.enSlug,
-        enKeywords: english.enKeywords,
-        enCategoryName: english.enCategoryName,
-        enCategorySlug: english.enCategorySlug,
-        enTags: english.enTags,
-        enRecommendTagName: english.enRecommendTagName,
-      },
-    });
-
-    activeStep = {
-      key: "english_save",
-      name: "写入英文草稿",
-      attempt,
-      progress: 82,
-    };
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "english_save",
-      stepName: "写入英文草稿",
-      status: "running",
-      progress: 82,
-      message: "正在写入文章英文 SEO 字段",
-    });
-    await updateTask(claimedTask, {
-      progress: 82,
-      currentStep: "写入英文 SEO 草稿",
-      rewriteOutputLength: enContent.length,
-    });
-
-    await renewAiTaskLease(claimedTask);
-    const englishPost = await upsertEnglishDraftPost({
-      parentPost: post,
-      existingPostId: existingEnglishPostId,
-      title: english.enTitle,
-      slug: english.enSlug,
-      description: english.enDescription,
-      keywords: english.enKeywords,
-      content: enContent,
-      metadata: english,
-    });
-    await updateTask(claimedTask, {
-      progress: 88,
-      currentStep: "英文草稿已保存，正在执行后续处理",
-      resultTitle: englishPost.title,
-      postId: englishPost.id,
-    });
-    schedulePublicWebCache("post.changed", {
-      postIds: [englishPost.id],
-      postSlugs: englishPost.previousSlug
-        ? [englishPost.previousSlug, englishPost.slug]
-        : [englishPost.slug],
-      categoryIds: [post.categoryId],
-    });
-
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "english_save",
-      stepName: "写入英文草稿",
-      status: "success",
-      progress: 88,
-      message: `英文草稿已单独生成：/posts/edit/post/${encodeURIComponent(englishPost.slug)}`,
-      payload: { postId: englishPost.id, enSlug: englishPost.slug },
-    });
-
-    const postProcessWarnings: string[] = [];
-    activeStep = {
-      key: "english_internal_link_plan",
-      name: "生成英文文章内链",
-      attempt,
-      progress: 90,
-    };
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: activeStep.key,
-      stepName: activeStep.name,
-      status: "running",
-      progress: activeStep.progress,
-      message: "正在匹配英文正文标签和相关文章",
-    });
-    try {
-      const internalLinkResult = await regeneratePostInternalLinks({
-        postId: englishPost.id,
-        mode: "activate-high-confidence",
-        generatedBy: "rule",
-        includeKnowledge: false,
-      });
-      await upsertTaskStep({
-        taskId: claimedTask.id,
-        attempt,
-        stepKey: activeStep.key,
-        stepName: activeStep.name,
-        status: "success",
-        progress: 91,
-        message: `生成 ${internalLinkResult.generated} 条英文内链，其中 ${internalLinkResult.active} 条已启用`,
-        payload: internalLinkResult,
-      });
-    } catch (error) {
-      structuredLog("error", "ai.english_internal_link_plan_failed", {
-        taskId: claimedTask.id,
-        postId: englishPost.id,
-        error,
-      });
-      await upsertTaskStep({
-        taskId: claimedTask.id,
-        attempt,
-        stepKey: activeStep.key,
-        stepName: activeStep.name,
-        status: "manual_required",
-        progress: 91,
-        message: "英文草稿已保存，但内链规划失败",
-        error: getErrorMessage(error),
-      });
-      postProcessWarnings.push("英文文章内链规划失败");
-    }
-
-    const coverResult = await enqueueCoverForDraftPost({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "english_cover",
-      stepName: "自动生成英文封面",
-      progress: 92,
-      postId: englishPost.id,
-      language: "en",
-      configId: claimedTask.imageConfigId,
-      force: shouldForceEnglishCoverGeneration({
-        englishImgUrl: englishPost.imgUrl,
-        parentImgUrl: post.imgUrl,
-      }),
-    });
-    if (coverResult.status === "failed") {
-      postProcessWarnings.push("英文封面任务入队失败");
-    }
-
-    activeStep = {
-      key: "english_image_references",
-      name: "同步英文图片引用",
-      attempt,
-      progress: 94,
-    };
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: activeStep.key,
-      stepName: activeStep.name,
-      status: "running",
-      progress: activeStep.progress,
-      message: "正在同步英文文章图片引用",
-    });
-    try {
-      await syncImageReferencesForPost(englishPost.id);
-      await upsertTaskStep({
-        taskId: claimedTask.id,
-        attempt,
-        stepKey: activeStep.key,
-        stepName: activeStep.name,
-        status: "success",
-        progress: 96,
-        message: "英文文章图片引用同步完成",
-      });
-    } catch (error) {
-      structuredLog("error", "ai.english_image_references_sync_failed", {
-        taskId: claimedTask.id,
-        postId: englishPost.id,
-        error,
-      });
-      await upsertTaskStep({
-        taskId: claimedTask.id,
-        attempt,
-        stepKey: activeStep.key,
-        stepName: activeStep.name,
-        status: "manual_required",
-        progress: 96,
-        message: "英文草稿已保存，但图片引用索引同步失败",
-        error: getErrorMessage(error),
-      });
-      postProcessWarnings.push("英文图片引用索引同步失败");
-    }
-
-    activeStep = {
-      key: "english_finalize",
-      name: "完成英文任务",
-      attempt,
-      progress: 98,
-    };
-    const finalized = await finalizeTask(
-      claimedTask,
-      postProcessWarnings.length > 0 ? "manual_required" : "succeeded",
-      {
-        progress: 100,
-        currentStep:
-          postProcessWarnings.length > 0
-            ? `英文 SEO 版本已生成；${postProcessWarnings.join("；")}`
-            : "英文 SEO 版本已生成",
-        resultTitle: english.enTitle,
-        postId: englishPost.id,
-        diagnostics: JSON.stringify({
-          sourceHost: "english-seo",
-          strategy: "english-seo-version",
-          usedAiRewrite: true,
-          aiInputLength: markdownInput.markdown.length,
-          rewriteOutputLength: enContent.length,
-          markdownInputLength: markdownInput.markdown.length,
-          markdownInputTruncated: markdownInput.truncated,
-          sourceHtmlLength: markdownInput.document.sourceHtmlLength,
-          semanticBlockCount: markdownInput.document.blocks.length,
-          warnings: [
-            ...(markdownInput.truncated
-              ? ["英文生成使用的中文 Markdown 输入过长，已按正文结构截断"]
-              : []),
-            ...postProcessWarnings,
-          ],
-        }),
-        finishedAt: new Date(),
-      },
-    );
-    if (!finalized) throw new TaskLeaseLostError();
-  } catch (error) {
-    if (!(await requeueAiTaskWithNextConfig(claimedTask, error, activeStep))) {
-      await failTask(claimedTask, error, activeStep);
-    }
-  }
-}
-
-async function runSeoMetadataTask(
-  claimedTask: typeof aiRewriteTasks.$inferSelect,
-) {
-  const attempt = claimedTask.attempts;
-  const rewriteExecutionOptions = {
-    styleId: claimedTask.rewriteStyleId ?? undefined,
-    onRequestStage: createAiRequestStageHandler(claimedTask),
-    onAudit: (audit: AiRewriteAuditEvent) =>
-      persistAiRewriteArtifactBestEffort({
-        taskId: claimedTask.id,
-        taskAttempt: attempt,
-        audit,
-      }),
-  };
-  let activeStep = {
-    key: "seo_metadata",
-    name: "生成文章 SEO",
-    attempt,
-    progress: 35,
-  };
-
-  try {
-    if (!claimedTask.postId) {
-      throw new Error("SEO 更新任务缺少文章 ID");
-    }
-
-    const [post] = await db
-      .select({
-        id: posts.id,
-        title: posts.title,
-        slug: posts.slug,
-        published: posts.published,
-        slugLocked: posts.slugLocked,
-        description: posts.description,
-        keywords: posts.keywords,
-        content: posts.content,
-        categoryId: posts.categoryId,
-        categoryName: categories.name,
-        categorySlug: categories.slug,
-        categoryEnName: categories.enName,
-        categoryEnSlug: categories.enSlug,
-        language: posts.language,
-      })
-      .from(posts)
-      .innerJoin(categories, eq(posts.categoryId, categories.id))
-      .where(eq(posts.id, claimedTask.postId))
-      .limit(1);
-
-    if (!post) {
-      throw new Error("文章不存在或已被删除");
-    }
-
-    const sourceContent = claimedTask.sourceContent?.trim() ?? post.content;
-    const markdownInput = contentToArticleMarkdown(sourceContent, {
-      maxLength: await getTaskAiInputMaxLength(claimedTask.rewriteStyleId),
-    });
-
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "seo_prepare",
-      stepName: "准备 SEO 输入",
-      status: "success",
-      progress: 25,
-      message: markdownInput.truncated
-        ? `正文 Markdown 输入 ${markdownInput.markdown.length} 字符，已截断`
-        : `正文 Markdown 输入 ${markdownInput.markdown.length} 字符`,
-      payload: {
-        language: post.language,
-        markdownInputLength: markdownInput.markdown.length,
-        markdownInputTruncated: markdownInput.truncated,
-      },
-    });
-
-    await updateTask(claimedTask, {
-      progress: 35,
-      currentStep: "生成文章 SEO",
-      resultTitle: post.title,
-      scrapedTitle: post.title,
-      scrapedDescription: post.description,
-      scrapedHtml: sourceContent.slice(0, 60_000),
-      aiInputLength: markdownInput.markdown.length,
-    });
-
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "seo_metadata",
-      stepName: post.language === "en" ? "生成英文 SEO" : "生成中文 SEO",
-      status: "running",
-      progress: 45,
-      message:
-        post.language === "en"
-          ? "正在生成英文标题、分类、标签和 SEO 元信息"
-          : "正在生成中文标题、摘要、关键词和标签",
-    });
-
-    const isEnglishPost = post.language === "en";
-    const updateResult = isEnglishPost
-      ? await (async () => {
-          const metadata = await generateEnglishMetadata(
-            {
-              title: post.title,
-              description: post.description,
-              keywords: post.keywords,
-              enContent: markdownInput.markdown,
-              category: {
-                name: post.categoryName,
-                slug: post.categorySlug,
-                enName: post.categoryEnName,
-                enSlug: post.categoryEnSlug,
-              },
-            },
-            rewriteExecutionOptions,
-          );
-          await renewAiTaskLease(claimedTask);
-          const nextSlug =
-            post.slugLocked || post.published
-              ? post.slug
-              : await getUniqueEnglishArticleSlug(
-                  metadata.enSlug || metadata.enTitle,
-                  post.id,
-                );
-          const [updatedPost] = await db
-            .update(posts)
-            .set({
-              title: metadata.enTitle,
-              slug: sql`case when ${posts.slugLocked} or ${posts.published} then ${posts.slug} else ${nextSlug} end`,
-              description: metadata.enDescription,
-              keywords: metadata.enKeywords.join(","),
-              updatedAt: new Date(),
-            })
-            .where(eq(posts.id, post.id))
-            .returning({
-              id: posts.id,
-              title: posts.title,
-              slug: posts.slug,
-              categoryId: posts.categoryId,
-            });
-          const taxonomy = updatedPost
-            ? await applyEnglishTaxonomyToPost({
-                postId: post.id,
-                categoryId: post.categoryId,
-                metadata,
-              })
-            : null;
-
-          return {
-            updatedPost,
-            title: metadata.enTitle,
-            slug: updatedPost?.slug ?? nextSlug,
-            description: metadata.enDescription,
-            keywords: metadata.enKeywords,
-            tagCount: taxonomy?.tags.length ?? null,
-          };
-        })()
-      : await (async () => {
-          const metadata = await generateArticleMetadata(
-            { markdownContent: markdownInput.markdown },
-            rewriteExecutionOptions,
-          );
-          await renewAiTaskLease(claimedTask);
-          const nextSlug =
-            post.slugLocked || post.published
-              ? post.slug
-              : await getUniqueEnglishArticleSlug(metadata.title, post.id);
-          const tagRows = await replacePostTagsByNames(post.id, [
-            metadata.recommendTagName,
-            ...metadata.tagsName,
-          ]);
-          const recommendedTagSlug = slugify(metadata.recommendTagName);
-          const recommendedTag =
-            tagRows.find((tag) => tag.slug === recommendedTagSlug) ?? null;
-          const [updatedPost] = await db
-            .update(posts)
-            .set({
-              title: metadata.title,
-              slug: sql`case when ${posts.slugLocked} or ${posts.published} then ${posts.slug} else ${nextSlug} end`,
-              description: metadata.description,
-              keywords: metadata.keywords.join(","),
-              recommendedTagName:
-                recommendedTag?.name ?? metadata.recommendTagName,
-              recommendedTagId: recommendedTag?.id ?? null,
-              updatedAt: new Date(),
-            })
-            .where(eq(posts.id, post.id))
-            .returning({
-              id: posts.id,
-              title: posts.title,
-              slug: posts.slug,
-              categoryId: posts.categoryId,
-            });
-
-          return {
-            updatedPost,
-            title: metadata.title,
-            slug: updatedPost?.slug ?? nextSlug,
-            description: metadata.description,
-            keywords: metadata.keywords,
-            tagCount: tagRows.length,
-          };
-        })();
-
-    if (!updateResult.updatedPost) {
-      throw new Error("文章 SEO 写入失败");
-    }
-
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "seo_metadata",
-      stepName: isEnglishPost ? "生成英文 SEO" : "生成中文 SEO",
-      status: "success",
-      progress: 78,
-      message: `SEO 标题：${updateResult.title}`,
-      payload: {
-        slug: updateResult.slug,
-        description: updateResult.description,
-        keywords: updateResult.keywords,
-        tagCount: updateResult.tagCount,
-      },
-    });
-
-    activeStep = {
-      key: "seo_save",
-      name: "写入文章 SEO",
-      attempt,
-      progress: 88,
-    };
-    await upsertTaskStep({
-      taskId: claimedTask.id,
-      attempt,
-      stepKey: "seo_save",
-      stepName: "写入文章 SEO",
-      status: "success",
-      progress: 95,
-      message: `已更新文章 #${post.id}`,
-      payload: {
-        postId: post.id,
-        oldSlug: post.slug,
-        newSlug: updateResult.slug,
-      },
-    });
-
-    schedulePublicWebCache("post.changed", {
-      postIds: [post.id],
-      postSlugs: [post.slug, updateResult.slug],
-      categoryIds: [post.categoryId],
-    });
-
-    activeStep = {
-      key: "seo_finalize",
-      name: "完成 SEO 任务",
-      attempt,
-      progress: 98,
-    };
-    const finalized = await finalizeTask(claimedTask, "succeeded", {
-      progress: 100,
-      currentStep: "文章 SEO 已更新",
-      resultTitle: updateResult.title,
-      postId: post.id,
-      rewriteOutputLength: updateResult.description.length,
-      diagnostics: JSON.stringify({
-        sourceHost: "post-seo",
-        strategy: isEnglishPost ? "english-post-seo" : "chinese-post-seo",
-        usedAiRewrite: true,
-        aiInputLength: markdownInput.markdown.length,
-        rewriteOutputLength: updateResult.description.length,
-        markdownInputLength: markdownInput.markdown.length,
-        markdownInputTruncated: markdownInput.truncated,
-        sourceHtmlLength: markdownInput.document.sourceHtmlLength,
-        semanticBlockCount: markdownInput.document.blocks.length,
-        warnings: markdownInput.truncated
-          ? ["SEO 生成使用的 Markdown 输入过长，已按正文结构截断"]
-          : [],
-      }),
-      finishedAt: new Date(),
-    });
-    if (!finalized) throw new TaskLeaseLostError();
-  } catch (error) {
-    if (!(await requeueAiTaskWithNextConfig(claimedTask, error, activeStep))) {
-      await failTask(claimedTask, error, activeStep);
-    }
-  }
-}
-
-async function createArticleFromManualTask(input: {
-  sourceTitle: string | null;
-  sourceContent: string | null;
-  sourceUrl: string;
-  rewriteStyleId?: number;
-  categoryName?: string | null;
-  aiInputMaxLength: number;
-  onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>;
-  onRequestStage?: (stage: AiRequestStage) => void | Promise<void>;
-}): Promise<ScrapedArticle> {
-  const rawContent = input.sourceContent?.trim();
-  if (!rawContent) {
-    throw new Error("手动素材内容为空");
-  }
-
-  const trimmedTitle = input.sourceTitle?.trim();
-  const sourceTitle =
-    typeof trimmedTitle === "string" && trimmedTitle.length > 0
-      ? trimmedTitle
-      : "手动素材";
-  const normalizedHtml = normalizeArticleHtml(
-    looksLikeHtml(rawContent) ? rawContent : textToHtml(rawContent),
-  );
-  const noiseCleanup = cleanArticleNoise(normalizedHtml);
-  const html = noiseCleanup.html;
-  const $ = cheerio.load(html, null, false);
+async function readManualMaterial(task: Task): Promise<ScrapedArticle> {
+  const source = task.sourceContent?.trim();
+  if (!source) throw new Error("素材内容为空，请补充原文后重试");
+  // This conversion preserves the complete source and table links. It never calls a text model.
+  const cleaned = cleanArticleNoise(normalizeArticleHtml(source));
+  const $ = cheerio.load(cleaned.html, null, false);
   const baseUrl = process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com";
   const affiliateReport = await rewriteAffiliateLinks({
     $,
@@ -1883,293 +172,272 @@ async function createArticleFromManualTask(input: {
     sourceHost: new URL(baseUrl).hostname,
     removeInternal: false,
   });
-  const cleanedHtml = $.html();
-  const markdownInput = htmlToArticleMarkdown(cleanedHtml, {
-    maxLength: input.aiInputMaxLength,
-  });
+  const html = $.html();
+  const markdown = contentToArticleMarkdown(html).markdown;
+  if (!markdown.trim()) throw new Error("素材没有可读正文");
+  const title = task.sourceTitle?.trim() ?? "手动素材";
   const diagnostics: ScrapeDiagnostics = {
-    sourceHost: input.sourceUrl,
+    sourceHost: task.sourceUrl,
     strategy: "manual-material",
     usedPuppeteer: false,
     usedFallback: false,
     usedAiRewrite: false,
-    contentLength: cleanedHtml.length,
-    scrapedTitle: sourceTitle,
-    scrapedDescription: $.text().trim().slice(0, 160),
-    cleanedHtmlLength: cleanedHtml.length,
-    aiInputLength: markdownInput.markdown.length,
-    aiInputTruncated: markdownInput.truncated,
-    removedSelectors: noiseCleanup.removedSelectors,
-    removedContentPatterns: noiseCleanup.removedContentPatterns,
+    contentLength: markdown.length,
+    scrapedTitle: title,
+    scrapedDescription: "",
+    cleanedHtmlLength: html.length,
+    removedSelectors: cleaned.removedSelectors,
+    removedContentPatterns: cleaned.removedContentPatterns,
     affiliateReport,
-    warnings: markdownInput.truncated
-      ? ["AI Markdown 输入过长，已按正文结构截取前半部分核心内容改写"]
-      : [],
+    warnings: [],
   };
-  const progressSnapshot = () => ({
-    title: sourceTitle,
-    description: diagnostics.scrapedDescription ?? "",
-    cleanedHtmlContent: cleanedHtml,
-    diagnostics,
-  });
-  await input.onProgress?.({
-    stage: "content_prepared",
-    snapshot: progressSnapshot(),
-  });
-
-  let rewritten: Awaited<ReturnType<typeof RewriteArticle>>;
-  try {
-    rewritten = await RewriteArticle(markdownInput.markdown, {
-      styleId: input.rewriteStyleId,
-      sourceTitle,
-      categoryName: input.categoryName,
-      onProgress: async (ai) => {
-        await input.onProgress?.({
-          stage: "ai_progress",
-          snapshot: progressSnapshot(),
-          ai,
-        });
-      },
-      onAudit: async (audit) => {
-        await input.onProgress?.({
-          stage: "ai_audit",
-          snapshot: progressSnapshot(),
-          audit,
-        });
-      },
-      onRequestStage: input.onRequestStage,
-    });
-  } catch (error) {
-    const message = getErrorMessage(error);
-    diagnostics.aiRewriteError = message;
-    await input.onProgress?.({
-      stage: "ai_failed",
-      snapshot: progressSnapshot(),
-      error: message,
-    });
-    throw error;
-  }
-  const repairedMarkdown = repairMarkdownAffiliateLinks(
-    rewritten.markdownContent,
-    affiliateReport,
-  );
-  const finalMarkdown = repairedMarkdown.trim() || markdownInput.markdown;
-  if (!repairedMarkdown.trim()) {
-    diagnostics.warnings.push("AI 返回空正文，已回退到清洗后的原始正文");
-  }
-  diagnostics.usedAiRewrite = true;
-  diagnostics.rewriteOutputLength = finalMarkdown.length;
-  diagnostics.rewriteQuality = rewritten.quality;
-
   return {
-    title: rewritten.title || sourceTitle,
-    content: finalMarkdown,
-    htmlContent: finalMarkdown,
-    cleanedHtmlContent: cleanedHtml,
-    description: rewritten.description,
-    keywords: rewritten.keywords,
-    recommendTagName: rewritten.recommendTagName,
-    tagsName: rewritten.tagsName,
+    title,
+    description: "",
+    content: markdown,
+    htmlContent: markdown,
+    cleanedHtmlContent: html,
+    keywords: [],
+    tagsName: [],
+    recommendTagName: "",
     diagnostics,
   };
 }
 
-async function loadTaskArticle(
-  claimedTask: typeof aiRewriteTasks.$inferSelect,
-  onProgress?: (progress: ArticleProcessingProgress) => void | Promise<void>,
-  onRequestStage?: (stage: AiRequestStage) => void | Promise<void>,
-) {
-  const aiInputMaxLength = await getTaskAiInputMaxLength(
-    claimedTask.rewriteStyleId,
-  );
-  const [category] = await db
-    .select({ name: categories.name })
-    .from(categories)
-    .where(eq(categories.id, claimedTask.categoryId))
-    .limit(1);
+async function prepareExistingArticle(task: Task) {
+  let postId = task.postId;
+  let source = task.scrapedHtml ?? task.sourceContent ?? "";
+  if (task.sourceType === "english") {
+    const parentId = getManualEnglishSourceId(task.sourceUrl);
+    if (!parentId) throw new Error("英文任务缺少中文来源文章");
+    const [parent] = await db
+      .select({ id: posts.id, content: posts.content, title: posts.title })
+      .from(posts)
+      .where(eq(posts.id, parentId))
+      .limit(1);
+    if (!parent) throw new Error("中文来源文章不存在");
+    const [translation] = await db
+      .select({ id: posts.id })
+      .from(posts)
+      .where(
+        and(
+          eq(posts.translationSourcePostId, parentId),
+          eq(posts.language, "en"),
+        ),
+      )
+      .limit(1);
+    postId = translation?.id ?? null;
+    source = parent.content;
+  }
+  await upsertTaskStep(task, {
+    key: "manual_input",
+    name: "人工填写正文与 SEO",
+    status: "manual_required",
+    progress: 100,
+    message: postId
+      ? "请打开现有文章，人工填写正文和 SEO 后保存"
+      : "中文来源已准备，请人工输入英文正文和 SEO",
+  });
+  await finalizeTask(task, "manual_required", {
+    postId,
+    scrapedHtml: source,
+    requestStage: "manual_required",
+    error: null,
+    currentStep: postId
+      ? "请从文章编辑页人工维护正文与 SEO"
+      : "请人工填写英文正文与 SEO 后保存草稿",
+    aiInputLength: null,
+    rewriteOutputLength: null,
+  });
+}
 
+async function collectTaskSource(task: Task) {
   if (
-    claimedTask.sourceType === "text" ||
-    claimedTask.sourceType === "email" ||
-    claimedTask.sourceType === "file"
+    task.sourceType === "english" ||
+    task.sourceType === "seo" ||
+    task.postId
   ) {
-    return createArticleFromManualTask({
-      sourceTitle: claimedTask.sourceTitle,
-      sourceContent: claimedTask.sourceContent,
-      sourceUrl: claimedTask.sourceUrl,
-      rewriteStyleId: claimedTask.rewriteStyleId ?? undefined,
-      categoryName: category?.name ?? null,
-      aiInputMaxLength,
-      onProgress,
-      onRequestStage,
-    });
+    await prepareExistingArticle(task);
+    return;
   }
-
-  return scrapeArticleWithOptions({
-    url: claimedTask.sourceUrl,
-    rewriteStyleId: claimedTask.rewriteStyleId ?? undefined,
-    aiInputMaxLength,
-    categoryName: category?.name ?? null,
-    onProgress,
-    onRequestStage,
+  await upsertTaskStep(task, {
+    key: "source_collect",
+    name: "抓取/读取素材",
+    status: "running",
+    progress: 20,
+    message: "正在读取素材",
+  });
+  const article = ["text", "email", "file"].includes(task.sourceType)
+    ? await readManualMaterial(task)
+    : await scrapeArticleWithOptions({ url: task.sourceUrl });
+  await renewAiTaskLease(task);
+  await updateTask(task, {
+    scrapedTitle: article.title,
+    scrapedDescription:
+      article.diagnostics.scrapedDescription ?? article.description,
+    scrapedHtml: article.cleanedHtmlContent,
+    diagnostics: JSON.stringify(article.diagnostics),
+    aiInputLength: null,
+    rewriteOutputLength: null,
+    currentStep: "素材已清洗，准备人工编辑",
+    progress: 80,
+  });
+  await upsertTaskStep(task, {
+    key: "source_collect",
+    name: "抓取/读取素材",
+    status: "success",
+    progress: 40,
+    message: "素材读取完成",
+  });
+  await upsertTaskStep(task, {
+    key: "html_clean",
+    name: "清洗正文结构",
+    status: "success",
+    progress: 70,
+    message: `已保留完整清洗正文 ${article.cleanedHtmlContent.length} 个字符`,
+  });
+  const report = article.diagnostics.affiliateReport;
+  await upsertTaskStep(task, {
+    key: "affiliate_check",
+    name: "识别商户与返利链接",
+    status: report.invalidLinks.length ? "manual_required" : "success",
+    progress: 80,
+    message: `命中 ${report.matchedLinks.length} 条，未命中 ${report.unmatchedLinks.length} 条，无效 ${report.invalidLinks.length} 条`,
+  });
+  await upsertTaskStep(task, {
+    key: "manual_input",
+    name: "人工填写正文与 SEO",
+    status: "manual_required",
+    progress: 100,
+    message:
+      "请人工填写最终正文、标题、slug、摘要、关键词和标签；保存草稿后可手动点击生成封面",
+  });
+  await finalizeTask(task, "manual_required", {
+    currentStep: "素材已准备，请人工填写正文与 SEO",
+    requestStage: "manual_required",
+    error: null,
   });
 }
 
-function boundAuditText(value: string | undefined, limit: number) {
-  if (typeof value !== "string") {
-    return { value: null, length: null, truncated: false };
-  }
-
-  return {
-    value: value.slice(0, limit),
-    length: value.length,
-    truncated: value.length > limit,
-  };
-}
-
-function auditJson(value: unknown, limit = MAX_AI_AUDIT_METADATA_LENGTH) {
-  if (typeof value === "undefined") {
-    return null;
-  }
-
+export async function runAiRewriteTask(taskId: number) {
+  if (!Number.isSafeInteger(taskId) || taskId <= 0) return;
+  const leaseOwner = createTaskLeaseOwner("article-collection");
+  const claimedAt = new Date();
+  const task = await db.transaction(async (tx) => {
+    const [claimed] = await tx
+      .update(aiRewriteTasks)
+      .set({
+        status: "running",
+        progress: 10,
+        currentStep: "准备读取素材",
+        error: null,
+        startedAt: claimedAt,
+        finishedAt: null,
+        requestStage: "queued",
+        attempts: sql`${aiRewriteTasks.attempts} + 1`,
+        leaseOwner,
+        leaseExpiresAt: getTaskLeaseExpiry(claimedAt),
+        heartbeatAt: claimedAt,
+        updatedAt: claimedAt,
+      })
+      .where(
+        and(
+          eq(aiRewriteTasks.id, taskId),
+          inArray(aiRewriteTasks.status, ["pending", "failed"]),
+        ),
+      )
+      .returning();
+    if (claimed?.sourceMaterialId) {
+      await tx
+        .update(sourceMaterials)
+        .set({ status: "running", updatedAt: claimedAt })
+        .where(eq(sourceMaterials.id, claimed.sourceMaterialId));
+    }
+    return claimed;
+  });
+  if (!task) return;
   try {
-    return JSON.stringify(value).slice(0, limit);
-  } catch {
-    return JSON.stringify({ error: "审计元数据序列化失败" });
-  }
-}
-
-async function upsertAiRewriteArtifact(input: {
-  taskId: number;
-  taskAttempt: number;
-  audit: AiRewriteAuditEvent;
-}) {
-  const now = new Date();
-  const prompt = boundAuditText(input.audit.prompt, MAX_AI_AUDIT_PROMPT_LENGTH);
-  const response = boundAuditText(
-    input.audit.response,
-    MAX_AI_AUDIT_RESPONSE_LENGTH,
-  );
-  const readableContent = boundAuditText(
-    input.audit.readableContent,
-    MAX_AI_AUDIT_READABLE_CONTENT_LENGTH,
-  );
-  const isTerminal = input.audit.status !== "running";
-
-  await db
-    .insert(aiRewriteArtifacts)
-    .values({
-      taskId: input.taskId,
-      taskAttempt: Math.max(1, input.taskAttempt),
-      stage: input.audit.stage,
-      stageName: input.audit.stageName,
-      stageAttempt: Math.max(1, input.audit.stageAttempt),
-      status: input.audit.status,
-      configSnapshot: auditJson(input.audit.config),
-      model: input.audit.config.model,
-      maxTokens: input.audit.maxTokens,
-      temperature: input.audit.temperature,
-      prompt: prompt.value,
-      promptLength: prompt.length,
-      promptTruncated: prompt.truncated,
-      response: response.value,
-      responseLength: response.length,
-      responseTruncated: response.truncated,
-      readableContent: readableContent.value,
-      readableContentLength: readableContent.length,
-      readableContentTruncated: readableContent.truncated,
-      metadata: auditJson(input.audit.metadata),
-      finishReason: input.audit.finishReason ?? null,
-      promptTokens: input.audit.promptTokens ?? null,
-      completionTokens: input.audit.completionTokens ?? null,
-      totalTokens: input.audit.totalTokens ?? null,
-      error: input.audit.error ?? null,
-      startedAt: now,
-      finishedAt: isTerminal ? now : null,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [
-        aiRewriteArtifacts.taskId,
-        aiRewriteArtifacts.taskAttempt,
-        aiRewriteArtifacts.stage,
-        aiRewriteArtifacts.stageAttempt,
-      ],
-      set: {
-        stageName: input.audit.stageName,
-        status: input.audit.status,
-        configSnapshot: auditJson(input.audit.config),
-        model: input.audit.config.model,
-        maxTokens: input.audit.maxTokens,
-        temperature: input.audit.temperature,
-        prompt: prompt.value,
-        promptLength: prompt.length,
-        promptTruncated: prompt.truncated,
-        response: response.value,
-        responseLength: response.length,
-        responseTruncated: response.truncated,
-        readableContent: readableContent.value,
-        readableContentLength: readableContent.length,
-        readableContentTruncated: readableContent.truncated,
-        metadata: auditJson(input.audit.metadata),
-        finishReason: input.audit.finishReason ?? null,
-        promptTokens: input.audit.promptTokens ?? null,
-        completionTokens: input.audit.completionTokens ?? null,
-        totalTokens: input.audit.totalTokens ?? null,
-        error: input.audit.error ?? null,
-        finishedAt: isTerminal ? now : null,
-        updatedAt: now,
+    await withTaskLeaseHeartbeat({
+      renew: async () => {
+        try {
+          await renewAiTaskLease(task);
+          return true;
+        } catch (error) {
+          if (error instanceof TaskLeaseLostError) return false;
+          throw error;
+        }
+      },
+      onRenewError: (error) =>
+        structuredLog("error", "article.collection_heartbeat_failed", {
+          taskId,
+          error,
+        }),
+      run: async (signal) => {
+        signal.throwIfAborted();
+        await collectTaskSource(task);
       },
     });
-}
-
-async function persistAiRewriteArtifactBestEffort(input: {
-  taskId: number;
-  taskAttempt: number;
-  audit: AiRewriteAuditEvent;
-}) {
-  try {
-    await upsertAiRewriteArtifact(input);
   } catch (error) {
-    structuredLog("error", "ai.rewrite_artifact_persist_failed", {
-      taskId: input.taskId,
-      taskAttempt: input.taskAttempt,
-      stage: input.audit.stage,
-      stageAttempt: input.audit.stageAttempt,
-      error,
-    });
+    if (error instanceof TaskLeaseLostError) return;
+    structuredLog("error", "article.collection_failed", { taskId, error });
+    const message = "素材读取失败，请检查来源地址和正文内容后重试";
+    try {
+      await renewAiTaskLease(task);
+      try {
+        await upsertTaskStep(task, {
+          key: "source_collect",
+          name: "抓取/读取素材",
+          status: "failed",
+          progress: 100,
+          message,
+          error: message,
+        });
+      } catch (stepError) {
+        structuredLog(
+          "error",
+          "article.collection_failure_step_persist_failed",
+          { taskId, error: stepError },
+        );
+      }
+      await finalizeTask(task, "failed", {
+        currentStep: message,
+        error: message,
+      });
+    } catch (finalizeError) {
+      if (!(finalizeError instanceof TaskLeaseLostError)) throw finalizeError;
+    }
+  } finally {
+    try {
+      await db
+        .update(aiRewriteTasks)
+        .set({ leaseOwner: null, leaseExpiresAt: null, heartbeatAt: null })
+        .where(
+          and(
+            eq(aiRewriteTasks.id, taskId),
+            eq(aiRewriteTasks.leaseOwner, leaseOwner),
+          ),
+        );
+    } catch (error) {
+      structuredLog("error", "article.collection_lease_release_failed", {
+        taskId,
+        error,
+      });
+    }
   }
-}
-
-export async function enqueueAiRewriteTask(taskId: number) {
-  if (!Number.isInteger(taskId) || taskId <= 0) return;
-  await ensureAiRewriteWorker();
-}
-
-async function getNextPendingAiRewriteTaskId() {
-  const [task] = await db
-    .select({ id: aiRewriteTasks.id })
-    .from(aiRewriteTasks)
-    .where(eq(aiRewriteTasks.status, "pending"))
-    .orderBy(aiRewriteTasks.createdAt, aiRewriteTasks.id)
-    .limit(1);
-
-  return task?.id ?? null;
 }
 
 async function recoverInterruptedAiRewriteTasks() {
   const now = new Date();
-  const recovery = await db.transaction(async (tx) => {
-    const uncertainRows = await tx
+  await db.transaction(async (tx) => {
+    // Old AI requests may have completed upstream. Preserve their results for manual entry.
+    const uncertain = await tx
       .update(aiRewriteTasks)
       .set({
         status: "manual_required",
         progress: 100,
-        currentStep:
-          "上次执行已发出 AI 请求但连接中断，无法确认上游结果，请人工确认后再重试",
-        error:
-          "AI 请求已发出但运行租约过期，无法确认上游是否完成。为避免重复计费，系统没有自动重试。",
         requestStage: "manual_required",
+        currentStep: "历史 AI 请求已停止自动处理，请人工填写正文和 SEO",
+        error: null,
         finishedAt: now,
         leaseOwner: null,
         leaseExpiresAt: null,
@@ -2191,20 +459,16 @@ async function recoverInterruptedAiRewriteTasks() {
           ),
         ),
       )
-      .returning({
-        id: aiRewriteTasks.id,
-        sourceMaterialId: aiRewriteTasks.sourceMaterialId,
-      });
-
-    const recoveredRows = await tx
+      .returning({ sourceMaterialId: aiRewriteTasks.sourceMaterialId });
+    const recovered = await tx
       .update(aiRewriteTasks)
       .set({
         status: "pending",
-        currentStep: "检测到上次执行尚未发出 AI 请求，已保留历史并重新排队",
+        requestStage: "queued",
+        currentStep: "素材读取中断，已重新排队",
         error: null,
         startedAt: null,
         finishedAt: null,
-        requestStage: "queued",
         leaseOwner: null,
         leaseExpiresAt: null,
         heartbeatAt: null,
@@ -2220,796 +484,46 @@ async function recoverInterruptedAiRewriteTasks() {
           ),
         ),
       )
-      .returning({
-        id: aiRewriteTasks.id,
-        sourceMaterialId: aiRewriteTasks.sourceMaterialId,
-      });
-
-    const uncertainSourceMaterialIds = [
-      ...new Set(
-        uncertainRows
-          .map((row) => row.sourceMaterialId)
-          .filter((id): id is number => typeof id === "number"),
-      ),
-    ];
-    const recoveredSourceMaterialIds = [
-      ...new Set(
-        recoveredRows
-          .map((row) => row.sourceMaterialId)
-          .filter((id): id is number => typeof id === "number"),
-      ),
-    ];
-
-    if (uncertainSourceMaterialIds.length > 0) {
-      await tx
-        .update(sourceMaterials)
-        .set({ status: "manual_required", updatedAt: now })
-        .where(inArray(sourceMaterials.id, uncertainSourceMaterialIds));
+      .returning({ sourceMaterialId: aiRewriteTasks.sourceMaterialId });
+    for (const [rows, status] of [
+      [uncertain, "manual_required"],
+      [recovered, "queued"],
+    ] as const) {
+      const ids = rows.flatMap((row) =>
+        row.sourceMaterialId === null ? [] : [row.sourceMaterialId],
+      );
+      if (ids.length)
+        await tx
+          .update(sourceMaterials)
+          .set({ status, updatedAt: now })
+          .where(inArray(sourceMaterials.id, ids));
     }
-
-    if (recoveredSourceMaterialIds.length > 0) {
-      await tx
-        .update(sourceMaterials)
-        .set({ status: "queued", updatedAt: now })
-        .where(inArray(sourceMaterials.id, recoveredSourceMaterialIds));
-    }
-
-    return { uncertainRows, recoveredRows };
   });
-
-  if (recovery.recoveredRows.length > 0) {
-    structuredLog("warn", "ai.tasks_recovered", {
-      count: recovery.recoveredRows.length,
-      taskIds: recovery.recoveredRows.map((task) => task.id),
-    });
-  }
-  if (recovery.uncertainRows.length > 0) {
-    structuredLog("warn", "ai.tasks_marked_manual_required", {
-      count: recovery.uncertainRows.length,
-      taskIds: recovery.uncertainRows.map((task) => task.id),
-    });
-  }
 }
 
 async function runAiRewriteWorker() {
   await recoverInterruptedAiRewriteTasks();
-
   while (true) {
-    const taskId = await getNextPendingAiRewriteTaskId();
-    if (!taskId) return;
-    await runAiRewriteTask(taskId);
+    const [task] = await db
+      .select({ id: aiRewriteTasks.id })
+      .from(aiRewriteTasks)
+      .where(eq(aiRewriteTasks.status, "pending"))
+      .orderBy(aiRewriteTasks.createdAt, aiRewriteTasks.id)
+      .limit(1);
+    if (!task) return;
+    await runAiRewriteTask(task.id);
   }
 }
 
 export async function ensureAiRewriteWorker() {
   await enqueueAdminBackgroundJob({
     key: "ai-rewrite-worker",
-    label: "AI rewrite worker",
+    label: "Article collection worker",
     run: runAiRewriteWorker,
   });
 }
 
-export async function runAiRewriteTask(taskId: number) {
+export async function enqueueAiRewriteTask(taskId: number) {
   if (!Number.isSafeInteger(taskId) || taskId <= 0) return;
-
-  let leaseHeartbeat: ReturnType<typeof setInterval> | null = null;
-  let leaseOwner: string | null = null;
-  let leaseHeartbeatRunning = false;
-  let leaseLost = false;
-
-  try {
-    leaseOwner = createTaskLeaseOwner("ai-rewrite");
-    const claimedAt = new Date();
-    let [claimedTask] = await db.transaction(async (tx) => {
-      const rows = await tx
-        .update(aiRewriteTasks)
-        .set({
-          status: "running",
-          progress: 10,
-          currentStep: "准备抓取",
-          error: null,
-          startedAt: claimedAt,
-          finishedAt: null,
-          attempts: sql`${aiRewriteTasks.attempts} + 1`,
-          leaseOwner,
-          leaseExpiresAt: getTaskLeaseExpiry(claimedAt),
-          heartbeatAt: claimedAt,
-          updatedAt: claimedAt,
-        })
-        .where(
-          and(
-            eq(aiRewriteTasks.id, taskId),
-            inArray(aiRewriteTasks.status, ["pending", "failed"]),
-          ),
-        )
-        .returning();
-      const task = rows[0];
-
-      if (task?.sourceMaterialId) {
-        await tx
-          .update(sourceMaterials)
-          .set({ status: "running", updatedAt: claimedAt })
-          .where(eq(sourceMaterials.id, task.sourceMaterialId));
-      }
-
-      return rows;
-    });
-
-    if (!claimedTask) {
-      return;
-    }
-
-    const leasedTask = claimedTask;
-    leaseHeartbeat = setInterval(() => {
-      if (leaseHeartbeatRunning || leaseLost) return;
-      leaseHeartbeatRunning = true;
-      void renewAiTaskLease(leasedTask)
-        .catch((error) => {
-          if (error instanceof TaskLeaseLostError) leaseLost = true;
-          structuredLog("error", "ai.task_heartbeat_failed", {
-            taskId,
-            leaseOwner,
-            error,
-          });
-        })
-        .finally(() => {
-          leaseHeartbeatRunning = false;
-        });
-    }, TASK_LEASE_HEARTBEAT_MS);
-    leaseHeartbeat.unref?.();
-
-    if (
-      claimedTask.postId &&
-      claimedTask.sourceType !== "seo" &&
-      claimedTask.sourceType !== "english"
-    ) {
-      try {
-        await upsertTaskStep({
-          taskId: claimedTask.id,
-          attempt: claimedTask.attempts,
-          stepKey: "config_bind",
-          stepName: "绑定 AI 配置",
-          status: "skipped",
-          progress: 10,
-          message:
-            "已存在草稿 checkpoint，先恢复草稿后处理，不重新绑定改写配置",
-          payload: { resumedFromPostId: claimedTask.postId },
-        });
-        await resumeChineseTaskFromDraft(claimedTask);
-      } catch (error) {
-        await failTask(claimedTask, error, {
-          key: "resume_postprocess",
-          name: "从草稿断点恢复后处理",
-          attempt: claimedTask.attempts,
-          progress: 88,
-        });
-      }
-      return;
-    }
-
-    try {
-      claimedTask = await bindTaskConfigs(claimedTask);
-      await upsertTaskStep({
-        taskId: claimedTask.id,
-        attempt: claimedTask.attempts,
-        stepKey: "config_bind",
-        stepName: "绑定 AI 配置",
-        status: "success",
-        progress: 10,
-        message: claimedTask.imageConfigId
-          ? `改写：${claimedTask.rewriteConfigName ?? `#${claimedTask.rewriteStyleId}`}；生图：${claimedTask.imageConfigName ?? `#${claimedTask.imageConfigId}`}`
-          : `改写：${claimedTask.rewriteConfigName ?? `#${claimedTask.rewriteStyleId}`}；未配置自动生图`,
-        payload: {
-          rewrite: {
-            id: claimedTask.rewriteStyleId,
-            name: claimedTask.rewriteConfigName,
-            provider: claimedTask.rewriteProvider,
-            model: claimedTask.rewriteModel,
-            maxTokens: claimedTask.rewriteMaxTokens,
-          },
-          image: claimedTask.imageConfigId
-            ? {
-                id: claimedTask.imageConfigId,
-                name: claimedTask.imageConfigName,
-                provider: claimedTask.imageProvider,
-                model: claimedTask.imageModel,
-              }
-            : null,
-        },
-      });
-    } catch (error) {
-      await failTask(claimedTask, error, {
-        key: "config_bind",
-        name: "绑定 AI 配置",
-        attempt: claimedTask.attempts,
-        progress: 10,
-      });
-      return;
-    }
-
-    if (claimedTask.sourceType === "seo") {
-      await runSeoMetadataTask(claimedTask);
-      return;
-    }
-
-    if (claimedTask.sourceType === "english") {
-      await runEnglishSeoTask(claimedTask);
-      return;
-    }
-
-    const attempt = claimedTask.attempts;
-    const sourceStep = {
-      key: "source_collect",
-      name: "抓取/读取素材",
-      attempt,
-      progress: 20,
-    };
-    const aiStep = {
-      key: "ai_rewrite",
-      name: "AI 改写文章",
-      attempt,
-      progress: 54,
-    };
-    let activeStep: ActiveTaskStep = sourceStep;
-
-    const persistArticleProgress = async (event: ArticleProcessingProgress) => {
-      const snapshot = event.snapshot;
-      const diagnostics = JSON.stringify(snapshot.diagnostics);
-      const commonTaskValues: Partial<typeof aiRewriteTasks.$inferInsert> = {
-        scrapedTitle: snapshot.title,
-        scrapedDescription: snapshot.description,
-        scrapedHtml: snapshot.cleanedHtmlContent.slice(0, 60_000),
-        aiInputLength: snapshot.diagnostics.aiInputLength ?? null,
-        diagnostics,
-      };
-
-      if (event.stage === "ai_audit") {
-        await persistAiRewriteArtifactBestEffort({
-          taskId,
-          taskAttempt: attempt,
-          audit: event.audit,
-        });
-        return;
-      }
-
-      if (event.stage === "content_prepared") {
-        await upsertTaskStep({
-          taskId,
-          attempt,
-          stepKey: sourceStep.key,
-          stepName: sourceStep.name,
-          status: "success",
-          progress: 30,
-          message: `素材读取完成，正文 ${snapshot.diagnostics.contentLength} 字`,
-          payload: {
-            strategy: snapshot.diagnostics.strategy,
-            usedPuppeteer: snapshot.diagnostics.usedPuppeteer,
-            usedFallback: snapshot.diagnostics.usedFallback,
-          },
-        });
-        await upsertTaskStep({
-          taskId,
-          attempt,
-          stepKey: "html_clean",
-          stepName: "清洗正文结构",
-          status: "success",
-          progress: 45,
-          message: `清洗后正文 ${snapshot.diagnostics.cleanedHtmlLength ?? snapshot.cleanedHtmlContent.length} 字符，AI Markdown 输入 ${snapshot.diagnostics.aiInputLength ?? "-"} 字符`,
-          payload: {
-            removedSelectors: snapshot.diagnostics.removedSelectors,
-            aiInputTruncated: snapshot.diagnostics.aiInputTruncated,
-          },
-        });
-        const affiliateReport = snapshot.diagnostics.affiliateReport;
-        await upsertTaskStep({
-          taskId,
-          attempt,
-          stepKey: "affiliate_check",
-          stepName: "识别商户与返利链接",
-          status:
-            affiliateReport.invalidLinks.length > 0
-              ? "manual_required"
-              : "success",
-          progress: 58,
-          message: `命中 ${affiliateReport.matchedLinks.length} 条，未命中 ${affiliateReport.unmatchedLinks.length} 条，无效 ${affiliateReport.invalidLinks.length} 条`,
-        });
-        activeStep = aiStep;
-        await updateTask(claimedTask, {
-          ...commonTaskValues,
-          progress: 50,
-          currentStep: "正文已清洗，准备执行 AI 改写",
-        });
-        return;
-      }
-
-      if (event.stage === "ai_failed") {
-        await updateTask(claimedTask, {
-          ...commonTaskValues,
-          currentStep: `AI 改写失败：${event.error}`,
-          error: event.error,
-        });
-        return;
-      }
-
-      if (event.stage === "ai_request_stage") {
-        activeStep = {
-          ...aiStep,
-          progress: event.requestStage === "request_started" ? 58 : 59,
-          payload: { requestStage: event.requestStage },
-        };
-        await upsertTaskStep({
-          taskId,
-          attempt,
-          stepKey: aiStep.key,
-          stepName: aiStep.name,
-          status: "running",
-          progress: activeStep.progress,
-          message:
-            event.requestStage === "request_started"
-              ? "AI 请求已发出，等待上游响应"
-              : "已收到 AI 响应，正在保存结果",
-          payload: { requestStage: event.requestStage },
-        });
-        await updateTask(claimedTask, {
-          ...commonTaskValues,
-          progress: activeStep.progress,
-          requestStage: event.requestStage,
-          currentStep:
-            event.requestStage === "request_started"
-              ? "AI 请求已发出，等待上游响应"
-              : "已收到 AI 响应，正在保存 AI 结果",
-        });
-        return;
-      }
-
-      const progress = getArticleRewriteProgress(event.ai);
-      const payload = {
-        stage: event.ai.stage,
-        status: event.ai.status,
-        attempt: event.ai.attempt ?? null,
-        maxAttempts: event.ai.maxAttempts ?? null,
-        maxTokens: event.ai.maxTokens,
-        inputLength: event.ai.inputLength ?? null,
-        outputLength: event.ai.outputLength ?? null,
-      };
-      activeStep = {
-        ...aiStep,
-        progress,
-        payload,
-      };
-      await upsertTaskStep({
-        taskId,
-        attempt,
-        stepKey: aiStep.key,
-        stepName: aiStep.name,
-        status: "running",
-        progress,
-        message: event.ai.message,
-        payload,
-      });
-      const taskValues: Partial<typeof aiRewriteTasks.$inferInsert> = {
-        ...commonTaskValues,
-        progress,
-        currentStep: `AI 改写：${event.ai.message}`,
-      };
-      if (
-        event.ai.stage === "content_generation" &&
-        event.ai.status === "success" &&
-        typeof event.ai.outputLength === "number"
-      ) {
-        taskValues.rewriteOutputLength = event.ai.outputLength;
-      }
-      await updateTask(claimedTask, taskValues);
-    };
-
-    try {
-      await upsertTaskStep({
-        taskId,
-        attempt,
-        stepKey: sourceStep.key,
-        stepName: sourceStep.name,
-        status: "running",
-        progress: sourceStep.progress,
-        message: "正在读取素材并准备正文",
-      });
-      await updateTask(claimedTask, {
-        progress: 35,
-        currentStep: "抓取文章并执行 AI 改写",
-      });
-
-      const article = await loadTaskArticle(
-        claimedTask,
-        persistArticleProgress,
-        createAiRequestStageHandler(claimedTask),
-      );
-      let manualRequired = needsManualAffiliateReview(article.diagnostics);
-
-      await upsertTaskStep({
-        taskId,
-        attempt,
-        stepKey: sourceStep.key,
-        stepName: sourceStep.name,
-        status: "success",
-        progress: 30,
-        message: `素材读取完成，清洗正文 ${article.diagnostics.cleanedHtmlLength ?? article.cleanedHtmlContent.length} 字`,
-        payload: {
-          strategy: article.diagnostics.strategy,
-          usedPuppeteer: article.diagnostics.usedPuppeteer,
-          usedFallback: article.diagnostics.usedFallback,
-        },
-      });
-      await upsertTaskStep({
-        taskId,
-        attempt,
-        stepKey: "html_clean",
-        stepName: "清洗正文结构",
-        status: "success",
-        progress: 45,
-        message: `清洗后正文 ${article.diagnostics.cleanedHtmlLength ?? article.cleanedHtmlContent.length} 字符，AI Markdown 输入 ${article.diagnostics.aiInputLength ?? "-"} 字符`,
-        payload: {
-          removedSelectors: article.diagnostics.removedSelectors,
-          aiInputTruncated: article.diagnostics.aiInputTruncated,
-        },
-      });
-      await upsertTaskStep({
-        taskId,
-        attempt,
-        stepKey: "affiliate_check",
-        stepName: "识别商户与返利链接",
-        status: manualRequired ? "manual_required" : "success",
-        progress: 58,
-        message: article.diagnostics.affiliateReport
-          ? `命中 ${article.diagnostics.affiliateReport.matchedLinks.length} 条，未命中 ${article.diagnostics.affiliateReport.unmatchedLinks.length} 条，无效 ${article.diagnostics.affiliateReport.invalidLinks.length} 条`
-          : "没有返利链接诊断",
-      });
-      await upsertTaskStep({
-        taskId,
-        attempt,
-        stepKey: "ai_rewrite",
-        stepName: "AI 改写文章",
-        status: article.diagnostics.usedAiRewrite ? "success" : "skipped",
-        progress: 80,
-        message: article.diagnostics.usedAiRewrite
-          ? article.diagnostics.rewriteQuality
-            ? `AI 输出 ${article.diagnostics.rewriteOutputLength ?? article.htmlContent.length} 字符；完整性检查通过；生成 ${article.diagnostics.rewriteQuality.attempts} 轮`
-            : `AI 输出 ${article.diagnostics.rewriteOutputLength ?? article.htmlContent.length} 字符`
-          : (article.diagnostics.aiRewriteError ??
-            "AI 未改写，使用原始采集内容"),
-        payload: article.diagnostics.rewriteQuality
-          ? {
-              promptVersion: article.diagnostics.rewriteQuality.promptVersion,
-              originalityScore:
-                article.diagnostics.rewriteQuality.originalityScore,
-              criticalFactCoverage:
-                article.diagnostics.rewriteQuality.criticalFactCoverage,
-              attempts: article.diagnostics.rewriteQuality.attempts,
-              knowledgeReferences:
-                article.diagnostics.rewriteQuality.knowledgeReferences,
-              providerReferences:
-                article.diagnostics.rewriteQuality.providerReferences,
-              seoKeywordPlan: article.diagnostics.rewriteQuality.seoKeywordPlan,
-            }
-          : undefined,
-      });
-      activeStep = {
-        key: "save_draft",
-        name: "保存草稿",
-        attempt,
-        progress: 82,
-      };
-      await updateTask(claimedTask, {
-        progress: 82,
-        currentStep: "保存为草稿文章",
-        resultTitle: article.title,
-        scrapedTitle: article.diagnostics.scrapedTitle ?? article.title,
-        scrapedDescription:
-          article.diagnostics.scrapedDescription ?? article.description,
-        scrapedHtml: article.cleanedHtmlContent.slice(0, 60_000),
-        aiInputLength: article.diagnostics.aiInputLength ?? null,
-        rewriteOutputLength:
-          article.diagnostics.rewriteOutputLength ?? article.htmlContent.length,
-        diagnostics: JSON.stringify(article.diagnostics),
-      });
-
-      await upsertTaskStep({
-        taskId,
-        attempt,
-        stepKey: "save_draft",
-        stepName: "保存草稿",
-        status: "running",
-        progress: 82,
-        message: "正在写入文章草稿",
-      });
-
-      await renewAiTaskLease(claimedTask);
-      const reusedDraft = claimedTask.postId !== null;
-      const taskLeaseOwner = claimedTask.leaseOwner;
-      if (!taskLeaseOwner) throw new TaskLeaseLostError();
-      const draftContent = firstNonEmptyContent(
-        article.htmlContent,
-        article.content,
-        article.cleanedHtmlContent,
-      );
-      if (!draftContent) {
-        throw new Error("正文提取失败：没有可保存的正文内容");
-      }
-
-      const post = claimedTask.postId
-        ? {
-            id: claimedTask.postId,
-            title: claimedTask.resultTitle ?? article.title,
-          }
-        : await db.transaction(async (tx) => {
-            const result = await createPostRecordInTransaction(
-              {
-                post: {
-                  title: article.title || "未命名采集文章",
-                  description:
-                    article.description || article.title || "待补充摘要",
-                  content: draftContent,
-                  imgUrl: "",
-                  published: false,
-                  categoryId: claimedTask.categoryId,
-                  recommendedTagName: article.recommendTagName || null,
-                  keywords: article.keywords.join(","),
-                },
-                tags: article.tagsName.map((name) => ({ name })),
-              },
-              tx,
-            );
-
-            if (result.error || !result.data) {
-              throw new Error(result.error ?? "草稿保存失败");
-            }
-
-            const [checkpointedTask] = await tx
-              .update(aiRewriteTasks)
-              .set({
-                progress: 88,
-                currentStep: "草稿已保存，正在执行后续处理",
-                postId: result.data.id,
-                resultTitle: result.data.title,
-                updatedAt: new Date(),
-              })
-              .where(
-                and(
-                  eq(aiRewriteTasks.id, taskId),
-                  eq(aiRewriteTasks.status, "running"),
-                  eq(aiRewriteTasks.leaseOwner, taskLeaseOwner),
-                ),
-              )
-              .returning({ id: aiRewriteTasks.id });
-
-            if (!checkpointedTask) throw new TaskLeaseLostError();
-            return result.data;
-          });
-
-      if (!post) {
-        throw new Error("草稿保存失败");
-      }
-
-      if (reusedDraft) {
-        await updateTask(claimedTask, {
-          progress: 88,
-          currentStep: "已找到上次保存的草稿，正在继续后续处理",
-          postId: post.id,
-          resultTitle: post.title,
-        });
-      }
-
-      await upsertTaskStep({
-        taskId,
-        attempt,
-        stepKey: "save_draft",
-        stepName: "保存草稿",
-        status: "success",
-        progress: 90,
-        message: reusedDraft
-          ? `已复用草稿文章 #${post.id}`
-          : `已生成草稿文章 #${post.id}`,
-        payload: { postId: post.id, title: post.title },
-      });
-
-      const postProcessWarnings: string[] = [];
-      activeStep = {
-        key: "internal_link_plan",
-        name: "生成文章内链",
-        attempt,
-        progress: 90,
-      };
-      await upsertTaskStep({
-        taskId,
-        attempt,
-        stepKey: activeStep.key,
-        stepName: activeStep.name,
-        status: "running",
-        progress: activeStep.progress,
-        message: "正在匹配正文标签和相关文章",
-      });
-      try {
-        const internalLinkResult = await regeneratePostInternalLinks({
-          postId: post.id,
-          mode: "activate-high-confidence",
-          generatedBy: "rule",
-          includeKnowledge: false,
-        });
-        await upsertTaskStep({
-          taskId,
-          attempt,
-          stepKey: activeStep.key,
-          stepName: activeStep.name,
-          status: "success",
-          progress: 91,
-          message: `生成 ${internalLinkResult.generated} 条内链，其中 ${internalLinkResult.active} 条已启用`,
-          payload: internalLinkResult,
-        });
-      } catch (error) {
-        structuredLog("error", "ai.internal_link_plan_failed", {
-          taskId,
-          postId: post.id,
-          error,
-        });
-        await upsertTaskStep({
-          taskId,
-          attempt,
-          stepKey: activeStep.key,
-          stepName: activeStep.name,
-          status: "manual_required",
-          progress: 91,
-          message: "草稿已保存，但内链规划失败",
-          error: getErrorMessage(error),
-        });
-        manualRequired = true;
-        postProcessWarnings.push("文章内链规划失败");
-      }
-
-      const coverResult = await enqueueCoverForDraftPost({
-        taskId,
-        attempt,
-        stepKey: "cover_generate",
-        stepName: "自动生成中文封面",
-        progress: 91,
-        postId: post.id,
-        language: "zh",
-        configId: claimedTask.imageConfigId,
-      });
-      if (coverResult.status === "failed") {
-        manualRequired = true;
-        postProcessWarnings.push("中文封面任务入队失败");
-      }
-
-      activeStep = {
-        key: "image_references",
-        name: "同步图片引用",
-        attempt,
-        progress: 92,
-      };
-      await upsertTaskStep({
-        taskId,
-        attempt,
-        stepKey: activeStep.key,
-        stepName: activeStep.name,
-        status: "running",
-        progress: activeStep.progress,
-        message: "正在同步文章图片引用",
-      });
-      try {
-        await syncImageReferencesForPost(post.id);
-        await upsertTaskStep({
-          taskId,
-          attempt,
-          stepKey: activeStep.key,
-          stepName: activeStep.name,
-          status: "success",
-          progress: 94,
-          message: "图片引用同步完成",
-        });
-      } catch (error) {
-        structuredLog("error", "ai.image_references_sync_failed", {
-          taskId,
-          postId: post.id,
-          error,
-        });
-        await upsertTaskStep({
-          taskId,
-          attempt,
-          stepKey: activeStep.key,
-          stepName: activeStep.name,
-          status: "manual_required",
-          progress: 94,
-          message: "中文草稿已保存，但图片引用索引同步失败",
-          error: getErrorMessage(error),
-        });
-        manualRequired = true;
-        postProcessWarnings.push("图片引用索引同步失败");
-      }
-
-      activeStep = {
-        key: "offer_source",
-        name: "套餐数据来源",
-        attempt,
-        progress: 96,
-      };
-      await upsertTaskStep({
-        taskId,
-        attempt,
-        stepKey: activeStep.key,
-        stepName: activeStep.name,
-        status: "success",
-        progress: activeStep.progress,
-        message: "文章不再提取套餐；套餐由供应商官网采集并单独审核",
-        payload: { source: "provider_catalog", postId: post.id },
-      });
-      await upsertTaskStep({
-        taskId,
-        attempt,
-        stepKey: "english_enqueue",
-        stepName: "等待人工确认后生成英文",
-        status: "skipped",
-        progress: 98,
-        message:
-          "中文草稿已保存。请先手动修改并保存中文文章，再从文章生产面板生成英文。",
-        payload: {
-          requiresManualChineseEdit: true,
-          postId: post.id,
-          reason: "manual_chinese_edit_required",
-        },
-      });
-
-      activeStep = {
-        key: "task_finalize",
-        name: "完成改写任务",
-        attempt,
-        progress: 99,
-      };
-      const completionParts = [finishedStepText({ manualRequired })];
-      completionParts.push("英文生成已暂停，等待人工修改并保存中文文章");
-      completionParts.push(...postProcessWarnings);
-      const terminalStatus = manualRequired ? "manual_required" : "succeeded";
-      const finalized = await finalizeTask(claimedTask, terminalStatus, {
-        progress: 100,
-        currentStep: completionParts.join("；"),
-        postId: post.id,
-        resultTitle: post.title,
-        diagnostics: JSON.stringify({
-          ...article.diagnostics,
-          warnings: [...article.diagnostics.warnings, ...postProcessWarnings],
-        }),
-        finishedAt: new Date(),
-      });
-      if (!finalized) throw new TaskLeaseLostError();
-    } catch (error) {
-      if (
-        !(await requeueAiTaskWithNextConfig(claimedTask, error, activeStep))
-      ) {
-        await failTask(claimedTask, error, activeStep);
-      }
-    }
-  } finally {
-    if (leaseHeartbeat) clearInterval(leaseHeartbeat);
-    if (leaseOwner) {
-      try {
-        await db
-          .update(aiRewriteTasks)
-          .set({
-            leaseOwner: null,
-            leaseExpiresAt: null,
-            heartbeatAt: null,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(aiRewriteTasks.id, taskId),
-              eq(aiRewriteTasks.leaseOwner, leaseOwner),
-            ),
-          );
-      } catch (error) {
-        structuredLog("error", "ai.task_lease_release_failed", {
-          taskId,
-          leaseOwner,
-          error,
-        });
-      }
-    }
-  }
+  await ensureAiRewriteWorker();
 }

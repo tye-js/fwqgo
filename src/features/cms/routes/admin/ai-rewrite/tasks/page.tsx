@@ -9,7 +9,6 @@ import {
   getUnifiedTaskList,
 } from "@/features/cms/data/operations";
 import { getLeafCategories } from "@/features/shared/data/category";
-import { getAiRewriteStyleOptions } from "@/features/cms/actions/scrape";
 import {
   AdminPageShell,
   AdminSectionCard,
@@ -85,12 +84,11 @@ export async function AiRewriteTasksPageContent({
     tasksResult,
     sourceSitesResult,
     categoriesResult,
-    rewriteStylesResult,
     operationsSummaryResult,
     unifiedTaskListResult,
   ] = await Promise.all([
     loadPageData(
-      "AI 改写任务列表",
+      "文章采集任务列表",
       isTaskCenter
         ? Promise.resolve([])
         : getAiRewriteTaskList({ pageSize: 50 }),
@@ -106,10 +104,6 @@ export async function AiRewriteTasksPageContent({
             data: [],
           } as Awaited<ReturnType<typeof getLeafCategories>>)
         : getLeafCategories(),
-    ),
-    loadPageData(
-      "AI 改写风格",
-      isTaskCenter ? Promise.resolve([]) : getAiRewriteStyleOptions(),
     ),
     loadPageData(
       "任务队列健康",
@@ -132,19 +126,17 @@ export async function AiRewriteTasksPageContent({
     tasksResult.error,
     sourceSitesResult.error,
     categoriesResult.error,
-    rewriteStylesResult.error,
     operationsSummaryResult.error,
     unifiedTaskListResult.error,
   ].filter((error): error is PageDataError => Boolean(error));
   const tasks = tasksResult.data ?? [];
   const sourceSites = sourceSitesResult.data ?? [];
   const categories = categoriesResult.data?.data ?? [];
-  const rewriteStyles = rewriteStylesResult.data ?? [];
   const operationsSummary = operationsSummaryResult.data;
   const unifiedTaskList = unifiedTaskListResult.data;
-  const pageTitle = isTaskCenter ? "AI任务中心" : "AI 生产台";
+  const pageTitle = isTaskCenter ? "AI任务中心" : "文章生产台";
   const pageDescription = isTaskCenter
-    ? "统一处理 AI 改写、封面生图和供应商采集任务。"
+    ? "统一处理文章采集、人工编辑、封面生图和供应商采集任务。"
     : "";
 
   return (
@@ -159,7 +151,7 @@ export async function AiRewriteTasksPageContent({
             <Button asChild size="sm" variant="secondary">
               <Link href="/ai-rewrite/tasks#single-task">
                 <Plus className="size-4" />
-                创建 AI 任务
+                创建采集任务
               </Link>
             </Button>
           ) : (
@@ -226,17 +218,12 @@ export async function AiRewriteTasksPageContent({
             <AiRewriteTaskManager
               tasks={tasks}
               categories={categories}
-              rewriteStyles={rewriteStyles}
               showTaskList={false}
             />
           </section>
 
           <section id="source-sites" className="scroll-mt-24">
-            <AiSourceSiteManager
-              sites={sourceSites}
-              categories={categories}
-              rewriteStyles={rewriteStyles}
-            />
+            <AiSourceSiteManager sites={sourceSites} categories={categories} />
           </section>
         </>
       )}

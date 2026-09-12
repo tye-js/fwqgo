@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -86,12 +86,6 @@ type RewriteTask = Awaited<ReturnType<typeof getAiRewriteTaskList>>[number];
 type Option = {
   id: number;
   name: string;
-};
-
-type RewriteStyleOption = {
-  id: number;
-  styleName: string;
-  isDefault: boolean;
 };
 
 const sourceTypeOptions = [
@@ -448,7 +442,7 @@ function FailedTaskPanel({
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>删除这个 AI 任务？</AlertDialogTitle>
+                    <AlertDialogTitle>删除这个文章任务？</AlertDialogTitle>
                     <AlertDialogDescription>
                       只会删除任务记录和步骤日志，不会删除已经生成的草稿文章。任务删除后无法恢复。
                     </AlertDialogDescription>
@@ -494,8 +488,8 @@ function taskSourceTypeLabel(value: string) {
     text: "手动文本",
     email: "邮件素材",
     file: "文件导入",
-    english: "英文生成",
-    seo: "SEO 更新",
+    english: "英文人工编辑",
+    seo: "人工 SEO 编辑",
   };
 
   return labels[value] ?? value;
@@ -511,7 +505,7 @@ function taskSourceTitle(task: RewriteTask) {
   }
 
   if (task.sourceType === "seo") {
-    return `SEO 更新：${task.postTitle ?? task.resultTitle ?? task.sourceTitle ?? task.sourceUrl}`;
+    return `人工 SEO 编辑：${task.postTitle ?? task.resultTitle ?? task.sourceTitle ?? task.sourceUrl}`;
   }
 
   return task.sourceTitle ?? task.sourceUrl;
@@ -548,9 +542,9 @@ function AffiliateDiagnosticsSummary({
             <Badge variant="outline">浏览器渲染</Badge>
           ) : null}
           <Badge
-            variant={diagnostics.usedAiRewrite ? "secondary" : "destructive"}
+            variant={diagnostics.usedAiRewrite ? "secondary" : "outline"}
           >
-            {diagnostics.usedAiRewrite ? "AI 已改写" : "AI 回退"}
+            {diagnostics.usedAiRewrite ? "历史 AI 内容" : "原始素材"}
           </Badge>
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs">
@@ -706,7 +700,6 @@ function AffiliateDiagnosticsSummary({
 export function AiRewriteTaskManager({
   tasks,
   categories,
-  rewriteStyles,
   basePath = "/ai-rewrite/tasks",
   showCreateForm = true,
   showTaskList = true,
@@ -716,7 +709,6 @@ export function AiRewriteTaskManager({
 }: {
   tasks: RewriteTask[];
   categories: Option[];
-  rewriteStyles: RewriteStyleOption[];
   basePath?: string;
   showCreateForm?: boolean;
   showTaskList?: boolean;
@@ -738,12 +730,6 @@ export function AiRewriteTaskManager({
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [sourceType, setSourceType] = useState("url");
   const defaultCategoryId = categories[0]?.id ? String(categories[0].id) : "";
-  const defaultRewriteStyleId = useMemo(
-    () =>
-      rewriteStyles.find((style) => style.isDefault)?.id ??
-      rewriteStyles[0]?.id,
-    [rewriteStyles],
-  );
   const hasActiveTask =
     showTaskList &&
     tasks.some((task) => ["pending", "running"].includes(task.status));
@@ -771,27 +757,27 @@ export function AiRewriteTaskManager({
         const result = await createAiRewriteTaskAction(formData);
         if (result.error) {
           notifyError({
-            title: "AI 改写任务创建失败",
+            title: "文章采集任务创建失败",
             description: describeAdminResult([
               result.error,
-              "请检查素材来源、分类和改写配置后再提交",
+              "请检查素材来源和分类后再提交",
             ]),
           });
           return;
         }
 
         notifySuccess({
-          title: "AI 改写任务已加入队列",
+          title: "文章采集任务已加入队列",
           description: describeAdminResult([
             `提交 ${countSubmittedUrls(formData)} 个素材`,
             `创建 ${result.count ?? 1} 个任务`,
-            "任务成功后才会保存为草稿",
+            "素材准备完成后，请在任务详情页人工填写正文和 SEO",
           ]),
         });
         router.refresh();
       } catch (error) {
         notifyError({
-          title: "AI 改写任务创建失败",
+          title: "文章采集任务创建失败",
           description: describeAdminResult([
             error instanceof Error ? error.message : "请求未完成",
             "服务器连接可能中断，请确认任务中心没有生成重复任务后再提交",
@@ -807,7 +793,7 @@ export function AiRewriteTaskManager({
       const result = await retryAiRewriteTaskAction(taskId);
       if (result.error) {
         notifyError({
-          title: "AI 改写任务重试失败",
+          title: "文章采集任务重试失败",
           description: describeAdminResult([
             `任务 ID ${taskId}`,
             result.error,
@@ -818,16 +804,16 @@ export function AiRewriteTaskManager({
       }
 
       notifySuccess({
-        title: "AI 改写任务已重新加入队列",
+        title: "文章采集任务已重新加入队列",
         description: describeAdminResult([
           `任务 ID ${taskId}`,
-          "系统会重新抓取、清洗、改写，成功后再保存草稿",
+          "系统会重新准备素材，正文和 SEO 由人工填写",
         ]),
       });
       router.refresh();
     } catch (error) {
       notifyError({
-        title: "AI 改写任务重试失败",
+        title: "文章采集任务重试失败",
         description: describeAdminResult([
           `任务 ID ${taskId}`,
           error instanceof Error ? error.message : "请求未完成",
@@ -845,7 +831,7 @@ export function AiRewriteTaskManager({
       const result = await cancelAiRewriteTaskAction(taskId);
       if (result.error) {
         notifyError({
-          title: "AI 任务取消失败",
+          title: "文章任务取消失败",
           description: describeAdminResult([
             `任务 ID ${taskId}`,
             result.error,
@@ -856,7 +842,7 @@ export function AiRewriteTaskManager({
       }
 
       notifySuccess({
-        title: "AI 任务已取消",
+        title: "文章任务已取消",
         description: describeAdminResult([
           `任务 ID ${taskId}`,
           "需要继续时可点击恢复，任务会重新加入队列",
@@ -865,7 +851,7 @@ export function AiRewriteTaskManager({
       router.refresh();
     } catch (error) {
       notifyError({
-        title: "AI 任务取消失败",
+        title: "文章任务取消失败",
         description: describeAdminResult([
           `任务 ID ${taskId}`,
           error instanceof Error ? error.message : "请求未完成",
@@ -883,7 +869,7 @@ export function AiRewriteTaskManager({
       const result = await deleteAiRewriteTaskAction(task.id);
       if (result.error) {
         notifyError({
-          title: "AI 任务删除失败",
+          title: "文章任务删除失败",
           description: describeAdminResult([
             `任务 ID ${task.id}`,
             result.error,
@@ -896,7 +882,7 @@ export function AiRewriteTaskManager({
       }
 
       notifySuccess({
-        title: "AI 任务已删除",
+        title: "文章任务已删除",
         description: describeAdminResult([
           `任务 ID ${task.id}`,
           task.postSlug
@@ -907,7 +893,7 @@ export function AiRewriteTaskManager({
       router.refresh();
     } catch (error) {
       notifyError({
-        title: "AI 任务删除失败",
+        title: "文章任务删除失败",
         description: describeAdminResult([
           `任务 ID ${task.id}`,
           error instanceof Error ? error.message : "请求未完成",
@@ -1045,37 +1031,7 @@ export function AiRewriteTaskManager({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="ai-task-style">改写风格</Label>
-              <Select
-                name="rewriteStyleId"
-                defaultValue={
-                  defaultRewriteStyleId
-                    ? String(defaultRewriteStyleId)
-                    : undefined
-                }
-                disabled={rewriteStyles.length === 0}
-              >
-                <SelectTrigger
-                  id="ai-task-style"
-                  className="min-h-11 bg-background"
-                >
-                  <SelectValue
-                    placeholder={
-                      rewriteStyles.length > 0 ? "选择风格" : "未配置 AI"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {rewriteStyles.map((style) => (
-                    <SelectItem key={style.id} value={String(style.id)}>
-                      {style.styleName}
-                      {style.isDefault ? "（默认）" : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+
             <Button
               type="submit"
               disabled={isSubmitting || categories.length === 0}
@@ -1133,8 +1089,8 @@ export function AiRewriteTaskManager({
                     <SelectItem value="text">手动文本</SelectItem>
                     <SelectItem value="email">邮件素材</SelectItem>
                     <SelectItem value="file">文件导入</SelectItem>
-                    <SelectItem value="english">英文生成</SelectItem>
-                    <SelectItem value="seo">SEO 更新</SelectItem>
+                    <SelectItem value="english">英文人工编辑</SelectItem>
+                    <SelectItem value="seo">人工 SEO 编辑</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select
@@ -1173,8 +1129,8 @@ export function AiRewriteTaskManager({
           >
             {tasks.length === 0 ? (
               <AdminTableEmpty
-                title="暂无 AI 改写任务"
-                description="提交来源 URL 后，系统会在后台抓取、清洗、改写，并在成功后保存为草稿。"
+                title="暂无文章采集任务"
+                description="提交来源 URL 后准备素材，人工填写正文和 SEO 后保存草稿。"
               />
             ) : (
               <Table className="cms-mobile-sticky-actions cms-table-sticky-actions">
@@ -1374,7 +1330,7 @@ export function AiRewriteTaskManager({
                               <AlertDialogContent>
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>
-                                    删除 AI 任务 #{task.id}？
+                                    删除文章任务 #{task.id}？
                                   </AlertDialogTitle>
                                   <AlertDialogDescription>
                                     只会删除任务记录和步骤日志，不会删除已经生成的草稿文章。任务删除后无法恢复。
