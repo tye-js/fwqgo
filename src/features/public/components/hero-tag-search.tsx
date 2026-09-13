@@ -71,15 +71,17 @@ export function HeroTagSearch() {
               if (errorMessage) setErrorMessage("");
             }}
             placeholder="搜索套餐、商家、地区、优惠码，例如：香港 CN2"
-            aria-describedby={errorMessage ? "hero-tag-search-error" : undefined}
+            aria-describedby={
+              errorMessage ? "hero-tag-search-error" : undefined
+            }
             aria-invalid={Boolean(errorMessage)}
-            className="h-12 rounded-md border-border bg-background pl-10 text-sm shadow-sm"
+            className="h-14 rounded-xl border-border bg-card pl-10 text-base shadow-sm"
           />
         </div>
         <Button
           type="submit"
           disabled={isPending}
-          className="h-12 rounded-md px-6 text-sm font-medium"
+          className="h-14 rounded-xl px-6 text-sm font-medium"
         >
           {isPending ? "搜索中..." : "搜索"}
         </Button>

@@ -33,14 +33,14 @@ export function LatestPostsSidebar({
   const compactPosts = posts.slice(1);
   const listPosts = variant === "compact" ? posts : compactPosts;
   const resolvedMoreHref =
-    moreHref ?? (language === "en" ? "/search?lang=en" : "/search");
+    moreHref ?? (language === "en" ? "/en/fwq/page/1" : "/fwq/page/1");
 
   return (
     <Card
       className={
         variant === "compact"
-          ? "overflow-hidden rounded-lg border-border/70 bg-background shadow-none"
-          : "overflow-hidden rounded-lg border-border/70 bg-background shadow-sm"
+          ? "public-panel overflow-hidden shadow-none"
+          : "public-panel overflow-hidden"
       }
     >
       <CardContent className="p-0">

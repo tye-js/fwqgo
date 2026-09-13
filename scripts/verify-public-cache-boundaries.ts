@@ -233,16 +233,28 @@ for (const [relativePath, name] of [
   if (!body.includes("isDatabaseFreeBuild()")) {
     errors.push(`${relativePath} must keep verification builds database-free`);
   }
-  for (const tag of ["homepage", "homepageSlots", "posts", "tags", "sidebar", "serverOffers"]) {
+  for (const tag of [
+    "homepage",
+    "homepageSlots",
+    "posts",
+    "tags",
+    "sidebar",
+    "serverOffers",
+    "knowledge",
+  ]) {
     if (!body.includes(`cacheTags.${tag}`)) {
-      errors.push(`${relativePath} must invalidate its rendered content with ${tag}`);
+      errors.push(
+        `${relativePath} must invalidate its rendered content with ${tag}`,
+      );
     }
   }
   if (!/revalidate:\s*300\b/.test(body) || !/expire:\s*3_600\b/.test(body)) {
     errors.push(`${relativePath} must keep a bounded homepage render lifetime`);
   }
   if (!source.getFullText().includes(`await ${name}()`)) {
-    errors.push(`${relativePath} must resolve its cached body before rendering`);
+    errors.push(
+      `${relativePath} must resolve its cached body before rendering`,
+    );
   }
 }
 
@@ -308,8 +320,12 @@ for (const errorMessage of [
 }
 
 for (const requirement of articleRouteRequirements) {
-  if (fs.existsSync(path.join(root, path.dirname(requirement.app), "loading.tsx"))) {
-    errors.push(`${requirement.app} must not hide its entire article behind loading.tsx`);
+  if (
+    fs.existsSync(path.join(root, path.dirname(requirement.app), "loading.tsx"))
+  ) {
+    errors.push(
+      `${requirement.app} must not hide its entire article behind loading.tsx`,
+    );
   }
   const appSource = fs.readFileSync(path.join(root, requirement.app), "utf8");
   const routeSource = fs.readFileSync(
@@ -377,7 +393,9 @@ if (!webProxySource.includes("isPublicHtmlRequest(request)")) {
   errors.push("The proxy must apply the shared HTML cache boundary");
 }
 if (!webProxySource.includes("CACHED_HOMEPAGE_PATHS.has(pathname)")) {
-  errors.push("Cached homepages must also bypass shared caching for private/RSC requests");
+  errors.push(
+    "Cached homepages must also bypass shared caching for private/RSC requests",
+  );
 }
 if (
   webNextConfig.includes("publicArticleCacheHeaders") ||

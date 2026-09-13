@@ -44,7 +44,7 @@ export function KnowledgeCategoryQuickReference({
           <Link
             key={category.id}
             href={category.href}
-            className="group flex min-h-28 items-start justify-between gap-3 rounded-lg border border-border/70 bg-background p-4 outline-none transition-[border-color,box-shadow] duration-200 hover:border-primary/35 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="public-panel public-card group flex min-h-28 items-start justify-between gap-3 p-5 outline-none transition-[border-color,box-shadow] duration-200 hover:border-primary/35 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <span className="min-w-0">
               <span className="block text-sm font-semibold text-foreground group-hover:text-primary">

@@ -103,7 +103,7 @@ async function CategoryPageContent({
   };
 
   return (
-    <div className="grid gap-8 xl:grid-cols-[minmax(0,0.82fr)_320px]">
+    <div className="grid gap-7 px-4 xl:grid-cols-[minmax(0,1fr)_300px]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -144,7 +144,7 @@ async function CategoryPageContent({
       </div>
 
       <aside className="hidden xl:block">
-        <div className="sticky top-24 space-y-4">
+        <div className="sticky top-28 space-y-4">
           <Card className="rounded-lg border-border/70 bg-background shadow-none">
             <CardContent className="space-y-4 p-5">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -175,7 +175,10 @@ export default function EnglishCategoryPage(props: {
     <div className="flex min-h-dvh flex-col bg-background">
       <Header language="en" />
       <Separator />
-      <main className="container mx-auto flex-1 px-4 py-6 md:py-8">
+      <main
+        id="main-content"
+        className="container mx-auto flex-1 px-4 py-6 md:py-8"
+      >
         <Suspense
           fallback={
             <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">

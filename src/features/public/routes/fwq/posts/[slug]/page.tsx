@@ -333,7 +333,7 @@ async function PostPageContent({
         <ArticleTocSidebar items={tocItems} label="本文目录" />
 
         <div className="mx-auto w-full min-w-0 max-w-[820px] space-y-10 xl:mx-0 xl:max-w-none">
-          <article className="min-w-0">
+          <article className="article-reading-surface">
             <script
               type="application/ld+json"
               dangerouslySetInnerHTML={{

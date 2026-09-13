@@ -24,7 +24,7 @@ import { LanguageSwitchLink } from "@/features/public/components/language-switch
 import { buildArticleNavigation } from "@/features/public/lib/article-navigation";
 import { getNavigationCategories } from "@/features/shared/data/category";
 import { cn } from "@fwqgo/core/utils";
-import { BookOpen, Globe2, Menu, Search, Server } from "lucide-react";
+import { BookOpen, Cpu, Globe2, Menu, Search, Server } from "lucide-react";
 
 type PublicLanguage = "zh" | "en";
 
@@ -118,9 +118,12 @@ const HeaderContent = async ({
   const safeCategories = buildArticleNavigation(categories ?? [], language);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/70 bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
-      <div className="container mx-auto px-4">
-        <div className="flex min-h-16 items-center justify-between gap-5">
+    <header className="sticky top-0 z-50 border-b border-border/70 bg-card/95 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
+      <a href="#main-content" className="public-skip-link">
+        {language === "en" ? "Skip to content" : "跳转到正文"}
+      </a>
+      <div className="public-container">
+        <div className="flex min-h-20 items-center justify-between gap-4">
           <Link
             href={language === "en" ? "/en" : "/"}
             prefetch
@@ -130,8 +133,21 @@ const HeaderContent = async ({
             <BrandLogo compact />
           </Link>
 
-          <NavigationMenu className="hidden lg:block">
+          <NavigationMenu className="hidden xl:block">
             <NavigationMenuList className="gap-0.5">
+              <NavigationMenuItem>
+                <NavigationMenuLink asChild>
+                  <Link
+                    href={`${language === "en" ? "/en" : ""}/fwq/page/1`}
+                    className={cn(
+                      navigationMenuTriggerStyle(),
+                      "min-h-11 rounded-lg bg-transparent",
+                    )}
+                  >
+                    {language === "en" ? "Journal" : "最新文章"}
+                  </Link>
+                </NavigationMenuLink>
+              </NavigationMenuItem>
               <NavigationMenuItem>
                 <NavigationMenuTrigger className="rounded-md">
                   {copy.dealsTitle}
@@ -209,6 +225,35 @@ const HeaderContent = async ({
                 </NavigationMenuItem>
               ) : null}
               <NavigationMenuItem>
+                <NavigationMenuTrigger className="min-h-11 rounded-lg bg-transparent">
+                  {language === "en" ? "Tools" : "选购工具"}
+                </NavigationMenuTrigger>
+                <NavigationMenuContent>
+                  <ul className="grid w-[min(520px,calc(100vw-2rem))] gap-2 p-4 md:grid-cols-2">
+                    <ListItem
+                      href={`${language === "en" ? "/en" : ""}/tools/server-sizing`}
+                      title={
+                        language === "en" ? "Server sizing" : "服务器配置选择"
+                      }
+                    >
+                      {language === "en"
+                        ? "Match CPU, memory and storage to your workload."
+                        : "结合业务规模，梳理 CPU、内存和存储需求。"}
+                    </ListItem>
+                    <ListItem
+                      href={`${language === "en" ? "/en" : ""}/tools/network-lines`}
+                      title={
+                        language === "en" ? "Network routes" : "网络线路选择"
+                      }
+                    >
+                      {language === "en"
+                        ? "Understand routes and carrier compatibility."
+                        : "根据用户地区和运营商，比较网络线路。"}
+                    </ListItem>
+                  </ul>
+                </NavigationMenuContent>
+              </NavigationMenuItem>
+              <NavigationMenuItem>
                 <NavigationMenuLink asChild>
                   <Link
                     href={copy.searchHref}
@@ -230,7 +275,7 @@ const HeaderContent = async ({
               <Button
                 asChild
                 variant="outline"
-                className="hidden shrink-0 lg:inline-flex"
+                className="hidden shrink-0 rounded-full xl:inline-flex"
               >
                 <Link href={language === "en" ? "/" : "/en"} prefetch>
                   <Globe2 className="size-4" />
@@ -242,7 +287,7 @@ const HeaderContent = async ({
             <Button
               asChild
               variant="outline"
-              className="hidden shrink-0 lg:inline-flex"
+              className="hidden shrink-0 rounded-full xl:inline-flex"
             >
               <LanguageSwitchLink currentLanguage={language} prefetch>
                 <Globe2 className="size-4" />
@@ -257,7 +302,7 @@ const HeaderContent = async ({
                 type="button"
                 variant="outline"
                 size="icon"
-                className="lg:hidden"
+                className="rounded-xl xl:hidden"
                 aria-label={copy.navigationTitle}
               >
                 <Menu className="size-5" />
@@ -271,6 +316,13 @@ const HeaderContent = async ({
                 <SheetTitle>{copy.navigationTitle}</SheetTitle>
               </SheetHeader>
               <nav className="mt-6 grid gap-4">
+                <MobileNavLink
+                  href={`${language === "en" ? "/en" : ""}/fwq/page/1`}
+                  className="flex min-h-11 items-center gap-2 rounded-lg bg-primary/5 px-3 text-sm font-semibold text-primary"
+                >
+                  <BookOpen className="size-4" />
+                  {language === "en" ? "Latest articles" : "最新文章"}
+                </MobileNavLink>
                 <div className="grid gap-1 rounded-lg border border-border/70 p-2">
                   <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium uppercase text-muted-foreground">
                     <Server className="size-3.5" />
@@ -341,6 +393,22 @@ const HeaderContent = async ({
                   >
                     <Search className="size-4" />
                     {copy.searchLabel}
+                  </MobileNavLink>
+                </div>
+                <div className="grid gap-1 rounded-lg border border-border/70 p-2">
+                  <MobileNavLink
+                    href={`${language === "en" ? "/en" : ""}/tools/server-sizing`}
+                    className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm hover:bg-muted"
+                  >
+                    <Cpu className="size-4 text-primary" />
+                    {language === "en" ? "Server sizing" : "服务器配置选择"}
+                  </MobileNavLink>
+                  <MobileNavLink
+                    href={`${language === "en" ? "/en" : ""}/tools/network-lines`}
+                    className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm hover:bg-muted"
+                  >
+                    <Globe2 className="size-4 text-primary" />
+                    {language === "en" ? "Network routes" : "网络线路选择"}
                   </MobileNavLink>
                 </div>
                 {safeCategories.length > 0 ? (

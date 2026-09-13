@@ -181,14 +181,14 @@ async function ServerTopicContent({
   };
 
   return (
-    <main className="flex-1">
+    <main id="main-content" className="flex-1">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
           __html: jsonLdScriptContent([itemListJsonLd, faqJsonLd]),
         }}
       />
-      <section className="home-grid-surface border-b border-border/60">
+      <section className="public-hero">
         <div className="container mx-auto px-4 py-7 md:py-9">
           <Link
             href="/servers"
@@ -209,7 +209,7 @@ async function ServerTopicContent({
               预筛选套餐 · 价格默认从低到高
             </span>
           </div>
-          <h1 className="mt-3 max-w-3xl text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+          <h1 className="font-editorial mt-3 max-w-3xl text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
             {topicInfo.h1}
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">
@@ -275,7 +275,14 @@ export default function ServerTopicPage({
     <div className="flex min-h-dvh flex-col bg-background">
       <Header />
       <Suspense
-        fallback={<main className="flex-1 px-4 py-10 text-center text-sm text-muted-foreground">正在加载专题套餐...</main>}
+        fallback={
+          <main
+            id="main-content"
+            className="flex-1 px-4 py-10 text-center text-sm text-muted-foreground"
+          >
+            正在加载专题套餐...
+          </main>
+        }
       >
         <ServerTopicContent params={params} />
       </Suspense>

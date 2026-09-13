@@ -74,6 +74,16 @@ const footerCopy = {
     ],
     utilities: [
       {
+        title: "服务器配置选择",
+        href: "/tools/server-sizing",
+        description: "结合业务规模估算资源需求",
+      },
+      {
+        title: "网络线路选择",
+        href: "/tools/network-lines",
+        description: "从运营商与访问场景判断线路",
+      },
+      {
         title: "服务器知识库",
         href: "/knowledge",
         description: "配置、线路、机房与 IP 基础知识",
@@ -124,6 +134,16 @@ const footerCopy = {
       },
     ],
     utilities: [
+      {
+        title: "Server sizing",
+        href: "/en/tools/server-sizing",
+        description: "Plan resources around your workload",
+      },
+      {
+        title: "Network routes",
+        href: "/en/tools/network-lines",
+        description: "Understand carriers and connectivity",
+      },
       {
         title: "Server Knowledge Base",
         href: "/en/knowledge",
@@ -268,8 +288,25 @@ function FooterView({
   ];
 
   return (
-    <footer className="border-t border-border/70 bg-muted/20 text-foreground">
-      <div className="mx-auto max-w-7xl px-4 pb-[max(2rem,calc(env(safe-area-inset-bottom)+2rem))] pt-8 sm:px-6 lg:px-8">
+    <footer className="border-t border-border/70 bg-card text-foreground">
+      <div className="public-container pb-[max(2rem,calc(env(safe-area-inset-bottom)+2rem))] pt-10">
+        <div className="mb-9 flex flex-wrap items-center justify-between gap-4 border-b border-border pb-7">
+          <div>
+            <p className="public-kicker mb-2">FWQGO / CLOUD INFRASTRUCTURE</p>
+            <p className="font-editorial text-xl font-semibold sm:text-2xl">
+              {language === "en"
+                ? "Understand more. Choose with confidence."
+                : "看懂技术，选对服务器。"}
+            </p>
+          </div>
+          <Link
+            href={language === "en" ? "/en/knowledge" : "/knowledge"}
+            className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary/5 px-5 text-sm font-semibold text-primary hover:bg-primary/10"
+          >
+            {language === "en" ? "Explore the knowledge base" : "探索知识库"}
+            <ArrowUpRight className="size-4" aria-hidden="true" />
+          </Link>
+        </div>
         <div className="grid gap-8 lg:grid-cols-[minmax(260px,0.85fr)_minmax(0,2fr)]">
           <section className="min-w-0 space-y-5">
             <div>

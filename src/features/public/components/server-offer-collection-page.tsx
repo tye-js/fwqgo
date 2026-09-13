@@ -272,7 +272,7 @@ export function ServerOfferCollectionPage({
   );
 
   return (
-    <main className="flex-1">
+    <main id="main-content" className="flex-1">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -288,7 +288,7 @@ export function ServerOfferCollectionPage({
           ),
         }}
       />
-      <section className="home-grid-surface border-b border-border/60">
+      <section className="public-hero">
         <div className="container mx-auto px-4 py-7 md:py-9">
           <Link
             href="/servers"
@@ -309,7 +309,7 @@ export function ServerOfferCollectionPage({
               预筛选套餐 · 价格默认从低到高
             </span>
           </div>
-          <h1 className="mt-3 max-w-3xl text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+          <h1 className="font-editorial mt-3 max-w-3xl text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
             {title || `${value}${copy.titleSuffix}`}
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">

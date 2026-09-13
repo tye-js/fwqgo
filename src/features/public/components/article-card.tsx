@@ -3,6 +3,7 @@ import { ArrowRight, CalendarDays } from "lucide-react";
 
 import { type PostWithTags } from "@/types";
 import { SafePostImage } from "@/features/public/components/safe-post-image";
+import { cn } from "@fwqgo/core/utils";
 
 type ArticleCardTag = PostWithTags["tags"][number]["tag"];
 
@@ -63,10 +64,12 @@ function ArticleCard({
   post,
   language = "zh",
   excludedTagSlug,
+  variant = "list",
 }: {
   post: PostWithTags;
   language?: "zh" | "en";
   excludedTagSlug?: string;
+  variant?: "list" | "feature" | "compact";
 }) {
   const postPrefix = language === "en" ? "/en/fwq/posts" : "/fwq/posts";
   const tagPrefix = language === "en" ? "/en/fwq/tags" : "/fwq/tags";
@@ -94,23 +97,49 @@ function ArticleCard({
     <article
       aria-labelledby={titleId}
       data-testid="article-card"
-      className="group overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm transition-[border-color,background-color,box-shadow] duration-200 hover:border-primary/35 hover:bg-muted/15 hover:shadow-md"
+      className="public-panel public-card group overflow-hidden transition-[border-color,box-shadow] duration-200 hover:border-primary/35 hover:shadow-md"
     >
-      <div className="grid min-w-0 md:grid-cols-[224px_minmax(0,1fr)] lg:grid-cols-[232px_minmax(0,1fr)]">
+      <div
+        className={cn(
+          "grid min-w-0",
+          variant === "list" &&
+            "md:grid-cols-[224px_minmax(0,1fr)] lg:grid-cols-[232px_minmax(0,1fr)]",
+          variant === "compact" && "sm:grid-cols-[112px_minmax(0,1fr)]",
+        )}
+      >
         <Link
           href={href}
           prefetch
           aria-label={copy.imageLabel}
-          className="relative aspect-[16/9] overflow-hidden border-b border-border/60 bg-muted focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:m-3 md:mr-0 md:self-center md:rounded-md md:border"
+          className={cn(
+            "public-card-image relative aspect-[16/9] overflow-hidden bg-muted focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            variant === "list" &&
+              "m-3 mb-0 rounded-xl md:m-4 md:mr-0 md:self-center",
+            variant === "feature" &&
+              "border-b border-border/60 sm:aspect-[2/1]",
+            variant === "compact" &&
+              "m-3 mb-0 rounded-lg sm:mb-3 sm:mr-0 sm:aspect-square sm:self-center",
+          )}
         >
           <SafePostImage
             src={post.imgUrl}
             alt={post.title}
-            sizes="(max-width: 767px) calc(100vw - 2rem), 232px"
+            sizes={
+              variant === "feature"
+                ? "(max-width: 767px) calc(100vw - 2rem), (max-width: 1279px) 60vw, 730px"
+                : "(max-width: 767px) calc(100vw - 2rem), 232px"
+            }
+            priority={variant === "feature"}
           />
         </Link>
 
-        <div className="flex min-w-0 flex-col px-4 py-4 md:min-h-[150px] md:px-5 md:py-4">
+        <div
+          className={cn(
+            "flex min-w-0 flex-col p-5",
+            variant === "feature" && "sm:p-6",
+            variant === "compact" && "p-4",
+          )}
+        >
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
             {primaryTag ? (
               <ArticleTagLabel tag={primaryTag} tagPrefix={tagPrefix} primary />
@@ -128,7 +157,12 @@ function ArticleCard({
           >
             <h3
               id={titleId}
-              className="font-editorial break-words text-lg font-semibold leading-7 text-foreground underline-offset-4 transition-colors group-hover:text-primary group-hover:underline md:line-clamp-2"
+              className={cn(
+                "font-editorial break-words font-semibold text-foreground transition-colors group-hover:text-primary",
+                variant === "feature"
+                  ? "text-2xl leading-snug sm:text-3xl"
+                  : "text-lg leading-7",
+              )}
             >
               {post.title}
             </h3>
@@ -138,7 +172,12 @@ function ArticleCard({
             {post.description ?? copy.fallbackDescription}
           </p>
 
-          <div className="mt-auto flex min-w-0 flex-wrap items-end justify-between gap-x-4 gap-y-2 pt-3">
+          <div
+            className={cn(
+              "mt-auto flex min-w-0 flex-wrap items-end justify-between gap-x-4 gap-y-2 pt-3",
+              variant === "compact" && "hidden",
+            )}
+          >
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
               {secondaryTags.map((tag) => (
                 <ArticleTagLabel

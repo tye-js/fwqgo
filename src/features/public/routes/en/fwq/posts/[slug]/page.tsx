@@ -285,11 +285,11 @@ async function EnglishPostContent({ params }: PageProps) {
     ],
   };
   return (
-    <main className="flex-1">
+    <main id="main-content" className="flex-1">
       <div className="container mx-auto grid items-start gap-6 px-4 py-4 sm:px-6 md:py-6 xl:grid-cols-[minmax(0,800px)_280px] xl:justify-center 2xl:grid-cols-[180px_minmax(0,760px)_260px] 2xl:gap-5">
         <ArticleTocSidebar items={tocItems} label="Contents" />
 
-        <article className="mx-auto w-full min-w-0 max-w-[820px] xl:mx-0 xl:max-w-none">
+        <article className="article-reading-surface mx-auto w-full max-w-[820px] xl:mx-0 xl:max-w-none">
           <script
             type="application/ld+json"
             dangerouslySetInnerHTML={{

@@ -3,6 +3,7 @@ import { notFound, permanentRedirect } from "next/navigation";
 import ArticleCard from "@/features/public/components/article-card";
 import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
 import PageCard from "@/features/public/components/page-card";
+import { PublicDiscovery } from "./public-discovery";
 import {
   getLatestPostsForSidebar,
   getPublishedPostCount,
@@ -139,7 +140,7 @@ export async function AllArticlesPageContent({
   };
 
   return (
-    <div className="grid gap-8 px-4 xl:grid-cols-[minmax(0,0.82fr)_320px]">
+    <div className="grid gap-7 px-4 xl:grid-cols-[minmax(0,1fr)_300px]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -178,9 +179,15 @@ export async function AllArticlesPageContent({
         />
       </div>
 
-      <aside className="hidden xl:block">
-        <div className="sticky top-24">
+      <aside className="min-w-0">
+        <div className="space-y-5 xl:sticky xl:top-28">
           <LatestPostsSidebar posts={latestPosts ?? []} language={language} />
+          <section className="public-panel p-4">
+            <h2 className="px-3 pt-2 text-sm font-semibold">
+              {language === "en" ? "Find your next step" : "找到你的下一步"}
+            </h2>
+            <PublicDiscovery compact language={language} />
+          </section>
         </div>
       </aside>
     </div>

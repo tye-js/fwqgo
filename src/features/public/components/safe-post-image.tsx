@@ -2,6 +2,8 @@
 
 import Image from "next/image";
 import { useState } from "react";
+import { isDefaultArticleCover } from "@fwqgo/core/article-cover";
+import { ServerCoverArt } from "./server-cover-art";
 
 import {
   getOptimizedImageSrc,
@@ -22,14 +24,8 @@ export function SafePostImage({
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const failed = failedSrc === src;
 
-  if (!isRenderableImageSrc(src) || failed) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,hsl(var(--muted)),hsl(var(--background)))] px-4 text-center">
-        <span className="line-clamp-2 text-xs font-medium leading-5 text-muted-foreground">
-          {alt}
-        </span>
-      </div>
-    );
+  if (!isRenderableImageSrc(src) || failed || isDefaultArticleCover(src)) {
+    return <ServerCoverArt />;
   }
 
   return (

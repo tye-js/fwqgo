@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import ArticleCard from "@/features/public/components/article-card";
 import Footer from "@/features/public/components/footer";
 import Header from "@/features/public/components/header";
+import { PublicDiscovery } from "@/features/public/components/public-discovery";
 import { ServerOfferTable } from "@/features/public/components/server-offer-table";
 import { searchPublishedPosts } from "@/features/public/data/post";
 import { searchServerOffers } from "@/server/offers/server-offers";
@@ -112,14 +113,14 @@ async function SearchContent({ searchParams }: SearchPageProps) {
     : [{ data: [] }, []];
 
   return (
-    <main className="flex-1">
-      <section className="border-b border-border/60 bg-muted/20">
-        <div className="container mx-auto px-4 py-8 md:py-10">
+    <main id="main-content" className="flex-1">
+      <section className="public-hero">
+        <div className="public-container py-9 md:py-12">
           <div className="max-w-3xl space-y-4">
-            <Badge className="bg-primary text-primary-foreground">
+            <Badge className="rounded-full border-primary/20 bg-primary/5 px-3 py-1.5 text-primary hover:bg-primary/5">
               {copy.badge}
             </Badge>
-            <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
+            <h1 className="font-editorial text-3xl font-semibold tracking-tight md:text-4xl">
               {copy.h1}
             </h1>
             <p className="text-sm leading-7 text-muted-foreground md:text-base">
@@ -141,10 +142,10 @@ async function SearchContent({ searchParams }: SearchPageProps) {
                   defaultValue={query}
                   placeholder={copy.placeholder}
                   autoComplete="off"
-                  className="min-h-11 w-full rounded-md border border-border/70 bg-background pl-10 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-ring"
+                  className="h-14 w-full rounded-xl border border-border bg-card pl-10 pr-4 text-base shadow-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-ring"
                 />
               </div>
-              <Button type="submit" className="min-h-11">
+              <Button type="submit" className="h-14 rounded-xl px-6">
                 {copy.submit}
                 <ArrowRight className="size-4" />
               </Button>
@@ -167,17 +168,20 @@ async function SearchContent({ searchParams }: SearchPageProps) {
 
       <section className="container mx-auto px-4 py-8 md:py-10">
         {!query ? (
-          <Card className="border-border/70 bg-background shadow-sm">
-            <CardContent className="p-8 text-center">
-              <Search className="mx-auto size-8 text-muted-foreground" />
-              <p className="mt-4 text-base font-medium text-foreground">
-                {copy.emptyTitle}
-              </p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {copy.emptyDescription}
-              </p>
-            </CardContent>
-          </Card>
+          <div className="space-y-7">
+            <Card className="public-panel">
+              <CardContent className="p-8 text-center">
+                <Search className="mx-auto size-8 text-muted-foreground" />
+                <p className="mt-4 text-base font-medium text-foreground">
+                  {copy.emptyTitle}
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {copy.emptyDescription}
+                </p>
+              </CardContent>
+            </Card>
+            <PublicDiscovery language={language} />
+          </div>
         ) : (
           <div className="space-y-8">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -249,7 +253,10 @@ export default function SearchPage(props: SearchPageProps) {
       </Suspense>
       <Suspense
         fallback={
-          <main className="container mx-auto flex flex-1 items-center px-4 py-12">
+          <main
+            id="main-content"
+            className="container mx-auto flex flex-1 items-center px-4 py-12"
+          >
             <div className="w-full rounded-md border border-border/70 bg-card p-6 text-sm text-muted-foreground">
               正在加载搜索页...
             </div>

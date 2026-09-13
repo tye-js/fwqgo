@@ -79,7 +79,7 @@ export function KnowledgeCard({
   const definition = textOrFallback(item.definition, fallbackDefinition);
 
   return (
-    <article className="flex min-h-72 flex-col rounded-lg border border-border/70 bg-background p-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-primary/35 hover:shadow-md">
+    <article className="public-panel group flex min-h-72 flex-col p-5 transition-[border-color,box-shadow] duration-200 hover:border-primary/35 hover:shadow-md sm:p-6">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <span className="inline-flex min-w-0 flex-1 items-start gap-1.5 break-words font-medium text-primary">
           <Layers3 className="size-3.5 shrink-0" aria-hidden="true" />
@@ -93,7 +93,7 @@ export function KnowledgeCard({
         </time>
       </div>
 
-      <h3 className="mt-3 text-lg font-semibold leading-7 tracking-normal">
+      <h3 className="font-editorial mt-5 text-xl font-semibold leading-7 tracking-tight">
         <Link
           href={href}
           className="break-words rounded-sm outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -145,7 +145,9 @@ export function KnowledgeCard({
             className="mt-0.5 size-3.5 shrink-0 text-primary"
             aria-hidden="true"
           />
-          <span className="min-w-0 break-words">{inlineCode(item.quickTip)}</span>
+          <span className="min-w-0 break-words">
+            {inlineCode(item.quickTip)}
+          </span>
         </div>
       ) : null}
 

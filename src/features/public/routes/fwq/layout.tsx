@@ -10,8 +10,10 @@ export default function CreateLayout({
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <Header />
-      <Separator />
-      <main className="container mx-auto min-h-0 flex-1 py-2 md:py-4">
+      <main
+        id="main-content"
+        className="container mx-auto min-h-0 flex-1 py-6 md:py-9"
+      >
         {children}
       </main>
       <Separator className="mt-4" />

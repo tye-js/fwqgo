@@ -147,14 +147,14 @@ export function NetworkLineSelector({ language, ruleSet }: { language: Language;
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 sm:px-6 lg:px-8">
-      <div className="max-w-3xl">
+    <main id="main-content" className="public-container flex-1 py-8 md:py-10">
+      <div className="public-page-intro">
         <div className="flex items-center gap-2 text-sm font-medium text-primary"><Network className="size-4" aria-hidden="true" /><span>{text.eyebrow}</span></div>
-        <h1 className="mt-3 text-3xl font-semibold tracking-normal sm:text-4xl">{text.title}</h1>
+        <h1 className="font-editorial mt-3 max-w-4xl text-3xl font-semibold tracking-tight sm:text-4xl">{text.title}</h1>
         <p className="mt-3 text-base leading-7 text-muted-foreground">{text.intro}</p>
       </div>
 
-      <form className="mt-8 grid gap-4 rounded-lg border border-border/70 bg-card p-5 shadow-sm sm:grid-cols-2 lg:grid-cols-3" onSubmit={(event) => { event.preventDefault(); setSubmitted(true); }}>
+      <form className="public-panel mt-7 grid gap-5 p-5 sm:grid-cols-2 sm:p-6 lg:grid-cols-3" onSubmit={(event) => { event.preventDefault(); setSubmitted(true); }}>
         <Field label={text.userRegion}><select className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm" value={input.userRegion} onChange={(event) => update("userRegion", event.target.value as NetworkExperienceInputV1["userRegion"])}>{regionOptions.map((item) => <option key={item.value} value={item.value}>{item[language]}</option>)}</select></Field>
         <Field label={text.carrier}><select className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm" value={input.carrier} onChange={(event) => update("carrier", event.target.value as NetworkExperienceInputV1["carrier"])}>{["multi_carrier", "telecom", "unicom", "mobile"].map((value) => <option key={value} value={value}>{labels[value]![language]}</option>)}</select></Field>
         <Field label={text.access}><select className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm" value={input.accessType} onChange={(event) => update("accessType", event.target.value as NetworkExperienceInputV1["accessType"])}>{NETWORK_ACCESS_TYPES.map((value) => <option key={value} value={value}>{labels[value === "mobile" ? "mobile_access" : value]![language]}</option>)}</select></Field>

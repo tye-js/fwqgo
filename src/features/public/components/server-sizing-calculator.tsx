@@ -593,15 +593,15 @@ export function ServerSizingCalculator({
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
-      <main className="flex-1">
-        <section className="border-b border-border/70 bg-muted/20">
+      <main id="main-content" className="flex-1">
+        <section className="public-hero">
           <div className="container mx-auto px-4 py-10 md:py-14">
             <div className="max-w-4xl">
               <Badge variant="outline" className="gap-1.5 bg-background">
                 <Calculator className="size-3.5" aria-hidden="true" />
                 {text.eyebrow}
               </Badge>
-              <h1 className="mt-4 max-w-3xl text-3xl font-semibold leading-tight tracking-normal md:text-4xl">
+              <h1 className="font-editorial mt-4 max-w-3xl text-3xl font-semibold leading-tight tracking-tight md:text-4xl">
                 {text.title}
               </h1>
               <p className="mt-4 max-w-3xl text-base leading-7 text-muted-foreground">

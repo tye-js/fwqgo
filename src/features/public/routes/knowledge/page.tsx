@@ -194,15 +194,15 @@ async function KnowledgeIndexContent(props: {
   const indexHref = props.language === "en" ? "/en/knowledge" : "/knowledge";
 
   return (
-    <main className="flex-1">
-      <section className="border-b border-border/60 bg-muted/20">
-        <div className="container mx-auto px-4 py-8 md:py-10">
+    <main id="main-content" className="flex-1">
+      <section className="public-hero">
+        <div className="public-container py-9 md:py-12">
           <div className="max-w-4xl">
-            <Badge className="bg-primary text-primary-foreground">
+            <Badge className="rounded-full border-primary/20 bg-primary/5 px-3 py-1.5 text-primary hover:bg-primary/5">
               <BookOpen className="mr-1 size-3.5" />
               {languageCopy.badge}
             </Badge>
-            <h1 className="mt-4 text-3xl font-semibold tracking-normal md:text-4xl">
+            <h1 className="font-editorial mt-4 text-3xl font-semibold tracking-tight md:text-4xl">
               {languageCopy.heading}
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">
@@ -225,11 +225,11 @@ async function KnowledgeIndexContent(props: {
                   type="search"
                   name="q"
                   defaultValue={query}
-                  className="min-h-11 w-full rounded-md border border-border/70 bg-background pl-10 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-ring"
+                  className="h-14 w-full rounded-xl border border-border bg-card pl-10 pr-4 text-base shadow-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-ring"
                   placeholder={languageCopy.searchPlaceholder}
                 />
               </div>
-              <Button type="submit" className="min-h-11">
+              <Button type="submit" className="h-14 rounded-xl px-6">
                 {languageCopy.searchButton}
                 <ArrowRight className="size-4" />
               </Button>
@@ -410,7 +410,10 @@ export function KnowledgeIndexPage(props: {
       <Header language={props.language} />
       <Suspense
         fallback={
-          <main className="container mx-auto flex flex-1 items-center px-4 py-12">
+          <main
+            id="main-content"
+            className="container mx-auto flex flex-1 items-center px-4 py-12"
+          >
             <div className="w-full rounded-md border border-border/70 p-6 text-sm text-muted-foreground">
               {copy[props.language].loading}
             </div>

@@ -114,7 +114,7 @@ async function InventoryRuntime({
       <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-5 py-8">
         <p className="font-medium text-destructive">库存数据暂时无法读取</p>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          页面框架和专题入口仍可使用。请稍后重试；持续失败时需要检查数据库连接和最新迁移状态。
+          请稍后刷新重试，也可以先浏览下方的地区专题，了解不同地区与线路的选购要点。
         </p>
       </div>
     );
@@ -166,7 +166,7 @@ export default function ServersPage({
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <Header />
-      <main className="flex-1">
+      <main id="main-content" className="flex-1">
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -174,8 +174,8 @@ export default function ServersPage({
           }}
         />
 
-        <section className="home-grid-surface border-b border-border/60">
-          <div className="container mx-auto px-4 py-6 md:py-8">
+        <section className="public-hero">
+          <div className="public-container py-8 md:py-10">
             <div className="flex flex-wrap items-center gap-2">
               <Badge
                 variant="outline"
@@ -188,11 +188,11 @@ export default function ServersPage({
                 常规套餐与限时活动分开查询
               </span>
             </div>
-            <h1 className="mt-3 max-w-4xl text-2xl font-semibold leading-tight text-foreground md:text-3xl">
-              按厂商、库存、地区、线路和月价查找服务器
+            <h1 className="font-editorial mt-4 max-w-4xl text-3xl font-semibold leading-tight tracking-tight text-foreground md:text-4xl">
+              把服务器放在一起，认真比较。
             </h1>
             <p className="mt-2 max-w-4xl text-sm leading-7 text-muted-foreground">
-              常规款由后台人工维护，活动款单独进行库存探测。价格统一折算为美元月价用于排序，下单前仍应在商家结算页核对价格、续费和退款政策。
+              按商家、库存、地区、线路和配置缩小范围，使用美元月价比较不同计费周期。下单前，再核对商家结算价格、续费与退款政策。
             </p>
           </div>
         </section>
@@ -210,7 +210,7 @@ export default function ServersPage({
                 服务器选购专题
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                工具负责实时筛选，专题页提供选购说明、FAQ、相关文章和精选套餐。
+                从选购说明、常见问题和相关文章入手，了解地区与线路的差异。
               </p>
             </div>
             <div className="grid gap-3 md:grid-cols-3">

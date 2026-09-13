@@ -1,0 +1,255 @@
+/* Public-site tokens and surfaces. CMS continues to use its own theme. */
+html.public-site {
+  --background: 216 33% 97%;
+  --foreground: 222 37% 15%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 37% 15%;
+  --primary: 220 83% 49%;
+  --primary-foreground: 0 0% 100%;
+  --muted: 216 30% 94%;
+  --muted-foreground: 218 16% 42%;
+  --border: 216 24% 88%;
+  --input: 216 24% 84%;
+  --ring: 220 83% 49%;
+  --radius: 1rem;
+  --public-soft: 218 100% 96%;
+  --public-ink: 223 41% 15%;
+  --public-shadow: 0 6px 24px hsl(222 40% 22% / 0.035);
+}
+
+html.public-site.dark {
+  --background: 223 30% 9%;
+  --foreground: 215 30% 94%;
+  --card: 223 26% 12%;
+  --card-foreground: 215 30% 94%;
+  --primary: 215 96% 72%;
+  --primary-foreground: 223 45% 12%;
+  --muted: 220 24% 18%;
+  --muted-foreground: 216 19% 70%;
+  --border: 220 21% 24%;
+  --input: 220 21% 32%;
+  --ring: 215 96% 72%;
+  --public-soft: 222 35% 17%;
+  --public-ink: 215 30% 94%;
+  --public-shadow: 0 6px 24px hsl(0 0% 0% / 0.12);
+}
+
+.public-site body {
+  line-height: 1.65;
+  text-rendering: optimizeLegibility;
+}
+
+.public-site .container,
+.public-site .public-container {
+  width: 100%;
+  max-width: 1248px;
+  margin-inline: auto;
+}
+
+.public-site .public-container {
+  padding-inline: clamp(1rem, 3vw, 2rem);
+}
+
+.public-site .public-panel {
+  border: 1px solid hsl(var(--border) / 0.85);
+  border-radius: 1rem;
+  background: hsl(var(--card));
+  box-shadow: var(--public-shadow);
+}
+
+.public-site .public-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: hsl(var(--primary));
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  line-height: 1.6;
+}
+
+.public-site .public-kicker::before {
+  content: "";
+  width: 1.25rem;
+  height: 2px;
+  flex-shrink: 0;
+  background: currentColor;
+}
+
+.public-site .public-section-title {
+  font-family: var(--font-editorial), var(--font-ui), sans-serif;
+  color: hsl(var(--foreground));
+  font-size: clamp(1.25rem, 1.6vw, 1.625rem);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.4;
+}
+
+.public-site .public-hero {
+  position: relative;
+  border-bottom: 1px solid hsl(var(--border) / 0.8);
+  background:
+    radial-gradient(
+      ellipse at 88% 18%,
+      hsl(var(--primary) / 0.06),
+      transparent 45%
+    ),
+    linear-gradient(180deg, hsl(var(--card)), hsl(var(--background)));
+}
+
+.public-site .public-page-intro {
+  position: relative;
+  border: 1px solid hsl(var(--border));
+  border-radius: 1rem;
+  background: linear-gradient(
+    120deg,
+    hsl(var(--card)) 42%,
+    hsl(var(--public-soft))
+  );
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+}
+
+.public-site .public-page-intro h1 {
+  overflow-wrap: anywhere;
+  font-family: var(--font-editorial), var(--font-ui), sans-serif;
+  font-size: clamp(1.875rem, 3vw, 2.75rem);
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.035em;
+}
+
+.public-site .public-stat {
+  font-family: var(--font-editorial), var(--font-ui), sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.035em;
+}
+
+.public-site .public-cover-art {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: hsl(var(--public-soft));
+  color: hsl(var(--primary));
+}
+
+.public-site .public-cover-art::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background-image: radial-gradient(
+    hsl(var(--primary) / 0.17) 1px,
+    transparent 1px
+  );
+  background-size: 20px 20px;
+  mask-image: linear-gradient(120deg, transparent, black);
+}
+
+.public-site .public-cover-art svg {
+  width: 68%;
+  max-height: 85%;
+  filter: drop-shadow(0 12px 14px hsl(var(--primary) / 0.1));
+}
+
+.public-site .public-card-image img {
+  transition: transform 250ms ease;
+}
+
+.public-site .public-card:hover .public-card-image img {
+  transform: scale(1.035);
+}
+
+.public-site a.public-panel:hover,
+.public-site .public-card:hover {
+  border-color: hsl(var(--primary) / 0.35);
+  box-shadow: 0 9px 26px hsl(var(--primary) / 0.06);
+}
+
+.public-site .article-reading-surface {
+  min-width: 0;
+  border: 1px solid hsl(var(--border) / 0.75);
+  border-radius: 1rem;
+  background: hsl(var(--card));
+  padding: clamp(1.1rem, 3vw, 2.25rem);
+  box-shadow: var(--public-shadow);
+}
+
+.public-site .article-prose {
+  font-size: 1rem;
+  line-height: 1.95;
+}
+
+.public-site .article-prose :is(h2, h3, h4) {
+  color: hsl(var(--foreground));
+  letter-spacing: -0.02em;
+  scroll-margin-top: 7rem;
+}
+
+.public-site .article-prose h2 {
+  margin-top: 2.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid hsl(var(--border));
+  font-size: 1.45rem;
+}
+
+.public-site .article-prose blockquote {
+  border-left: 3px solid hsl(var(--primary));
+  border-radius: 0 0.75rem 0.75rem 0;
+  background: hsl(var(--public-soft));
+  padding: 0.85rem 1.2rem;
+  font-style: normal;
+}
+
+.public-site .article-prose :not(pre) > code {
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.3rem;
+  background: hsl(var(--muted));
+  padding: 0.1rem 0.35rem;
+  font-size: 0.86em;
+}
+
+.public-site .article-prose thead {
+  background: hsl(var(--public-soft));
+}
+
+.public-site .article-prose tbody tr:nth-child(even) {
+  background: hsl(var(--muted) / 0.4);
+}
+
+.public-site #inventory-results article,
+.public-site form[aria-label="筛选服务器套餐"] {
+  border-radius: 1rem;
+  background: hsl(var(--card));
+  box-shadow: var(--public-shadow);
+}
+
+.public-site :is(a, button, input, select, summary):focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 3px;
+}
+
+.public-site .public-skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 0.75rem;
+  left: 1rem;
+  transform: translateY(-160%);
+  border-radius: 0.5rem;
+  background: hsl(var(--card));
+  padding: 0.75rem 1rem;
+  color: hsl(var(--primary));
+  font-weight: 600;
+}
+
+.public-site .public-skip-link:focus {
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-site .public-card:hover .public-card-image img {
+    transform: none;
+  }
+}

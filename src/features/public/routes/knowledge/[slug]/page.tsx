@@ -227,8 +227,8 @@ async function KnowledgeArticleContent(props: {
   ];
 
   return (
-    <main className="flex-1">
-      <article className="container mx-auto max-w-5xl px-4 py-7 md:py-10">
+    <main id="main-content" className="public-container flex-1 py-7 md:py-10">
+      <article className="article-reading-surface mx-auto max-w-5xl">
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: jsonLdScriptContent(jsonLd) }}
@@ -255,7 +255,7 @@ async function KnowledgeArticleContent(props: {
               {formatDate(article.contentUpdatedAt, props.language)}
             </span>
           </div>
-          <h1 className="mt-4 max-w-4xl text-3xl font-semibold leading-tight tracking-normal md:text-4xl">
+          <h1 className="font-editorial mt-4 max-w-4xl text-3xl font-semibold leading-tight tracking-tight md:text-4xl">
             {article.title}
           </h1>
           {article.summary ? (
@@ -404,8 +404,22 @@ export function KnowledgeArticlePage(props: {
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <Header language={props.language} />
-      <Suspense fallback={<main className="container mx-auto flex flex-1 items-center px-4 py-12"><div className="w-full rounded-md border border-border/70 p-6 text-sm text-muted-foreground">{copy[props.language].loading}</div></main>}>
-        <KnowledgeArticleContent language={props.language} params={props.params} />
+      <Suspense
+        fallback={
+          <main
+            id="main-content"
+            className="container mx-auto flex flex-1 items-center px-4 py-12"
+          >
+            <div className="w-full rounded-md border border-border/70 p-6 text-sm text-muted-foreground">
+              {copy[props.language].loading}
+            </div>
+          </main>
+        }
+      >
+        <KnowledgeArticleContent
+          language={props.language}
+          params={props.params}
+        />
       </Suspense>
       <Footer language={props.language} />
     </div>

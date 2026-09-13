@@ -87,7 +87,17 @@ export default function ServerLinePage({ params }: PageProps) {
     <div className="flex min-h-dvh flex-col bg-background">
       <Header />
       <Suspense
-        fallback={<main className="flex-1"><section className="container mx-auto px-4 py-10"><Card className="border-border/70 bg-background shadow-sm"><CardContent className="p-8 text-center text-sm text-muted-foreground">正在加载线路套餐...</CardContent></Card></section></main>}
+        fallback={
+          <main id="main-content" className="flex-1">
+            <section className="container mx-auto px-4 py-10">
+              <Card className="border-border/70 bg-background shadow-sm">
+                <CardContent className="p-8 text-center text-sm text-muted-foreground">
+                  正在加载线路套餐...
+                </CardContent>
+              </Card>
+            </section>
+          </main>
+        }
       >
         <LineContent params={params} />
       </Suspense>

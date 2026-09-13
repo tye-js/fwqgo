@@ -173,7 +173,10 @@ export default function EnglishTagPage(props: {
     <div className="flex min-h-dvh flex-col bg-background">
       <Header language="en" />
       <Separator />
-      <main className="container mx-auto flex-1 px-4 py-6 md:py-8">
+      <main
+        id="main-content"
+        className="container mx-auto flex-1 px-4 py-6 md:py-8"
+      >
         <Suspense
           fallback={
             <div className="rounded-lg border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">

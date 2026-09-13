@@ -4,6 +4,8 @@ import { BookOpenText, ImageIcon } from "lucide-react";
 
 import { TableOfContents } from "@/components/toc/table-of-contents";
 import type { TocItem } from "@fwqgo/core/toc";
+import { isDefaultArticleCover } from "@fwqgo/core/article-cover";
+import { ServerCoverArt } from "./server-cover-art";
 import {
   getOptimizedImageSrc,
   isRenderableImageSrc,
@@ -26,12 +28,12 @@ export function ArticleDetailHeader({
   eyebrow?: ReactNode;
 }) {
   return (
-    <header className="border-b border-border/70 pb-5 md:pb-6">
+    <header className="border-b border-border/70 pb-5 md:pb-7">
       {eyebrow ? <div className="mb-3">{eyebrow}</div> : null}
-      <h1 className="font-editorial max-w-4xl break-words text-2xl font-semibold leading-tight text-foreground sm:text-3xl md:text-4xl">
+      <h1 className="font-editorial max-w-4xl break-words text-2xl font-semibold leading-tight tracking-tight text-foreground sm:text-3xl md:text-4xl">
         {title}
       </h1>
-      <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground md:line-clamp-2 md:text-base md:leading-7">
+      <p className="mt-4 max-w-3xl text-base leading-7 text-muted-foreground">
         {description}
       </p>
       <div className="mt-4 flex min-w-0 flex-col gap-2 border-t border-border/60 pt-2 text-sm text-muted-foreground sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
@@ -63,14 +65,16 @@ export function ArticleCover({
     : null;
 
   return (
-    <div className="relative mx-auto aspect-video w-full overflow-hidden rounded-lg border border-border/70 bg-muted/30 md:max-w-[640px]">
-      {imageSrc ? (
+    <div className="relative mx-auto aspect-video w-full overflow-hidden rounded-xl border border-border/70 bg-muted/30">
+      {isDefaultArticleCover(src) ? (
+        <ServerCoverArt />
+      ) : imageSrc ? (
         <Image
           src={imageSrc}
           alt={alt}
           width={width}
           height={height}
-          sizes="(max-width: 767px) calc(100vw - 2rem), (max-width: 1279px) min(820px, calc(100vw - 3rem)), 640px"
+          sizes="(max-width: 767px) calc(100vw - 4rem), (max-width: 1279px) min(748px, calc(100vw - 6rem)), 700px"
           className="h-full w-full object-contain"
           quality={75}
           preload
@@ -95,8 +99,8 @@ export function ArticleTocSidebar({
   label: string;
 }) {
   return (
-    <aside className="sticky top-20 hidden max-h-[calc(100dvh-96px)] self-start 2xl:block">
-      <div className="border-l border-border/80 pl-4">
+    <aside className="sticky top-28 hidden max-h-[calc(100dvh-128px)] self-start 2xl:block">
+      <div className="rounded-xl border border-border/80 bg-card p-4">
         <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <BookOpenText className="size-4 text-primary" aria-hidden="true" />
           {label}

@@ -103,6 +103,7 @@ for (const file of publicSources) {
 
 const articleDetail = read("src/features/public/components/article-detail.tsx");
 const articleCard = read("src/features/public/components/article-card.tsx");
+const homeView = read("src/features/public/components/home-page.tsx");
 const header = read("src/features/public/components/header.tsx");
 const inventoryResults = read(
   "src/features/public/components/server-inventory-results.tsx",
@@ -149,7 +150,7 @@ assert.doesNotMatch(
   articleDetail,
   /flex-nowrap items-center[^"\n]*overflow-hidden/,
 );
-assert.match(articleDetail, /md:line-clamp-2/);
+assert.doesNotMatch(articleDetail, /line-clamp-2/);
 assert.match(postViewCount, /flex min-h-11 [^"\n]*items-center/);
 assert.match(featuredOffers, /basis-52 break-words/);
 assert.match(featuredOffers, /mt-1 break-words/);
@@ -160,10 +161,11 @@ assert.match(knowledgeCard, /flex min-w-0 flex-wrap/);
 assert.match(knowledgeCard, /className="break-words"/);
 assert.match(fwqLayout, /flex min-h-dvh flex-col/);
 assert.doesNotMatch(fwqLayout, /min-h-\[90vh\]/);
-for (const home of [zhHome, enHome]) {
-  assert.match(home, /min-w-0 flex-1 break-words text-foreground/);
-  assert.match(home, /max-w-\[45%\] shrink-0 break-all/);
-}
+// Both language routes share the same responsive presentation; coupon codes
+// must still wrap in that component instead of overflowing a narrow screen.
+for (const home of [zhHome, enHome]) assert.match(home, /<PublicHomePage/);
+assert.match(homeView, /min-w-0 flex-1 break-words text-foreground/);
+assert.match(homeView, /max-w-\[45%\] shrink-0 break-all/);
 assert.match(
   sizingCalculator,
   /whitespace-normal break-words px-2 text-center/,
@@ -199,7 +201,10 @@ assert.match(
 );
 
 assert.match(articleCard, /min-h-11/);
-assert.match(header, /className="lg:hidden"/);
+// The expanded public navigation uses the drawer through tablet widths so
+// article categories, tools and language switching cannot squeeze the header.
+assert.match(header, /className="[^"\n]*xl:hidden"/);
+assert.match(header, /NavigationMenu className="hidden xl:block"/);
 assert.match(header, /max-h-dvh w-\[88vw\]/);
 assert.match(header, /<SheetClose asChild>/);
 
