@@ -46,6 +46,8 @@ import {
 } from "@/features/cms/lib/ai-rewrite-task-filters";
 import { ilikeContains } from "@/server/db/search";
 import { getManualEnglishSourceId } from "@/features/cms/lib/manual-article";
+import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
+import { createEnglishTranslationSource } from "@/server/ai/english-translation-source";
 
 const taskInputSchema = z.object({
   sourceUrl: z.string().url("请输入有效 URL"),
@@ -688,6 +690,8 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
         title: posts.title,
         slug: posts.slug,
         content: posts.content,
+        description: posts.description,
+        keywords: posts.keywords,
         categoryId: posts.categoryId,
         language: posts.language,
         translationSourcePostId: posts.translationSourcePostId,
@@ -710,7 +714,10 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
                   title: posts.title,
                   slug: posts.slug,
                   content: posts.content,
+                  description: posts.description,
+                  keywords: posts.keywords,
                   categoryId: posts.categoryId,
+                  language: posts.language,
                 })
                 .from(posts)
                 .where(eq(posts.id, post.translationSourcePostId))
@@ -719,13 +726,38 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
           : null
         : post;
 
-    if (!parentPost) {
+    if (parentPost?.language !== "zh") {
       return { error: "英文文章缺少对应的中文来源，无法创建英文稿" };
     }
 
-    const sourceSnapshot = parentPost.content.trim();
-    if (!sourceSnapshot) {
+    const [existingEnglish] = await db
+      .select({ id: posts.id, slug: posts.slug })
+      .from(posts)
+      .where(
+        and(
+          eq(posts.translationSourcePostId, parentPost.id),
+          eq(posts.language, "en"),
+        ),
+      )
+      .limit(1);
+    if (existingEnglish) {
+      return {
+        data: {
+          taskId: null,
+          sourcePostId: parentPost.id,
+          sourceSlug: parentPost.slug,
+          postId: existingEnglish.id,
+          postSlug: existingEnglish.slug,
+        },
+      };
+    }
+    const sourceSnapshot = parentPost.content;
+    if (!sourceSnapshot.trim()) {
       return { error: "中文文章正文为空，无法创建英文稿" };
+    }
+    const config = await getActiveAiRewriteConfig();
+    if (!config?.apiKey?.trim()) {
+      return { error: "请先在 AI 接口配置中启用可用的文本模型并填写 API Key" };
     }
 
     const sourceUrl = englishSourceUrl(parentPost.id);
@@ -736,7 +768,18 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
       sourceContent: sourceSnapshot,
       categoryId: parentPost.categoryId,
       initialPostId: null,
-      currentStep: "等待人工填写英文正文与 SEO",
+      currentStep: "等待将中文文章翻译为英文",
+      diagnostics: JSON.stringify({
+        ...createEnglishTranslationSource(parentPost),
+        strategy: "english-translation",
+      }),
+      rewriteConfig: {
+        id: config.id,
+        name: config.name,
+        provider: config.provider,
+        model: config.model,
+        maxTokens: config.maxTokens,
+      },
     });
 
     if (task.status !== "running") {
@@ -752,10 +795,12 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
         taskId: task.id,
         sourcePostId: parentPost.id,
         sourceSlug: parentPost.slug,
+        postId: null,
+        postSlug: null,
       },
     };
   } catch (error) {
-    console.error("创建英文人工编辑任务失败:", error);
+    console.error("创建英文翻译任务失败:", error);
     return { error: getErrorMessage(error) };
   }
 }
@@ -813,8 +858,10 @@ export async function bulkEnqueueEnglishVersionsForPostsAction(
 
       if (result.data?.taskId) {
         taskIds.push(result.data.taskId);
+        queued += 1;
+      } else {
+        skipped += 1;
       }
-      queued += 1;
     }
 
     revalidateAiTaskPages();

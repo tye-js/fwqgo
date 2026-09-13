@@ -21,6 +21,7 @@ export async function upsertDerivedAiTask(input: {
   categoryId: number;
   initialPostId: number | null;
   currentStep: string;
+  diagnostics?: string | null;
   rewriteConfig?: DerivedTaskConfigSnapshot;
   imageConfig?: DerivedImageConfigSnapshot | null;
 }) {
@@ -64,6 +65,7 @@ export async function upsertDerivedAiTask(input: {
       sourceTitle: input.sourceTitle,
       sourceContent: input.sourceContent,
       sourceType: input.sourceType,
+      postId: input.initialPostId,
       status: "pending",
       progress: 0,
       currentStep: input.currentStep,
@@ -85,7 +87,7 @@ export async function upsertDerivedAiTask(input: {
       scrapedHtml: input.sourceContent,
       aiInputLength: null,
       rewriteOutputLength: null,
-      diagnostics: null,
+      diagnostics: input.diagnostics ?? null,
       startedAt: null,
       finishedAt: null,
       leaseOwner: null,
@@ -118,7 +120,6 @@ export async function upsertDerivedAiTask(input: {
         ...taskValues,
         sourceMaterialId: null,
         sourceUrl: input.sourceUrl,
-        postId: input.initialPostId,
       })
       .returning({ id: aiRewriteTasks.id });
 

@@ -1,28 +1,19 @@
 "use client";
 
-import { useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   CheckCircle2,
   ExternalLink,
   Image as ImageIcon,
   Languages,
-  RotateCcw,
 } from "lucide-react";
 
-import { enqueueEnglishVersionForPostAction } from "@/features/cms/actions/ai-rewrite-task";
 import { AffiliateRewriteAudit } from "@/features/cms/components/affiliate-rewrite-audit";
 import { PostAffiliateReviewActions } from "@/features/cms/components/post-affiliate-review-actions";
 import { AdminSectionCard } from "@/features/cms/components/admin-page-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  describeAdminResult,
-  notifyError,
-  notifySuccess,
-} from "@/lib/admin-toast";
 import { type AffiliateRewriteReport } from "@/server/links/affiliate-link-rewriter";
 import { type getPostProductionContext } from "@/features/cms/data/post";
 
@@ -174,55 +165,6 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function GenerateEnglishButton({ postId }: { postId: number }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-
-  return (
-    <Button
-      type="button"
-      size="sm"
-      variant="outline"
-      disabled={isPending}
-      onClick={() => {
-        startTransition(async () => {
-          const result = await enqueueEnglishVersionForPostAction(postId);
-          if (result.error) {
-            notifyError({
-              title: "英文编辑任务创建失败",
-              description: describeAdminResult([
-                result.error,
-                "请确认中文文章已保存且正文不为空",
-              ]),
-            });
-            return;
-          }
-
-          if (!result.data) {
-            notifyError({
-              title: "英文编辑任务创建失败",
-              description: "服务端没有返回任务 ID，请刷新后重试。",
-            });
-            return;
-          }
-
-          notifySuccess({
-            title: "英文人工编辑任务已创建",
-            description: describeAdminResult([
-              `任务 ID ${result.data.taskId}`,
-              "中文来源供参考，请在任务详情中人工填写英文正文与 SEO",
-            ]),
-          });
-          router.push(`/ai-tasks/${result.data.taskId}`);
-        });
-      }}
-    >
-      <RotateCcw className="size-4" />
-      {isPending ? "提交中..." : "填写英文稿"}
-    </Button>
-  );
-}
-
 function relationshipTarget(context: ProductionContext) {
   if (context.currentPost.language === "en") {
     return context.sourcePost;
@@ -248,7 +190,7 @@ export function PostProductionContextPanel({
     <div className="space-y-4">
       <AdminSectionCard
         title="文章来源与中英文关系"
-        description="采集正文直接保存到草稿。英文版本保留独立任务和文章关系，参考中文来源人工填写正文与 SEO，已有英文稿不会被覆盖。"
+        description="中文页的“生成英文文章”会翻译已保存的中文全文并建立独立英文草稿；已有英文文章会保留并提供编辑入口。"
       >
         <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
           <div className="space-y-3">
@@ -302,11 +244,6 @@ export function PostProductionContextPanel({
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
-                {context.currentPost.language === "zh" || context.sourcePost ? (
-                  <GenerateEnglishButton
-                    postId={context.sourcePost?.id ?? context.currentPost.id}
-                  />
-                ) : null}
                 <Button asChild size="sm" variant="outline">
                   <Link href="/ai-tasks">查看采集任务</Link>
                 </Button>

@@ -64,13 +64,13 @@ for (const match of replacement.diagnostics.affiliateReport.matchedLinks) {asser
 `);
 });
 
-void test("Collection goes directly to drafts while English keeps manual editing and SEO queues are retired", () => {
+void test("collection goes directly to drafts and only explicitly requested English translations start AI", () => {
   isolated(String.raw`
 import assert from "node:assert/strict";
 import {mock} from "bun:test";
 import {PgDialect} from "drizzle-orm/pg-core";
 const dialect=new PgDialect(),name=table=>table[Symbol.for("drizzle:Name")];
-const f={task:null,steps:[],saved:[],fetches:0};
+const f={task:null,steps:[],saved:[],fetches:0,allowTranslation:false,translations:0};
 const report={totalLinks:0,matchedLinks:[],unmatchedLinks:[],invalidLinks:[],internalLinksRemoved:0};
 const db={
  async transaction(work){return work(db);},
@@ -82,6 +82,7 @@ mock.module("@fwqgo/db",()=>({db}));
 mock.module("@/server/admin/background-jobs",()=>({enqueueAdminBackgroundJob:async()=>{}}));
 mock.module("@/server/links/affiliate-link-rewriter",()=>({rewriteAffiliateLinks:async()=>report}));
 mock.module("@/server/posts/collected-article-draft",()=>({saveCollectedArticleDraft:async(task,article)=>{assert.ok(f.steps.some(s=>s.stepKey==="html_clean"));assert.ok(f.steps.some(s=>s.stepKey==="affiliate_check"));f.saved.push(article);f.task={...f.task,status:"succeeded",postId:42,leaseOwner:null};}}));
+mock.module("@/server/ai/english-translation-task",()=>({EnglishTranslationTaskError:class extends Error {},runEnglishTranslationTask:async(task,source,signal)=>{assert.equal(f.allowTranslation,true,"Legacy and collection tasks must not start translation");assert.equal(source.sourcePostId,20);assert.equal(signal.aborted,false);f.translations++;f.task={...f.task,status:"succeeded",postId:43,leaseOwner:null};}}));
 mock.module("@/server/images/cover-generation-task-runner",()=>({enqueueArticleCoverGenerationTask:()=>{throw new Error("Cover requires an explicit click");}}));
 mock.module("@fwqgo/ai/rewrite-config",()=>({getActiveAiRewriteConfig:()=>{throw new Error("Unexpected AI configuration lookup");}}));
 mock.module("@/server/scrape/article-scraper",()=>({scrapeArticleWithOptions:async()=>{f.fetches++;return {title:"Source",description:"",content:"Original body",htmlContent:"Original body",cleanedHtmlContent:"<p>Original body</p>",keywords:[],tagsName:[],recommendTagName:"",diagnostics:{usedAiRewrite:false,affiliateReport:report}};}}));
@@ -98,6 +99,11 @@ for(const type of ["url","text","email","file","english","seo"]) {
 }
 f.task={id:2,sourceType:"url",sourceUrl:"https://example.com/removed",scrapedTitle:"Saved source",scrapedHtml:"<p>Saved full snapshot END</p>",sourceMaterialId:null,status:"pending",attempts:1,leaseOwner:null,createdAt:new Date()};f.saved=[];const before=f.fetches;
 await runAiRewriteTask(2);assert.equal(f.fetches,before);assert.equal(f.task.status,"succeeded");assert.ok(f.saved[0].htmlContent.includes("Saved full snapshot END"));
+assert.equal(f.translations,0);
+const {createEnglishTranslationSource}=await import("./src/server/ai/english-translation-source.ts");
+const source={id:20,title:"中文标题",content:"完整中文正文",description:"中文描述",keywords:null,categoryId:3};
+f.allowTranslation=true;f.task={id:3,sourceType:"english",sourceUrl:"post://20/english",sourceTitle:source.title,sourceContent:source.content,diagnostics:JSON.stringify(createEnglishTranslationSource(source)),status:"pending",attempts:0,leaseOwner:null,createdAt:new Date()};
+await runAiRewriteTask(3);assert.equal(f.translations,1);assert.equal(f.task.status,"succeeded");assert.equal(f.task.postId,43);
 `);
 });
 
@@ -245,7 +251,7 @@ mock.module("next/cache",()=>({revalidatePath(){},revalidateTag(){},updateTag(){
 mock.module("@/server/cache/public-revalidation-client",()=>({schedulePublicWebCache(){}}));
 mock.module("@/server/images/generation-config",()=>({getActiveImageGenerationConfig:async()=>null}));
 mock.module("@/server/images/cover-generation-task-runner",()=>({
- enqueueArticleCoverGenerationTask:async input=>{assert.equal(input.postId,1);assert.equal(input.createdBy,"admin");f.queued++;f.task={id:9,batchId,postId:1,status:"pending",outputUrl:null};return {task:f.task};},
+ enqueueArticleCoverGenerationTask:async input=>{assert.equal(input.postId,1);assert.equal(input.createdBy,"admin");assert.equal(input.description,"Current unsaved article description");f.queued++;f.task={id:9,batchId,postId:1,status:"pending",outputUrl:null};return {task:f.task};},
  enqueueStandaloneCoverGenerationTask:async()=>{throw new Error("An existing article must remain linked to its cover task");},
  ensureCoverGenerationWorker:async()=>{},
  formatCoverGenerationError:error=>({title:"Cover error",detail:error.message}),
@@ -254,7 +260,7 @@ mock.module("@/server/images/cover-generation-task-runner",()=>({
 }));
 const {generateArticleCoverImageAction,getCoverGenerationBatchStatusAction}=await import("./src/features/cms/actions/article-cover-image.ts");
 assert.equal(f.queued,0);assert.equal(f.reads,0);
-const input={postId:1,title:"Manual article"};
+const input={postId:1,title:"Manual article",description:"Current unsaved article description"};
 assert.equal((await generateArticleCoverImageAction(input)).success,false);assert.equal(f.reads,0);assert.equal(f.queued,0);
 f.authorized=true;
 assert.equal((await generateArticleCoverImageAction({...input,title:""})).success,false);assert.equal(f.queued,0);
@@ -283,9 +289,9 @@ const f={cover:null,refreshes:0,allowConfig:false};
 const name=table=>table[Symbol.for("drizzle:Name")];
 const db={
  async transaction(work){return work(db);},
- select(){let table;const rows=()=>table==="posts"?[{id:1,title:"Fixture",slug:"fixture",content:"Manual article body",categoryId:3,language:"zh",imgUrl:f.cover}]:[];const q={from(t){table=name(t);return q;},where:()=>q,limit:async()=>rows(),then(resolve,reject){return Promise.resolve(rows()).then(resolve,reject);}};return q;},
+ select(){let table;const rows=()=>table==="posts"?[{id:1,title:"Fixture",slug:"fixture",description:"Article description for the cover",content:"Manual article body",categoryId:3,language:"zh",imgUrl:f.cover}]:[];const q={from(t){table=name(t);return q;},where:()=>q,limit:async()=>rows(),then(resolve,reject){return Promise.resolve(rows()).then(resolve,reject);}};return q;},
  insert(){let values;const q={values(v){values=v;return q;},returning:async()=>[{...values,id:9}]};return q;},
- update(table){let values,condition;const q={set(value){values=value;return q;},where(value){condition=value;return q;},returning:async()=>{if(name(table)!=="posts")return [{id:9}];const query=dialect.sqlToQuery(condition);const guarded=query.sql.includes('"imgUrl" =')&&query.params.includes("/img/placeholders/fwq-placeholder.png");if(guarded&&f.cover&&!query.params.includes(f.cover))return [];f.cover=values.imgUrl;return [{id:1,slug:"fixture",categoryId:3}];}};return q;},
+ update(table){let values,condition;const q={set(value){values=value;return q;},where(value){condition=value;return q;},returning:async()=>{if(name(table)!=="posts")return [{id:9}];const query=dialect.sqlToQuery(condition);const guarded=query.sql.includes('"imgUrl" =');const matches=f.cover===null?query.sql.includes('"imgUrl" is null'):query.params.includes(f.cover);if(guarded&&!matches)return [];f.cover=values.imgUrl;return [{id:1,slug:"fixture",categoryId:3}];}};return q;},
 };
 mock.module("@fwqgo/db",()=>({db}));
 mock.module("@fwqgo/cache/tags",()=>({cacheTags:{posts:"posts",homepage:"home",homepageSlots:"slots",post:id=>"post:"+id,postSlug:slug=>slug,category:id=>"cat:"+id},revalidateSiteContent(){f.refreshes++;}}));
@@ -307,7 +313,7 @@ fs.writeFileSync(fixturePath,compiled);
 try {
 const {processCoverGenerationTask,enqueueArticleCoverGenerationTask}=await import(pathToFileURL(fixturePath).href);
 const placeholder="/img/placeholders/fwq-placeholder.png";
-for(const [initial,current,shouldReplace] of [[placeholder,placeholder,true],[null,null,true],["","",true],[placeholder,"/uploads/manual-cover.webp",false],[placeholder,"/uploads/generated-zh-cover.webp",true],["/uploads/old-cover.webp","/uploads/old-cover.webp",true]]) {
+for(const [initial,current,shouldReplace] of [[placeholder,placeholder,true],[null,null,true],["","",true],[placeholder,"/uploads/manual-cover.webp",false],[placeholder,"/uploads/generated-zh-cover.webp",true],["/uploads/old-cover.webp","/uploads/old-cover.webp",true],["/uploads/old-cover.webp","/uploads/new-manual-cover.webp",false],[null,"/uploads/new-manual-cover.webp",false],["/uploads/old-cover.webp",null,false]]) {
  f.cover=initial;f.refreshes=0;f.allowConfig=true;
  const queued=await enqueueArticleCoverGenerationTask({postId:1,title:"Fixture",createdBy:"admin"});
  assert.equal(queued.task.inputSnapshot.replaceDefaultCoverOnly,!initial||initial===placeholder);

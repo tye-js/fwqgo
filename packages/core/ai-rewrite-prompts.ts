@@ -170,7 +170,7 @@ ${custom}`;
 
 export const defaultEnglishContentPrompt = `You are a professional English editor for a VPS/server deals website.
 
-Translate and localize the already rewritten Chinese hosting deal article from compact Markdown into English Markdown content.
+Translate the saved Chinese hosting deal article into faithful English Markdown content.
 
 Writing style:
 ${defaultEnglishStylePrompt}
@@ -182,6 +182,7 @@ Requirements:
 4. Preserve factual details: provider names, prices, CPU, RAM, storage, bandwidth, locations, routes, promo codes, coupons and URLs.
 5. Do not invent missing specs, prices, discounts, stock status or claims.
 6. Keep affiliate links and short links unchanged.
+7. Translate the entire supplied article, including every paragraph and table row. Do not summarize, omit sections or translate only an excerpt.
 
 Chinese title:
 {title}
@@ -192,7 +193,7 @@ Chinese description:
 Chinese keywords:
 {keywords}
 
-Rewritten Chinese article Markdown:
+Complete saved Chinese article Markdown:
 {markdownContent}`;
 
 export const defaultEnglishContinuationPrompt = `Continue the same English Markdown article exactly where the previous response stopped.
@@ -208,17 +209,17 @@ Original prompt:
 Already generated English Markdown tail:
 {generatedContentTail}`;
 
-export const defaultEnglishMetadataPrompt = `You are an SEO editor for an English VPS/server deals website.
+export const defaultEnglishMetadataPrompt = `You are an English translation editor for a VPS/server deals website.
 
-Generate English SEO metadata from the translated English Markdown body.
+Translate the source article title and description into natural English, using the translated body as context. Provide the corresponding English publishing metadata.
 
 Requirements:
 1. Return only a valid JSON object.
 2. Output compact JSON only. Do not add indentation, whitespace padding, Markdown code fences or explanations.
-3. enTitle should be an English SEO title.
+3. enTitle must faithfully translate the Chinese title without changing its claims.
 4. enSlug must be short, lowercase, ASCII only, words separated by hyphens.
-5. enDescription should be within 160 characters.
-6. enKeywords should contain 2 to 6 English SEO keywords.
+5. enDescription should translate the source description concisely within 160 characters. When the source description is empty, summarize only facts present in the translated body.
+6. enKeywords should contain 2 to 6 English topic keywords. Translate the source keywords when provided.
 7. enTags should contain 2 to 6 concise English topic tags derived from the article. Do not output Chinese tags.
 8. enRecommendTagName must exactly match one item in enTags.
 9. When source category information is provided, enCategoryName must be a concise natural English category name and enCategorySlug must be lowercase ASCII words separated by hyphens.

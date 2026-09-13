@@ -23,6 +23,14 @@ const taskDetail = readFileSync(
   "utf8",
 );
 const collector = readFileSync("src/server/ai/rewrite-task-runner.ts", "utf8");
+const englishTranslation = readFileSync(
+  "src/server/ai/english-translation-task.ts",
+  "utf8",
+);
+const englishSource = readFileSync(
+  "src/server/ai/english-translation-source.ts",
+  "utf8",
+);
 const scraper = readFileSync("src/server/scrape/article-scraper.ts", "utf8");
 const draftEditor = readFileSync(
   "src/components/editor/markdown-editor.tsx",
@@ -80,7 +88,18 @@ assert.match(
   /export async function generateArticleCoverImageAction/,
 );
 assert.match(coverAction, /await enqueueArticleCoverGenerationTask/);
+assert.match(collector, /readEnglishTranslationSource\(task\.diagnostics\)/);
+assert.match(englishSource, /workflow: z\.literal\("english-translation-v1"\)/);
+assert.match(englishTranslation, /generateEnglishArticleContent\(/);
+assert.match(
+  englishTranslation,
+  /assertTranslatedArticleStructure\(markdown, translated\)/,
+);
+assert.doesNotMatch(
+  englishTranslation,
+  /enqueueArticleCoverGenerationTask|generateArticleMetadata\(/,
+);
 
 console.log(
-  `Article workflow verified: clean source, replace affiliate links, save draft, copy full body, explicit cover generation, and ${configurablePromptFields.length} compatible historical configuration fields.`,
+  `Article workflow verified: clean source, replace affiliate links, save draft, copy full body, explicit English translation and cover generation, and ${configurablePromptFields.length} compatible configuration fields.`,
 );

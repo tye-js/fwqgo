@@ -170,8 +170,9 @@ binary as PM2 will use to launch the applications.
 - Keep source titles/descriptions as initial draft values; body edits and final SEO fields are maintained in the draft editor. Incomplete SEO/tags must not prevent saving an unpublished draft. Its Markdown toolbar copies the entire current body, including unsaved edits and table links.
 - Keep complete cleaned source snapshots separate from manually entered content. Do not truncate them to historical AI token/input limits.
 - New collected drafts use `/img/placeholders/fwq-placeholder.png` immediately. Saving must not enqueue image generation or require image credentials. Operators explicitly click the cover generation button to start a background task.
-- A manually started cover task replaces the default/empty cover on success; preserve a cover set manually while that job was running. Failed generation keeps the current cover. Revalidate public article caches after replacement.
-- Historical AI artifacts and configuration fields remain readable. Retrying old collection tasks uses saved source snapshots when available. Retire only standalone SEO task queues. Preserve English version task creation, bulk entry, manual input, retries and bilingual article relationships; never resume text model calls.
+- Chinese article editors expose “生成英文文章”. Explicit requests translate the complete saved Chinese body using the configured text model and save an independent unpublished English article with a bilingual relationship. Keep every table row and link; do not overwrite the source or an existing English article. Preserve completed translation checkpoints across retries and reject unfinished output or stale source writes.
+- Both language editors expose “生成封面图”. A click queues a background task using the current article description and the language-specific AI image configuration. Saving alone does not generate a cover. On success, replace the cover only if it still matches the one present when requested; preserve a cover changed manually during generation. Failure keeps the current cover. Revalidate public article caches after replacement.
+- Historical AI artifacts and configuration fields remain readable. Retrying old collection tasks uses saved source snapshots when available. Retire standalone SEO task queues. Preserve English bulk entry, retries, historical manual forms and bilingual relationships. Only explicitly marked English translation tasks may call text models; never replay historical unmarked tasks or restore Chinese rewriting.
 
 ## CMS Notes
 
@@ -180,7 +181,7 @@ binary as PM2 will use to launch the applications.
 - SEO management includes Chinese and English site SEO, category SEO, and tag SEO. Keep language filters and bilingual fields intact when changing these screens.
 - Chinese and English generated posts are separate articles in drafts and article lists. Preserve language filters in list/workbench UI.
 - `正文预览` is for the cleaned original body after scraping and cleaning. Do not overwrite it with rewritten output.
-- English editing tasks retain the Chinese article as a reference. English content and SEO are entered manually in the English task form; existing English articles must remain intact and provide an editing link rather than being overwritten automatically.
+- English translation tasks retain the complete Chinese source snapshot and translate its body, title and description into an independent draft. Final English body and SEO fields remain editable. Historical manual English tasks retain their input forms; existing English articles provide an editing link and must never be overwritten automatically.
 - Long operational descriptions in CMS headers/workbenches should wrap instead of being line-clamped when they contain instructions.
 - Wide admin tables should use internal horizontal scrolling and stable min widths rather than squeezing columns on tablet or desktop.
 - Long SEO descriptions should use textareas, not single-line inputs.

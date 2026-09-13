@@ -314,6 +314,12 @@ function TaskDiagnosticsDisclosure({
     return null;
   }
 
+  if (diagnostics.strategy === "english-translation") {
+    return (
+      <p className="text-xs text-muted-foreground">根据已保存的中文全文翻译</p>
+    );
+  }
+
   return (
     <Collapsible>
       <CollapsibleTrigger asChild>
@@ -476,7 +482,7 @@ function taskSourceTypeLabel(value: string) {
     text: "手动文本",
     email: "邮件素材",
     file: "文件导入",
-    english: "英文人工编辑",
+    english: "英文翻译",
     seo: "历史 SEO 任务",
   };
 
@@ -1075,7 +1081,7 @@ export function AiRewriteTaskManager({
                     <SelectItem value="text">手动文本</SelectItem>
                     <SelectItem value="email">邮件素材</SelectItem>
                     <SelectItem value="file">文件导入</SelectItem>
-                    <SelectItem value="english">英文人工编辑</SelectItem>
+                    <SelectItem value="english">英文翻译</SelectItem>
                     <SelectItem value="seo">历史 SEO 任务</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1251,7 +1257,9 @@ export function AiRewriteTaskManager({
                             ) : null}
                             {(isFailed ||
                               (task.status === "manual_required" &&
-                                task.sourceType !== "english")) &&
+                                (task.sourceType !== "english" ||
+                                  diagnostics?.strategy ===
+                                    "english-translation"))) &&
                             task.sourceType !== "seo" ? (
                               <Button
                                 type="button"
@@ -1289,7 +1297,8 @@ export function AiRewriteTaskManager({
                                 {cancelingId === task.id ? "取消中" : "取消"}
                               </Button>
                             ) : null}
-                            {task.status === "manual_required" ? (
+                            {task.status === "manual_required" &&
+                            task.postId ? (
                               <AiRewriteTaskResolveButton
                                 taskId={task.id}
                                 size="sm"

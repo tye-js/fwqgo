@@ -17,7 +17,7 @@
     "verify:cms-mobile-ui": "bun scripts/verify-cms-mobile-ui.ts",
     "verify:table-mobile-labels": "bun scripts/verify-table-mobile-labels.tsx",
     "verify:ai-rewrite-prompts": "bun scripts/verify-ai-rewrite-prompts.ts",
-    "verify:article-workflow": "bun test ./scripts/verify-manual-article-workflow.test.ts",
+    "verify:article-workflow": "bun test ./scripts/verify-manual-article-workflow.test.ts ./scripts/verify-article-generation.test.ts",
     "verify:repository": "bun scripts/verify-repository-hygiene.mjs",
     "verify:architecture": "bun scripts/verify-architecture.mjs",
     "verify:deploy": "bun scripts/verify-deploy-workflow.mjs",

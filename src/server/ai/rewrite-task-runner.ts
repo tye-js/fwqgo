@@ -24,6 +24,12 @@ import {
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import { rewriteAffiliateLinks } from "@/server/links/affiliate-link-rewriter";
 import { saveCollectedArticleDraft } from "@/server/posts/collected-article-draft";
+import { readEnglishTranslationSource } from "./english-translation-source";
+import {
+  EnglishTranslationTaskError,
+  runEnglishTranslationTask,
+} from "./english-translation-task";
+import { AiRequestConnectionInterruptedError } from "@fwqgo/ai/article-rewriter";
 import {
   scrapeArticleWithOptions,
   type ScrapedArticle,
@@ -283,7 +289,23 @@ async function prepareExistingArticle(task: Task) {
   });
 }
 
-async function collectTaskSource(task: Task) {
+async function collectTaskSource(task: Task, signal: AbortSignal) {
+  const translationSource =
+    task.sourceType === "english"
+      ? readEnglishTranslationSource(task.diagnostics)
+      : null;
+  if (translationSource) {
+    if (
+      translationSource.sourcePostId !==
+      getManualEnglishSourceId(task.sourceUrl)
+    ) {
+      throw new EnglishTranslationTaskError(
+        "英文翻译任务与中文来源不匹配，请重新创建任务",
+      );
+    }
+    await runEnglishTranslationTask(task, translationSource, signal);
+    return;
+  }
   if (
     task.sourceType === "english" ||
     task.sourceType === "seo" ||
@@ -408,22 +430,39 @@ export async function runAiRewriteTask(taskId: number) {
         }),
       run: async (signal) => {
         signal.throwIfAborted();
-        await collectTaskSource(task);
+        await collectTaskSource(task, signal);
       },
     });
   } catch (error) {
     if (error instanceof TaskLeaseLostError) return;
     structuredLog("error", "article.collection_failed", { taskId, error });
     const draftSaveFailed = error instanceof DraftSaveError;
-    const message = draftSaveFailed
-      ? error.message
-      : "素材读取失败，请检查来源地址和正文内容后重试";
+    const translating =
+      task.sourceType === "english" &&
+      Boolean(readEnglishTranslationSource(task.diagnostics));
+    const interrupted =
+      translating && error instanceof AiRequestConnectionInterruptedError;
+    const message = translating
+      ? error instanceof EnglishTranslationTaskError || interrupted
+        ? error.message
+        : "英文翻译未完成，请检查模型配置和任务记录后重试"
+      : draftSaveFailed
+        ? error.message
+        : "素材读取失败，请检查来源地址和正文内容后重试";
     try {
       await renewAiTaskLease(task);
       try {
         await upsertTaskStep(task, {
-          key: draftSaveFailed ? "draft_save" : "source_collect",
-          name: draftSaveFailed ? "保存草稿" : "抓取/读取素材",
+          key: translating
+            ? "english_task_error"
+            : draftSaveFailed
+              ? "draft_save"
+              : "source_collect",
+          name: translating
+            ? "英文翻译"
+            : draftSaveFailed
+              ? "保存草稿"
+              : "抓取/读取素材",
           status: "failed",
           progress: 100,
           message,
@@ -436,7 +475,7 @@ export async function runAiRewriteTask(taskId: number) {
           { taskId, error: stepError },
         );
       }
-      await finalizeTask(task, "failed", {
+      await finalizeTask(task, interrupted ? "manual_required" : "failed", {
         currentStep: message,
         error: message,
       });

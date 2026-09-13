@@ -296,8 +296,8 @@ function ConfigForm({
         <p className="text-xs leading-5 text-muted-foreground">
           仅用于中文文章封面。支持占位符：
           <code>{"{title}"}</code>、<code>{"{description}"}</code>、
-          <code>{"{keywords}"}</code>、<code>{"{visualBrief}"}</code>
-          。正文不会直接注入 Prompt，系统会自动追加中文语言约束和旗帜限制。
+          <code>{"{visualBrief}"}</code>
+          。生成时读取当前文章描述，视觉简报只从标题和描述提取。系统会自动追加中文语言约束和旗帜限制。
         </p>
       </div>
 
@@ -315,7 +315,7 @@ function ConfigForm({
         <p className="text-xs leading-5 text-muted-foreground">
           仅用于英文文章封面，不会拼接中文封面模板。支持占位符：
           <code>{"{title}"}</code>、<code>{"{description}"}</code>、
-          <code>{"{keywords}"}</code>、<code>{"{visualBrief}"}</code>。
+          <code>{"{visualBrief}"}</code>。生成时读取英文文章描述。
         </p>
       </div>
 

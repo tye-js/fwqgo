@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { ImageUpload } from "@/features/cms/components/image-upload";
 import { ArticleCoverGenerator } from "@/features/cms/components/article-cover-generator";
+import { GenerateEnglishArticleButton } from "@/features/cms/components/generate-english-article-button";
 import { AffiliateRewriteAudit } from "@/features/cms/components/affiliate-rewrite-audit";
 import { PostProductionContextPanel } from "@/features/cms/components/post-production-context-panel";
 import { Button } from "@/components/ui/button";
@@ -331,6 +332,12 @@ export default function EditPost({
       description="在一个页面维护标题、slug、发布状态、正文和 SEO 信息。"
       actions={
         <>
+          {postLanguage === "zh" ? (
+            <GenerateEnglishArticleButton
+              postId={post.post.id}
+              hasUnsavedChanges={articleFormDirty || isSubmitting}
+            />
+          ) : null}
           <Button asChild variant="outline" size="sm">
             <Link href="/posts/edit">
               <ArrowLeft className="size-4" />
@@ -538,8 +545,6 @@ export default function EditPost({
                     postId={post.post.id}
                     title={title}
                     description={description ?? ""}
-                    keywords={keywords}
-                    content={content}
                     fileSlug={slug}
                     language={postLanguage}
                     currentCoverUrl={imageUrl}

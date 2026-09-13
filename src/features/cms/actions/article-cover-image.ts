@@ -32,7 +32,11 @@ import {
 const coverSchema = z.object({
   postId: formPostgresIntegerIdSchema.optional(),
   title: z.string().trim().min(1, "标题不能为空"),
-  description: z.string().trim().optional(),
+  description: z
+    .string()
+    .trim()
+    .max(800, "文章描述不能超过 800 个字符")
+    .optional(),
   keywords: z.string().trim().optional(),
   content: z.string().optional(),
   fileSlug: z.string().trim().optional(),
@@ -156,10 +160,10 @@ export async function generateArticleCoverImageAction(input: {
 
       const { task } = await enqueueArticleCoverGenerationTask({
         postId: post.id,
-        title: post.title,
+        title: payload.title,
+        description: payload.description,
         configId: payload.configId,
         createdBy: session.userId,
-        visualBriefOverrides: payload.visualBriefOverrides,
       });
 
       revalidatePath("/images/covers");
@@ -214,8 +218,6 @@ export async function batchGenerateArticleCoverImagesAction(input: {
         title: posts.title,
         slug: posts.slug,
         description: posts.description,
-        keywords: posts.keywords,
-        content: posts.content,
         categoryId: posts.categoryId,
       })
       .from(posts)
@@ -238,15 +240,23 @@ export async function batchGenerateArticleCoverImagesAction(input: {
         ),
       );
     const activePostIds = new Set(activeTaskRows.map((task) => task.postId));
+    const missingDescriptionPostIds = postRows
+      .filter(
+        (post) => !activePostIds.has(post.id) && !post.description?.trim(),
+      )
+      .map((post) => post.id);
     const queuedPostRows = postRows.filter(
-      (post) => !activePostIds.has(post.id),
+      (post) =>
+        !activePostIds.has(post.id) && Boolean(post.description?.trim()),
     );
 
     if (queuedPostRows.length === 0) {
       return {
         success: false,
-        error: "所选文章已有封面任务正在排队或生成，请等待完成后再操作",
-        errorTitle: "没有创建重复封面任务",
+        error: missingDescriptionPostIds.length
+          ? "请先填写文章描述，再生成封面；已有运行中任务不会重复创建"
+          : "所选文章已有封面任务正在排队或生成，请等待完成后再操作",
+        errorTitle: "没有可生成封面的文章",
       };
     }
 
@@ -275,6 +285,7 @@ export async function batchGenerateArticleCoverImagesAction(input: {
       runningCount: 0,
       skippedActiveCount: activePostIds.size,
       skippedActivePostIds: [...activePostIds],
+      skippedMissingDescriptionCount: missingDescriptionPostIds.length,
     };
   } catch (error) {
     const readableError = formatCoverGenerationError(error);

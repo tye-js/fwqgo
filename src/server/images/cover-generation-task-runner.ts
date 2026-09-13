@@ -14,7 +14,6 @@ import {
 
 import { db } from "@fwqgo/db";
 import {
-  affServiceProviders,
   imageCoverGenerationTasks,
   imageAssets,
   posts,
@@ -42,8 +41,6 @@ import { syncImageReferencesForPost } from "@/server/images/assets";
 import { generateArticleCoverImage } from "@/server/images/generated-cover";
 import { generateCustomImage } from "@/server/images/generated-custom-image";
 import {
-  extractCoverVisualBrief,
-  mergeCoverVisualBrief,
   type CoverVisualBrief,
   type CoverVisualBriefOverrides,
 } from "@fwqgo/core/image-generation-prompts";
@@ -69,6 +66,7 @@ type CoverTaskInputSnapshot = {
   visualBrief?: CoverVisualBrief;
   visualBriefOverrides?: CoverVisualBriefOverrides | null;
   replaceDefaultCoverOnly?: boolean;
+  expectedCoverUrl?: string | null;
 };
 
 type CustomTaskInputSnapshot = {
@@ -85,6 +83,7 @@ type ImageGenerationConfig = Awaited<
 type EnqueueCoverGenerationTaskInput = {
   postId: number;
   title: string;
+  description?: string;
   configId?: number | null;
   createdBy?: string | null;
   batchId?: string;
@@ -184,47 +183,29 @@ export function serializeCoverTask(task: CoverTaskRow) {
 export async function enqueueArticleCoverGenerationTask(
   input: EnqueueCoverGenerationTaskInput,
 ) {
-  const [[post], brandRows] = await Promise.all([
-    db
-      .select({
-        id: posts.id,
-        title: posts.title,
-        description: posts.description,
-        keywords: posts.keywords,
-        content: posts.content,
-        slug: posts.slug,
-        language: posts.language,
-        imgUrl: posts.imgUrl,
-      })
-      .from(posts)
-      .where(eq(posts.id, input.postId))
-      .limit(1),
-    db
-      .select({
-        name: affServiceProviders.name,
-        aliases: affServiceProviders.aliases,
-      })
-      .from(affServiceProviders),
-  ]);
+  const [post] = await db
+    .select({
+      id: posts.id,
+      title: posts.title,
+      description: posts.description,
+      slug: posts.slug,
+      language: posts.language,
+      imgUrl: posts.imgUrl,
+    })
+    .from(posts)
+    .where(eq(posts.id, input.postId))
+    .limit(1);
   if (!post) throw new Error("文章不存在或已被删除");
+  const description = (input.description ?? post.description)?.trim();
+  if (!description) throw new Error("请先填写文章描述，再根据生图配置生成封面");
   const coverInput: CoverTaskInputSnapshot = {
-    title: post.title,
-    description: post.description,
-    keywords: post.keywords,
-    content: post.content,
+    title: input.title.trim() || post.title,
+    description,
     fileSlug: post.slug,
     language: post.language === "en" ? "en" : "zh",
     replaceDefaultCoverOnly: isDefaultArticleCover(post.imgUrl),
-    knownBrands: brandRows.flatMap((row) => [
-      row.name,
-      ...(row.aliases?.split(/[,，\n]/) ?? []),
-    ]),
+    expectedCoverUrl: post.imgUrl ?? null,
   };
-  coverInput.visualBrief = mergeCoverVisualBrief(
-    extractCoverVisualBrief(coverInput),
-    input.visualBriefOverrides,
-  );
-  coverInput.visualBriefOverrides = input.visualBriefOverrides;
   const requestedBatchId = input.batchId?.trim();
   const batchId = requestedBatchId?.length ? requestedBatchId : randomUUID();
   const enqueueResult = await db.transaction(async (tx) => {
@@ -278,7 +259,7 @@ export async function enqueueArticleCoverGenerationTask(
             .update(imageCoverGenerationTasks)
             .set({
               taskType: "article_cover",
-              title: post.title,
+              title: coverInput.title,
               inputSnapshot: coverInput,
               configId: config.id,
               configName: config.name,
@@ -315,7 +296,7 @@ export async function enqueueArticleCoverGenerationTask(
               batchId,
               taskType: "article_cover",
               postId: input.postId,
-              title: post.title,
+              title: coverInput.title,
               inputSnapshot: coverInput,
               configId: config.id,
               configName: config.name,
@@ -387,23 +368,14 @@ async function enqueueDetachedImageGenerationTask(input: {
 export async function enqueueStandaloneCoverGenerationTask(
   input: EnqueueStandaloneCoverGenerationTaskInput,
 ) {
-  const brandRows = await db
-    .select({
-      name: affServiceProviders.name,
-      aliases: affServiceProviders.aliases,
-    })
-    .from(affServiceProviders);
+  const description = input.description?.trim();
+  if (!description) throw new Error("请先填写文章描述，再根据生图配置生成封面");
   const snapshot: CoverTaskInputSnapshot = {
-    ...input,
-    knownBrands: brandRows.flatMap((row) => [
-      row.name,
-      ...(row.aliases?.split(/[,，\n]/) ?? []),
-    ]),
+    title: input.title,
+    description,
+    fileSlug: input.fileSlug,
+    language: input.language,
   };
-  snapshot.visualBrief = mergeCoverVisualBrief(
-    extractCoverVisualBrief(snapshot),
-    input.visualBriefOverrides,
-  );
   return enqueueDetachedImageGenerationTask({
     taskType: "standalone_cover",
     title: snapshot.title,
@@ -670,8 +642,6 @@ async function processCoverGenerationTask(
             title: posts.title,
             slug: posts.slug,
             description: posts.description,
-            keywords: posts.keywords,
-            content: posts.content,
             categoryId: posts.categoryId,
             language: posts.language,
           })
@@ -790,16 +760,19 @@ async function processCoverGenerationTask(
           });
         } else {
           const snapshot = activeTask.inputSnapshot as CoverTaskInputSnapshot;
-          const coverInput: CoverTaskInputSnapshot = snapshot.title?.trim()
-            ? snapshot
-            : {
-                title: post?.title ?? activeTask.title,
-                description: post?.description,
-                keywords: post?.keywords,
-                content: post?.content,
-                fileSlug: post?.slug,
-                language: post?.language === "en" ? "en" : "zh",
-              };
+          const snapshotTitle = snapshot.title?.trim();
+          const snapshotDescription = snapshot.description?.trim();
+          const coverInput: CoverTaskInputSnapshot = {
+            title: snapshotTitle?.length
+              ? snapshotTitle
+              : (post?.title ?? activeTask.title),
+            description: snapshotDescription?.length
+              ? snapshotDescription
+              : post?.description,
+            fileSlug: snapshot.fileSlug ?? post?.slug,
+            language:
+              snapshot.language ?? (post?.language === "en" ? "en" : "zh"),
+          };
           generated = await generateArticleCoverImage({
             ...coverInput,
             configId: config.id,
@@ -837,6 +810,8 @@ async function processCoverGenerationTask(
   }
   if (taskType !== "article_cover" || !post) return generated;
 
+  const snapshot = activeTask.inputSnapshot as CoverTaskInputSnapshot;
+  const hasExpectedCover = "expectedCoverUrl" in snapshot;
   const [updatedPost] = await db
     .update(posts)
     .set({
@@ -846,16 +821,22 @@ async function processCoverGenerationTask(
     .where(
       and(
         eq(posts.id, post.id),
-        (activeTask.inputSnapshot as CoverTaskInputSnapshot)
-          .replaceDefaultCoverOnly
+        hasExpectedCover
           ? or(
-              eq(posts.imgUrl, DEFAULT_ARTICLE_COVER),
-              eq(posts.imgUrl, ""),
-              isNull(posts.imgUrl),
-              // A retry may need to finish references/cache after the cover was written.
+              snapshot.expectedCoverUrl === null
+                ? isNull(posts.imgUrl)
+                : eq(posts.imgUrl, snapshot.expectedCoverUrl ?? ""),
               eq(posts.imgUrl, generated.asset.path),
             )
-          : undefined,
+          : snapshot.replaceDefaultCoverOnly
+            ? or(
+                eq(posts.imgUrl, DEFAULT_ARTICLE_COVER),
+                eq(posts.imgUrl, ""),
+                isNull(posts.imgUrl),
+                // A retry may need to finish references/cache after the cover was written.
+                eq(posts.imgUrl, generated.asset.path),
+              )
+            : undefined,
       ),
     )
     .returning({
@@ -865,10 +846,7 @@ async function processCoverGenerationTask(
     });
 
   if (!updatedPost) {
-    if (
-      (activeTask.inputSnapshot as CoverTaskInputSnapshot)
-        .replaceDefaultCoverOnly
-    ) {
+    if (hasExpectedCover || snapshot.replaceDefaultCoverOnly) {
       // The generated asset stays available, but an editor's cover takes priority.
       return generated;
     }

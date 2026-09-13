@@ -109,6 +109,7 @@ export interface AiRewriteAuditEvent {
 
 export interface AiRewriteExecutionOptions {
   styleId?: number;
+  signal?: AbortSignal;
   onAudit?: (event: AiRewriteAuditEvent) => void | Promise<void>;
   onRequestStage?: (stage: AiRequestStage) => void | Promise<void>;
 }
@@ -719,31 +720,39 @@ async function requestChatCompletionResult(input: {
   userPrompt: string;
   stepName: string;
   allowLengthFinishReason?: boolean;
+  signal?: AbortSignal;
   onRequestStage?: (stage: AiRequestStage) => void | Promise<void>;
 }): Promise<ChatCompletionTextResult> {
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
 
   try {
+    input.signal?.throwIfAborted();
     await input.onRequestStage?.("request_started");
     const request = async () => {
-      const response = await fetchPublicHttpUrlOnce(input.endpoint, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${input.config.apiKey}`,
-          "Content-Type": "application/json",
+      const response = await fetchPublicHttpUrlOnce(
+        input.endpoint,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${input.config.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          signal: input.signal
+            ? AbortSignal.any([controller.signal, input.signal])
+            : controller.signal,
+          body: JSON.stringify({
+            model: input.config.model,
+            temperature: input.temperature ?? input.config.temperature / 100,
+            max_tokens: input.maxTokens,
+            ...(input.responseFormat
+              ? { response_format: input.responseFormat }
+              : {}),
+            messages: [{ role: "user", content: input.userPrompt }],
+          }),
         },
-        signal: controller.signal,
-        body: JSON.stringify({
-          model: input.config.model,
-          temperature: input.temperature ?? input.config.temperature / 100,
-          max_tokens: input.maxTokens,
-          ...(input.responseFormat
-            ? { response_format: input.responseFormat }
-            : {}),
-          messages: [{ role: "user", content: input.userPrompt }],
-        }),
-      }, "AI 接口地址");
+        "AI 接口地址",
+      );
       const responseText = await readResponseTextWithLimit(
         response,
         MAX_AI_RESPONSE_BYTES,
@@ -915,6 +924,7 @@ async function requestAuditedChatCompletion(input: {
       userPrompt: input.userPrompt,
       stepName: input.stepName,
       allowLengthFinishReason: input.allowLengthFinishReason,
+      signal: input.options.signal,
       onRequestStage: input.options.onRequestStage,
     });
     await reportRewriteAudit(input.options, {
@@ -1357,12 +1367,11 @@ export async function generateEnglishArticleContent(
   }
 
   const endpoint = buildOpenAiChatCompletionsEndpoint(config.baseUrl);
-  const contentLimit = getAiRewriteContentLimit(config.maxTokens);
   const userPrompt = buildEnglishContentPrompt({
     template: config.englishContentPrompt,
     ...input,
     markdownContent: normalizedContent,
-    maxMarkdownLength: contentLimit,
+    maxMarkdownLength: normalizedContent.length,
   });
   const firstResult = await requestAuditedChatCompletion({
     options,
@@ -1404,13 +1413,37 @@ export async function generateEnglishArticleContent(
     });
     const continuation = cleanMarkdownText(continuationResult.text);
 
-    enContent = appendMarkdownContinuation(enContent, continuation);
-    finishReason =
-      continuation.length > 0 ? continuationResult.finishReason : null;
-
-    if (!continuation || finishReason !== "length") {
+    if (!continuation) {
+      finishReason = "length";
       break;
     }
+
+    enContent = appendMarkdownContinuation(enContent, continuation);
+    finishReason = continuationResult.finishReason;
+
+    if (finishReason !== "length") {
+      break;
+    }
+  }
+
+  if (finishReason === "length") {
+    const error = createReadableError(
+      "英文正文翻译尚未完成",
+      `已使用 ${continuationAttempt} 次续写，模型仍因输出上限停止；请提高 Max Tokens 或更换支持更大输出的模型后重试`,
+    );
+    await updateRewriteAudit(options, config, {
+      stage: "english_content_generation",
+      stageName: "英文正文生成",
+      stageAttempt: 1,
+      status: "failed",
+      prompt: userPrompt,
+      response: firstResult.text,
+      readableContent: enContent,
+      error: error.message,
+      finishReason,
+      metadata: { continuationAttempts: continuationAttempt },
+    });
+    throw error;
   }
 
   if (!enContent) {
@@ -1566,10 +1599,7 @@ export async function generateEnglishSeoVersion(
   },
   options: AiRewriteExecutionOptions = {},
 ): Promise<EnglishSeoVersionOutput> {
-  const config = await getVerifiedAiConfig("英文 SEO 生成", options);
-  const markdown = contentToArticleMarkdown(input.htmlContent, {
-    maxLength: getAiRewriteContentLimit(config.maxTokens),
-  });
+  const markdown = contentToArticleMarkdown(input.htmlContent);
   const enContent = await generateEnglishArticleContent(
     {
       title: input.title,

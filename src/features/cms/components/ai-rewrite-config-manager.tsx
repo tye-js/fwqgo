@@ -318,7 +318,7 @@ function ConfigForm({
             stringValue(formData, "name"),
             stringValue(formData, "model"),
             enabled ? "已启用" : "已停用",
-            "可在内容生产台选择该改写风格",
+            "启用后可用于中文文章页的英文翻译",
           ]),
         });
       }
@@ -447,7 +447,7 @@ function ConfigForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor={`${formId}-max-tokens`}>
-            Max Tokens（中文 / 英文）
+            Max Tokens（模型输出上限）
           </Label>
           <Input
             id={`${formId}-max-tokens`}
@@ -459,27 +459,26 @@ function ConfigForm({
             required
           />
           <p className="text-xs leading-5 text-muted-foreground">
-            同时限制中文正文改写、英文正文生成的 Markdown 输入长度和模型输出
-            max_tokens。
+            限制每次模型请求的输出长度。英文翻译不会按此数值裁剪中文原文。
           </p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor={`${formId}-rewrite-count`}>中文正文调用次数</Label>
+          <Label htmlFor={`${formId}-rewrite-count`}>采集时调用文本模型</Label>
           <Input
             id={`${formId}-rewrite-count`}
-            value="1"
+            value="0"
             readOnly
             aria-readonly="true"
           />
           <p className="text-xs leading-5 text-muted-foreground">
-            固定生成 1 次，不再自动重写。
+            采集只清洗和入稿；英文翻译需在中文文章页手动启动。
           </p>
         </div>
       </div>
 
-      <details id="prompt-template" open className="scroll-mt-24 border-t pt-4">
+      <details id="prompt-template" className="scroll-mt-24 border-t pt-4">
         <summary className="cursor-pointer text-sm font-semibold text-foreground">
-          中文改写提示词
+          历史中文提示词（兼容保留）
         </summary>
         <div className="mt-4 space-y-6">
           <PromptTemplateField
@@ -491,7 +490,7 @@ function ConfigForm({
               "rewriteLengthBudget",
               "protectedContent",
             ]}
-            description="直接根据清洗后的原文完成单次改写，不再执行来源事实提取或事实核查调用。"
+            description="保留历史配置供查阅；当前文章采集和保存不会调用中文正文改写模型。"
             className="min-h-72 lg:min-h-[34rem]"
           />
           <PromptTemplateField
@@ -499,15 +498,15 @@ function ConfigForm({
             label="2. 中文标题 / SEO Prompt"
             value={defaults?.metadataPrompt ?? defaultMetadataPrompt}
             variables={["markdownContent"]}
-            description="直接从改写后的正文生成标题、摘要、关键词、标签和推荐标签。"
+            description="保留历史配置供查阅；中文正文与 SEO 在草稿中人工编辑。"
             className="min-h-72 lg:min-h-[28rem]"
           />
         </div>
       </details>
 
-      <details className="border-t pt-4">
+      <details open className="border-t pt-4">
         <summary className="cursor-pointer text-sm font-semibold text-foreground">
-          英文正文与 SEO 提示词
+          英文翻译提示词
         </summary>
         <div className="mt-4 space-y-6">
           <PromptTemplateField
@@ -517,7 +516,7 @@ function ConfigForm({
               defaults?.englishContentPrompt ?? defaultEnglishContentPrompt
             }
             variables={["title", "description", "keywords", "markdownContent"]}
-            description="用于从已完成改写的中文正文生成英文 Markdown。"
+            description="用于将已保存的完整中文正文翻译为英文 Markdown，保留表格、参数和链接。"
             className="min-h-72 lg:min-h-[30rem]"
           />
           <PromptTemplateField

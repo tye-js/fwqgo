@@ -2,7 +2,6 @@ export const defaultCoverPromptTemplate = `为服务器/VPS推广文章生成一
 
 文章标题（核心主题）：{title}
 文章摘要：{description}
-关键词：{keywords}
 结构化视觉简报：
 {visualBrief}
 
@@ -23,7 +22,6 @@ export const defaultEnglishCoverPromptTemplate = `English article cover override
 Source information to preserve:
 - English title and core subject: {title}
 - English summary: {description}
-- English keywords: {keywords}
 - Structured visual brief:
 {visualBrief}`;
 
@@ -61,8 +59,14 @@ function uniqueMatches(values: string[]) {
 function matchPatterns(source: string, patterns: RegExp[]) {
   return uniqueMatches(
     patterns.flatMap((pattern) =>
-      [...source.matchAll(new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`))]
-        .map((match) => match[0]),
+      [
+        ...source.matchAll(
+          new RegExp(
+            pattern.source,
+            pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`,
+          ),
+        ),
+      ].map((match) => match[0]),
     ),
   );
 }
@@ -139,19 +143,32 @@ export function mergeCoverVisualBrief(
 }
 
 export function formatCoverVisualBrief(brief: CoverVisualBrief) {
-  const empty = brief.language === "en" ? "not explicitly stated" : "未明确提供";
+  const empty =
+    brief.language === "en" ? "not explicitly stated" : "未明确提供";
   const rows: Array<[string, string | string[]]> = [
     [brief.language === "en" ? "Title" : "标题", brief.title],
     [brief.language === "en" ? "Brands" : "品牌", brief.brands],
     [brief.language === "en" ? "Regions" : "地区", brief.regions],
-    [brief.language === "en" ? "Product types" : "产品类型", brief.productTypes],
-    [brief.language === "en" ? "Specifications" : "关键规格", brief.specifications],
+    [
+      brief.language === "en" ? "Product types" : "产品类型",
+      brief.productTypes,
+    ],
+    [
+      brief.language === "en" ? "Specifications" : "关键规格",
+      brief.specifications,
+    ],
     [brief.language === "en" ? "Promotion" : "促销主题", brief.promotionThemes],
     [brief.language === "en" ? "Language" : "语言", brief.language],
-    [brief.language === "en" ? "Forbidden" : "禁用元素", brief.forbiddenElements],
+    [
+      brief.language === "en" ? "Forbidden" : "禁用元素",
+      brief.forbiddenElements,
+    ],
   ];
   return rows
-    .map(([label, value]) => `- ${label}: ${Array.isArray(value) ? value.join(", ") || empty : value || empty}`)
+    .map(
+      ([label, value]) =>
+        `- ${label}: ${Array.isArray(value) ? value.join(", ") || empty : value || empty}`,
+    )
     .join("\n");
 }
 
@@ -191,20 +208,37 @@ export function buildArticleCoverPrompt(
     visualBriefOverrides?: CoverVisualBriefOverrides | null;
   },
 ) {
-  const visualBrief = mergeCoverVisualBrief(
-    input.visualBrief ?? extractCoverVisualBrief(input),
-    input.visualBriefOverrides,
+  const description = input.description?.trim();
+  if (!description) throw new Error("生成文章封面需要文章描述");
+  const visualBrief = extractCoverVisualBrief({
+    title: input.title,
+    description,
+    language: input.language,
+  });
+  const renderInput = {
+    title: input.title,
+    description,
+    keywords: "",
+    visualBrief,
+  };
+  const renderedPrompt = renderCoverPromptTemplate(
+    input.language === "en" ? englishPromptTemplate : promptTemplate,
+    renderInput,
   );
-  const renderInput = { ...input, title: visualBrief.title, visualBrief };
+  const descriptionContext = renderedPrompt.includes(description)
+    ? ""
+    : `${input.language === "en" ? "Article description" : "文章描述"}:\n${description}`;
   if (input.language === "en") {
     return [
-      renderCoverPromptTemplate(englishPromptTemplate, renderInput),
+      renderedPrompt,
+      descriptionContext,
       getMandatoryCoverVisualRules("en"),
     ].join("\n\n");
   }
 
   return [
-    renderCoverPromptTemplate(promptTemplate, renderInput),
+    renderedPrompt,
+    descriptionContext,
     [
       "Chinese article cover rules:",
       "- This cover is for a Chinese article and Chinese public page.",

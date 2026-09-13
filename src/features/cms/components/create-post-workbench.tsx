@@ -432,8 +432,6 @@ export function CreatePostWorkbench({
                 <ArticleCoverGenerator
                   title={title}
                   description={description}
-                  keywords={normalizedKeywords.join(",")}
-                  content={content}
                   fileSlug={title}
                   language="zh"
                   currentCoverUrl={imageUrl}

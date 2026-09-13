@@ -36,7 +36,7 @@ CMS 路由直接从根路径开始，例如 `/ai-rewrite/tasks`、`/posts/edit` 
 ### CMS
 
 - 人工文章生产台、统一任务中心、任务步骤、失败原因、重试、取消和人工处理。
-- 网页抓取与完整正文清洗，人工输入中英文正文与文章 SEO，再保存为草稿。
+- 网页抓取、完整正文清洗和返利链接替换后直接保存草稿；正文与 SEO 可人工编辑，中文文章可按需翻译为英文草稿。
 - Markdown 文章编辑、草稿箱、文章列表、发布质检和中英文分类/标签。
 - 返利商家、链接命中诊断、短链跳转和首页文章/套餐/推广图片运营位。
 - 供应商套餐采集、去重、多周期价格、人工锁定字段、库存监控、检测历史和状态管理。
@@ -46,7 +46,7 @@ CMS 路由直接从根路径开始，例如 `/ai-rewrite/tasks`、`/posts/edit` 
 
 ### 文章生产链路
 
-采集流程为“读取素材 → 清洗正文 → 替换返利链接 → 保存草稿”。完整正文直接进入草稿箱，正文工具栏的“复制全文”可复制全部 Markdown、表格和链接，包含当前未保存的修改。正文与 SEO 后续在草稿中人工编辑，封面先使用默认图，手动点击后才生成并替换。英文版本保留原有的单篇/批量任务入口和独立人工编辑流程；仅移除独立 SEO 任务。见 [`docs/manual-article-workflow.md`](docs/manual-article-workflow.md)。
+采集流程为“读取素材 → 清洗正文 → 替换返利链接 → 保存草稿”。完整正文直接进入草稿箱，正文工具栏的“复制全文”可复制全部 Markdown、表格和链接，包含当前未保存的修改。正文与 SEO 后续在草稿中人工编辑。中文文章页的“生成英文文章”会翻译已保存的完整中文内容，建立独立英文草稿；已有英文文章提供编辑入口。中英文编辑页的“生成封面图”根据当前文章描述和生图配置启动后台生成，成功后替换封面，并保留生成期间手动换过的图片。保存文章不自动翻译或生图，历史英文人工任务保持可用，独立 SEO 队列保持停用。见 [`docs/manual-article-workflow.md`](docs/manual-article-workflow.md)。
 
 ## 本地开发
 
@@ -235,14 +235,14 @@ bun run db:studio         # 打开 Drizzle Studio
 | `bun run verify:deploy`             | 验证 Actions 远端激活脚本                        |
 | `bun run verify:migrations`         | 验证迁移 journal 与 SQL 文件                     |
 | `bun run verify:security`           | 验证 CMS 鉴权和数据库边界                        |
-| `bun run verify:security-runtime`   | 在 Bun 验证出站、限流、上传、事务和密钥隔离     |
+| `bun run verify:security-runtime`   | 在 Bun 验证出站、限流、上传、事务和密钥隔离      |
 | `bun run smoke:security-migrations` | 在独立测试库验证账号权限迁移                     |
 | `bun run verify:cache`              | 验证公开站关键读取缓存边界                       |
 | `bun run smoke:cms`                 | 浏览器验证 CMS 登录与核心路由                    |
 | `bun run verify:public-mobile-ui`   | 验证公开站移动断点、触控区和库存卡片             |
 | `bun run verify:cms-mobile-ui`      | 验证 CMS 表格、动态文本和 safe-area              |
-| `bun run verify:ai-rewrite-prompts` | 验证人工文章链路与历史 Prompt 配置兼容           |
-| `bun run verify:article-workflow`   | 验证人工保存、完整原文和默认封面替换             |
+| `bun run verify:ai-rewrite-prompts` | 验证采集、主动翻译与 Prompt 配置兼容             |
+| `bun run verify:article-workflow`   | 验证完整原文、英文翻译、重试与描述驱动的封面生成 |
 | `bun run smoke:mobile`              | 启动服务后验证真实视口和横向溢出                 |
 | `bun run smoke:article-isr`         | 验证生产文章原始 HTML、metadata、缓存与 RSC 隔离 |
 | `bun run secrets:migrate`           | 演练或执行存量密钥加密迁移                       |

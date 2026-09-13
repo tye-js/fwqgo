@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import type { ScrapeDiagnostics } from "@/server/scrape/article-scraper";
+import { readEnglishTranslationSource } from "@/server/ai/english-translation-source";
 
 type PageProps = { params: Promise<{ id: string }> };
 type DetailProps = PageProps & { basePath?: string };
@@ -133,6 +134,8 @@ export async function AiRewriteTaskDetailPageContent({
   if (!task) notFound();
   const diagnostics = parseDiagnostics(task.diagnostics);
   const englishTask = task.sourceType === "english";
+  const translating =
+    englishTask && Boolean(readEnglishTranslationSource(task.diagnostics));
   const retiredSeoTask = task.sourceType === "seo";
   const source = task.scrapedHtml ?? task.sourceContent ?? "";
   const sourceMarkdown = contentToArticleMarkdown(source).markdown;
@@ -142,14 +145,15 @@ export async function AiRewriteTaskDetailPageContent({
   const historicalSteps = task.steps.filter(
     (step) =>
       !collectionSteps.some(({ key }) => key === step.stepKey) &&
-      !(englishTask && step.stepKey === "manual_input"),
+      !(englishTask && step.stepKey === "manual_input") &&
+      !(translating && step.stepKey.startsWith("english_")),
   );
   const sourceLabels: Record<string, string> = {
     url: "网址",
     text: "文本",
     email: "邮件",
     file: "文件",
-    english: "英文人工编辑",
+    english: translating ? "中文文章翻译" : "历史英文人工编辑",
     seo: "历史 SEO 任务",
   };
 
@@ -164,7 +168,9 @@ export async function AiRewriteTaskDetailPageContent({
       }
       description={
         englishTask
-          ? "参考中文来源，人工填写英文正文与 SEO，保存为独立英文草稿。"
+          ? translating
+            ? "翻译已保存的完整中文文章，保留表格与链接，完成后保存为独立英文草稿。"
+            : "历史英文任务保留人工编辑，可从中文文章页发起新的自动翻译。"
           : "清洗正文、替换返利链接后直接保存草稿；正文与 SEO 在草稿箱中编辑。"
       }
       actions={
@@ -182,7 +188,8 @@ export async function AiRewriteTaskDetailPageContent({
             canRetry={
               !retiredSeoTask &&
               (["failed", "cancelled"].includes(task.status) ||
-                (!englishTask && task.status === "manual_required"))
+                ((!englishTask || translating) &&
+                  task.status === "manual_required"))
             }
             canCancel={task.status === "pending"}
             canResolve={
@@ -215,7 +222,10 @@ export async function AiRewriteTaskDetailPageContent({
             <Link href="/posts/drafts">前往草稿箱</Link>
           </Button>
         </AdminSectionCard>
-      ) : englishTask && task.status === "manual_required" && !task.postId ? (
+      ) : englishTask &&
+        !translating &&
+        task.status === "manual_required" &&
+        !task.postId ? (
         <ManualArticleTaskEditor
           taskId={task.id}
           expectedUpdatedAt={(task.updatedAt ?? task.createdAt).toISOString()}
@@ -278,7 +288,31 @@ export async function AiRewriteTaskDetailPageContent({
               })}
             </div>
           ) : null}
-          {englishTask ? (
+          {translating ? (
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[
+                ["english_translation", "翻译中文正文"],
+                ["english_metadata", "英文标题与摘要"],
+                ["english_save", "保存英文草稿"],
+              ].map(([key, label]) => {
+                const step = latestSteps.find((item) => item.stepKey === key);
+                return (
+                  <div
+                    key={key}
+                    className="space-y-2 rounded-md border border-border/70 p-3"
+                  >
+                    <p className="text-sm font-medium">{label}</p>
+                    <Badge variant="outline">
+                      {statusLabels[step?.status ?? "pending"]}
+                    </Badge>
+                    <p className="break-words text-xs text-muted-foreground">
+                      {step?.message ?? "等待处理"}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          ) : englishTask ? (
             <div className="space-y-2 rounded-md border border-border/70 p-3">
               <p className="text-sm font-medium">英文正文与 SEO</p>
               <p className="text-sm text-muted-foreground">
@@ -319,7 +353,12 @@ export async function AiRewriteTaskDetailPageContent({
           </div>
           <div className="space-y-2 text-sm">
             <p>分类：{task.categoryName ?? "-"}</p>
-            <p>采集策略：{diagnostics?.strategy ?? "-"}</p>
+            <p>
+              {englishTask ? "来源方式" : "采集策略"}：
+              {englishTask
+                ? "已保存的中文文章"
+                : (diagnostics?.strategy ?? "-")}
+            </p>
             <p>来源正文：{sourceMarkdown.length} 字符</p>
             <p>草稿正文：{task.rewriteOutputLength ?? "-"} 字符</p>
           </div>
@@ -359,7 +398,9 @@ export async function AiRewriteTaskDetailPageContent({
         title={englishTask ? "中文来源正文预览" : "正文预览"}
         description={
           englishTask
-            ? "保留中文来源供参考；英文正文与 SEO 由人工输入，保存为独立英文文章。"
+            ? translating
+              ? "此处保留发起翻译时的中文全文，英文结果不会覆盖中文文章。"
+              : "保留中文来源供参考；历史英文任务仍可人工填写并保存。"
             : "清洗后的完整来源正文。替换返利链接后的正文已保存在草稿箱，可在正文工具栏一键复制全文。"
         }
       >
@@ -370,7 +411,7 @@ export async function AiRewriteTaskDetailPageContent({
       {task.artifacts.length || historicalSteps.length ? (
         <details className="min-w-0 rounded-md border border-border/70 p-4">
           <summary className="min-h-11 cursor-pointer text-sm font-medium">
-            历史 AI 记录
+            {translating ? "英文翻译记录" : "历史 AI 记录"}
           </summary>
           <div className="min-w-0 space-y-4 pt-4">
             {historicalSteps.map((step) => (

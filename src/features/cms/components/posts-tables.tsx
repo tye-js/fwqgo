@@ -366,6 +366,9 @@ export function PostList({
           (result.skippedActiveCount ?? 0) > 0
             ? `跳过 ${result.skippedActiveCount} 篇正在生成的文章`
             : null,
+          (result.skippedMissingDescriptionCount ?? 0) > 0
+            ? `跳过 ${result.skippedMissingDescriptionCount} 篇未填写文章描述的文章`
+            : null,
         ]),
       });
       setSelectedIds([]);
@@ -390,25 +393,25 @@ export function PostList({
         await bulkEnqueueEnglishVersionsForPostsAction(selectedIds);
 
       if (result.error) {
-        toast.error("批量创建英文编辑任务失败", {
+        toast.error("批量创建英文翻译任务失败", {
           description: result.error,
         });
         return;
       }
 
       if (!result.data) {
-        toast.error("批量创建英文编辑任务没有返回结果", {
+        toast.error("批量创建英文翻译任务没有返回结果", {
           description: "请到 AI 任务中心确认任务是否已创建。",
         });
         return;
       }
 
       const stats = result.data;
-      toast.success("英文人工编辑任务已加入任务中心", {
+      toast.success("英文翻译任务已加入任务中心", {
         description: describeAdminResult([
           `处理 ${stats.requested} 篇`,
           `排队 ${stats.queued} 个任务`,
-          "任务提供中文正文作为参考，请逐篇人工填写英文正文和 SEO",
+          "系统会将已保存的中文全文翻译为独立英文草稿",
           stats.skipped > 0 ? `跳过 ${stats.skipped} 篇` : null,
           stats.failed > 0 ? `失败 ${stats.failed} 个` : null,
         ]),
@@ -418,7 +421,7 @@ export function PostList({
       }
       router.refresh();
     } catch (error) {
-      toast.error("批量创建英文编辑任务失败", {
+      toast.error("批量创建英文翻译任务失败", {
         description: error instanceof Error ? error.message : "请稍后重试。",
       });
     } finally {
@@ -570,7 +573,7 @@ export function PostList({
               className="min-h-11 w-full sm:w-auto"
             >
               <Languages className="size-4" />
-              {bulkAction === "english" ? "排队中..." : "填写英文稿"}
+              {bulkAction === "english" ? "排队中..." : "生成英文文章"}
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
