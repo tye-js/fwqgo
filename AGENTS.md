@@ -165,12 +165,13 @@ binary as PM2 will use to launch the applications.
 
 ## Article Production Contract
 
-- Article collection only fetches and cleans source content. Never call text AI models or require an enabled rewrite configuration to collect an article.
-- Chinese and English article bodies, titles, slugs, descriptions, keywords and tags are entered manually. Collection tasks stop at `manual_required`; the task detail form saves the operator's input to a draft atomically.
+- Article collection fetches and cleans source content, replaces merchant affiliate links, then saves the complete body directly to a draft. Never call text AI models or require an enabled rewrite configuration to collect an article.
+- The collected draft and task/material completion must commit atomically under the task lease. Retries reuse an existing linked article without overwriting operator edits. New collection tasks end at `succeeded`, not an intermediate manual-entry gate.
+- Keep source titles/descriptions as initial draft values; body edits and final SEO fields are maintained in the draft editor. Incomplete SEO/tags must not prevent saving an unpublished draft. Its Markdown toolbar copies the entire current body, including unsaved edits and table links.
 - Keep complete cleaned source snapshots separate from manually entered content. Do not truncate them to historical AI token/input limits.
-- New manual-task drafts use `/img/placeholders/fwq-placeholder.png` immediately. Saving must not enqueue image generation or require image credentials. Operators explicitly click the cover generation button to start a background task.
+- New collected drafts use `/img/placeholders/fwq-placeholder.png` immediately. Saving must not enqueue image generation or require image credentials. Operators explicitly click the cover generation button to start a background task.
 - A manually started cover task replaces the default/empty cover on success; preserve a cover set manually while that job was running. Failed generation keeps the current cover. Revalidate public article caches after replacement.
-- Historical AI artifacts and configuration fields remain readable. Retrying old article, English or SEO tasks must use the manual workflow and must never resume text model calls.
+- Historical AI artifacts and configuration fields remain readable. Retrying old collection tasks uses saved source snapshots when available. Retire only standalone SEO task queues. Preserve English version task creation, bulk entry, manual input, retries and bilingual article relationships; never resume text model calls.
 
 ## CMS Notes
 
@@ -179,7 +180,7 @@ binary as PM2 will use to launch the applications.
 - SEO management includes Chinese and English site SEO, category SEO, and tag SEO. Keep language filters and bilingual fields intact when changing these screens.
 - Chinese and English generated posts are separate articles in drafts and article lists. Preserve language filters in list/workbench UI.
 - `正文预览` is for the cleaned original body after scraping and cleaning. Do not overwrite it with rewritten output.
-- English editing tasks retain the Chinese article as a reference. English content and SEO are entered manually; existing English articles must not be overwritten automatically.
+- English editing tasks retain the Chinese article as a reference. English content and SEO are entered manually in the English task form; existing English articles must remain intact and provide an editing link rather than being overwritten automatically.
 - Long operational descriptions in CMS headers/workbenches should wrap instead of being line-clamped when they contain instructions.
 - Wide admin tables should use internal horizontal scrolling and stable min widths rather than squeezing columns on tablet or desktop.
 - Long SEO descriptions should use textareas, not single-line inputs.

@@ -605,16 +605,35 @@ async function scrapeByRule(input: {
       }
     };
 
+    const $cleanedSource = cheerio.load($content.html() ?? "", null, false);
+    const resolvedSourceLinks = new Map<string, string>();
     const affiliateReport = await rewriteAffiliateLinks({
       $: $content,
       selector: input.rule.linkSelector ?? "a",
       baseUrl: input.url,
       sourceHost: parsedUrl.hostname,
       removeInternal: input.rule.removeInternalLinks,
-      resolveHref,
+      resolveHref: async (href) => {
+        const resolved = await resolveHref(href);
+        resolvedSourceLinks.set(href, resolved);
+        return resolved;
+      },
     });
 
     diagnostics.affiliateReport = affiliateReport;
+    // Keep original affiliate parameters, but retain resolved destinations so a
+    // retry can use this snapshot even when the source redirect is unavailable.
+    $cleanedSource("a[href]").each((_, element) => {
+      const link = $cleanedSource(element);
+      try {
+        const href = new URL(link.attr("href") ?? "", input.url).toString();
+        const resolved = resolvedSourceLinks.get(href);
+        if (resolved) link.attr("href", resolved);
+      } catch {
+        // Invalid source links remain part of the original snapshot/audit.
+      }
+    });
+    const cleanedHtmlContent = $cleanedSource.html() ?? "";
 
     let rawHtml = $content.html() ?? "";
     let preparedContent = htmlToArticleMarkdown(rawHtml);
@@ -640,11 +659,11 @@ async function scrapeByRule(input: {
     diagnostics.scrapedTitle = scrapedTitle;
     diagnostics.scrapedDescription = scrapedDescription;
     diagnostics.contentLength = rawHtml.length;
-    diagnostics.cleanedHtmlLength = rawHtml.length;
+    diagnostics.cleanedHtmlLength = cleanedHtmlContent.length;
     const progressSnapshot = (): ArticleProcessingSnapshot => ({
       title: scrapedTitle,
       description: scrapedDescription,
-      cleanedHtmlContent: rawHtml,
+      cleanedHtmlContent,
       diagnostics,
     });
 
@@ -662,7 +681,7 @@ async function scrapeByRule(input: {
     return createArticle({
       title: scrapedTitle,
       htmlContent: preparedContent.markdown,
-      cleanedHtmlContent: rawHtml,
+      cleanedHtmlContent,
       description: scrapedDescription,
       tagsName: collectTags(page$, input.rule.tagSelector),
       diagnostics,

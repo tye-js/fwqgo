@@ -28,6 +28,12 @@ export async function saveManualArticleTask(input: ManualArticleInput) {
       .for("update")
       .limit(1);
     if (!task) throw new PostEditValidationError("任务不存在");
+    if (task.sourceType !== "english") {
+      throw new PostEditValidationError(
+        "采集正文已改为直接保存草稿，请重新处理采集任务",
+        409,
+      );
+    }
     if (task.status !== "manual_required") {
       throw new PostEditValidationError("任务状态已变化，请刷新后再保存", 409);
     }
@@ -42,7 +48,7 @@ export async function saveManualArticleTask(input: ManualArticleInput) {
       language === "en" ? getManualEnglishSourceId(task.sourceUrl) : null;
     const hasLegacyParentPointer =
       language === "en" && task.postId === parentId;
-    if ((task.postId && !hasLegacyParentPointer) || task.sourceType === "seo") {
+    if (task.postId && !hasLegacyParentPointer) {
       throw new PostEditValidationError(
         "任务已有文章，请从文章编辑页修改正文和 SEO",
         409,

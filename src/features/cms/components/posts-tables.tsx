@@ -10,7 +10,6 @@ import {
   ExternalLink,
   ImagePlus,
   Languages,
-  SearchCheck,
   Send,
   Trash2,
 } from "lucide-react";
@@ -27,10 +26,7 @@ import {
   finalizeCoverGenerationBatchAction,
   getCoverGenerationBatchStatusAction,
 } from "@/features/cms/actions/article-cover-image";
-import {
-  bulkEnqueueEnglishVersionsForPostsAction,
-  enqueueSeoUpdateForPostsAction,
-} from "@/features/cms/actions/ai-rewrite-task";
+import { bulkEnqueueEnglishVersionsForPostsAction } from "@/features/cms/actions/ai-rewrite-task";
 import {
   describeAdminResult,
   notifyActionError,
@@ -79,7 +75,7 @@ type PostListProp = Pick<
   "id" | "title" | "published" | "imgUrl" | "slug" | "language" | "slugLocked"
 >;
 type PostStatusFilter = "all" | "published" | "draft";
-type BulkAction = "publish" | "draft" | "cover" | "english" | "seo" | "delete";
+type BulkAction = "publish" | "draft" | "cover" | "english" | "delete";
 
 type CoverBatch = {
   batchId: string;
@@ -430,53 +426,6 @@ export function PostList({
     }
   }
 
-  async function handleBulkSeo() {
-    if (selectedIds.length === 0) {
-      toast.error("请先选择文章");
-      return;
-    }
-
-    setBulkAction("seo");
-    try {
-      const result = await enqueueSeoUpdateForPostsAction(selectedIds);
-
-      if (result.error) {
-        toast.error("创建人工 SEO 编辑任务 失败", {
-          description: result.error,
-        });
-        return;
-      }
-
-      if (!result.data) {
-        toast.error("创建人工 SEO 编辑任务 没有返回结果", {
-          description: "请到 AI 任务中心确认任务是否已创建。",
-        });
-        return;
-      }
-
-      const stats = result.data;
-      toast.success("人工 SEO 编辑任务已加入任务中心", {
-        description: describeAdminResult([
-          `处理 ${stats.requested} 篇`,
-          `排队 ${stats.queued} 个任务`,
-          stats.running > 0 ? `运行中 ${stats.running} 个` : null,
-          stats.skipped > 0 ? `跳过 ${stats.skipped} 篇` : null,
-          stats.failed > 0 ? `失败 ${stats.failed} 个` : null,
-        ]),
-      });
-      if (stats.failed === 0) {
-        setSelectedIds([]);
-      }
-      router.refresh();
-    } catch (error) {
-      toast.error("创建人工 SEO 编辑任务 失败", {
-        description: error instanceof Error ? error.message : "请稍后重试。",
-      });
-    } finally {
-      setBulkAction(null);
-    }
-  }
-
   function handleInputChange(
     key: keyof PostListProp,
     value: string | boolean | null,
@@ -622,15 +571,6 @@ export function PostList({
             >
               <Languages className="size-4" />
               {bulkAction === "english" ? "排队中..." : "填写英文稿"}
-            </Button>
-            <Button
-              variant="outline"
-              disabled={bulkDisabled}
-              onClick={handleBulkSeo}
-              className="min-h-11 w-full sm:w-auto"
-            >
-              <SearchCheck className="size-4" />
-              {bulkAction === "seo" ? "排队中..." : "人工编辑 SEO"}
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>

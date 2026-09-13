@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef } from "react";
-import { Bold, Heading2, Link2, List, Table2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { Bold, Copy, Heading2, Link2, List, Table2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -48,6 +49,22 @@ export function MarkdownEditor({
   minHeightClassName = "min-h-[50dvh] lg:min-h-[560px]",
 }: MarkdownEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [copying, setCopying] = useState(false);
+
+  async function copyArticle() {
+    if (copying || !content.trim()) return;
+    setCopying(true);
+    try {
+      await navigator.clipboard.writeText(content);
+      toast.success("已复制完整正文");
+    } catch {
+      textareaRef.current?.focus();
+      textareaRef.current?.select();
+      toast.error("无法访问剪贴板，已选中全文，请手动复制");
+    } finally {
+      setCopying(false);
+    }
+  }
 
   function insertSnippet(text: string) {
     const textarea = textareaRef.current;
@@ -86,6 +103,18 @@ export function MarkdownEditor({
             </Button>
           );
         })}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="min-h-11 sm:ml-auto"
+          disabled={copying || !content.trim()}
+          onClick={copyArticle}
+          aria-label="复制完整文章正文"
+        >
+          <Copy className="size-3.5" />
+          {copying ? "复制中..." : "复制全文"}
+        </Button>
       </div>
       <Textarea
         id={id}

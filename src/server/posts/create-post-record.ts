@@ -249,7 +249,7 @@ export async function createPostRecordInTransaction(
     return { error: "文章标题不能为空" };
   }
 
-  if (!normalizedDescription) {
+  if (postInput.published && !normalizedDescription) {
     return { error: "文章摘要不能为空" };
   }
 

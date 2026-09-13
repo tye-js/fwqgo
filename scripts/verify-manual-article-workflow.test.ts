@@ -32,102 +32,119 @@ function isolated(source: string) {
   );
 }
 
-void test("collection keeps the entire original and distinct table links without text AI", () => {
+void test("collection preserves full source, rewrites merchant parameters once and keeps href replacement", () => {
   isolated(String.raw`
 import assert from "node:assert/strict";
 import {mock} from "bun:test";
 import * as originalNetwork from "./packages/core/network-url.ts";
 const network={...originalNetwork};
-const paragraph="This is the original article content about a VPS offer. ".repeat(600);
-const html='<html><head><title>Original title</title></head><body><article><h1>Original title</h1><p>'+paragraph+'</p><table><tr><th>Plan</th><th>Buy</th></tr><tr><td>A</td><td><a href="https://merchant.example/buy?pid=1">Buy A</a></td></tr><tr><td>B</td><td><a href="https://merchant.example/buy?pid=2">Buy B</a></td></tr></table><p>COMPLETE SOURCE END</p></article></body></html>';
-const report={totalLinks:2,matchedLinks:[],unmatchedLinks:[],invalidLinks:[],internalLinksRemoved:0};
-mock.module("@fwqgo/core/network-url",()=>({...network,fetchPublicHttpUrl:async()=>new Response(html,{headers:{"content-type":"text/html"}})}));
-mock.module("@/server/links/affiliate-link-rewriter",()=>({rewriteAffiliateLinks:async()=>report,mergeAffiliateReports:()=>report}));
+const paragraph="This is the complete original article about a VPS offer. ".repeat(700);
+const urls=["https://merchant.example/buy?pid=1&affid=23&coupon=one","https://merchant.example/buy?pid=2&affid=23&coupon=two"];
+const html='<html><head><title>Original title</title></head><body><article><h1>Original title</h1><p>'+paragraph+'</p><table><tr><th>Plan</th><th>Buy</th></tr><tr><td>A</td><td><a href="'+urls[0]+'">Buy A</a></td></tr><tr><td>B</td><td><a href="'+urls[1]+'">Buy B</a></td></tr></table><p><a href="https://example.com/go/offer">Redirected plan</a></p><p>COMPLETE SOURCE END</p></article></body></html>';
+const provider={id:3,name:"Merchant",officialUrl:"https://merchant.example",affUrl:"https://merchant.example/?affid=33",affParam:"affid",affValue:"33"};
+let providerReads=0;
+mock.module("@fwqgo/db",()=>({db:{select(){return {from:async()=>{providerReads++;return [provider];}};}}}));
+mock.module("@fwqgo/core/network-url",()=>({...network,fetchPublicHttpUrl:async(url,options)=>options?.method==="HEAD"?{url:"https://merchant.example/buy?pid=3&affid=23"}:new Response(html,{headers:{"content-type":"text/html"}})}));
 mock.module("@/langchain/rewrite-article",()=>({default:()=>{throw new Error("Unexpected text AI request");}}));
-mock.module("@fwqgo/ai/rewrite-config",()=>({getActiveAiRewriteConfig:()=>{throw new Error("No text AI configuration is available");}}));
+mock.module("@fwqgo/ai/rewrite-config",()=>({getActiveAiRewriteConfig:()=>{throw new Error("Unexpected AI configuration lookup");}}));
 const {scrapeArticleWithOptions}=await import("./src/server/scrape/article-scraper.ts");
 const article=await scrapeArticleWithOptions({url:"https://example.com/article"});
-assert.equal(article.title,"Original title");
-assert.equal(article.diagnostics.usedAiRewrite,false);
-assert.ok(article.htmlContent.length>30000);
-assert.ok(article.htmlContent.includes("COMPLETE SOURCE END"),"The last source paragraph must survive collection");
-assert.ok(article.htmlContent.includes("https://merchant.example/buy?pid=1"));
-assert.ok(article.htmlContent.includes("https://merchant.example/buy?pid=2"));
-assert.ok(article.cleanedHtmlContent.includes("COMPLETE SOURCE END"));
+assert.equal(providerReads,1);assert.equal(article.title,"Original title");assert.equal(article.diagnostics.usedAiRewrite,false);
+assert.ok(article.htmlContent.length>30000);assert.ok(article.htmlContent.includes("COMPLETE SOURCE END"));
+for (const [index,url] of urls.entries()) {
+ assert.ok(article.htmlContent.includes(url.replace("affid=23","affid=33")),"Each plan keeps its own purchase URL");
+ assert.equal(article.diagnostics.affiliateReport.matchedLinks[index].originalHref,url);
+}
+assert.ok(article.htmlContent.includes("https://merchant.example/buy?pid=3&affid=33"));assert.ok(!article.cleanedHtmlContent.includes("/go/offer"));assert.ok(article.cleanedHtmlContent.includes("pid=3"));
+assert.ok(article.cleanedHtmlContent.includes("affid=23"));assert.ok(!article.cleanedHtmlContent.includes("affid=33"));
+provider.affParam="href";provider.affUrl="https://merchant.example/special-offer?ref=ours";
+const replacement=await scrapeArticleWithOptions({url:"https://example.com/article"});
+assert.equal(providerReads,2);assert.equal(replacement.diagnostics.affiliateReport.matchedLinks.length,3);
+for (const match of replacement.diagnostics.affiliateReport.matchedLinks) {assert.equal(match.mode,"replace");assert.equal(match.finalHref,provider.affUrl);}
 `);
 });
 
-void test("URL, manual and legacy derived tasks stop for manual entry without creating articles or covers", () => {
+void test("Collection goes directly to drafts while English keeps manual editing and SEO queues are retired", () => {
   isolated(String.raw`
 import assert from "node:assert/strict";
 import {mock} from "bun:test";
 import {PgDialect} from "drizzle-orm/pg-core";
-const dialect=new PgDialect();
-const name=table=>table[Symbol.for("drizzle:Name")];
-const f={task:null,steps:[],postWrites:0};
+const dialect=new PgDialect(),name=table=>table[Symbol.for("drizzle:Name")];
+const f={task:null,steps:[],saved:[],fetches:0};
 const report={totalLinks:0,matchedLinks:[],unmatchedLinks:[],invalidLinks:[],internalLinksRemoved:0};
 const db={
  async transaction(work){return work(db);},
- select(){let table,condition;const q={from(t){table=name(t);return q;},where(c){condition=c;return q;},limit:async()=>table==="posts"&&!dialect.sqlToQuery(condition).sql.includes('"translationSourcePostId"')?[{id:20,title:"Chinese source",content:"中文来源正文，不应被改写或覆盖。",language:"zh"}]:[]};return q;},
- update(table){let values,condition;const apply=()=>{if(name(table)==="posts"){f.postWrites++;throw new Error("Collection must not modify an article");}if(name(table)!=="ai_rewrite_tasks")return [];const query=dialect.sqlToQuery(condition);if(query.sql.includes('"leaseOwner" =')&&!query.params.includes(f.task.leaseOwner))return [];f.task={...f.task,...values,attempts:typeof values.attempts==="object"?f.task.attempts+1:(values.attempts??f.task.attempts)};return [structuredClone(f.task)];};const q={set(v){values=v;return q;},where(c){condition=c;return q;},returning:async()=>apply(),then(resolve,reject){return Promise.resolve().then(apply).then(resolve,reject);}};return q;},
+ select(){let table,condition;const q={from(t){table=name(t);return q;},where(c){condition=c;return q;},limit:async()=>table==="posts"&&!dialect.sqlToQuery(condition).sql.includes('"translationSourcePostId"')?[{id:20,title:"Chinese source",content:"中文原文保持不变",language:"zh"}]:[]};return q;},
+ update(table){let values,condition;const apply=()=>{assert.notEqual(name(table),"posts");if(name(table)!=="ai_rewrite_tasks")return [];const query=dialect.sqlToQuery(condition);if(query.sql.includes('"status" in')&&!query.params.includes(f.task.status))return [];if(query.sql.includes('"leaseOwner" =')&&!query.params.includes(f.task.leaseOwner))return [];f.task={...f.task,...values,attempts:typeof values.attempts==="object"?f.task.attempts+1:(values.attempts??f.task.attempts)};return [structuredClone(f.task)];};const q={set(v){values=v;return q;},where(c){condition=c;return q;},returning:async()=>apply(),then(resolve,reject){return Promise.resolve().then(apply).then(resolve,reject);}};return q;},
  insert(table){assert.equal(name(table),"ai_task_steps");return {values(values){return {onConflictDoUpdate:async()=>{f.steps.push(values);}};}};},
 };
 mock.module("@fwqgo/db",()=>({db}));
 mock.module("@/server/admin/background-jobs",()=>({enqueueAdminBackgroundJob:async()=>{}}));
 mock.module("@/server/links/affiliate-link-rewriter",()=>({rewriteAffiliateLinks:async()=>report}));
-mock.module("@/server/images/cover-generation-task-runner",()=>({enqueueArticleCoverGenerationTask:()=>{throw new Error("Cover work requires an explicit operator click");}}));
+mock.module("@/server/posts/collected-article-draft",()=>({saveCollectedArticleDraft:async(task,article)=>{assert.ok(f.steps.some(s=>s.stepKey==="html_clean"));assert.ok(f.steps.some(s=>s.stepKey==="affiliate_check"));f.saved.push(article);f.task={...f.task,status:"succeeded",postId:42,leaseOwner:null};}}));
+mock.module("@/server/images/cover-generation-task-runner",()=>({enqueueArticleCoverGenerationTask:()=>{throw new Error("Cover requires an explicit click");}}));
 mock.module("@fwqgo/ai/rewrite-config",()=>({getActiveAiRewriteConfig:()=>{throw new Error("Unexpected AI configuration lookup");}}));
-mock.module("@/server/scrape/article-scraper",()=>({scrapeArticleWithOptions:async()=>({title:"Source",description:"Original source excerpt",content:"Original body",htmlContent:"Original body",cleanedHtmlContent:"<p>Original body</p>",keywords:[],tagsName:[],recommendTagName:"",diagnostics:{usedAiRewrite:false,affiliateReport:report}})}));
+mock.module("@/server/scrape/article-scraper",()=>({scrapeArticleWithOptions:async()=>{f.fetches++;return {title:"Source",description:"",content:"Original body",htmlContent:"Original body",cleanedHtmlContent:"<p>Original body</p>",keywords:[],tagsName:[],recommendTagName:"",diagnostics:{usedAiRewrite:false,affiliateReport:report}};}}));
 const {runAiRewriteTask}=await import("./src/server/ai/rewrite-task-runner.ts");
 for(const type of ["url","text","email","file","english","seo"]) {
- f.task={id:1,sourceType:type,sourceUrl:type==="english"?"post://20/english":"https://example.com/source",sourceTitle:"Original source",sourceContent:"A complete manual source paragraph. ".repeat(700),postId:type==="seo"||type==="english"?20:null,sourceMaterialId:null,status:"pending",attempts:0,leaseOwner:null,createdAt:new Date()};f.steps=[];
+ f.task={id:1,sourceType:type,sourceUrl:type==="english"?"post://20/english":"https://example.com/source",sourceTitle:"Original source",sourceContent:"A complete manual source paragraph. ".repeat(700)+"SOURCE END",postId:type==="seo"||type==="english"?20:null,sourceMaterialId:null,status:"pending",attempts:0,leaseOwner:null,createdAt:new Date()};f.steps=[];f.saved=[];
  await runAiRewriteTask(1);
- assert.equal(f.task.status,"manual_required",type);
- assert.equal(f.task.requestStage,"manual_required");
- assert.ok(f.steps.some(step=>step.stepKey==="manual_input"));
- assert.equal(f.task.postId,type==="seo"?20:null);
- assert.equal(f.postWrites,0);
- if(["text","email","file"].includes(type))assert.ok(f.task.scrapedHtml.length>20000);
+ const legacy=["english","seo"].includes(type);
+ assert.equal(f.task.status,type==="english"?"manual_required":type==="seo"?"cancelled":"succeeded",type);
+ assert.equal(f.saved.length,legacy?0:1);
+ assert.equal(f.steps.some(step=>step.stepKey==="manual_input"),type==="english");
+ if(!legacy) {assert.ok(f.steps.some(step=>step.stepKey==="draft_save"));await runAiRewriteTask(1);assert.equal(f.saved.length,1);}
+ if(["text","email","file"].includes(type)){assert.ok(f.task.scrapedHtml.length>20000);assert.ok(f.saved[0].htmlContent.includes("SOURCE END"));}
 }
+f.task={id:2,sourceType:"url",sourceUrl:"https://example.com/removed",scrapedTitle:"Saved source",scrapedHtml:"<p>Saved full snapshot END</p>",sourceMaterialId:null,status:"pending",attempts:1,leaseOwner:null,createdAt:new Date()};f.saved=[];const before=f.fetches;
+await runAiRewriteTask(2);assert.equal(f.fetches,before);assert.equal(f.task.status,"succeeded");assert.ok(f.saved[0].htmlContent.includes("Saved full snapshot END"));
 `);
 });
 
-void test("manual save commits supplied SEO and content once, with a default cover and no AI configuration or image task", () => {
+void test("draft, task and material commit together; lost leases and failures cannot create duplicates or overwrite edits", () => {
   isolated(String.raw`
 import assert from "node:assert/strict";
 import {mock} from "bun:test";
-const now=new Date("2026-09-12T00:00:00.000Z");
-const f={task:{id:1,status:"manual_required",sourceType:"url",sourceUrl:"https://example.com/source",sourceMaterialId:2,postId:null,categoryId:3,attempts:1,createdAt:now,updatedAt:now},posts:[],commits:0,coverCalls:0,failStep:false};
-const name=t=>t[Symbol.for("drizzle:Name")];
+import {TaskLeaseLostError} from "@fwqgo/core/task-lease";
+const now=new Date("2026-09-13T00:00:00.000Z"),name=t=>t[Symbol.for("drizzle:Name")];
+const f={task:{id:1,status:"running",leaseOwner:"owner",sourceType:"url",sourceMaterialId:2,postId:null,categoryId:3,attempts:1,createdAt:now,updatedAt:now},material:{status:"running"},posts:[],steps:[],commits:0,failStep:false,locks:0};
 const tx={
- select(){const q={from:()=>q,where:()=>q,for:()=>q,limit:async()=>[structuredClone(f.task)]};return q;},
- update(table){return {set(values){return {where:async()=>{if(name(table)==="ai_rewrite_tasks")f.task={...f.task,...values};}};}};},
- insert(){return {values(){return {onConflictDoUpdate:async()=>{if(f.failStep)throw new Error("Fixture step write failed");}};}};},
+ select(){let table;const q={from(t){table=name(t);return q;},where(){return q;},for(){f.locks++;return q;},limit:async()=>table==="ai_rewrite_tasks"?[structuredClone(f.task)]:f.posts};return q;},
+ update(table){return {set(values){return {where:async()=>{if(name(table)==="ai_rewrite_tasks")f.task={...f.task,...values};else if(name(table)==="source_materials")f.material={...f.material,...values};else throw new Error("Existing posts must never be updated");}};}};},
+ insert(table){assert.equal(name(table),"ai_task_steps");return {values(values){return {onConflictDoUpdate:async()=>{if(f.failStep)throw new Error("Fixture step write failed");f.steps.push(values);}};}};},
 };
-const db={async transaction(work){const before=structuredClone({task:f.task,posts:f.posts});try{const result=await work(tx);f.commits++;return result;}catch(error){f.task=before.task;f.posts=before.posts;throw error;}}};
+const db={async transaction(work){const before=structuredClone({task:f.task,material:f.material,posts:f.posts,steps:f.steps});try{const result=await work(tx);f.commits++;return result;}catch(error){Object.assign(f,before);throw error;}}};
 mock.module("@fwqgo/db",()=>({db}));
-mock.module("@/server/posts/create-post-record",()=>({createPostRecordInTransaction:async(input,transaction)=>{assert.equal(transaction,tx);const post={...input.post,id:42};f.posts.push(post);return {data:post};}}));
-mock.module("@/server/images/assets",()=>({syncImageReferencesForPost:async()=>{}}));
-mock.module("@/server/posts/internal-links",()=>({regeneratePostInternalLinks:async input=>{assert.equal(input.includeKnowledge,false);assert.equal(input.generatedBy,"rule");}}));
-mock.module("@/server/cache/public-revalidation-client",()=>({schedulePublicWebCache(){}}));
-mock.module("@/server/images/cover-generation-task-runner",()=>({enqueueArticleCoverGenerationTask:async()=>{f.coverCalls++;throw new Error("Saving must not create an image task");}}));
-mock.module("@/server/images/generation-config",()=>({getActiveImageGenerationConfig:()=>{throw new Error("No image configuration is available");}}));
-mock.module("@fwqgo/ai/rewrite-config",()=>({getActiveAiRewriteConfig:()=>{throw new Error("No text AI configuration is available");}}));
-const {saveManualArticleTask}=await import("./src/server/posts/manual-article-task.ts");
-const input={taskId:1,expectedUpdatedAt:now.toISOString(),title:"Manually supplied title",slug:"manual-slug",description:"Manually supplied SEO description",keywords:"manual,seo",content:"Manually entered body. ".repeat(20),tagNames:["Manual tag"]};
-await assert.rejects(saveManualArticleTask({...input,expectedUpdatedAt:"2020-01-01T00:00:00.000Z"}),/任务内容已更新/);
-assert.equal(f.posts.length,0);
-f.failStep=true;
-await assert.rejects(saveManualArticleTask(input),/Fixture step write failed/);
-assert.equal(f.posts.length,0);assert.equal(f.task.status,"manual_required");assert.equal(f.coverCalls,0);
-f.failStep=false;
-const saved=await saveManualArticleTask(input);
-assert.equal(saved.postId,42);assert.deepEqual(saved.warnings,[]);
-assert.equal(f.posts[0].content,input.content);assert.equal(f.posts[0].title,input.title);assert.equal(f.posts[0].description,input.description);assert.equal(f.posts[0].slug,input.slug);assert.equal(f.posts[0].keywords,input.keywords);
-assert.equal(f.posts[0].imgUrl,"/img/placeholders/fwq-placeholder.png");assert.equal(f.posts[0].published,false);
-assert.equal(f.task.status,"succeeded");assert.equal(f.task.postId,42);assert.equal(f.commits,1);
-await assert.rejects(saveManualArticleTask(input),/任务状态已变化/);
-assert.equal(f.posts.length,1);assert.equal(f.coverCalls,0);
+mock.module("@/server/posts/create-post-record",()=>({createPostRecordInTransaction:async(input,transaction)=>{assert.equal(transaction,tx);const post={...input,id:42};f.posts.push(post);return {data:post};}}));
+mock.module("@/server/images/assets",()=>({syncImageReferencesForPost:async()=>{throw new Error("Postcommit image reference failure");}}));
+mock.module("@/server/cache/public-revalidation-client",()=>({schedulePublicWebCache(){throw new Error("Postcommit cache failure");}}));
+mock.module("@/server/images/cover-generation-task-runner",()=>({enqueueArticleCoverGenerationTask:()=>{throw new Error("No automatic cover work");}}));
+mock.module("@fwqgo/ai/rewrite-config",()=>({getActiveAiRewriteConfig:()=>{throw new Error("No text model lookup");}}));
+const {saveCollectedArticleDraft}=await import("./src/server/posts/collected-article-draft.ts");
+const task=structuredClone(f.task),content="Complete cleaned draft. ".repeat(1400)+"[Buy](https://merchant.example/buy?pid=1&affid=33)\nSOURCE END";
+const article={title:"Source title",description:"",htmlContent:content};
+await assert.rejects(saveCollectedArticleDraft({...task,leaseOwner:"stale-owner"},article),TaskLeaseLostError);assert.equal(f.posts.length,0);
+f.failStep=true;await assert.rejects(saveCollectedArticleDraft(task,article),/Fixture step write failed/);
+assert.equal(f.posts.length,0);assert.equal(f.task.status,"running");assert.equal(f.material.status,"running");
+f.failStep=false;const post=await saveCollectedArticleDraft(task,article);
+assert.equal(post.content,content);assert.equal(post.published,false);assert.equal(post.imgUrl,"/img/placeholders/fwq-placeholder.png");assert.equal(post.description,"");assert.equal(post.keywords,"");
+assert.equal(f.task.postId,42);assert.equal(f.task.status,"succeeded");assert.equal(f.task.leaseOwner,null);assert.equal(f.material.status,"succeeded");assert.equal(f.steps[0].stepKey,"draft_save");assert.equal(f.commits,1);assert.ok(f.locks>0);
+f.posts[0].content="Human edit that must survive retries";f.posts[0].published=true;
+f.task={...f.task,status:"running",leaseOwner:"retry-owner",attempts:2};
+await saveCollectedArticleDraft(structuredClone(f.task),article);
+assert.equal(f.posts.length,1);assert.equal(f.posts[0].content,"Human edit that must survive retries");assert.equal(f.posts[0].published,true);
+`);
+});
+
+void test("draft editing permits unfinished SEO while publishing still requires it", () => {
+  isolated(String.raw`
+import assert from "node:assert/strict";
+import {postEditSchema} from "./src/features/cms/lib/post-edit.ts";
+const draft={id:1,title:"Source title",slug:"source-1",content:"Full source body",published:false,description:"",keywords:"",categoryId:1,recommendTagName:"",newTags:[]};
+assert.equal(postEditSchema.safeParse(draft).success,true);
+assert.equal(postEditSchema.safeParse({...draft,published:true}).success,false);
+assert.equal(postEditSchema.safeParse({...draft,published:true,description:"Human SEO",newTags:[{tag:{name:"VPS",slug:"vps"}}]}).success,true);
+assert.equal(postEditSchema.safeParse({...draft,slug:"bad/slug"}).success,false);
 `);
 });
 

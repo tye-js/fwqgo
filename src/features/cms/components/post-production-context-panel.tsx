@@ -247,8 +247,8 @@ export function PostProductionContextPanel({
   return (
     <div className="space-y-4">
       <AdminSectionCard
-        title="生产链路与中英文关系"
-        description="中英文正文与 SEO 均由人工填写。创建英文编辑任务后可参考已保存的中文正文，已有英文稿会保留并提供编辑入口。"
+        title="文章来源与中英文关系"
+        description="采集正文直接保存到草稿。英文版本保留独立任务和文章关系，参考中文来源人工填写正文与 SEO，已有英文稿不会被覆盖。"
       >
         <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
           <div className="space-y-3">
@@ -308,7 +308,7 @@ export function PostProductionContextPanel({
                   />
                 ) : null}
                 <Button asChild size="sm" variant="outline">
-                  <Link href="/ai-tasks">打开 AI 任务中心</Link>
+                  <Link href="/ai-tasks">查看采集任务</Link>
                 </Button>
               </div>
             </div>

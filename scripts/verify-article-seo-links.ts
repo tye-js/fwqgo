@@ -185,7 +185,10 @@ async function verifyAiRewriteInternalLinkScope() {
       "utf8",
     ),
     readFile(
-      new URL("../src/server/posts/manual-article-task.ts", import.meta.url),
+      new URL(
+        "../src/server/posts/collected-article-draft.ts",
+        import.meta.url,
+      ),
       "utf8",
     ),
   ]);
@@ -196,10 +199,7 @@ async function verifyAiRewriteInternalLinkScope() {
     internalLinks,
     /const knowledgeRows: KnowledgeRelevanceCandidate\[\] = includeKnowledge/,
   );
-  assert.equal(
-    (rewriteRunner.match(/includeKnowledge: false/g) ?? []).length,
-    1,
-  );
+  assert.doesNotMatch(rewriteRunner, /regeneratePostInternalLinks/);
   assert.doesNotMatch(
     rewriteRunner,
     /正在匹配(?:英文)?正文标签、相关知识和相关文章/,

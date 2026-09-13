@@ -46,7 +46,7 @@ CMS 路由直接从根路径开始，例如 `/ai-rewrite/tasks`、`/posts/edit` 
 
 ### 文章生产链路
 
-采集完成后，在任务详情人工填写正文、标题、slug、摘要、关键词与标签。保存的草稿使用默认封面；需要 AI 封面时，在文章编辑页手动点击“生成封面图”，后台生成成功后替换默认图。采集和人工保存无需文本或生图模型配置，历史任务重试也采用人工流程。见 [`docs/manual-article-workflow.md`](docs/manual-article-workflow.md)。
+采集流程为“读取素材 → 清洗正文 → 替换返利链接 → 保存草稿”。完整正文直接进入草稿箱，正文工具栏的“复制全文”可复制全部 Markdown、表格和链接，包含当前未保存的修改。正文与 SEO 后续在草稿中人工编辑，封面先使用默认图，手动点击后才生成并替换。英文版本保留原有的单篇/批量任务入口和独立人工编辑流程；仅移除独立 SEO 任务。见 [`docs/manual-article-workflow.md`](docs/manual-article-workflow.md)。
 
 ## 本地开发
 

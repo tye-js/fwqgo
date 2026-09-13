@@ -24,12 +24,12 @@ const taskDetail = readFileSync(
 );
 const collector = readFileSync("src/server/ai/rewrite-task-runner.ts", "utf8");
 const scraper = readFileSync("src/server/scrape/article-scraper.ts", "utf8");
-const manualEditor = readFileSync(
-  "src/features/cms/components/manual-article-task-editor.tsx",
+const draftEditor = readFileSync(
+  "src/components/editor/markdown-editor.tsx",
   "utf8",
 );
-const manualSave = readFileSync(
-  "src/server/posts/manual-article-task.ts",
+const draftSave = readFileSync(
+  "src/server/posts/collected-article-draft.ts",
   "utf8",
 );
 const coverAction = readFileSync(
@@ -66,15 +66,15 @@ assert.doesNotMatch(
   /RewriteArticle\(|generateEnglishArticleContent\(|generateEnglishMetadata\(|generateArticleMetadata\(|getActiveAiRewriteConfig\(/,
 );
 assert.doesNotMatch(
-  `${collector}\n${manualSave}`,
+  `${collector}\n${draftSave}`,
   /enqueueArticleCoverGenerationTask|generateArticleCoverImage/,
 );
+assert.doesNotMatch(taskDetail, /SEO 关键词规划/);
 assert.match(taskDetail, /ManualArticleTaskEditor/);
-assert.match(manualEditor, /人工填写正文与 SEO/);
-for (const field of ["title", "slug", "description", "keywords", "tagNames"]) {
-  assert.match(manualEditor, new RegExp(`name="${field}"`));
-}
-assert.match(manualSave, /imgUrl: DEFAULT_ARTICLE_COVER/);
+assert.match(taskDetail, /language="en"/);
+assert.match(collector, /saveCollectedArticleDraft\(task, article\)/);
+assert.match(draftEditor, /navigator\.clipboard\.writeText\(content\)/);
+assert.match(draftSave, /imgUrl: DEFAULT_ARTICLE_COVER/);
 assert.match(
   coverAction,
   /export async function generateArticleCoverImageAction/,
@@ -82,5 +82,5 @@ assert.match(
 assert.match(coverAction, /await enqueueArticleCoverGenerationTask/);
 
 console.log(
-  `Article workflow verified: manual body and SEO, default covers with explicitly triggered image generation, and ${configurablePromptFields.length} compatible historical configuration fields.`,
+  `Article workflow verified: clean source, replace affiliate links, save draft, copy full body, explicit cover generation, and ${configurablePromptFields.length} compatible historical configuration fields.`,
 );

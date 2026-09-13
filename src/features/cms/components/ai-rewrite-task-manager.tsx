@@ -281,17 +281,6 @@ function TaskProgress({ task }: { task: RewriteTask }) {
   );
 }
 
-function TaskTokenMeta({ task }: { task: RewriteTask }) {
-  return (
-    <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-      <Badge variant="outline">{task.model ?? "未配置模型"}</Badge>
-      <Badge variant="outline">Max {task.maxTokens ?? "-"}</Badge>
-      <Badge variant="outline">输入 {task.aiInputLength ?? "-"}</Badge>
-      <Badge variant="outline">输出 {task.rewriteOutputLength ?? "-"}</Badge>
-    </div>
-  );
-}
-
 function TaskFailureMessage({ error }: { error: string | null }) {
   const lines = getErrorLines(error);
 
@@ -362,7 +351,7 @@ function FailedTaskPanel({
   basePath: string;
 }) {
   const failedTasks = tasks
-    .filter((task) => task.status === "failed")
+    .filter((task) => task.status === "failed" && task.sourceType !== "seo")
     .slice(0, 4);
 
   if (failedTasks.length === 0) {
@@ -411,7 +400,6 @@ function FailedTaskPanel({
               <p className="text-xs text-muted-foreground">
                 {formatTime(task.updatedAt)} · 尝试 {task.attempts} 次
               </p>
-              <TaskTokenMeta task={task} />
             </div>
             <TaskFailureMessage error={task.error} />
             <div className="flex items-center justify-end gap-2">
@@ -489,7 +477,7 @@ function taskSourceTypeLabel(value: string) {
     email: "邮件素材",
     file: "文件导入",
     english: "英文人工编辑",
-    seo: "人工 SEO 编辑",
+    seo: "历史 SEO 任务",
   };
 
   return labels[value] ?? value;
@@ -505,7 +493,7 @@ function taskSourceTitle(task: RewriteTask) {
   }
 
   if (task.sourceType === "seo") {
-    return `人工 SEO 编辑：${task.postTitle ?? task.resultTitle ?? task.sourceTitle ?? task.sourceUrl}`;
+    return `历史 SEO 任务：${task.postTitle ?? task.resultTitle ?? task.sourceTitle ?? task.sourceUrl}`;
   }
 
   return task.sourceTitle ?? task.sourceUrl;
@@ -541,9 +529,7 @@ function AffiliateDiagnosticsSummary({
           {diagnostics.usedPuppeteer ? (
             <Badge variant="outline">浏览器渲染</Badge>
           ) : null}
-          <Badge
-            variant={diagnostics.usedAiRewrite ? "secondary" : "outline"}
-          >
+          <Badge variant={diagnostics.usedAiRewrite ? "secondary" : "outline"}>
             {diagnostics.usedAiRewrite ? "历史 AI 内容" : "原始素材"}
           </Badge>
         </div>
@@ -771,7 +757,7 @@ export function AiRewriteTaskManager({
           description: describeAdminResult([
             `提交 ${countSubmittedUrls(formData)} 个素材`,
             `创建 ${result.count ?? 1} 个任务`,
-            "素材准备完成后，请在任务详情页人工填写正文和 SEO",
+            "清洗和返利链接替换完成后，正文会自动保存到草稿箱",
           ]),
         });
         router.refresh();
@@ -807,7 +793,7 @@ export function AiRewriteTaskManager({
         title: "文章采集任务已重新加入队列",
         description: describeAdminResult([
           `任务 ID ${taskId}`,
-          "系统会重新准备素材，正文和 SEO 由人工填写",
+          "系统会处理完整素材并保存草稿，已有文章不会被覆盖",
         ]),
       });
       router.refresh();
@@ -1090,7 +1076,7 @@ export function AiRewriteTaskManager({
                     <SelectItem value="email">邮件素材</SelectItem>
                     <SelectItem value="file">文件导入</SelectItem>
                     <SelectItem value="english">英文人工编辑</SelectItem>
-                    <SelectItem value="seo">人工 SEO 编辑</SelectItem>
+                    <SelectItem value="seo">历史 SEO 任务</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select
@@ -1130,7 +1116,7 @@ export function AiRewriteTaskManager({
             {tasks.length === 0 ? (
               <AdminTableEmpty
                 title="暂无文章采集任务"
-                description="提交来源 URL 后准备素材，人工填写正文和 SEO 后保存草稿。"
+                description="读取并清洗来源正文，替换返利链接后直接保存草稿。"
               />
             ) : (
               <Table className="cms-mobile-sticky-actions cms-table-sticky-actions">
@@ -1215,12 +1201,10 @@ export function AiRewriteTaskManager({
                           {isFailed ? (
                             <div className="space-y-2">
                               <TaskFailureMessage error={task.error} />
-                              <TaskTokenMeta task={task} />
                             </div>
                           ) : (
                             <div className="space-y-2">
                               <TaskProgress task={task} />
-                              <TaskTokenMeta task={task} />
                             </div>
                           )}
                         </TableCell>
@@ -1265,7 +1249,10 @@ export function AiRewriteTaskManager({
                                 </Link>
                               </Button>
                             ) : null}
-                            {isFailed ? (
+                            {(isFailed ||
+                              (task.status === "manual_required" &&
+                                task.sourceType !== "english")) &&
+                            task.sourceType !== "seo" ? (
                               <Button
                                 type="button"
                                 size="sm"
@@ -1277,7 +1264,8 @@ export function AiRewriteTaskManager({
                                 {retryingId === task.id ? "启动中" : "重试"}
                               </Button>
                             ) : null}
-                            {task.status === "cancelled" ? (
+                            {task.status === "cancelled" &&
+                            task.sourceType !== "seo" ? (
                               <Button
                                 type="button"
                                 size="sm"

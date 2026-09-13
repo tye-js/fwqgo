@@ -191,8 +191,12 @@ export default function EditPost({
       });
       return;
     }
-    if (!normalizedContent || !normalizedDescription) {
-      toast.error("请填写内容和简述");
+    if (!normalizedContent) {
+      toast.error("请填写文章正文");
+      return;
+    }
+    if (published && !normalizedDescription) {
+      toast.error("发布前请填写文章简述");
       return;
     }
     if (!Number.isSafeInteger(parsedCategoryId) || parsedCategoryId <= 0) {
@@ -203,8 +207,8 @@ export default function EditPost({
       toast.error("当前分类不存在，请重新选择分类");
       return;
     }
-    if (tags.length === 0) {
-      toast.error("请添加标签");
+    if (published && tags.length === 0) {
+      toast.error("发布前请添加标签");
       return;
     }
     if (normalizedImageUrl && !isRenderableImageSrc(normalizedImageUrl)) {

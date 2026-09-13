@@ -198,10 +198,6 @@ function englishSourceUrl(postId: number) {
   return `post://${postId}/english`;
 }
 
-function seoSourceUrl(postId: number) {
-  return `post://${postId}/seo`;
-}
-
 function normalizePostIds(postIds: number[], limit = 50) {
   return [
     ...new Set(
@@ -495,6 +491,10 @@ export async function retryAiRewriteTaskAction(taskId: number) {
       )
     ) {
       return { error: "任务不存在，或当前状态不能重试" };
+    }
+
+    if (retryCandidate.sourceType === "seo") {
+      return { error: "历史 SEO 任务流程已停用，请在草稿箱直接编辑 SEO" };
     }
 
     const task = await db.transaction(async (tx) => {
@@ -831,81 +831,6 @@ export async function bulkEnqueueEnglishVersionsForPostsAction(
     };
   } catch (error) {
     console.error("批量创建英文文章任务失败:", error);
-    return { error: getErrorMessage(error) };
-  }
-}
-
-export async function enqueueSeoUpdateForPostsAction(postIds: number[]) {
-  try {
-    await requireAdminSession();
-
-    const validIds = normalizePostIds(postIds);
-    if (validIds.length === 0) {
-      return { error: "请先选择要更新 SEO 的文章" };
-    }
-
-    const postRows = await db
-      .select({
-        id: posts.id,
-        title: posts.title,
-        content: posts.content,
-        categoryId: posts.categoryId,
-      })
-      .from(posts)
-      .where(inArray(posts.id, validIds));
-    const foundIds = new Set(postRows.map((post) => post.id));
-
-    let queued = 0;
-    let running = 0;
-    let skipped = validIds.filter((id) => !foundIds.has(id)).length;
-    const taskIds: number[] = [];
-    const errors: Array<{ postId: number; reason: string }> = [];
-
-    for (const post of postRows) {
-      const sourceSnapshot = post.content.trim();
-      if (!sourceSnapshot) {
-        skipped += 1;
-        errors.push({ postId: post.id, reason: "文章正文为空" });
-        continue;
-      }
-
-      const sourceUrl = seoSourceUrl(post.id);
-      const task = await upsertDerivedAiTask({
-        sourceUrl,
-        sourceType: "seo",
-        sourceTitle: post.title,
-        sourceContent: sourceSnapshot,
-        categoryId: post.categoryId,
-        initialPostId: post.id,
-        currentStep: "等待人工编辑文章 SEO",
-      });
-
-      taskIds.push(task.id);
-
-      if (task.status === "running") {
-        running += 1;
-        continue;
-      }
-
-      await enqueueAiRewriteTask(task.id);
-      queued += 1;
-    }
-
-    revalidateAiTaskPages();
-
-    return {
-      data: {
-        requested: validIds.length,
-        queued,
-        running,
-        skipped,
-        failed: errors.length,
-        taskIds,
-        errors,
-      },
-    };
-  } catch (error) {
-    console.error("批量创建 SEO 更新任务失败:", error);
     return { error: getErrorMessage(error) };
   }
 }

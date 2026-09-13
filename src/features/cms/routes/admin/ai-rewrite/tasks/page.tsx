@@ -136,7 +136,7 @@ export async function AiRewriteTasksPageContent({
   const unifiedTaskList = unifiedTaskListResult.data;
   const pageTitle = isTaskCenter ? "AI任务中心" : "文章生产台";
   const pageDescription = isTaskCenter
-    ? "统一处理文章采集、人工编辑、封面生图和供应商采集任务。"
+    ? "查看文章采集入稿、手动封面生图和供应商采集任务。"
     : "";
 
   return (
