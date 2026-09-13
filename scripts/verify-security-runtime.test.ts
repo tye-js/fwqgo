@@ -595,6 +595,46 @@ void test("CSP permits CMS object URL previews and keeps development on HTTP", (
   assert.equal(development.has("Strict-Transport-Security"), false);
 });
 
+void test("Cloudflare analytics is allowed only in the production public CSP", () => {
+  for (const cms of [false, true]) {
+    for (const production of [false, true]) {
+      const policy = getSecurityHeaders({ cms, production }).find(
+        ({ key }) => key === "Content-Security-Policy",
+      )?.value;
+      assert.ok(policy);
+      const directives = new Map(
+        policy.split(";").map((directive) => {
+          const [name, ...sources] = directive.trim().split(/\s+/);
+          return [name, sources] as const;
+        }),
+      );
+      for (const [directive, origin] of [
+        ["script-src", "https://static.cloudflareinsights.com"],
+        ["connect-src", "https://cloudflareinsights.com"],
+      ] as const) {
+        const sources = directives.get(directive);
+        assert.ok(sources);
+        assert.equal(sources.includes(origin), production && !cms);
+        assert.ok(sources.includes("'self'"));
+        // A broad scheme or wildcard would also admit unrelated third parties.
+        assert.ok(
+          !sources.some((source) => source === "https:" || source.includes("*")),
+        );
+        const externalOrigins = sources.filter((source) =>
+          source.startsWith("https://"),
+        );
+        assert.deepEqual(externalOrigins, production && !cms ? [origin] : []);
+      }
+      assert.deepEqual(directives.get("object-src"), ["'none'"]);
+      assert.deepEqual(directives.get("frame-ancestors"), ["'none'"]);
+      assert.equal(
+        directives.get("script-src")?.includes("'unsafe-eval'"),
+        !production,
+      );
+    }
+  }
+});
+
 void test("revalidation secrets can only target the configured Web service", () => {
   assert.equal(
     resolveWebRevalidationUrl({ WEB_PORT: "3300" }),

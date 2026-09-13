@@ -1,5 +1,16 @@
 /** @param {{ cms?: boolean, production: boolean }} options */
 export function getSecurityHeaders({ cms = false, production }) {
+  const scriptSources = ["'self'", "'unsafe-inline'"];
+  const connectSources = ["'self'"];
+  // Cloudflare injects its analytics beacon at the edge on the public site.
+  if (production && !cms) {
+    scriptSources.push("https://static.cloudflareinsights.com");
+    connectSources.push("https://cloudflareinsights.com");
+  }
+  if (!production) {
+    scriptSources.push("'unsafe-eval'");
+    connectSources.push("ws:", "wss:");
+  }
   const policy = [
     "default-src 'self'",
     "base-uri 'self'",
@@ -9,8 +20,8 @@ export function getSecurityHeaders({ cms = false, production }) {
     `img-src 'self' data: https:${cms ? " blob:" : ""}`,
     "font-src 'self' data:",
     "style-src 'self' 'unsafe-inline'",
-    `script-src 'self' 'unsafe-inline'${production ? "" : " 'unsafe-eval'"}`,
-    `connect-src 'self'${production ? "" : " ws: wss:"}`,
+    `script-src ${scriptSources.join(" ")}`,
+    `connect-src ${connectSources.join(" ")}`,
     ...(production ? ["upgrade-insecure-requests"] : []),
   ].join("; ");
   return [

@@ -66,10 +66,15 @@ PERFORMANCE_VANTAGE='本机网络' bun run audit:performance
 ## 统计口径与真实体验
 
 - Cloudflare Web Analytics 先筛选公开站，CMS、内部测试和监控单独观察。
+- 公开站生产 CSP 允许 `script-src https://static.cloudflareinsights.com` 和 `connect-src https://cloudflareinsights.com`；自动注入版本的同源 `/cdn-cgi/rum` 仍由 `'self'` 放行。CMS 和开发环境不增加这些第三方来源。脚本由 Cloudflare 注入，不在应用中重复插入或硬编码统计 token。来源与上报端点说明见 [Cloudflare Web Analytics FAQ](https://developers.cloudflare.com/web-analytics/faq/)。
 - 核对真实手机的 beacon 脚本与 `/cdn-cgi/rum` 请求是否成功。桌面占比极高、直接来源极高只是调查线索，不等同于机器人证据。
+- 使用浏览器 UA 和 HTML Accept 头检查注入结果；普通 `curl` 请求可能不包含 beacon。2026-09-13 排查确认，中英文首页已注入统计脚本，但旧 CSP 的 `script-src 'self' 'unsafe-inline'` 会阻止其加载。修改须发布后验证，已有缺失的 Web Analytics 样本无法通过本次修复补录。
+- 域名的代理请求/带宽统计与 Web Analytics 是不同口径；浏览器 CSP 不会停止 Cloudflare 边缘请求计数。若边缘图表也没有数据，需要另外检查账号、域名、时间范围和筛选条件。
 - 用源站日志对照时间、UA、ASN、访问频率和路径分布；确认异常行为后再设置相应限速，不按这份性能 PDF 批量封禁国家。
 - FCP、LCP、INP、CLS 使用 Cloudflare Core Web Vitals，按国家、路径、设备和浏览器拆分。每次对比保留样本量，移动端只有个位数样本时不判断改善。
 - 首阶段争取 FCP P75 降到 3 秒以内；长期参考 FCP ≤1.8 秒、LCP ≤2.5 秒、INP ≤200ms、CLS ≤0.1。发布后至少对比同口径 7 天，不用一次本地成绩替代真实用户数据。
+
+2026-09-13 CSP 修复在本地 Bun 1.4.2 下通过 32 项安全运行时测试、安全边界检查、lint、typecheck、双应用构建和产物 smoke。另核对生成的 `routes-manifest.json`，确认只有 Web 的正式响应策略包含 Cloudflare 来源。未连接生产数据库，本机 Chromium 未能启动，尚未验证真实浏览器 RUM 上报及控制台数据恢复；本次未提交或发布。
 
 ## 验证命令
 
