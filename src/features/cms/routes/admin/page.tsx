@@ -19,6 +19,7 @@ import {
   AdminSectionCard,
 } from "@/features/cms/components/admin-page-shell";
 import { getDashboardStats } from "@/features/cms/data/post";
+import { CmsWorkflowLinks } from "@/features/cms/components/cms-workflow-links";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -63,7 +64,7 @@ function MetricStrip({ items }: { items: MetricItem[] }) {
   return (
     <section
       aria-label="核心指标"
-      className="grid gap-px overflow-hidden rounded-md border border-border/70 bg-border/70 sm:grid-cols-2 xl:grid-cols-4"
+      className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
     >
       {items.map((item) => {
         const Icon = item.icon;
@@ -75,15 +76,15 @@ function MetricStrip({ items }: { items: MetricItem[] }) {
               </p>
               <Icon
                 className={cn(
-                  "size-4 shrink-0",
+                  "size-9 shrink-0 rounded-lg bg-primary/5 p-2",
                   item.tone === "attention"
                     ? "text-amber-700 dark:text-amber-300"
-                    : "text-muted-foreground",
+                    : "text-primary",
                 )}
                 aria-hidden="true"
               />
             </div>
-            <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+            <p className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-foreground">
               {item.value}
             </p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -96,12 +97,12 @@ function MetricStrip({ items }: { items: MetricItem[] }) {
           <Link
             key={item.label}
             href={item.href}
-            className="min-h-[104px] bg-card px-3 py-3 transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            className="cms-metric-card min-h-[132px] p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           >
             {content}
           </Link>
         ) : (
-          <div key={item.label} className="min-h-[104px] bg-card px-3 py-3">
+          <div key={item.label} className="cms-metric-card min-h-[132px] p-5">
             {content}
           </div>
         );
@@ -138,7 +139,7 @@ function QueueItem({
     <Link
       href={href}
       className={cn(
-        "group flex min-h-[96px] min-w-0 items-start gap-3 rounded-md border border-l-2 border-border/70 bg-card px-3 py-3 transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group flex min-h-[110px] min-w-0 items-start gap-3 rounded-xl border border-l-2 border-border/70 bg-card p-4 transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         toneClasses[tone],
       )}
     >
@@ -147,7 +148,7 @@ function QueueItem({
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center justify-between gap-3">
-          <span className="truncate text-sm font-medium text-foreground">
+          <span className="break-words text-sm font-semibold text-foreground">
             {title}
           </span>
           <strong className="shrink-0 text-lg font-semibold tabular-nums">
@@ -188,11 +189,11 @@ function ContentTrendChart({ data }: { data: TrendItem[] }) {
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3">
         <div className="flex items-center gap-5 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-2">
-            <span className="size-2.5 rounded-sm bg-muted-foreground/30" />
+            <span className="size-2.5 rounded-sm bg-primary/25" />
             新建 {formatNumber(totalCreated)}
           </span>
           <span className="inline-flex items-center gap-2">
-            <span className="size-2.5 rounded-sm bg-foreground/75" />
+            <span className="size-2.5 rounded-sm bg-primary" />
             已发布 {formatNumber(totalPublished)}
           </span>
         </div>
@@ -202,7 +203,7 @@ function ContentTrendChart({ data }: { data: TrendItem[] }) {
       <div
         className="mt-4 grid h-48 grid-cols-7 items-end gap-1.5 sm:gap-3"
         role="img"
-        aria-label={`近七日新建 ${totalCreated} 篇，其中已发布 ${totalPublished} 篇`}
+        aria-label={`近七日新建 ${totalCreated} 篇，其中已发布 ${totalPublished} 篇。${data.map((item) => `${formatDate(item.date)}：新建 ${item.createdCount}，已发布 ${item.publishedCount}`).join("；")}`}
       >
         {data.map((item) => {
           const createdHeight = Math.max(
@@ -220,16 +221,16 @@ function ContentTrendChart({ data }: { data: TrendItem[] }) {
               className="flex h-full min-w-0 flex-col items-center"
               title={`${formatDate(item.date)}：新建 ${item.createdCount}，已发布 ${item.publishedCount}`}
             >
-              <span className="mb-1 text-[11px] font-medium tabular-nums text-foreground">
+              <span className="mb-1 max-w-full break-all text-center text-xs font-medium tabular-nums text-foreground">
                 {item.createdCount}/{item.publishedCount}
               </span>
               <div className="flex min-h-0 w-full flex-1 items-end justify-center gap-1">
                 <span
-                  className="w-2.5 rounded-t-sm bg-muted-foreground/30 sm:w-4"
+                  className="w-2.5 rounded-t-md bg-primary/25 sm:w-5"
                   style={{ height: `${createdHeight}%` }}
                 />
                 <span
-                  className="w-2.5 rounded-t-sm bg-foreground/75 sm:w-4"
+                  className="w-2.5 rounded-t-md bg-primary sm:w-5"
                   style={{ height: `${publishedHeight}%` }}
                 />
               </div>
@@ -328,7 +329,7 @@ export default async function Page() {
   if (!data) {
     return (
       <AdminPageShell
-        title="运营看板"
+        title="运营工作台"
         description="暂时无法读取后台概览数据，请刷新重试。"
       >
         <AdminSectionCard>
@@ -377,20 +378,20 @@ export default async function Page() {
   return (
     <AdminPageShell
       badge={recentContentLabel}
-      title="运营看板"
-      description={`内容、AI 任务和数据资产的实时工作概览；文章表现按${recentContentLabel}新文统计 · 更新于 ${formatDateTime(overview.generatedAt)}`}
+      title="运营工作台"
+      description={`查看内容产出与待处理事项。文章表现按${recentContentLabel}新文统计 · 更新于 ${formatDateTime(overview.generatedAt)}`}
       actions={
         <>
           <Button asChild variant="secondary" size="sm">
             <Link href="/ai-rewrite/tasks#single-task">
               <Sparkles className="size-4" />
-              内容生产
+              采集文章
             </Link>
           </Button>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/posts/drafts">
+          <Button asChild size="sm">
+            <Link href="/posts/create">
               <PenLine className="size-4" />
-              草稿箱
+              新建文章
             </Link>
           </Button>
         </>
@@ -420,19 +421,21 @@ export default async function Page() {
             icon: Eye,
           },
           {
-            label: "英文内容覆盖",
+            label: "英文 / 中文篇数比",
             value: formatPercent(englishCoverage),
-            note: `${overview.enPublishedPostCount}/${overview.zhPublishedPostCount} 篇已发布中文文章`,
+            note: `已发布英文 ${overview.enPublishedPostCount} · 中文 ${overview.zhPublishedPostCount}`,
             icon: Languages,
             href: "/posts/quality?language=zh",
           },
         ]}
       />
 
-      <section aria-labelledby="priority-queue-title" className="space-y-2.5">
+      <CmsWorkflowLinks />
+
+      <section aria-labelledby="priority-queue-title" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 id="priority-queue-title" className="text-sm font-semibold">
+            <h2 id="priority-queue-title" className="text-base font-semibold">
               优先处理
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
@@ -448,7 +451,7 @@ export default async function Page() {
 
         <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
           <QueueItem
-            title="文章采集需处理"
+            title="内容任务需处理"
             count={taskOverview.ai.attention}
             detail={`${taskOverview.ai.manualRequired} 个人工确认 · ${taskOverview.ai.failed} 个失败`}
             href={aiAttentionHref}
@@ -526,10 +529,10 @@ export default async function Page() {
 
         <AdminSectionCard
           title="生产链路"
-          description="AI、封面、供应商采集和后台 worker 的累计状态。"
+          description="文章采集、英文翻译、生图与后台作业的累计状态。"
         >
           <TaskHealthRow
-            title="文章采集"
+            title="采集与英文翻译"
             summary={taskOverview.ai}
             href="/ai-tasks?type=ai"
             icon={Bot}
@@ -695,8 +698,11 @@ export default async function Page() {
         title="最近内容"
         description={`${recentContentLabel}内创建的中文和英文文章，可直接查看浏览量并进入编辑。`}
       >
-        <div className="overflow-x-auto">
-          <Table className="cms-mobile-sticky-actions min-w-[820px]">
+        <div className="min-w-0">
+          <Table
+            viewportLabel="最近内容列表"
+            className="cms-mobile-sticky-actions min-w-[820px]"
+          >
             <TableHeader>
               <TableRow>
                 <TableHead>文章</TableHead>
@@ -714,7 +720,7 @@ export default async function Page() {
                     <TableCell>
                       <Link
                         href={`/posts/edit/post/${encodeURIComponent(post.slug)}`}
-                        className="line-clamp-1 max-w-[720px] font-medium underline-offset-4 hover:text-primary hover:underline"
+                        className="block min-h-11 max-w-[720px] break-words font-medium leading-6 underline-offset-4 hover:text-primary hover:underline"
                       >
                         {post.title}
                       </Link>

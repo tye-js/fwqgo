@@ -5,7 +5,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 
 export function AdminPageShell({
@@ -25,34 +24,35 @@ export function AdminPageShell({
 }) {
   return (
     <div
-      className="flex min-w-0 flex-1 flex-col gap-3 px-3 py-3 md:gap-4 md:px-5 md:py-4"
+      className="cms-page flex min-w-0 flex-1 flex-col gap-5 px-4 py-5 md:gap-6 md:px-6 md:py-6 xl:px-8"
       aria-label={title}
     >
+      {!showHeading ? <h1 className="sr-only">{title}</h1> : null}
       {showHeading || actions ? (
         <div
-          className={`flex flex-col gap-2 border-b border-border/70 pb-3 md:flex-row md:items-start ${showHeading ? "md:justify-between" : "md:justify-end"}`}
+          className={`cms-page-header flex min-w-0 flex-col gap-4 xl:flex-row xl:items-start ${showHeading ? "xl:justify-between" : "xl:justify-end"}`}
         >
           {showHeading ? (
-            <div className="min-w-0 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="min-w-0 break-words text-lg font-semibold tracking-tight text-foreground md:text-xl">
-                  {title}
-                </h1>
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex flex-col items-start gap-2">
                 {badge ? (
-                  <span className="inline-flex min-h-11 max-w-full items-center break-words rounded-sm border border-border bg-muted/50 px-2 text-xs font-medium text-muted-foreground">
+                  <span className="cms-kicker max-w-full break-words">
                     {badge}
                   </span>
                 ) : null}
+                <h1 className="cms-page-title min-w-0 break-words text-2xl font-semibold text-foreground md:text-[1.7rem]">
+                  {title}
+                </h1>
               </div>
               {description ? (
-                <p className="max-w-4xl break-words text-xs leading-5 text-muted-foreground md:text-sm">
+                <p className="max-w-4xl break-words text-sm leading-6 text-muted-foreground">
                   {description}
                 </p>
               ) : null}
             </div>
           ) : null}
           {actions ? (
-            <div className="flex w-full shrink-0 flex-wrap items-center gap-2 md:w-auto md:justify-end [&>*]:w-full sm:[&>*]:w-auto [&_a]:min-h-11 [&_button]:min-h-11">
+            <div className="flex w-full min-w-0 flex-wrap items-center gap-2 xl:w-auto xl:max-w-[60%] xl:justify-end [&>*]:w-full sm:[&>*]:w-auto [&_a]:min-h-11 [&_button]:min-h-11">
               {actions}
             </div>
           ) : null}
@@ -73,26 +73,24 @@ export function AdminSectionCard({
   children: ReactNode;
 }) {
   return (
-    <Card className="min-w-0 rounded-md border-border/70 bg-card shadow-none">
+    <Card className="cms-panel min-w-0">
       {title || description ? (
-        <CardHeader className="border-b border-border/60 px-3 py-2.5 md:px-4">
+        <CardHeader className="cms-section-header border-b border-border/70 px-4 py-4 md:px-5">
           <div className="space-y-1">
             {title ? (
-              <CardTitle className="text-sm font-semibold tracking-normal">
+              <h2 className="text-base font-semibold tracking-tight">
                 {title}
-              </CardTitle>
+              </h2>
             ) : null}
             {description ? (
-              <CardDescription className="text-xs leading-5">
+              <CardDescription className="break-words text-sm leading-6">
                 {description}
               </CardDescription>
             ) : null}
           </div>
         </CardHeader>
       ) : null}
-      <CardContent className="min-w-0 px-3 py-3 md:px-4">
-        {children}
-      </CardContent>
+      <CardContent className="min-w-0 p-4 md:p-5">{children}</CardContent>
     </Card>
   );
 }
@@ -103,11 +101,11 @@ export function AdminSummaryStrip({
   items: Array<{ label: string; value: string; note?: string }>;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-border/70 bg-border/70 sm:grid-cols-2 lg:[grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:[grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]">
       {items.map((item, index) => (
         <div
           key={item.label}
-          className={`min-w-0 bg-card px-3 py-2.5 ${
+          className={`cms-metric-card min-w-0 px-4 py-4 ${
             items.length % 2 === 1 && index === items.length - 1
               ? "sm:col-span-2 lg:col-span-1"
               : ""
@@ -116,7 +114,7 @@ export function AdminSummaryStrip({
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {item.label}
           </p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">
+          <p className="mt-2 break-words text-2xl font-semibold tabular-nums tracking-tight text-foreground">
             {item.value}
           </p>
           {item.note ? (

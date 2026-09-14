@@ -33,18 +33,18 @@ type NavItem = {
 };
 
 export function NavMain({ items }: { items: NavItem[] }) {
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setOpenMobile, state, setOpen } = useSidebar();
 
   function closeMobileNavigation() {
     if (isMobile) setOpenMobile(false);
   }
 
   return (
-    <SidebarGroup className="p-1.5">
-      <SidebarGroupLabel className="h-7 px-2 text-xs uppercase tracking-wide text-sidebar-foreground/60">
-        菜单
+    <SidebarGroup className="p-0.5 group-data-[collapsible=icon]:p-0">
+      <SidebarGroupLabel className="h-7 px-2 text-xs uppercase tracking-wide text-muted-foreground">
+        工作空间
       </SidebarGroupLabel>
-      <SidebarMenu className="gap-0.5">
+      <SidebarMenu className="gap-1">
         {items.map((item) => {
           if (!item.items || item.items.length === 0) {
             return (
@@ -53,11 +53,18 @@ export function NavMain({ items }: { items: NavItem[] }) {
                   asChild
                   tooltip={item.title}
                   isActive={item.isActive}
-                  className="h-11"
+                  className="h-11 group-data-[collapsible=icon]:justify-center"
                 >
-                  <Link href={item.url} onClick={closeMobileNavigation}>
+                  <Link
+                    href={item.url}
+                    onClick={closeMobileNavigation}
+                    aria-label={item.title}
+                    aria-current={item.isActive ? "page" : undefined}
+                  >
                     {item.icon && <item.icon />}
-                    <span>{item.title}</span>
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      {item.title}
+                    </span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -76,26 +83,42 @@ export function NavMain({ items }: { items: NavItem[] }) {
                   <SidebarMenuButton
                     tooltip={item.title}
                     isActive={item.isActive}
-                    className="h-11"
+                    aria-label={item.title}
+                    className="h-11 group-data-[collapsible=icon]:justify-center"
+                    onClick={(event) => {
+                      if (!isMobile && state === "collapsed") {
+                        setOpen(true);
+                        // Expanding the sidebar should keep its active group open.
+                        if (
+                          event.currentTarget.getAttribute("aria-expanded") ===
+                          "true"
+                        ) {
+                          event.preventDefault();
+                        }
+                      }
+                    }}
                   >
                     {item.icon && <item.icon />}
-                    <span>{item.title}</span>
-                    <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      {item.title}
+                    </span>
+                    <ChevronRight className="ml-auto transition-transform duration-200 group-data-[collapsible=icon]:hidden group-data-[state=open]/collapsible:rotate-90" />
                   </SidebarMenuButton>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <SidebarMenuSub>
+                  <SidebarMenuSub className="my-2 gap-1">
                     {item.items.map((subItem) => (
                       <SidebarMenuSubItem key={subItem.title}>
                         <SidebarMenuSubButton
                           asChild
                           isActive={subItem.isActive}
-                          size="sm"
+                          size="md"
                           className="min-h-11"
                         >
                           <Link
                             href={subItem.url}
                             onClick={closeMobileNavigation}
+                            aria-current={subItem.isActive ? "page" : undefined}
                           >
                             <span>{subItem.title}</span>
                           </Link>

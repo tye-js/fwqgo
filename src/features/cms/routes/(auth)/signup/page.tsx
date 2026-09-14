@@ -10,6 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
 import { Eye, EyeOff } from "lucide-react";
+import { CmsAuthShell } from "@/features/cms/components/cms-auth-shell";
 
 const registerSchema = z
   .object({
@@ -74,142 +75,144 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="cms-theme editorial-surface flex min-h-dvh items-center justify-center bg-background px-4 py-10">
-      <div className="w-full max-w-md rounded-lg border border-border/70 bg-background p-6 shadow-sm">
-        <div className="space-y-1.5">
-          <h1 className="text-2xl font-semibold">注册</h1>
-          <p className="text-sm text-muted-foreground">
-            创建管理员账号。公开注册默认关闭，需要服务器开启注册入口。
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
-          <div className="grid gap-2">
-            <Label htmlFor="username">用户名</Label>
-            <Input
-              id="username"
-              {...register("username")}
-              type="text"
-              autoComplete="username"
-              aria-invalid={Boolean(errors.username)}
-              aria-describedby={
-                errors.username ? "signup-username-error" : undefined
-              }
-            />
-            {errors.username && (
-              <p
-                id="signup-username-error"
-                role="alert"
-                className="text-sm text-destructive"
-              >
-                {errors.username.message}
-              </p>
-            )}
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="password">密码</Label>
-            <div className="relative">
-              <Input
-                id="password"
-                {...register("password")}
-                type={showPassword ? "text" : "password"}
-                autoComplete="new-password"
-                aria-invalid={Boolean(errors.password)}
-                aria-describedby={
-                  errors.password ? "signup-password-error" : undefined
-                }
-                className="pr-12"
-              />
-              <button
-                type="button"
-                className="absolute right-1 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={showPassword ? "隐藏密码" : "显示密码"}
-                title={showPassword ? "隐藏密码" : "显示密码"}
-                onClick={() => setShowPassword((value) => !value)}
-              >
-                {showPassword ? (
-                  <EyeOff className="size-4" />
-                ) : (
-                  <Eye className="size-4" />
-                )}
-              </button>
-            </div>
-            {errors.password && (
-              <p
-                id="signup-password-error"
-                role="alert"
-                className="text-sm text-destructive"
-              >
-                {errors.password.message}
-              </p>
-            )}
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="confirmPassword">确认密码</Label>
-            <div className="relative">
-              <Input
-                id="confirmPassword"
-                {...register("confirmPassword")}
-                type={showConfirmPassword ? "text" : "password"}
-                autoComplete="new-password"
-                aria-invalid={Boolean(errors.confirmPassword)}
-                aria-describedby={
-                  errors.confirmPassword
-                    ? "signup-confirm-password-error"
-                    : undefined
-                }
-                className="pr-12"
-              />
-              <button
-                type="button"
-                className="absolute right-1 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={
-                  showConfirmPassword ? "隐藏确认密码" : "显示确认密码"
-                }
-                title={showConfirmPassword ? "隐藏确认密码" : "显示确认密码"}
-                onClick={() => setShowConfirmPassword((value) => !value)}
-              >
-                {showConfirmPassword ? (
-                  <EyeOff className="size-4" />
-                ) : (
-                  <Eye className="size-4" />
-                )}
-              </button>
-            </div>
-            {errors.confirmPassword && (
-              <p
-                id="signup-confirm-password-error"
-                role="alert"
-                className="text-sm text-destructive"
-              >
-                {errors.confirmPassword.message}
-              </p>
-            )}
-          </div>
-
-          {error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
+    <main className="cms-theme flex min-h-dvh items-center justify-center bg-background px-4 py-10 sm:px-6 lg:px-10">
+      <CmsAuthShell>
+        <div className="cms-panel mx-auto w-full max-w-md p-6 sm:p-8">
+          <div className="space-y-1.5">
+            <h2 className="text-2xl font-semibold">创建管理员账号</h2>
+            <p className="text-sm text-muted-foreground">
+              创建管理员账号。公开注册默认关闭，需要服务器开启注册入口。
             </p>
-          ) : null}
-
-          <Button type="submit" className="w-full" disabled={isPending}>
-            {isPending ? "注册中..." : "注册"}
-          </Button>
-
-          <div className="text-center text-sm">
-            已有账号？
-            <Link
-              href="/login"
-              className="ml-1 rounded-sm text-primary underline underline-offset-4 hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              去登录
-            </Link>
           </div>
-        </form>
-      </div>
-    </div>
+
+          <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
+            <div className="grid gap-2">
+              <Label htmlFor="username">用户名</Label>
+              <Input
+                id="username"
+                {...register("username")}
+                type="text"
+                autoComplete="username"
+                aria-invalid={Boolean(errors.username)}
+                aria-describedby={
+                  errors.username ? "signup-username-error" : undefined
+                }
+              />
+              {errors.username && (
+                <p
+                  id="signup-username-error"
+                  role="alert"
+                  className="text-sm text-destructive"
+                >
+                  {errors.username.message}
+                </p>
+              )}
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="password">密码</Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  {...register("password")}
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  aria-invalid={Boolean(errors.password)}
+                  aria-describedby={
+                    errors.password ? "signup-password-error" : undefined
+                  }
+                  className="pr-12"
+                />
+                <button
+                  type="button"
+                  className="absolute right-1 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                  title={showPassword ? "隐藏密码" : "显示密码"}
+                  onClick={() => setShowPassword((value) => !value)}
+                >
+                  {showPassword ? (
+                    <EyeOff className="size-4" />
+                  ) : (
+                    <Eye className="size-4" />
+                  )}
+                </button>
+              </div>
+              {errors.password && (
+                <p
+                  id="signup-password-error"
+                  role="alert"
+                  className="text-sm text-destructive"
+                >
+                  {errors.password.message}
+                </p>
+              )}
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="confirmPassword">确认密码</Label>
+              <div className="relative">
+                <Input
+                  id="confirmPassword"
+                  {...register("confirmPassword")}
+                  type={showConfirmPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  aria-invalid={Boolean(errors.confirmPassword)}
+                  aria-describedby={
+                    errors.confirmPassword
+                      ? "signup-confirm-password-error"
+                      : undefined
+                  }
+                  className="pr-12"
+                />
+                <button
+                  type="button"
+                  className="absolute right-1 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={
+                    showConfirmPassword ? "隐藏确认密码" : "显示确认密码"
+                  }
+                  title={showConfirmPassword ? "隐藏确认密码" : "显示确认密码"}
+                  onClick={() => setShowConfirmPassword((value) => !value)}
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff className="size-4" />
+                  ) : (
+                    <Eye className="size-4" />
+                  )}
+                </button>
+              </div>
+              {errors.confirmPassword && (
+                <p
+                  id="signup-confirm-password-error"
+                  role="alert"
+                  className="text-sm text-destructive"
+                >
+                  {errors.confirmPassword.message}
+                </p>
+              )}
+            </div>
+
+            {error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            ) : null}
+
+            <Button type="submit" className="w-full" disabled={isPending}>
+              {isPending ? "注册中..." : "注册"}
+            </Button>
+
+            <div className="text-center text-sm">
+              已有账号？
+              <Link
+                href="/login"
+                className="ml-1 rounded-sm text-primary underline underline-offset-4 hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                去登录
+              </Link>
+            </div>
+          </form>
+        </div>
+      </CmsAuthShell>
+    </main>
   );
 }

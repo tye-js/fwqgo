@@ -19,15 +19,15 @@ export function AdminSectionNav({
   return (
     <nav
       aria-label={label}
-      className="flex min-w-0 flex-wrap gap-1 rounded-md border border-border/70 bg-muted/20 p-1"
+      className="flex min-w-0 flex-wrap gap-1 rounded-xl border border-border bg-card p-1.5"
     >
       {items.map((item) => (
         <Button
           key={item.href}
           asChild
           size="sm"
-          variant={currentHref === item.href ? "secondary" : "ghost"}
-          className="min-h-11 flex-1 sm:flex-none"
+          variant={currentHref === item.href ? "default" : "ghost"}
+          className="min-h-11 flex-1 rounded-lg sm:flex-none"
         >
           <Link
             href={item.href}

@@ -66,8 +66,23 @@ async function verifyLoginPage(page) {
   await page.waitForSelector("#username", { timeout });
   await page.waitForSelector("#password", { timeout });
   await page.waitForSelector('button[type="submit"]', { timeout });
-  const body = await page.locator("body").map((element) => element.textContent).wait();
-  assert(body?.includes("输入管理员账号进入后台"), "登录页缺少管理员登录说明");
+  const fields = await page.evaluate(() => ({
+    username: document.querySelector("#username")?.getAttribute("autocomplete"),
+    password: document.querySelector("#password")?.getAttribute("type"),
+    passwordAutocomplete: document
+      .querySelector("#password")
+      ?.getAttribute("autocomplete"),
+    usernameLabel: document.querySelector('label[for="username"]')?.textContent,
+    passwordLabel: document.querySelector('label[for="password"]')?.textContent,
+  }));
+  assert(fields.username === "username", "登录页缺少账号自动填充标记");
+  assert(fields.password === "password", "登录密码默认没有隐藏");
+  assert(
+    fields.passwordAutocomplete === "current-password",
+    "登录页缺少密码自动填充标记",
+  );
+  assert(fields.usernameLabel?.trim(), "登录页缺少账号标签");
+  assert(fields.passwordLabel?.trim(), "登录页缺少密码标签");
 }
 
 /** @param {import("puppeteer").Page} page */
@@ -118,12 +133,23 @@ async function verifyCoreRoutes(page) {
       const pathname = new URL(page.url()).pathname;
       assert(pathname !== "/login", `${route} 丢失登录会话`);
       const body =
-        (await page.locator("body").map((element) => element.textContent).wait()) ??
-        "";
-      assert(!body.includes("Internal Server Error"), `${route} 出现服务端错误页`);
+        (await page
+          .locator("body")
+          .map((element) => element.textContent)
+          .wait()) ?? "";
+      assert(
+        !body.includes("Internal Server Error"),
+        `${route} 出现服务端错误页`,
+      );
       assert(!body.includes("Application error"), `${route} 出现应用错误页`);
-      assert(!body.includes("This page could not be found"), `${route} 路由不存在`);
-      assert(pageErrors.length === 0, `${route} 浏览器异常：${pageErrors.join("; ")}`);
+      assert(
+        !body.includes("This page could not be found"),
+        `${route} 路由不存在`,
+      );
+      assert(
+        pageErrors.length === 0,
+        `${route} 浏览器异常：${pageErrors.join("; ")}`,
+      );
     } finally {
       page.off("pageerror", onPageError);
     }
@@ -173,9 +199,13 @@ async function main() {
     if (username && password) {
       await login(page);
       await verifyCoreRoutes(page);
-      console.log(`CMS browser smoke passed: login and ${coreRoutes.length} routes`);
+      console.log(
+        `CMS browser smoke passed: login and ${coreRoutes.length} routes`,
+      );
     } else {
-      console.log("CMS browser smoke passed: login UI and unauthenticated redirect");
+      console.log(
+        "CMS browser smoke passed: login UI and unauthenticated redirect",
+      );
     }
   } finally {
     await browser.close();

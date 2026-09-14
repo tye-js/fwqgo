@@ -111,17 +111,17 @@ export function UnifiedTaskList({ result }: { result: UnifiedTaskListResult }) {
   const { type, status, query, pageNo } = result.filters;
 
   return (
-    <div className="space-y-3">
-      <div className="space-y-3 rounded-md border border-border/70 bg-muted/15 p-3">
+    <div className="space-y-5">
+      <div className="cms-workbench space-y-4 p-4 md:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex flex-wrap gap-1 rounded-md border border-border/70 bg-background p-1">
+          <div className="inline-flex flex-wrap gap-1 rounded-lg bg-muted/40 p-1">
             {taskTypeFilters.map((item) => (
               <Button
                 key={item.value}
                 asChild
                 size="sm"
-                variant={type === item.value ? "secondary" : "ghost"}
-                className="rounded-sm"
+                variant={type === item.value ? "default" : "ghost"}
+                className="min-h-11 rounded-lg"
               >
                 <Link
                   href={buildTaskListHref({
@@ -144,7 +144,7 @@ export function UnifiedTaskList({ result }: { result: UnifiedTaskListResult }) {
         <form
           action="/ai-tasks"
           method="get"
-          className="grid gap-2 md:grid-cols-[minmax(240px,1fr)_180px_auto_auto]"
+          className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_180px_auto_auto]"
         >
           <input type="hidden" name="type" value={type === "all" ? "" : type} />
           <div className="relative" role="search">
@@ -153,8 +153,9 @@ export function UnifiedTaskList({ result }: { result: UnifiedTaskListResult }) {
               name="query"
               defaultValue={query}
               placeholder="搜索任务标题、文章、错误原因或来源"
+              aria-label="搜索任务标题、文章、错误原因或来源"
               maxLength={160}
-              className="min-h-11 pl-9"
+              className="min-h-11 rounded-lg bg-background/40 pl-9"
             />
           </div>
           <Select name="status" defaultValue={status}>
@@ -187,14 +188,14 @@ export function UnifiedTaskList({ result }: { result: UnifiedTaskListResult }) {
       </div>
 
       {result.items.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border bg-background p-6 text-center">
+        <div className="rounded-xl border border-dashed border-border bg-card px-5 py-12 text-center">
           <p className="text-sm font-medium">当前筛选下没有任务</p>
           <p className="mt-1 text-xs text-muted-foreground">
             可以切换任务类型、状态，或清空搜索关键词。
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-md border border-border/70 bg-background">
+        <div className="cms-panel min-w-0 overflow-hidden">
           <Table className="cms-mobile-sticky-actions cms-table-sticky-actions min-w-[960px]">
             <TableHeader>
               <TableRow>

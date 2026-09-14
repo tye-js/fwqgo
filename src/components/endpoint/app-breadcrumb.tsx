@@ -42,7 +42,7 @@ export default function AppBreadcrumb() {
         <BreadcrumbList className="min-w-0 flex-nowrap">
           <BreadcrumbItem className="min-w-0">
             <BreadcrumbPage className="max-w-[58vw] truncate text-sm md:max-w-[42vw]">
-              数据面板
+              工作台
             </BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>

@@ -951,7 +951,7 @@ export function ImageAssetManager({
                           target="_blank"
                           rel="noopener noreferrer"
                         >
-                          <div className="relative h-16 w-20 overflow-hidden rounded-md border border-border/70 bg-muted">
+                          <div className="relative h-20 w-28 overflow-hidden rounded-lg border border-border/70 bg-muted">
                             <Image
                               src={getOptimizedImageSrc(
                                 image.thumbPath ?? image.path,
@@ -959,7 +959,7 @@ export function ImageAssetManager({
                               )}
                               alt={image.originalName}
                               fill
-                              sizes="80px"
+                              sizes="112px"
                               className="object-cover"
                             />
                           </div>
@@ -967,7 +967,7 @@ export function ImageAssetManager({
                       </TableCell>
                       <TableCell className="min-w-[260px]">
                         <div className="space-y-2">
-                          <p className="line-clamp-1 font-medium text-foreground">
+                          <p className="break-words font-medium text-foreground">
                             {image.originalName}
                           </p>
                           <button
@@ -981,7 +981,9 @@ export function ImageAssetManager({
                               className="size-3.5 shrink-0"
                               aria-hidden="true"
                             />
-                            <span className="truncate">{image.path}</span>
+                            <span className="min-w-0 break-all">
+                              {image.path}
+                            </span>
                           </button>
                           <div className="flex items-center gap-2">
                             <Input

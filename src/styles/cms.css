@@ -1,0 +1,228 @@
+/* CMS-only theme. Public pages load their own stylesheet. */
+html.cms-app,
+.cms-app .cms-theme {
+  --background: 216 28% 97%;
+  --foreground: 222 32% 16%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 32% 16%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 32% 16%;
+  --primary: 219 80% 47%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 217 28% 94%;
+  --secondary-foreground: 220 28% 25%;
+  --muted: 216 27% 94%;
+  --muted-foreground: 218 14% 43%;
+  --accent: 217 40% 94%;
+  --accent-foreground: 219 70% 36%;
+  --destructive: 0 58% 42%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 216 23% 88%;
+  --input: 216 21% 82%;
+  --ring: 219 80% 47%;
+  --radius: 0.875rem;
+  --sidebar-background: 0 0% 100%;
+  --sidebar-foreground: 219 23% 31%;
+  --sidebar-primary: 219 80% 47%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 217 86% 96%;
+  --sidebar-accent-foreground: 219 76% 40%;
+  --sidebar-border: 216 23% 90%;
+  --sidebar-ring: 219 80% 47%;
+  --cms-shadow: 0 2px 12px hsl(220 35% 20% / 0.035);
+}
+
+html.cms-app.dark,
+.cms-app.dark .cms-theme {
+  --background: 222 28% 10%;
+  --foreground: 215 24% 94%;
+  --card: 222 25% 13%;
+  --card-foreground: 215 24% 94%;
+  --popover: 222 25% 14%;
+  --popover-foreground: 215 24% 94%;
+  --primary: 215 93% 73%;
+  --primary-foreground: 223 35% 12%;
+  --secondary: 220 22% 20%;
+  --secondary-foreground: 215 24% 92%;
+  --muted: 222 20% 19%;
+  --muted-foreground: 215 18% 70%;
+  --accent: 219 35% 23%;
+  --accent-foreground: 214 88% 83%;
+  --destructive: 0 80% 74%;
+  --destructive-foreground: 223 35% 12%;
+  --border: 221 18% 25%;
+  --input: 220 17% 33%;
+  --ring: 215 93% 73%;
+  --sidebar-background: 222 27% 12%;
+  --sidebar-foreground: 215 18% 77%;
+  --sidebar-primary: 215 93% 73%;
+  --sidebar-primary-foreground: 223 35% 12%;
+  --sidebar-accent: 219 38% 22%;
+  --sidebar-accent-foreground: 214 90% 82%;
+  --sidebar-border: 221 18% 23%;
+  --sidebar-ring: 215 93% 73%;
+  --cms-shadow: 0 2px 12px hsl(0 0% 0% / 0.1);
+}
+
+.cms-app .cms-page {
+  width: 100%;
+  max-width: 1600px;
+  margin-inline: auto;
+}
+
+.cms-app .cms-panel,
+.cms-app .cms-workbench,
+.cms-app .cms-metric-card {
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.875rem;
+  background: hsl(var(--card));
+  box-shadow: var(--cms-shadow);
+}
+
+.cms-app .cms-metric-card p {
+  overflow-wrap: anywhere;
+}
+
+.cms-app .cms-kicker {
+  color: hsl(var(--primary));
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.055em;
+}
+
+.cms-app .cms-page-title {
+  line-height: 1.35;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+
+.cms-app .cms-page-header {
+  padding-bottom: 1.15rem;
+  border-bottom: 1px solid hsl(var(--border) / 0.8);
+}
+
+.cms-app .cms-section-header {
+  background: linear-gradient(
+    100deg,
+    hsl(var(--card)),
+    hsl(var(--muted) / 0.2)
+  );
+}
+
+.cms-app .cms-metric-card {
+  position: relative;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.cms-app a.cms-metric-card:hover {
+  border-color: hsl(var(--primary) / 0.4);
+  box-shadow: 0 4px 16px hsl(var(--primary) / 0.06);
+}
+
+.cms-app [data-sidebar="sidebar"] {
+  background: hsl(var(--sidebar-background));
+}
+
+.cms-app [data-collapsible="icon"] [data-sidebar="menu"] {
+  align-items: center;
+}
+
+.cms-app [data-sidebar="menu-button"],
+.cms-app [data-sidebar="menu-sub-button"] {
+  border-radius: 0.625rem;
+}
+
+.cms-app [data-sidebar="menu-button"][data-active="true"],
+.cms-app [data-sidebar="menu-sub-button"][data-active="true"] {
+  color: hsl(var(--sidebar-accent-foreground));
+  font-weight: 600;
+}
+
+.cms-app [data-sidebar="menu-sub-button"][data-active="true"] {
+  box-shadow: inset 3px 0 hsl(var(--primary));
+}
+
+.cms-app .cms-table-viewport {
+  border-radius: 0.75rem;
+  background-color: hsl(var(--card));
+}
+
+.cms-app .cms-table-viewport thead {
+  background: hsl(var(--muted) / 0.6);
+}
+
+.cms-app .cms-table-viewport th {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.cms-app .cms-table-viewport td {
+  vertical-align: middle;
+}
+
+.cms-app .cms-table-viewport tbody tr[data-state="selected"] {
+  background: hsl(var(--primary) / 0.06);
+}
+
+.cms-app .cms-table-viewport tbody tr:hover {
+  background-color: hsl(var(--muted) / 0.5);
+}
+
+.cms-app .cms-editor-layout > * {
+  min-width: 0;
+}
+
+.cms-app .cms-editor-layout textarea {
+  line-height: 1.85;
+}
+
+.cms-app .cms-editor-layout > .cms-panel:first-child {
+  align-self: start;
+}
+
+.cms-app .text-accent {
+  color: hsl(var(--primary));
+}
+
+.cms-app .cms-skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 0.75rem;
+  left: 1rem;
+  transform: translateY(-180%);
+  border-radius: 0.5rem;
+  background: hsl(var(--card));
+  color: hsl(var(--primary));
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+}
+
+.cms-app .cms-skip-link:focus {
+  transform: translateY(0);
+}
+
+.cms-app :where(a, button, input, textarea, select, summary):focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+@media (max-width: 1023px) {
+  .cms-app .cms-mobile-sticky-actions tbody > tr {
+    border-radius: 0.875rem;
+    background: hsl(var(--card));
+    box-shadow: var(--cms-shadow);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cms-app *,
+  .cms-app *::before,
+  .cms-app *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

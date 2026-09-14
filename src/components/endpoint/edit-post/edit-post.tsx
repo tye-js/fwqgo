@@ -328,8 +328,8 @@ export default function EditPost({
   return (
     <AdminPageShell
       badge="文章编辑"
-      title="修改文章"
-      description="在一个页面维护标题、slug、发布状态、正文和 SEO 信息。"
+      title="编辑文章"
+      description="先完成正文，再检查封面、SEO 和发布设置。"
       actions={
         <>
           {postLanguage === "zh" ? (
@@ -357,16 +357,8 @@ export default function EditPost({
         </>
       }
     >
-      {productionContext ? (
-        <PostProductionContextPanel context={productionContext} />
-      ) : null}
-
-      <AdminSectionCard title="文章内链">
-        <PostInternalLinkManager postId={post.post.id} links={internalLinks} />
-      </AdminSectionCard>
-
       <form
-        className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]"
+        className="cms-editor-layout grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_350px] 2xl:grid-cols-[minmax(0,1fr)_380px]"
         onSubmit={handleSubmit}
       >
         <AdminSectionCard title="正文编辑" description={title}>
@@ -554,7 +546,7 @@ export default function EditPost({
                 <ImageUpload value={imageUrl} onChange={setImageUrl} />
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4">
                 <div className="space-y-2">
                   <label
                     htmlFor="edit-post-category"
@@ -738,10 +730,10 @@ export default function EditPost({
             </div>
           </AdminSectionCard>
 
-          <div className="cms-mobile-save-bar rounded-md border border-border/70 bg-background/95 p-3 shadow-sm backdrop-blur lg:sticky lg:bottom-4">
+          <div className="cms-mobile-save-bar rounded-xl border border-primary/20 bg-card/95 p-4 shadow-sm backdrop-blur lg:sticky lg:bottom-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs leading-5 text-muted-foreground">
-                一次保存会更新标题、slug、发布状态、正文、分类、推荐标签、关键词和标签关系。
+                正文与文章设置一起保存。
               </p>
               <Button
                 type="submit"
@@ -749,12 +741,28 @@ export default function EditPost({
                 className="min-h-11 min-w-32"
               >
                 <Save className="size-4" />
-                {isSubmitting ? "更新中..." : "更新文章"}
+                {isSubmitting ? "保存中..." : "保存修改"}
               </Button>
             </div>
           </div>
         </div>
       </form>
+      <details className="cms-panel p-4 md:p-5">
+        <summary className="cursor-pointer text-sm font-semibold">
+          文章来源、双语关系与内链管理
+        </summary>
+        <div className="mt-4 space-y-4">
+          {productionContext ? (
+            <PostProductionContextPanel context={productionContext} />
+          ) : null}
+          <AdminSectionCard title="文章内链">
+            <PostInternalLinkManager
+              postId={post.post.id}
+              links={internalLinks}
+            />
+          </AdminSectionCard>
+        </div>
+      </details>
     </AdminPageShell>
   );
 }

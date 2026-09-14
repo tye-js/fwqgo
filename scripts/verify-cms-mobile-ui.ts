@@ -148,6 +148,9 @@ const mobilePostList = postList.slice(
   desktopPostListStart,
 );
 const adminLayout = read("src/features/cms/routes/admin/layout.tsx");
+const workspaceHeader = read(
+  "src/features/cms/components/cms-workspace-header.tsx",
+);
 const loginPage = read("src/features/cms/routes/(auth)/login/page.tsx");
 const signupPage = read("src/features/cms/routes/(auth)/signup/page.tsx");
 const select = read("src/components/ui/select.tsx");
@@ -164,8 +167,14 @@ assert.equal(
 );
 assert.match(adminLayout, /cms-theme min-h-dvh/);
 assert.match(adminLayout, /SidebarInset className="min-w-0"/);
-assert.match(adminLayout, /min-w-0 overflow-x-hidden/);
-assert.match(adminLayout, /safe-area-inset-top/);
+assert.doesNotMatch(
+  adminLayout,
+  /overflow-x-(?:hidden|clip)/,
+  "The workspace must not hide horizontal layout overflow; tables own their scroll viewport",
+);
+assert.match(adminLayout, /id="cms-main-content"[\s\S]*?tabIndex=\{-1\}/);
+assert.match(workspaceHeader, /safe-area-inset-top/);
+assert.match(workspaceHeader, /min-h-14/);
 for (const authPage of [loginPage, signupPage]) {
   assert.match(authPage, /min-h-dvh/);
   assert.match(authPage, /px-4 py-10/);
@@ -269,8 +278,14 @@ const imageManager = read(
 assert.match(imageManager, /grid gap-3 xl:hidden/);
 assert.match(imageManager, /hidden overflow-x-auto[^"\n]*xl:block/);
 assert.match(imageManager, /查看其余引用/);
-assert.match(read("src/features/cms/components/admin-page-shell.tsx"), /break-words/);
-assert.match(read("src/features/cms/routes/admin/ai-rewrite/tasks/[id]/page.tsx"), /flex w-full flex-wrap/);
+assert.match(
+  read("src/features/cms/components/admin-page-shell.tsx"),
+  /break-words/,
+);
+assert.match(
+  read("src/features/cms/routes/admin/ai-rewrite/tasks/[id]/page.tsx"),
+  /flex w-full flex-wrap/,
+);
 
 console.log(
   `CMS mobile UI verification passed: ${cmsAppRoutePages.length} app pages mapped to ${cmsFeatureRoutePages.length} feature routes, ${responsiveTableCount} responsive tables, ${labeledNativeCellCount} native cells labeled, and adaptive navigation guards present.`,

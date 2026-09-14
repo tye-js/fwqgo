@@ -14,7 +14,10 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { usePathname } from "next/navigation";
-import { cmsNavigation, isCmsPathMatch } from "@/features/cms/lib/navigation";
+import {
+  cmsNavigation,
+  findCmsNavigationEntry,
+} from "@/features/cms/lib/navigation";
 
 const data = {
   user: {
@@ -25,35 +28,34 @@ const data = {
     {
       name: "FWQGO",
       logo: BrandMarkIcon,
-      plan: "服务器go",
+      plan: "内容管理工作空间",
     },
   ],
 };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname();
+  const currentEntry = findCmsNavigationEntry(pathname);
   const navItems = cmsNavigation.map((item) => ({
     ...item,
     items: item.items?.map((subItem) => ({
       ...subItem,
-      isActive: isCmsPathMatch(pathname, subItem.url, subItem.matchUrls),
+      isActive: currentEntry?.url === subItem.url,
     })),
     isActive:
-      isCmsPathMatch(pathname, item.url, item.matchUrls) ||
-      item.items?.some((subItem) =>
-        isCmsPathMatch(pathname, subItem.url, subItem.matchUrls),
-      ),
+      currentEntry?.url === item.url ||
+      item.items?.some((subItem) => currentEntry?.url === subItem.url),
   }));
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader>
+      <SidebarHeader className="border-b border-sidebar-border px-3 py-3 group-data-[collapsible=icon]:px-1">
         <TeamSwitcher teams={data.teams} />
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent className="px-2 py-3 group-data-[collapsible=icon]:overflow-auto group-data-[collapsible=icon]:px-0.5">
         <NavMain items={navItems} />
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="border-t border-sidebar-border p-3 group-data-[collapsible=icon]:px-1">
         <NavUser user={data.user} />
       </SidebarFooter>
       <SidebarRail />

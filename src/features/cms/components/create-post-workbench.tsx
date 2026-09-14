@@ -229,14 +229,16 @@ export function CreatePostWorkbench({
 
   return (
     <>
-      <AdminSectionCard
-        title="采集辅助"
-        description="可以先通过采集工具生成初始内容，再进入下方编辑区完成排版和 SEO 信息。"
-      >
-        <ScraperForm setContent={setContent} />
-      </AdminSectionCard>
+      <details className="cms-panel p-4 md:p-5">
+        <summary className="cursor-pointer text-sm font-semibold">
+          从网址采集初始内容
+        </summary>
+        <div className="mt-3">
+          <ScraperForm setContent={setContent} />
+        </div>
+      </details>
       <form
-        className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]"
+        className="cms-editor-layout grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_350px] 2xl:grid-cols-[minmax(0,1fr)_380px]"
         onSubmit={handleSubmit}
       >
         <AdminSectionCard
@@ -516,7 +518,7 @@ export function CreatePostWorkbench({
                 ))}
               </div>
             </div>
-            <div className="cms-mobile-save-bar flex flex-col gap-3 rounded-md border border-border/70 bg-background/95 px-4 py-3 shadow-sm backdrop-blur md:flex-row md:justify-end">
+            <div className="cms-mobile-save-bar flex flex-col gap-3 rounded-xl border border-primary/20 bg-card/95 p-4 shadow-sm backdrop-blur md:flex-row md:justify-end">
               <Button
                 type="button"
                 variant="secondary"

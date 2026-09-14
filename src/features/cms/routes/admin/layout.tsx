@@ -5,13 +5,8 @@ import { Suspense } from "react";
 import { isUnauthorizedError, requireAdminSession } from "@fwqgo/auth/session";
 
 import { AppSidebar } from "@/components/endpoint/app-sidebar";
-import { Separator } from "@/components/ui/separator";
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
-import AppBreadcrumb from "@/components/endpoint/app-breadcrumb";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { CmsWorkspaceHeader } from "@/features/cms/components/cms-workspace-header";
 import { CmsReleaseGuard } from "@/features/cms/components/cms-release-guard";
 import { AdminLoading } from "@/features/cms/components/admin-loading";
 
@@ -41,6 +36,9 @@ async function AuthenticatedAdminLayout({
 
   return (
     <div className="cms-theme min-h-dvh bg-background [&_input]:text-sm max-sm:[&_input]:text-base [&_textarea]:text-sm max-sm:[&_textarea]:text-base">
+      <a href="#cms-main-content" className="cms-skip-link">
+        跳转到工作区
+      </a>
       <CmsReleaseGuard releaseId={process.env.RELEASE_ID ?? "local"} />
       <Toaster
         position="top-center"
@@ -64,25 +62,30 @@ async function AuthenticatedAdminLayout({
           className: "dark:bg-zinc-950 dark:text-zinc-50",
         }}
       />
-      <main className="min-h-dvh">
-        <SidebarProvider>
+      <div className="min-h-dvh">
+        <SidebarProvider
+          style={
+            {
+              "--sidebar-width": "15.5rem",
+              "--sidebar-width-icon": "4rem",
+            } as React.CSSProperties
+          }
+        >
           <Suspense fallback={null}>
             <AppSidebar />
           </Suspense>
           <SidebarInset className="min-w-0">
-            <header className="sticky top-0 z-20 flex min-h-14 shrink-0 items-center gap-2 border-b border-border bg-background/95 pt-[env(safe-area-inset-top)] transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:min-h-14">
-              <div className="flex min-w-0 items-center gap-2 px-3">
-                <SidebarTrigger className="-ml-1 size-11" />
-                <Separator orientation="vertical" className="h-4" />
-                <Suspense fallback={null}>
-                  <AppBreadcrumb />
-                </Suspense>
-              </div>
-            </header>
-            <div className="min-w-0 overflow-x-hidden">{children}</div>
+            <CmsWorkspaceHeader />
+            <div
+              id="cms-main-content"
+              tabIndex={-1}
+              className="min-w-0 flex-1 outline-none"
+            >
+              {children}
+            </div>
           </SidebarInset>
         </SidebarProvider>
-      </main>
+      </div>
     </div>
   );
 }

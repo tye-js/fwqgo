@@ -1,6 +1,7 @@
 "use client";
 
 import { LoginForm } from "@/features/cms/components/login-form";
+import { CmsAuthShell } from "@/features/cms/components/cms-auth-shell";
 import { useEffect, useState } from "react";
 
 export default function Page() {
@@ -64,16 +65,18 @@ export default function Page() {
   };
 
   return (
-    <div className="cms-theme editorial-surface flex min-h-dvh w-full items-center justify-center bg-background px-4 py-10">
-      <LoginForm
-        handleLogin={handleLogin}
-        username={username}
-        setUsername={setUsername}
-        password={password}
-        setPassword={setPassword}
-        error={error}
-        isPending={isPending}
-      />
-    </div>
+    <main className="cms-theme flex min-h-dvh w-full items-center justify-center bg-background px-4 py-10 sm:px-6 lg:px-10">
+      <CmsAuthShell>
+        <LoginForm
+          handleLogin={handleLogin}
+          username={username}
+          setUsername={setUsername}
+          password={password}
+          setPassword={setPassword}
+          error={error}
+          isPending={isPending}
+        />
+      </CmsAuthShell>
+    </main>
   );
 }

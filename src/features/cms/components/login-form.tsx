@@ -7,7 +7,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,14 +32,16 @@ export function LoginForm({
   const errorId = error ? "login-form-error" : undefined;
 
   return (
-    <Card className="mx-auto w-full max-w-sm rounded-lg border-border/70 shadow-sm">
-      <CardHeader>
-        <CardTitle className="text-2xl">登录</CardTitle>
-        <CardDescription>输入管理员账号进入后台。</CardDescription>
+    <Card className="cms-panel mx-auto w-full max-w-md">
+      <CardHeader className="space-y-2 p-6 pb-5 sm:p-8 sm:pb-5">
+        <h2 className="text-2xl font-semibold tracking-tight">登录后台</h2>
+        <CardDescription className="text-sm leading-6">
+          欢迎回来，使用管理员账号进入工作空间。
+        </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-6 pt-0 sm:p-8 sm:pt-0">
         <form
-          className="grid gap-4"
+          className="grid gap-5"
           onSubmit={(event) => {
             event.preventDefault();
             handleLogin();
@@ -52,6 +53,7 @@ export function LoginForm({
               id="username"
               type="text"
               autoComplete="username"
+              className="h-12 rounded-lg bg-background/40"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               aria-invalid={Boolean(error)}
@@ -72,7 +74,7 @@ export function LoginForm({
                 onChange={(e) => setPassword(e.target.value)}
                 aria-invalid={Boolean(error)}
                 aria-describedby={errorId}
-                className="pr-12"
+                className="h-12 rounded-lg bg-background/40 pr-12"
                 required
               />
               <button
@@ -91,16 +93,20 @@ export function LoginForm({
             </div>
           </div>
           {error ? (
-            <p id="login-form-error" role="alert" className="text-sm text-destructive">
+            <p
+              id="login-form-error"
+              role="alert"
+              className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+            >
               {error}
             </p>
           ) : null}
           <Button
             type="submit"
-            className="w-full"
+            className="h-12 w-full rounded-lg"
             disabled={isPending}
           >
-            {isPending ? "登录中..." : "登录"}
+            {isPending ? "登录中..." : "进入工作空间"}
           </Button>
         </form>
       </CardContent>

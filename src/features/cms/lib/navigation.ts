@@ -1,5 +1,7 @@
 import {
   Bot,
+  BookOpen,
+  FileText,
   Images,
   LayoutDashboard,
   Megaphone,
@@ -24,36 +26,44 @@ export type CmsNavigationItem = {
 
 export const cmsNavigation: CmsNavigationItem[] = [
   {
-    title: "概览",
+    title: "工作台",
     url: "/",
     icon: LayoutDashboard,
   },
   {
-    title: "内容",
-    url: "/ai-rewrite/tasks",
-    icon: Bot,
+    title: "内容管理",
+    url: "/posts/edit",
+    icon: FileText,
     items: [
-      { title: "文章生产台", url: "/ai-rewrite/tasks" },
+      { title: "采集入稿", url: "/ai-rewrite/tasks" },
+      { title: "草稿箱", url: "/posts/drafts" },
       {
         title: "文章库",
         url: "/posts/edit",
-        matchUrls: ["/posts/drafts", "/posts/create", "/posts/edit/post"],
+        matchUrls: ["/posts/edit/post"],
       },
-      { title: "AI 任务中心", url: "/ai-tasks" },
-      {
-        title: "服务器知识库",
-        url: "/knowledge",
-        matchUrls: [
-          "/knowledge/sources",
-          "/knowledge/server-sizing",
-          "/knowledge/network-lines",
-        ],
-      },
+      { title: "新建文章", url: "/posts/create" },
       { title: "发布质检", url: "/posts/quality" },
     ],
   },
   {
-    title: "套餐",
+    title: "任务中心",
+    url: "/ai-tasks",
+    icon: Bot,
+  },
+  {
+    title: "知识管理",
+    url: "/knowledge",
+    icon: BookOpen,
+    items: [
+      { title: "知识条目", url: "/knowledge" },
+      { title: "来源资料", url: "/knowledge/sources" },
+      { title: "配置规则", url: "/knowledge/server-sizing" },
+      { title: "线路经验", url: "/knowledge/network-lines" },
+    ],
+  },
+  {
+    title: "服务器套餐",
     url: "/servers/manage",
     icon: Server,
     items: [
@@ -62,45 +72,37 @@ export const cmsNavigation: CmsNavigationItem[] = [
     ],
   },
   {
-    title: "媒体",
+    title: "图片媒体",
     url: "/images/list",
     icon: Images,
     items: [
-      {
-        title: "图片资产",
-        url: "/images/list",
-        matchUrls: ["/images/upload"],
-      },
-      {
-        title: "AI 生图",
-        url: "/images/covers",
-        matchUrls: ["/images/ai-generate"],
-      },
+      { title: "图片资产", url: "/images/list" },
+      { title: "上传图片", url: "/images/upload" },
+      { title: "文章封面", url: "/images/covers" },
+      { title: "通用生图", url: "/images/ai-generate" },
     ],
   },
   {
-    title: "运营",
+    title: "内容运营",
     url: "/collect/homepage-promoted",
     icon: Megaphone,
     items: [
       { title: "首页运营", url: "/collect/homepage-promoted" },
-      {
-        title: "链接管理",
-        url: "/collect/aff-man",
-        matchUrls: ["/collect/short-links"],
-      },
-      {
-        title: "SEO 管理",
-        url: "/seo",
-        matchUrls: ["/seo/category", "/seo/tag"],
-      },
+      { title: "供应商档案", url: "/collect/aff-man" },
+      { title: "短链管理", url: "/collect/short-links" },
+      { title: "主页 SEO", url: "/seo" },
+      { title: "分类 SEO", url: "/seo/category" },
+      { title: "标签 SEO", url: "/seo/tag" },
     ],
   },
   {
-    title: "模型与接口",
+    title: "接口设置",
     url: "/collect/ai-rewrite",
     icon: Settings,
-    matchUrls: ["/settings/image-generation"],
+    items: [
+      { title: "AI 服务配置", url: "/collect/ai-rewrite" },
+      { title: "生图接口配置", url: "/settings/image-generation" },
+    ],
   },
 ];
 
@@ -123,6 +125,52 @@ export function isCmsPathMatch(
       : normalizedPathname === candidate ||
         normalizedPathname.startsWith(`${candidate}/`),
   );
+}
+
+export type CmsNavigationEntry = CmsNavigationChild & {
+  groupTitle: string;
+  icon: LucideIcon;
+};
+
+export function getCmsNavigationEntries(query = ""): CmsNavigationEntry[] {
+  const entries = cmsNavigation.flatMap((group) =>
+    group.items?.length
+      ? group.items.map((item) => ({
+          ...item,
+          groupTitle: group.title,
+          icon: group.icon,
+        }))
+      : [
+          {
+            title: group.title,
+            url: group.url,
+            matchUrls: group.matchUrls,
+            groupTitle: "工作空间",
+            icon: group.icon,
+          },
+        ],
+  );
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return entries.filter((entry) => {
+    const searchable =
+      `${entry.title} ${entry.groupTitle} ${entry.url}`.toLowerCase();
+    return terms.every((term) => searchable.includes(term));
+  });
+}
+
+export function findCmsNavigationEntry(pathname: string) {
+  let selected: CmsNavigationEntry | undefined;
+  let bestLength = -1;
+  for (const entry of getCmsNavigationEntries()) {
+    for (const candidate of [entry.url, ...(entry.matchUrls ?? [])]) {
+      const length = normalizeCmsPath(candidate).length;
+      if (isCmsPathMatch(pathname, candidate) && length > bestLength) {
+        selected = entry;
+        bestLength = length;
+      }
+    }
+  }
+  return selected;
 }
 
 export const cmsBreadcrumbSegmentTitles: Record<string, string> = {
@@ -159,6 +207,8 @@ export const cmsBreadcrumbSegmentTitles: Record<string, string> = {
 
 export const cmsBreadcrumbPathTitles: Record<string, string> = {
   "/collect/ai-rewrite": "AI 服务配置",
+  "/ai-rewrite/tasks": "采集入稿",
+  "/posts/create": "新建文章",
 };
 
 export const cmsBreadcrumbPathHrefs: Record<string, string> = {
