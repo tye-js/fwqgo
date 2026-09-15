@@ -1,11 +1,20 @@
 import { and, desc, eq } from "drizzle-orm";
 import * as cheerio from "cheerio";
 import { z } from "zod";
-import { getActiveAiRewriteConfigWithFallback } from "@fwqgo/ai/rewrite-config";
+import {
+  getActiveAiRewriteConfigWithFallback,
+  getNextEnabledAiRewriteConfig,
+} from "@fwqgo/ai/rewrite-config";
+import {
+  AiProviderConnectionRefusedError,
+  AiProviderHttpError,
+  canFailoverAiProviderError,
+} from "@fwqgo/ai/openai-compatible";
 import {
   generateEnglishArticleContent,
   generateEnglishMetadata,
   type AiRewriteAuditEvent,
+  type AiRewriteExecutionOptions,
   type EnglishMetadataOutput,
 } from "@fwqgo/ai/article-rewriter";
 import { DEFAULT_ARTICLE_COVER } from "@fwqgo/core/article-cover";
@@ -34,6 +43,9 @@ import {
 
 type Task = typeof aiRewriteTasks.$inferSelect;
 type TaskValues = Partial<typeof aiRewriteTasks.$inferInsert>;
+type TranslationConfig = NonNullable<
+  Awaited<ReturnType<typeof getActiveAiRewriteConfigWithFallback>>
+>;
 
 export class EnglishTranslationTaskError extends Error {}
 
@@ -187,6 +199,64 @@ async function saveAudit(task: Task, event: AiRewriteAuditEvent) {
         aiRewriteArtifacts.stage,
         aiRewriteArtifacts.stageAttempt,
       ],
+      set: values,
+    });
+}
+
+async function saveProviderSwitch(
+  task: Task,
+  input: {
+    from: TranslationConfig;
+    to: TranslationConfig;
+    stepName: string;
+    progress: number;
+    reason: string;
+    switchNumber: number;
+  },
+) {
+  const message = `${input.stepName}：「${input.from.name}」${input.reason}，切换到「${input.to.name}」继续处理`;
+  await updateTask(task, {
+    currentStep: message,
+    progress: input.progress,
+    requestStage: "queued",
+    rewriteStyleId: input.to.id,
+    rewriteConfigName: input.to.name,
+    rewriteProvider: input.to.provider,
+    rewriteModel: input.to.model,
+    rewriteMaxTokens: input.to.maxTokens,
+  });
+  const now = new Date();
+  const describe = (config: TranslationConfig) => ({
+    id: config.id,
+    name: config.name,
+    provider: config.provider,
+    model: config.model,
+  });
+  const values = {
+    stepName: "翻译接口自动切换",
+    status: "success",
+    progress: input.progress,
+    message,
+    payload: JSON.stringify({
+      from: describe(input.from),
+      to: describe(input.to),
+      reason: input.reason,
+      stepName: input.stepName,
+    }),
+    startedAt: now,
+    finishedAt: now,
+    updatedAt: now,
+  };
+  await db
+    .insert(aiTaskSteps)
+    .values({
+      taskId: task.id,
+      attempt: task.attempts,
+      stepKey: `english_provider_switch_${input.switchNumber}`,
+      ...values,
+    })
+    .onConflictDoUpdate({
+      target: [aiTaskSteps.taskId, aiTaskSteps.stepKey, aiTaskSteps.attempt],
       set: values,
     });
 }
@@ -365,34 +435,99 @@ export async function runEnglishTranslationTask(
   if (!markdown.trim())
     throw new EnglishTranslationTaskError("中文正文为空，无法翻译");
   await updateTask(task, { aiInputLength: markdown.length });
-  let config:
-    | Awaited<ReturnType<typeof getActiveAiRewriteConfigWithFallback>>
-    | undefined;
-  async function requestOptions() {
-    if (!config) {
-      config = await getActiveAiRewriteConfigWithFallback(
-        task.rewriteStyleId ?? undefined,
-      );
-      if (!config?.apiKey?.trim())
-        throw new EnglishTranslationTaskError(
-          "没有可用的英文翻译模型，请先检查 AI 接口配置",
-        );
-      await updateTask(task, {
-        rewriteStyleId: config.id,
-        rewriteConfigName: config.name,
-        rewriteProvider: config.provider,
-        rewriteModel: config.model,
-        rewriteMaxTokens: config.maxTokens,
-      });
-    }
+  let config: TranslationConfig | null = null;
+  const failedConfigIds = new Set<number>();
+  const failures: string[] = [];
+  const auditStageAttempts = new Map<AiRewriteAuditEvent["stage"], number>();
+
+  async function requestOptions(
+    currentConfig: TranslationConfig,
+  ): Promise<AiRewriteExecutionOptions> {
+    await updateTask(task, {
+      rewriteStyleId: currentConfig.id,
+      rewriteConfigName: currentConfig.name,
+      rewriteProvider: currentConfig.provider,
+      rewriteModel: currentConfig.model,
+      rewriteMaxTokens: currentConfig.maxTokens,
+      requestStage: "queued",
+    });
+    const requestAuditAttempts = new Map<string, number>();
     return {
-      styleId: config.id,
+      styleId: currentConfig.id,
       signal,
-      onAudit: (event: AiRewriteAuditEvent) => saveAudit(task, event),
+      onAudit: (event: AiRewriteAuditEvent) => {
+        // Repeated updates share one row; another provider gets a new row.
+        const key = `${event.stage}:${event.stageAttempt}`;
+        let stageAttempt = requestAuditAttempts.get(key);
+        if (stageAttempt === undefined) {
+          stageAttempt = (auditStageAttempts.get(event.stage) ?? 0) + 1;
+          auditStageAttempts.set(event.stage, stageAttempt);
+          requestAuditAttempts.set(key, stageAttempt);
+        }
+        return saveAudit(task, { ...event, stageAttempt });
+      },
       onRequestStage: (
         requestStage: "request_started" | "response_received" | "checkpointed",
       ) => updateTask(task, { requestStage }),
     };
+  }
+
+  async function generateWithFailover<T>(
+    stepName: string,
+    progress: number,
+    generate: (options: AiRewriteExecutionOptions) => Promise<T>,
+  ): Promise<T> {
+    while (true) {
+      signal.throwIfAborted();
+      config ??= await getActiveAiRewriteConfigWithFallback(
+        task.rewriteStyleId ?? undefined,
+      );
+      if (!config)
+        throw new EnglishTranslationTaskError(
+          "没有可用的英文翻译模型，请先检查 AI 接口配置",
+        );
+      const currentConfig = config;
+      const options = await requestOptions(currentConfig);
+      try {
+        if (!currentConfig.apiKey?.trim()) {
+          throw new Error(
+            `AI 改写配置不完整：「${currentConfig.name}」缺少 API Key`,
+          );
+        }
+        return await generate(options);
+      } catch (error) {
+        signal.throwIfAborted();
+        if (!canFailoverAiProviderError(error)) throw error;
+
+        failedConfigIds.add(currentConfig.id);
+        const reason =
+          error instanceof AiProviderHttpError
+            ? `返回 HTTP ${error.status}`
+            : error instanceof AiProviderConnectionRefusedError
+              ? "拒绝连接"
+              : error instanceof Error &&
+                  error.message.startsWith("AI 接口地址 域名")
+                ? "域名解析失败"
+                : "接口配置不可用";
+        failures.push(`「${currentConfig.name}」${reason}`);
+        const next = await getNextEnabledAiRewriteConfig([...failedConfigIds]);
+        if (!next) {
+          throw new EnglishTranslationTaskError(
+            `${stepName}未完成，已无可切换的启用配置。${failures.join("；")}。请检查接口配置后重试`,
+          );
+        }
+        signal.throwIfAborted();
+        await saveProviderSwitch(task, {
+          from: currentConfig,
+          to: next,
+          stepName,
+          progress,
+          reason,
+          switchNumber: failedConfigIds.size,
+        });
+        config = next;
+      }
+    }
   }
   let translated = await readContentCheckpoint(
     task,
@@ -401,14 +536,16 @@ export async function runEnglishTranslationTask(
   );
   if (!translated) {
     await saveStep(task, "english_translation", "正在翻译完整中文正文", 25);
-    translated = await generateEnglishArticleContent(
-      {
-        title: task.sourceTitle ?? parent.title,
-        description: source.description,
-        keywords: source.keywords,
-        markdownContent: markdown,
-      },
-      await requestOptions(),
+    translated = await generateWithFailover("英文正文翻译", 25, (options) =>
+      generateEnglishArticleContent(
+        {
+          title: task.sourceTitle ?? parent.title,
+          description: source.description,
+          keywords: source.keywords,
+          markdownContent: markdown,
+        },
+        options,
+      ),
     );
     assertTranslatedArticleStructure(markdown, translated);
     await saveStep(
@@ -473,15 +610,17 @@ export async function runEnglishTranslationTask(
       .from(categories)
       .where(eq(categories.id, parent.categoryId))
       .limit(1);
-    metadata = await generateEnglishMetadata(
-      {
-        title: task.sourceTitle ?? parent.title,
-        description: source.description,
-        keywords: source.keywords,
-        enContent: translated,
-        category,
-      },
-      await requestOptions(),
+    metadata = await generateWithFailover("英文标题与摘要生成", 80, (options) =>
+      generateEnglishMetadata(
+        {
+          title: task.sourceTitle ?? parent.title,
+          description: source.description,
+          keywords: source.keywords,
+          enContent: translated,
+          category,
+        },
+        options,
+      ),
     );
     await saveStep(
       task,

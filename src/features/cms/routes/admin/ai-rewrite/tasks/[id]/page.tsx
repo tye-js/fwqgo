@@ -142,6 +142,9 @@ export async function AiRewriteTaskDetailPageContent({
   const latestSteps = task.steps.filter(
     (step) => step.attempt === task.attempts,
   );
+  const providerSwitches = task.steps.filter((step) =>
+    step.stepKey.startsWith("english_provider_switch_"),
+  );
   const historicalSteps = task.steps.filter(
     (step) =>
       !collectionSteps.some(({ key }) => key === step.stepKey) &&
@@ -325,6 +328,24 @@ export async function AiRewriteTaskDetailPageContent({
           ) : null}
         </div>
       </AdminSectionCard>
+
+      {translating && providerSwitches.length > 0 ? (
+        <AdminSectionCard title="翻译接口切换记录">
+          <ol className="space-y-3">
+            {providerSwitches.map((step) => (
+              <li
+                key={`${step.attempt}-${step.stepKey}`}
+                className="space-y-2 rounded-md border border-border/70 p-3"
+              >
+                <p className="text-xs text-muted-foreground">
+                  第 {step.attempt} 次执行 · {formatTime(step.startedAt)}
+                </p>
+                <p className="break-words text-sm leading-6">{step.message}</p>
+              </li>
+            ))}
+          </ol>
+        </AdminSectionCard>
+      ) : null}
 
       <AdminSectionCard
         title="来源与结果"

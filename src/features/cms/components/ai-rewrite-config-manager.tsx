@@ -745,6 +745,10 @@ export function AiRewriteConfigManager({ configs }: { configs: Config[] }) {
 
   return (
     <div className="space-y-5">
+      <p className="break-words text-sm leading-6 text-muted-foreground">
+        英文翻译接口明确报错、拒绝连接或域名解析失败时，会自动尝试其他已启用配置：默认配置优先，其余按下方列表顺序。
+        已完成的英文正文会保留，接口切换可在任务详情查看。超时、断连或网关超时需人工确认后重试。
+      </p>
       <div className="flex justify-end">
         <Button
           variant="outline"

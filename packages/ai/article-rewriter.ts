@@ -9,9 +9,11 @@ import { fetchPublicHttpUrlOnce } from "@fwqgo/core/network-url";
 import { readResponseTextWithLimit } from "@fwqgo/core/bounded-response-body";
 
 import {
+  AiProviderConnectionRefusedError,
   AiProviderHttpError,
   buildOpenAiChatCompletionsEndpoint,
   getTransientAiNetworkErrorMessage,
+  isAiProviderConnectionRefused,
   isTransientAiNetworkError,
   parseAiJsonObject,
 } from "./openai-compatible";
@@ -752,7 +754,13 @@ async function requestChatCompletionResult(input: {
           }),
         },
         "AI 接口地址",
-      );
+      ).catch((error: unknown) => {
+        // Only transport errors belong here; audit/DB failures must not fail over.
+        if (isAiProviderConnectionRefused(error)) {
+          throw new AiProviderConnectionRefusedError();
+        }
+        throw error;
+      });
       const responseText = await readResponseTextWithLimit(
         response,
         MAX_AI_RESPONSE_BYTES,

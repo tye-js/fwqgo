@@ -64,10 +64,11 @@ const bulk=await bulkEnqueueEnglishVersionsForPostsAction([20]);assert.equal(bul
 `);
 });
 
-const translationFixture = String.raw`
+const translationSetupFixture = String.raw`
 import assert from "node:assert/strict";
 import {mock} from "bun:test";
 import {PgDialect} from "drizzle-orm/pg-core";
+import {AiProviderHttpError} from "./packages/ai/openai-compatible.ts";
 import {createEnglishTranslationSource} from "./src/server/ai/english-translation-source.ts";
 const dialect=new PgDialect(),name=t=>t[Symbol.for("drizzle:Name")];
 const original={id:20,title:"中文优惠文章",content:"## 中文套餐\n\n"+"完整中文原文，不可改写。".repeat(600)+"\n\n| 方案 | 购买 |\n| --- | --- |\n| A | [购买 A](https://merchant.example/buy?pid=1&affid=33) |\n| B | [购买 B](https://merchant.example/buy?pid=2&affid=33) |",description:"中文描述",keywords:"VPS,香港",categoryId:3,language:"zh"};
@@ -75,7 +76,8 @@ const translated="## English plans\n\n"+"Faithful English translation of the com
 const metadata={enTitle:"English VPS offer",enSlug:"english-vps-offer",enDescription:"A faithful English offer description",enKeywords:["VPS","Hong Kong"],enTags:[{name:"VPS",slug:"vps"},{name:"Hong Kong",slug:"hong-kong"}],enRecommendTagName:"VPS",enCategoryName:"VPS",enCategorySlug:"vps"};
 const snapshot=createEnglishTranslationSource(original);
 const f={parent:structuredClone(original),task:{id:41,sourceType:"english",sourceUrl:"post://20/english",sourceTitle:original.title,sourceContent:original.content,diagnostics:JSON.stringify(snapshot),categoryId:3,rewriteStyleId:7,status:"running",leaseOwner:"owner",attempts:1},english:[],steps:[],artifacts:[],bodyCalls:0,metadataCalls:0,configReads:0,failSave:false,failMetadata:false,changeSource:false,loseLease:false,noConfig:false};
-const config={id:7,name:"Translation fixture",provider:"compatible",model:"fixture",maxTokens:8192,temperature:0,apiKey:"fixture-key-not-for-snapshots"};
+const config={id:7,name:"Translation fixture",provider:"compatible",model:"fixture",baseUrl:"https://primary.example/v1",maxTokens:8192,temperature:0,apiKey:"fixture-key-not-for-snapshots",enabled:true,isDefault:true,englishContentPrompt:"Translate the complete source:\n{markdownContent}",englishContinuationPrompt:"Continue {originalPrompt}\n{generatedContentTail}",englishMetadataPrompt:"Return English metadata for {enContent}"};
+Object.assign(f,{configs:[config],bodyConfigIds:[],metadataConfigIds:[],backupSelections:[],bodyFailures:new Map(),metadataFailures:new Map()});
 const db={
  async transaction(work){const before=structuredClone({parent:f.parent,task:f.task,english:f.english,steps:f.steps,artifacts:f.artifacts});try{return await work(db);}catch(error){Object.assign(f,before);throw error;}},
  select(){let table,condition;const rows=()=>{
@@ -86,21 +88,55 @@ const db={
   throw new Error("Unexpected read: "+table);
  };const q={from(t){table=name(t);return q;},where(c){condition=c;return q;},orderBy(){return q;},for(){return q;},limit:async()=>structuredClone(rows()),then(resolve,reject){return Promise.resolve().then(rows).then(resolve,reject);}};return q;},
  update(t){let values,condition;const apply=()=>{assert.equal(name(t),"ai_rewrite_tasks");const q=dialect.sqlToQuery(condition);if(q.sql.includes('"leaseOwner" =')&&!q.params.includes(f.task.leaseOwner))return [];if(q.sql.includes('"status" =')&&!q.params.includes(f.task.status))return [];f.task={...f.task,...values};return [structuredClone(f.task)];};const q={set(v){values=v;return q;},where(c){condition=c;return q;},returning:async()=>apply(),then(resolve,reject){return Promise.resolve().then(apply).then(resolve,reject);}};return q;},
- insert(t){let values;const apply=()=>{const table=name(t);if(table==="ai_task_steps"){if(f.failSave&&values.stepKey==="english_save")throw new Error("Fixture save failed");const found=f.steps.find(v=>v.stepKey===values.stepKey&&v.attempt===values.attempt);if(found)Object.assign(found,values);else f.steps.push(values);return;}if(table==="ai_rewrite_artifacts"){f.artifacts.push(values);return;}throw new Error("Unexpected insert: "+table);};const q={values(v){values=v;return q;},onConflictDoUpdate:async()=>apply()};return q;},
+ insert(t){let values;const apply=()=>{const table=name(t);if(table==="ai_task_steps"){if(f.failSave&&values.stepKey==="english_save")throw new Error("Fixture save failed");const found=f.steps.find(v=>v.stepKey===values.stepKey&&v.attempt===values.attempt);if(found)Object.assign(found,values);else f.steps.push(values);return;}if(table==="ai_rewrite_artifacts"){if(f.failAudit)throw Object.assign(new Error("Fixture audit database failed"),{code:"ECONNREFUSED"});const found=f.artifacts.find(v=>v.taskId===values.taskId&&v.taskAttempt===values.taskAttempt&&v.stage===values.stage&&v.stageAttempt===values.stageAttempt);if(found)Object.assign(found,values);else f.artifacts.push(values);return;}throw new Error("Unexpected insert: "+table);};const q={values(v){values=v;return q;},onConflictDoUpdate:async()=>apply()};return q;},
 };
 mock.module("@fwqgo/db",()=>({db}));
-mock.module("@fwqgo/ai/rewrite-config",()=>({getActiveAiRewriteConfigWithFallback:async()=>{f.configReads++;if(f.noConfig)throw new Error("A completed checkpoint must not require model configuration");return config;}}));
-const audit=(stage,text)=>({stage,stageName:stage,stageAttempt:1,status:"success",prompt:"fixture-prompt",response:text,readableContent:text,maxTokens:8192,temperature:0,finishReason:"stop",config:{id:7,name:config.name,provider:config.provider,model:config.model,maxTokens:8192,temperature:0,updatedAt:null}});
-mock.module("@fwqgo/ai/article-rewriter",()=>({
- generateEnglishArticleContent:async(input,options)=>{f.bodyCalls++;assert.ok(input.markdownContent.includes("完整中文原文"));assert.ok(input.markdownContent.includes("pid=2&affid=33"));await options.onRequestStage("request_started");if(f.loseLease)f.task.leaseOwner="new-owner";await options.onAudit(audit("english_content_generation",translated));await options.onRequestStage("checkpointed");return translated;},
- generateEnglishMetadata:async(input,options)=>{f.metadataCalls++;assert.equal(input.enContent,translated);if(f.failMetadata)throw new Error("Fixture metadata failed");if(f.changeSource)f.parent.content+="\n用户刚保存的新正文";await options.onAudit(audit("english_metadata_generation",JSON.stringify(metadata)));return metadata;},
+const enabledConfigs=()=>f.configs.filter(c=>c.enabled).sort((a,b)=>Number(b.isDefault)-Number(a.isDefault)||b.id-a.id);
+mock.module("@fwqgo/ai/rewrite-config",()=>({
+ getActiveAiRewriteConfigWithFallback:async(id)=>{f.configReads++;if(f.noConfig)throw new Error("A completed checkpoint must not require model configuration");return enabledConfigs().find(c=>c.id===id)??enabledConfigs()[0]??null;},
+ getActiveAiRewriteConfig:async(id)=>id?enabledConfigs().find(c=>c.id===id)??null:enabledConfigs()[0]??null,
+ getNextEnabledAiRewriteConfig:async(excluded)=>{f.backupSelections.push([...excluded]);return enabledConfigs().find(c=>!excluded.includes(c.id))??null;},
 }));
+`;
+
+const translationModelFixture = String.raw`
+const audit=(stage,text,current,status="success")=>({stage,stageName:stage,stageAttempt:1,status,prompt:"fixture-prompt",response:text,readableContent:text,maxTokens:current.maxTokens,temperature:0,finishReason:"stop",config:{id:current.id,name:current.name,provider:current.provider,model:current.model,maxTokens:current.maxTokens,temperature:0,updatedAt:null}});
+mock.module("@fwqgo/ai/article-rewriter",()=>({
+ generateEnglishArticleContent:async(input,options)=>{
+  f.bodyCalls++;f.bodyConfigIds.push(options.styleId);const current=f.configs.find(c=>c.id===options.styleId);
+  assert.ok(input.markdownContent.includes("完整中文原文"));assert.ok(input.markdownContent.includes("pid=2&affid=33"));await options.onRequestStage("request_started");
+  if(f.loseLease)f.task.leaseOwner="new-owner";
+  await options.onAudit(audit("english_content_generation",undefined,current,"running"));
+  const error=f.bodyFailures.get(options.styleId);if(error){await options.onAudit({...audit("english_content_generation",undefined,current,"failed"),error:error.message});f.onBodyFailure?.();throw error;}
+  const content=f.invalidBody?translated.replace("pid=2&affid=33","pid=2&affid=changed"):translated;
+  await options.onAudit(audit("english_content_generation",content,current));await options.onRequestStage("checkpointed");return content;
+ },
+ generateEnglishMetadata:async(input,options)=>{
+  f.metadataCalls++;f.metadataConfigIds.push(options.styleId);const current=f.configs.find(c=>c.id===options.styleId);assert.equal(input.enContent,translated);
+  if(f.failMetadata)throw new Error("Fixture metadata failed");if(f.changeSource)f.parent.content+="\n用户刚保存的新正文";
+  await options.onAudit(audit("english_metadata_generation",undefined,current,"running"));
+  const error=f.metadataFailures.get(options.styleId);if(error){await options.onAudit({...audit("english_metadata_generation",undefined,current,"failed"),error:error.message});throw error;}
+  await options.onAudit(audit("english_metadata_generation",JSON.stringify(metadata),current));return metadata;
+ },
+}));
+`;
+
+const translationRuntimeFixture = String.raw`
 mock.module("@/server/posts/create-post-record",()=>({createPostRecordInTransaction:async(input,tx)=>{assert.equal(tx,db);const post={...input.post,id:42};f.english.push(post);return {data:post};}}));
 mock.module("@/server/images/assets",()=>({syncImageReferencesForPost:async()=>{}}));
 mock.module("@/server/posts/internal-links",()=>({regeneratePostInternalLinks:async input=>{assert.equal(input.includeKnowledge,false);}}));
 mock.module("@/server/cache/public-revalidation-client",()=>({schedulePublicWebCache(){}}));
 const {runEnglishTranslationTask,assertTranslatedArticleStructure}=await import("./src/server/ai/english-translation-task.ts");
 const run=()=>runEnglishTranslationTask(structuredClone(f.task),snapshot,new AbortController().signal);
+`;
+
+const translationFixture =
+  translationSetupFixture + translationModelFixture + translationRuntimeFixture;
+
+const fallbackConfigsFixture = String.raw`
+const backup={...config,id:9,name:"Backup translation",model:"backup-model",baseUrl:"https://backup.example/v1",apiKey:"backup-key-fixture",maxTokens:12000,temperature:20,isDefault:false};
+const lastBackup={...config,id:8,name:"Last translation",model:"last-model",baseUrl:"https://last.example/v1",apiKey:"last-key-fixture",isDefault:false};
+f.configs.push(backup,lastBackup,{...config,id:99,name:"Disabled configuration",enabled:false,isDefault:false});
 `;
 
 void test("English translation saves an independent draft and keeps the source and every purchase link", () => {
@@ -140,6 +176,184 @@ f.failMetadata=false;f.task.attempts=2;await run();
 assert.equal(f.bodyCalls,1);assert.equal(f.metadataCalls,2);assert.equal(f.english[0].content,translated);
 `,
   );
+});
+
+void test("server and connection failures switch the real translation requests, credentials and model without losing earlier audits", () => {
+  for (const failureMode of [
+    "http",
+    "continuation",
+    "connection-refused",
+    "dns",
+  ]) {
+    isolated(
+      translationSetupFixture +
+        fallbackConfigsFixture +
+        `const failureMode=${JSON.stringify(failureMode)},failDuringContinuation=failureMode==="continuation";\n` +
+        String.raw`
+import * as networkModule from "./packages/core/network-url.ts";
+const network={...networkModule},requests=[];let primaryCalls=0;
+mock.module("@fwqgo/core/network-url",()=>({...network,fetchPublicHttpUrlOnce:async(url,options)=>{
+ const body=JSON.parse(options.body),current=f.configs.find(c=>String(url).startsWith(c.baseUrl));
+ assert.ok(current);assert.equal(options.headers.Authorization,"Bearer "+current.apiKey);assert.equal(body.model,current.model);assert.equal(body.max_tokens,current.maxTokens);assert.equal(body.temperature,current.temperature/100);
+ const stage=body.response_format?"metadata":"body";requests.push({configId:current.id,stage});
+ if(current.id===config.id){
+  primaryCalls++;
+  if(failureMode==="connection-refused")throw new TypeError("fetch failed",{cause:Object.assign(new Error("connect refused"),{code:"ECONNREFUSED"})});
+  if(failureMode==="dns")throw new Error("AI 接口地址 域名解析失败：Fixture DNS failure");
+  if(failDuringContinuation&&primaryCalls===1)return new Response(JSON.stringify({choices:[{message:{content:"PRIMARY_PARTIAL English translation. ".repeat(50)},finish_reason:"length"}]}));
+  return new Response(JSON.stringify({error:{message:"Fixture service unavailable"}}),{status:503});
+ }
+ assert.equal(current.id,backup.id);
+ if(stage==="body"){assert.ok(body.messages[0].content.includes("完整中文原文"));assert.ok(body.messages[0].content.includes("pid=2&affid=33"));assert.ok(!body.messages[0].content.includes("PRIMARY_PARTIAL"));}
+ const content=stage==="metadata"?JSON.stringify({...metadata,enTags:metadata.enTags.map(t=>t.name)}):translated;
+ return new Response(JSON.stringify({choices:[{message:{content},finish_reason:"stop"}],usage:{prompt_tokens:1000,completion_tokens:1500,total_tokens:2500}}));
+}}));
+` +
+        translationRuntimeFixture +
+        String.raw`
+await run();
+assert.deepEqual(requests,[{configId:7,stage:"body"},...(failDuringContinuation?[{configId:7,stage:"body"}]:[]),{configId:9,stage:"body"},{configId:9,stage:"metadata"}]);
+assert.equal(f.english.length,1);assert.equal(f.english[0].content,translated);assert.deepEqual(f.parent,original);assert.equal(f.task.rewriteStyleId,9);assert.equal(f.task.rewriteModel,backup.model);assert.equal(f.task.status,"succeeded");
+const bodies=f.artifacts.filter(v=>v.stage==="english_content_generation");assert.equal(bodies.length,2);assert.deepEqual(bodies.map(v=>v.stageAttempt),[1,2]);assert.deepEqual(bodies.map(v=>JSON.parse(v.configSnapshot).id),[7,9]);assert.equal(bodies[0].status,failDuringContinuation?"success":"failed");assert.equal(bodies[1].status,"success");
+if(failDuringContinuation){assert.ok(bodies[0].response.includes("PRIMARY_PARTIAL"));assert.equal(f.artifacts.find(v=>v.stage==="english_continuation").status,"failed");}
+const switches=f.steps.filter(v=>v.stepKey.startsWith("english_provider_switch_"));assert.equal(switches.length,1);const payload=JSON.parse(switches[0].payload);assert.equal(payload.from.id,7);assert.equal(payload.to.id,9);assert.match(payload.reason,failureMode==="connection-refused"?/拒绝连接/:failureMode==="dns"?/域名解析/:/503/);
+const stored=JSON.stringify({steps:f.steps,artifacts:f.artifacts});for(const c of f.configs)assert.ok(!stored.includes(c.apiKey));
+assert.deepEqual(f.configs.filter(c=>c.isDefault).map(c=>c.id),[7]);
+`,
+    );
+  }
+});
+
+void test("metadata failover keeps the completed body and does not revisit a failed provider", () => {
+  isolated(
+    translationFixture +
+      fallbackConfigsFixture +
+      String.raw`
+f.bodyFailures.set(7,new AiProviderHttpError("Fixture HTTP 503",503));
+f.metadataFailures.set(9,new AiProviderHttpError("Fixture HTTP 502",502));
+f.failSave=true;await assert.rejects(run(),/Fixture save failed/);assert.equal(f.english.length,0);
+f.failSave=false;f.noConfig=true;f.task.attempts=2;
+await run();
+assert.deepEqual(f.bodyConfigIds,[7,9]);assert.deepEqual(f.metadataConfigIds,[9,8]);assert.deepEqual(f.backupSelections,[[7],[7,9]]);
+assert.equal(f.english.length,1);assert.equal(f.english[0].content,translated);assert.equal(f.task.rewriteStyleId,8);
+const metadataAudits=f.artifacts.filter(v=>v.stage==="english_metadata_generation");assert.deepEqual(metadataAudits.map(v=>[JSON.parse(v.configSnapshot).id,v.status,v.stageAttempt]),[[9,"failed",1],[8,"success",2]]);
+assert.equal(f.steps.filter(v=>v.stepKey.startsWith("english_provider_switch_")).length,2);
+`,
+  );
+});
+
+void test("exhausted translation configurations stop after one failed attempt each and report the reasons", () => {
+  isolated(
+    translationFixture +
+      fallbackConfigsFixture +
+      String.raw`
+for(const [id,status] of [[7,503],[9,402],[8,429]])f.bodyFailures.set(id,new AiProviderHttpError("Fixture failure",status));
+await assert.rejects(run(),error=>{assert.match(error.message,/已无可切换/);for(const c of [config,backup,lastBackup])assert.ok(error.message.includes(c.name));for(const status of [503,402,429])assert.ok(error.message.includes(String(status)));return true;});
+assert.deepEqual(f.bodyConfigIds,[7,9,8]);assert.deepEqual(f.backupSelections,[[7],[7,9],[7,9,8]]);assert.equal(f.metadataCalls,0);assert.equal(f.english.length,0);assert.deepEqual(f.parent,original);
+assert.deepEqual(f.artifacts.filter(v=>v.stage==="english_content_generation").map(v=>v.status),["failed","failed","failed"]);
+`,
+  );
+});
+
+void test("uncertain requests and invalid model output stop the failover chain", () => {
+  for (const failure of [
+    'new AiProviderHttpError("HTTP 408",408)',
+    'new AiProviderHttpError("HTTP 504",504)',
+    'new AiProviderHttpError("HTTP 524",524)',
+    'new Error("AI 改写请求超时；上游可能仍在处理")',
+    'new Error("The socket connection was closed unexpectedly")',
+    'new Error("第三方 AI 中转连接中断：配置名包含缺少 API Key")',
+    'new Error("英文正文翻译尚未完成")',
+    'new Error("AI 接口返回格式错误")',
+  ]) {
+    isolated(
+      translationFixture +
+        fallbackConfigsFixture +
+        `const failure=${failure};\n` +
+        String.raw`
+f.bodyFailures.set(7,new AiProviderHttpError("HTTP 503",503));f.bodyFailures.set(9,failure);
+await assert.rejects(run(),error=>error===failure);
+assert.deepEqual(f.bodyConfigIds,[7,9]);assert.deepEqual(f.backupSelections,[[7]]);assert.equal(f.english.length,0);
+`,
+    );
+  }
+  isolated(
+    translationFixture +
+      fallbackConfigsFixture +
+      String.raw`
+f.invalidBody=true;await assert.rejects(run(),/链接/);
+assert.deepEqual(f.bodyConfigIds,[7]);assert.equal(f.backupSelections.length,0);assert.equal(f.english.length,0);
+`,
+  );
+});
+
+void test("missing keys and a configuration disabled between stages can switch without redoing the body", () => {
+  isolated(
+    translationFixture +
+      fallbackConfigsFixture +
+      String.raw`
+config.apiKey="";await run();assert.deepEqual(f.bodyConfigIds,[9]);assert.deepEqual(f.metadataConfigIds,[9]);assert.equal(f.task.rewriteStyleId,9);assert.equal(f.english.length,1);
+`,
+  );
+  isolated(
+    translationFixture +
+      fallbackConfigsFixture +
+      String.raw`
+f.metadataFailures.set(7,new Error("英文 SEO 生成未启用；原因：当前配置已停用"));
+await run();assert.deepEqual(f.bodyConfigIds,[7]);assert.deepEqual(f.metadataConfigIds,[7,9]);assert.equal(f.english.length,1);assert.equal(f.english[0].content,translated);
+`,
+  );
+});
+
+void test("cancellation, lease loss and audit storage failures never launch another provider", () => {
+  isolated(
+    translationFixture +
+      fallbackConfigsFixture +
+      String.raw`
+const controller=new AbortController();f.bodyFailures.set(7,new AiProviderHttpError("HTTP 503",503));f.onBodyFailure=()=>controller.abort(new Error("Fixture cancelled"));
+await assert.rejects(runEnglishTranslationTask(structuredClone(f.task),snapshot,controller.signal),/Fixture cancelled/);
+assert.deepEqual(f.bodyConfigIds,[7]);assert.equal(f.backupSelections.length,0);assert.equal(f.english.length,0);
+`,
+  );
+  isolated(
+    translationFixture +
+      fallbackConfigsFixture +
+      String.raw`
+f.bodyFailures.set(7,new AiProviderHttpError("HTTP 503",503));f.onBodyFailure=()=>{f.task.leaseOwner="new-owner";};
+await assert.rejects(run());assert.deepEqual(f.bodyConfigIds,[7]);assert.equal(f.task.leaseOwner,"new-owner");assert.equal(f.english.length,0);
+`,
+  );
+  isolated(
+    translationFixture +
+      fallbackConfigsFixture +
+      String.raw`
+f.failAudit=true;await assert.rejects(run(),/Fixture audit database failed/);
+assert.deepEqual(f.bodyConfigIds,[7]);assert.equal(f.backupSelections.length,0);assert.equal(f.english.length,0);
+`,
+  );
+});
+
+void test("backup configuration selection excludes disabled and failed entries and only resolves the selected key", () => {
+  isolated(String.raw`
+import assert from "node:assert/strict";
+import {mock} from "bun:test";
+import {PgDialect} from "drizzle-orm/pg-core";
+const dialect=new PgDialect(),resolved=[];
+const configs=[{id:7,isDefault:true,enabled:true,apiKey:"primary-key"},{id:15,isDefault:false,enabled:false,apiKey:"must-not-read"},{id:9,isDefault:false,enabled:true,apiKey:"newer-key"},{id:8,isDefault:false,enabled:true,apiKey:"older-key"}];
+const db={select(){let condition,order;const q={from(){return q;},where(value){condition=value;return q;},orderBy(...value){order=value;return q;},limit:async(limit)=>{
+ assert.equal(limit,1);const filter=dialect.sqlToQuery(condition);assert.ok(filter.sql.includes('"enabled" ='));assert.ok(filter.params.includes(true));const excluded=filter.params.filter(v=>typeof v==="number");if(excluded.length)assert.match(filter.sql,/not in/);
+ assert.match(dialect.sqlToQuery(order[0]).sql,/"isDefault" desc/);assert.match(dialect.sqlToQuery(order[1]).sql,/"id" desc/);
+ return configs.filter(c=>c.enabled&&!excluded.includes(c.id)).sort((a,b)=>Number(b.isDefault)-Number(a.isDefault)||b.id-a.id).slice(0,limit);
+}};return q;}};
+mock.module("@fwqgo/db",()=>({db}));
+mock.module("@fwqgo/core/secret-envelope",()=>({decryptSecret:value=>{resolved.push(value);assert.notEqual(value,"must-not-read");return {value,needsMigration:false};},hasSecretEncryptionKey:()=>false,encryptSecret:()=>{throw new Error("Unexpected encryption");},maskStoredSecret:()=>"masked"}));
+const {getNextEnabledAiRewriteConfig}=await import("./packages/ai/rewrite-config.ts");
+assert.equal((await getNextEnabledAiRewriteConfig([])).id,7);
+assert.equal((await getNextEnabledAiRewriteConfig([7])).id,9);
+assert.equal((await getNextEnabledAiRewriteConfig([7,9])).id,8);
+assert.equal(await getNextEnabledAiRewriteConfig([7,9,8]),null);
+assert.deepEqual(resolved,["primary-key","newer-key","older-key"]);
+`);
 });
 
 void test("source edits and lost leases prevent stale translation writes", () => {

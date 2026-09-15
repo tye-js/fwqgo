@@ -29,31 +29,37 @@ export class AiProviderHttpError extends Error {
   }
 }
 
+export class AiProviderConnectionRefusedError extends Error {
+  constructor() {
+    super("AI 接口拒绝连接，服务暂时不可用");
+    this.name = "AiProviderConnectionRefusedError";
+  }
+}
+
+export function isAiProviderConnectionRefused(error: unknown) {
+  return errorDetails(error).includes("ECONNREFUSED");
+}
+
 export function canFailoverAiProviderError(error: unknown) {
+  if (error instanceof AiProviderConnectionRefusedError) return true;
   if (error instanceof AiProviderHttpError) {
     // A complete HTTP response proves that the provider rejected or failed
     // the request. Keep timeout/gateway-timeout statuses out because the
     // upstream may still be processing a non-idempotent request.
     return new Set([
-      400,
-      401,
-      402,
-      403,
-      404,
-      405,
-      413,
-      415,
-      422,
-      429,
-      500,
-      501,
-      502,
-      503,
+      400, 401, 402, 403, 404, 405, 413, 415, 422, 429, 500, 501, 502, 503,
     ]).has(error.status);
   }
 
   const message = error instanceof Error ? error.message : "";
-  return /AI 改写配置不完整|缺少 API Key|AI 接口地址校验失败/.test(message);
+  return (
+    /^(?:AI 改写配置不完整|缺少 API Key|AI 接口地址校验失败|(?:英文正文生成|英文 SEO 生成)未启用)(?:[：:；\s]|$)/.test(
+      message,
+    ) ||
+    /^AI 接口地址 (?:不安全或格式不正确|域名解析失败|域名没有可用解析记录|解析到了非公网地址)(?:[：:\s]|$)/.test(
+      message,
+    )
+  );
 }
 
 export function isTransientAiNetworkError(error: unknown) {

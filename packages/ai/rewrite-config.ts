@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, notInArray, sql } from "drizzle-orm";
 
 import { db } from "@fwqgo/db";
 import { aiRewriteConfigs } from "@fwqgo/db/schema";
@@ -196,8 +196,27 @@ export async function getActiveAiRewriteConfigWithFallback(styleId?: number) {
   const preferred = await getActiveAiRewriteConfig(styleId);
   if (preferred || !styleId) return preferred;
 
-  const [fallback] = await getEnabledAiRewriteConfigs();
-  return fallback ?? null;
+  return getNextEnabledAiRewriteConfig([styleId]);
+}
+
+export async function getNextEnabledAiRewriteConfig(
+  excludedConfigIds: number[],
+) {
+  const [next] = await db
+    .select(activeAiRewriteConfigColumns)
+    .from(aiRewriteConfigs)
+    .where(
+      and(
+        eq(aiRewriteConfigs.enabled, true),
+        excludedConfigIds.length
+          ? notInArray(aiRewriteConfigs.id, excludedConfigIds)
+          : undefined,
+      ),
+    )
+    .orderBy(desc(aiRewriteConfigs.isDefault), desc(aiRewriteConfigs.id))
+    .limit(1);
+
+  return next ? withPromptDefaults(await resolveStoredApiKey(next)) : null;
 }
 
 export async function getEnabledAiRewriteConfigs() {
@@ -205,12 +224,11 @@ export async function getEnabledAiRewriteConfigs() {
     .select(activeAiRewriteConfigColumns)
     .from(aiRewriteConfigs)
     .where(eq(aiRewriteConfigs.enabled, true))
-    .orderBy(
-      desc(aiRewriteConfigs.isDefault),
-      desc(aiRewriteConfigs.id),
-    );
+    .orderBy(desc(aiRewriteConfigs.isDefault), desc(aiRewriteConfigs.id));
 
-  return Promise.all(rows.map((row) => resolveStoredApiKey(withPromptDefaults(row))));
+  return Promise.all(
+    rows.map((row) => resolveStoredApiKey(withPromptDefaults(row))),
+  );
 }
 
 export async function getAiRewriteConfigForStatusCheck(id: number) {
