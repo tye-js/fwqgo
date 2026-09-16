@@ -11,6 +11,13 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import { CoverTaskPromptCopy } from "@/features/cms/components/cover-task-prompt-copy";
 import { UnifiedTaskActionButtons } from "@/features/cms/components/unified-task-action-buttons";
+import { TaskDetailAutoRefresh } from "@/features/cms/components/task-detail-auto-refresh";
+import {
+  TaskMutationBadge,
+  TaskMutationBoundary,
+  TaskMutationMessage,
+  TaskMutationText,
+} from "@/features/cms/components/task-mutation-feedback";
 import {
   UnifiedTaskStat,
   UnifiedTaskStepTimeline,
@@ -89,7 +96,7 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  return (
+  const content = (
     <AdminPageShell
       badge="封面生图任务"
       title={task.title}
@@ -123,10 +130,17 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
         </div>
       }
     >
+      <TaskDetailAutoRefresh
+        enabled={task.status === "pending" || task.status === "running"}
+      />
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
         <UnifiedTaskStat
           label="状态"
-          value={statusLabels[task.status] ?? task.status}
+          value={
+            <TaskMutationText>
+              {statusLabels[task.status] ?? task.status}
+            </TaskMutationText>
+          }
         />
         <UnifiedTaskStat
           label="任务类型"
@@ -135,7 +149,11 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
         <UnifiedTaskStat
           label="请求阶段"
           value={
-            requestStageLabels[task.requestStage] ?? task.requestStage ?? "-"
+            <TaskMutationText mode="message">
+              {requestStageLabels[task.requestStage] ??
+                task.requestStage ??
+                "-"}
+            </TaskMutationText>
           }
         />
         <UnifiedTaskStat label="批次" value={task.batchId} />
@@ -162,7 +180,9 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
           />
           <div className="space-y-3 text-sm">
             <div className="flex flex-wrap gap-2">
-              <Badge>{statusLabels[task.status] ?? task.status}</Badge>
+              <TaskMutationBadge>
+                {statusLabels[task.status] ?? task.status}
+              </TaskMutationBadge>
               {task.asset ? (
                 <Badge variant="outline">资产 #{task.asset.id}</Badge>
               ) : null}
@@ -176,13 +196,17 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
               </Badge>
             </div>
             <p className="break-all text-muted-foreground">
-              {task.description}
+              <TaskMutationText mode="message">
+                {task.description}
+              </TaskMutationText>
             </p>
-            {task.error ? (
-              <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-destructive">
-                {task.error}
-              </p>
-            ) : null}
+            <TaskMutationMessage>
+              {task.error ? (
+                <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-destructive">
+                  {task.error}
+                </p>
+              ) : null}
+            </TaskMutationMessage>
             {task.outputUrl ? (
               <p className="break-all text-xs text-muted-foreground">
                 输出地址：{task.outputUrl}
@@ -199,8 +223,12 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
               </details>
             ) : null}
             <p className="break-all text-xs text-muted-foreground">
-              请求阶段：
-              {requestStageLabels[task.requestStage] ?? task.requestStage ?? "-"}
+              <TaskMutationText mode="message">
+                请求阶段：
+                {requestStageLabels[task.requestStage] ??
+                  task.requestStage ??
+                  "-"}
+              </TaskMutationText>
             </p>
           </div>
         </div>
@@ -231,5 +259,10 @@ export default async function CoverTaskDetailPage({ params }: PageProps) {
         <UnifiedTaskStepTimeline steps={task.steps} />
       </AdminSectionCard>
     </AdminPageShell>
+  );
+  return (
+    <TaskMutationBoundary key={task.id} type="cover">
+      {content}
+    </TaskMutationBoundary>
   );
 }

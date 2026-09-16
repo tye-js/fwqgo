@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 export function TaskDetailAutoRefresh({
@@ -11,13 +11,14 @@ export function TaskDetailAutoRefresh({
   intervalMs?: number;
 }) {
   const router = useRouter();
+  const [refreshPending, startRefresh] = useTransition();
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || refreshPending) return;
 
     const refresh = () => {
       if (document.visibilityState === "visible") {
-        router.refresh();
+        startRefresh(() => router.refresh());
       }
     };
     const interval = window.setInterval(refresh, intervalMs);
@@ -27,7 +28,7 @@ export function TaskDetailAutoRefresh({
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [enabled, intervalMs, router]);
+  }, [enabled, intervalMs, router, refreshPending, startRefresh]);
 
   return null;
 }

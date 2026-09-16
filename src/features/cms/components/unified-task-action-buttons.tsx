@@ -16,6 +16,7 @@ import {
 } from "@/features/cms/actions/article-cover-image";
 import { retryProviderMonitorRunAction } from "@/features/cms/actions/provider-monitors";
 import { useAdminMutation } from "@/features/cms/hooks/use-admin-mutation";
+import { useTaskMutationFeedback } from "./task-mutation-feedback";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -108,8 +109,9 @@ export function UnifiedTaskActionButtons({
 }) {
   const router = useRouter();
   const { mutate, isPending } = useAdminMutation();
+  const feedback = useTaskMutationFeedback();
   const mutationKey = `unified-task:${type}:${taskId}`;
-  const pending = isPending(mutationKey);
+  const pending = isPending(mutationKey) || feedback.mutation !== null;
   const taskLabel =
     type === "ai"
       ? "文章采集任务"
@@ -118,9 +120,13 @@ export function UnifiedTaskActionButtons({
         : "供应商采集任务";
 
   function handleRetry() {
+    if (pending) return;
     const actionLabel = status === "cancelled" ? "恢复" : "重试";
     void mutate({
       key: mutationKey,
+      optimistic: feedback.optimistic(
+        status === "cancelled" ? "resume" : "retry",
+      ),
       action: () => retryTask(type, taskId),
       pendingMessage: {
         title: `正在${actionLabel}${taskLabel}...`,
@@ -139,8 +145,10 @@ export function UnifiedTaskActionButtons({
   }
 
   function handleCancel() {
+    if (pending) return;
     void mutate({
       key: mutationKey,
+      optimistic: feedback.optimistic("cancel"),
       action: () => cancelTask(type, taskId),
       pendingMessage: {
         title: `正在取消${taskLabel}...`,
@@ -159,10 +167,11 @@ export function UnifiedTaskActionButtons({
   }
 
   function handleResolve() {
-    if (type !== "ai") return;
+    if (type !== "ai" || pending) return;
 
     void mutate({
       key: mutationKey,
+      optimistic: feedback.optimistic("resolve"),
       action: () => resolveManualRequiredAiRewriteTaskAction(taskId),
       pendingMessage: {
         title: "正在更新 AI 任务状态...",
@@ -181,10 +190,12 @@ export function UnifiedTaskActionButtons({
   }
 
   function handleDelete() {
-    if ((type !== "ai" && type !== "cover") || status === "running") return;
+    if ((type !== "ai" && type !== "cover") || status === "running" || pending)
+      return;
 
     void mutate({
       key: mutationKey,
+      optimistic: feedback.optimistic("delete"),
       action: () => deleteTask(type, taskId),
       pendingMessage: {
         title: `正在删除${taskLabel}...`,
@@ -235,7 +246,7 @@ export function UnifiedTaskActionButtons({
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>取消</AlertDialogCancel>
-                <AlertDialogAction onClick={handleRetry}>
+                <AlertDialogAction onClick={handleRetry} disabled={pending}>
                   我已确认，继续重试
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -305,7 +316,7 @@ export function UnifiedTaskActionButtons({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>取消</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDelete}>
+              <AlertDialogAction onClick={handleDelete} disabled={pending}>
                 确定删除
               </AlertDialogAction>
             </AlertDialogFooter>

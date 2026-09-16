@@ -1,6 +1,8 @@
 import { AlertCircle, CheckCircle2, CircleDashed, XCircle } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { TaskMutationIdle } from "./task-mutation-feedback";
 
 type UnifiedTaskStep = {
   key: string;
@@ -74,7 +76,7 @@ export function UnifiedTaskStat({
   value,
 }: {
   label: string;
-  value: string | number | null | undefined;
+  value: ReactNode;
 }) {
   return (
     <div className="rounded-md border border-border/70 bg-background p-3">
@@ -92,42 +94,46 @@ export function UnifiedTaskStepTimeline({
   steps: UnifiedTaskStep[];
 }) {
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
-      {steps.map((step) => (
-        <div
-          key={step.key}
-          className="flex gap-3 rounded-md border border-border/70 bg-background p-3"
-        >
-          <div className="mt-0.5">
-            <StepIcon status={step.status} />
-          </div>
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-medium text-foreground">{step.name}</p>
-              <Badge variant={stepStatusVariants[step.status]}>
-                {stepStatusLabels[step.status]}
-              </Badge>
+    <TaskMutationIdle>
+      <div className="grid gap-3 lg:grid-cols-2">
+        {steps.map((step) => (
+          <div
+            key={step.key}
+            className="flex gap-3 rounded-md border border-border/70 bg-background p-3"
+          >
+            <div className="mt-0.5">
+              <StepIcon status={step.status} />
             </div>
-            <p className="text-xs leading-5 text-muted-foreground">
-              {step.description}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {formatTime(step.time)}
-            </p>
-            {step.payload ? (
-              <details className="pt-1">
-                <summary className="cursor-pointer text-xs font-medium text-primary">
-                  查看日志 / payload
-                </summary>
-                <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
-                  {payloadPreview(step.payload)}
-                </pre>
-              </details>
-            ) : null}
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-medium text-foreground">
+                  {step.name}
+                </p>
+                <Badge variant={stepStatusVariants[step.status]}>
+                  {stepStatusLabels[step.status]}
+                </Badge>
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground">
+                {step.description}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {formatTime(step.time)}
+              </p>
+              {step.payload ? (
+                <details className="pt-1">
+                  <summary className="cursor-pointer text-xs font-medium text-primary">
+                    查看日志 / payload
+                  </summary>
+                  <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
+                    {payloadPreview(step.payload)}
+                  </pre>
+                </details>
+              ) : null}
+            </div>
           </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </TaskMutationIdle>
   );
 }
 

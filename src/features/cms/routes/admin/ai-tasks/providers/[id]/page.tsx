@@ -10,6 +10,13 @@ import {
   AdminSectionCard,
 } from "@/features/cms/components/admin-page-shell";
 import { UnifiedTaskActionButtons } from "@/features/cms/components/unified-task-action-buttons";
+import { TaskDetailAutoRefresh } from "@/features/cms/components/task-detail-auto-refresh";
+import {
+  TaskMutationBadge,
+  TaskMutationBoundary,
+  TaskMutationMessage,
+  TaskMutationText,
+} from "@/features/cms/components/task-mutation-feedback";
 import {
   UnifiedTaskStat,
   UnifiedTaskStepTimeline,
@@ -41,11 +48,11 @@ export default async function ProviderRunDetailPage({ params }: PageProps) {
   const run = await getProviderRunDetail(runId);
   if (!run) notFound();
 
-  return (
+  const content = (
     <AdminPageShell
       badge="供应商采集任务"
       title={run.title}
-      description="查看供应商请求、解析质量、幂等同步、待审核数量、缺失判定和可读失败原因。"
+      description="查看本次采集结果和失败原因。每次运行独立保留记录，重试会提交新的采集运行。"
       actions={
         <div className="flex w-full flex-wrap gap-2 md:w-auto">
           <Button asChild variant="outline">
@@ -68,10 +75,15 @@ export default async function ProviderRunDetailPage({ params }: PageProps) {
         </div>
       }
     >
+      <TaskDetailAutoRefresh enabled={run.status === "running"} />
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
         <UnifiedTaskStat
           label="状态"
-          value={statusLabels[run.status] ?? run.status}
+          value={
+            <TaskMutationText>
+              {statusLabels[run.status] ?? run.status}
+            </TaskMutationText>
+          }
         />
         <UnifiedTaskStat label="适配器" value={run.adapter.toUpperCase()} />
         <UnifiedTaskStat
@@ -92,11 +104,11 @@ export default async function ProviderRunDetailPage({ params }: PageProps) {
       >
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge
+            <TaskMutationBadge
               variant={run.status === "failed" ? "destructive" : "outline"}
             >
               {statusLabels[run.status] ?? run.status}
-            </Badge>
+            </TaskMutationBadge>
             <Badge variant="outline">
               {run.autoPublish ? "新套餐自动发布" : "新套餐先审核"}
             </Badge>
@@ -113,11 +125,13 @@ export default async function ProviderRunDetailPage({ params }: PageProps) {
             {run.endpointUrl}
             <ExternalLink className="size-3 shrink-0" />
           </a>
-          {run.error ? (
-            <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm leading-6 text-destructive">
-              {run.error}
-            </p>
-          ) : null}
+          <TaskMutationMessage>
+            {run.error ? (
+              <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm leading-6 text-destructive">
+                {run.error}
+              </p>
+            ) : null}
+          </TaskMutationMessage>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
             <UnifiedTaskStat label="接收" value={run.received} />
             <UnifiedTaskStat label="新增" value={run.created} />
@@ -137,5 +151,10 @@ export default async function ProviderRunDetailPage({ params }: PageProps) {
         <UnifiedTaskStepTimeline steps={run.steps} />
       </AdminSectionCard>
     </AdminPageShell>
+  );
+  return (
+    <TaskMutationBoundary key={run.id} type="offer">
+      {content}
+    </TaskMutationBoundary>
   );
 }

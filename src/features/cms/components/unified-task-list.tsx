@@ -21,6 +21,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { UnifiedTaskActionButtons } from "@/features/cms/components/unified-task-action-buttons";
+import { TaskDetailAutoRefresh } from "./task-detail-auto-refresh";
+import {
+  TaskMutationBadge,
+  TaskMutationBoundary,
+  TaskMutationIdle,
+  TaskMutationMessage,
+} from "./task-mutation-feedback";
 import { PaginationComponent } from "@/features/shared/components/pagination";
 import type {
   UnifiedTaskListResult,
@@ -112,6 +119,11 @@ export function UnifiedTaskList({ result }: { result: UnifiedTaskListResult }) {
 
   return (
     <div className="space-y-5">
+      <TaskDetailAutoRefresh
+        enabled={result.items.some(
+          (task) => task.status === "pending" || task.status === "running",
+        )}
+      />
       <div className="cms-workbench space-y-4 p-4 md:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex flex-wrap gap-1 rounded-lg bg-muted/40 p-1">
@@ -208,83 +220,94 @@ export function UnifiedTaskList({ result }: { result: UnifiedTaskListResult }) {
             </TableHeader>
             <TableBody>
               {result.items.map((task) => (
-                <TableRow key={task.uid}>
-                  <TableCell>
-                    <Link
-                      href={task.href}
-                      className="group flex min-h-11 items-start gap-2 rounded-sm px-1 py-1 hover:bg-muted/50"
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="flex flex-wrap items-center gap-2">
-                          <Badge variant="outline">
-                            {typeLabels[task.type]}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground">
-                            #{task.id} · {task.sourceLabel}
-                          </span>
-                        </span>
-                        <span className="mt-1 line-clamp-2 block text-sm font-medium">
-                          {task.title}
-                        </span>
-                        <span
-                          className={
-                            task.error
-                              ? "mt-1 line-clamp-2 block text-xs leading-5 text-destructive"
-                              : "mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground"
-                          }
-                          title={task.error ?? task.description}
-                        >
-                          {task.error ?? task.description}
-                        </span>
-                      </span>
-                      <ChevronRight className="mt-1 size-4 shrink-0 opacity-50 transition-transform group-hover:translate-x-0.5 group-hover:opacity-100" />
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <div className="space-y-2.5">
-                      <Badge variant={statusVariant(task.status)}>
-                        {statusLabels[task.status] ?? task.status}
-                      </Badge>
-                      {task.status === "pending" ||
-                      task.status === "running" ? (
-                        <div className="space-y-1.5">
-                          <Progress value={task.progress} />
-                          <p className="text-xs tabular-nums text-muted-foreground">
-                            {task.progress}%
-                          </p>
-                        </div>
-                      ) : null}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {task.post ? (
+                <TaskMutationBoundary key={task.uid} type={task.type}>
+                  <TableRow>
+                    <TableCell>
                       <Link
-                        href={`/posts/edit/post/${encodeURIComponent(task.post.slug)}`}
-                        className="line-clamp-2 min-h-11 rounded-sm px-1 py-1 text-sm hover:bg-muted/50"
+                        href={task.href}
+                        className="group flex min-h-11 items-start gap-2 rounded-sm px-1 py-1 hover:bg-muted/50"
                       >
-                        <span className="line-clamp-2">{task.post.title}</span>
-                        <span className="mt-1 block text-xs uppercase text-muted-foreground">
-                          {task.post.language === "en" ? "EN" : "中文"}
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <Badge variant="outline">
+                              {typeLabels[task.type]}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              #{task.id} · {task.sourceLabel}
+                            </span>
+                          </span>
+                          <span className="mt-1 line-clamp-2 block text-sm font-medium">
+                            {task.title}
+                          </span>
+                          <TaskMutationMessage
+                            as="span"
+                            className="mt-1 text-xs leading-5"
+                          >
+                            <span
+                              className={
+                                task.error
+                                  ? "mt-1 block break-words text-xs leading-5 text-destructive"
+                                  : "mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground"
+                              }
+                              title={task.error ?? task.description}
+                            >
+                              {task.error ?? task.description}
+                            </span>
+                          </TaskMutationMessage>
                         </span>
+                        <ChevronRight className="mt-1 size-4 shrink-0 opacity-50 transition-transform group-hover:translate-x-0.5 group-hover:opacity-100" />
                       </Link>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {formatTime(task.updatedAt ?? task.createdAt)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <UnifiedTaskActionButtons
-                      type={task.type}
-                      taskId={task.id}
-                      status={task.status}
-                      canRetry={task.canRetry}
-                      canCancel={task.canCancel}
-                      canResolve={task.canResolve}
-                    />
-                  </TableCell>
-                </TableRow>
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-2.5">
+                        <TaskMutationBadge variant={statusVariant(task.status)}>
+                          {statusLabels[task.status] ?? task.status}
+                        </TaskMutationBadge>
+                        <TaskMutationIdle>
+                          {task.status === "pending" ||
+                          task.status === "running" ? (
+                            <div className="space-y-1.5">
+                              <Progress value={task.progress} />
+                              <p className="text-xs tabular-nums text-muted-foreground">
+                                {task.progress}%
+                              </p>
+                            </div>
+                          ) : null}
+                        </TaskMutationIdle>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {task.post ? (
+                        <Link
+                          href={`/posts/edit/post/${encodeURIComponent(task.post.slug)}`}
+                          className="line-clamp-2 min-h-11 rounded-sm px-1 py-1 text-sm hover:bg-muted/50"
+                        >
+                          <span className="line-clamp-2">
+                            {task.post.title}
+                          </span>
+                          <span className="mt-1 block text-xs uppercase text-muted-foreground">
+                            {task.post.language === "en" ? "EN" : "中文"}
+                          </span>
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatTime(task.updatedAt ?? task.createdAt)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <UnifiedTaskActionButtons
+                        type={task.type}
+                        taskId={task.id}
+                        status={task.status}
+                        canRetry={task.canRetry}
+                        canCancel={task.canCancel}
+                        canResolve={task.canResolve}
+                      />
+                    </TableCell>
+                  </TableRow>
+                </TaskMutationBoundary>
               ))}
             </TableBody>
           </Table>

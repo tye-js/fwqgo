@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -106,13 +113,32 @@ function runOptimisticCallbackSafely(
   }
 }
 
+const emptyPendingKeys: ReadonlySet<string> = new Set();
+
 export function useAdminMutation() {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const pendingKeysRef = useRef<ReadonlySet<string>>(new Set());
+  const inFlightKeysRef = useRef(new Set<string>());
   const [pendingKeys, setPendingKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const [transitionPendingKeys, markTransitionPending] = useOptimistic(
+    emptyPendingKeys,
+    (current, update: { key: string; pending: boolean }) =>
+      updatePendingAdminMutationKeys(current, update.key, update.pending),
+  );
+
+  useEffect(() => {
+    // Release locks only after the matching UI update has committed. A stale
+    // effect must not unlock a newer request before its pending state renders.
+    if (pendingKeys !== pendingKeysRef.current) return;
+    for (const key of inFlightKeysRef.current) {
+      if (!pendingKeys.has(key) && !transitionPendingKeys.has(key)) {
+        inFlightKeysRef.current.delete(key);
+      }
+    }
+  }, [pendingKeys, transitionPendingKeys]);
 
   const setKeyPending = useCallback((key: string, pending: boolean) => {
     const next = updatePendingAdminMutationKeys(
@@ -128,10 +154,11 @@ export function useAdminMutation() {
     <TResult>(
       options: AdminMutationOptions<TResult>,
     ): Promise<AdminMutationOutcome<TResult>> => {
-      if (pendingKeysRef.current.has(options.key)) {
+      if (inFlightKeysRef.current.has(options.key)) {
         return Promise.resolve({ status: "duplicate" });
       }
 
+      inFlightKeysRef.current.add(options.key);
       setKeyPending(options.key, true);
       const pendingMessage = asToastMessage(
         options.pendingMessage ?? "正在处理...",
@@ -142,7 +169,10 @@ export function useAdminMutation() {
 
       return new Promise((resolve) => {
         startTransition(async () => {
+          markTransitionPending({ key: options.key, pending: true });
           let optimisticApplied = false;
+          let acceptedResult: { value: TResult } | null = null;
+          let waitForRefresh = false;
           try {
             optimisticApplied = Boolean(options.optimistic);
             options.optimistic?.apply();
@@ -156,9 +186,11 @@ export function useAdminMutation() {
                 suggestion: options.errorSuggestion,
               });
               if (optimisticApplied) {
-                runOptimisticCallbackSafely(
-                  options.optimistic?.rollback,
-                  "rollback",
+                startTransition(() =>
+                  runOptimisticCallbackSafely(
+                    options.optimistic?.rollback,
+                    "rollback",
+                  ),
                 );
               }
               toast.error(failure.title, {
@@ -176,9 +208,11 @@ export function useAdminMutation() {
             });
             if (failure) {
               if (optimisticApplied) {
-                runOptimisticCallbackSafely(
-                  options.optimistic?.rollback,
-                  "rollback",
+                startTransition(() =>
+                  runOptimisticCallbackSafely(
+                    options.optimistic?.rollback,
+                    "rollback",
+                  ),
                 );
               }
               toast.error(failure.title, {
@@ -190,7 +224,10 @@ export function useAdminMutation() {
               return;
             }
 
-            runOptimisticCallbackSafely(options.optimistic?.commit, "commit");
+            acceptedResult = { value: result };
+            startTransition(() =>
+              runOptimisticCallbackSafely(options.optimistic?.commit, "commit"),
+            );
             const successMessage = resolveSuccessMessage(
               options.successMessage,
               result,
@@ -204,18 +241,29 @@ export function useAdminMutation() {
             });
             await runCallbackSafely(options.onSuccess, result, "onSuccess");
             if (options.refresh !== false) {
-              router.refresh();
+              waitForRefresh = true;
+              startTransition(() => router.refresh());
             }
             resolve({ status: "success", result });
           } catch (error) {
+            if (acceptedResult) {
+              toast.warning("操作已提交，页面同步失败", {
+                id: toastId,
+                description: "请刷新查看最新状态，避免重复提交。",
+              });
+              resolve({ status: "success", result: acceptedResult.value });
+              return;
+            }
             const failure = normalizeAdminMutationError(error, {
               title: options.errorTitle,
               suggestion: options.errorSuggestion,
             });
             if (optimisticApplied) {
-              runOptimisticCallbackSafely(
-                options.optimistic?.rollback,
-                "rollback",
+              startTransition(() =>
+                runOptimisticCallbackSafely(
+                  options.optimistic?.rollback,
+                  "rollback",
+                ),
               );
             }
             toast.error(failure.title, {
@@ -225,22 +273,27 @@ export function useAdminMutation() {
             await runCallbackSafely(options.onError, failure, "onError");
             resolve({ status: "error", failure });
           } finally {
+            if (!waitForRefresh) {
+              startTransition(() =>
+                markTransitionPending({ key: options.key, pending: false }),
+              );
+            }
             setKeyPending(options.key, false);
           }
         });
       });
     },
-    [router, setKeyPending, startTransition],
+    [router, setKeyPending, startTransition, markTransitionPending],
   );
 
   const isPending = useCallback(
-    (key: string) => pendingKeys.has(key),
-    [pendingKeys],
+    (key: string) => pendingKeys.has(key) || transitionPendingKeys.has(key),
+    [pendingKeys, transitionPendingKeys],
   );
 
   return {
     mutate,
     isPending,
-    isAnyPending: pendingKeys.size > 0,
+    isAnyPending: pendingKeys.size > 0 || transitionPendingKeys.size > 0,
   };
 }
