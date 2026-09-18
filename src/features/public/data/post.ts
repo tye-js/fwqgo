@@ -269,7 +269,12 @@ export async function getHomepagePostsWithTags(
 export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
   "use cache";
   cacheLife({ stale: 300, revalidate: 300, expire: 3_600 });
-  tagCache(cacheTags.homepage, cacheTags.sidebar, cacheTags.posts);
+  tagCache(
+    cacheTags.homepage,
+    cacheTags.sidebar,
+    cacheTags.posts,
+    cacheTags.categories,
+  );
 
   const promotedPostsPromise = (async () => {
     try {
@@ -313,7 +318,7 @@ export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
     }
   })();
 
-  const popularPostsPromise = (async () => {
+  const editorPicksPromise = (async () => {
     try {
       return await readDb
         .select({
@@ -322,32 +327,32 @@ export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
           slug: posts.slug,
           description: posts.description,
           imgUrl: posts.imgUrl,
-          views: posts.views,
           createdAt: posts.createdAt,
         })
         .from(posts)
-        .where(publicPostCondition(language))
-        .orderBy(desc(posts.views), desc(posts.createdAt), desc(posts.id))
-        .limit(6);
+        .innerJoin(categories, eq(posts.categoryId, categories.id))
+        .where(
+          and(
+            eq(categories.name, "站长推荐"),
+            publicPostCondition(language),
+          ),
+        )
+        .orderBy(desc(posts.createdAt), desc(posts.id))
+        .limit(5);
     } catch (error) {
-      throw new Error("获取首页热门文章失败", { cause: error });
+      throw new Error("获取首页站长推荐文章失败", { cause: error });
     }
   })();
 
-  const [promotedPosts, popularPosts] = await Promise.all([
+  const [promotedPosts, editorPicks] = await Promise.all([
     promotedPostsPromise,
-    popularPostsPromise,
+    editorPicksPromise,
   ]);
-
-  const promotedIds = new Set(promotedPosts.map((post) => post.id));
-  const dedupedPopularPosts = popularPosts.filter(
-    (post) => !promotedIds.has(post.id),
-  );
 
   return {
     data: {
       promotedPosts,
-      popularPosts: dedupedPopularPosts,
+      editorPicks,
     },
   };
 }

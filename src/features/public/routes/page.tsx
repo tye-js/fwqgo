@@ -57,6 +57,7 @@ async function HomeContent() {
     cacheTags.homepage,
     cacheTags.homepageSlots,
     cacheTags.posts,
+    cacheTags.categories,
     cacheTags.tags,
     cacheTags.sidebar,
     cacheTags.serverOffers,

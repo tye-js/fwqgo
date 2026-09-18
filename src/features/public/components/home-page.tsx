@@ -144,7 +144,7 @@ export function PublicHomePage({
   const sidebarSlots = homepageSlots.filter(
     (slot) => slot.placement === "sidebar",
   );
-  const popularPosts = sidebarData?.popularPosts ?? [];
+  const editorPicks = sidebarData?.editorPicks ?? [];
   const promotedPosts = sidebarData?.promotedPosts ?? [];
   const coupons = latestOffers
     .filter((offer) => offer.promoCode?.trim())
@@ -510,17 +510,17 @@ export function PublicHomePage({
                 </div>
               </section>
             ) : null}
-            {popularPosts.length > 0 ? (
+            {editorPicks.length > 0 ? (
               <section className="public-panel p-5">
                 <h2 className="text-base font-semibold">
-                  {english ? "Readers are exploring" : "大家都在读"}
+                  {english ? "Editor's picks" : "站长推荐"}
                 </h2>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {english
-                    ? "Ranked by all-time article views"
-                    : "按文章累计浏览量排序"}
+                    ? "Latest articles in Editor's Picks"
+                    : "站长推荐分类的最新文章"}
                 </p>
-                {popularPosts.slice(0, 5).map((post, index) => (
+                {editorPicks.slice(0, 5).map((post, index) => (
                   <ReadingLink
                     key={post.id}
                     post={post}
@@ -533,7 +533,7 @@ export function PublicHomePage({
             {sidebarSlots.length > 0 || promotedPosts.length > 0 ? (
               <section className="public-panel p-5">
                 <h2 className="mb-4 text-base font-semibold">
-                  {english ? "Editor's picks" : "站长推荐"}
+                  {english ? "Featured promotions" : "精选推广"}
                 </h2>
                 {sidebarSlots.length > 0 ? (
                   <HomepageSidebarPromotions slots={sidebarSlots} />
