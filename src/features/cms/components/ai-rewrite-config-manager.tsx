@@ -515,8 +515,8 @@ function ConfigForm({
             value={
               defaults?.englishContentPrompt ?? defaultEnglishContentPrompt
             }
-            variables={["title", "description", "keywords", "markdownContent"]}
-            description="用于将已保存的完整中文正文翻译为英文 Markdown，保留表格、参数和链接。"
+            variables={["markdownContent"]}
+            description="仅需已保存的完整中文正文；翻译为英文 Markdown，保留所有段落、表格、参数和链接。"
             className="min-h-72 lg:min-h-[30rem]"
           />
           <PromptTemplateField
@@ -536,14 +536,8 @@ function ConfigForm({
             value={
               defaults?.englishMetadataPrompt ?? defaultEnglishMetadataPrompt
             }
-            variables={[
-              "title",
-              "description",
-              "keywords",
-              "categoryContext",
-              "enContent",
-            ]}
-            description="用于英文标题、slug、摘要、关键词、标签和分类元信息。"
+            variables={["enContent"]}
+            description="仅依据英文正文生成标题、slug、摘要、关键词和标签，无需重复传入中文 SEO 数据。文章沿用来源分类。"
             className="min-h-72 lg:min-h-[32rem]"
           />
         </div>

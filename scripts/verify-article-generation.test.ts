@@ -112,7 +112,7 @@ mock.module("@fwqgo/ai/article-rewriter",()=>({
   await options.onAudit(audit("english_content_generation",content,current));await options.onRequestStage("checkpointed");return content;
  },
  generateEnglishMetadata:async(input,options)=>{
-  f.metadataCalls++;f.metadataConfigIds.push(options.styleId);const current=f.configs.find(c=>c.id===options.styleId);assert.equal(input.enContent,translated);
+  f.metadataCalls++;f.metadataConfigIds.push(options.styleId);const current=f.configs.find(c=>c.id===options.styleId);assert.equal(input.enContent,translated);assert.equal(input.category,undefined,"Drafts inherit their source category without AI classification");
   if(f.failMetadata)throw new Error("Fixture metadata failed");if(f.changeSource)f.parent.content+="\n用户刚保存的新正文";
   await options.onAudit(audit("english_metadata_generation",undefined,current,"running"));
   const error=f.metadataFailures.get(options.styleId);if(error){await options.onAudit({...audit("english_metadata_generation",undefined,current,"failed"),error:error.message});throw error;}
@@ -399,6 +399,53 @@ mode="truncated";calls=0;await assert.rejects(generateEnglishArticleContent(inpu
 mode="empty-continuation";calls=0;await assert.rejects(generateEnglishArticleContent(input),/尚未完成/);assert.equal(calls,2);
 const controller=new AbortController();controller.abort(new Error("cancelled by fixture"));calls=0;
 await assert.rejects(generateEnglishArticleContent(input,{signal:controller.signal}),/cancelled by fixture/);assert.equal(calls,0);
+`);
+});
+
+void test("English default prompts use only stage content and never fall back to Chinese SEO fields", () => {
+  isolated(String.raw`
+import assert from "node:assert/strict";
+import {mock} from "bun:test";
+import * as networkModule from "./packages/core/network-url.ts";
+import {defaultEnglishContentPrompt,defaultEnglishMetadataPrompt,resolveEnglishContentPromptTemplate,resolveEnglishMetadataPromptTemplate} from "./packages/core/ai-rewrite-prompts.ts";
+const network={...networkModule};
+const config={id:1,name:"Fixture",provider:"compatible",baseUrl:"https://api.example/v1",apiKey:"fixture",model:"fixture",temperature:0,maxTokens:8192,updatedAt:null,englishContentPrompt:defaultEnglishContentPrompt,englishMetadataPrompt:defaultEnglishMetadataPrompt};
+const source={title:"中文标题不得重复发送",description:"中文摘要不得重复发送",keywords:"中文关键词不得重复发送"};
+const markdownContent="完整中文原文，价格 $9.99，2GB RAM，链接 https://example.test/buy?pid=2&affid=33。".repeat(1000)+"SOURCE END";
+const enContent="Complete English hosting article with 2GB RAM for $9.99 and its purchase link. ".repeat(10);
+const metadata={enTitle:"Provider VPS with 2GB RAM",enSlug:"provider-vps",enDescription:"A VPS hosting deal with 2GB RAM and the stated monthly price of $9.99.",enKeywords:["VPS","Hosting"],enTags:["VPS","Hosting"],enRecommendTagName:"VPS"};
+let mode="body",responseMetadata=metadata;const requests=[];
+mock.module("@fwqgo/ai/rewrite-config",()=>({getActiveAiRewriteConfig:async()=>config}));
+mock.module("@fwqgo/core/network-url",()=>({...network,fetchPublicHttpUrlOnce:async(url,options)=>{const request=JSON.parse(options.body);requests.push(request);return new Response(JSON.stringify({choices:[{message:{content:mode==="body"?enContent:JSON.stringify(responseMetadata)},finish_reason:"stop"}]}));}}));
+const {generateEnglishArticleContent,generateEnglishMetadata}=await import("./packages/ai/article-rewriter.ts");
+assert.equal(await generateEnglishArticleContent({...source,markdownContent}),enContent.trim());
+let prompt=requests.at(-1).messages[0].content;assert.ok(prompt.endsWith("SOURCE END"));for(const value of Object.values(source))assert.ok(!prompt.includes(value));
+mode="metadata";const result=await generateEnglishMetadata({...source,enContent});prompt=requests.at(-1).messages[0].content;
+assert.ok(prompt.includes(enContent));for(const value of Object.values(source))assert.ok(!prompt.includes(value));
+assert.ok(!prompt.includes("enCategoryName"));assert.equal(result.enTitle,metadata.enTitle);assert.equal(result.enCategoryName,null);assert.equal(result.enCategorySlug,null);
+for(const field of ["enTitle","enDescription"]){responseMetadata={...metadata,[field]:""};await assert.rejects(generateEnglishMetadata({...source,enContent}),/返回字段不完整/);}
+responseMetadata={...metadata,enCategoryName:"Dedicated Servers",enCategorySlug:"dedicated-servers"};
+const backfill=await generateEnglishMetadata({...source,enContent,category:{name:"独立服务器",slug:"dedicated"}});prompt=requests.at(-1).messages[0].content;
+assert.ok(prompt.includes("enCategoryName"));assert.ok(prompt.includes("独立服务器"));assert.equal(backfill.enCategoryName,"Dedicated Servers");
+for(const [resolve,template] of [[resolveEnglishContentPromptTemplate,defaultEnglishContentPrompt],[resolveEnglishMetadataPromptTemplate,defaultEnglishMetadataPrompt]]){assert.equal(resolve(null),template);assert.equal(resolve("  "),template);const custom="Custom instruction {title} {markdownContent} {enContent}";assert.equal(resolve(custom),custom);}
+`);
+});
+
+void test("AI configuration accepts simplified English templates while requiring the article variable and admin authentication", () => {
+  isolated(String.raw`
+import assert from "node:assert/strict";
+import {mock} from "bun:test";
+const f={authorized:true,saved:[]};
+mock.module("@fwqgo/auth/session",()=>({requireAdminSession:async()=>{if(!f.authorized)throw Error("Unauthorized");return {userId:"admin"};}}));
+mock.module("@/server/admin/audit-log",()=>({recordAdminAuditLogSafely:async()=>{}}));
+mock.module("next/cache",()=>({revalidatePath(){}}));
+mock.module("@fwqgo/ai/rewrite-status-check",()=>({checkAiRewriteConfigStatus:async()=>{}}));
+mock.module("@fwqgo/ai/rewrite-config",()=>({aiProviderOptions:["compatible"],createAiRewriteConfig:async input=>{f.saved.push(input);return {id:1};},updateAiRewriteConfig:async(id,input)=>{f.saved.push(input);return {id};},deleteAiRewriteConfig:async()=>{},getAiRewriteConfigs:async()=>[],setAiRewriteConfigEnabled:async()=>{},setDefaultAiRewriteConfig:async()=>{}}));
+const {createAiRewriteConfigAction,updateAiRewriteConfigAction}=await import("./src/features/cms/actions/ai-rewrite-config.ts");
+const form=new FormData();for(const [key,value] of Object.entries({name:"Translation",provider:"compatible",baseUrl:"https://api.example.com/v1",model:"fixture",basePrompt:"{sourceContent} {protectedContent}",metadataPrompt:"{markdownContent}",styleName:"English",englishContentPrompt:"Translate {markdownContent}",englishContinuationPrompt:"Continue {originalPrompt} {generatedContentTail}",englishMetadataPrompt:"Metadata for {enContent}",providerCatalogDiscoveryPrompt:"{providerName} {officialUrl} {pagesJson}",temperature:"0",maxTokens:"8192",enabled:"false",isDefault:"false"}))form.set(key,value);
+assert.equal((await createAiRewriteConfigAction(form)).success,true);assert.equal((await updateAiRewriteConfigAction(1,form)).success,true);assert.equal(f.saved.length,2);
+for(const field of ["englishContentPrompt","englishMetadataPrompt"]){const original=form.get(field);form.set(field,"Missing article variable");assert.equal((await updateAiRewriteConfigAction(1,form)).success,false);form.set(field,original);}
+f.authorized=false;assert.equal((await updateAiRewriteConfigAction(1,form)).success,false);assert.equal(f.saved.length,2);
 `);
 });
 

@@ -168,7 +168,7 @@ export function resolveMetadataPromptTemplate(value?: string | null) {
 ${custom}`;
 }
 
-export const defaultEnglishContentPrompt = `You are a professional English editor for a VPS/server deals website.
+const legacyDefaultEnglishContentPrompt = `You are a professional English editor for a VPS/server deals website.
 
 Translate the saved Chinese hosting deal article into faithful English Markdown content.
 
@@ -209,7 +209,7 @@ Original prompt:
 Already generated English Markdown tail:
 {generatedContentTail}`;
 
-export const defaultEnglishMetadataPrompt = `You are an English translation editor for a VPS/server deals website.
+const legacyDefaultEnglishMetadataPrompt = `You are an English translation editor for a VPS/server deals website.
 
 Translate the source article title and description into natural English, using the translated body as context. Provide the corresponding English publishing metadata.
 
@@ -254,3 +254,37 @@ Source category:
 
 English Markdown:
 {enContent}`;
+
+export const defaultEnglishContentPrompt = `Translate the complete Chinese VPS/server article below into clear, faithful English Markdown.
+
+Return only the English body, without an article title, SEO metadata, explanations or enclosing code fences. Keep every paragraph, table row and factual detail; do not summarize or invent information. Preserve Markdown structure, use headings from ##, and keep all URLs, affiliate links, prices, specifications and promo codes unchanged.
+
+Chinese Markdown:
+{markdownContent}`;
+
+export const defaultEnglishMetadataPrompt = `Generate English publishing metadata using only the English article below. Do not invent facts, prices, specifications or claims.
+
+Return only compact JSON with these fields:
+- enTitle: a clear, factual English title reflecting the article's main topic.
+- enSlug: a short lowercase ASCII slug with hyphen-separated words.
+- enDescription: an accurate English summary within 160 characters.
+- enKeywords: an array of 2 to 6 relevant English keywords.
+- enTags: an array of 2 to 6 concise English topic tags, preferably starting with the provider name when identified.
+- enRecommendTagName: exactly one of enTags.
+
+English Markdown:
+{enContent}`;
+
+export function resolveEnglishContentPromptTemplate(value?: string | null) {
+  const custom = value?.trim();
+  return !custom || custom === legacyDefaultEnglishContentPrompt
+    ? defaultEnglishContentPrompt
+    : custom;
+}
+
+export function resolveEnglishMetadataPromptTemplate(value?: string | null) {
+  const custom = value?.trim();
+  return !custom || custom === legacyDefaultEnglishMetadataPrompt
+    ? defaultEnglishMetadataPrompt
+    : custom;
+}

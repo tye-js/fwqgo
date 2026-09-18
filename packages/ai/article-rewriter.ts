@@ -3,6 +3,8 @@ import {
   buildSourceAnchoredRewritePrompt,
   defaultMetadataPrompt,
   interpolatePromptTemplate,
+  resolveEnglishContentPromptTemplate,
+  resolveEnglishMetadataPromptTemplate,
 } from "@fwqgo/core/ai-rewrite-prompts";
 import { contentToArticleMarkdown } from "@fwqgo/core/content";
 import { fetchPublicHttpUrlOnce } from "@fwqgo/core/network-url";
@@ -359,13 +361,16 @@ function buildEnglishContentPrompt(input: {
   markdownContent: string;
   maxMarkdownLength: number;
 }) {
-  return fillPromptTemplate(input.template, {
-    englishStylePrompt: "",
-    title: input.title,
-    description: input.description ?? "",
-    keywords: input.keywords ?? "",
-    markdownContent: input.markdownContent.slice(0, input.maxMarkdownLength),
-  });
+  return fillPromptTemplate(
+    resolveEnglishContentPromptTemplate(input.template),
+    {
+      englishStylePrompt: "",
+      title: input.title,
+      description: input.description ?? "",
+      keywords: input.keywords ?? "",
+      markdownContent: input.markdownContent.slice(0, input.maxMarkdownLength),
+    },
+  );
 }
 
 function buildEnglishContinuationPrompt(input: {
@@ -400,7 +405,8 @@ function buildEnglishMetadataPrompt(input: {
     ? `- Chinese name: ${input.category.name}\n- Source slug: ${input.category.slug}\n- Existing English name: ${input.category.enName ?? ""}\n- Existing English slug: ${input.category.enSlug ?? ""}`
     : "No source category was provided.";
 
-  return fillPromptTemplate(input.template, {
+  const template = resolveEnglishMetadataPromptTemplate(input.template);
+  const prompt = fillPromptTemplate(template, {
     englishMetadataStylePrompt: "",
     title: input.title,
     description: input.description ?? "",
@@ -408,6 +414,13 @@ function buildEnglishMetadataPrompt(input: {
     categoryContext,
     enContent: input.enContent.slice(0, metadataInputLength),
   });
+
+  // Only the separate taxonomy backfill needs category translation. New English
+  // drafts inherit their source category and do not send category data to AI.
+  if (input.category && !template.includes("{categoryContext}")) {
+    return `${prompt}\n\nAlso return enCategoryName and enCategorySlug for this source category. Reuse existing English values when present; otherwise translate its name and use a lowercase ASCII hyphenated slug.\n${categoryContext}`;
+  }
+  return prompt;
 }
 
 function cleanMarkdownText(text: string) {
@@ -556,19 +569,17 @@ function normalizeEnglishSlug(value: string, fallback: string) {
 function normalizeEnglishMetadata(
   raw: EnglishSeoVersionRawOutput,
   fallback: {
-    title: string;
-    description: string | null;
     category?: EnglishMetadataCategoryInput | null;
   },
 ): EnglishMetadataOutput {
   const enTitle =
     typeof raw.enTitle === "string" && raw.enTitle.trim()
       ? raw.enTitle.trim()
-      : fallback.title;
+      : "";
   const enDescription =
     typeof raw.enDescription === "string" && raw.enDescription.trim()
       ? raw.enDescription.trim().slice(0, 180)
-      : (fallback.description ?? enTitle).slice(0, 180);
+      : "";
 
   const enKeywords = normalizeStringArray(raw.enKeywords).slice(0, 6);
   const rawTagNames = normalizeStringArray(raw.enTags);
@@ -1559,8 +1570,6 @@ export async function generateEnglishMetadata(
         "英文 SEO 元信息生成失败",
       ),
       {
-        title: input.title,
-        description: input.description,
         category: input.category,
       },
     );

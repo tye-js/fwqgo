@@ -35,6 +35,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ArticleTextInput } from "@/features/cms/components/article-text-input";
+import { parseArticleTagInput } from "@/features/cms/lib/article-tag-input";
 import { type PostEditFormData } from "@/types/post.types";
 import { toast } from "sonner";
 import { notifyActionError } from "@/lib/admin-toast";
@@ -125,35 +127,31 @@ export default function EditPost({
     "文章修改尚未保存，确定离开编辑页面吗？",
   );
   const handleAddTag = (tagInput: string) => {
-    const name = tagInput.trim();
-    if (!name) return;
+    if (!tagInput.split(/[,，\n]/).some((name) => name.trim())) return;
+    const names = parseArticleTagInput(
+      tagInput,
+      tags.map((tag) => tag.tag.name),
+    );
 
-    if (name.length > 40) {
+    if (names.some((name) => name.length > 40)) {
       toast.error("标签名称不能超过 40 个字符");
       return;
     }
 
-    if (postLanguage === "en" && /\p{Script=Han}/u.test(name)) {
+    if (
+      postLanguage === "en" &&
+      names.some((name) => /\p{Script=Han}/u.test(name))
+    ) {
       toast.error("英文文章只能添加英文标签");
       return;
     }
 
-    const normalizedName = name.toLowerCase();
-    if (
-      tags.some((tag) => tag.tag.name.trim().toLowerCase() === normalizedName)
-    ) {
-      toast.info("这个标签已经添加过了");
+    if (names.length === 0) {
+      toast.info("这些标签已经添加过了");
       return;
     }
 
-    const newTag = {
-      tag: {
-        name,
-        slug: "",
-      },
-    };
-
-    setTags(tags ? [...tags, newTag] : [newTag]);
+    setTags([...tags, ...names.map((name) => ({ tag: { name, slug: "" } }))]);
     setTagInput("");
     setIsAddingTag(false);
   };
@@ -440,7 +438,7 @@ export default function EditPost({
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="post-title">文章标题</Label>
-                <Input
+                <ArticleTextInput
                   id="post-title"
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
@@ -453,7 +451,7 @@ export default function EditPost({
 
               <div className="space-y-2">
                 <Label htmlFor="post-slug">文章 slug</Label>
-                <Input
+                <ArticleTextInput
                   id="post-slug"
                   value={slug}
                   readOnly={slugIsLocked && !allowSlugChange}
@@ -619,14 +617,15 @@ export default function EditPost({
                   ))}
 
                   {isAddingTag ? (
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
                       <Input
                         value={tagInput}
                         onChange={(e) => setTagInput(e.target.value)}
-                        placeholder="输入标签名称"
-                        className="w-40"
+                        placeholder="多个标签用逗号分隔"
+                        aria-label="新增文章标签"
+                        className="min-w-0 flex-1"
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") {
+                          if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                             e.preventDefault();
                             handleAddTag(tagInput);
                           }

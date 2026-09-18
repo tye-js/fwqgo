@@ -29,7 +29,6 @@ import {
   aiRewriteArtifacts,
   aiRewriteTasks,
   aiTaskSteps,
-  categories,
   posts,
 } from "@fwqgo/db/schema";
 import { createPostRecordInTransaction } from "@/server/posts/create-post-record";
@@ -600,16 +599,6 @@ export async function runEnglishTranslationTask(
       "正在生成对应的英文标题与摘要",
       80,
     );
-    const [category] = await db
-      .select({
-        name: categories.name,
-        slug: categories.slug,
-        enName: categories.enName,
-        enSlug: categories.enSlug,
-      })
-      .from(categories)
-      .where(eq(categories.id, parent.categoryId))
-      .limit(1);
     metadata = await generateWithFailover("英文标题与摘要生成", 80, (options) =>
       generateEnglishMetadata(
         {
@@ -617,7 +606,6 @@ export async function runEnglishTranslationTask(
           description: source.description,
           keywords: source.keywords,
           enContent: translated,
-          category,
         },
         options,
       ),

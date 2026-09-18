@@ -41,6 +41,7 @@ import { ImageLibraryPicker } from "@/features/cms/components/image-library-pick
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { ArticleTextInput } from "@/features/cms/components/article-text-input";
 import {
   Select,
   SelectContent,
@@ -698,7 +699,7 @@ export function PostList({
                           >
                             文章标题
                           </label>
-                          <Input
+                          <ArticleTextInput
                             id={`mobile-post-title-${post.id}`}
                             className="min-h-11"
                             autoFocus
@@ -716,7 +717,7 @@ export function PostList({
                           >
                             Slug
                           </label>
-                          <Input
+                          <ArticleTextInput
                             id={`mobile-post-slug-${post.id}`}
                             className="min-h-11"
                             aria-label="文章 slug"
@@ -928,7 +929,7 @@ export function PostList({
                     </TableCell>
                     <TableCell className="min-w-[220px] max-w-[360px]">
                       {editPostId === post.id ? (
-                        <Input
+                        <ArticleTextInput
                           className="min-h-11"
                           autoFocus
                           aria-label={`修改标题：${post.title}`}
@@ -948,7 +949,7 @@ export function PostList({
                     </TableCell>
                     <TableCell className="text-nowrap">
                       {editPostId === post.id ? (
-                        <Input
+                        <ArticleTextInput
                           className="min-h-11"
                           aria-label={`修改 slug：${post.title}`}
                           value={editPostData?.slug ?? ""}

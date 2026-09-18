@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ArticleTextInput } from "@/features/cms/components/article-text-input";
 
 export function ManualArticleTaskEditor({
   taskId,
@@ -93,7 +94,7 @@ export function ManualArticleTaskEditor({
           <div className="grid min-w-0 gap-4 lg:grid-cols-2">
             <div className="min-w-0 space-y-2">
               <Label htmlFor="manual-article-title">文章标题 / SEO 标题</Label>
-              <Textarea
+              <ArticleTextInput
                 id="manual-article-title"
                 name="title"
                 required
@@ -106,7 +107,7 @@ export function ManualArticleTaskEditor({
             </div>
             <div className="min-w-0 space-y-2">
               <Label htmlFor="manual-article-slug">文章 URL（slug）</Label>
-              <Textarea
+              <ArticleTextInput
                 id="manual-article-slug"
                 name="slug"
                 required

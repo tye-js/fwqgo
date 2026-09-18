@@ -3,9 +3,9 @@ import { and, desc, eq, notInArray, sql } from "drizzle-orm";
 import { db } from "@fwqgo/db";
 import { aiRewriteConfigs } from "@fwqgo/db/schema";
 import {
-  defaultEnglishContentPrompt,
   defaultEnglishContinuationPrompt,
-  defaultEnglishMetadataPrompt,
+  resolveEnglishContentPromptTemplate,
+  resolveEnglishMetadataPromptTemplate,
   resolveMetadataPromptTemplate,
   resolveSourceAnchoredRewriteTemplate,
 } from "@fwqgo/core/ai-rewrite-prompts";
@@ -98,12 +98,14 @@ function withPromptDefaults<T extends ActiveAiRewriteConfigRow>(row: T) {
     provider: row.provider as AiProvider,
     basePrompt: resolveSourceAnchoredRewriteTemplate(row.basePrompt),
     metadataPrompt: resolveMetadataPromptTemplate(row.metadataPrompt),
-    englishContentPrompt:
-      row.englishContentPrompt ?? defaultEnglishContentPrompt,
+    englishContentPrompt: resolveEnglishContentPromptTemplate(
+      row.englishContentPrompt,
+    ),
     englishContinuationPrompt:
       row.englishContinuationPrompt ?? defaultEnglishContinuationPrompt,
-    englishMetadataPrompt:
-      row.englishMetadataPrompt ?? defaultEnglishMetadataPrompt,
+    englishMetadataPrompt: resolveEnglishMetadataPromptTemplate(
+      row.englishMetadataPrompt,
+    ),
     providerCatalogDiscoveryPrompt: resolveProviderCatalogDiscoveryPrompt(
       row.providerCatalogDiscoveryPrompt,
     ),

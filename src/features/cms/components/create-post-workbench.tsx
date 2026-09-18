@@ -28,6 +28,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ArticleTextInput } from "@/features/cms/components/article-text-input";
+import { parseArticleTagInput } from "@/features/cms/lib/article-tag-input";
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
 import { useConfirmUnsavedChanges } from "@/features/cms/hooks/use-confirm-unsaved-changes";
@@ -98,15 +100,17 @@ export function CreatePostWorkbench({
   );
 
   const handleAddTag = () => {
-    const name = tagInput.trim();
-    if (!name) return;
-
-    if (tags.some((tag) => tag.name.trim() === name)) {
-      toast.info("这个标签已经添加过了");
+    if (!tagInput.split(/[,，\n]/).some((name) => name.trim())) return;
+    const names = parseArticleTagInput(
+      tagInput,
+      tags.map((tag) => tag.name),
+    );
+    if (names.length === 0) {
+      toast.info("这些标签已经添加过了");
       return;
     }
 
-    setTags([...tags, { name }]);
+    setTags([...tags, ...names.map((name) => ({ name }))]);
     setTagInput("");
     setIsAddingTag(false);
   };
@@ -300,7 +304,7 @@ export function CreatePostWorkbench({
               >
                 文章标题
               </label>
-              <Input
+              <ArticleTextInput
                 id="create-post-title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -389,14 +393,15 @@ export function CreatePostWorkbench({
                   ))}
 
                 {isAddingTag ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex w-full min-w-0 items-center gap-2">
                     <Input
                       value={tagInput}
                       onChange={(e) => setTagInput(e.target.value)}
-                      placeholder="输入标签名称"
-                      className="w-32"
+                      placeholder="多个标签用逗号分隔"
+                      aria-label="新增文章标签"
+                      className="min-w-0 flex-1"
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") {
+                        if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                           e.preventDefault();
                           handleAddTag();
                         }
@@ -421,6 +426,7 @@ export function CreatePostWorkbench({
                     type="button"
                     variant="outline"
                     size="sm"
+                    aria-label="添加标签"
                     onClick={() => setIsAddingTag(true)}
                   >
                     +

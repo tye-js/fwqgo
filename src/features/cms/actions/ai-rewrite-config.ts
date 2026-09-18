@@ -60,9 +60,6 @@ const configSchema = z.object({
   metadataPrompt: metadataPromptSchema,
   styleName: z.string().trim().min(1, "风格名称不能为空"),
   englishContentPrompt: promptSchema("英文正文生成 Prompt", [
-    "title",
-    "description",
-    "keywords",
     "markdownContent",
   ]),
   englishContinuationPrompt: promptSchema("英文续写 Prompt", [
@@ -70,10 +67,6 @@ const configSchema = z.object({
     "generatedContentTail",
   ]),
   englishMetadataPrompt: promptSchema("英文元信息 Prompt", [
-    "title",
-    "description",
-    "keywords",
-    "categoryContext",
     "enContent",
   ]),
   providerCatalogDiscoveryPrompt: promptSchema("供应商套餐源发现 Prompt", [
