@@ -155,8 +155,8 @@ async function AffManList({
       ) : null}
       <AdminSectionCard>
         <AffManTable
-          key={`${pagination.pageNo}-${query}-${filter}-${sort}`}
           data={tableData}
+          pageNo={pagination.pageNo}
           initialQuery={query}
           initialFilter={filter}
           initialSort={sort}

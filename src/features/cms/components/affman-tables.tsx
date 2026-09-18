@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, Pencil, Trash2 } from "lucide-react";
 
@@ -503,11 +503,13 @@ function withTimeout<T>(promise: Promise<T>, message: string) {
 
 export default function AffManTable({
   data,
+  pageNo = 1,
   initialQuery,
   initialFilter = "all",
   initialSort = "id-desc",
 }: {
   data: AffProviderTableData[];
+  pageNo?: number;
   initialQuery: string;
   initialFilter?: string;
   initialSort?: string;
@@ -515,8 +517,12 @@ export default function AffManTable({
   const router = useRouter();
   const updateUrlQuery = useUrlQueryUpdater();
   const [query, setQuery] = useState(initialQuery);
-  const [filter, setFilter] = useState(initialFilter);
-  const [sortValue, setSortValue] = useState(initialSort);
+  const [isComposing, setIsComposing] = useState(false);
+  const [isSearchPending, startSearchTransition] = useTransition();
+  const [submittedQuery, setSubmittedQuery] = useState(initialQuery);
+  const [previousQuery, setPreviousQuery] = useState(initialQuery);
+  const filter = initialFilter;
+  const sortValue = initialSort;
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editId, setEditId] = useState<number | null>(null);
   const [name, setName] = useState("");
@@ -539,6 +545,27 @@ export default function AffManTable({
   const [isAddSave, setIsAddSave] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [activeProviderId, setActiveProviderId] = useState<number | null>(null);
+  const resultKey = JSON.stringify([pageNo, initialQuery, filter, sortValue]);
+  const [previousResultKey, setPreviousResultKey] = useState(resultKey);
+
+  // Keep the input mounted and retain newer typing when our own request arrives.
+  // A different URL query (for example, browser Back) should still restore it.
+  if (previousQuery !== initialQuery) {
+    setPreviousQuery(initialQuery);
+    if (initialQuery !== submittedQuery) {
+      setQuery(initialQuery);
+      setSubmittedQuery(initialQuery);
+    }
+  }
+
+  // Reset row actions when the result scope changes, without remounting search.
+  if (previousResultKey !== resultKey) {
+    setPreviousResultKey(resultKey);
+    setSelectedIds([]);
+    setEditId(null);
+    setIsAdd(false);
+    setActiveProviderId(null);
+  }
 
   function resetProviderForm() {
     setName("");
@@ -592,16 +619,23 @@ export default function AffManTable({
     const normalizedInitialQuery = initialQuery.trim();
     const normalizedQuery = query.trim();
 
-    if (normalizedQuery === normalizedInitialQuery) {
+    if (
+      isComposing ||
+      isSearchPending ||
+      normalizedQuery === normalizedInitialQuery
+    ) {
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
-      updateUrlQuery({ query: normalizedQuery || null });
+      setSubmittedQuery(normalizedQuery);
+      startSearchTransition(() => {
+        updateUrlQuery({ query: normalizedQuery || null });
+      });
     }, 400);
 
     return () => window.clearTimeout(timeoutId);
-  }, [initialQuery, query, updateUrlQuery]);
+  }, [initialQuery, isComposing, isSearchPending, query, updateUrlQuery]);
 
   const sortedData = data;
   const activeProvider =
@@ -889,15 +923,28 @@ export default function AffManTable({
       <AdminTableWorkbench
         searchValue={query}
         onSearchChange={setQuery}
+        onSearchCompositionStart={() => setIsComposing(true)}
+        onSearchCompositionEnd={(event) => {
+          setQuery(event.currentTarget.value);
+          setIsComposing(false);
+        }}
         searchPlaceholder="搜索商家名、官网域名或返利链接"
+        searchMaxLength={160}
         selectionCount={selectedIds.length}
         filterSlot={
           <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
             <Select
               value={filter}
+              disabled={isSearchPending}
               onValueChange={(value) => {
-                setFilter(value);
-                updateUrlQuery({ filter: value === "all" ? null : value });
+                const nextQuery = isComposing ? initialQuery : query.trim();
+                setSubmittedQuery(nextQuery);
+                startSearchTransition(() => {
+                  updateUrlQuery({
+                    query: nextQuery || null,
+                    filter: value === "all" ? null : value,
+                  });
+                });
               }}
             >
               <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[140px] sm:border-0 sm:bg-transparent sm:px-0">
@@ -911,9 +958,16 @@ export default function AffManTable({
             </Select>
             <Select
               value={sortValue}
+              disabled={isSearchPending}
               onValueChange={(value) => {
-                setSortValue(value);
-                updateUrlQuery({ sort: value === "id-desc" ? null : value });
+                const nextQuery = isComposing ? initialQuery : query.trim();
+                setSubmittedQuery(nextQuery);
+                startSearchTransition(() => {
+                  updateUrlQuery({
+                    query: nextQuery || null,
+                    sort: value === "id-desc" ? null : value,
+                  });
+                });
               }}
             >
               <SelectTrigger className="min-h-11 w-full border-border/70 bg-background shadow-none focus:ring-0 sm:w-[148px] sm:border-0 sm:bg-transparent sm:px-0">

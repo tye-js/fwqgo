@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type CompositionEventHandler, type ReactNode } from "react";
 import { ChevronDown, Filter, Search, SearchX, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,8 @@ export function AdminTableWorkbench({
   description,
   searchValue,
   onSearchChange,
+  onSearchCompositionStart,
+  onSearchCompositionEnd,
   searchPlaceholder,
   searchMaxLength,
   filterSlot,
@@ -20,6 +22,8 @@ export function AdminTableWorkbench({
   description?: string;
   searchValue: string;
   onSearchChange: (value: string) => void;
+  onSearchCompositionStart?: CompositionEventHandler<HTMLInputElement>;
+  onSearchCompositionEnd?: CompositionEventHandler<HTMLInputElement>;
   searchPlaceholder: string;
   searchMaxLength?: number;
   filterSlot?: ReactNode;
@@ -70,6 +74,8 @@ export function AdminTableWorkbench({
           <Input
             value={searchValue}
             onChange={(event) => onSearchChange(event.target.value)}
+            onCompositionStart={onSearchCompositionStart}
+            onCompositionEnd={onSearchCompositionEnd}
             placeholder={searchPlaceholder}
             maxLength={searchMaxLength}
             className="min-h-11 rounded-lg border-input bg-background/50 pl-10 pr-12 text-sm shadow-none"
