@@ -43,6 +43,7 @@ import {
   parseServerOfferAmount,
 } from "@fwqgo/core/server-offer-price";
 import { getChineseArticlePresentation } from "@/features/public/lib/article-presentation";
+import { buildPublisherJsonLd } from "@/features/public/lib/site-structured-data";
 import {
   getPublicArticleStaticParams,
   isPublicArticleStaticParamsPlaceholder,
@@ -286,14 +287,14 @@ async function PostPageContent({
     description: post.description,
     datePublished: post.createdAt,
     dateModified: post.updatedAt ?? post.createdAt,
+    // No bylined individual authors exist yet, so authorship is attributed to
+    // the publisher. A `Person` whose name is the brand would be a false claim.
     author: {
-      "@type": "Person",
-      name: "服务器go",
-    },
-    publisher: {
       "@type": "Organization",
       name: "服务器go",
+      url: getSiteUrl(),
     },
+    publisher: buildPublisherJsonLd(),
     mainEntityOfPage: {
       "@type": "WebPage",
       "@id": articleUrl,

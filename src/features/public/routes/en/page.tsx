@@ -16,6 +16,11 @@ import {
 } from "@/server/offers/server-offers";
 import { getSiteSeoConfig } from "@/features/shared/data/site-seo";
 import { getActiveHomepageSlots } from "@/server/homepage/homepage-slots";
+import {
+  buildOrganizationJsonLd,
+  buildWebSiteJsonLd,
+} from "@/features/public/lib/site-structured-data";
+import { jsonLdScriptContent } from "@fwqgo/core/utils";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { isDatabaseFreeBuild } from "@fwqgo/core/build-verification";
 
@@ -39,6 +44,9 @@ export async function generateMetadata(): Promise<Metadata> {
         "zh-CN": getSiteUrl(),
         en: `${getSiteUrl()}/en`,
         "x-default": getSiteUrl(),
+      },
+      types: {
+        "application/rss+xml": "/feed.xml",
       },
     },
     openGraph: {
@@ -100,10 +108,26 @@ async function EnglishHomeContent() {
 }
 
 export default async function EnglishHome() {
-  // Keep the complete cached homepage visible in the initial HTML.
+  // Start the cached SEO config alongside the cached body, then resolve the
+  // body before rendering so the complete homepage stays in the first HTML.
+  const seoPromise = getSiteSeoConfig("en");
   const content = await EnglishHomeContent();
+  const { data: seo } = await seoPromise;
   return (
     <div className="flex min-h-dvh flex-col bg-background">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLdScriptContent([
+            buildWebSiteJsonLd({
+              language: "en",
+              name: seo.siteName,
+              description: seo.description,
+            }),
+            buildOrganizationJsonLd({ name: seo.siteName }),
+          ]),
+        }}
+      />
       <Header language="en" />
       {content}
       <Footer language="en" />

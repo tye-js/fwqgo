@@ -20,20 +20,22 @@ export const defaultSiteSeoConfigs: Record<
   zh: {
     language: "zh",
     siteName: "服务器go",
-    title: "服务器go",
+    // The homepage carries the strongest internal link equity on the site, so
+    // its title has to earn a head term instead of repeating the brand alone.
+    title: "服务器go - VPS优惠与服务器评测｜香港/美国VPS推荐",
     description:
-      "服务器go为您汇总国内国外VPS、云服务器、独立服务器、原生IP云服务器的最新促销信息，更有商家背景、售后服务全面解析，助您轻松选购高性价比服务器！",
+      "服务器go 汇总 VPS、云服务器与独立服务器优惠，覆盖香港、美国、日本机房与 CN2 GIA、CMIN2、原生IP 等线路，提供价格比价、商家评测与选购指南，帮你选到高性价比服务器。",
     keywords:
-      "服务器go,VPS,云服务器,独立服务器,原生IP云服务器,CN2 GIA VPS,最新优惠码,服务器商家推荐,服务器购买指南",
+      "服务器go,VPS优惠,服务器优惠,香港VPS,美国VPS,日本VPS,CN2 GIA VPS,原生IP服务器,云服务器,独立服务器,VPS推荐,VPS评测,服务器比价,最新优惠码",
   },
   en: {
     language: "en",
     siteName: "fwqgo",
-    title: "fwqgo",
+    title: "fwqgo - VPS Deals, Server Reviews & Hosting Comparisons",
     description:
-      "fwqgo collects VPS, cloud server, dedicated server, native IP hosting deals, provider reviews, coupons, and buying guides for global hosting users.",
+      "fwqgo collects VPS, cloud and dedicated server deals across Hong Kong, the US, Japan and more, including CN2 GIA, residential IP and unmetered options, plus provider reviews, coupons and buying guides.",
     keywords:
-      "fwqgo,VPS deals,cloud servers,dedicated servers,native IP VPS,server coupons,hosting reviews",
+      "fwqgo,VPS deals,cheap VPS,Hong Kong VPS,US VPS,CN2 GIA VPS,residential IP VPS,cloud servers,dedicated servers,hosting reviews,server coupons",
   },
 };
 
