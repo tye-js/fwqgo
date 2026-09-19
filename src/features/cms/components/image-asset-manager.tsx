@@ -836,8 +836,8 @@ export function ImageAssetManager({
                         variant="outline"
                         size="icon"
                         className="size-11"
-                        title="复制 URL"
-                        aria-label={`复制图片 URL：${image.originalName}`}
+                        title="复制图片 URL"
+                        aria-label={`复制图片 URL：${image.path}`}
                         onClick={() => void handleCopy(image.path)}
                       >
                         <Copy className="size-4" />
@@ -1220,8 +1220,8 @@ export function ImageAssetManager({
                             type="button"
                             variant="outline"
                             size="icon"
-                            title="复制 URL"
-                            aria-label={`复制图片 URL：${image.originalName}`}
+                            title="复制图片 URL"
+                            aria-label={`复制图片 URL：${image.path}`}
                             onClick={() => void handleCopy(image.path)}
                           >
                             <Copy className="size-4" />

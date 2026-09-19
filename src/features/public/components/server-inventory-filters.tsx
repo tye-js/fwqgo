@@ -14,6 +14,14 @@ import {
 } from "@fwqgo/core/public-inventory-filters";
 import type { PublicInventoryFacets } from "@/server/offers/public-inventory-query";
 
+/**
+ * 侧栏厂商列表的渲染上限。
+ *
+ * 超出部分不静默丢弃：搜索是在截断之前做的，若不提示，用户会遇到
+ * 「搜得到某个厂商、但按列表浏览时找不到它」。
+ */
+const MAX_VISIBLE_PROVIDERS = 100;
+
 const selectClassName =
   "min-h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -43,14 +51,23 @@ export function ServerInventoryProviderNav({
   filters: PublicInventoryFilters;
 }) {
   const [providerSearch, setProviderSearch] = useState("");
-  const visibleProviders = useMemo(() => {
+  const providerMatches = useMemo(() => {
     const needle = providerSearch.trim().toLowerCase();
-    return facets.providers
-      .filter((provider) =>
-        needle ? provider.label.toLowerCase().includes(needle) : true,
-      )
-      .slice(0, 100);
+    const matched = needle
+      ? facets.providers.filter((provider) =>
+          provider.label.toLowerCase().includes(needle),
+        )
+      : facets.providers;
+
+    return {
+      matched: matched.length,
+      visible: matched.slice(0, MAX_VISIBLE_PROVIDERS),
+    };
   }, [facets.providers, providerSearch]);
+  const visibleProviders = providerMatches.visible;
+  // 截断数量用于给出「还有 N 个未显示」的提示，避免静默少列厂商
+  const hiddenProviderCount =
+    providerMatches.matched - providerMatches.visible.length;
   const total = facets.providers.reduce((sum, item) => sum + item.count, 0);
 
   return (
@@ -114,6 +131,11 @@ export function ServerInventoryProviderNav({
         {visibleProviders.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">
             没有匹配的厂商
+          </p>
+        ) : null}
+        {hiddenProviderCount > 0 ? (
+          <p className="px-3 py-2 text-center text-xs text-muted-foreground">
+            还有 {hiddenProviderCount} 个厂商未显示，请用上方搜索框查找
           </p>
         ) : null}
       </nav>

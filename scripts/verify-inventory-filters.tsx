@@ -224,3 +224,36 @@ void test("provider and kind links preserve other filters and reset pagination",
     .attr("href")!;
   assert.deepEqual(filtersFromHref(resetHref), parsePublicInventoryFilters({}));
 });
+
+void test("the provider sidebar discloses providers hidden by the render limit", () => {
+  // 侧栏最多渲染 100 个厂商，而搜索是在截断之前做的：若不提示，
+  // 用户会遇到「搜得到某个厂商、但按列表浏览时找不到它」。
+  const manyProviders = Array.from({ length: 103 }, (_, index) => ({
+    key: `provider-${index}`,
+    label: `Provider ${index}`,
+    count: index + 1,
+  }));
+  const truncated = load(
+    renderToStaticMarkup(
+      <ServerInventoryProviderNav
+        facets={{ ...facets, providers: manyProviders }}
+        filters={parsePublicInventoryFilters({})}
+      />,
+    ),
+  );
+
+  // 「全部厂商」+ 前 100 个厂商
+  assert.equal(truncated("nav a").length, 101);
+  assert.match(truncated.html(), /还有 3 个厂商未显示/);
+
+  // 未触达上限时不得出现该提示，否则会误导用户以为列表被截断
+  const complete = load(
+    renderToStaticMarkup(
+      <ServerInventoryProviderNav
+        facets={facets}
+        filters={parsePublicInventoryFilters({})}
+      />,
+    ),
+  );
+  assert.doesNotMatch(complete.html(), /个厂商未显示/);
+});
