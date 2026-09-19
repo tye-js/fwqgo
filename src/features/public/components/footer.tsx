@@ -6,6 +6,7 @@ import {
   BookOpen,
   Globe2,
   Mail,
+  Rss,
   Server,
   ShieldCheck,
   Tags,
@@ -13,6 +14,11 @@ import {
 
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { LanguageSwitchLink } from "@/features/public/components/language-switch-link";
+import {
+  SITE_CONTACT,
+  trustPagePath,
+  type TrustPageSlug,
+} from "@/features/public/lib/site-contact";
 import {
   buildArticleNavigation,
   type ArticleNavigationSource,
@@ -33,6 +39,35 @@ type FooterGroup = {
   links: FooterLink[];
 };
 
+const TRUST_LINK_LABELS: Record<
+  TrustPageSlug,
+  { zh: string; en: string }
+> = {
+  about: { zh: "关于我们", en: "About" },
+  contact: { zh: "联系我们", en: "Contact" },
+  privacy: { zh: "隐私政策", en: "Privacy Policy" },
+  terms: { zh: "服务条款", en: "Terms of Service" },
+  "affiliate-disclosure": {
+    zh: "推广与佣金披露",
+    en: "Affiliate Disclosure",
+  },
+};
+
+const TRUST_LINK_ORDER: TrustPageSlug[] = [
+  "about",
+  "contact",
+  "privacy",
+  "terms",
+  "affiliate-disclosure",
+];
+
+function buildTrustLinks(language: PublicLanguage): FooterLink[] {
+  return TRUST_LINK_ORDER.map((slug) => ({
+    title: TRUST_LINK_LABELS[slug][language],
+    href: trustPagePath(slug, language),
+  }));
+}
+
 const footerCopy = {
   zh: {
     description:
@@ -42,8 +77,9 @@ const footerCopy = {
     categoryTitle: "服务器分类",
     utilityTitle: "常用入口",
     contactTitle: "联系与说明",
+    trustTitle: "信任与政策",
     languageLabel: "English",
-    contactEmail: "contact@fwqgo.com",
+    contactEmail: SITE_CONTACT.email,
     copyright: "服务器go 保留所有权利。",
     highlights: [
       { title: "套餐比价", href: "/servers" },
@@ -103,8 +139,9 @@ const footerCopy = {
     categoryTitle: "Article Categories",
     utilityTitle: "Useful Links",
     contactTitle: "Contact",
+    trustTitle: "Trust & Policies",
     languageLabel: "中文",
-    contactEmail: "contact@fwqgo.com",
+    contactEmail: SITE_CONTACT.email,
     copyright: "fwqgo. All rights reserved.",
     highlights: [
       { title: "Offer Compare", href: "/servers" },
@@ -165,6 +202,7 @@ const footerCopy = {
     categoryTitle: string;
     utilityTitle: string;
     contactTitle: string;
+    trustTitle: string;
     languageLabel: string;
     contactEmail: string;
     copyright: string;
@@ -285,6 +323,12 @@ function FooterView({
       icon: BookOpen,
       links: copy.utilities,
     },
+    {
+      id: "trust",
+      title: copy.trustTitle,
+      icon: ShieldCheck,
+      links: buildTrustLinks(language),
+    },
   ];
 
   return (
@@ -378,6 +422,13 @@ function FooterView({
                 ? "Deal data needs final checkout verification"
                 : "套餐价格以商家结算页为准"}
             </span>
+            <a
+              href="/feed.xml"
+              className="inline-flex min-h-11 items-center gap-1.5 font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <Rss className="size-3.5" aria-hidden="true" />
+              {language === "en" ? "RSS feed" : "RSS 订阅"}
+            </a>
           </div>
         </div>
       </div>

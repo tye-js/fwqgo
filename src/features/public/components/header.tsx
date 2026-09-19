@@ -22,11 +22,41 @@ import {
 } from "@/components/ui/sheet";
 import { LanguageSwitchLink } from "@/features/public/components/language-switch-link";
 import { buildArticleNavigation } from "@/features/public/lib/article-navigation";
+import { trustPagePath, type TrustPageSlug } from "@/features/public/lib/site-contact";
 import { getNavigationCategories } from "@/features/shared/data/category";
 import { cn } from "@fwqgo/core/utils";
-import { BookOpen, Cpu, Globe2, Menu, Search, Server } from "lucide-react";
+import {
+  BookOpen,
+  Cpu,
+  Globe2,
+  Menu,
+  Search,
+  Server,
+  ShieldCheck,
+} from "lucide-react";
 
 type PublicLanguage = "zh" | "en";
+
+/**
+ * Trust pages sit at the bottom of the mobile sheet rather than in the primary
+ * navigation: they are low-frequency but high-value, and the desktop nav is
+ * already at capacity.
+ */
+const MOBILE_TRUST_LINKS: Array<{
+  slug: TrustPageSlug;
+  zh: string;
+  en: string;
+}> = [
+  { slug: "about", zh: "关于我们", en: "About" },
+  { slug: "contact", zh: "联系我们", en: "Contact" },
+  { slug: "privacy", zh: "隐私政策", en: "Privacy Policy" },
+  { slug: "terms", zh: "服务条款", en: "Terms of Service" },
+  {
+    slug: "affiliate-disclosure",
+    zh: "推广与佣金披露",
+    en: "Affiliate Disclosure",
+  },
+];
 
 const headerCopy: Record<
   PublicLanguage,
@@ -410,6 +440,18 @@ const HeaderContent = async ({
                     <Globe2 className="size-4 text-primary" />
                     {language === "en" ? "Network routes" : "网络线路选择"}
                   </MobileNavLink>
+                </div>
+                <div className="grid gap-1 rounded-lg border border-border/70 p-2">
+                  {MOBILE_TRUST_LINKS.map((link) => (
+                    <MobileNavLink
+                      key={link.slug}
+                      href={trustPagePath(link.slug, language)}
+                      className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm hover:bg-muted"
+                    >
+                      <ShieldCheck className="size-4 text-primary" />
+                      {language === "en" ? link.en : link.zh}
+                    </MobileNavLink>
+                  ))}
                 </div>
                 {safeCategories.length > 0 ? (
                   <div className="px-3 text-xs font-medium uppercase text-muted-foreground">

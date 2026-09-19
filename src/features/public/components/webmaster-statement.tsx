@@ -1,4 +1,7 @@
+import Link from "next/link";
 import { MessageCircle, Send, ShieldCheck } from "lucide-react";
+
+import { SITE_CONTACT } from "@/features/public/lib/site-contact";
 
 export function WebmasterStatement() {
   return (
@@ -19,25 +22,36 @@ export function WebmasterStatement() {
       <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         联系方式：
         <a
-          href="https://qm.qq.com/q/WCugMBGEso"
+          href={SITE_CONTACT.qqGroup.href}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex min-h-11 items-center gap-1 rounded-sm font-medium text-primary underline underline-offset-4 transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <MessageCircle className="size-4" aria-hidden="true" />
-          QQ群：601090215
+          {SITE_CONTACT.qqGroup.label}
         </a>
         <a
-          href="https://t.me/+525xG6tzmbIyN2Fl"
+          href={SITE_CONTACT.telegram.href}
           target="_blank"
           rel="noopener noreferrer"
           aria-label="加入 Telegram 群组"
           className="inline-flex min-h-11 items-center gap-1 rounded-sm font-medium text-primary underline underline-offset-4 transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <Send className="size-4" aria-hidden="true" />
-          Telegram
+          {SITE_CONTACT.telegram.label}
         </a>
       </div>
+      <p className="mt-2 text-sm leading-7 text-muted-foreground">
+        我们的编辑原则、收录与排序规则、推广关系披露，
+        <Link
+          href="/about"
+          prefetch={false}
+          className="font-medium text-primary underline underline-offset-4 transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          更多说明见关于我们
+        </Link>
+        。
+      </p>
     </aside>
   );
 }

@@ -25,6 +25,7 @@ import {
   offerTopics,
 } from "@/server/offers/server-offers";
 import { publicPostCondition } from "@/server/posts/public-post-policy";
+import { TRUST_PAGE_SLUGS } from "@/features/public/lib/site-contact";
 
 function getBaseUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
@@ -226,6 +227,29 @@ async function buildSitemapCoreXml() {
           }),
         ]
       : []),
+    // Trust pages are static and always published, so they are listed
+    // unconditionally rather than behind a data check.
+    ...TRUST_PAGE_SLUGS.flatMap((slug) => {
+      const alternates = [
+        { hreflang: "zh-CN", href: `${baseUrl}/${slug}` },
+        { hreflang: "en", href: `${baseUrl}/en/${slug}` },
+        { hreflang: "x-default", href: `${baseUrl}/${slug}` },
+      ];
+      return [
+        urlEntry({
+          loc: `${baseUrl}/${slug}`,
+          changefreq: "monthly",
+          priority: "0.5",
+          alternates,
+        }),
+        urlEntry({
+          loc: `${baseUrl}/en/${slug}`,
+          changefreq: "monthly",
+          priority: "0.4",
+          alternates,
+        }),
+      ];
+    }),
   ]);
 }
 

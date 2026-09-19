@@ -64,6 +64,19 @@ const delegatedPublicShells = new Set([
   "en/knowledge/page.tsx",
   "en/tools/server-sizing/page.tsx",
   "en/fwq/posts/[slug]/page.tsx",
+  // Trust pages delegate their whole shell (including the min-h-dvh column) to
+  // `about-route.tsx` / `trust-document-route.tsx`, so the shell literal lives
+  // in those factories rather than in each thin route entry.
+  "about/page.tsx",
+  "contact/page.tsx",
+  "privacy/page.tsx",
+  "terms/page.tsx",
+  "affiliate-disclosure/page.tsx",
+  "en/about/page.tsx",
+  "en/contact/page.tsx",
+  "en/privacy/page.tsx",
+  "en/terms/page.tsx",
+  "en/affiliate-disclosure/page.tsx",
 ]);
 for (const routePage of publicRoutePages) {
   const routeRelativePath = relative(
@@ -88,8 +101,10 @@ const publicSources = listFiles(join(root, "src/features/public"))
 
 assert.equal(
   webRoutePages.length,
-  28,
+  38,
   // Two guarded ISR render entries preserve the existing public knowledge URLs.
+  // Ten trust-page entries (five pages in two languages) were added on top of
+  // the original 28.
   "Expected 26 public page entries plus two internal knowledge ISR entries",
 );
 

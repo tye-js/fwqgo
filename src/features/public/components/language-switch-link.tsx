@@ -43,6 +43,18 @@ function buildFallbackHref(
     return targetLanguage === "zh" ? "/knowledge" : "/en/knowledge";
   }
 
+  // Trust pages share the same slug in both language trees, so the switch is a
+  // prefix change rather than a translation lookup.
+  const trustMatch =
+    /^\/(?:en\/)?(about|contact|privacy|terms|affiliate-disclosure)$/.exec(
+      pathname,
+    );
+  if (trustMatch) {
+    return targetLanguage === "en"
+      ? `/en/${trustMatch[1]}`
+      : `/${trustMatch[1]}`;
+  }
+
   if (targetLanguage === "en") {
     if (pathname === "/") return toHref("/en", params);
     if (pathname === "/en" || pathname.startsWith("/en/")) {
