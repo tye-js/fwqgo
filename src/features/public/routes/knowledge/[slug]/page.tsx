@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import {
   ArrowLeft,
   ArrowRight,
@@ -67,6 +69,7 @@ function formatDate(value: Date, language: PublicKnowledgeLanguage) {
     year: "numeric",
     month: "long",
     day: "numeric",
+    timeZone: DISPLAY_TIME_ZONE,
   }).format(value);
 }
 

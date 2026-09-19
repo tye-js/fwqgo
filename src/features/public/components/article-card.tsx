@@ -4,6 +4,7 @@ import { ArrowRight, CalendarDays } from "lucide-react";
 import { type PostWithTags } from "@/types";
 import { SafePostImage } from "@/features/public/components/safe-post-image";
 import { cn } from "@fwqgo/core/utils";
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 
 type ArticleCardTag = PostWithTags["tags"][number]["tag"];
 
@@ -57,6 +58,7 @@ function formatArticleDate(value: Date | string, locale: string) {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    timeZone: DISPLAY_TIME_ZONE,
   });
 }
 

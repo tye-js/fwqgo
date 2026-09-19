@@ -122,6 +122,13 @@ export function PostList({
   );
   const finalizedCoverBatchIdsRef = useRef(new Set<string>());
 
+  // Polling must depend on primitives only: `setActiveCoverBatch` replaces the
+  // object on every tick, so depending on it would rebuild the effect (and
+  // clear its interval) on each poll, collapsing the 3s cadence into a
+  // back-to-back request loop.
+  const activeCoverBatchId = activeCoverBatch?.batchId ?? null;
+  const activeCoverBatchDone = activeCoverBatch?.done ?? false;
+
   const sortedPosts = posts;
 
   const allFilteredSelected =
@@ -141,13 +148,11 @@ export function PostList({
   }, [initialQuery, query, updateUrlQuery]);
 
   useEffect(() => {
-    if (!activeCoverBatch || activeCoverBatch.done) return;
+    if (!activeCoverBatchId || activeCoverBatchDone) return;
 
     let stopped = false;
     const poll = async () => {
-      const result = await getCoverGenerationBatchStatusAction(
-        activeCoverBatch.batchId,
-      );
+      const result = await getCoverGenerationBatchStatusAction(activeCoverBatchId);
       if (stopped) return;
 
       if (!result.success) {
@@ -159,7 +164,7 @@ export function PostList({
       }
 
       setActiveCoverBatch({
-        batchId: result.batchId ?? activeCoverBatch.batchId,
+        batchId: result.batchId ?? activeCoverBatchId,
         pendingCount: result.pendingCount ?? 0,
         runningCount: result.runningCount ?? 0,
         successCount: result.successCount ?? 0,
@@ -171,9 +176,9 @@ export function PostList({
         return;
       }
 
-      if (!finalizedCoverBatchIdsRef.current.has(activeCoverBatch.batchId)) {
+      if (!finalizedCoverBatchIdsRef.current.has(activeCoverBatchId)) {
         const finalizeResult = await finalizeCoverGenerationBatchAction(
-          activeCoverBatch.batchId,
+          activeCoverBatchId,
         );
         if (stopped) return;
 
@@ -184,7 +189,7 @@ export function PostList({
           return;
         }
 
-        finalizedCoverBatchIdsRef.current.add(activeCoverBatch.batchId);
+        finalizedCoverBatchIdsRef.current.add(activeCoverBatchId);
       }
 
       const description = describeAdminResult([
@@ -211,7 +216,7 @@ export function PostList({
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [activeCoverBatch, router]);
+  }, [activeCoverBatchId, activeCoverBatchDone, router]);
 
   async function handleDelete(id: number) {
     try {
@@ -239,10 +244,10 @@ export function PostList({
 
     setBulkAction("delete");
     try {
-      const { error } = await deletePostsByIds(selectedIds);
+      const result = await deletePostsByIds(selectedIds);
 
-      if (error) {
-        toast.error("批量删除文章失败");
+      if (result.error) {
+        notifyActionError(result, { title: "批量删除文章失败" });
         return;
       }
 
@@ -893,7 +898,7 @@ export function PostList({
                       onCheckedChange={(checked) =>
                         toggleSelectAll(Boolean(checked))
                       }
-                      aria-label="全选当前筛选结果"
+                      aria-label="全选当前页文章"
                     />
                   </TableHead>
                   <TableHead className="w-[64px]">ID</TableHead>

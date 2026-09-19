@@ -85,7 +85,7 @@ export function TagSeoTable({
   const [rows, setRows] = useState(tags);
   const [query, setQuery] = useState(initialQuery);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [pendingId, setPendingId] = useState<number | null>(null);
+  const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [aiPendingId, setAiPendingId] = useState<number | null>(null);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -174,9 +174,17 @@ export function TagSeoTable({
   }
 
   const handleIndexableChange = (tag: TagSeoRow, indexable: boolean) => {
-    const previousRows = rows;
+    // 只回滚目标行：整表快照会把并发期间其他行已成功的更新一起覆盖掉。
+    const previousIndexable = tag.indexable;
 
-    setPendingId(tag.id);
+    const revertRow = () =>
+      setRows((current) =>
+        current.map((row) =>
+          row.id === tag.id ? { ...row, indexable: previousIndexable } : row,
+        ),
+      );
+
+    setPendingIds((current) => new Set(current).add(tag.id));
     setRows((current) =>
       current.map((row) => (row.id === tag.id ? { ...row, indexable } : row)),
     );
@@ -186,7 +194,7 @@ export function TagSeoTable({
         const result = await updateTagIndexable({ id: tag.id, indexable });
 
         if (result.error) {
-          setRows(previousRows);
+          revertRow();
           toast.error("标签收录状态更新失败", {
             description: result.error,
           });
@@ -197,12 +205,16 @@ export function TagSeoTable({
           description: `${tag.name} (${tag.slug})`,
         });
       } catch (error) {
-        setRows(previousRows);
+        revertRow();
         toast.error("标签收录状态更新失败", {
           description: getClientErrorMessage(error),
         });
       } finally {
-        setPendingId(null);
+        setPendingIds((current) => {
+          const next = new Set(current);
+          next.delete(tag.id);
+          return next;
+        });
       }
     });
   };
@@ -468,7 +480,7 @@ export function TagSeoTable({
                       <div className="flex items-center justify-center gap-2">
                         <Switch
                           checked={tag.indexable}
-                          disabled={isPending && pendingId === tag.id}
+                          disabled={isPending && pendingIds.has(tag.id)}
                           aria-label={`${tag.name} SEO 收录状态`}
                           onCheckedChange={(checked) =>
                             handleIndexableChange(tag, checked)

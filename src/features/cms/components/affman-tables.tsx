@@ -1141,7 +1141,9 @@ export default function AffManTable({
                       onCheckedChange={(checked) =>
                         setSelectedIds((prev) =>
                           Boolean(checked)
-                            ? [...prev, item.id]
+                            ? prev.includes(item.id)
+                              ? prev
+                              : [...prev, item.id]
                             : prev.filter((id) => id !== item.id),
                         )
                       }

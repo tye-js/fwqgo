@@ -9,6 +9,7 @@ import {
   ShoppingCart,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -249,6 +250,7 @@ function formatShortDate(
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    timeZone: DISPLAY_TIME_ZONE,
   });
 }
 

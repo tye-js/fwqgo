@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Layers3, Lightbulb } from "lucide-react";
 
 import type { PublicKnowledgeLanguage } from "@/features/public/data/knowledge";
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 
 export type KnowledgeCardItem = {
   id: number;
@@ -28,6 +29,7 @@ function formatKnowledgeDate(value: Date, language: PublicKnowledgeLanguage) {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    timeZone: DISPLAY_TIME_ZONE,
   }).format(value);
 }
 

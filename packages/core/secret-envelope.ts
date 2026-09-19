@@ -51,21 +51,40 @@ function readKeys(value: string) {
   return keys;
 }
 
+let cachedKeyringSignature: string | null = null;
+let cachedKeyring: Keyring | null = null;
+
 function keyring(): Keyring | null {
-  const serialized = process.env.SECRET_ENCRYPTION_KEYS?.trim();
-  const single = process.env.SECRET_ENCRYPTION_KEY?.trim();
+  const serialized = process.env.SECRET_ENCRYPTION_KEYS?.trim() ?? "";
+  const single = process.env.SECRET_ENCRYPTION_KEY?.trim() ?? "";
+  const configuredActiveKeyId =
+    process.env.SECRET_ENCRYPTION_ACTIVE_KEY_ID?.trim() ?? "";
+
+  // 每次加解密都重新解析环境变量成本偏高，这里按配置签名缓存；
+  // 配置变化（含测试中的临时覆盖）会自动失效。
+  const signature = [serialized, single, configuredActiveKeyId].join("\u0000");
+  if (cachedKeyringSignature === signature) return cachedKeyring;
+
   const keys = serialized
     ? readKeys(serialized)
     : single
       ? new Map([["default", decodeKey(single)]])
       : new Map<string, Buffer>();
-  if (keys.size === 0) return null;
-  const activeKeyId =
-    process.env.SECRET_ENCRYPTION_ACTIVE_KEY_ID?.trim() ?? keys.keys().next().value;
-  if (!activeKeyId || !keys.has(activeKeyId)) {
-    throw new Error("SECRET_ENCRYPTION_ACTIVE_KEY_ID 未指向已配置的密钥");
+
+  let ring: Keyring | null = null;
+  if (keys.size > 0) {
+    // 空字符串视为未配置：`?.trim() ?? fallback` 会在 `KEY=` 这种写法下
+    // 保留空串而不回退，导致启动即抛错。
+    const activeKeyId = configuredActiveKeyId || keys.keys().next().value;
+    if (!activeKeyId || !keys.has(activeKeyId)) {
+      throw new Error("SECRET_ENCRYPTION_ACTIVE_KEY_ID 未指向已配置的密钥");
+    }
+    ring = { activeKeyId, keys };
   }
-  return { activeKeyId, keys };
+
+  cachedKeyringSignature = signature;
+  cachedKeyring = ring;
+  return ring;
 }
 
 function aad(keyId: string) {

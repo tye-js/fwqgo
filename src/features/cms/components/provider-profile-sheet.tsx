@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
@@ -186,6 +188,7 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat("zh-CN", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: DISPLAY_TIME_ZONE,
   }).format(date);
 }
 

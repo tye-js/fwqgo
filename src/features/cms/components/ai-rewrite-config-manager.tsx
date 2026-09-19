@@ -1,6 +1,8 @@
 "use client";
 
 import { Fragment, useId, useState } from "react";
+
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import { useRouter } from "next/navigation";
 import {
   Activity,
@@ -159,6 +161,7 @@ function formatCheckTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+    timeZone: DISPLAY_TIME_ZONE,
   });
 }
 

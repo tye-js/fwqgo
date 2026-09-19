@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import { Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,6 +36,7 @@ function formatDate(value: string) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: DISPLAY_TIME_ZONE,
   });
 }
 

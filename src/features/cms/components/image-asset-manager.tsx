@@ -1,6 +1,8 @@
 "use client";
 
 import Image from "next/image";
+
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -1464,5 +1466,6 @@ function formatDate(date: string) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: DISPLAY_TIME_ZONE,
   }).format(new Date(date));
 }

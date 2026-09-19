@@ -67,17 +67,36 @@ type PostCacheIdentity = {
   categoryId: number;
 };
 
+/**
+ * 批量文章操作的单次上限。
+ *
+ * 后台列表页尺寸为 15 且翻页会重挂载列表组件（选中集合随之清空），
+ * 所以当前 UI 不可能触达该上限。这里仍然显式拒绝超限请求，
+ * 而不是让 normalizePostIds 静默 slice：一旦上限被触达，
+ * 静默截断会产生「提示处理了 N 篇、实际只处理了前 100 篇」的部分成功，
+ * 与 batchGenerateArticleCoverImagesAction 的显式拒绝保持一致。
+ */
+const MAX_BULK_POST_IDS = 100;
+
 function parseIntegerId(value: number) {
   const parsed = postgresIntegerIdSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
 }
 
-function normalizePostIds(ids: number[], limit = 100) {
+function normalizePostIds(ids: number[], limit = MAX_BULK_POST_IDS) {
   return [
     ...new Set(
       ids.map(parseIntegerId).filter((id): id is number => id !== null),
     ),
   ].slice(0, limit);
+}
+
+function exceedsBulkPostIdLimit(ids: number[]) {
+  return ids.length > MAX_BULK_POST_IDS;
+}
+
+function bulkPostIdLimitMessage(action: string) {
+  return `单次最多${action} ${MAX_BULK_POST_IDS} 篇文章，请减少选择后重试`;
 }
 
 function getPostCacheTags(
@@ -171,11 +190,23 @@ async function runPostSaveMaintenance(input: {
   try {
     revalidateImageAssetList();
     revalidatePostWorkbenches();
+  } catch (error) {
+    console.error("文章已保存，但后台列表刷新失败:", error);
+    warnings.push("后台列表刷新延迟");
+  }
+
+  try {
     if (input.routeHandler) {
       revalidateSiteContentFromRouteHandler(input.revalidationTags);
     } else {
       revalidateSiteContent(input.revalidationTags);
     }
+  } catch (error) {
+    console.error("文章已保存，但站内缓存刷新失败:", error);
+    warnings.push("页面缓存刷新延迟，稍后刷新页面即可");
+  }
+
+  try {
     schedulePublicWebCache("post.changed", {
       postIds: [input.postId],
       postSlugs: input.revalidationTags
@@ -183,8 +214,8 @@ async function runPostSaveMaintenance(input: {
         .map((tag) => tag.slice("post-slug:".length)),
     });
   } catch (error) {
-    console.error("文章已保存，但缓存刷新失败:", error);
-    warnings.push("页面缓存刷新延迟，稍后刷新页面即可");
+    console.error("文章已保存，但公网缓存刷新未排队:", error);
+    warnings.push("公网页面可能需要稍后刷新");
   }
 
   return warnings;
@@ -198,9 +229,16 @@ async function revalidateChangedPosts(
     translationSourcePostId?: number | null;
   }>,
 ) {
+  const warnings: string[] = [];
+
   if (changedPosts.length === 0) {
-    revalidatePostWorkbenches();
-    return;
+    try {
+      revalidatePostWorkbenches();
+    } catch (error) {
+      console.error("批量操作后后台列表刷新失败:", error);
+      warnings.push("后台列表刷新延迟");
+    }
+    return warnings;
   }
 
   const translationSourceIds = [
@@ -210,45 +248,73 @@ async function revalidateChangedPosts(
         .filter((id): id is number => typeof id === "number"),
     ),
   ];
-  const translationSourcePosts =
-    translationSourceIds.length > 0
-      ? await db
-          .select({
-            id: posts.id,
-            slug: posts.slug,
-            categoryId: posts.categoryId,
-          })
-          .from(posts)
-          .where(inArray(posts.id, translationSourceIds))
-      : [];
+  let translationSourcePosts: Array<{
+    id: number;
+    slug: string;
+    categoryId: number;
+  }> = [];
+  if (translationSourceIds.length > 0) {
+    try {
+      translationSourcePosts = await db
+        .select({
+          id: posts.id,
+          slug: posts.slug,
+          categoryId: posts.categoryId,
+        })
+        .from(posts)
+        .where(inArray(posts.id, translationSourceIds));
+    } catch (error) {
+      console.error("批量操作后读取翻译源文章失败:", error);
+      warnings.push("翻译源文章页面缓存可能延迟刷新");
+    }
+  }
 
-  revalidatePostWorkbenches();
-  revalidateSiteContent([
-    ...changedPosts.flatMap((post) => [
-      cacheTags.post(post.id),
-      cacheTags.postSlug(post.slug),
-      cacheTags.category(post.categoryId),
-    ]),
-    ...translationSourcePosts.flatMap((post) => [
-      cacheTags.post(post.id),
-      cacheTags.postSlug(post.slug),
-      cacheTags.category(post.categoryId),
-    ]),
-  ]);
-  schedulePublicWebCache("post.changed", {
-    postIds: [
-      ...changedPosts.map((post) => post.id),
-      ...translationSourcePosts.map((post) => post.id),
-    ],
-    postSlugs: [
-      ...changedPosts.map((post) => post.slug),
-      ...translationSourcePosts.map((post) => post.slug),
-    ],
-    categoryIds: [
-      ...changedPosts.map((post) => post.categoryId),
-      ...translationSourcePosts.map((post) => post.categoryId),
-    ],
-  });
+  try {
+    revalidatePostWorkbenches();
+  } catch (error) {
+    console.error("批量操作后后台列表刷新失败:", error);
+    warnings.push("后台列表刷新延迟");
+  }
+
+  try {
+    revalidateSiteContent([
+      ...changedPosts.flatMap((post) => [
+        cacheTags.post(post.id),
+        cacheTags.postSlug(post.slug),
+        cacheTags.category(post.categoryId),
+      ]),
+      ...translationSourcePosts.flatMap((post) => [
+        cacheTags.post(post.id),
+        cacheTags.postSlug(post.slug),
+        cacheTags.category(post.categoryId),
+      ]),
+    ]);
+  } catch (error) {
+    console.error("批量操作后站内缓存刷新失败:", error);
+    warnings.push("页面缓存刷新延迟，稍后刷新页面即可");
+  }
+
+  try {
+    schedulePublicWebCache("post.changed", {
+      postIds: [
+        ...changedPosts.map((post) => post.id),
+        ...translationSourcePosts.map((post) => post.id),
+      ],
+      postSlugs: [
+        ...changedPosts.map((post) => post.slug),
+        ...translationSourcePosts.map((post) => post.slug),
+      ],
+      categoryIds: [
+        ...changedPosts.map((post) => post.categoryId),
+        ...translationSourcePosts.map((post) => post.categoryId),
+      ],
+    });
+  } catch (error) {
+    console.error("批量操作后公网缓存刷新未排队:", error);
+    warnings.push("公网页面可能需要稍后刷新");
+  }
+
+  return warnings;
 }
 
 async function auditAffiliateLinksForPublish(content: string) {
@@ -834,6 +900,13 @@ export async function bulkUpdatePostsPublishedAction(input: {
 
     if (!Array.isArray(input.ids) || typeof input.published !== "boolean") {
       return { error: "批量发布参数无效" };
+    }
+
+    if (exceedsBulkPostIdLimit(input.ids)) {
+      return {
+        error: "批量发布参数无效",
+        message: bulkPostIdLimitMessage("发布"),
+      };
     }
 
     const validIds = normalizePostIds(input.ids);
@@ -1425,6 +1498,13 @@ export async function deletePostById(id: number) {
 export async function deletePostsByIds(ids: number[]) {
   try {
     await requireAdminSession();
+
+    if (Array.isArray(ids) && exceedsBulkPostIdLimit(ids)) {
+      return {
+        error: "批量删除文章失败",
+        message: bulkPostIdLimitMessage("删除"),
+      };
+    }
 
     const validIds = normalizePostIds(ids);
 

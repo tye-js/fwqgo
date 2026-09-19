@@ -2,6 +2,8 @@
 
 import { Copy } from "lucide-react";
 
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -74,6 +76,7 @@ function formatTime(value: Date | string | null) {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+    timeZone: DISPLAY_TIME_ZONE,
   }).format(date);
 }
 

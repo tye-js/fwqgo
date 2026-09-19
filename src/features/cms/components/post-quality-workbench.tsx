@@ -1,4 +1,6 @@
 import Link from "next/link";
+
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import { ExternalLink, FileWarning } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +62,7 @@ function formatTime(value: string | null) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: DISPLAY_TIME_ZONE,
   });
 }
 

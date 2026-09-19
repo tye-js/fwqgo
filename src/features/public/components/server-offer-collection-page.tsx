@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { ServerOfferTable } from "@/features/public/components/server-offer-table";
 import { offerTopics } from "@/server/offers/server-offers";
 import { jsonLdScriptContent, toAbsoluteHttpUrl } from "@fwqgo/core/utils";
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import {
   formatServerOfferAmount,
   isSupportedServerOfferCurrency,
@@ -98,6 +99,7 @@ function formatDate(value: Date | string | null | undefined) {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    timeZone: DISPLAY_TIME_ZONE,
   });
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import { AlertTriangle, CheckCircle2, HelpCircle, Network } from "lucide-react";
 
 import {
@@ -181,7 +182,7 @@ export function NetworkLineSelector({ language, ruleSet }: { language: Language;
           </article>)}
         </div>
         <div className="grid gap-5 lg:grid-cols-2"><InfoList title={text.risks} codes={result.globalRiskCodes} language={language} /><InfoList title={text.verify} codes={result.verificationChecklistCodes} language={language} /></div>
-        <p className="text-sm text-muted-foreground">{text.testGuide} {result.versions.ruleSetVersion !== "unavailable" ? `${result.versions.ruleSetVersion}${result.versions.reviewDueAt ? ` · ${new Date(result.versions.reviewDueAt).toLocaleDateString(language === "zh" ? "zh-CN" : "en-US")}` : ""}` : ""}</p>
+        <p className="text-sm text-muted-foreground">{text.testGuide} {result.versions.ruleSetVersion !== "unavailable" ? `${result.versions.ruleSetVersion}${result.versions.reviewDueAt ? ` · ${new Date(result.versions.reviewDueAt).toLocaleDateString(language === "zh" ? "zh-CN" : "en-US", { timeZone: DISPLAY_TIME_ZONE })}` : ""}` : ""}</p>
       </section> : null}
     </main>
   );

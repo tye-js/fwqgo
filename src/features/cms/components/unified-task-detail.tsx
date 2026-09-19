@@ -1,4 +1,6 @@
 import { AlertCircle, CheckCircle2, CircleDashed, XCircle } from "lucide-react";
+
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +46,7 @@ function formatTime(value: string | null) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: DISPLAY_TIME_ZONE,
   });
 }
 

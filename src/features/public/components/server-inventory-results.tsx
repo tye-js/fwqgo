@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ServerInventoryOfferActions } from "@/features/public/components/server-inventory-offer-actions";
 import { buildPublicInventoryHref } from "@fwqgo/core/public-inventory-filters";
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import type {
   PublicInventoryFilters,
   PublicInventoryPage,
@@ -61,6 +62,7 @@ function formatCheckedAt(value: Date | null) {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    timeZone: DISPLAY_TIME_ZONE,
   }).format(value);
 }
 

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { contentToArticleMarkdown } from "@fwqgo/core/content";
 import { isHttpHref, parsePostgresIntegerId } from "@fwqgo/core/utils";
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import { getAiRewriteTaskDetail } from "@/features/cms/actions/ai-rewrite-task";
 import { AffiliateRewriteAudit } from "@/features/cms/components/affiliate-rewrite-audit";
 import { AiRewriteAuditViewer } from "@/features/cms/components/ai-rewrite-audit-viewer";
@@ -127,7 +128,9 @@ function parseDiagnostics(value: string | null) {
 function formatTime(value: Date | string | null) {
   if (!value) return "-";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString("zh-CN");
+  return Number.isNaN(date.getTime())
+    ? "-"
+    : date.toLocaleString("zh-CN", { timeZone: DISPLAY_TIME_ZONE });
 }
 
 export async function AiRewriteTaskDetailPageContent({

@@ -6,25 +6,47 @@ import {
   publicCacheEvents,
   revalidatePublicCacheEventFromRouteHandler,
 } from "@fwqgo/cache/tags";
+import {
+  PUBLIC_CACHE_EVENT_ID_LIMIT,
+  PUBLIC_CACHE_EVENT_TOPIC_SLUG_LIMIT,
+} from "@fwqgo/cache/public-cache-event-payload";
 import { purgePublicEdgeCache } from "@/server/cache/public-edge-cache";
 
-const MAX_BODY_BYTES = 16 * 1024;
+// 一个分片最多携带 50 个 slug，slug 长度上限 360，postSlugs 与 knowledgeSlugs
+// 同时打满时最坏情况约 37 KB；留出余量避免合法分片被体积上限挡掉。
+const MAX_BODY_BYTES = 64 * 1024;
+const MAX_BODY_LABEL = `${MAX_BODY_BYTES / 1024} KB`;
 const requestSchema = z.object({
   event: z.enum(publicCacheEvents),
   payload: z
     .object({
-      postIds: z.array(z.number().int().positive()).max(50).optional(),
-      postSlugs: z.array(z.string().trim().min(1).max(360)).max(50).optional(),
-      categoryIds: z.array(z.number().int().positive()).max(50).optional(),
-      tagIds: z.array(z.number().int().positive()).max(50).optional(),
-      topicSlugs: z.array(z.string().trim().min(1).max(160)).max(20).optional(),
+      postIds: z
+        .array(z.number().int().positive())
+        .max(PUBLIC_CACHE_EVENT_ID_LIMIT)
+        .optional(),
+      postSlugs: z
+        .array(z.string().trim().min(1).max(360))
+        .max(PUBLIC_CACHE_EVENT_ID_LIMIT)
+        .optional(),
+      categoryIds: z
+        .array(z.number().int().positive())
+        .max(PUBLIC_CACHE_EVENT_ID_LIMIT)
+        .optional(),
+      tagIds: z
+        .array(z.number().int().positive())
+        .max(PUBLIC_CACHE_EVENT_ID_LIMIT)
+        .optional(),
+      topicSlugs: z
+        .array(z.string().trim().min(1).max(160))
+        .max(PUBLIC_CACHE_EVENT_TOPIC_SLUG_LIMIT)
+        .optional(),
       knowledgeArticleIds: z
         .array(z.number().int().positive())
-        .max(50)
+        .max(PUBLIC_CACHE_EVENT_ID_LIMIT)
         .optional(),
       knowledgeSlugs: z
         .array(z.string().trim().min(1).max(360))
-        .max(50)
+        .max(PUBLIC_CACHE_EVENT_ID_LIMIT)
         .optional(),
     })
     .default({}),
@@ -41,7 +63,9 @@ function secretsMatch(actual: string, expected: string) {
 
 async function readLimitedRequestBody(request: Request) {
   const declaredLength = Number(request.headers.get("content-length") ?? 0);
-  if (declaredLength > MAX_BODY_BYTES) throw new Error("请求体超过 16 KB 限制");
+  if (declaredLength > MAX_BODY_BYTES) {
+    throw new Error(`请求体超过 ${MAX_BODY_LABEL} 限制`);
+  }
   if (!request.body) return "";
 
   const reader = request.body.getReader();
@@ -54,7 +78,7 @@ async function readLimitedRequestBody(request: Request) {
     bytes += value.byteLength;
     if (bytes > MAX_BODY_BYTES) {
       await reader.cancel();
-      throw new Error("请求体超过 16 KB 限制");
+      throw new Error(`请求体超过 ${MAX_BODY_LABEL} 限制`);
     }
     body += decoder.decode(value, { stream: true });
   }

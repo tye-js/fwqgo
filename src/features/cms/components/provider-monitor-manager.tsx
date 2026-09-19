@@ -37,6 +37,7 @@ import {
   updateProviderMonitorsEnabledAction,
 } from "@/features/cms/actions/provider-monitors";
 import { useAdminMutation } from "@/features/cms/hooks/use-admin-mutation";
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import {
   AdminTableEmpty,
   AdminTableWorkbench,
@@ -405,6 +406,7 @@ function formatDate(value: Date | null) {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    timeZone: DISPLAY_TIME_ZONE,
   }).format(value);
 }
 

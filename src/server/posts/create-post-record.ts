@@ -202,13 +202,18 @@ export async function createPostRecord(
   if (result.data && shouldRevalidate) {
     try {
       revalidateSiteContent(result.revalidateTags);
+    } catch (error) {
+      console.error("文章已创建，但站内缓存刷新失败:", error);
+    }
+
+    try {
       schedulePublicWebCache("post.changed", {
         postIds: [result.data.id],
         postSlugs: [result.data.slug],
         categoryIds: [result.data.categoryId],
       });
     } catch (error) {
-      console.error("文章已创建，但缓存刷新失败:", error);
+      console.error("文章已创建，但公网缓存刷新未排队:", error);
     }
   }
 

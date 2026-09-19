@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import { useRouter } from "next/navigation";
 import { Bot, Copy, LoaderCircle, RefreshCw, Search } from "lucide-react";
 
@@ -68,7 +70,9 @@ const stepLabels: Record<string, string> = {
 function formatDate(value: Date | null) {
   if (!value) return "-";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString("zh-CN");
+  return Number.isNaN(date.getTime())
+    ? "-"
+    : date.toLocaleString("zh-CN", { timeZone: DISPLAY_TIME_ZONE });
 }
 
 function getStatusVariant(status: string) {

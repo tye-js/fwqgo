@@ -200,7 +200,16 @@ function englishSourceUrl(postId: number) {
   return `post://${postId}/english`;
 }
 
-function normalizePostIds(postIds: number[], limit = 50) {
+/**
+ * 批量创建英文翻译任务的单次上限。
+ *
+ * 与 post.ts 的 MAX_BULK_POST_IDS 同理：后台文章列表只能勾选当前页（15 条），
+ * 该上限当前不可达；这里显式拒绝而不是静默截断，避免出现
+ * 「提示排队 N 篇、实际只排队了前 50 篇」的部分成功。
+ */
+const MAX_BULK_ENGLISH_POST_IDS = 50;
+
+function normalizePostIds(postIds: number[], limit = MAX_BULK_ENGLISH_POST_IDS) {
   return [
     ...new Set(
       postIds.map(parseIntegerId).filter((id): id is number => id !== null),
@@ -810,6 +819,12 @@ export async function bulkEnqueueEnglishVersionsForPostsAction(
 ) {
   try {
     await requireAdminSession();
+
+    if (postIds.length > MAX_BULK_ENGLISH_POST_IDS) {
+      return {
+        error: `单次最多为 ${MAX_BULK_ENGLISH_POST_IDS} 篇文章创建英文翻译任务，请减少选择后重试`,
+      };
+    }
 
     const validIds = normalizePostIds(postIds);
     if (validIds.length === 0) {

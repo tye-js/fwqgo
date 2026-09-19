@@ -1,4 +1,6 @@
 import Link from "next/link";
+
+import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import { connection } from "next/server";
 import {
   ArrowRight,
@@ -44,6 +46,7 @@ function formatDateTime(date: Date) {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    timeZone: DISPLAY_TIME_ZONE,
   }).format(date);
 }
 
@@ -238,6 +241,7 @@ function ContentTrendChart({ data }: { data: TrendItem[] }) {
                 {new Intl.DateTimeFormat("zh-CN", {
                   month: "numeric",
                   day: "numeric",
+                  timeZone: DISPLAY_TIME_ZONE,
                 }).format(item.date)}
               </span>
             </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, type ReactNode, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
 import { Activity, ExternalLink, Plus, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -1016,6 +1016,9 @@ export function ServerOfferAdminTable({
   const [bulkStatus, setBulkStatus] = useState("in_stock");
   const [bulkKind, setBulkKind] = useState("regular");
   const [bulkReviewStatus, setBulkReviewStatus] = useState("reviewed");
+  // 搜索框是受控组件，直接写入地址栏会让每次按键都触发一次 RSC 导航并丢字，
+  // 因此先落到本地 state，再防抖同步到查询参数。
+  const [searchInput, setSearchInput] = useState(initialFilters.query);
   const bulkPending = isPending(serverOfferBulkMutationKey);
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const activeFilters = {
@@ -1051,6 +1054,17 @@ export function ServerOfferAdminTable({
   );
   const allPageOffersSelected =
     pagedOffers.length > 0 && selectedOnPageCount === pagedOffers.length;
+
+  useEffect(() => {
+    const normalizedInput = searchInput.trim();
+    if (normalizedInput === initialFilters.query.trim()) return;
+
+    const timeoutId = window.setTimeout(() => {
+      updateUrlQuery({ query: normalizedInput || null });
+    }, 400);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [initialFilters.query, searchInput, updateUrlQuery]);
 
   function toggleSelected(id: number) {
     setSelectedIds((current) =>
@@ -1098,8 +1112,8 @@ export function ServerOfferAdminTable({
       <AdminTableWorkbench
         title="套餐筛选"
         description={`筛选条件和页码会写入地址栏，当前匹配 ${totalCount} 条套餐。`}
-        searchValue={activeFilters.query}
-        onSearchChange={(value) => updateUrlQuery({ query: value || null })}
+        searchValue={searchInput}
+        onSearchChange={setSearchInput}
         searchPlaceholder="搜索套餐、商家、地区、线路、配置或优惠码"
         filterSlot={
           <>
