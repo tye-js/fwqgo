@@ -13,6 +13,13 @@ mkdirSync(path.join(temp, "logs"));
 const policies = [
   { path: "/knowledge", name: "knowledge", ttl: 300, stale: 60 },
   { path: "/fwq/posts/fixture", name: "public", ttl: 900, stale: 86400 },
+  { path: "/servers", name: "public-page", ttl: 900, stale: 86400 },
+];
+
+/** Each public surface opts in through its own application marker. */
+const markers = [
+  { prefix: "/fwq/posts/", header: "X-Fwqgo-Cacheable-Article" },
+  { prefix: "/servers", header: "X-Fwqgo-Cacheable-Public" },
 ];
 
 const upstream = createServer((request, response) => {
@@ -23,9 +30,8 @@ const upstream = createServer((request, response) => {
     "Cache-Control": "private, no-cache, no-store, max-age=0, must-revalidate",
   };
   if (request.headers["x-fixture-marker"] !== "0") {
-    headers[request.url?.startsWith("/fwq/posts/")
-      ? "X-Fwqgo-Cacheable-Article"
-      : "X-Fwqgo-Cacheable-Knowledge"] = "1";
+    const matched = markers.find((item) => request.url?.startsWith(item.prefix));
+    headers[matched?.header ?? "X-Fwqgo-Cacheable-Knowledge"] = "1";
   }
   if (request.headers["x-fixture-cookie"] === "1") headers["Set-Cookie"] = "fixture=1; HttpOnly";
   response.writeHead(status, headers).end("fixture");

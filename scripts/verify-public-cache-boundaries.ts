@@ -392,10 +392,60 @@ for (const bypass of [
 if (!webProxySource.includes("isPublicHtmlRequest(request)")) {
   errors.push("The proxy must apply the shared HTML cache boundary");
 }
-if (!webProxySource.includes("CACHED_HOMEPAGE_PATHS.has(pathname)")) {
+// The index branch must test the public HTML boundary before it attaches a
+// shared-cache marker, so Flight, prefetch, query and authenticated requests
+// keep a private policy. Assert the structure, not a local variable name.
+if (
+  !/SHARED_CACHE_INDEX_PATHS\.has\(pathname\)[\s\S]{0,400}?if \(!isPublicHtmlRequest\(request\)\) return markRequestPrivate\(response\);/.test(
+    webProxySource,
+  )
+) {
   errors.push(
-    "Cached homepages must also bypass shared caching for private/RSC requests",
+    "Cached index pages must also bypass shared caching for private/RSC requests",
   );
+}
+if (!webProxySource.includes("X-Fwqgo-Cacheable-Public")) {
+  errors.push(
+    "Public index and collection HTML must opt into shared caching explicitly",
+  );
+}
+// A prepared Nginx snippet only matters when a location actually loads it, so
+// assert the wiring that the docs confirmed was missing from production.
+const publicPageHeadersSnippet = "fwqgo-public-page-cache-headers.conf";
+if (!fs.existsSync(path.join(root, "deploy/nginx", publicPageHeadersSnippet))) {
+  errors.push(`deploy/nginx/${publicPageHeadersSnippet} must exist`);
+}
+for (const required of [
+  "$fwqgo_public_page_cdn_cache_control",
+  "$fwqgo_public_page_cache_control",
+]) {
+  if (
+    !fs
+      .readFileSync(
+        path.join(root, "deploy/nginx/fwqgo-public-cache-maps.conf"),
+        "utf8",
+      )
+      .includes(required)
+  ) {
+    errors.push(`The Nginx cache maps must define ${required}`);
+  }
+}
+const publicSiteConf = fs.readFileSync(
+  path.join(root, "deploy/nginx/fwqgo-site.conf"),
+  "utf8",
+);
+for (const indexLocation of [
+  "location = / {",
+  "location = /en {",
+  "location = /servers {",
+]) {
+  const start = publicSiteConf.indexOf(indexLocation);
+  const body = start === -1 ? "" : publicSiteConf.slice(start, start + 400);
+  if (!body.includes(publicPageHeadersSnippet)) {
+    errors.push(
+      `${indexLocation.slice(0, -2)} must load the public page cache headers`,
+    );
+  }
 }
 if (
   webNextConfig.includes("publicArticleCacheHeaders") ||

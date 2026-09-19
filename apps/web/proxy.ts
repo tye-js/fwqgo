@@ -4,6 +4,7 @@ import {
   getPrimaryPublicRedirectUrl,
   isPublicHtmlRequest,
   parsePublicResourceRoute,
+  type PublicResourceRoute,
 } from "@fwqgo/core/public-route-policy";
 import {
   getKnowledgeIndexRewritePath,
@@ -12,7 +13,27 @@ import {
 import { resolvePublicResourcePath } from "@/server/seo/public-route-guard";
 
 const DEFAULT_CMS_ORIGIN = "https://cms.fwqgo.com";
-const CACHED_HOMEPAGE_PATHS = new Set(["/", "/en"]);
+/**
+ * Index pages whose anonymous canonical HTML may be shared-cached by the outer
+ * proxy. The homepage and the offer hub carry the strongest internal links on
+ * the site and hold no per-visitor state, so they belong to the same class as
+ * the article pages that already opt in.
+ */
+const SHARED_CACHE_INDEX_PATHS = new Set(["/", "/en", "/servers"]);
+/**
+ * Collection and taxonomy routes are listings of already-published content.
+ * They add a marker only; the outer proxy still verifies the final status,
+ * content type and absence of Set-Cookie before applying a shared policy.
+ */
+const SHARED_CACHE_ROUTE_KINDS = new Set<PublicResourceRoute["kind"]>([
+  "archive",
+  "category",
+  "tag",
+  "provider",
+  "region",
+  "line",
+  "server_topic",
+]);
 const ARTICLE_STATIC_SHELL_PATHS = new Set([
   "/fwq/posts/__fwqgo_article_static_shell__",
   "/en/fwq/posts/__fwqgo_article_static_shell__",
@@ -27,6 +48,18 @@ const CMS_ROUTE_PREFIXES = [
   "/seo",
   "/settings",
 ];
+
+/**
+ * Static documents must not share their policy with Flight, prefetches,
+ * queries, or requests carrying authentication state. Those requests keep an
+ * explicit private policy instead of a shared-cache marker.
+ */
+function markRequestPrivate(response: NextResponse) {
+  response.headers.set("Cache-Control", "private, no-store, max-age=0");
+  response.headers.set("CDN-Cache-Control", "no-store");
+  response.headers.set("Cloudflare-CDN-Cache-Control", "no-store");
+  return response;
+}
 
 function getCmsOrigin() {
   return (process.env.NEXT_PUBLIC_CMS_URL ?? DEFAULT_CMS_ORIGIN).replace(
@@ -109,16 +142,12 @@ export async function proxy(request: NextRequest) {
   }
 
   if (request.method === "GET" || request.method === "HEAD") {
-    if (
-      CACHED_HOMEPAGE_PATHS.has(pathname) &&
-      !isPublicHtmlRequest(request)
-    ) {
-      // Static homepage documents must not share their policy with Flight,
-      // prefetches, queries, or requests carrying authentication state.
+    if (SHARED_CACHE_INDEX_PATHS.has(pathname)) {
       const response = NextResponse.next();
-      response.headers.set("Cache-Control", "private, no-store, max-age=0");
-      response.headers.set("CDN-Cache-Control", "no-store");
-      response.headers.set("Cloudflare-CDN-Cache-Control", "no-store");
+      if (!isPublicHtmlRequest(request)) return markRequestPrivate(response);
+      // This is eligibility, not a cache policy. The outer proxy must also
+      // verify final status 200, HTML content type and no Set-Cookie.
+      response.headers.set("X-Fwqgo-Cacheable-Public", "1");
       return response;
     }
 
@@ -131,15 +160,10 @@ export async function proxy(request: NextRequest) {
       const response = NextResponse.rewrite(target);
       // Next.js determines the final successful HTML policy. Never attach a
       // positive CDN policy before the downstream response status is known.
-      if (!isPublicHtmlRequest(request)) {
-        response.headers.set("Cache-Control", "private, no-store, max-age=0");
-        response.headers.set("CDN-Cache-Control", "no-store");
-        response.headers.set("Cloudflare-CDN-Cache-Control", "no-store");
-      } else {
-        // The outer proxy must still validate the final status, content type
-        // and absence of Set-Cookie before applying a shared HTML policy.
-        response.headers.set("X-Fwqgo-Cacheable-Knowledge", "1");
-      }
+      if (!isPublicHtmlRequest(request)) return markRequestPrivate(response);
+      // The outer proxy must still validate the final status, content type
+      // and absence of Set-Cookie before applying a shared HTML policy.
+      response.headers.set("X-Fwqgo-Cacheable-Knowledge", "1");
       return response;
     }
 
@@ -157,13 +181,13 @@ export async function proxy(request: NextRequest) {
         }
         const response = NextResponse.next();
         if (!isPublicHtmlRequest(request)) {
-          response.headers.set("Cache-Control", "private, no-store, max-age=0");
-          response.headers.set("CDN-Cache-Control", "no-store");
-          response.headers.set("Cloudflare-CDN-Cache-Control", "no-store");
+          markRequestPrivate(response);
         } else if (route.kind === "post") {
           // This is eligibility, not a cache policy. The outer proxy must also
           // verify final status 200, HTML content type and no Set-Cookie.
           response.headers.set("X-Fwqgo-Cacheable-Article", "1");
+        } else if (SHARED_CACHE_ROUTE_KINDS.has(route.kind)) {
+          response.headers.set("X-Fwqgo-Cacheable-Public", "1");
         }
         response.headers.set(
           "Server-Timing",
