@@ -191,6 +191,15 @@ function CoverPreview({ src, title }: { src: string | null; title: string }) {
   );
 }
 
+/**
+ * 封面批量的单次上限，与 `batchGenerateArticleCoverImagesAction` 的
+ * `batchCoverSchema`（`z.array(...).min(1).max(20)`）保持一致。
+ *
+ * 选择阶段一旦超限必须给出可见反馈，不能静默丢弃：否则用户看到的是
+ * 「勾了却没反应」或「全选后勾选框弹回未选中」，无法判断发生了什么。
+ */
+const MAX_COVER_BATCH_POSTS = 20;
+
 export function ArticleCoverBatchGenerator({
   posts,
 }: {
@@ -204,10 +213,11 @@ export function ArticleCoverBatchGenerator({
   const [selectedIds, setSelectedIds] = useState<number[]>(
     posts
       .filter((post) => !post.imgUrl)
-      .slice(0, 20)
+      .slice(0, MAX_COVER_BATCH_POSTS)
       .map((post) => post.id),
   );
   const [results, setResults] = useState<GenerateResult[]>([]);
+  const [limitNotice, setLimitNotice] = useState(false);
   const [batchId, setBatchId] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [batchSummary, setBatchSummary] = useState({
@@ -238,7 +248,9 @@ export function ArticleCoverBatchGenerator({
   }, [coverFilter, posts, query]);
 
   const selectedSet = new Set(selectedIds);
-  const selectableFilteredPosts = filteredPosts.slice(0, 20);
+  // 「可全选」的范围与 toggleAllFiltered 共用同一基准，否则表头勾选框的
+  // 选中态与实际写入的集合会不一致（表现为勾选框点不动、弹回未选中）。
+  const selectableFilteredPosts = filteredPosts.slice(0, MAX_COVER_BATCH_POSTS);
   const allFilteredSelected =
     selectableFilteredPosts.length > 0 &&
     selectableFilteredPosts.every((post) => selectedSet.has(post.id));
@@ -252,37 +264,49 @@ export function ArticleCoverBatchGenerator({
   const isBusy = isStarting || isBatchRunning;
 
   function toggleSelected(id: number, checked: boolean) {
-    setSelectedIds((current) =>
-      checked
-        ? [...new Set([...current, id])].slice(0, 20)
-        : current.filter((item) => item !== id),
-    );
+    if (!checked) {
+      setSelectedIds((current) => current.filter((item) => item !== id));
+      return;
+    }
+    if (selectedSet.has(id)) return;
+
+    // 达到上限时保持原选择并给出提示，而不是静默丢弃这一次勾选。
+    if (selectedIds.length >= MAX_COVER_BATCH_POSTS) {
+      setLimitNotice(true);
+      return;
+    }
+
+    setLimitNotice(false);
+    setSelectedIds((current) => [...current, id]);
   }
 
   function toggleAllFiltered(checked: boolean) {
     if (!checked) {
+      setLimitNotice(false);
       setSelectedIds((current) =>
         current.filter((id) => !filteredPosts.some((post) => post.id === id)),
       );
       return;
     }
 
-    setSelectedIds((current) =>
-      [
-        ...new Set([
-          ...current,
-          ...selectableFilteredPosts.map((post) => post.id),
-        ]),
-      ].slice(0, 20),
-    );
+    // 过滤结果优先入列，保证「全选」后 selectableFilteredPosts 一定被覆盖；
+    // 若过滤结果本身超过上限，则截到上限并提示剩余未选中的数量。
+    setLimitNotice(filteredPosts.length > MAX_COVER_BATCH_POSTS);
+    setSelectedIds((current) => [
+      ...new Set([
+        ...selectableFilteredPosts.map((post) => post.id),
+        ...current,
+      ]),
+    ].slice(0, MAX_COVER_BATCH_POSTS));
   }
 
   function selectMissingCovers() {
+    const missingCoverPosts = posts.filter((post) => !post.imgUrl);
     setCoverFilter("missing");
+    setLimitNotice(missingCoverPosts.length > MAX_COVER_BATCH_POSTS);
     setSelectedIds(
-      posts
-        .filter((post) => !post.imgUrl)
-        .slice(0, 20)
+      missingCoverPosts
+        .slice(0, MAX_COVER_BATCH_POSTS)
         .map((post) => post.id),
     );
   }
@@ -591,9 +615,13 @@ export function ArticleCoverBatchGenerator({
         </div>
       ) : null}
 
-      {selectedIds.length > 20 ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          单次最多选择 20 篇文章。
+      {limitNotice ? (
+        <div
+          role="status"
+          className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        >
+          单次最多选择 {MAX_COVER_BATCH_POSTS} 篇文章，已保留前{" "}
+          {MAX_COVER_BATCH_POSTS} 篇，请减少选择后重试。
         </div>
       ) : null}
 
@@ -689,7 +717,7 @@ export function ArticleCoverBatchGenerator({
                     onCheckedChange={(checked) =>
                       toggleAllFiltered(Boolean(checked))
                     }
-                    aria-label="选择当前筛选文章"
+                    aria-label={`选择当前筛选的前 ${MAX_COVER_BATCH_POSTS} 篇文章`}
                   />
                 </TableHead>
                 <TableHead className="min-w-[320px]">文章</TableHead>

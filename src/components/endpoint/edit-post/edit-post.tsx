@@ -530,7 +530,7 @@ export default function EditPost({
 
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <label className="text-sm font-medium">封面图片</label>
+                  <span className="text-sm font-medium">封面图片</span>
                   <ArticleCoverGenerator
                     postId={post.post.id}
                     title={title}
@@ -596,7 +596,7 @@ export default function EditPost({
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">标签</label>
+                <span className="text-sm font-medium">标签</span>
                 <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-md border border-border/70 bg-background p-2">
                   {tags.map((tag) => (
                     <Badge

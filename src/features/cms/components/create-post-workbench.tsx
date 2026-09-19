@@ -371,7 +371,7 @@ export function CreatePostWorkbench({
               ) : null}
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">标签</label>
+              <span className="text-sm font-medium">标签</span>
               <div className="flex flex-wrap items-center gap-2">
                 {tags.length > 0 &&
                   tags.map((tag) => (
@@ -436,7 +436,7 @@ export function CreatePostWorkbench({
             </div>
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="text-sm font-medium">封面图片</label>
+                <span className="text-sm font-medium">封面图片</span>
                 <ArticleCoverGenerator
                   title={title}
                   description={description}

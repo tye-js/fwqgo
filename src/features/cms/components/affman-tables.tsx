@@ -1109,7 +1109,7 @@ export default function AffManTable({
               <TableRow>
                 <TableHead className="w-[44px]">
                   <Checkbox
-                    aria-label="全选当前筛选商家"
+                    aria-label="全选当前页商家"
                     checked={allFilteredSelected}
                     onCheckedChange={(checked) =>
                       setSelectedIds(

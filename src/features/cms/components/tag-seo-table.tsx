@@ -84,6 +84,7 @@ export function TagSeoTable({
   const updateUrlQuery = useUrlQueryUpdater();
   const [rows, setRows] = useState(tags);
   const [query, setQuery] = useState(initialQuery);
+  const [isComposing, setIsComposing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [aiPendingId, setAiPendingId] = useState<number | null>(null);
@@ -102,14 +103,16 @@ export function TagSeoTable({
     const normalizedInitialQuery = initialQuery.trim();
     const normalizedQuery = query.trim();
 
-    if (normalizedQuery === normalizedInitialQuery) return;
+    // 中文输入法合成期间不要把拼音串写进地址栏：父级用 query 作为列表的
+    // 重挂载 key，一旦写入就会重挂载列表并摧毁正在进行的合成。
+    if (isComposing || normalizedQuery === normalizedInitialQuery) return;
 
     const timeoutId = window.setTimeout(() => {
       updateUrlQuery({ query: normalizedQuery || null });
     }, 400);
 
     return () => window.clearTimeout(timeoutId);
-  }, [initialQuery, query, updateUrlQuery]);
+  }, [initialQuery, isComposing, query, updateUrlQuery]);
 
   const visibleSelectedCount = rows.filter((row) =>
     selectedIds.has(row.id),
@@ -357,6 +360,11 @@ export function TagSeoTable({
         description="维护标签聚合页的 Description、Keywords、英文标签、英文 slug、英文 Description 和英文 Keywords；价格类标签已自动排除。"
         searchValue={query}
         onSearchChange={setQuery}
+        onSearchCompositionStart={() => setIsComposing(true)}
+        onSearchCompositionEnd={(event) => {
+          setQuery(event.currentTarget.value);
+          setIsComposing(false);
+        }}
         searchPlaceholder="搜索标签、slug、Description、Keywords 或英文内容"
         selectionCount={selectedRowIds.length}
         actionSlot={

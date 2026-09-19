@@ -51,18 +51,22 @@ export function ShortLinkTable({
 }) {
   const updateUrlQuery = useUrlQueryUpdater();
   const [query, setQuery] = useState(initialQuery);
+  const [isComposing, setIsComposing] = useState(false);
   const publicOrigin = initialPublicOrigin.replace(/\/+$/, "");
 
   useEffect(() => {
     const normalizedQuery = query.trim();
-    if (normalizedQuery === initialQuery.trim()) return;
+
+    // 中文输入法合成期间不要把拼音串写进地址栏：父级用 query 作为列表的
+    // 重挂载 key，一旦写入就会重挂载列表并摧毁正在进行的合成。
+    if (isComposing || normalizedQuery === initialQuery.trim()) return;
 
     const timeoutId = window.setTimeout(() => {
       updateUrlQuery({ query: normalizedQuery || null });
     }, 400);
 
     return () => window.clearTimeout(timeoutId);
-  }, [initialQuery, query, updateUrlQuery]);
+  }, [initialQuery, isComposing, query, updateUrlQuery]);
 
   async function copyShortLink(slug: string) {
     const resolvedOrigin =
@@ -88,6 +92,11 @@ export function ShortLinkTable({
         description="文章发布时外部链接会被转换为 /go/{slug}，这里用于检查短链和目标 URL。"
         searchValue={query}
         onSearchChange={setQuery}
+        onSearchCompositionStart={() => setIsComposing(true)}
+        onSearchCompositionEnd={(event) => {
+          setQuery(event.currentTarget.value);
+          setIsComposing(false);
+        }}
         searchPlaceholder="搜索 slug 或目标 URL"
       />
 

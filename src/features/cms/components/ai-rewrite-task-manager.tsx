@@ -736,6 +736,24 @@ export function AiRewriteTaskManager({
     query: "",
   };
 
+  // 搜索框先落本地 state 再防抖同步到地址栏：直接 onChange → updateUrlQuery
+  // 会让每一次按键（含中文输入法的每个拼音键）都触发一次 RSC 导航。
+  const [searchInput, setSearchInput] = useState(activeFilters.query);
+  const [isComposing, setIsComposing] = useState(false);
+
+  useEffect(() => {
+    const normalizedInput = searchInput.trim();
+
+    // 合成期间不写入地址栏，避免拼音串被当成查询词。
+    if (isComposing || normalizedInput === activeFilters.query.trim()) return;
+
+    const timeoutId = window.setTimeout(() => {
+      updateUrlQuery({ query: normalizedInput || null });
+    }, 400);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [activeFilters.query, isComposing, searchInput, updateUrlQuery]);
+
   useEffect(() => {
     if (!hasActiveTask) return;
 
@@ -1043,8 +1061,13 @@ export function AiRewriteTaskManager({
           <AdminTableWorkbench
             title="任务筛选"
             description={`筛选条件和页码会写入地址栏，当前匹配 ${totalCount ?? tasks.length} 个任务。`}
-            searchValue={activeFilters.query}
-            onSearchChange={(value) => updateUrlQuery({ query: value || null })}
+            searchValue={searchInput}
+            onSearchChange={setSearchInput}
+            onSearchCompositionStart={() => setIsComposing(true)}
+            onSearchCompositionEnd={(event) => {
+              setSearchInput(event.currentTarget.value);
+              setIsComposing(false);
+            }}
             searchPlaceholder="搜索来源、标题、分类或生成结果"
             searchMaxLength={160}
             filterSlot={

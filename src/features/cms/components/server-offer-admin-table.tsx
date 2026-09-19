@@ -1019,6 +1019,7 @@ export function ServerOfferAdminTable({
   // 搜索框是受控组件，直接写入地址栏会让每次按键都触发一次 RSC 导航并丢字，
   // 因此先落到本地 state，再防抖同步到查询参数。
   const [searchInput, setSearchInput] = useState(initialFilters.query);
+  const [isComposing, setIsComposing] = useState(false);
   const bulkPending = isPending(serverOfferBulkMutationKey);
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const activeFilters = {
@@ -1057,14 +1058,17 @@ export function ServerOfferAdminTable({
 
   useEffect(() => {
     const normalizedInput = searchInput.trim();
-    if (normalizedInput === initialFilters.query.trim()) return;
+
+    // 中文输入法合成期间不要把拼音串写进地址栏：父级用 query 作为列表的
+    // 重挂载 key，一旦写入就会重挂载列表并摧毁正在进行的合成。
+    if (isComposing || normalizedInput === initialFilters.query.trim()) return;
 
     const timeoutId = window.setTimeout(() => {
       updateUrlQuery({ query: normalizedInput || null });
     }, 400);
 
     return () => window.clearTimeout(timeoutId);
-  }, [initialFilters.query, searchInput, updateUrlQuery]);
+  }, [initialFilters.query, isComposing, searchInput, updateUrlQuery]);
 
   function toggleSelected(id: number) {
     setSelectedIds((current) =>
@@ -1114,6 +1118,11 @@ export function ServerOfferAdminTable({
         description={`筛选条件和页码会写入地址栏，当前匹配 ${totalCount} 条套餐。`}
         searchValue={searchInput}
         onSearchChange={setSearchInput}
+        onSearchCompositionStart={() => setIsComposing(true)}
+        onSearchCompositionEnd={(event) => {
+          setSearchInput(event.currentTarget.value);
+          setIsComposing(false);
+        }}
         searchPlaceholder="搜索套餐、商家、地区、线路、配置或优惠码"
         filterSlot={
           <>

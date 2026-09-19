@@ -110,6 +110,7 @@ export function PostList({
   const router = useRouter();
   const updateUrlQuery = useUrlQueryUpdater();
   const [query, setQuery] = useState(initialQuery);
+  const [isComposing, setIsComposing] = useState(false);
   const statusFilter = defaultStatusFilter;
   const sortValue = initialSort;
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -138,14 +139,16 @@ export function PostList({
   useEffect(() => {
     const normalizedInitialQuery = initialQuery.trim();
     const normalizedQuery = query.trim();
-    if (normalizedQuery === normalizedInitialQuery) return;
+    // 中文输入法合成期间不要把拼音串写进地址栏：父级用 query 作为列表的
+    // 重挂载 key，一旦写入就会重挂载列表并摧毁正在进行的合成。
+    if (isComposing || normalizedQuery === normalizedInitialQuery) return;
 
     const timeoutId = window.setTimeout(() => {
       updateUrlQuery({ query: normalizedQuery || null });
     }, 400);
 
     return () => window.clearTimeout(timeoutId);
-  }, [initialQuery, query, updateUrlQuery]);
+  }, [initialQuery, isComposing, query, updateUrlQuery]);
 
   useEffect(() => {
     if (!activeCoverBatchId || activeCoverBatchDone) return;
@@ -490,6 +493,11 @@ export function PostList({
       <AdminTableWorkbench
         searchValue={query}
         onSearchChange={setQuery}
+        onSearchCompositionStart={() => setIsComposing(true)}
+        onSearchCompositionEnd={(event) => {
+          setQuery(event.currentTarget.value);
+          setIsComposing(false);
+        }}
         searchPlaceholder="搜索文章标题或 slug"
         selectionCount={selectedIds.length}
         actionDisclosureId="post-bulk-actions"
