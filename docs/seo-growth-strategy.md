@@ -127,7 +127,7 @@
 
 - TTFB：`/` 1.27 s、文章页 1.30 s、`/servers` 1.45 s。
 - 响应头：`cache-control: private, no-cache, no-store, max-age=0, must-revalidate` + `cf-cache-status: DYNAMIC`。
-- `docs/search-console-remediation.md:44` 明确写：「这些 include 本轮仅准备在仓库中，**尚未安装到线上**」。
+- 文章与知识库首页的缓存 include 已于 2026-09-12 上线（`docs/nginx-optimization.md` 的生产执行记录），但只覆盖文章 location 与知识库首页，首页与 `/servers` 仍落在 `location /` 上，没有任何共享缓存策略。
 - `cf-ray: ...-AMS` —— 请求落在阿姆斯特丹节点，对中文用户 RTT 偏高。
 
 **问题**：TTFB 直接抬升 LCP；`no-store` 让每次请求都回源，既伤用户体验也降低爬取预算利用率。
@@ -141,6 +141,14 @@
 5. 评估首页 RSC payload 内联体积（563 KB / 781 KB），把非首屏模块改为客户端懒加载。
 
 **验收**：`ARTICLE_ISR_REQUIRE_EDGE_CACHE=1 SITE_URL=https://fwqgo.com bun run smoke:article-isr` 通过；`cf-cache-status: HIT`；TTFB < 400 ms；CrUX / PageSpeed 移动端 LCP < 2.5 s。
+
+> **进度（2026-09-19）**：第 3 步的 Nginx 侧已上线。
+>
+> - 第 1 步本就不需要重做 —— 文章与知识库的 include 已在 2026-09-12 安装，`deploy/nginx/fwqgo-public-cache-maps.conf` 与 `fwqgo-public-cache-headers.conf` 已经在线，文档里「尚未安装到线上」是 09-05 的旧结论。
+> - 第 3 步完成：`fwqgo-public-page-cache-headers.conf` + public page maps + `fwqgo-site.conf` 的 5 个新 location（`= /`、`= /en`、`= /servers`、`^/servers/`、分类/标签/归档正则）已安装并平滑重载。原有 robots / sitemap / feed / 知识库 / 文章策略与点文件拦截实测未变，新 location 的安全头已重挂。
+> - 仍未生效：这些 location 需要 `apps/web/proxy.ts` 发出的 `X-Fwqgo-Cacheable-Public` 标记随应用发布上线；在此之前对外是 `no-store`，行为与改动前等价。
+> - **第 2 步是当前瓶颈**：实测文章页在已有 900 秒公共策略的情况下 `cf-cache-status` 仍是 `DYNAMIC`，说明 Cloudflare 从未缓存 HTML。必须建 Cache Rule 才会出现 `HIT`；主动清理另需 `CLOUDFLARE_ZONE_ID` 与 `CLOUDFLARE_CACHE_PURGE_TOKEN`。这一步需要 Cloudflare 账号权限，代码侧无法代办。
+> - 第 4 步无需处理：`cf-ray` 实测已落在 `HKG` 节点。
 
 ---
 
@@ -307,7 +315,7 @@
 
 ### 第 2-3 周 — 结构
 
-- [ ] P1-5 Nginx 缓存上线 + Cloudflare 边缘缓存 + 首页纳入缓存
+- [ ] P1-5 Nginx 缓存上线 + Cloudflare 边缘缓存 + 首页纳入缓存 —— **Nginx 侧 2026-09-19 已完成**（新增首页 / `/servers` / 分类 / 标签 / 归档 5 个 location），待应用发布带上资格标记后生效；**Cloudflare Cache Rule 仍缺，需要账号权限**
 - [ ] P0-4 聚合页实体映射补齐（region / line / provider）
 - [ ] P1-7 干净 URL 200 化
 - [ ] P1-6 标签 slug ASCII 化 + 门槛提升 + 合并

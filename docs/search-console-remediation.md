@@ -34,14 +34,14 @@
 
 应用也识别 `Host`/`X-Forwarded-Host` 的 www。若 Cloudflare 在请求到达源站前已经把 Host 改成裸域，需在 Cloudflare 最外层执行同一条 www 重定向；应用无法恢复被覆盖的域名。
 
-缓存 include 分两层：
+缓存 include 分三层：
 
-1. 在 Nginx `http {}` 中载入 `fwqgo-public-cache-maps.conf`。
-2. 仅在现有中英文文章代理 location 中载入 `fwqgo-public-cache-headers.conf`，保留现有 proxy_pass、Host、超时等配置。
-3. 映射只对资格标记为 1、GET/HEAD、无请求 Cookie/Authorization/RSC/预取/查询参数、最终 200 HTML 且无 Set-Cookie 的响应发出 900 秒共享缓存头；其他文章响应均 no-store。
+1. 在 Nginx `http {}` 中载入 `fwqgo-public-cache-maps.conf`（文章 map + 公开页 map）与 `fwqgo-knowledge-cache-maps.conf`。
+2. 在中英文文章代理 location 中载入 `fwqgo-public-cache-headers.conf`；在首页、`location = /servers`、`location ~ ^/servers/` 以及分类/标签/归档列表的 location 中载入 `fwqgo-public-page-cache-headers.conf`；在 `/knowledge` 与 `/en/knowledge` 中载入 `fwqgo-knowledge-cache-headers.conf`。三者都保留现有 proxy_pass、Host、超时等配置。
+3. 映射只对资格标记为 1、GET/HEAD、无请求 Cookie/Authorization/RSC/预取/查询参数、最终 200 HTML 且无 Set-Cookie 的响应发出共享缓存头（文章与公开页 900 秒，知识库首页 300 秒）；其他响应均 no-store。
 4. 先 `nginx -t`，再按发布流程 reload。Cloudflare 只为同样的匿名规范 HTML 建缓存规则，非 200 TTL 为 0，保留 HTML/RSC 区分，不启用宽泛 Cache Everything。
 
-这些 include 本轮仅准备在仓库中，尚未安装到线上。未安装时，Next 的整页响应可能仍为 private/no-store；文章核心 ISR 缓存继续工作。
+三套 include 已分别于 2026-09-11/12（文章、知识库首页）和 2026-09-19（公开页）安装到线上，执行记录见 `docs/nginx-optimization.md`。公开页的资格标记 `X-Fwqgo-Cacheable-Public` 由 `apps/web/proxy.ts` 发出，需随应用发布才对线上生效；标记缺失时这些 location 输出 no-store，与未安装时等价，因此 Nginx 侧可以安全前置。
 
 如要在发布、改名或共享 taxonomy 变化时主动清理 Cloudflare URL 缓存，在 Web 服务环境配置 `CLOUDFLARE_ZONE_ID` 与仅有该 Zone 缓存清理权限的 `CLOUDFLARE_CACHE_PURGE_TOKEN`。已认证的缓存事件会在后台分批清理规范文章、历史地址与受影响 sitemap，不执行全站 Purge Everything。缺少配置时不调用外部 API；失败记录为 `public.edge_cache.purge_failed`。
 
