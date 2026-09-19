@@ -67,5 +67,7 @@ fwqgo.com
 /tests/
 /.claude/
 /.agents/
+/.workbuddy/
+/.workbuddy-ai/
 
 /output/imagegen
