@@ -433,6 +433,25 @@ export function enhanceArticleLinks(html: string) {
   return $.html();
 }
 
+/**
+ * 超过该列数的表格会被包进 `.article-table-scroll`，从而允许横向滚动。
+ *
+ * 列数少时表格可以用 `table-fixed` 均分宽度、靠换行容纳内容；列数一多，
+ * 均分会让每列窄到逐字换行，此时宁可让用户横向滚动。
+ */
+const ARTICLE_TABLE_SCROLL_COLUMN_THRESHOLD = 4;
+
+/**
+ * 写入 `--article-table-columns` 的列数上限。
+ *
+ * `colspan` 会在 `sanitizeArticleHtml` 中被保留，所以 `colspan="9999"`
+ * 这类内容能一路走到这里。真正兜住布局的是样式表里的
+ * `min-width: min(calc(var(--article-table-columns) * 5rem), 720px)`，
+ * 这里再夹一道只是让写进 DOM 的属性值本身保持合理（避免出现 `--article-table-columns:9999`
+ * 这种明显失真的值），并让列数语义与真实列数保持可信。
+ */
+const ARTICLE_TABLE_LAYOUT_COLUMN_CAP = 24;
+
 function enhanceArticleTables(html: string) {
   const $ = cheerio.load(html, null, false);
 
@@ -453,9 +472,17 @@ function enhanceArticleTables(html: string) {
       maxColumns = Math.max(maxColumns, columns);
     });
 
-    if (maxColumns > 4) {
+    if (maxColumns > ARTICLE_TABLE_SCROLL_COLUMN_THRESHOLD) {
+      // 把列数交给样式表：`.article-table-scroll table` 用它算出「可读下限宽度」，
+      // 列宽因此由表格宽度均分（table-fixed）而不是按内容撑开。若仍用 table-auto，
+      // 任一长文本列都会把整张表推宽，在桌面端也会强制横向滚动。
+      // 这里写入的只是服务端解析出的整数，不含任何来自文章内容的字符串。
+      const layoutColumns = Math.min(
+        maxColumns,
+        ARTICLE_TABLE_LAYOUT_COLUMN_CAP,
+      );
       $table.wrap(
-        '<div class="article-table-scroll" role="region" aria-label="Data table" tabindex="0"></div>',
+        `<div class="article-table-scroll" role="region" aria-label="Data table" tabindex="0" style="--article-table-columns:${layoutColumns}"></div>`,
       );
     }
   });

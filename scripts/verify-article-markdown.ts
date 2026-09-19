@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import * as cheerio from "cheerio";
 
@@ -6,6 +7,12 @@ import {
   htmlToArticleMarkdown,
   renderArticleContentHtml,
 } from "../packages/core/content";
+
+// 正文表格的滚动/列宽契约横跨两处：包裹层由 enhanceArticleTables 生成，
+// 列宽由 .article-table-scroll table 的样式决定。任何一侧单独改动都会
+// 让另一侧失效（例如去掉 table-fixed 就退回「长文本列把表格撑宽」），
+// 所以在这里一并守住。
+const globalsCss = readFileSync("src/styles/globals.css", "utf8");
 
 const requestText =
   "Hello, Could you please double the monthly bandwidth and assign an IPv6 address for my VPS? Service ID: [填写你的服务ID] Invoice Number: [填写账单号] Thank you!";
@@ -144,6 +151,72 @@ void test("tables retain distinct purchase destinations and paid-link attributes
     "nofollow sponsored noopener noreferrer",
   );
   assert.equal(render("[购买](/go/test-plan)")("a").attr("rel"), "nofollow");
+});
+
+void test("wide tables expose their column count for the layout CSS", () => {
+  const $ = render(
+    "| 套餐 | CPU | 内存 | 地区 | 购买 |\n| --- | --- | --- | --- | --- |\n| A | 2 核 | 2 GB | 香港 | [购买](https://merchant.example/a) |",
+  );
+
+  const wrapper = $(".article-table-scroll");
+  assert.equal(wrapper.length, 1);
+  // 列数必须写进 CSS 自定义属性，min-width 才能按列数算出「可读下限宽度」
+  assert.equal(wrapper.attr("style"), "--article-table-columns:5");
+  // 表格必须留在包裹层内部，否则 overflow-x-auto 无从生效
+  assert.equal(wrapper.find("table").length, 1);
+});
+
+void test("table column counts follow colspan and stop at the layout cap", () => {
+  // colspan 要计入列数：3 + 1 + 1 = 5 列，按裸单元格数只有 3 列
+  const spanned = render(
+    '<table><tr><th colspan="3">标题</th><th>甲</th><th>乙</th></tr><tr><td>a</td><td>b</td><td>c</td><td>d</td><td>e</td></tr></table>',
+  );
+  assert.equal(
+    spanned(".article-table-scroll").attr("style"),
+    "--article-table-columns:5",
+  );
+
+  // 清洗阶段会保留 colspan（4 位以内），因此超大 colspan 能一路走到这里；
+  // 写入 CSS 前必须夹紧，否则 min-width 会算出天文数字拖垮整页布局
+  const capped = render(
+    '<table><tr><th colspan="9999">标题</th><th>甲</th><th>乙</th><th>丙</th><th>丁</th></tr><tr><td>a</td><td>b</td><td>c</td><td>d</td><td>e</td></tr></table>',
+  );
+  assert.equal(
+    capped(".article-table-scroll").attr("style"),
+    "--article-table-columns:24",
+  );
+});
+
+void test("tables at or below the scroll threshold stay unwrapped", () => {
+  const $ = render(
+    "| 套餐 | 价格 | 备注 | 购买 |\n| --- | --- | --- | --- |\n| A | 5 美元 | 有货 | [购买](https://merchant.example/a) |",
+  );
+
+  // 4 列及以下不需要滚动容器：均分宽度 + 换行已经够用，
+  // 多包一层会平白给读屏用户增加一个可聚焦的 region
+  assert.equal($(".article-table-scroll").length, 0);
+  assert.equal($("table").length, 1);
+});
+
+void test("scroll containers size columns by width instead of by content", () => {
+  const start = globalsCss.indexOf(
+    ".article-prose :where(.article-table-scroll table)",
+  );
+  assert.ok(start > -1, "缺少 .article-table-scroll table 样式规则");
+  const rule = globalsCss.slice(start, globalsCss.indexOf("}", start));
+
+  // table-auto 会按内容撑开列宽：只要有一列是长文本，整张表就宽过正文栏，
+  // 桌面端也会出现横向滚动。必须固定为 table-fixed，让列宽由表格宽度均分。
+  assert.match(rule, /table-fixed/);
+  assert.doesNotMatch(rule, /table-auto/);
+  // 可读下限必须与列数挂钩，而不是写死一个与列数无关的值。
+  // 末尾的 px 上界（= 修复前的固定值）同样必须存在：没有它，列数 ≥ 10 时
+  // 列数 × 每列下限会超过 720px，反而比修复前溢出更多。
+  assert.match(
+    rule,
+    /min-width:\s*min\(calc\(var\(--article-table-columns,\s*\d+\)\s*\*\s*[\d.]+rem\),\s*\d+px\)/,
+  );
+  assert.doesNotMatch(rule, /min-w-\[720px\]/);
 });
 
 void test("unsafe links and executable HTML remain blocked", () => {

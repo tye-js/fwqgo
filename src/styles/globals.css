@@ -305,8 +305,29 @@
     scrollbar-width: thin;
   }
 
+  /*
+   * 列数 > 4 的表格由 enhanceArticleTables 包进这里（见 packages/core/content.ts）。
+   *
+   * 刻意用 table-fixed 而不是 table-auto：auto 会按内容撑开列宽，只要有一列是
+   * 长文本（套餐配置、线路说明之类），整张表就会宽过正文栏，在桌面端也逼着用户
+   * 横向滚动。fixed 让列宽由表格宽度均分，配合 th/td 的 overflow-wrap:anywhere
+   * 自动换行，绝大多数表格不再需要滚动。
+   *
+   * min-width 按列数给出「可读下限」，列数越多越早允许滚动，避免窄屏上把每列
+   * 压到只能逐字换行。默认值 4 与 enhanceArticleTables 的包裹阈值保持一致。
+   *
+   * 5rem（80px）是实测选定的：正文栏在 ≥1536px 视口时反而收窄到 644px
+   * （1920×1080 正在此区间），1024–1440px 视口为 724–755px，900px 视口最宽 762px。
+   * 取 80px 可让最常见的 5–8 列表格在 644px 容器内全部放下（8×80 = 640），
+   * 而此前的固定 min-width:720px 会让 644px 容器里的每一张表格都溢出 76px。
+   *
+   * 末尾的 720px 是修复前的固定值，作为上界夹紧：列数 ≥ 10 时 cols × 80px 会超过它，
+   * 于是回到「与修复前完全一致」的行为，而不是把溢出量推得更大。
+   * 这样任何列数下都满足「不会比修复前更差」。
+   */
   .article-prose :where(.article-table-scroll table) {
-    @apply my-0 min-w-[720px] table-auto rounded-none border-0 shadow-none;
+    @apply my-0 w-full table-fixed rounded-none border-0 shadow-none;
+    min-width: min(calc(var(--article-table-columns, 4) * 5rem), 720px);
   }
 
   .article-prose :where(thead) {
