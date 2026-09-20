@@ -119,6 +119,44 @@
 
 **验收**：region 页 ≥ 8、line 页 ≥ 6、provider 页 ≥ 20，全部在 `sitemap-servers.xml` 中且 `index,follow`。
 
+> **实测复核（2026-09-20，只读查询生产库）——这一节的假设需要改写**
+>
+> 上面的数字来自线上抓取，是对的；但「补齐映射就能换来一批聚合页」这个前提不成立。实测：
+>
+> | 指标 | 实测值 |
+> | --- | --- |
+> | `server_offers` 总行数 | **28**（全部 visible、全部 `regular`、全部有价格和购买链接） |
+> | region 已映射 | **0 / 28** |
+> | line 已映射 | **0 / 28** |
+> | provider 已映射 | 28 / 28 |
+> | 拥有可售套餐的商家 | **只有 2 个**：`666clouds`（23 条）与 `racknerd`（5 条） |
+> | provider slug 为 NULL | **20 / 78** |
+> | provider slug 带 `-N` 全局计数器后缀 | **58 / 78** |
+>
+> 结论：**验收目标在当前数据量下不可能达成**。可索引门槛是每个集合 ≥5 条套餐，而
+> 28 条套餐分散在 6 个真实地区里，最好的情况也只有美国（11 条）能过线；线路侧最多 3 条，
+> **一条都过不了**；78 个商家里只有 2 个有套餐，离「≥20 个商家页」差一个数量级。
+> 所以 P0-4 的真实阻塞是**套餐数据量**（属于采集/监控与 P1-9 的范畴），不是实体映射。
+>
+> 复核中确认的三个具体缺陷（按处理优先级）：
+>
+> 1. **`/servers` 上大量链接指向 404。** `666clouds` 的 slug 为 NULL，而
+>    `server-inventory-results.tsx` 原本用 `offer.providerSlug ?? offer.providerName` 拼 URL，
+>    于是 82% 的套餐卡片链到 `/servers/providers/666clouds` —— 实测 **404**。地区与线路同理：
+>    0% 映射 → `/servers/regions/united-states`、`/servers/lines/cn2-gia` 实测全部 404，
+>    而 `/servers` 本身就在 `sitemap-servers.xml` 里。
+>    **已修** `server-inventory-results.tsx`：没有规范 slug 的标签渲染为纯文本（沿用站点对
+>    未达门槛 taxonomy 的既有规则），并加了解析型守卫。
+>    **未修** `server-offer-table.tsx`：它同样有 6 处同类回退，但它的数据源
+>    `serverOfferPublicSelect()` 根本没有 select 任何 slug 字段，需要先给公共套餐查询加上
+>    providers/regions/lines 三个 join，属于数据层改动，应单独开一次变更。
+> 2. **`666clouds` 没有 slug（23 条套餐，占 82%）。** 这是单个最大的聚合页损失：
+>    给这一个商家补 slug，就能立刻多一个 23 条套餐的商家页。
+> 3. **provider slug 生成规则有问题**：20 个为 NULL，58 个带 `-N` 后缀。
+>    文档原文只点了 `racknerd-16`，实际是**全站普遍现象**（`zgovps-1`…`jtti-62`），
+>    后缀来自全局计数器而不是「同名冲突才加」。改名需要配合 `publicSlugRedirects` 做 301。
+
+
 ---
 
 ## P1-5 性能与爬取效率
@@ -316,7 +354,7 @@
 ### 第 2-3 周 — 结构
 
 - [ ] P1-5 Nginx 缓存上线 + Cloudflare 边缘缓存 + 首页纳入缓存 —— **Nginx 侧 2026-09-19 已完成**（新增首页 / `/servers` / 分类 / 标签 / 归档 5 个 location），待应用发布带上资格标记后生效；**Cloudflare Cache Rule 仍缺，需要账号权限**
-- [ ] P0-4 聚合页实体映射补齐（region / line / provider）
+- [ ] P0-4 聚合页实体映射补齐（region / line / provider）—— **2026-09-20 实测复核后改写**：生产库仅 28 条可售套餐、region/line 映射 0%、只有 2 个商家有套餐，验收目标在数据量上不可能达成；真实阻塞是套餐数据量。已修 `/servers` 上指向 404 的聚合链接，剩余见该节复核说明
 - [ ] P1-7 干净 URL 200 化
 - [ ] P1-6 标签 slug ASCII 化 + 门槛提升 + 合并
 
