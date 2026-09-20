@@ -19,6 +19,8 @@ import {
   check,
 } from "drizzle-orm/pg-core";
 
+import { MIN_PUBLIC_ARTICLE_CONTENT_LENGTH } from "@fwqgo/core/public-content-policy";
+
 // Post table
 export const posts = pgTable(
   "posts",
@@ -75,11 +77,24 @@ export const posts = pgTable(
       table.published,
       table.updatedAt,
     ),
-    publishedViewsCreatedAtIdx: index("posts_published_views_createdAt_idx").on(
-      table.published,
-      table.views,
-      table.createdAt,
-    ),
+    // NOTE: there is deliberately no index on `posts.views`.
+    //
+    // `posts_published_views_createdAt_idx` existed to serve "popular post"
+    // ordering. It was removed because `views` is the hottest write column in
+    // the application: every article view runs
+    // `UPDATE posts SET views = views + 1`
+    // (src/features/public/actions/post-views.ts). With `views` in an index that
+    // update can never be HOT, so each single view rewrote an entry in every
+    // index on the table. Measured on the production primary: 0 of 30 view
+    // increments were HOT with the index present, 30 of 30 after removing it.
+    //
+    // The only readers of a `views` ordering are the build-time pre-render list
+    // (src/features/public/lib/article-static-params.ts — which the planner
+    // already served from `posts_public_language_created_idx` plus a 193-row
+    // top-N sort, so it never used this index) and the admin dashboard top-5
+    // (src/features/cms/data/post.ts), which went from 0.11ms to 1.48ms.
+    //
+    // Do not re-add an index on `views` without re-measuring the HOT ratio.
     categoryPublishedCreatedAtIdx: index(
       "posts_categoryId_published_createdAt_idx",
     ).on(table.categoryId, table.published, table.createdAt),
@@ -98,6 +113,39 @@ export const posts = pgTable(
       table.published,
       table.id,
     ),
+    // Partial indexes that encode `publicPostCondition` from
+    // src/server/posts/public-post-policy.ts.
+    //
+    // The public visibility rule ends in `char_length(btrim(content)) >= N`.
+    // Postgres keeps long article bodies out of line once a row is TOASTed, so
+    // evaluating that predicate per candidate row forced a full detoast pass:
+    // the taxonomy post-count queries measured ~15-32ms and the public list
+    // query ~17-24ms. Encoding the predicate in the index lets the planner
+    // prove it from index membership and skip the detoast entirely
+    // (measured 0.19-1.43ms after the change).
+    //
+    // `createdAt` is deliberately ascending, matching the existing
+    // `posts_published_createdAt_idx` convention: the public list orders
+    // `createdAt DESC`, which Postgres serves with a backward index scan, and
+    // the candidate set is a few hundred rows so the tie-break order is not
+    // worth a `DESC NULLS LAST` variant that would diverge from what
+    // drizzle-kit generates.
+    //
+    // `sql.raw` is required for the threshold: a plain interpolation makes
+    // drizzle-kit emit a `$1` placeholder, which is not valid inside DDL.
+    // KEEP THESE PREDICATES IN SYNC with publicPostCondition and
+    // MIN_PUBLIC_ARTICLE_CONTENT_LENGTH. If that constant changes, these
+    // indexes stop matching the query predicate and silently stop being used.
+    publicLanguageCreatedAtIdx: index("posts_public_language_created_idx")
+      .on(table.language, table.createdAt, table.id)
+      .where(
+        sql`${table.published} = true and char_length(btrim(${table.title})) > 0 and char_length(btrim(${table.slug})) > 0 and char_length(btrim(${table.content})) >= ${sql.raw(String(MIN_PUBLIC_ARTICLE_CONTENT_LENGTH))}`,
+      ),
+    publicCategoryIdx: index("posts_public_category_idx")
+      .on(table.categoryId)
+      .where(
+        sql`${table.published} = true and char_length(btrim(${table.title})) > 0 and char_length(btrim(${table.slug})) > 0 and char_length(btrim(${table.content})) >= ${sql.raw(String(MIN_PUBLIC_ARTICLE_CONTENT_LENGTH))}`,
+      ),
     translationSourceLanguageUnique: uniqueIndex(
       "posts_translationSource_language_unique",
     )

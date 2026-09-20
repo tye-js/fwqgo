@@ -2,7 +2,6 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 import { resolveDatabaseUrls } from "./connection-config";
-import { isBuildProcess } from "@fwqgo/core/build-verification";
 
 const databaseUrls = resolveDatabaseUrls(process.env);
 
@@ -17,7 +16,17 @@ const globalForDb = globalThis as unknown as {
 };
 
 function resolveMaxConnections() {
-  const fallback = isBuildProcess() ? 1 : 4;
+  // Builds render many independent pages. Article routes issue their reads with
+  // `Promise.all`, so a pool of one serialises every statement of a page and
+  // multiplies the wall time that can trip Next's prerender cache-fill budget.
+  // Keep the build pool aligned with the runtime pool instead.
+  //
+  // A single public render fans out four to eight statements (`/servers` issues
+  // four, an article page up to eight), and each app runs one PM2 process, so a
+  // pool of four is exhausted by a single request in flight and head-of-line
+  // blocks every other request behind it. Ten leaves room for a few concurrent
+  // renders per process while staying well under `max_connections`.
+  const fallback = 10;
   const parsed = Number.parseInt(
     process.env.DB_MAX_CONNECTIONS ?? String(fallback),
     10,
@@ -30,7 +39,15 @@ const connectionOptions = {
   connect_timeout: 10,
   idle_timeout: 20,
   max: resolveMaxConnections(),
-  connection: { TimeZone: "UTC" },
+  // postgres.js forwards every `connection` key as a startup parameter, so these
+  // are applied to each pooled connection. Without a statement timeout a single
+  // slow statement pins one of the pool slots indefinitely; with the pool sized
+  // above, a handful of stuck statements starves the whole app.
+  connection: {
+    TimeZone: "UTC",
+    statement_timeout: 15_000,
+    idle_in_transaction_session_timeout: 10_000,
+  },
 };
 
 const writeConn =

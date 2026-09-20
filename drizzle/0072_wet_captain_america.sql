@@ -1,0 +1,17 @@
+-- Drop the index on `posts.views`.
+--
+-- `views` is the hottest write column in the app: every article view runs
+-- `UPDATE posts SET views = views + 1` (src/features/public/actions/post-views.ts).
+-- While `views` was indexed that update could never be a HOT update, so a single
+-- article view rewrote an entry in every index on `posts`. Measured on the
+-- production primary: 0 of 30 view increments were HOT with the index present,
+-- 30 of 30 after removing it.
+--
+-- Readers of a `views` ordering were the build-time pre-render list
+-- (src/features/public/lib/article-static-params.ts, which the planner already
+-- served from `posts_public_language_created_idx`, i.e. it never used this index)
+-- and the admin dashboard top-5 (src/features/cms/data/post.ts, 0.11ms -> 1.48ms).
+--
+-- IF EXISTS keeps this migration idempotent: the index was already dropped online
+-- on the production primary with DROP INDEX CONCURRENTLY.
+DROP INDEX IF EXISTS "posts_published_views_createdAt_idx";
