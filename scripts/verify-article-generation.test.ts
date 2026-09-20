@@ -454,13 +454,13 @@ void test("cover tasks snapshot the current description and configured model for
 import assert from "node:assert/strict";
 import {mock} from "bun:test";
 const name=t=>t[Symbol.for("drizzle:Name")];
-const f={post:{id:1,title:"Saved title",description:"Old saved description",content:"ARTICLE BODY MUST NOT BE SENT",keywords:"IGNORED KEYWORDS",slug:"article",language:"zh",imgUrl:"/uploads/original.webp"},queued:[],configReads:0};
+const f={post:{id:1,title:"Saved title",description:"Old saved description",content:"ARTICLE BODY MUST NOT BE SENT",keywords:"Saved keywords",slug:"article",language:"zh",imgUrl:"/uploads/original.webp"},queued:[],configReads:0};
 const db={transaction:async work=>work(db),select(){const q={from(t){assert.equal(name(t),"posts");return q;},where(){return q;},limit:async()=>[f.post]};return q;},insert(t){assert.equal(name(t),"image_cover_generation_tasks");return {values(value){return {returning:async()=>{const task={...value,id:9};f.queued.push(task);return [task];}};}};}};
 mock.module("@fwqgo/db",()=>({db}));
 mock.module("@/server/admin/background-jobs",()=>({enqueueAdminBackgroundJob:async()=>{}}));
 mock.module("@/server/images/generation-config",()=>({getActiveImageGenerationConfig:async()=>{f.configReads++;return {id:44,name:"Selected configuration",provider:"compatible",model:"configured-image-model"};},getEnabledImageGenerationConfigs:async()=>[]}));
 const {enqueueArticleCoverGenerationTask}=await import("./src/server/images/cover-generation-task-runner.ts");
-for(const language of ["zh","en"]){f.post.language=language;await enqueueArticleCoverGenerationTask({postId:1,title:"Current article title",description:"Current edited description",configId:44,createdBy:"admin"});const task=f.queued.at(-1);assert.equal(task.configId,44);assert.equal(task.model,"configured-image-model");assert.equal(task.inputSnapshot.description,"Current edited description");assert.equal(task.inputSnapshot.language,language);assert.equal(task.inputSnapshot.expectedCoverUrl,"/uploads/original.webp");assert.equal(task.inputSnapshot.content,undefined);assert.equal(task.inputSnapshot.keywords,undefined);}
+for(const language of ["zh","en"]){f.post.language=language;await enqueueArticleCoverGenerationTask({postId:1,title:"Current article title",description:"Current edited description",configId:44,createdBy:"admin"});const task=f.queued.at(-1);assert.equal(task.configId,44);assert.equal(task.model,"configured-image-model");assert.equal(task.inputSnapshot.description,"Current edited description");assert.equal(task.inputSnapshot.language,language);assert.equal(task.inputSnapshot.expectedCoverUrl,"/uploads/original.webp");assert.equal(task.inputSnapshot.content,undefined);assert.equal(task.inputSnapshot.keywords,"Saved keywords");}
 const before=f.configReads;await assert.rejects(enqueueArticleCoverGenerationTask({postId:1,title:"Title",description:""}),/文章描述/);assert.equal(f.configReads,before);
 `);
 });

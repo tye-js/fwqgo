@@ -84,6 +84,7 @@ type EnqueueCoverGenerationTaskInput = {
   postId: number;
   title: string;
   description?: string;
+  keywords?: string | null;
   configId?: number | null;
   createdBy?: string | null;
   batchId?: string;
@@ -188,6 +189,7 @@ export async function enqueueArticleCoverGenerationTask(
       id: posts.id,
       title: posts.title,
       description: posts.description,
+      keywords: posts.keywords,
       slug: posts.slug,
       language: posts.language,
       imgUrl: posts.imgUrl,
@@ -201,6 +203,9 @@ export async function enqueueArticleCoverGenerationTask(
   const coverInput: CoverTaskInputSnapshot = {
     title: input.title.trim() || post.title,
     description,
+    // English posts store their English keywords here, so the English cover
+    // template can render them without a separate field.
+    keywords: input.keywords ?? post.keywords,
     fileSlug: post.slug,
     language: post.language === "en" ? "en" : "zh",
     replaceDefaultCoverOnly: isDefaultArticleCover(post.imgUrl),
@@ -373,6 +378,7 @@ export async function enqueueStandaloneCoverGenerationTask(
   const snapshot: CoverTaskInputSnapshot = {
     title: input.title,
     description,
+    keywords: input.keywords,
     fileSlug: input.fileSlug,
     language: input.language,
   };
@@ -642,6 +648,7 @@ async function processCoverGenerationTask(
             title: posts.title,
             slug: posts.slug,
             description: posts.description,
+            keywords: posts.keywords,
             categoryId: posts.categoryId,
             language: posts.language,
           })
@@ -769,6 +776,7 @@ async function processCoverGenerationTask(
             description: snapshotDescription?.length
               ? snapshotDescription
               : post?.description,
+            keywords: snapshot.keywords ?? post?.keywords,
             fileSlug: snapshot.fileSlug ?? post?.slug,
             language:
               snapshot.language ?? (post?.language === "en" ? "en" : "zh"),

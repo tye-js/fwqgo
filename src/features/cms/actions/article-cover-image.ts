@@ -162,6 +162,7 @@ export async function generateArticleCoverImageAction(input: {
         postId: post.id,
         title: payload.title,
         description: payload.description,
+        keywords: payload.keywords,
         configId: payload.configId,
         createdBy: session.userId,
       });

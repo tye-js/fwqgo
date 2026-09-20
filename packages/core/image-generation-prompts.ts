@@ -2,6 +2,7 @@ export const defaultCoverPromptTemplate = `为服务器/VPS推广文章生成一
 
 文章标题（核心主题）：{title}
 文章摘要：{description}
+关键词：{keywords}
 结构化视觉简报：
 {visualBrief}
 
@@ -22,6 +23,7 @@ export const defaultEnglishCoverPromptTemplate = `English article cover override
 Source information to preserve:
 - English title and core subject: {title}
 - English summary: {description}
+- English keywords: {keywords}
 - Structured visual brief:
 {visualBrief}`;
 
@@ -218,7 +220,10 @@ export function buildArticleCoverPrompt(
   const renderInput = {
     title: input.title,
     description,
-    keywords: "",
+    // Keywords reach the template as-is. English covers must receive the
+    // article's English keywords; `posts.keywords` already holds them for
+    // English posts.
+    keywords: input.keywords,
     visualBrief,
   };
   const renderedPrompt = renderCoverPromptTemplate(
