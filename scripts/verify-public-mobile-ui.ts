@@ -234,8 +234,21 @@ assert.doesNotMatch(
   /md:min-h-(?:8|9)/,
   "Public interactive controls must not reintroduce tablet touch-target downgrades",
 );
-assert.match(inventoryResults, /href=\{collectionHref\("regions"/);
-assert.match(inventoryResults, /href=\{collectionHref\("lines"/);
+// Region, line and provider cells must stay real links whenever the offer has
+// a canonical slug. Only unmapped marketing text renders as plain text, which
+// verify:public-seo guards; here we assert the linked case is still wired.
+for (const kind of ["regions", "lines", "providers"] as const) {
+  const field = {
+    regions: "regionSlug",
+    lines: "lineSlug",
+    providers: "providerSlug",
+  }[kind];
+  assert.match(
+    inventoryResults,
+    new RegExp(`kind="${kind}"\\s+slug=\\{offer\\.${field}\\}`),
+    `Inventory rows must link ${kind} through their canonical slug`,
+  );
+}
 assert.match(inventoryResults, /套餐标签/);
 assert.match(inventoryResults, /有效期至/);
 

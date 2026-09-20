@@ -5,6 +5,7 @@ import {
   Clock3,
   PackageSearch,
 } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -73,6 +74,34 @@ function collectionHref(
   return `/servers/${kind}/${encodeURIComponent(value)}`;
 }
 
+/**
+ * A collection page exists only for a canonical entity slug. The offer rows
+ * carry the upstream marketing text ("United States", "CMIN2 / CU9929", a
+ * provider name), and an offer whose entity is not mapped has no page behind
+ * that text. Linking it anyway produced a crawlable 404 for most offers, so an
+ * unmapped label renders as plain text here — the same rule the site already
+ * applies to taxonomy links that fall below the threshold.
+ */
+function CollectionLink({
+  kind,
+  slug,
+  className,
+  children,
+}: {
+  kind: "providers" | "regions" | "lines";
+  slug: string | null | undefined;
+  className?: string;
+  children: ReactNode;
+}) {
+  const canonical = slug?.trim();
+  if (!canonical) return <span className={className}>{children}</span>;
+  return (
+    <Link href={collectionHref(kind, canonical)} className={className}>
+      {children}
+    </Link>
+  );
+}
+
 function buildPageHref(filters: PublicInventoryFilters, cursor: string) {
   return `${buildPublicInventoryHref({ ...filters, cursor })}#inventory-results`;
 }
@@ -139,15 +168,13 @@ function OfferMobileCard({
           </p>
           <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
             {offer.providerName ? (
-              <Link
-                href={collectionHref(
-                  "providers",
-                  offer.providerSlug ?? offer.providerName,
-                )}
+              <CollectionLink
+                kind="providers"
+                slug={offer.providerSlug}
                 className="min-h-11 max-w-full break-words py-3 text-primary underline-offset-4 hover:underline"
               >
                 {offer.providerName}
-              </Link>
+              </CollectionLink>
             ) : null}
             {offer.externalProductId ? (
               <span className="max-w-full break-all">
@@ -169,22 +196,24 @@ function OfferMobileCard({
           <dt className="text-muted-foreground">地区 / 线路</dt>
           <dd className="mt-1 break-words font-medium text-foreground">
             {offer.region ? (
-              <Link
-                href={collectionHref("regions", offer.regionSlug ?? offer.region)}
+              <CollectionLink
+                kind="regions"
+                slug={offer.regionSlug}
                 className="min-h-11 break-words underline-offset-4 hover:text-primary hover:underline"
               >
                 {offer.region}
-              </Link>
+              </CollectionLink>
             ) : (
               "待补充"
             )}
             {offer.lineType ? (
-              <Link
-                href={collectionHref("lines", offer.lineSlug ?? offer.lineType)}
+              <CollectionLink
+                kind="lines"
+                slug={offer.lineSlug}
                 className="ml-1 inline-flex min-h-11 items-center break-words underline-offset-4 hover:text-primary hover:underline"
               >
                 {offer.lineType}
-              </Link>
+              </CollectionLink>
             ) : null}
           </dd>
         </div>
@@ -309,15 +338,13 @@ export function ServerInventoryResults({
                     </p>
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {offer.providerName ? (
-                        <Link
-                          href={collectionHref(
-                            "providers",
-                            offer.providerSlug ?? offer.providerName,
-                          )}
+                        <CollectionLink
+                          kind="providers"
+                          slug={offer.providerSlug}
                           className="text-xs text-primary underline-offset-4 hover:underline"
                         >
                           {offer.providerName}
-                        </Link>
+                        </CollectionLink>
                       ) : null}
                       {offer.externalProductId ? (
                         <span className="text-xs text-muted-foreground">
@@ -340,28 +367,24 @@ export function ServerInventoryResults({
                   </td>
                   <td className="px-3 py-3 leading-5">
                     {offer.region ? (
-                      <Link
-                        href={collectionHref(
-                          "regions",
-                          offer.regionSlug ?? offer.region,
-                        )}
+                      <CollectionLink
+                        kind="regions"
+                        slug={offer.regionSlug}
                         className="font-medium underline-offset-4 hover:text-primary hover:underline"
                       >
                         {offer.region}
-                      </Link>
+                      </CollectionLink>
                     ) : (
                       <span className="text-muted-foreground">待补充</span>
                     )}
                     {offer.lineType ? (
-                      <Link
-                        href={collectionHref(
-                          "lines",
-                          offer.lineSlug ?? offer.lineType,
-                        )}
+                      <CollectionLink
+                        kind="lines"
+                        slug={offer.lineSlug}
                         className="mt-1 block text-xs text-muted-foreground underline-offset-4 hover:text-primary hover:underline"
                       >
                         {offer.lineType}
-                      </Link>
+                      </CollectionLink>
                     ) : null}
                   </td>
                   <td className="px-3 py-3 leading-5 text-muted-foreground">

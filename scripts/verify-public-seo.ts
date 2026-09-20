@@ -231,6 +231,31 @@ for (const invariant of [
     `Missing slug history protection: ${invariant}`,
   );
 }
+// A collection page exists only for a canonical entity slug. The offer rows
+// carry the upstream marketing text ("United States", "CMIN2 / CU9929", a
+// provider name), so falling back to it put crawlable 404s on /servers, which
+// is listed in sitemap-servers.xml.
+const inventoryResults = readFileSync(
+  "src/features/public/components/server-inventory-results.tsx",
+  "utf8",
+);
+assert.ok(
+  inventoryResults.includes("function CollectionLink("),
+  "Offer rows must render a collection label without a canonical slug as plain text",
+);
+assert.ok(
+  !/Slug \?\? offer\.(providerName|region|lineType)/.test(inventoryResults),
+  "Collection hrefs must not fall back to unmapped marketing text",
+);
+for (const raw of ["providerName", "region", "lineType"]) {
+  assert.ok(
+    !new RegExp(`collectionHref\\([^)]*offer\\.${raw}\\b`).test(
+      inventoryResults,
+    ),
+    `Collection hrefs must not be built from offer.${raw}`,
+  );
+}
+
 console.log(
   "Public SEO rules verified: pagination, bilingual eligibility, publication quality, aliases and cache exclusions.",
 );
