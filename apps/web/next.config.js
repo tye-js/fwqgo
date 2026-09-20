@@ -20,18 +20,7 @@ loadEnvConfig(
 );
 await import("../../src/env.js");
 
-/**
- * Next 16.3.5 reads `experimental.trustHostHeader` at runtime
- * (`next/dist/esm/server/lib/router-utils/resolve-routes.js`) but never
- * declares it in `ExperimentalConfig`, so widen the annotation here instead of
- * casting at the call site.
- *
- * @type {import("next").NextConfig & {
- *   experimental?: import("next").NextConfig["experimental"] & {
- *     trustHostHeader?: boolean;
- *   };
- * }}
- */
+/** @type {import("next").NextConfig} */
 const config = {
   // Public article s-maxage=900 is applied only by the verified outer proxy.
   // Cloudflare-CDN-Cache-Control is also set only by that outer proxy.
@@ -99,16 +88,6 @@ const config = {
     // different article URLs must keep their own client-side cache entries.
     varyParams: false,
     optimizePackageImports: ["lucide-react"],
-    // Redirects must keep the public host. Without this, Next builds the
-    // request URL from `HOSTNAME:PORT` instead of the `Host` header
-    // (`next/dist/esm/server/lib/router-utils/resolve-routes.js`), so every
-    // 301 this app issues — canonical page numbers, post/category/tag slug
-    // aliases from `public_slug_redirects` — sends `Location:
-    // https://localhost:3000/...`, which no visitor can resolve. Nginx already
-    // forwards `Host $host` (`fwqgo-proxy-headers.conf`), so trusting the
-    // header yields `https://fwqgo.com/...`. Do not remove: the taxonomy slug
-    // redirects depend on it.
-    trustHostHeader: true,
   },
   compiler: {
     removeConsole:
