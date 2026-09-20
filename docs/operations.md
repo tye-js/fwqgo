@@ -2,6 +2,41 @@
 
 本文档记录代码边界、秘密字段、时间、套餐汇率和历史数据保留的统一约定。数据库结构以 `packages/db/schema.ts` 为准，版本化变更以 `drizzle/` 和 `_journal.json` 为准。
 
+## 生产环境速查（改动数据前先读这一节）
+
+线上只有一台应用机，**数据库不在本机，也不在仓库 `.deploy.env` 里写的地址**。
+
+| 项           | 值                                                                                            |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| 应用主机     | HK VPS `103.117.136.139`（hostname `ser283322661745`），SSH key `/Users/liulu/.ssh/fwqgo-hk`    |
+| 进程         | PM2 `fwqgo-web`（127.0.0.1:3000）、`fwqgo-cms`（127.0.0.1:3100），fork 模式                    |
+| 发布目录     | `/var/www/fwqgo/releases/<runId>-1` + `current` 软链                                            |
+| **生产数据库** | 主机**本机** PostgreSQL 16，`postgresql://fwqgo:<pass>@127.0.0.1:5432/fwqgo`                    |
+| 连接串位置   | 服务器 `/var/www/fwqgo/shared/.env.production`                                                  |
+
+`.env.production` 里另有三个专用角色：`CMS_DATABASE_URL`（`fwqgo_cms`）、`READ_DATABASE_URL`（`fwqgo_readonly`）、`ANALYTICS_DATABASE_URL`（`fwqgo_analytics`）。业务写入用 `DATABASE_URL`。
+
+⚠️ **`fwqgo/.deploy.env` 中的 `DATABASE_URL` 不是生产库。** 它指向 `106.14.106.30:5432/fwqgo_db`，是一个废弃的旧库：结构落后（`server_offers` 只有 41 列、`drizzle.__drizzle_migrations` 只有 11 条），仅供本地构建检查和可选迁移使用。**向它写数据不会出现在线上后台**，排查"后台看不到新增数据"时先核对是不是写到了这里。
+
+读写生产数据的标准姿势（`~/.ssh` 在沙箱内不可读，SSH 需前台执行并关闭沙箱）：
+
+```bash
+ssh -i /Users/liulu/.ssh/fwqgo-hk -o UserKnownHostsFile=/tmp/fwqgo_cms_known_hosts \
+  root@103.117.136.139 \
+  'set -a; . /var/www/fwqgo/shared/.env.production; set +a; psql "$DATABASE_URL" -c "select count(*) from server_offers;"'
+```
+
+批量写入用可审计的 SQL 文件，并先做一次事务内语法验证再正式执行：
+
+```bash
+# 1) 本地生成 SQL -> scp 到服务器 /tmp/
+# 2) 把 COMMIT 换成 ROLLBACK 验证语法（不落库）
+sed 's/^COMMIT;/ROLLBACK;/' /tmp/import.sql > /tmp/validate.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/validate.sql
+# 3) 正式执行
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/import.sql
+```
+
 ## 1. 代码依赖边界
 
 依赖方向保持由应用层指向底层：
