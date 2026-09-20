@@ -88,7 +88,11 @@ Do not commit secrets. Local `.env*` files may exist in the working tree; treat 
 
 This project uses GitHub Actions for deployment.
 
-The default deployment boundary is strict: a normal request such as "部署" means prepare and verify the release, then stop so the user can manually push and let GitHub Actions deploy it. Do not run the local deployment script, commit, or push unless the user explicitly requests that exact action. The local Docker deployment script is an emergency/manual fallback only.
+The deployment boundary is: a normal request such as "部署" means finish the work, run the recommended verification, then **commit and push**. Pushing is the expected end of the task, not a separate action that needs its own confirmation — it is what triggers deployment, after which GitHub Actions builds, uploads, runs the production migrations, and restarts PM2.
+
+Do not hand the push back to the user, and do not add a follow-up step afterwards: no polling the workflow run, no re-verifying the deployed site, no cleanup pass. The task is done once the push lands. Commit messages follow the convention used in the repository history — a Chinese declarative sentence with no conventional-commit prefix, e.g. "修复 /servers 聚合链接指向 404：没有规范 slug 的标签改渲染纯文本" — and stage only the files relevant to the task.
+
+Do not run the local Docker deployment script — `scripts/deploy-local-build.sh` is an emergency/manual fallback only. Do not force-push or rewrite already-published history.
 
 Deployment model:
 
