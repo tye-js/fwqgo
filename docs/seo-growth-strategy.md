@@ -150,8 +150,15 @@
 >    **未修** `server-offer-table.tsx`：它同样有 6 处同类回退，但它的数据源
 >    `serverOfferPublicSelect()` 根本没有 select 任何 slug 字段，需要先给公共套餐查询加上
 >    providers/regions/lines 三个 join，属于数据层改动，应单独开一次变更。
-> 2. **`666clouds` 没有 slug（23 条套餐，占 82%）。** 这是单个最大的聚合页损失：
->    给这一个商家补 slug，就能立刻多一个 23 条套餐的商家页。
+> 2. **`666clouds` 没有 slug（23 条套餐，占 82%）。** 这是单个最大的聚合页损失。
+>    **已修（2026-09-20）**：`aff_service_providers` id=64 的 slug 由 NULL 改为 `666clouds`。
+>    实测 `/servers/providers/666clouds` 立刻返回 200、自 canonical、`index,follow`，
+>    `sitemap-servers.xml` 从 5 条变 6 条，侧栏 facets 也出现了该商家。
+>    根因值得记住：`resolveServerEntity` 会先剔除没有规范 ASCII slug 的实体，
+>    再按 slug/name/aliases 匹配 —— 名字能对上也没用，slug 为空即等于不存在。
+>    剩余 19 个 slug 为 NULL 的商家当前都没有可售套餐，补 slug 也换不来页面，优先级低。
+>    **系统性缺口**：CMS 的商家 action（`aff-provider.ts`）完全不写 slug，仓库里也没有
+>    生成 provider slug 的迁移或脚本，所以每新增一个商家都会重现同一个问题，需要在 CMS 侧补上。
 > 3. **provider slug 生成规则有问题**：20 个为 NULL，58 个带 `-N` 后缀。
 >    文档原文只点了 `racknerd-16`，实际是**全站普遍现象**（`zgovps-1`…`jtti-62`），
 >    后缀来自全局计数器而不是「同名冲突才加」。改名需要配合 `publicSlugRedirects` 做 301。
@@ -354,7 +361,7 @@
 ### 第 2-3 周 — 结构
 
 - [ ] P1-5 Nginx 缓存上线 + Cloudflare 边缘缓存 + 首页纳入缓存 —— **Nginx 侧 2026-09-19 已完成**（新增首页 / `/servers` / 分类 / 标签 / 归档 5 个 location），待应用发布带上资格标记后生效；**Cloudflare Cache Rule 仍缺，需要账号权限**
-- [ ] P0-4 聚合页实体映射补齐（region / line / provider）—— **2026-09-20 实测复核后改写**：生产库仅 28 条可售套餐、region/line 映射 0%、只有 2 个商家有套餐，验收目标在数据量上不可能达成；真实阻塞是套餐数据量。已修 `/servers` 上指向 404 的聚合链接，剩余见该节复核说明
+- [ ] P0-4 聚合页实体映射补齐（region / line / provider）—— **2026-09-20 实测复核后改写**：生产库仅 28 条可售套餐、region/line 映射 0%、只有 2 个商家有套餐，验收目标在数据量上不可能达成；真实阻塞是套餐数据量。已修 `/servers` 上指向 404 的聚合链接，已为 `666clouds` 补 slug（新增 1 个 23 条套餐的商家页），剩余见该节复核说明
 - [ ] P1-7 干净 URL 200 化
 - [ ] P1-6 标签 slug ASCII 化 + 门槛提升 + 合并
 
