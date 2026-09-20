@@ -1,4 +1,7 @@
-import { publicTagPostCountSql } from "@/server/posts/public-post-policy";
+import {
+  publicTagPostCount,
+  readPublicTaxonomyPostCounts,
+} from "@/server/posts/public-taxonomy-post-counts";
 import { resolveEnglishTagIdentity } from "@fwqgo/core/taxonomy";
 import { asc, eq, inArray } from "drizzle-orm";
 
@@ -50,18 +53,32 @@ export async function getTagsByPostIds(
         enName: tags.enName,
         enSlug: tags.enSlug,
         indexable: tags.indexable,
-        publishedPostCount: publicTagPostCountSql(language, tags.id),
       },
     })
     .from(postTags)
     .innerJoin(tags, eq(postTags.tagId, tags.id))
     .where(inArray(postTags.postId, postIds))
     .orderBy(asc(postTags.postId), asc(tags.name));
+  // One grouped count query for every tag on the page instead of a correlated
+  // subquery per emitted card/tag row.
+  const taxonomyPostCounts = await readPublicTaxonomyPostCounts({
+    language,
+    tagIds: rows.map((row) => row.tag.id),
+  });
   const result = new Map<number, TagMain[]>();
   for (const row of rows) {
     const current = result.get(row.postId) ?? [];
     if (current.length >= MAX_CARD_TAGS) continue;
-    const localized = localizeTag(row.tag, language);
+    const localized = localizeTag(
+      {
+        ...row.tag,
+        publishedPostCount: publicTagPostCount(
+          taxonomyPostCounts,
+          row.tag.id,
+        ),
+      },
+      language,
+    );
     if (!localized) continue;
     current.push({ tag: localized });
     result.set(row.postId, current);

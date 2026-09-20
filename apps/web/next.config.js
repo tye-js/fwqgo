@@ -72,6 +72,13 @@ const config = {
   },
   cacheComponents: true,
   partialPrefetching: true,
+  // Next derives the `'use cache'` fill budget used during prerender as
+  // `staticPageGenerationTimeout * 0.9`. The default 60s therefore aborts a
+  // page whose cached reads take longer than 54s, which is reachable for
+  // article routes that read several relations from a remote database before
+  // the page cache is filled. Give the fill real headroom; this only bounds
+  // how long a single page may take before the worker kills it.
+  staticPageGenerationTimeout: 240,
   // Preserve the server's request origin for internal rewrites. NextURL's
   // loopback normalization can otherwise turn them into external self-fetches.
   skipProxyUrlNormalize: true,

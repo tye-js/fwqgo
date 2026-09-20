@@ -3,8 +3,8 @@ import { readDb } from "@fwqgo/db";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { cacheLife } from "next/cache";
 import {
+  isPublicCategoryIndexable,
   isPublicTagIndexable,
-  MIN_INDEXABLE_TAXONOMY_POSTS,
 } from "@fwqgo/core/public-content-policy";
 import { decodeSlug } from "@fwqgo/core/utils";
 import { attachTagsToPosts } from "@/features/public/data/post-tags";
@@ -27,14 +27,14 @@ import {
   isNull,
   lte,
   or,
-  sql,
 } from "drizzle-orm";
 import { ilikeContains } from "@/server/db/search";
+import { publicPostCondition } from "@/server/posts/public-post-policy";
 import {
-  publicPostCondition,
-  publicTagPostCountSql,
-  publicCategoryPostCountSql,
-} from "@/server/posts/public-post-policy";
+  publicCategoryPostCount,
+  publicTagPostCount,
+  readPublicTaxonomyPostCounts,
+} from "@/server/posts/public-taxonomy-post-counts";
 
 type PublicLanguage = "zh" | "en";
 
@@ -416,7 +416,6 @@ export async function getPostWithTagsBySlug(slug: string) {
         categoryId: categories.id,
         categoryName: categories.name,
         categorySlug: categories.slug,
-        categoryPubliclyIndexable: sql<boolean>`${publicCategoryPostCountSql("zh", categories.id)} >= ${MIN_INDEXABLE_TAXONOMY_POSTS}`,
       })
       .from(posts)
       .leftJoin(tags, eq(posts.recommendedTagId, tags.id))
@@ -435,7 +434,7 @@ export async function getPostWithTagsBySlug(slug: string) {
           id: tags.id,
           name: tags.name,
           slug: tags.slug,
-          publiclyIndexable: sql<boolean>`${tags.indexable} and ${publicTagPostCountSql("zh", tags.id)} >= ${MIN_INDEXABLE_TAXONOMY_POSTS}`,
+          indexable: tags.indexable,
         },
       })
       .from(postTags)
@@ -450,6 +449,13 @@ export async function getPostWithTagsBySlug(slug: string) {
       postTagsPromise,
       publishedEnglishSlugPromise,
     ]);
+    // One grouped count query for the whole page instead of a correlated
+    // subquery per category and per tag row.
+    const taxonomyPostCounts = await readPublicTaxonomyPostCounts({
+      language: "zh",
+      categoryIds: [post.categoryId],
+      tagIds: postTagsData.map((row) => row.tag.id),
+    });
 
     return {
       data: {
@@ -457,7 +463,23 @@ export async function getPostWithTagsBySlug(slug: string) {
           ...post,
           enSlug: publishedEnglishSlug,
           recommendedTagSlug,
-          tags: postTagsData,
+          categoryPubliclyIndexable: isPublicCategoryIndexable(
+            publicCategoryPostCount(taxonomyPostCounts, post.categoryId),
+          ),
+          tags: postTagsData.map(({ tag }) => ({
+            tag: {
+              id: tag.id,
+              name: tag.name,
+              slug: tag.slug,
+              publiclyIndexable: isPublicTagIndexable({
+                indexable: tag.indexable,
+                publishedPostCount: publicTagPostCount(
+                  taxonomyPostCounts,
+                  tag.id,
+                ),
+              }),
+            },
+          })),
         },
       },
     };
@@ -494,7 +516,6 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
         categoryId: categories.id,
         categoryName: categories.name,
         categorySlug: categories.slug,
-        categoryPubliclyIndexable: sql<boolean>`${publicCategoryPostCountSql("en", categories.id)} >= ${MIN_INDEXABLE_TAXONOMY_POSTS}`,
         categoryEnName: categories.enName,
         categoryEnSlug: categories.enSlug,
       })
@@ -532,14 +553,25 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
           enName: tags.enName,
           enSlug: tags.enSlug,
           indexable: tags.indexable,
-          publishedPostCount: publicTagPostCountSql("en", tags.id),
         },
       })
       .from(postTags)
       .innerJoin(tags, eq(postTags.tagId, tags.id))
       .where(eq(postTags.postId, postRow.id));
+    // One grouped count query for the whole page instead of a correlated
+    // subquery per category and per tag row.
+    const taxonomyPostCounts = await readPublicTaxonomyPostCounts({
+      language: "en",
+      categoryIds: [postRow.categoryId],
+      tagIds: postTagsData.map(({ tag }) => tag.id),
+    });
     const localizedPostTags = postTagsData
-      .map(({ tag }) => localizeEnglishTag(tag))
+      .map(({ tag }) =>
+        localizeEnglishTag({
+          ...tag,
+          publishedPostCount: publicTagPostCount(taxonomyPostCounts, tag.id),
+        }),
+      )
       .filter((tag): tag is NonNullable<typeof tag> => tag !== null)
       .map((tag) => ({ tag }));
 
@@ -549,6 +581,9 @@ export async function getEnglishPostWithTagsBySlug(slug: string) {
           ...postRow,
           imgUrl: postRow.imgUrl ?? postRow.fallbackImgUrl,
           chineseSlug,
+          categoryPubliclyIndexable: isPublicCategoryIndexable(
+            publicCategoryPostCount(taxonomyPostCounts, postRow.categoryId),
+          ),
           tags: localizedPostTags,
         },
       },

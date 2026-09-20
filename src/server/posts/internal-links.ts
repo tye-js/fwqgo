@@ -1,8 +1,9 @@
+import { publicPostCondition, publicTagPostCountSql } from "./public-post-policy";
 import {
-  publicPostCondition,
-  publicCategoryPostCountSql,
-  publicTagPostCountSql,
-} from "./public-post-policy";
+  publicCategoryPostCount,
+  publicTagPostCount,
+  readPublicTaxonomyPostCounts,
+} from "./public-taxonomy-post-counts";
 import { publicKnowledgeCondition } from "@/server/knowledge/public-knowledge-policy";
 import { createHash } from "node:crypto";
 
@@ -256,6 +257,8 @@ export async function regeneratePostInternalLinks(input: {
   const generatedBy = input.generatedBy ?? "rule";
   const sourceLanguage: ArticleLinkLanguage =
     context.sourcePost.language === "en" ? "en" : "zh";
+  // Admin-only path with a bounded tag set; public render paths must use
+  // `readPublicTaxonomyPostCounts` so the count is not evaluated per row.
   const eligibleTags =
     context.sourceTags.length > 0
       ? await db
@@ -505,6 +508,8 @@ export async function readPublicPostInternalLinks(
       generatedBy: postInternalLinks.generatedBy,
       targetPath: postInternalLinks.targetPath,
       sourceContentHash: postInternalLinks.sourceContentHash,
+      targetCategoryId: postInternalLinks.targetCategoryId,
+      targetTagId: postInternalLinks.targetTagId,
       postTitle: posts.title,
       postDescription: posts.description,
       postSlug: posts.slug,
@@ -521,16 +526,11 @@ export async function readPublicPostInternalLinks(
       categoryEnName: categories.enName,
       categorySlug: categories.slug,
       categoryEnSlug: categories.enSlug,
-      categoryPublishedPostCount: publicCategoryPostCountSql(
-        language,
-        categories.id,
-      ),
       tagName: tags.name,
       tagEnName: tags.enName,
       tagSlug: tags.slug,
       tagEnSlug: tags.enSlug,
       tagIndexable: tags.indexable,
-      tagPublishedPostCount: publicTagPostCountSql(language, tags.id),
     })
     .from(postInternalLinks)
     .leftJoin(posts, eq(postInternalLinks.targetPostId, posts.id))
@@ -547,6 +547,14 @@ export async function readPublicPostInternalLinks(
         eq(postInternalLinks.status, "active"),
       ),
     );
+
+  // One grouped count query per kind for the whole link set instead of a
+  // correlated subquery on every joined row.
+  const taxonomyPostCounts = await readPublicTaxonomyPostCounts({
+    language,
+    categoryIds: rows.map((row) => row.targetCategoryId),
+    tagIds: rows.map((row) => row.targetTagId),
+  });
 
   const links = rows.flatMap((row): PublicArticleInternalLink[] => {
     if (row.sourceContentHash !== currentContentHash) return [];
@@ -613,7 +621,9 @@ export async function readPublicPostInternalLinks(
       row.targetType === "category" &&
       row.categoryName &&
       row.categorySlug &&
-      isPublicCategoryIndexable(Number(row.categoryPublishedPostCount ?? 0))
+      isPublicCategoryIndexable(
+        publicCategoryPostCount(taxonomyPostCounts, row.targetCategoryId),
+      )
     ) {
       return [
         {
@@ -644,7 +654,10 @@ export async function readPublicPostInternalLinks(
       row.tagSlug &&
       isPublicTagIndexable({
         indexable: row.tagIndexable,
-        publishedPostCount: Number(row.tagPublishedPostCount ?? 0),
+        publishedPostCount: publicTagPostCount(
+          taxonomyPostCounts,
+          row.targetTagId,
+        ),
       })
     ) {
       return [
