@@ -183,7 +183,12 @@
 2. 配置 `CLOUDFLARE_ZONE_ID` + `CLOUDFLARE_CACHE_PURGE_TOKEN`，启用边缘缓存与主动清理。
 3. **把首页与 `/servers`、分类/标签页也纳入缓存规则** —— 当前 include 只覆盖文章 location，而首页恰恰是最慢的。
 4. Cloudflare 侧检查节点调度，让中文用户落到香港/新加坡/日本 POP。
-5. 评估首页 RSC payload 内联体积（563 KB / 781 KB），把非首屏模块改为客户端懒加载。
+5. **评估首页 RSC payload 内联体积，把非首屏模块改为客户端懒加载。**
+   **2026-09-21 评估结论：这一步不应执行，改为独立跟踪 JS 体积。** 原文的 563 KB / 781 KB 是**未压缩 HTML**，
+   实测 gzip 后只有 86 KB / 58 KB；HTML 只占页面传输量的 11%（`/`）和 5%（`/servers`），
+   外部 JS 是它的 8–18 倍（694 KB / 1039 KB gzip）。而且首屏以下的模块正是内链载体，
+   改成客户端懒加载会损失可爬取内链，与本站的 SEO 目标相反。完整数据与理由见
+   `docs/public-performance.md`，测量用 `bun run audit:public-payload`（脚本已入库）。
 
 **验收**：`ARTICLE_ISR_REQUIRE_EDGE_CACHE=1 SITE_URL=https://fwqgo.com bun run smoke:article-isr` 通过；`cf-cache-status: HIT`；TTFB < 400 ms；CrUX / PageSpeed 移动端 LCP < 2.5 s。
 
@@ -360,7 +365,7 @@
 
 ### 第 2-3 周 — 结构
 
-- [x] P1-5 Nginx 缓存上线 + Cloudflare 边缘缓存 + 首页纳入缓存 —— **已完成**：Nginx 侧 5 个 location（首页 / `/servers` / 分类 / 标签 / 归档）2026-09-19 上线；Cloudflare Cache Rule 2026-09-21 生效，HTML 出现边缘 `HIT`；清理凭据已配置。第 5 步（RSC 内联体积懒加载）不在本项范围
+- [x] P1-5 Nginx 缓存上线 + Cloudflare 边缘缓存 + 首页纳入缓存 —— **已完成**：Nginx 侧 5 个 location（首页 / `/servers` / 分类 / 标签 / 归档）2026-09-19 上线；Cloudflare Cache Rule 2026-09-21 生效（含 sitemap 与 feed），HTML 出现边缘 `HIT`；清理凭据已配置。第 5 步已评估，结论是不执行、改为独立跟踪 JS 体积
 - [ ] P0-4 聚合页实体映射补齐（region / line / provider）—— **2026-09-20 实测复核后改写**：生产库仅 28 条可售套餐、region/line 映射 0%、只有 2 个商家有套餐，验收目标在数据量上不可能达成；真实阻塞是套餐数据量。已修 `/servers` 上指向 404 的聚合链接，已为 `666clouds` 补 slug（新增 1 个 23 条套餐的商家页），剩余见该节复核说明
 - [ ] P1-7 干净 URL 200 化
 - [ ] P1-6 标签 slug ASCII 化 + 门槛提升 + 合并

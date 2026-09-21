@@ -185,5 +185,46 @@ Zone：`fwqgo.com`（Free Website），Zone ID `13a8cb15bceaeadc5596bacc128f250e
 
 一个观测陷阱：**从本机测得的 `cf-cache-status`/`age` 不代表真实状态**。本机链路上游存在中间缓存，purge 后本机仍显示 `age: 841 HIT`，而同一时刻香港侧是 `MISS`。判断缓存与清理必须换一条干净链路（例如生产服务器自身）。
 
-尚未处理：`sitemap.xml`、`sitemap-*.xml`、`feed.xml` 仍为 `DYNAMIC`（它们不在规则路径集合里，源站给的是 `s-maxage=3600` / `1800`）。`robots.txt` 本来就由 Cloudflare 默认规则缓存。若要连 sitemap 一起加速，在表达式里补相应路径即可。
+### 覆盖范围（2026-09-21 追加）
+
+同日把 `sitemap.xml` / `sitemap-*.xml` / `feed.xml` 也纳入规则（规则集 version 2，规则 id 不变）：表达式补上
+`starts_with(http.request.uri.path, "/sitemap")` 与 `http.request.uri.path eq "/feed.xml"`。
+实测 `/sitemap.xml`、`/sitemap-core.xml`、`/sitemap-posts.xml`、`/sitemap-tags.xml`、`/sitemap-servers.xml`、`/feed.xml`
+全部转为 `HIT`；`/robots.txt` 本来就由 Cloudflare 默认规则缓存（`EXPIRED`），未受影响；
+带查询串的 `/sitemap.xml?x=1` 仍为 `DYNAMIC`，证明绕过头条件对该路径同样生效。
+
+至此仍为 `DYNAMIC` 的公开端点是 CMS 域名下的内容与 `/api/*`，它们本就不应被边缘缓存。
+
+## 首页与 /servers 的传输体积实测（2026-09-21，P1-5 第 5 步）
+
+P1-5 原文写的「首页 RSC payload 内联体积 563 KB / 781 KB」是**未压缩 HTML**，既不是传输体积，也不是页面的主要重量。实测数据（`bun run audit:public-payload`，脚本已入库可复现）：
+
+| 指标 | `/` | `/servers` |
+| --- | --- | --- |
+| HTML 解码后 | 648 KB | 858 KB |
+| HTML gzip -9 | 86 KB | 58 KB |
+| HTML 实际传输编码 | zstd（Cloudflare 边缘） | zstd |
+| 内联 RSC payload | 450 KB（占 69%） | 489 KB（占 57%） |
+| 内联 `<script>` 标签数 | 164 | **240** |
+| 内联 `<svg>` | 37 KB / 84 个 | 90 KB / 243 个 |
+| RSC 完全重复行 | 30 KB（相同字符串） | 30 KB |
+| **外部 JS（gzip）** | **694 KB / 12 个文件** | **1039 KB / 14 个文件** |
+
+**结论：HTML 只占页面传输量的约 11%（`/`）和 5%（`/servers`），外部 JS 是它的 8–18 倍。**
+
+因此 P1-5 第 5 步原本提出的「把非首屏模块改为客户端懒加载」**不应该执行**，两个理由：
+
+1. 它优化的是占比 5–11% 的那一半，收益上限很低；
+2. 首页首屏以下的模块恰恰是**内链载体**（页脚的两组信任/入口链接、侧栏推荐、taxonomy 链接）。改成客户端懒加载会把它们移出初始 HTML，直接损失可爬取内链 —— 与这一整轮增长策略的目标相反。
+
+另外两点需要澄清，避免后人重复研究：
+
+- 内联 RSC payload 占 57–69% 是 **App Router 的固有形态**：服务端组件的渲染树必须随文档下发用于 hydration，不是冗余数据，也不是可删的「RSC 体积」。
+- 那 30 KB「完全重复行」是**逐字节相同的字符串**（页脚分组、Radix 菜单子树在多个 segment 行里重复），gzip 后几乎为零。它是 segment 边界重复工作的线索，不是值得为它改结构的字节节省。
+- DOM 没有重复：`<header>`、`<footer>`、`<main>`、`id="footer-utilities"` 各只出现 1 次，重复只发生在 payload 层。
+
+要真正降体积必须动 JS：`/` 上 4 个 chunk 就占 82%（224 / 162 / 110 / 72 KB），`/servers` 另有一个 291 KB 的页级 chunk。这需要 bundle 分析（找出重依赖、按路由拆分、评估哪些非首屏交互组件可以延后 hydration），是独立的一项工作，不在 P1-5 范围内。
+
+复现方式：`bun run audit:public-payload` 默认测首页与 `/servers`，也可传入任意 URL。
+
 
