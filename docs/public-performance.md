@@ -227,4 +227,45 @@ P1-5 原文写的「首页 RSC payload 内联体积 563 KB / 781 KB」是**未�
 
 复现方式：`bun run audit:public-payload` 默认测首页与 `/servers`，也可传入任意 URL。
 
+## 文章详情页封面绕过图片优化器（2026-09-21 修复）
+
+**症状**：文章详情页封面下载的是 1600×900 原图（本例 169 KB），而实测渲染尺寸只有 724×406 CSS px（1280 视口，DPR 1），即按需要的 2.2 倍下载。
+
+**根因是一次回归**。2026-09-04 的 `d0a612d`（提交说明只写了「seo 优化」）把原本正确的写法改掉了：
+
+```diff
+- src={getOptimizedImageSrc(src)}
++ src={src.startsWith("/uploads/") ? src : getOptimizedImageSrc(src)}
++ unoptimized={src.startsWith("/uploads/")}
+```
+
+于是 `/uploads/` 图片用原始路径直出并带 `unoptimized`，Next 的图片优化被完全绕过：没有 `srcset`、`sizes` 与 `quality` 全部失效，任何视口都下载原图。注意 `getOptimizedImageSrc` 对非 upload 路径是原样返回，所以那个三元判断实际上**只在不需要它的分支上生效**。
+
+**修复**：恢复 `src={getOptimizedImageSrc(src)}` 并去掉 `unoptimized`，与 `safe-post-image.tsx`（卡片路径）和 CMS 各处保持一致 —— 全仓库只有这一处反向判断。
+
+**实测收益**（同一次请求、带正确 `Accept` 头）：
+
+| 变体 | webp | avif |
+| --- | --- | --- |
+| 640px | 38 KB | 21 KB |
+| 750px（对 724px 槽位，DPR 1 命中） | 48 KB | 25 KB |
+| 828px | 54 KB | 30 KB |
+| 原图 1600px | **169 KB**（修复前始终下载这个） | — |
+
+即桌面端从 169 KB 降到 25–48 KB（−72% 至 −85%），移动端命中 640 档更低。
+
+`sizes` 不需要改：实测最宽断点为 724px（`2xl` 起正文栏反而收窄），750 档正好覆盖，`sizes` 末段的 700px 只低估约 3%。
+
+**防回归**：新增 `bun run verify:public-images` 并挂进 `bun run check`，断言
+`getOptimizedImageSrc` 确实把 upload 路径改写到 `/api/images/source`、`images.localPatterns`
+放行了该路径且 `formats` 含 webp/avif、公开侧没有任何组件使用 `unoptimized`、
+两个封面路径都保留 `sizes`，以及文章封面不再回退到原图路径。
+
+**已知运维特征**：图片优化器的变体缓存位于发布目录内（`.next-web/cache/images`），
+每次发布都是新目录，所以发布后每个 (图片, 宽度) 组合的首次请求需要重新转码一次。
+这条在本次修复前只影响卡片图片，现在也覆盖文章封面；有爬虫与真实流量后很快自愈。
+若想跨发布保留该缓存，可参照 `.env.production` 的做法把缓存目录软链到 `shared/`，
+但那会同时保留 `"use cache"` 数据缓存、影响内容新鲜度，属于需要单独评估的改动，本轮未做。
+
+
 
