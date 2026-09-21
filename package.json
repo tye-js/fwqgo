@@ -77,6 +77,7 @@
     "verify:trust-pages": "bun scripts/verify-trust-pages.ts",
     "smoke:public-seo": "bun scripts/smoke-public-seo.mjs",
     "audit:public-seo": "bun scripts/audit-public-seo-data.ts",
+    "audit:public-payload": "bun scripts/audit-public-payload.mjs",
     "verify:article-markdown": "bun test ./scripts/verify-article-markdown.ts",
     "verify:article-navigation": "SKIP_ENV_VALIDATION=1 NEXT_PHASE=phase-production-build bun test ./scripts/verify-article-navigation.ts",
     "verify:dependencies": "bun audit"
