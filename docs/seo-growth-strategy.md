@@ -192,7 +192,7 @@
 > - 第 1 步本就不需要重做 —— 文章与知识库的 include 已在 2026-09-12 安装，`deploy/nginx/fwqgo-public-cache-maps.conf` 与 `fwqgo-public-cache-headers.conf` 已经在线，文档里「尚未安装到线上」是 09-05 的旧结论。
 > - 第 3 步完成：`fwqgo-public-page-cache-headers.conf` + public page maps + `fwqgo-site.conf` 的 5 个新 location（`= /`、`= /en`、`= /servers`、`^/servers/`、分类/标签/归档正则）已安装并平滑重载。原有 robots / sitemap / feed / 知识库 / 文章策略与点文件拦截实测未变，新 location 的安全头已重挂。
 > - 仍未生效：这些 location 需要 `apps/web/proxy.ts` 发出的 `X-Fwqgo-Cacheable-Public` 标记随应用发布上线；在此之前对外是 `no-store`，行为与改动前等价。
-> - **第 2 步是当前瓶颈**：实测文章页在已有 900 秒公共策略的情况下 `cf-cache-status` 仍是 `DYNAMIC`，说明 Cloudflare 从未缓存 HTML。必须建 Cache Rule 才会出现 `HIT`；主动清理另需 `CLOUDFLARE_ZONE_ID` 与 `CLOUDFLARE_CACHE_PURGE_TOKEN`。这一步需要 Cloudflare 账号权限，代码侧无法代办。
+> - **第 2 步已完成（2026-09-21）**：建好 Cache Rule 后 HTML 首次出现边缘 `HIT`。首页、`/servers`、文章页、`/knowledge` 全部命中；带 Cookie / RSC / 查询串 / 规则外路径仍为 `DYNAMIC`；同一 URL 的 A/B TTFB 在香港视角从 0.18–0.24s 降到 0.056–0.065s（约 3.5 倍），阿姆斯特丹视角从约 1.92s 降到约 0.84s。规则原文、凭证位置与验收细节见 `docs/public-performance.md` 的「Cloudflare Cache Rule」一节 —— 该规则只存在于 Cloudflare 侧，仓库无法部署，靠文档存档。
 > - 第 4 步无需处理：`cf-ray` 实测已落在 `HKG` 节点。
 
 ---
@@ -360,7 +360,7 @@
 
 ### 第 2-3 周 — 结构
 
-- [ ] P1-5 Nginx 缓存上线 + Cloudflare 边缘缓存 + 首页纳入缓存 —— **Nginx 侧 2026-09-19 已完成**（新增首页 / `/servers` / 分类 / 标签 / 归档 5 个 location），待应用发布带上资格标记后生效；**Cloudflare Cache Rule 仍缺，需要账号权限**
+- [x] P1-5 Nginx 缓存上线 + Cloudflare 边缘缓存 + 首页纳入缓存 —— **已完成**：Nginx 侧 5 个 location（首页 / `/servers` / 分类 / 标签 / 归档）2026-09-19 上线；Cloudflare Cache Rule 2026-09-21 生效，HTML 出现边缘 `HIT`；清理凭据已配置。第 5 步（RSC 内联体积懒加载）不在本项范围
 - [ ] P0-4 聚合页实体映射补齐（region / line / provider）—— **2026-09-20 实测复核后改写**：生产库仅 28 条可售套餐、region/line 映射 0%、只有 2 个商家有套餐，验收目标在数据量上不可能达成；真实阻塞是套餐数据量。已修 `/servers` 上指向 404 的聚合链接，已为 `666clouds` 补 slug（新增 1 个 23 条套餐的商家页），剩余见该节复核说明
 - [ ] P1-7 干净 URL 200 化
 - [ ] P1-6 标签 slug ASCII 化 + 门槛提升 + 合并

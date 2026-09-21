@@ -129,5 +129,61 @@ HTTP smoke 默认访问配置了 Nginx 响应策略的入口，检查可见 HTML
 - 中英文首页真实预渲染分别包含 8 张文章卡片，可见 h1 不在 `[hidden]` 节点中；构建清单的重验证时间均为 300 秒。真实文章正文、初始 head metadata 和 resume ID 检查通过。
 - 带真实只读数据库的 standalone smoke 通过；另在本地 Bun 预览中发送 `homepage.changed`，两个语言首页失效后仍返回 200 和真实文章卡片。该失效测试仅针对本地预览，Cloudflare 调用被显式禁用。
 - 线上 `smoke:knowledge` 及严格文章缓存头/ISR 检查通过，Web/CMS 健康检查均为 200。
-- 外网文章和知识库仍为 Cloudflare `DYNAMIC`，尚无边缘 HIT。生产进程未配置 `CLOUDFLARE_ZONE_ID` 与 `CLOUDFLARE_CACHE_PURGE_TOKEN`，当前也没有可用的 Cloudflare 管理连接。需要账号侧设置“允许缓存且尊重源站策略”的精确规则，并配置 URL 清理凭据；不得用固定 Edge TTL 覆盖 private/no-store。
+- ~~外网文章和知识库仍为 Cloudflare `DYNAMIC`，尚无边缘 HIT。生产进程未配置 `CLOUDFLARE_ZONE_ID` 与 `CLOUDFLARE_CACHE_PURGE_TOKEN`~~ → **2026-09-21 已解决，见下一节**。原记录的要求（「允许缓存且尊重源站策略」的精确规则，不得用固定 Edge TTL 覆盖 private/no-store）仍然是本节的约束。
 - 尚不能承诺边缘即时失效或真实用户 P75 已改善。首页/文章代码仍需用户提交推送后由 GitHub Actions 发布；本轮未提交、推送、触发工作流或执行生产迁移。真实浏览器和大陆三网验收仍待补齐。
+
+## Cloudflare Cache Rule（2026-09-21 上线）
+
+此前外网 HTML 一直是 `cf-cache-status: DYNAMIC`：Nginx 与源站已经把 900 秒公共策略写好了，但 Cloudflare 默认不缓存 HTML，缺一条 Cache Rule。**这条规则只存在于 Cloudflare 侧，仓库无法部署，所以在此存档以便复现。**
+
+Zone：`fwqgo.com`（Free Website），Zone ID `13a8cb15bceaeadc5596bacc128f250e`。
+规则集 phase `http_request_cache_settings`，entrypoint 版本 1，规则 action `set_cache_settings`。
+
+表达式：
+
+```text
+(http.host eq "fwqgo.com"
+ and http.request.method in {"GET" "HEAD"}
+ and http.request.uri.query eq ""
+ and (http.request.uri.path eq "/"
+      or http.request.uri.path eq "/en"
+      or http.request.uri.path eq "/servers"
+      or starts_with(http.request.uri.path, "/servers/")
+      or starts_with(http.request.uri.path, "/fwq/")
+      or starts_with(http.request.uri.path, "/en/fwq/")
+      or http.request.uri.path in {"/knowledge" "/en/knowledge"}))
+ and not any(http.request.headers.names[*] in {
+   "cookie" "authorization" "rsc" "next-router-prefetch"
+   "next-router-segment-prefetch" "next-router-state-tree"
+ })
+```
+
+`action_parameters`：`cache: true`、`edge_ttl.mode = "respect_origin"`、`browser_ttl.mode = "respect_origin"`、`serve_stale.disable_stale_while_updating = false`。
+
+设计约束（与 Nginx 侧保持一致）：
+
+- 路径集合与 `fwqgo-site.conf` 新增的 5 个 location 一一对应，外加文章与知识库首页，避免出现「Nginx 允许、CF 不缓存」的错位。
+- **必须** `respect_origin`，**不得**用固定 Edge TTL，也不得开宽泛 Cache Everything：`private`/`no-store` 的绕过语义完全依赖源站头。
+- 绕过头条件与 Nginx 的 `$fwqgo_cache_bypass` 重复，是有意的第二道防线。
+
+生产凭据（写在 `/var/www/fwqgo/shared/.env.production`，权限 600）：`CLOUDFLARE_ZONE_ID` 与 `CLOUDFLARE_CACHE_PURGE_TOKEN`。
+两处注意事项：
+
+1. `scripts/merge-runtime-env.mjs` 只重写部署托管的 10 个键，其他行原样保留，所以这两个键能活过后续发布，不需要加进 workflow。
+2. `ecosystem.config.cjs` 的 `sharedRuntimeKeys` 已包含这两个键，改完必须用
+   `pm2 start <release>/ecosystem.config.cjs --update-env` 重启才会生效（与 deploy.yml 的 `start_release` 相同）。
+
+### 上线验收（2026-09-21，香港视角）
+
+| 检查 | 结果 |
+| --- | --- |
+| `/`、`/en`、`/servers`、`/servers/providers/666clouds`、文章页、`/knowledge` | 全部 `cf-cache-status: HIT`，`age` 正常递增 |
+| 带 Cookie / RSC / 查询串 / 规则外路径 `/about` | 全部 `DYNAMIC` |
+| 同一 URL 的 A/B TTFB（香港 → HKG 节点） | 边缘 0.056–0.065s，回源 0.18–0.24s（约 3.5 倍） |
+| 同一 URL 的 A/B TTFB（阿姆斯特丹视角） | 边缘约 0.84s，回源约 1.92s |
+| URL 清理（`purge_cache` files） | 返回 success，purge 后香港侧立刻回 MISS |
+
+一个观测陷阱：**从本机测得的 `cf-cache-status`/`age` 不代表真实状态**。本机链路上游存在中间缓存，purge 后本机仍显示 `age: 841 HIT`，而同一时刻香港侧是 `MISS`。判断缓存与清理必须换一条干净链路（例如生产服务器自身）。
+
+尚未处理：`sitemap.xml`、`sitemap-*.xml`、`feed.xml` 仍为 `DYNAMIC`（它们不在规则路径集合里，源站给的是 `s-maxage=3600` / `1800`）。`robots.txt` 本来就由 Cloudflare 默认规则缓存。若要连 sitemap 一起加速，在表达式里补相应路径即可。
+
