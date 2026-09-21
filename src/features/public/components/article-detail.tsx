@@ -57,12 +57,7 @@ export function ArticleCover({
   width?: number;
   height?: number;
 }) {
-  const isUploadImage = Boolean(src?.startsWith("/uploads/"));
-  const imageSrc = isRenderableImageSrc(src)
-    ? src.startsWith("/uploads/")
-      ? src
-      : getOptimizedImageSrc(src)
-    : null;
+  const imageSrc = isRenderableImageSrc(src) ? getOptimizedImageSrc(src) : null;
 
   return (
     <div className="relative mx-auto aspect-video w-full overflow-hidden rounded-xl border border-border/70 bg-muted/30">
@@ -80,7 +75,6 @@ export function ArticleCover({
           preload
           fetchPriority="high"
           loading="eager"
-          unoptimized={isUploadImage}
         />
       ) : (
         <div className="flex h-full items-center justify-center bg-muted/40 text-muted-foreground">
