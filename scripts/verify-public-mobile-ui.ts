@@ -129,9 +129,6 @@ const offerTable = read(
 const postViewCount = read(
   "src/features/public/components/post-view-count.tsx",
 );
-const featuredOffers = read(
-  "src/features/public/components/featured-offer-list.tsx",
-);
 const footer = read("src/features/public/components/footer.tsx");
 const knowledgeCard = read("src/features/public/components/knowledge-card.tsx");
 const fwqLayout = read("src/features/public/routes/fwq/layout.tsx");
@@ -167,9 +164,6 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(articleDetail, /line-clamp-2/);
 assert.match(postViewCount, /flex min-h-11 [^"\n]*items-center/);
-assert.match(featuredOffers, /basis-52 break-words/);
-assert.match(featuredOffers, /mt-1 break-words/);
-assert.match(featuredOffers, /flex flex-wrap gap-2/);
 assert.match(footer, /grid grid-cols-1 gap-2 min-\[420px\]:grid-cols-3/);
 assert.match(footer, /block break-words text-xs leading-5/);
 assert.match(knowledgeCard, /flex min-w-0 flex-wrap/);

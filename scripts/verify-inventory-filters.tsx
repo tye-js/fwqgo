@@ -33,6 +33,10 @@ const publicOfferTableSource = fs.readFileSync(
   "src/features/public/components/server-offer-table.tsx",
   "utf8",
 );
+const publicOfferPolicySource = fs.readFileSync(
+  "src/server/offers/public-offer-policy.ts",
+  "utf8",
+);
 
 /**
  * 需要遵守公开库存词汇的页面/组件，以及各自该用的入口。
@@ -59,10 +63,6 @@ const publicStatusConsumers: Array<{
   {
     path: "src/features/public/routes/en/fwq/posts/[slug]/page.tsx",
     uses: /resolveServerOfferAvailability\(offer\.status\)/,
-  },
-  {
-    path: "src/features/public/components/featured-offer-list.tsx",
-    uses: /publicOfferStatusLabel\(copy\.status, offer\.status\)/,
   },
   {
     path: "src/server/offers/server-offers.ts",
@@ -168,8 +168,16 @@ void test("discontinued offers are neither selectable nor collected", () => {
     parsePublicInventoryFilters({ stock: "discontinued" }).stock,
     "in_stock",
   );
-  // 结果集与 facet 统计共用一条基线，否则侧栏厂商计数会包含查不到的套餐
+  // 停售这条底线只有一个定义处：公开策略模块；工具页也得从它取，不能自己再写一遍
   assert.match(
+    publicOfferPolicySource,
+    /ne\(serverOffers\.status, "discontinued"\)/,
+  );
+  assert.match(
+    publicInventoryQuerySource,
+    /publicOfferAvailableStatusWhere\(\)/,
+  );
+  assert.doesNotMatch(
     publicInventoryQuerySource,
     /ne\(serverOffers\.status, "discontinued"\)/,
   );

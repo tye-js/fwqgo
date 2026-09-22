@@ -11,7 +11,6 @@ import {
   inArray,
   isNull,
   lt,
-  ne,
   or,
   sql,
   type SQL,
@@ -44,6 +43,7 @@ import {
   serverRegions,
 } from "@fwqgo/db/schema";
 import { ilikeContains } from "@/server/db/search";
+import { publicOfferAvailableStatusWhere } from "./public-offer-policy";
 
 const PAGE_SIZE = 30;
 
@@ -58,17 +58,17 @@ export {
 /**
  * 公开库存的收录基线：可见、有购买入口，并且没有停售。
  *
- * 停售是采集侧连续缺失后写入的终态标记，这类套餐已经买不到，公开侧不再收录。
- * 因此它是一条恒定条件，而不是库存下拉里的一个选项——库存筛选只在「仍可能买到」
- * 的状态之间切换。结果集和 facet 统计共用这条基线，否则侧栏厂商计数会包含结果集
- * 里查不到的套餐。
+ * 库存工具不要求必须有价格（价格待补充也能进结果，只是排在有效价格之后），
+ * 所以它不复用 `publicPurchasableOfferBaseWhere` 的价格条件；停售这条底线则共用，
+ * 保证工具页和其他公开页面收的是同一批套餐。结果集和 facet 统计也共用这条基线，
+ * 否则侧栏厂商计数会包含结果集里查不到的套餐。
  */
 function publicInventoryAvailableWhere(kind: ServerOfferKind) {
   return and(
     eq(serverOffers.visible, true),
     eq(serverOffers.offerKind, kind),
     sql`nullif(trim(${serverOffers.purchaseUrl}), '') is not null`,
-    ne(serverOffers.status, "discontinued"),
+    publicOfferAvailableStatusWhere(),
   );
 }
 
