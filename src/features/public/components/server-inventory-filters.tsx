@@ -34,7 +34,6 @@ const stockLabels: Record<PublicInventoryStock, string> = {
   all: "全部库存",
   in_stock: "有货",
   out_of_stock: "缺货",
-  restocking: "补货中",
   preorder: "预售",
 };
 

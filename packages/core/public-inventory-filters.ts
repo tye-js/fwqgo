@@ -12,20 +12,33 @@ export type PublicInventorySort = (typeof publicInventorySorts)[number];
 /**
  * 公开库存可筛选的库存状态。
  *
- * 停售（discontinued）是采集链路在连续缺失后写入的终态标记，这类套餐已经买不到：
- * 留在筛选里只会让用户点进一个失效入口。所以它既不是可选项，也不进入结果集与
- * facet 统计（见 `src/server/offers/public-inventory-query.ts` 的
- * `publicInventoryAvailableWhere`）。旧链接里的 `stock=discontinued` 按普通非法值
- * 处理，回落到默认库存视图。
+ * 公开侧只保留「用户能据此做决定」的两个状态差异：还有货、还是没货（预售单独一档）。
+ * 数据层里另外两个状态不单独出现：
+ *
+ * - 停售（discontinued）：采集链路连续缺失后写入的终态标记，套餐已经买不到。留在筛选里
+ *   只会让用户点进一个失效入口，所以它既不是可选项，也不进入结果集与 facet 统计
+ *   （见 `src/server/offers/public-inventory-query.ts` 的 `publicInventoryAvailableWhere`）。
+ * - 补货中（restocking）：仍在售、还能下单，对用户就是「有货」，见
+ *   `publicInventoryInStockStatuses`。
+ *
+ * 旧链接里的 `stock=discontinued`、`stock=restocking` 都按非法值处理，回落到默认库存视图。
  */
 export const publicInventoryStocks = [
   "all",
   "in_stock",
   "out_of_stock",
-  "restocking",
   "preorder",
 ] as const;
 export type PublicInventoryStock = (typeof publicInventoryStocks)[number];
+
+/**
+ * 「有货」在数据层对应的状态：`restocking` 表示正在补货但依然可以购买，
+ * 公开侧不把它当成独立状态，所以有货筛选要同时命中这两个值。
+ */
+export const publicInventoryInStockStatuses: Array<"in_stock" | "restocking"> = [
+  "in_stock",
+  "restocking",
+];
 
 /** 默认库存视图：只展示还可能买到的套餐。 */
 export const publicInventoryDefaultStock: PublicInventoryStock = "in_stock";

@@ -17,11 +17,13 @@ import type {
   PublicInventoryPage,
 } from "@/server/offers/public-inventory-query";
 
+/**
+ * 状态标签只覆盖公开库存词汇：查询已经把补货中归一成有货，停售也不在结果集里，
+ * 所以这里没有 restocking / discontinued 两个键。
+ */
 const stockLabels: Record<string, string> = {
   in_stock: "有货",
   out_of_stock: "缺货",
-  restocking: "补货中",
-  discontinued: "停售",
   preorder: "预售",
 };
 
@@ -29,9 +31,6 @@ const stockClasses: Record<string, string> = {
   in_stock:
     "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   out_of_stock: "border-border bg-muted text-muted-foreground",
-  restocking:
-    "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  discontinued: "border-border bg-muted text-muted-foreground",
   preorder: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
 };
 

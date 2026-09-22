@@ -20,6 +20,7 @@ import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import {
   aggregatePublicInventoryFacets,
   parsePublicInventoryFilters,
+  publicInventoryInStockStatuses,
   publicInventorySorts,
   type PublicInventoryFilters,
   type PublicInventorySearchParams,
@@ -85,9 +86,12 @@ function publicOfferWhere(filters: PublicInventoryFilters) {
   `;
   const conditions: Array<SQL | undefined> = [
     publicInventoryAvailableWhere(filters.kind),
+    // 有货同时命中 in_stock 与 restocking：补货中仍然可买，对用户就是有货。
     filters.stock === "all"
       ? undefined
-      : eq(serverOffers.status, filters.stock),
+      : filters.stock === "in_stock"
+        ? inArray(serverOffers.status, publicInventoryInStockStatuses)
+        : eq(serverOffers.status, filters.stock),
     filters.kind !== "promotion" || filters.check === "all"
       ? undefined
       : eq(serverOffers.checkStatus, filters.check),
@@ -238,7 +242,10 @@ function publicOfferSelection(kind: ServerOfferKind) {
     purchaseUrl: serverOffers.purchaseUrl,
     articleUrl: serverOffers.articleUrl,
     reviewUrl: serverOffers.reviewUrl,
-    status: serverOffers.status,
+    // 公开侧不区分补货中：仍然可买，就按有货呈现，否则筛「有货」会看到补货中标签。
+    status: sql<string>`
+      case when ${serverOffers.status} = 'restocking' then 'in_stock' else ${serverOffers.status} end
+    `,
     checkStatus: includesMonitoring
       ? serverOffers.checkStatus
       : sql<string>`'manual'`,

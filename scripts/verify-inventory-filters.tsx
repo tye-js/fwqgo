@@ -113,7 +113,7 @@ void test("discontinued offers are neither selectable nor collected", () => {
     $('select[name="stock"] option')
       .map((_, option) => $(option).attr("value"))
       .get(),
-    ["all", "in_stock", "out_of_stock", "restocking", "preorder"],
+    ["all", "in_stock", "out_of_stock", "preorder"],
   );
   assert.doesNotMatch($("form").html() ?? "", /停售/);
   // 旧链接里的 stock=discontinued 按非法值处理，回落到默认库存视图
@@ -126,6 +126,21 @@ void test("discontinued offers are neither selectable nor collected", () => {
     publicInventoryQuerySource,
     /ne\(serverOffers\.status, "discontinued"\)/,
   );
+});
+
+void test("restocking is presented as in stock instead of a separate state", () => {
+  const $ = renderToolbar({ stock: "restocking" });
+
+  // 补货中不再是一个可选项，旧链接回落到默认的有货视图 —— 它本来就包含补货中
+  assert.doesNotMatch($("form").html() ?? "", /补货中/);
+  assert.equal(
+    parsePublicInventoryFilters({ stock: "restocking" }).stock,
+    "in_stock",
+  );
+  assert.equal($('select[name="stock"] option[selected]').text(), "有货");
+  // 有货筛选要同时命中两个数据层状态，行内的状态也要归一，否则筛有货会看到补货中标签
+  assert.match(publicInventoryQuerySource, /publicInventoryInStockStatuses/);
+  assert.match(publicInventoryQuerySource, /then 'in_stock'/);
 });
 
 void test("the core filters stay outside 更多筛选 while advanced ones open it", () => {
