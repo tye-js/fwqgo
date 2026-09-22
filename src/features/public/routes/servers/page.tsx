@@ -67,6 +67,7 @@ export async function generateMetadata({
     "line",
     "feature",
     "promo",
+    "price",
     "minPrice",
     "maxPrice",
     "sort",
@@ -192,7 +193,8 @@ export default function ServersPage({
               把服务器放在一起，认真比较。
             </h1>
             <p className="mt-2 max-w-4xl text-sm leading-7 text-muted-foreground">
-              按商家、库存、地区、线路和配置缩小范围，使用美元月价比较不同计费周期。下单前，再核对商家结算价格、续费与退款政策。
+              先按地区、线路和月价缩小范围，再用商家、产品组和配置筛选；停售套餐不再收录。
+              使用美元月价比较不同计费周期，下单前，再核对商家结算价格、续费与退款政策。
             </p>
           </div>
         </section>

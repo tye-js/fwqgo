@@ -11,6 +11,7 @@ import {
   inArray,
   isNull,
   lt,
+  ne,
   or,
   sql,
   type SQL,
@@ -50,6 +51,23 @@ export {
   type PublicInventorySort,
 };
 
+/**
+ * 公开库存的收录基线：可见、有购买入口，并且没有停售。
+ *
+ * 停售是采集侧连续缺失后写入的终态标记，这类套餐已经买不到，公开侧不再收录。
+ * 因此它是一条恒定条件，而不是库存下拉里的一个选项——库存筛选只在「仍可能买到」
+ * 的状态之间切换。结果集和 facet 统计共用这条基线，否则侧栏厂商计数会包含结果集
+ * 里查不到的套餐。
+ */
+function publicInventoryAvailableWhere(kind: ServerOfferKind) {
+  return and(
+    eq(serverOffers.visible, true),
+    eq(serverOffers.offerKind, kind),
+    sql`nullif(trim(${serverOffers.purchaseUrl}), '') is not null`,
+    ne(serverOffers.status, "discontinued"),
+  );
+}
+
 function publicOfferWhere(filters: PublicInventoryFilters) {
   const searchDocument = sql<string>`
     coalesce(${serverOffers.title}, '') || ' ' ||
@@ -66,9 +84,7 @@ function publicOfferWhere(filters: PublicInventoryFilters) {
     coalesce(${serverOffers.promoCode}, '')
   `;
   const conditions: Array<SQL | undefined> = [
-    eq(serverOffers.visible, true),
-    eq(serverOffers.offerKind, filters.kind),
-    sql`nullif(trim(${serverOffers.purchaseUrl}), '') is not null`,
+    publicInventoryAvailableWhere(filters.kind),
     filters.stock === "all"
       ? undefined
       : eq(serverOffers.status, filters.stock),
@@ -84,16 +100,22 @@ function publicOfferWhere(filters: PublicInventoryFilters) {
     filters.group === "all"
       ? undefined
       : sql`trim(${serverOffers.productGroup}) = ${filters.group}`,
+    // 地区/线路同时接受三种写法：字典 slug（united-states）、字典名称（美国）、
+    // 以及尚未归一到字典的自由文本（region / lineType 原文）。
+    // 只比 slug 与原文会让同一个条件产生两个结果集（?region=美国 ≠ ?region=united-states），
+    // 补上字典名称匹配后三者在拥有字典行时返回同一集合。
     filters.region === "all"
       ? undefined
       : or(
           eq(serverRegions.slug, filters.region),
+          eq(serverRegions.name, filters.region),
           sql`trim(${serverOffers.region}) = ${filters.region}`,
         ),
     filters.line === "all"
       ? undefined
       : or(
           eq(serverNetworkLines.slug, filters.line),
+          eq(serverNetworkLines.name, filters.line),
           sql`trim(${serverOffers.lineType}) = ${filters.line}`,
         ),
     filters.feature === "all"
@@ -340,11 +362,7 @@ export async function getPublicInventoryPage(filters: PublicInventoryFilters) {
 }
 
 async function loadPublicInventoryFacets(kind: ServerOfferKind) {
-  const baseWhere = and(
-    eq(serverOffers.visible, true),
-    eq(serverOffers.offerKind, kind),
-    sql`nullif(trim(${serverOffers.purchaseUrl}), '') is not null`,
-  );
+  const baseWhere = publicInventoryAvailableWhere(kind);
   const providerKey = sql<string>`coalesce(
     nullif(trim(${affServiceProviders.slug}), ''),
     nullif(trim(${serverOffers.providerName}), '')

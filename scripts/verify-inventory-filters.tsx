@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 import { load, type CheerioAPI } from "cheerio";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
+  PUBLIC_INVENTORY_PRICE_ANY,
   buildPublicInventoryHref,
   parsePublicInventoryFilters,
   type PublicInventorySearchParams,
@@ -13,6 +15,11 @@ import {
   ServerInventoryToolbar,
 } from "@/features/public/components/server-inventory-filters";
 import type { PublicInventoryFacets } from "@/server/offers/public-inventory-query";
+
+const publicInventoryQuerySource = fs.readFileSync(
+  "src/server/offers/public-inventory-query.ts",
+  "utf8",
+);
 
 const facets: PublicInventoryFacets = {
   providers: [{ key: "alpha", label: "Alpha", count: 3 }],
@@ -70,6 +77,10 @@ void test("inventory controls render a usable GET form before client hydration",
     $('select[name="provider"] option[selected]').text(),
     "全部厂商",
   );
+  assert.equal(
+    $('select[name="price"] option[selected]').text(),
+    "全部月价",
+  );
   assert.deepEqual(
     [...formParams($).keys()].sort(),
     [
@@ -79,6 +90,7 @@ void test("inventory controls render a usable GET form before client hydration",
       "stock",
       "group",
       "sort",
+      "price",
       "region",
       "line",
       "feature",
@@ -91,6 +103,93 @@ void test("inventory controls render a usable GET form before client hydration",
   assert.deepEqual(
     parsePublicInventoryFilters(Object.fromEntries(formParams($))),
     parsePublicInventoryFilters({}),
+  );
+});
+
+void test("discontinued offers are neither selectable nor collected", () => {
+  const $ = renderToolbar();
+
+  assert.deepEqual(
+    $('select[name="stock"] option')
+      .map((_, option) => $(option).attr("value"))
+      .get(),
+    ["all", "in_stock", "out_of_stock", "restocking", "preorder"],
+  );
+  assert.doesNotMatch($("form").html() ?? "", /停售/);
+  // 旧链接里的 stock=discontinued 按非法值处理，回落到默认库存视图
+  assert.equal(
+    parsePublicInventoryFilters({ stock: "discontinued" }).stock,
+    "in_stock",
+  );
+  // 结果集与 facet 统计共用一条基线，否则侧栏厂商计数会包含查不到的套餐
+  assert.match(
+    publicInventoryQuerySource,
+    /ne\(serverOffers\.status, "discontinued"\)/,
+  );
+});
+
+void test("the core filters stay outside 更多筛选 while advanced ones open it", () => {
+  for (const input of [
+    { region: "hong-kong" },
+    { line: "cn2-gia" },
+    { sort: "latest" },
+    { price: "5-10" },
+  ]) {
+    assert.equal(
+      renderToolbar(input)("details").is("[open]"),
+      false,
+      JSON.stringify(input),
+    );
+  }
+});
+
+void test("monthly price bands round-trip through minPrice and maxPrice", () => {
+  const $ = renderToolbar({ price: "5-10" });
+  assert.equal(
+    $('select[name="price"] option[selected]').text(),
+    "5–10 美元/月",
+  );
+
+  const filters = parsePublicInventoryFilters(
+    Object.fromEntries(formParams($)),
+  );
+  assert.equal(filters.minPrice, 5);
+  assert.equal(filters.maxPrice, 10);
+  // 档位键只是输入别名，规范 URL 只带价格边界
+  assert.equal(buildPublicInventoryHref(filters), "/servers?minPrice=5&maxPrice=10");
+  // 重新解析规范 URL 时下拉框回显同一个档位，而不是「全部月价」
+  assert.equal(
+    renderToolbar(
+      Object.fromEntries(
+        new URL(buildPublicInventoryHref(filters), "https://fwqgo.test")
+          .searchParams,
+      ),
+    )('select[name="price"] option[selected]').text(),
+    "5–10 美元/月",
+  );
+});
+
+void test("a selected band wins over the stale custom price inputs", () => {
+  const filters = parsePublicInventoryFilters({
+    price: "5-10",
+    minPrice: "1",
+    maxPrice: "2",
+  });
+  assert.equal(filters.minPrice, 5);
+  assert.equal(filters.maxPrice, 10);
+
+  // 自定义档位反转过来：输入框里的数字仍然生效
+  const custom = parsePublicInventoryFilters({
+    price: "custom",
+    minPrice: "7",
+  });
+  assert.equal(custom.minPrice, 7);
+  assert.equal(custom.maxPrice, undefined);
+  assert.equal(
+    renderToolbar({ price: PUBLIC_INVENTORY_PRICE_ANY, maxPrice: "3" })(
+      'select[name="price"] option[selected]',
+    ).text(),
+    "自定义月价",
   );
 });
 
@@ -137,10 +236,10 @@ void test("an active facet outside the cached options is preserved on the next s
 void test("advanced filters and price boundaries remain visible in a refreshed page", () => {
   assert.equal(renderToolbar()("details").is("[open]"), false);
   for (const input of [
-    { region: "hong-kong" },
-    { line: "cn2-gia" },
     { feature: "ipv6" },
     { promo: "without" },
+    { stock: "all" },
+    { stock: "out_of_stock" },
     { minPrice: "0" },
     { maxPrice: "3" },
     { kind: "promotion", check: "failed" },
