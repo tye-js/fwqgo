@@ -348,7 +348,10 @@ ArticleCard
 
 - 关键词
 - 商家
-- 状态
+- 状态：默认「有货」，让表格一进来只列还能买的套餐；可选值来自
+  `@fwqgo/core/server-offer-status` 的公开状态列表（有货 / 没货 / 预售）加「全部状态」。
+  补货中不做成独立选项，它算有货——筛选匹配和行内标签都走 `resolvePublicServerOfferStatus`，
+  停售行只在「全部状态」下出现。
 - 地区
 - 线路
 - 排序

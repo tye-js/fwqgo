@@ -10,6 +10,11 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
+import {
+  PUBLIC_SERVER_OFFER_STATUSES,
+  resolvePublicServerOfferStatus,
+  type PublicServerOfferStatus,
+} from "@fwqgo/core/server-offer-status";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -74,7 +79,6 @@ const tableCopy = {
     status: {
       in_stock: "有货",
       out_of_stock: "没货",
-      restocking: "补货",
       discontinued: "停售",
       preorder: "预售",
     },
@@ -135,7 +139,6 @@ const tableCopy = {
     status: {
       in_stock: "In stock",
       out_of_stock: "Out of stock",
-      restocking: "Restocking",
       discontinued: "Discontinued",
       preorder: "Pre-order",
     },
@@ -206,16 +209,36 @@ function cleanText(value: string | null | undefined) {
   return trimmed;
 }
 
+/**
+ * 状态筛选的可选值：公开侧三个库存状态。
+ *
+ * 补货中不在其中——它仍然可以下单，就是有货，所以不做成独立选项。默认筛「有货」，
+ * 让表格一进来就只列还能买的套餐，而不是把缺货也一起端出来。
+ */
+const statusFilterValues: readonly PublicServerOfferStatus[] =
+  PUBLIC_SERVER_OFFER_STATUSES;
+
 function getStatusClassName(status: string) {
-  if (status === "in_stock") {
+  const resolved = resolvePublicServerOfferStatus(status);
+
+  if (resolved === "in_stock") {
     return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300";
   }
 
-  if (status === "preorder" || status === "restocking") {
+  if (resolved === "preorder") {
     return "border-amber-500/30 bg-amber-500/10 text-amber-700 hover:bg-amber-500/10 dark:text-amber-300";
   }
 
   return "border-border bg-muted text-muted-foreground hover:bg-muted";
+}
+
+/** 行内状态标签：补货中按有货呈现，未知状态原样显示，不静默改写。 */
+function publicStatusLabel(
+  copy: ReturnType<typeof getTableCopy>,
+  status: string,
+) {
+  const resolved = resolvePublicServerOfferStatus(status);
+  return (copy.status as Record<string, string>)[resolved] ?? resolved;
 }
 
 function formatPrice(offer: Offer, language: OfferLanguage) {
@@ -422,8 +445,7 @@ function OfferMobileCard({
             {offer.title}
           </h2>
           <Badge variant="outline" className={getStatusClassName(offer.status)}>
-            {copy.status[offer.status as keyof typeof copy.status] ??
-              offer.status}
+            {publicStatusLabel(copy, offer.status)}
           </Badge>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -528,7 +550,7 @@ export function ServerOfferTable({
   const copy = getTableCopy(language);
   const [query, setQuery] = useState("");
   const [provider, setProvider] = useState("all");
-  const [status, setStatus] = useState("all");
+  const [status, setStatus] = useState("in_stock");
   const [region, setRegion] = useState("all");
   const [lineType, setLineType] = useState("all");
   const [promoFilter, setPromoFilter] = useState("all");
@@ -572,7 +594,8 @@ export function ServerOfferTable({
         return (
           (!normalizedQuery || haystack.includes(normalizedQuery)) &&
           (activeProvider === "all" || offer.providerName === activeProvider) &&
-          (status === "all" || offer.status === status) &&
+          (status === "all" ||
+            resolvePublicServerOfferStatus(offer.status) === status) &&
           (activeRegion === "all" || offer.region === activeRegion) &&
           (activeLineType === "all" || offer.lineType === activeLineType) &&
           (promoFilter === "all" ||
@@ -651,9 +674,9 @@ export function ServerOfferTable({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{copy.allStatuses}</SelectItem>
-              {Object.entries(copy.status).map(([key, label]) => (
-                <SelectItem key={key} value={key}>
-                  {label}
+              {statusFilterValues.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {copy.status[value]}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -833,8 +856,7 @@ export function ServerOfferTable({
                     variant="outline"
                     className={getStatusClassName(offer.status)}
                   >
-                    {copy.status[offer.status as keyof typeof copy.status] ??
-                      offer.status}
+                    {publicStatusLabel(copy, offer.status)}
                   </Badge>
                 </td>
                 <td className="px-3 py-3">

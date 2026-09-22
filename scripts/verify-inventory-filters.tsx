@@ -8,8 +8,14 @@ import {
   PUBLIC_INVENTORY_PRICE_ANY,
   buildPublicInventoryHref,
   parsePublicInventoryFilters,
+  publicInventoryStocks,
   type PublicInventorySearchParams,
 } from "@fwqgo/core/public-inventory-filters";
+import {
+  PUBLIC_SERVER_OFFER_STATUSES,
+  SERVER_OFFER_IN_STOCK_STATUSES,
+  resolvePublicServerOfferStatus,
+} from "@fwqgo/core/server-offer-status";
 import {
   ServerInventoryProviderNav,
   ServerInventoryToolbar,
@@ -18,6 +24,10 @@ import type { PublicInventoryFacets } from "@/server/offers/public-inventory-que
 
 const publicInventoryQuerySource = fs.readFileSync(
   "src/server/offers/public-inventory-query.ts",
+  "utf8",
+);
+const publicOfferTableSource = fs.readFileSync(
+  "src/features/public/components/server-offer-table.tsx",
   "utf8",
 );
 
@@ -138,9 +148,47 @@ void test("restocking is presented as in stock instead of a separate state", () 
     "in_stock",
   );
   assert.equal($('select[name="stock"] option[selected]').text(), "有货");
-  // 有货筛选要同时命中两个数据层状态，行内的状态也要归一，否则筛有货会看到补货中标签
-  assert.match(publicInventoryQuerySource, /publicInventoryInStockStatuses/);
-  assert.match(publicInventoryQuerySource, /then 'in_stock'/);
+  // 有货筛选要同时命中两个数据层状态，结果行也要归一，否则筛有货会看到补货中标签
+  assert.match(publicInventoryQuerySource, /SERVER_OFFER_IN_STOCK_STATUSES/);
+  assert.match(
+    publicInventoryQuerySource,
+    /resolvePublicServerOfferStatus\(item\.status\)/,
+  );
+});
+
+void test("the public stock vocabulary merges restocking into in stock", () => {
+  assert.deepEqual([...PUBLIC_SERVER_OFFER_STATUSES], [
+    "in_stock",
+    "out_of_stock",
+    "preorder",
+  ]);
+  assert.deepEqual([...SERVER_OFFER_IN_STOCK_STATUSES], [
+    "in_stock",
+    "restocking",
+  ]);
+  assert.equal(resolvePublicServerOfferStatus("restocking"), "in_stock");
+  assert.equal(resolvePublicServerOfferStatus("out_of_stock"), "out_of_stock");
+  assert.equal(resolvePublicServerOfferStatus("discontinued"), "discontinued");
+  // 库存筛选枚举 = 全部 + 公开状态：一份词汇，两处不再各写一份列表
+  assert.deepEqual(
+    [...publicInventoryStocks],
+    ["all", ...PUBLIC_SERVER_OFFER_STATUSES],
+  );
+});
+
+void test("the offer table shares the same public stock vocabulary", () => {
+  // 专题 / 集合 / 搜索页的表格面板：默认只列有货，选项来自公开状态列表，
+  // 筛选与标签都走同一个归一函数，不会自己再写一遍补货中的合并规则。
+  assert.match(publicOfferTableSource, /useState\("in_stock"\)/);
+  assert.match(publicOfferTableSource, /PUBLIC_SERVER_OFFER_STATUSES/);
+  assert.match(
+    publicOfferTableSource,
+    /resolvePublicServerOfferStatus\(offer\.status\) === status/,
+  );
+  assert.doesNotMatch(
+    publicOfferTableSource,
+    /Object\.entries\(copy\.status\)/,
+  );
 });
 
 void test("the core filters stay outside 更多筛选 while advanced ones open it", () => {

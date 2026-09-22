@@ -20,12 +20,15 @@ import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import {
   aggregatePublicInventoryFacets,
   parsePublicInventoryFilters,
-  publicInventoryInStockStatuses,
   publicInventorySorts,
   type PublicInventoryFilters,
   type PublicInventorySearchParams,
   type PublicInventorySort,
 } from "@fwqgo/core/public-inventory-filters";
+import {
+  SERVER_OFFER_IN_STOCK_STATUSES,
+  resolvePublicServerOfferStatus,
+} from "@fwqgo/core/server-offer-status";
 import {
   decodePublicInventoryCursor,
   encodePublicInventoryCursor,
@@ -90,7 +93,7 @@ function publicOfferWhere(filters: PublicInventoryFilters) {
     filters.stock === "all"
       ? undefined
       : filters.stock === "in_stock"
-        ? inArray(serverOffers.status, publicInventoryInStockStatuses)
+        ? inArray(serverOffers.status, SERVER_OFFER_IN_STOCK_STATUSES)
         : eq(serverOffers.status, filters.stock),
     filters.kind !== "promotion" || filters.check === "all"
       ? undefined
@@ -242,10 +245,7 @@ function publicOfferSelection(kind: ServerOfferKind) {
     purchaseUrl: serverOffers.purchaseUrl,
     articleUrl: serverOffers.articleUrl,
     reviewUrl: serverOffers.reviewUrl,
-    // 公开侧不区分补货中：仍然可买，就按有货呈现，否则筛「有货」会看到补货中标签。
-    status: sql<string>`
-      case when ${serverOffers.status} = 'restocking' then 'in_stock' else ${serverOffers.status} end
-    `,
+    status: serverOffers.status,
     checkStatus: includesMonitoring
       ? serverOffers.checkStatus
       : sql<string>`'manual'`,
@@ -341,6 +341,8 @@ export async function getPublicInventoryPage(filters: PublicInventoryFilters) {
 
   const enrichedItems = items.map((item) => ({
     ...item,
+    // 公开侧不区分补货中：仍然可买就按有货呈现，否则筛「有货」会看到补货中标签。
+    status: resolvePublicServerOfferStatus(item.status),
     prices: prices.filter((price) => price.offerId === item.id),
     tags: tags.filter((tag) => tag.offerId === item.id),
   }));
