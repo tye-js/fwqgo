@@ -13,6 +13,10 @@ import {
   parseServerOfferAmount,
   resolveMonthlyPriceUsd,
 } from "@fwqgo/core/server-offer-price";
+import {
+  isPublicInStock,
+  resolveServerOfferAvailability,
+} from "@fwqgo/core/server-offer-status";
 
 type CollectionKind = "provider" | "region" | "line";
 
@@ -172,12 +176,7 @@ function buildJsonLd(input: {
               url: purchaseUrl,
               price: String(price),
               priceCurrency: currency,
-              availability:
-                offer.status === "in_stock"
-                  ? "https://schema.org/InStock"
-                  : offer.status === "preorder"
-                    ? "https://schema.org/PreOrder"
-                    : "https://schema.org/OutOfStock",
+              availability: resolveServerOfferAvailability(offer.status),
             }
           : undefined;
 
@@ -261,8 +260,8 @@ export function ServerOfferCollectionPage({
 }) {
   const copy = kindCopy[kind];
   const canonicalUrl = `${getSiteUrl()}${getCollectionPath(kind, slug)}`;
-  const inStockCount = offers.filter(
-    (offer) => offer.status === "in_stock",
+  const inStockCount = offers.filter((offer) =>
+    isPublicInStock(offer.status),
   ).length;
   const providers = uniqueValues(offers.map((offer) => offer.providerName));
   const regions = uniqueValues(offers.map((offer) => offer.region));

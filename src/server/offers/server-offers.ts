@@ -52,6 +52,7 @@ import {
   isCanonicalServerEntitySlug,
   resolveServerEntity,
 } from "@fwqgo/core/server-entity";
+import { SERVER_OFFER_IN_STOCK_STATUSES } from "@fwqgo/core/server-offer-status";
 import type { PUBLIC_SERVER_TOPIC_SLUGS } from "@fwqgo/core/public-route-policy";
 
 export const offerStatuses = [
@@ -531,7 +532,11 @@ export async function getLatestServerOffers(limit = 8) {
       .where(
         and(
           publicPurchasableOfferBaseWhere(),
-          inArray(serverOffers.status, ["in_stock", "preorder", "restocking"]),
+          // 精选只收还能买到的：有货（补货中算有货）与预售
+          inArray(serverOffers.status, [
+            "preorder",
+            ...SERVER_OFFER_IN_STOCK_STATUSES,
+          ]),
         ),
       )
       .orderBy(desc(serverOffers.featured), desc(serverOffers.createdAt))

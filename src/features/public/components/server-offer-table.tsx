@@ -12,6 +12,7 @@ import { useMemo, useState } from "react";
 import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import {
   PUBLIC_SERVER_OFFER_STATUSES,
+  publicOfferStatusLabel,
   resolvePublicServerOfferStatus,
   type PublicServerOfferStatus,
 } from "@fwqgo/core/server-offer-status";
@@ -232,15 +233,6 @@ function getStatusClassName(status: string) {
   return "border-border bg-muted text-muted-foreground hover:bg-muted";
 }
 
-/** 行内状态标签：补货中按有货呈现，未知状态原样显示，不静默改写。 */
-function publicStatusLabel(
-  copy: ReturnType<typeof getTableCopy>,
-  status: string,
-) {
-  const resolved = resolvePublicServerOfferStatus(status);
-  return (copy.status as Record<string, string>)[resolved] ?? resolved;
-}
-
 function formatPrice(offer: Offer, language: OfferLanguage) {
   const copy = getTableCopy(language);
   const priceAmount = cleanText(offer.priceAmount);
@@ -445,7 +437,7 @@ function OfferMobileCard({
             {offer.title}
           </h2>
           <Badge variant="outline" className={getStatusClassName(offer.status)}>
-            {publicStatusLabel(copy, offer.status)}
+            {publicOfferStatusLabel(copy.status, offer.status)}
           </Badge>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -856,7 +848,7 @@ export function ServerOfferTable({
                     variant="outline"
                     className={getStatusClassName(offer.status)}
                   >
-                    {publicStatusLabel(copy, offer.status)}
+                    {publicOfferStatusLabel(copy.status, offer.status)}
                   </Badge>
                 </td>
                 <td className="px-3 py-3">

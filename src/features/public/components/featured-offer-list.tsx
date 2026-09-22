@@ -5,6 +5,10 @@ import { ArrowUpRight, FileText, ShoppingCart } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatServerOfferAmount } from "@fwqgo/core/server-offer-price";
 import {
+  publicOfferStatusLabel,
+  resolvePublicServerOfferStatus,
+} from "@fwqgo/core/server-offer-status";
+import {
   cn,
   isHttpHref,
   isInternalHref,
@@ -61,7 +65,6 @@ const listCopy: Record<
     status: {
       in_stock: "有货",
       preorder: "预售",
-      restocking: "补货",
       out_of_stock: "没货",
       discontinued: "停售",
     },
@@ -84,7 +87,6 @@ const listCopy: Record<
     status: {
       in_stock: "In stock",
       preorder: "Preorder",
-      restocking: "Restocking",
       out_of_stock: "Out of stock",
       discontinued: "Discontinued",
     },
@@ -92,11 +94,13 @@ const listCopy: Record<
 };
 
 function statusClassName(status: string) {
-  if (status === "in_stock") {
+  const resolved = resolvePublicServerOfferStatus(status);
+
+  if (resolved === "in_stock") {
     return "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50";
   }
 
-  if (status === "preorder" || status === "restocking") {
+  if (resolved === "preorder") {
     return "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50";
   }
 
@@ -202,7 +206,7 @@ export function FeaturedOfferList({
                   variant="outline"
                   className={cn("shrink-0", statusClassName(offer.status))}
                 >
-                  {copy.status[offer.status] ?? offer.status}
+                  {publicOfferStatusLabel(copy.status, offer.status)}
                 </Badge>
               </div>
               <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">

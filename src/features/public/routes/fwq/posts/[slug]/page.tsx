@@ -2,6 +2,7 @@ import { PublicTaxonomyLink } from "@/features/public/components/public-taxonomy
 import { getRecommendedPosts } from "@/features/public/data/post";
 
 import { isRenderableImageSrc } from "@fwqgo/core/image-src";
+import { resolveServerOfferAvailability } from "@fwqgo/core/server-offer-status";
 import {
   formatDate,
   jsonLdScriptContent,
@@ -116,12 +117,7 @@ async function RelatedOffersSection({
         url: purchaseUrl,
         price: String(price),
         priceCurrency: currency,
-        availability:
-          offer.status === "in_stock"
-            ? "https://schema.org/InStock"
-            : offer.status === "preorder"
-              ? "https://schema.org/PreOrder"
-              : "https://schema.org/OutOfStock",
+        availability: resolveServerOfferAvailability(offer.status),
       },
     };
   });

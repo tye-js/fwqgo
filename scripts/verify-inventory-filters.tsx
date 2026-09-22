@@ -14,7 +14,10 @@ import {
 import {
   PUBLIC_SERVER_OFFER_STATUSES,
   SERVER_OFFER_IN_STOCK_STATUSES,
+  isPublicInStock,
+  publicOfferStatusLabel,
   resolvePublicServerOfferStatus,
+  resolveServerOfferAvailability,
 } from "@fwqgo/core/server-offer-status";
 import {
   ServerInventoryProviderNav,
@@ -30,6 +33,43 @@ const publicOfferTableSource = fs.readFileSync(
   "src/features/public/components/server-offer-table.tsx",
   "utf8",
 );
+
+/**
+ * 需要遵守公开库存词汇的页面/组件，以及各自该用的入口。
+ * 值是该文件必须出现的调用，用来锁住「补货中=有货」这条规则被真的推过去了。
+ */
+const publicStatusConsumers: Array<{
+  path: string;
+  uses: RegExp;
+  /** 该文件同时持有数据层词汇（后台与采集共用），允许出现 restocking。 */
+  ownsDataSourceVocabulary?: boolean;
+}> = [
+  {
+    path: "src/features/public/routes/servers/[topic]/page.tsx",
+    uses: /resolveServerOfferAvailability\(offer\.status\)/,
+  },
+  {
+    path: "src/features/public/components/server-offer-collection-page.tsx",
+    uses: /resolveServerOfferAvailability\(offer\.status\)/,
+  },
+  {
+    path: "src/features/public/routes/fwq/posts/[slug]/page.tsx",
+    uses: /resolveServerOfferAvailability\(offer\.status\)/,
+  },
+  {
+    path: "src/features/public/routes/en/fwq/posts/[slug]/page.tsx",
+    uses: /resolveServerOfferAvailability\(offer\.status\)/,
+  },
+  {
+    path: "src/features/public/components/featured-offer-list.tsx",
+    uses: /publicOfferStatusLabel\(copy\.status, offer\.status\)/,
+  },
+  {
+    path: "src/server/offers/server-offers.ts",
+    uses: /SERVER_OFFER_IN_STOCK_STATUSES/,
+    ownsDataSourceVocabulary: true,
+  },
+];
 
 const facets: PublicInventoryFacets = {
   providers: [{ key: "alpha", label: "Alpha", count: 3 }],
@@ -87,10 +127,7 @@ void test("inventory controls render a usable GET form before client hydration",
     $('select[name="provider"] option[selected]').text(),
     "全部厂商",
   );
-  assert.equal(
-    $('select[name="price"] option[selected]').text(),
-    "全部月价",
-  );
+  assert.equal($('select[name="price"] option[selected]').text(), "全部月价");
   assert.deepEqual(
     [...formParams($).keys()].sort(),
     [
@@ -157,15 +194,14 @@ void test("restocking is presented as in stock instead of a separate state", () 
 });
 
 void test("the public stock vocabulary merges restocking into in stock", () => {
-  assert.deepEqual([...PUBLIC_SERVER_OFFER_STATUSES], [
-    "in_stock",
-    "out_of_stock",
-    "preorder",
-  ]);
-  assert.deepEqual([...SERVER_OFFER_IN_STOCK_STATUSES], [
-    "in_stock",
-    "restocking",
-  ]);
+  assert.deepEqual(
+    [...PUBLIC_SERVER_OFFER_STATUSES],
+    ["in_stock", "out_of_stock", "preorder"],
+  );
+  assert.deepEqual(
+    [...SERVER_OFFER_IN_STOCK_STATUSES],
+    ["in_stock", "restocking"],
+  );
   assert.equal(resolvePublicServerOfferStatus("restocking"), "in_stock");
   assert.equal(resolvePublicServerOfferStatus("out_of_stock"), "out_of_stock");
   assert.equal(resolvePublicServerOfferStatus("discontinued"), "discontinued");
@@ -189,6 +225,50 @@ void test("the offer table shares the same public stock vocabulary", () => {
     publicOfferTableSource,
     /Object\.entries\(copy\.status\)/,
   );
+});
+
+void test("every public page reads the same restocking-aware status vocabulary", () => {
+  // 统计口径、标签、结构化数据都从同一份词汇取，页面不再各自翻译状态
+  assert.equal(isPublicInStock("restocking"), true);
+  assert.equal(isPublicInStock("in_stock"), true);
+  assert.equal(isPublicInStock("out_of_stock"), false);
+  assert.equal(
+    publicOfferStatusLabel({ in_stock: "有货" }, "restocking"),
+    "有货",
+  );
+  assert.equal(
+    publicOfferStatusLabel({ in_stock: "有货" }, "unknown_state"),
+    "unknown_state",
+  );
+  assert.equal(
+    resolveServerOfferAvailability("restocking"),
+    "https://schema.org/InStock",
+  );
+  assert.equal(
+    resolveServerOfferAvailability("preorder"),
+    "https://schema.org/PreOrder",
+  );
+  assert.equal(
+    resolveServerOfferAvailability("discontinued"),
+    "https://schema.org/OutOfStock",
+  );
+
+  for (const {
+    path,
+    uses,
+    ownsDataSourceVocabulary,
+  } of publicStatusConsumers) {
+    const source = fs.readFileSync(path, "utf8");
+    assert.match(source, uses, path);
+    // 页面不再自己拼 availability
+    assert.doesNotMatch(source, /schema\.org\//, path);
+    if (!ownsDataSourceVocabulary) {
+      // 也不再自己比 in_stock、自己提补货中
+      assert.doesNotMatch(source, /status === "in_stock"/, path);
+      assert.doesNotMatch(source, /restocking/, path);
+      assert.doesNotMatch(source, /补货/, path);
+    }
+  }
 });
 
 void test("the core filters stay outside 更多筛选 while advanced ones open it", () => {
@@ -219,7 +299,10 @@ void test("monthly price bands round-trip through minPrice and maxPrice", () => 
   assert.equal(filters.minPrice, 5);
   assert.equal(filters.maxPrice, 10);
   // 档位键只是输入别名，规范 URL 只带价格边界
-  assert.equal(buildPublicInventoryHref(filters), "/servers?minPrice=5&maxPrice=10");
+  assert.equal(
+    buildPublicInventoryHref(filters),
+    "/servers?minPrice=5&maxPrice=10",
+  );
   // 重新解析规范 URL 时下拉框回显同一个档位，而不是「全部月价」
   assert.equal(
     renderToolbar(

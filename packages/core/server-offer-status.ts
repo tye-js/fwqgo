@@ -22,11 +22,41 @@ export type PublicServerOfferStatus =
   (typeof PUBLIC_SERVER_OFFER_STATUSES)[number];
 
 /** 「有货」在数据层对应的取值：补货中依然可买，所以有货要同时命中这两个状态。 */
-export const SERVER_OFFER_IN_STOCK_STATUSES: Array<
-  "in_stock" | "restocking"
-> = ["in_stock", "restocking"];
+export const SERVER_OFFER_IN_STOCK_STATUSES: Array<"in_stock" | "restocking"> =
+  ["in_stock", "restocking"];
 
 /** 把数据层状态归一到公开状态：补货中按有货呈现，其余原样返回。 */
 export function resolvePublicServerOfferStatus(status: string) {
   return status === "restocking" ? "in_stock" : status;
+}
+
+/** 公开侧是否算「有货」。统计口径和标签口径共用它，避免各处自己比 `=== "in_stock"`。 */
+export function isPublicInStock(status: string) {
+  return resolvePublicServerOfferStatus(status) === "in_stock";
+}
+
+/**
+ * 行内状态标签：先把数据层状态归一到公开状态，再从给定标签表里取文案，
+ * 表里没有就回退归一后的值，不静默改写未知状态。
+ */
+export function publicOfferStatusLabel(
+  labels: Record<string, string | undefined>,
+  status: string,
+) {
+  const resolved = resolvePublicServerOfferStatus(status);
+  return labels[resolved] ?? resolved;
+}
+
+/**
+ * schema.org 的可用性取值。
+ *
+ * 结构化数据按公开状态上报：补货中仍然可以下单，就是 InStock——否则搜索结果的
+ * 富摘要会把还能买的套餐说成缺货。
+ */
+export function resolveServerOfferAvailability(status: string) {
+  const resolved = resolvePublicServerOfferStatus(status);
+
+  if (resolved === "in_stock") return "https://schema.org/InStock";
+  if (resolved === "preorder") return "https://schema.org/PreOrder";
+  return "https://schema.org/OutOfStock";
 }
