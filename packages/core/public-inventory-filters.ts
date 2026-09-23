@@ -1,6 +1,4 @@
-import { z } from "zod";
-
-import { SERVER_OFFER_KINDS } from "./server-offer-kind";
+import { SERVER_OFFER_KINDS, type ServerOfferKind } from "./server-offer-kind";
 import { PUBLIC_SERVER_OFFER_STATUSES } from "./server-offer-status";
 
 export const publicInventorySorts = [
@@ -73,26 +71,69 @@ export function resolvePublicInventoryPriceRange(
   return matched?.key ?? PUBLIC_INVENTORY_PRICE_CUSTOM;
 }
 
-const filterSchema = z.object({
-  query: z.string().trim().max(80).default(""),
-  kind: z.enum(SERVER_OFFER_KINDS).default("regular"),
-  provider: z.string().trim().max(160).default("all"),
-  group: z.string().trim().max(200).default("all"),
-  stock: z.enum(publicInventoryStocks).default(publicInventoryDefaultStock),
-  check: z.enum(["all", "ok", "failed", "unknown"]).default("all"),
-  region: z.string().trim().max(160).default("all"),
-  line: z.string().trim().max(160).default("all"),
-  feature: z.string().trim().max(160).default("all"),
-  promo: z.enum(["all", "with", "without"]).default("all"),
-  minPrice: z.coerce.number().min(0).max(1_000_000).optional(),
-  maxPrice: z.coerce.number().min(0).max(1_000_000).optional(),
-  sort: z.enum(publicInventorySorts).default("price-asc"),
-  cursor: z.string().trim().max(512).default(""),
-});
+/** 活动款套餐的探测状态筛选。默认 `all`（不筛）。 */
+export const publicInventoryChecks = ["all", "ok", "failed", "unknown"] as const;
+export type PublicInventoryCheck = (typeof publicInventoryChecks)[number];
+
+/** 优惠码筛选。默认 `all`（不筛）。 */
+export const publicInventoryPromos = ["all", "with", "without"] as const;
+export type PublicInventoryPromo = (typeof publicInventoryPromos)[number];
 
 type SearchParamValue = string | string[] | undefined;
 export type PublicInventorySearchParams = Record<string, SearchParamValue>;
-export type PublicInventoryFilters = z.infer<typeof filterSchema>;
+
+/**
+ * 库存筛选的取值形状。
+ *
+ * 这里刻意不用 zod，而是手写解析：本模块会被 `server-inventory-filters` 与
+ * `server-inventory-results` 两个客户端组件在运行时导入，而 schema 库会把整个运行时
+ * （gzip 约 72 KB）带进 `/servers` 的首屏包。字段全是固定枚举与有界文本，手写解析能穷尽；
+ * 换来的那点通用校验能力抵不过这 72 KB。
+ *
+ * 改动字段时同步 `scripts/verify-inventory-filters.tsx`（它逐字段断言了这些默认值与往返行为）。
+ */
+export type PublicInventoryFilters = {
+  query: string;
+  kind: ServerOfferKind;
+  provider: string;
+  group: string;
+  stock: PublicInventoryStock;
+  check: PublicInventoryCheck;
+  region: string;
+  line: string;
+  feature: string;
+  promo: PublicInventoryPromo;
+  minPrice?: number;
+  maxPrice?: number;
+  sort: PublicInventorySort;
+  cursor: string;
+};
+
+/** 月价边界上限（USD）。超出按「没给」处理，避免脏参数变成昂贵的范围查询。 */
+const PUBLIC_INVENTORY_MAX_PRICE = 1_000_000;
+
+/**
+ * 筛选默认值，同时也是「规范 URL 里不出现」的那一档：`buildPublicInventoryHref` 丢掉
+ * 等于默认值的字段，让同一组条件只有一种 URL 形态。
+ *
+ * 字段顺序就是 URL 参数顺序，不要随意调整。
+ */
+export const publicInventoryFilterDefaults: PublicInventoryFilters = {
+  query: "",
+  kind: "regular",
+  provider: "all",
+  group: "all",
+  stock: publicInventoryDefaultStock,
+  check: "all",
+  region: "all",
+  line: "all",
+  feature: "all",
+  promo: "all",
+  minPrice: undefined,
+  maxPrice: undefined,
+  sort: "price-asc",
+  cursor: "",
+};
 
 export type PublicInventoryFacetSource = {
   key: string | null | undefined;
@@ -173,13 +214,39 @@ function optionalParam(value: SearchParamValue) {
   return first?.trim() ? first : undefined;
 }
 
-function parseFilterField<Value>(
-  schema: z.ZodType<Value>,
-  value: unknown,
-  fallback: Value,
+/** 有界文本筛选：去空白后超长就当作「没给」，回落到默认值。空串是合法值，不是缺省。 */
+function parseTextFilter(
+  value: SearchParamValue,
+  limit: number,
+  fallback: string,
 ) {
-  const parsed = schema.safeParse(value);
-  return parsed.success ? parsed.data : fallback;
+  const text = firstParam(value)?.trim();
+  return text === undefined || text.length > limit ? fallback : text;
+}
+
+/** 枚举筛选：只认精确匹配，其余（含大小写不同、空串）都回落到默认档。 */
+function parseEnumFilter<Value extends string>(
+  value: SearchParamValue,
+  options: readonly Value[],
+  fallback: Value,
+): Value {
+  const text = firstParam(value);
+  return text !== undefined && (options as readonly string[]).includes(text)
+    ? (text as Value)
+    : fallback;
+}
+
+/** 价格边界：非法、负数、超上限都当「没给」，避免脏参数落进 SQL 范围条件。 */
+function parsePriceFilter(value: SearchParamValue, fallback?: number) {
+  const text = optionalParam(value);
+  if (text === undefined) return fallback;
+
+  const parsed = Number(text);
+  return Number.isFinite(parsed) &&
+    parsed >= 0 &&
+    parsed <= PUBLIC_INVENTORY_MAX_PRICE
+    ? parsed
+    : fallback;
 }
 
 /**
@@ -195,78 +262,22 @@ function requestedPriceRange(value: SearchParamValue) {
 export function parsePublicInventoryFilters(
   input: PublicInventorySearchParams,
 ): PublicInventoryFilters {
-  const defaults = filterSchema.parse({});
+  const defaults = publicInventoryFilterDefaults;
   const data: PublicInventoryFilters = {
-    query: parseFilterField(
-      filterSchema.shape.query,
-      firstParam(input.q),
-      defaults.query,
-    ),
-    kind: parseFilterField(
-      filterSchema.shape.kind,
-      firstParam(input.kind),
-      defaults.kind,
-    ),
-    provider: parseFilterField(
-      filterSchema.shape.provider,
-      firstParam(input.provider),
-      defaults.provider,
-    ),
-    group: parseFilterField(
-      filterSchema.shape.group,
-      firstParam(input.group),
-      defaults.group,
-    ),
-    stock: parseFilterField(
-      filterSchema.shape.stock,
-      firstParam(input.stock),
-      defaults.stock,
-    ),
-    check: parseFilterField(
-      filterSchema.shape.check,
-      firstParam(input.check),
-      defaults.check,
-    ),
-    region: parseFilterField(
-      filterSchema.shape.region,
-      firstParam(input.region),
-      defaults.region,
-    ),
-    line: parseFilterField(
-      filterSchema.shape.line,
-      firstParam(input.line),
-      defaults.line,
-    ),
-    feature: parseFilterField(
-      filterSchema.shape.feature,
-      firstParam(input.feature),
-      defaults.feature,
-    ),
-    promo: parseFilterField(
-      filterSchema.shape.promo,
-      firstParam(input.promo),
-      defaults.promo,
-    ),
-    minPrice: parseFilterField(
-      filterSchema.shape.minPrice,
-      optionalParam(input.minPrice),
-      defaults.minPrice,
-    ),
-    maxPrice: parseFilterField(
-      filterSchema.shape.maxPrice,
-      optionalParam(input.maxPrice),
-      defaults.maxPrice,
-    ),
-    sort: parseFilterField(
-      filterSchema.shape.sort,
-      firstParam(input.sort),
-      defaults.sort,
-    ),
-    cursor: parseFilterField(
-      filterSchema.shape.cursor,
-      firstParam(input.cursor),
-      defaults.cursor,
-    ),
+    query: parseTextFilter(input.q, 80, defaults.query),
+    kind: parseEnumFilter(input.kind, SERVER_OFFER_KINDS, defaults.kind),
+    provider: parseTextFilter(input.provider, 160, defaults.provider),
+    group: parseTextFilter(input.group, 200, defaults.group),
+    stock: parseEnumFilter(input.stock, publicInventoryStocks, defaults.stock),
+    check: parseEnumFilter(input.check, publicInventoryChecks, defaults.check),
+    region: parseTextFilter(input.region, 160, defaults.region),
+    line: parseTextFilter(input.line, 160, defaults.line),
+    feature: parseTextFilter(input.feature, 160, defaults.feature),
+    promo: parseEnumFilter(input.promo, publicInventoryPromos, defaults.promo),
+    minPrice: parsePriceFilter(input.minPrice, defaults.minPrice),
+    maxPrice: parsePriceFilter(input.maxPrice, defaults.maxPrice),
+    sort: parseEnumFilter(input.sort, publicInventorySorts, defaults.sort),
+    cursor: parseTextFilter(input.cursor, 512, defaults.cursor),
   };
   // 价格档位比 minPrice / maxPrice 输入框优先：用户在同一个表单里选了档位时，
   // 输入框里仍然是上一次的值，不能让它覆盖刚选的档位。
@@ -286,14 +297,17 @@ export function parsePublicInventoryFilters(
 }
 
 export function buildPublicInventoryHref(filters: PublicInventoryFilters) {
-  const defaults = filterSchema.parse({});
   const params = new URLSearchParams();
 
-  for (const key of Object.keys(filterSchema.shape) as Array<
-    keyof PublicInventoryFilters
-  >) {
+  for (const key of Object.keys(
+    publicInventoryFilterDefaults,
+  ) as Array<keyof PublicInventoryFilters>) {
     const value = filters[key];
-    if (value === undefined || value === "" || value === defaults[key])
+    if (
+      value === undefined ||
+      value === "" ||
+      value === publicInventoryFilterDefaults[key]
+    )
       continue;
     params.set(key === "query" ? "q" : key, String(value));
   }
