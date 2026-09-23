@@ -167,6 +167,7 @@ export async function getPublishedPostCountByCategoryId(
   language: PublicLanguage = "zh",
 ) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.posts, cacheTags.category(categoryId));
 
   const [result] = await readDb
@@ -184,6 +185,7 @@ export async function getPostsWithTags(
   language: PublicLanguage = "zh",
 ) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.posts, cacheTags.tags);
 
   try {
@@ -251,6 +253,14 @@ export async function searchPublishedPosts(input: {
   }
 }
 
+/**
+ * 首页文章区一次取多少条。
+ *
+ * 首页最多渲染 9 张卡片（`home-page.tsx` 的 1 篇头条 + 2 篇次条 + 6 篇列表），
+ * 这里留 3 条余量，卡片数量微调时不必同时动数据层；若要再往上加，注意两边一起改。
+ */
+export const HOMEPAGE_POST_QUERY_LIMIT = 12;
+
 export async function getHomepagePostsWithTags(
   language: PublicLanguage = "zh",
 ) {
@@ -259,7 +269,7 @@ export async function getHomepagePostsWithTags(
   tagCache(cacheTags.homepage, cacheTags.posts, cacheTags.tags);
 
   try {
-    const { data } = await getPostsWithTags(40, language);
+    const { data } = await getPostsWithTags(HOMEPAGE_POST_QUERY_LIMIT, language);
     return { data: await attachTagsToPosts(data, language) };
   } catch (error) {
     throw new Error("获取首页文章失败", { cause: error });
@@ -599,6 +609,7 @@ export async function getPostsWithTagsByCategoryId(
   language: PublicLanguage = "zh",
 ) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.posts, cacheTags.tags, cacheTags.category(id));
 
   try {
@@ -627,6 +638,7 @@ export async function getPostsWithTagsByCategoryId(
 
 export async function getPublishedPostCount(language: PublicLanguage = "zh") {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.posts);
 
   try {
@@ -646,6 +658,7 @@ export async function getPublishedPostsPage(
   language: PublicLanguage = "zh",
 ) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.posts, cacheTags.tags);
 
   try {
@@ -675,6 +688,7 @@ export async function getPublishedPostsPage(
 
 export async function getPostsByPostId(id: number) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.posts);
 
   try {
@@ -708,6 +722,7 @@ export async function getLatestPostsForSidebar(
   language: PublicLanguage = "zh",
 ) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.posts, cacheTags.sidebar);
 
   const postsData = await readDb

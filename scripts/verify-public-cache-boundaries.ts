@@ -24,7 +24,18 @@ const requirements = new Map<string, string[]>([
       "getRecommendedPosts",
       "getPostsWithTagsByCategoryId",
       "getLatestPostsForSidebar",
+      "getPublishedPostCount",
+      "getPublishedPostsPage",
+      "getPostsByPostId",
     ],
+  ],
+  [
+    "src/features/public/data/network-experience.ts",
+    ["getPublishedNetworkExperienceRuleSnapshot"],
+  ],
+  [
+    "src/features/public/data/server-sizing.ts",
+    ["getPublishedServerSizingRuleSnapshot"],
   ],
   [
     "src/features/public/data/article-internal-links.ts",
@@ -122,7 +133,11 @@ function inspectCacheStrategy(
     return {
       cached: true,
       tagged: bodyText.includes("tagCache("),
-      expiring: true,
+      // 这里以前无条件返回 true，等于这条闸门对 "use cache" 从未生效过：不写 cacheLife
+      // 会落到 Next 的 default 档（expire 约等于永不过期），按参数缓存的条目再也回收不掉，
+      // 外层函数声明的 revalidate 也会被内层更保守的档位盖住。必须真的检查。
+      expiring: bodyText.includes("cacheLife("),
+      expiryHint: '"use cache" must declare cacheLife()',
     };
   }
 
@@ -131,10 +146,11 @@ function inspectCacheStrategy(
       cached: true,
       tagged: /\btags\s*:/.test(bodyText),
       expiring: /\brevalidate\s*:/.test(bodyText),
+      expiryHint: "unstable_cache() must declare revalidate",
     };
   }
 
-  return { cached: false, tagged: false, expiring: false };
+  return { cached: false, tagged: false, expiring: false, expiryHint: "" };
 }
 
 const errors: string[] = [];
@@ -164,9 +180,7 @@ for (const [relativePath, functionNames] of requirements) {
       errors.push(`${relativePath}:${functionName} must declare cache tags`);
     }
     if (!strategy.expiring) {
-      errors.push(
-        `${relativePath}:${functionName} unstable_cache() must declare revalidate`,
-      );
+      errors.push(`${relativePath}:${functionName} ${strategy.expiryHint}`);
     }
     // These core caches must preserve the last successful value on DB errors.
     // A returned fallback from a catch block would itself become cacheable data.

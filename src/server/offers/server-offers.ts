@@ -504,7 +504,15 @@ export async function getPublicServerOfferCount() {
   }
 }
 
-export async function getLatestServerOffers(limit = 8) {
+/**
+ * 首页优惠码块从多少条最新套餐里挑。
+ *
+ * 查询按 `featured` / `createdAt` 排序，SQL 层筛不出「有优惠码」，所以是先取一批
+ * 再在内存里过滤；`home-page.tsx` 最多展示 4 条，取 8 条用来凑数即可，不必拉 24 条。
+ */
+export const HOMEPAGE_LATEST_OFFER_LIMIT = 8;
+
+export async function getLatestServerOffers(limit = HOMEPAGE_LATEST_OFFER_LIMIT) {
   "use cache";
   cacheLife({ stale: 300, revalidate: 300, expire: 3_600 });
   tagCache(cacheTags.serverOffers);
@@ -548,6 +556,7 @@ export async function getLatestServerOffers(limit = 8) {
 
 export async function getPublicServerOffers(limit = 120) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.serverOffers);
 
   try {
@@ -739,6 +748,7 @@ export async function getServerOffersByKeywords(input: {
   limit?: number;
 }) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.serverOffers);
 
   const keywords = input.keywords

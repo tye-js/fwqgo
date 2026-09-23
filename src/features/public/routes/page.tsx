@@ -9,6 +9,7 @@ import { PublicHomePage } from "@/features/public/components/home-page";
 import Header from "@/features/public/components/header";
 import Footer from "@/features/public/components/footer";
 import {
+  HOMEPAGE_LATEST_OFFER_LIMIT,
   getLatestServerOffers,
   getPublicServerOfferCount,
   getServerOfferTopicCounts,
@@ -86,7 +87,9 @@ async function HomeContent() {
     getHomepagePostsWithTags("zh"),
     getHomepageSidebarData("zh"),
     getServerOfferTopicCounts(),
-    getLatestServerOffers(24),
+    // 首页只用 4 条优惠码 + 一个「最近更新」时间戳（`home-page.tsx`），
+    // 按优惠码块约定的条数取，不必按 24 条拉全量字段。
+    getLatestServerOffers(HOMEPAGE_LATEST_OFFER_LIMIT),
     getPublicServerOfferCount(),
     getActiveHomepageSlots("zh"),
     getServerOfferCollectionIndex(5),

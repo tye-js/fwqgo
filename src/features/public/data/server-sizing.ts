@@ -5,11 +5,13 @@ import {
 } from "@fwqgo/core/server-sizing";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { desc, eq } from "drizzle-orm";
+import { cacheLife } from "next/cache";
 import { readDb } from "@fwqgo/db";
 import { serverSizingRuleSets } from "@fwqgo/db/schema";
 
 export async function getPublishedServerSizingRuleSnapshot(): Promise<ServerSizingRuleSet | null> {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.serverSizing);
 
   try {

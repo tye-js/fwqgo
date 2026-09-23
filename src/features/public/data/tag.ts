@@ -1,4 +1,5 @@
 import { and, asc, count, desc, eq, or, sql } from "drizzle-orm";
+import { cacheLife } from "next/cache";
 
 import { slugify } from "@fwqgo/core/utils";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
@@ -55,6 +56,7 @@ export async function getTagBySlug(
   language: PublicLanguage = "zh",
 ) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.posts, cacheTags.tags, cacheTags.tagSlug(tagSlug));
 
   try {
@@ -108,6 +110,7 @@ export async function getPostsWithTagsByTagSlug(
   language: PublicLanguage = "zh",
 ) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.posts, cacheTags.tags, cacheTags.tagSlug(tagSlug));
 
   try {

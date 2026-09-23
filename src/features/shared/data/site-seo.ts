@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { cacheLife } from "next/cache";
 
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { readDb } from "@fwqgo/db";
@@ -41,6 +42,7 @@ export const defaultSiteSeoConfigs: Record<
 
 export async function getSiteSeoConfig(language: SiteSeoLanguage = "zh") {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.siteSeo);
 
   const fallback = defaultSiteSeoConfigs[language];

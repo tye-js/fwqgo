@@ -53,6 +53,7 @@ function localizeCategory<
 
 export async function getCategories() {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.categories);
   if (isDatabaseFreeBuild()) return { data: [] };
 
@@ -120,6 +121,7 @@ export async function getCategoryBySlug(
   language: PublicLanguage = "zh",
 ) {
   "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.categories, cacheTags.posts, cacheTags.categorySlug(slug));
 
   try {
