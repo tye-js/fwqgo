@@ -886,6 +886,16 @@ export const aiRewriteTasks = pgTable(
       table.sourceUrl,
       table.createdAt,
     ),
+    // 任务中心的「统一任务列表」按 coalesce(updatedAt, createdAt) DESC, id DESC 排序
+    // （`src/features/cms/data/operations.ts` 的 getUnifiedTaskList）。
+    // coalesce 是表达式，普通索引用不上，Postgres 只能全表扫 + Sort；
+    // 这个表达式索引让它能直接按序取前 N 行。分页越深收益越大。
+    unifiedListOrderIdx: index(
+      "ai_rewrite_tasks_unified_list_order_idx",
+    ).on(
+      sql`coalesce(${table.updatedAt}, ${table.createdAt}) desc`,
+      table.id.desc(),
+    ),
     statusCheck: check(
       "ai_rewrite_tasks_status_check",
       sql`${table.status} in ('pending', 'running', 'succeeded', 'failed', 'manual_required', 'cancelled')`,
@@ -1180,6 +1190,16 @@ export const imageCoverGenerationTasks = pgTable(
     postIdx: index("image_cover_generation_tasks_postId_idx").on(table.postId),
     configIdx: index("image_cover_generation_tasks_configId_idx").on(
       table.configId,
+    ),
+    // 任务中心的「统一任务列表」按 coalesce(updatedAt, createdAt) DESC, id DESC 排序
+    // （`src/features/cms/data/operations.ts` 的 getUnifiedTaskList）。
+    // coalesce 是表达式，普通索引用不上，Postgres 只能全表扫 + Sort；
+    // 这个表达式索引让它能直接按序取前 N 行。分页越深收益越大。
+    unifiedListOrderIdx: index(
+      "image_cover_generation_tasks_unified_list_order_idx",
+    ).on(
+      sql`coalesce(${table.updatedAt}, ${table.createdAt}) desc`,
+      table.id.desc(),
     ),
     statusCheck: check(
       "image_cover_generation_tasks_status_check",
@@ -1524,6 +1544,15 @@ export const providerMonitorRuns = pgTable(
     statusStartedAtIdx: index("provider_monitor_runs_status_startedAt_idx").on(
       table.status,
       table.startedAt,
+    ),
+    // 同一份「统一任务列表」里，采集任务按 startedAt DESC, id DESC 排序。
+    // 已有的 (status, startedAt) 索引只在带 status 过滤时才用得上；
+    // type=all 且不筛状态时是裸排序，需要这个索引。
+    unifiedListOrderIdx: index(
+      "provider_monitor_runs_unified_list_order_idx",
+    ).on(
+      table.startedAt.desc(),
+      table.id.desc(),
     ),
     monitorStartedAtIdx: index(
       "provider_monitor_runs_monitorId_startedAt_idx",

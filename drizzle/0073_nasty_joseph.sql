@@ -1,0 +1,3 @@
+CREATE INDEX "ai_rewrite_tasks_unified_list_order_idx" ON "ai_rewrite_tasks" USING btree (coalesce("updatedAt", "createdAt") desc,"id" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "image_cover_generation_tasks_unified_list_order_idx" ON "image_cover_generation_tasks" USING btree (coalesce("updatedAt", "createdAt") desc,"id" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "provider_monitor_runs_unified_list_order_idx" ON "provider_monitor_runs" USING btree ("startedAt" DESC NULLS LAST,"id" DESC NULLS LAST);
