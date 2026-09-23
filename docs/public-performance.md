@@ -280,9 +280,10 @@ P1-5 原文写的「首页 RSC payload 内联体积 563 KB / 781 KB」是**未�
 
 | 资源 | 源站 Cache-Control | Cloudflare |
 | --- | --- | --- |
-| `/_next/image?url=…&w=…&q=75` | `public, max-age=2592000, must-revalidate` + `Vary: Accept` | **DYNAMIC** |
-| `/api/images/source?path=…`（本次改前） | `public, max-age=0, must-revalidate` | **DYNAMIC** |
-| `/api/images/source?path=…`（本次改后） | `public, max-age=31536000, immutable` | 待 CF 规则生效 |
+| `/_next/image?url=…&w=…&q=75`（`Accept` 含 `image/avif`） | `public, max-age=2592000, must-revalidate` + `Vary: Accept` | **HIT**（2026-09-23 起） |
+| `/_next/image?url=…&w=…&q=75`（其余 `Accept`） | 同上 | `DYNAMIC`（有意为之，见下） |
+| `/api/images/source?path=…`（本次改前） | `public, max-age=0, must-revalidate` | `DYNAMIC` |
+| `/api/images/source?path=…`（本次改后） | `public, max-age=31536000, immutable` | **HIT** |
 
 `/_next/image` 与 `/api/images/source` 都是**无扩展名路径**，Cloudflare 默认只缓存带已知扩展名的资源，
 所以即使源站声明了公开可缓存，边缘仍按 DYNAMIC 透传 —— 与 2026-09-21 之前 HTML 的情况同根。
@@ -300,9 +301,23 @@ users / 推广位的引用改写成 `?v=<内容哈希>`，并给缩略图与大�
 ⚠️ 若以后删除 `versionUploadImageReferences` 的重写，或让替换流程复用同一个 URL 而不带新版本号，
 这条长缓存会立刻变成「最长一年看不到新图」——两者必须同进同退。
 
-### 需要在 Cloudflare 侧新增的 Cache Rule
+### Cache Rule（2026-09-23 已上线）
 
 规则只存在于 Cloudflare，仓库无法部署，按 2026-09-21 那节的方式存档。
+
+**不需要登录控制台**：生产凭据就在服务器上（`/var/www/fwqgo/shared/.env.production` 的
+`CLOUDFLARE_ZONE_ID` + `CLOUDFLARE_CACHE_PURGE_TOKEN`）。这个令牌名字叫 purge，实际是账号级
+（`cfat_` 前缀）令牌，**既能清理缓存也能读写 Cache Rules** —— 所以规则可以直接用 API 改。
+
+```bash
+# 读规则集
+GET /client/v4/zones/{zone}/rulesets/phases/http_request_cache_settings/entrypoint
+# 写入：同一个 URL 的 PUT，body 为 {"rules": [...]}
+#   已有规则要原样带上它的 id，不带 id 的条目会被当作新增
+```
+
+`/user/tokens/verify` 对账号级令牌会返回 `Invalid API Token`，**这不代表令牌失效** ——
+那个端点只认用户令牌。判断有效性要看 zone 级调用是否 200。
 
 **规则一：`/_next/image`（必须带 `Accept` 条件）**
 
@@ -310,8 +325,17 @@ users / 推广位的引用改写成 `?v=<内容哈希>`，并给缩略图与大�
 (http.host eq "fwqgo.com"
  and http.request.method in {"GET" "HEAD"}
  and starts_with(http.request.uri.path, "/_next/image")
- and http.request.headers["accept"] contains "image/avif")
+ and any(http.request.headers["accept"][*] contains "image/avif"))
 ```
+
+⚠️ 必须写成 `any(http.request.headers["accept"][*] contains …)`。`http.request.headers["accept"]`
+是**数组**（同名头可出现多次），直接对它用 `contains` 会被 Cloudflare 拒绝：
+
+```text
+20127 … could not parse filter expression: cannot perform this operation on type Array(...)
+```
+
+整个 PUT 以 400 失败。好在 ruleset 写入是原子的，失败不会半写入、已有的 HTML 规则不受影响。
 
 `action_parameters` 与既有 HTML 规则一致：`cache: true`、`edge_ttl.mode = "respect_origin"`、
 `browser_ttl.mode = "respect_origin"`、`serve_stale.disable_stale_while_updating = false`。
@@ -356,6 +380,26 @@ curl -s -o /dev/null -D - -H 'Accept: */*' "<同一个 URL>" | grep -i 'content-
 
 首次请求应为 `MISS`、`content-type: image/avif`；二次请求应为 `HIT` 且 `age` 递增；
 带 `Accept: */*` 的请求应始终为 `DYNAMIC`，`content-type` 不是 avif。
+
+#### 上线实测（2026-09-23，从生产服务器这条干净链路发出）
+
+规则集从 version 2 → **version 3**，原有 HTML 规则（`f00d7d9a`）表达式逐字未变，
+新增 `e16b8064`（`/_next/image`）与 `8cfeb61b`（`/api/images/source`）。
+被测 URL：`/_next/image?url=…softshellweb-vps-zh-cover.webp&w=640&q=75`。
+
+| 请求 | content-type | content-length | cf-cache-status |
+| --- | --- | --- | --- |
+| AVIF 客户端，第 1 次 | `image/avif` | 20,944 | `MISS` |
+| AVIF 客户端，第 2 次 | `image/avif` | 20,944 | **`HIT`**（age 2） |
+| `Accept: */*` | `image/jpeg` | 40,892 | `DYNAMIC` |
+| `Accept: image/webp,*/*;q=0.8` | `image/webp` | 35,394 | `DYNAMIC` |
+| `/api/images/source?path=…` | `image/webp` | 154,864 | **`HIT`**（age 20+） |
+| 对照 `/about`（规则外路径） | `text/html` | — | `DYNAMIC` |
+
+结论：`Accept` 守卫按设计工作 —— 只有声明支持 AVIF 的客户端共享同一个缓存变体，
+其余客户端不匹配规则、走默认 `DYNAMIC` 回源，拿到正确的 jpeg/webp，**不会**被 AVIF 变体污染。
+`/servers` 观察到的 `EXPIRED` 属正常：源站 900 秒公共策略到期后 Cloudflare 重验证，
+不是规则失效。
 
 
 
