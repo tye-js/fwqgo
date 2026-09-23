@@ -99,7 +99,7 @@ function QueueSummaryLink({
     <div className="group min-w-0 px-3 py-2.5 transition-colors hover:bg-muted/40">
       <Link
         href={`/ai-tasks?type=${type}`}
-        className="flex items-center justify-between gap-3 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="flex min-h-11 items-center justify-between gap-3 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <span className="text-sm font-medium">{title}</span>
         <span className="text-xs tabular-nums text-muted-foreground">
@@ -117,8 +117,8 @@ function QueueSummaryLink({
           href={`/ai-tasks?type=${type}&status=failed`}
           className={
             summary.failed > 0
-              ? "text-destructive hover:underline"
-              : "text-muted-foreground hover:underline"
+              ? "inline-flex min-h-11 items-center px-2 text-destructive hover:underline"
+              : "inline-flex min-h-11 items-center px-2 text-muted-foreground hover:underline"
           }
         >
           失败{" "}
@@ -129,7 +129,7 @@ function QueueSummaryLink({
         {summary.uncertain > 0 ? (
           <Link
             href={`/ai-tasks?type=${type}&status=uncertain`}
-            className="text-destructive hover:underline"
+            className="inline-flex min-h-11 items-center px-2 text-destructive hover:underline"
           >
             不确定失败{" "}
             <strong className="font-semibold tabular-nums">

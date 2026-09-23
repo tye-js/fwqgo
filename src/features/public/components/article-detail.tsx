@@ -113,7 +113,7 @@ export function ArticlePageSkeleton({
   variant?: "nested" | "full";
 }) {
   const grid = (
-    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,800px)_280px] xl:justify-center 2xl:grid-cols-[180px_minmax(0,760px)_260px] 2xl:gap-5">
+    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,800px)] xl:justify-center 2xl:grid-cols-[180px_minmax(0,760px)] 2xl:gap-5">
       <div className="hidden space-y-3 pt-2 2xl:block">
         <div className="h-4 w-24 animate-pulse rounded bg-muted" />
         <div className="h-8 w-full animate-pulse rounded bg-muted/70" />
@@ -135,12 +135,6 @@ export function ArticlePageSkeleton({
           <div className="h-5 w-10/12 animate-pulse rounded bg-muted/60" />
           <div className="h-32 w-full animate-pulse rounded bg-muted/40" />
         </div>
-      </div>
-      <div className="hidden space-y-3 border-l border-border/70 pl-4 xl:block">
-        <div className="h-4 w-20 animate-pulse rounded bg-muted" />
-        <div className="h-14 w-full animate-pulse rounded bg-muted/60" />
-        <div className="h-14 w-full animate-pulse rounded bg-muted/60" />
-        <div className="h-14 w-full animate-pulse rounded bg-muted/60" />
       </div>
     </div>
   );

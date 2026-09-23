@@ -1,7 +1,12 @@
 import Link from "next/link";
+import Image from "next/image";
 
 import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import { ExternalLink, FileWarning } from "lucide-react";
+import {
+  getOptimizedImageSrc,
+  isRenderableImageSrc,
+} from "@fwqgo/core/image-src";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +24,7 @@ import type {
 } from "@/features/cms/data/post-quality";
 import type { PostLanguageFilter } from "@/features/cms/data/post";
 import { PostAffiliateReviewActions } from "@/features/cms/components/post-affiliate-review-actions";
+import { PaginationComponent } from "@/features/shared/components/pagination";
 
 const languageFilters: Array<{ value: PostLanguageFilter; label: string }> = [
   { value: "all", label: "全部语言" },
@@ -127,6 +133,53 @@ export function PostQualityWorkbench({
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span>
+          已扫描{" "}
+          <strong className="font-semibold text-foreground">
+            {report.summary.sampledPosts}
+          </strong>{" "}
+          篇
+        </span>
+        <span>
+          命中{" "}
+          <strong className="font-semibold text-foreground">
+            {report.summary.visiblePosts}
+          </strong>{" "}
+          篇
+        </span>
+        <span>
+          阻断{" "}
+          <strong
+            className={
+              report.summary.blockerCount > 0
+                ? "font-semibold text-destructive"
+                : "font-semibold text-foreground"
+            }
+          >
+            {report.summary.blockerCount}
+          </strong>
+        </span>
+        <span>
+          警告{" "}
+          <strong className="font-semibold text-foreground">
+            {report.summary.warningCount}
+          </strong>
+        </span>
+        <span>
+          已发布且有问题{" "}
+          <strong className="font-semibold text-foreground">
+            {report.summary.publishedWithIssues}
+          </strong>{" "}
+          篇
+        </span>
+        {report.scan.capped ? (
+          <span className="text-amber-600 dark:text-amber-400">
+            只扫描了最近 {report.scan.limit} 篇（上限），更早的文章未纳入本次质检
+          </span>
+        ) : null}
+      </div>
+
       {report.rows.length === 0 ? (
         <div className="rounded-md border border-dashed border-border bg-background p-6 text-center">
           <FileWarning className="mx-auto size-8 text-muted-foreground" />
@@ -144,7 +197,7 @@ export function PostQualityWorkbench({
               <TableHead className="w-16 text-center">
                 <span className="sr-only">中英文关系</span>
               </TableHead>
-              <TableHead className="w-[260px]">封面</TableHead>
+              <TableHead className="w-16">封面</TableHead>
               <TableHead className="w-[220px]">返利/套餐</TableHead>
               <TableHead className="w-[120px]">更新时间</TableHead>
               <TableHead className="w-[130px] text-right">操作</TableHead>
@@ -226,15 +279,29 @@ export function PostQualityWorkbench({
                     </span>
                   )}
                 </TableCell>
-                <TableCell>
-                  {post.imgUrl ? (
-                    <p className="line-clamp-3 break-all text-xs leading-5 text-muted-foreground">
-                      {post.imgUrl}
-                    </p>
+                <TableCell className="w-16">
+                  {post.imgUrl && isRenderableImageSrc(post.imgUrl) ? (
+                    <>
+                      <Image
+                        src={getOptimizedImageSrc(post.imgUrl)}
+                        alt=""
+                        title={post.imgUrl}
+                        width={36}
+                        height={36}
+                        className="h-9 w-9 rounded-md border border-border/70 object-cover"
+                      />
+                      <span className="sr-only">已设置封面</span>
+                    </>
                   ) : (
-                    <span className="text-xs text-muted-foreground">
-                      未设置
-                    </span>
+                    <>
+                      <span
+                        className="text-xs text-muted-foreground"
+                        aria-hidden="true"
+                      >
+                        未设置
+                      </span>
+                      <span className="sr-only">未设置封面</span>
+                    </>
                   )}
                 </TableCell>
                 <TableCell>
@@ -285,6 +352,11 @@ export function PostQualityWorkbench({
           </TableBody>
         </Table>
       )}
+
+      <PaginationComponent
+        pageNo={report.pagination.pageNo}
+        totalPage={report.pagination.totalPage}
+      />
     </div>
   );
 }

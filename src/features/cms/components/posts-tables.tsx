@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -69,6 +70,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { type posts } from "@fwqgo/db/schema";
+import {
+  getOptimizedImageSrc,
+  isRenderableImageSrc,
+} from "@fwqgo/core/image-src";
 
 type Post = typeof posts.$inferSelect;
 type PostListProp = Pick<
@@ -916,7 +921,7 @@ export function PostList({
                   <TableHead className="text-nowrap text-center">
                     发布
                   </TableHead>
-                  <TableHead className="text-nowrap">封面</TableHead>
+                  <TableHead className="w-16 text-nowrap">封面</TableHead>
                   <TableHead className="text-center">操作</TableHead>
                 </TableRow>
               </TableHeader>
@@ -979,7 +984,8 @@ export function PostList({
                       ) : (
                         <Link
                           href={`${editBasePath ?? pathname}/post/${encodeURIComponent(post.slug)}`}
-                          className="font-medium transition-colors hover:text-accent"
+                          title={post.slug}
+                          className="block max-w-[240px] truncate font-medium transition-colors hover:text-accent"
                         >
                           {post.slug}
                         </Link>
@@ -1014,7 +1020,7 @@ export function PostList({
                         </span>
                       ) : null}
                     </TableCell>
-                    <TableCell className="max-w-[200px] text-nowrap">
+                    <TableCell className="w-16">
                       {editPostId === post.id ? (
                         <div className="grid min-w-[240px] gap-2 xl:grid-cols-[minmax(180px,1fr)_auto]">
                           <Input
@@ -1031,14 +1037,32 @@ export function PostList({
                             }
                           />
                         </div>
+                      ) : post.imgUrl && isRenderableImageSrc(post.imgUrl) ? (
+                        <>
+                          <Image
+                            src={getOptimizedImageSrc(post.imgUrl)}
+                            alt=""
+                            title={post.imgUrl}
+                            width={36}
+                            height={36}
+                            className="h-9 w-9 rounded-md border border-border/70 object-cover"
+                          />
+                          <span className="sr-only">已设置封面</span>
+                        </>
                       ) : (
-                        <span className="block truncate text-muted-foreground">
-                          {post.imgUrl ?? "-"}
-                        </span>
+                        <>
+                          <span
+                            className="text-muted-foreground"
+                            aria-hidden="true"
+                          >
+                            —
+                          </span>
+                          <span className="sr-only">未设置封面</span>
+                        </>
                       )}
                     </TableCell>
                     <TableCell className="text-center">
-                      <div className="flex justify-center gap-1.5">
+                      <div className="flex justify-center gap-2">
                         {editPostId === post.id ? (
                           <>
                             <Button
@@ -1074,9 +1098,9 @@ export function PostList({
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <Button
-                                  variant="destructive"
+                                  variant="outline"
                                   size="sm"
-                                  className="px-2"
+                                  className="border-destructive/30 bg-background px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
                                 >
                                   删除
                                 </Button>

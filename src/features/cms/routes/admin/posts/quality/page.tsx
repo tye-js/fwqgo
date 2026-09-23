@@ -10,12 +10,21 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import { PostQualityWorkbench } from "@/features/cms/components/post-quality-workbench";
 import { getPostQualityReport } from "@/features/cms/data/post-quality";
-import { firstSearchParam, type SearchParamValue } from "@fwqgo/core/utils";
+import {
+  firstSearchParam,
+  parsePositiveInt,
+  type SearchParamValue,
+} from "@fwqgo/core/utils";
 
 type PostQualitySearchParams = {
   language?: SearchParamValue;
   issue?: SearchParamValue;
+  pageNo?: SearchParamValue;
 };
+
+function parsePageNo(value: SearchParamValue) {
+  return parsePositiveInt(value) ?? 1;
+}
 
 async function PostQualityWrapper({
   searchParamsPromise,
@@ -26,6 +35,9 @@ async function PostQualityWrapper({
   const report = await getPostQualityReport({
     language: firstSearchParam(searchParams.language),
     issue: firstSearchParam(searchParams.issue),
+    pageNo: parsePageNo(searchParams.pageNo),
+    // 渲染长度交给分页，扫描范围尽量放大；数据层上限 300，超出会在页面上明示。
+    limit: 300,
   }).catch((error: unknown) => {
     console.error("发布质检页加载失败:", error);
     return null;

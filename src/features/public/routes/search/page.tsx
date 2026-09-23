@@ -185,8 +185,10 @@ async function SearchContent({ searchParams }: SearchPageProps) {
         ) : (
           <div className="space-y-8">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-2xl font-semibold tracking-tight">
+              {/* 搜索词由用户输入，可能是长 URL 这类不可断行的一整串；
+                  不给 min-w-0 控件收缩，flex 项就会按 min-content 撑破视口。 */}
+              <div className="min-w-0">
+                <h2 className="break-words text-2xl font-semibold tracking-tight">
                   {copy.resultTitle(query)}
                 </h2>
                 <p className="mt-2 text-sm text-muted-foreground">

@@ -25,16 +25,35 @@ async function checkPage(page, url, name, { expectInventory = false } = {}) {
   const result = await page.evaluate(() => {
     const body = document.body;
     const overflowing = body.scrollWidth > window.innerWidth + 1;
-    const regions = [...document.querySelectorAll("*")].filter(
-      (node) => node.scrollWidth > node.clientWidth + 1,
-    );
-    const allowed = regions.every((node) =>
+    // 「未授权的横向滚动区」= 元素自己 overflow-x 是 auto/scroll 且内容更宽。
+    // 只比 scrollWidth/clientWidth 会把天然裁切也误判进来：sr-only（overflow:hidden）
+    // 与 <input>（overflow-x:clip，占位符或长搜索词比框宽）必然满足该不等式，
+    // 但都不会产生滚动条。真的撑破视口由上面的 overflowing 断言负责。
+    const regions = [...document.querySelectorAll("*")].filter((node) => {
+      const overflowX = getComputedStyle(node).overflowX;
+      return (
+        (overflowX === "auto" || overflowX === "scroll") &&
+        node.scrollWidth > node.clientWidth + 1
+      );
+    });
+    /** @param {Element} node */
+    const allowed = (node) =>
       node.matches(".cms-table-viewport, .cms-table-viewport *") ||
-      (window.innerWidth >= 1280 && node.matches("#inventory-results .overflow-x-auto, #inventory-results .overflow-x-auto *")),
-    );
+      node.matches(".article-table-scroll, .article-table-scroll *") ||
+      (window.innerWidth >= 1280 && node.matches("#inventory-results .overflow-x-auto, #inventory-results .overflow-x-auto *"));
+    const unowned = regions
+      .filter((node) => !allowed(node))
+      .slice(0, 5)
+      .map((node) => {
+        const rect = node.getBoundingClientRect();
+        const classes = String(node.className ?? "").trim().split(/\s+/).slice(0, 3).join(".");
+        const text = (node.textContent ?? "").trim().slice(0, 24);
+        return `${node.tagName.toLowerCase()}${classes ? `.${classes}` : ""} scrollWidth=${node.scrollWidth} clientWidth=${node.clientWidth} x=${Math.round(rect.x)} "${text}"`;
+      });
     return {
       overflowing,
-      allowed,
+      allowed: unowned.length === 0,
+      unowned,
       viewport: `${window.innerWidth}x${window.innerHeight}`,
       touchTargets: [...document.querySelectorAll("a,button,[role=button],summary")]
         .filter((node) => {
@@ -51,7 +70,11 @@ async function checkPage(page, url, name, { expectInventory = false } = {}) {
     };
   });
   assert.equal(result.overflowing, false, `${name} overflows at ${result.viewport}`);
-  assert.equal(result.allowed, true, `${name} has an unowned horizontal scroll region at ${result.viewport}`);
+  assert.equal(
+    result.allowed,
+    true,
+    `${name} has an unowned horizontal scroll region at ${result.viewport}: ${result.unowned.join(" | ")}`,
+  );
   if (expectInventory && requireData) {
     assert.ok(result.inventoryCards > 0, `${name} has no inventory cards at ${result.viewport}`);
   }

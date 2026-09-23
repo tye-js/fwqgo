@@ -7,6 +7,10 @@ import {
   normalizePostLanguageFilter,
   type PostLanguageFilter,
 } from "@/features/cms/data/post";
+import {
+  boundOffsetPaginationByTotal,
+  normalizeOffsetPagination,
+} from "@fwqgo/core/pagination";
 
 export type PostQualityIssueCode =
   | "seo"
@@ -295,6 +299,8 @@ export async function getPostQualityReport(input: {
   language?: string;
   issue?: string;
   limit?: number;
+  pageNo?: number;
+  pageSize?: number;
 }) {
   await requireAdminSession();
 
@@ -450,7 +456,7 @@ export async function getPostQualityReport(input: {
     };
   });
 
-  const rows =
+  const matchedRows =
     issue === "all"
       ? allRows
       : allRows.filter((row) => row.issues.some((item) => item.code === issue));
@@ -465,15 +471,36 @@ export async function getPostQualityReport(input: {
     0,
   );
 
+  // The scan itself stays bounded by `limit` (issue detection runs in JS, so the
+  // rows have to be materialised before they can be filtered); the pagination
+  // below only slices what was scanned. `scanCapped` is what makes that bound
+  // visible instead of silently dropping older posts.
+  const pagination = boundOffsetPaginationByTotal(
+    normalizeOffsetPagination({
+      pageNo: input.pageNo,
+      pageSize: input.pageSize ?? 20,
+      defaultPageSize: 20,
+      maxPageSize: 100,
+    }),
+    matchedRows.length,
+  );
+
   return {
     filters: {
       language,
       issue,
       limit,
+      pageNo: pagination.pageNo,
+      pageSize: pagination.pageSize,
+    },
+    pagination,
+    scan: {
+      limit,
+      capped: allRows.length >= limit,
     },
     summary: {
       sampledPosts: allRows.length,
-      visiblePosts: rows.length,
+      visiblePosts: matchedRows.length,
       issuePosts: allRows.filter((row) => row.issues.length > 0).length,
       blockerCount,
       warningCount,
@@ -481,7 +508,10 @@ export async function getPostQualityReport(input: {
         (row) => row.published && row.issues.length > 0,
       ).length,
     },
-    rows,
+    rows: matchedRows.slice(
+      pagination.offset,
+      pagination.offset + pagination.pageSize,
+    ),
   };
 }
 

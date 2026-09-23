@@ -1154,13 +1154,16 @@ export function ImageAssetManager({
                             <Button
                               type="button"
                               variant="outline"
-                              size="sm"
+                              size="icon"
+                              className="shrink-0"
+                              aria-label={`保存元数据：${image.originalName}`}
+                              title="保存元数据"
                               disabled={isPending}
                               onClick={() =>
                                 runAction(() => handleUpdateMetadata(image))
                               }
                             >
-                              <Save className="size-4" />
+                              <Save className="size-4" aria-hidden="true" />
                             </Button>
                           </div>
                         </div>
@@ -1204,13 +1207,16 @@ export function ImageAssetManager({
                           <Button
                             type="button"
                             variant="outline"
-                            size="sm"
+                            size="icon"
+                            className="shrink-0"
+                            aria-label={`按新路径替换引用：${image.originalName}`}
+                            title="替换引用"
                             disabled={isPending}
                             onClick={() =>
                               runAction(() => handleReplaceReferences(image.id))
                             }
                           >
-                            <Replace className="size-4" />
+                            <Replace className="size-4" aria-hidden="true" />
                           </Button>
                         </div>
                       </TableCell>

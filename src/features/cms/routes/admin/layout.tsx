@@ -71,9 +71,7 @@ async function AuthenticatedAdminLayout({
             } as React.CSSProperties
           }
         >
-          <Suspense fallback={null}>
-            <AppSidebar />
-          </Suspense>
+          <AppSidebar />
           <SidebarInset className="min-w-0">
             <CmsWorkspaceHeader />
             <div

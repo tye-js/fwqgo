@@ -714,7 +714,9 @@ export default async function Page() {
                 <TableHead className="w-20">语言</TableHead>
                 <TableHead className="w-24">状态</TableHead>
                 <TableHead className="w-24 text-right">浏览量</TableHead>
-                <TableHead className="w-32">创建时间</TableHead>
+                <TableHead className="w-40 whitespace-nowrap">
+                  创建时间
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -743,7 +745,7 @@ export default async function Page() {
                     <TableCell className="text-right font-semibold tabular-nums">
                       {formatNumber(post.views)}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                       {formatDate(post.createdAt)}
                     </TableCell>
                   </TableRow>

@@ -82,9 +82,13 @@ export function ImageUpload({ onChange, value }: ImageUploadProps) {
     }
   };
 
+  // 不能用 `md:grid-cols-*` 决定两列：断点看的是**视口**，而这里的可用宽度来自容器
+  // （文章编辑页把封面卡放在 ~350px 的侧栏里）。1280/1440 视口下容器只有 308px，
+  // 两列被压成 220px + 72px，`从图片库选择` 这个 142px 的 nowrap 按钮直接顶出视口 17px。
+  // 改成按 flex-basis 换行：宽度够就并排，不够就各自占一整行，与视口无关。
   return (
-    <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(220px,0.72fr)_minmax(0,1fr)] md:items-start">
-      <div className="min-w-0">
+    <div className="flex min-w-0 flex-wrap items-start gap-4">
+      <div className="min-w-0 flex-[1_1_220px]">
         {hasPreview ? (
           <div className="relative aspect-video w-full overflow-hidden rounded-md border border-border/70 bg-muted">
             <Image

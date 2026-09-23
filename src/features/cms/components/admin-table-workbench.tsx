@@ -94,7 +94,12 @@ export function AdminTableWorkbench({
         </div>
         {filterSlot ? (
           <div
-            className={`flex min-w-0 flex-col gap-3 rounded-lg border border-border/70 bg-muted/30 px-3 py-3 text-sm text-muted-foreground md:flex-row md:flex-wrap md:items-center ${actionSlot ? "xl:col-span-2 xl:row-start-2" : ""}`}
+            className={`flex min-w-0 flex-col gap-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-sm text-muted-foreground md:flex-row md:flex-wrap md:items-center ${
+              actionSlot
+                ? // 有批量操作时，筛选单独占第二行；按内容收缩，避免撑成一条大半是空白的横带。
+                  "xl:col-start-1 xl:row-start-2 xl:w-fit xl:max-w-full xl:justify-self-start"
+                : ""
+            }`}
           >
             <span className="flex shrink-0 items-center gap-2 text-xs font-medium text-muted-foreground">
               <Filter className="size-4" />

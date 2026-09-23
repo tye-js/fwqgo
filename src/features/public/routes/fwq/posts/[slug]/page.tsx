@@ -326,7 +326,7 @@ async function PostPageContent({
   };
   return (
     <div className="px-4 pb-10 pt-2 sm:px-6 md:pt-4">
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,800px)_280px] xl:justify-center 2xl:grid-cols-[180px_minmax(0,760px)_260px] 2xl:gap-5">
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,800px)] xl:justify-center 2xl:grid-cols-[180px_minmax(0,760px)] 2xl:gap-5">
         <ArticleTocSidebar items={tocItems} label="本文目录" />
 
         <div className="mx-auto w-full min-w-0 max-w-[820px] space-y-10 xl:mx-0 xl:max-w-none">
