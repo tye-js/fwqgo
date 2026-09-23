@@ -208,9 +208,16 @@ P1-5 原文写的「首页 RSC payload 内联体积 563 KB / 781 KB」是**未�
 | 内联 `<script>` 标签数 | 164 | **240** |
 | 内联 `<svg>` | 37 KB / 84 个 | 90 KB / 243 个 |
 | RSC 完全重复行 | 30 KB（相同字符串） | 30 KB |
-| **外部 JS（gzip）** | **694 KB / 12 个文件** | **1039 KB / 14 个文件** |
+| **外部 JS（传输，实测 227 KB）** | **227 KB / 12 个文件** | **317 KB / 14 个文件** |
 
-**结论：HTML 只占页面传输量的约 11%（`/`）和 5%（`/servers`），外部 JS 是它的 8–18 倍。**
+**结论：HTML 只占页面传输量的约 27%（`/`）和 15%（`/servers`），外部 JS 是它的约 2.7 倍与 5.6 倍。**
+
+> ⚠️ 上表的「外部 JS」数字在 2026-09-23 更正过：当时写的 694 KB / 1039 KB 是**解码后**体积，
+> 不是传输体积，倍数因此被夸大成 8–18 倍。原因是 `audit:public-payload` 用 Node `fetch` +
+> `accept-encoding` 量字节，而 undici 会自动解压并抹掉 `content-encoding`，脚本拿到的
+> `arrayBuffer().byteLength` 是解压后的长度。脚本已改为用 `node:http(s)` 读原始字节，
+> 并同时输出 `transfer` 与 `decoded` 两行，避免再混淆。下表结论不变（JS 仍是主要重量），
+> 但「JS 是 HTML 的 8 倍」这种说法不要再引用。
 
 因此 P1-5 第 5 步原本提出的「把非首屏模块改为客户端懒加载」**不应该执行**，两个理由：
 
@@ -266,6 +273,90 @@ P1-5 原文写的「首页 RSC payload 内联体积 563 KB / 781 KB」是**未�
 这条在本次修复前只影响卡片图片，现在也覆盖文章封面；有爬虫与真实流量后很快自愈。
 若想跨发布保留该缓存，可参照 `.env.production` 的做法把缓存目录软链到 `shared/`，
 但那会同时保留 `"use cache"` 数据缓存、影响内容新鲜度，属于需要单独评估的改动，本轮未做。
+
+## 图片链路缓存（2026-09-23）
+
+### 实测现状
+
+| 资源 | 源站 Cache-Control | Cloudflare |
+| --- | --- | --- |
+| `/_next/image?url=…&w=…&q=75` | `public, max-age=2592000, must-revalidate` + `Vary: Accept` | **DYNAMIC** |
+| `/api/images/source?path=…`（本次改前） | `public, max-age=0, must-revalidate` | **DYNAMIC** |
+| `/api/images/source?path=…`（本次改后） | `public, max-age=31536000, immutable` | 待 CF 规则生效 |
+
+`/_next/image` 与 `/api/images/source` 都是**无扩展名路径**，Cloudflare 默认只缓存带已知扩展名的资源，
+所以即使源站声明了公开可缓存，边缘仍按 DYNAMIC 透传 —— 与 2026-09-21 之前 HTML 的情况同根。
+
+### 代码侧改动
+
+`src/features/shared/routes/api/images/source/route.ts` 的本地分支从
+`max-age=0, must-revalidate` 改为 `max-age=31536000, immutable`。
+
+依据是仓库自己的版本号契约（`assets.ts` 中 `replaceImageAssetFile`）：`/uploads/<时间戳>-<名字>.webp`
+只写一次（`writeNewUploadFile` 用 `wx`），替换内容时**路径不变**但会把 posts / knowledgeArticles /
+users / 推广位的引用改写成 `?v=<内容哈希>`，并给缩略图与大图变体换名。同一 URL 的字节不会再变，
+因此可以 immutable；`v` 参数只影响缓存键，路由解析文件时会剥掉它。
+
+⚠️ 若以后删除 `versionUploadImageReferences` 的重写，或让替换流程复用同一个 URL 而不带新版本号，
+这条长缓存会立刻变成「最长一年看不到新图」——两者必须同进同退。
+
+### 需要在 Cloudflare 侧新增的 Cache Rule
+
+规则只存在于 Cloudflare，仓库无法部署，按 2026-09-21 那节的方式存档。
+
+**规则一：`/_next/image`（必须带 `Accept` 条件）**
+
+```text
+(http.host eq "fwqgo.com"
+ and http.request.method in {"GET" "HEAD"}
+ and starts_with(http.request.uri.path, "/_next/image")
+ and http.request.headers["accept"] contains "image/avif")
+```
+
+`action_parameters` 与既有 HTML 规则一致：`cache: true`、`edge_ttl.mode = "respect_origin"`、
+`browser_ttl.mode = "respect_origin"`、`serve_stale.disable_stale_while_updating = false`。
+
+**为什么必须带 `Accept` 条件**：实测同一个 `/_next/image` URL 会按请求头返回三种字节 ——
+
+| 请求 `Accept` | 响应 |
+| --- | --- |
+| `image/avif,image/webp,image/apng,image/*,*/*;q=0.8` | `image/avif` 72 KB |
+| `image/webp,*/*;q=0.8` | `image/webp` 121 KB |
+| `*/*` 或任意非图片类型 | 原图 `image/jpeg` 159 KB |
+
+源站为此发了 `Vary: Accept`，但 **Cloudflare 不按 `Accept` 分化缓存**（只认 `Accept-Encoding`）。
+不加条件就缓存该路径，会把先到的那个变体钉在缓存里：抓取器或旧客户端用 `*/*` 先命中，就会把
+159 KB 原图喂给后面所有访客，或被缓存成 AVIF 再发给不支持 AVIF 的客户端。
+
+加上 `contains "image/avif"` 之后，只有声明支持 AVIF 的客户端（现代浏览器基本都带 `image/avif`）
+命中缓存并得到 AVIF；其余客户端不匹配规则，走默认 DYNAMIC 回源，行为与今天一致、不会拿到错格式。
+**不要为 webp-only 客户端再加一条同路径的规则** —— 两条规则共用同一个 URL 缓存键，会互相污染。
+
+**规则二：`/api/images/source`（无内容协商，可整路径缓存）**
+
+```text
+(http.host eq "fwqgo.com"
+ and http.request.method in {"GET" "HEAD"}
+ and http.request.uri.path eq "/api/images/source")
+```
+
+该端点只按 URL（含 `path`、`v`）决定字节，不读任何请求头，所以不需要额外条件。
+
+### 验收
+
+```bash
+# 边缘命中（判缓存要换干净链路，本机可能被中间缓存干扰，见 2026-09-21 那节的观测陷阱）
+curl -s -o /dev/null -D - -H 'Accept: image/avif,image/webp,*/*;q=0.8' \
+  "https://fwqgo.com/_next/image?url=%2Fapi%2Fimages%2Fsource%3Fpath%3D%2Fuploads%2F<图>.webp&w=1080&q=75" \
+  | grep -i 'content-type\|cache-control\|cf-cache-status\|vary'
+
+# 非 AVIF 客户端必须仍然绕开缓存、拿到 jpeg/webp
+curl -s -o /dev/null -D - -H 'Accept: */*' "<同一个 URL>" | grep -i 'content-type\|cf-cache-status'
+```
+
+首次请求应为 `MISS`、`content-type: image/avif`；二次请求应为 `HIT` 且 `age` 递增；
+带 `Accept: */*` 的请求应始终为 `DYNAMIC`，`content-type` 不是 avif。
+
 
 
 

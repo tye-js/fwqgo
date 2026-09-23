@@ -3,14 +3,21 @@
  * Audit the HTML, inline RSC payload and JavaScript weight of public pages.
  *
  * The strategy doc carried "563 KB / 781 KB" as if it were a transfer size. It is
- * the uncompressed HTML; the same documents are ~85 KB / ~58 KB compressed, and
- * the external JavaScript around them is 8-18x larger, so a payload decision has
- * to start from these numbers instead of that figure.
+ * the uncompressed HTML; the same documents are ~85 KB compressed, so a payload
+ * decision has to start from these numbers instead of that figure.
+ *
+ * Measurement units matter more than the headline here. Every JS row is reported
+ * twice: **transfer** is what actually crosses the wire (measured on raw bytes,
+ * see measureScripts), **decoded** is what the parser sees afterwards. Reporting
+ * the decoded size as "transfer" is how this script once claimed 710 KB for the
+ * homepage when the wire cost was 226 KB.
  *
  * Usage:
  *   bun run audit:public-payload
  *   bun run audit:public-payload https://fwqgo.com/ https://fwqgo.com/servers
  */
+import http from "node:http";
+import https from "node:https";
 import { gzipSync } from "node:zlib";
 
 const DEFAULT_URLS = ["https://fwqgo.com/", "https://fwqgo.com/servers"];
@@ -104,28 +111,67 @@ function scriptSources(html) {
 }
 
 /**
+ * Count the raw bytes of a response without letting anything decompress it.
+ *
+ * `fetch` cannot be used for this: undici honours the accept-encoding it sends,
+ * decompresses the body itself and drops the content-encoding header, so
+ * `arrayBuffer().byteLength` is the *decoded* size. `node:http(s)` hands over the
+ * bytes as they arrived, which is what a transfer claim has to be based on.
+ *
+ * @param {URL} url
+ * @param {Record<string, string>} headers
+ * @returns {Promise<{ bytes: number; encoding: string }>}
+ */
+function requestBytes(url, headers) {
+  return new Promise((resolve, reject) => {
+    const client = url.protocol === "https:" ? https : http;
+    const request = client.get(url, { headers }, (response) => {
+      let received = 0;
+      response.on("data", (/** @type {Buffer} */ chunk) => {
+        received += chunk.length;
+      });
+      response.on("end", () => {
+        resolve({
+          bytes: received,
+          encoding: String(response.headers["content-encoding"] ?? "(identity)"),
+        });
+      });
+    });
+    request.on("error", reject);
+    request.setTimeout(20_000, () => {
+      request.destroy(new Error(`timed out fetching ${url.href}`));
+    });
+  });
+}
+
+/**
  * The HTML carries the document, but the JavaScript bundle gates LCP. Measure it
  * too, so a payload conversation does not spend effort on the cheaper half.
  *
+ * Each file is requested twice: once negotiated (transfer) and once with
+ * `identity` (decoded), so the two units cannot be confused in the report.
+ *
  * @param {string[]} sources
  * @param {string} baseUrl
- * @returns {Promise<{ files: number; transfer: number; encoding: string }>}
+ * @returns {Promise<{ files: number; transfer: number; decoded: number; encoding: string }>}
  */
 async function measureScripts(sources, baseUrl) {
   let transfer = 0;
+  let decoded = 0;
   let files = 0;
   /** @type {Set<string>} */
   const encodings = new Set();
   for (const source of sources) {
+    const url = new URL(source, baseUrl);
     try {
-      const response = await fetch(new URL(source, baseUrl).href, {
-        headers: { "accept-encoding": "br, gzip, zstd" },
+      const compressed = await requestBytes(url, {
+        "accept-encoding": "br, gzip, zstd",
       });
-      const body = await response.arrayBuffer();
-      transfer += body.byteLength;
+      const plain = await requestBytes(url, { "accept-encoding": "identity" });
+      transfer += compressed.bytes;
+      decoded += plain.bytes;
       files += 1;
-      const encoding = response.headers.get("content-encoding");
-      if (encoding) encodings.add(encoding);
+      encodings.add(compressed.encoding);
     } catch {
       // A chunk that cannot be fetched is reported by omission.
     }
@@ -133,6 +179,7 @@ async function measureScripts(sources, baseUrl) {
   return {
     files,
     transfer,
+    decoded,
     encoding: [...encodings].join(", ") || "(identity)",
   };
 }
@@ -204,4 +251,5 @@ for (const url of targets) {
   console.log(
     `  external js transfer    ${format(js.transfer)} bytes (${js.encoding})`,
   );
+  console.log(`  external js decoded     ${format(js.decoded)} bytes`);
 }
