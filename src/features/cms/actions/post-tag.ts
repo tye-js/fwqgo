@@ -7,13 +7,14 @@ import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { parsePostgresIntegerId } from "@fwqgo/core/utils";
 import { getErrorMessage } from "@/lib/admin-action-result";
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
+import { withAdminAudit } from "@/features/cms/lib/admin-audit";
 
 interface CreatePostTagsInput {
   postId: number;
   tags: { id: number }[];
 }
 
-export async function createPostTags({ postId, tags }: CreatePostTagsInput) {
+async function createPostTagsImpl({ postId, tags }: CreatePostTagsInput) {
   try {
     await requireAdminSession();
     const parsedPostId = parsePostgresIntegerId(postId);
@@ -52,3 +53,12 @@ export async function createPostTags({ postId, tags }: CreatePostTagsInput) {
     };
   }
 }
+
+export const createPostTags = withAdminAudit(
+  {
+    action: "post.tags.create",
+    entityType: "post",
+    entityId: ([input]) => input.postId,
+  },
+  createPostTagsImpl,
+);

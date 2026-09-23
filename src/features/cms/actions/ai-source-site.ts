@@ -19,6 +19,7 @@ import {
   categories,
 } from "@fwqgo/db/schema";
 import { enqueueAiSourceSiteBackgroundJob } from "@/server/ai/source-site-background";
+import { withAdminAudit } from "@/features/cms/lib/admin-audit";
 
 const sourceSiteSchema = z.object({
   name: z.string().trim().min(1, "请输入站点名称").max(120),
@@ -117,7 +118,7 @@ export async function getAiSourceSiteList() {
     .orderBy(desc(aiSourceSites.enabled), asc(aiSourceSites.id));
 }
 
-export async function createAiSourceSiteAction(formData: FormData) {
+async function createAiSourceSiteActionImpl(formData: FormData) {
   try {
     await requireAdminSession();
     const input = parseSourceSiteFormData(formData);
@@ -138,7 +139,15 @@ export async function createAiSourceSiteAction(formData: FormData) {
   }
 }
 
-export async function updateAiSourceSiteAction(id: number, formData: FormData) {
+export const createAiSourceSiteAction = withAdminAudit(
+  {
+    action: "ai_source_site.create",
+    entityType: "ai_source_site",
+  },
+  createAiSourceSiteActionImpl,
+);
+
+async function updateAiSourceSiteActionImpl(id: number, formData: FormData) {
   try {
     await requireAdminSession();
     const sourceSiteId = postgresIntegerIdSchema.parse(id);
@@ -204,7 +213,16 @@ export async function updateAiSourceSiteAction(id: number, formData: FormData) {
   }
 }
 
-export async function deleteAiSourceSiteAction(id: number) {
+export const updateAiSourceSiteAction = withAdminAudit(
+  {
+    action: "ai_source_site.update",
+    entityType: "ai_source_site",
+    entityId: ([id]) => id,
+  },
+  updateAiSourceSiteActionImpl,
+);
+
+async function deleteAiSourceSiteActionImpl(id: number) {
   try {
     await requireAdminSession();
     const sourceSiteId = postgresIntegerIdSchema.parse(id);
@@ -260,7 +278,16 @@ export async function deleteAiSourceSiteAction(id: number) {
   }
 }
 
-export async function runAiSourceSiteAction(id: number) {
+export const deleteAiSourceSiteAction = withAdminAudit(
+  {
+    action: "ai_source_site.delete",
+    entityType: "ai_source_site",
+    entityId: ([id]) => id,
+  },
+  deleteAiSourceSiteActionImpl,
+);
+
+async function runAiSourceSiteActionImpl(id: number) {
   let canRecordFailure = false;
   let queuedRunGeneration: number | null = null;
 
@@ -368,3 +395,12 @@ export async function runAiSourceSiteAction(id: number) {
     return { error: getErrorMessage(error) };
   }
 }
+
+export const runAiSourceSiteAction = withAdminAudit(
+  {
+    action: "ai_source_site.run",
+    entityType: "ai_source_site",
+    entityId: ([id]) => id,
+  },
+  runAiSourceSiteActionImpl,
+);

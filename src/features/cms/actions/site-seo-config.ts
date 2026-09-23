@@ -8,6 +8,7 @@ import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 import { db } from "@fwqgo/db";
 import { siteSeoConfigs } from "@fwqgo/db/schema";
+import { withAdminAudit } from "@/features/cms/lib/admin-audit";
 
 const siteSeoConfigSchema = z.object({
   language: z.enum(["zh", "en"]),
@@ -33,7 +34,7 @@ function textOrNull(value: string | undefined) {
   return trimmed;
 }
 
-export async function updateSiteSeoConfig(
+async function updateSiteSeoConfigImpl(
   input: z.infer<typeof siteSeoConfigSchema>,
 ) {
   try {
@@ -84,3 +85,11 @@ export async function updateSiteSeoConfig(
     };
   }
 }
+
+export const updateSiteSeoConfig = withAdminAudit(
+  {
+    action: "site_seo_config.update",
+    entityType: "site_seo_config",
+  },
+  updateSiteSeoConfigImpl,
+);

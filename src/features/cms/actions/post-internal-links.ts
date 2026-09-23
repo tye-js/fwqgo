@@ -12,6 +12,7 @@ import {
   regeneratePostInternalLinks,
   updatePostInternalLink,
 } from "@/server/posts/internal-links";
+import { withAdminAudit } from "@/features/cms/lib/admin-audit";
 
 function parseId(value: number) {
   const parsed = postgresIntegerIdSchema.safeParse(value);
@@ -34,7 +35,7 @@ async function revalidateInternalLinkSource(postId: number) {
   revalidatePath(`/posts/edit/post/${encodeURIComponent(post.slug)}`);
 }
 
-export async function regeneratePostInternalLinksAction(postId: number) {
+async function regeneratePostInternalLinksActionImpl(postId: number) {
   try {
     await requireAdminSession();
     const parsedPostId = parseId(postId);
@@ -54,7 +55,16 @@ export async function regeneratePostInternalLinksAction(postId: number) {
   }
 }
 
-export async function updatePostInternalLinkAction(input: {
+export const regeneratePostInternalLinksAction = withAdminAudit(
+  {
+    action: "post.internal_links.regenerate",
+    entityType: "post",
+    entityId: ([postId]) => postId,
+  },
+  regeneratePostInternalLinksActionImpl,
+);
+
+async function updatePostInternalLinkActionImpl(input: {
   id: number;
   status: "suggested" | "active" | "rejected" | "stale";
   anchorText?: string | null;
@@ -77,3 +87,12 @@ export async function updatePostInternalLinkAction(input: {
     };
   }
 }
+
+export const updatePostInternalLinkAction = withAdminAudit(
+  {
+    action: "post.internal_link.update",
+    entityType: "post",
+    entityId: ([input]) => input.id,
+  },
+  updatePostInternalLinkActionImpl,
+);

@@ -6,8 +6,9 @@ import { structuredLog } from "@fwqgo/core/structured-log";
 import { manualArticleSchema } from "@/features/cms/lib/manual-article";
 import { PostEditValidationError } from "@/features/cms/lib/post-edit";
 import { saveManualArticleTask } from "@/server/posts/manual-article-task";
+import { withAdminAudit } from "@/features/cms/lib/admin-audit";
 
-export async function saveManualArticleTaskAction(input: unknown) {
+async function saveManualArticleTaskActionImpl(input: unknown) {
   try {
     await requireAdminSession();
     const parsed = manualArticleSchema.safeParse(input);
@@ -33,3 +34,11 @@ export async function saveManualArticleTaskAction(input: unknown) {
     return { error: "人工文章保存失败，请稍后重试" };
   }
 }
+
+export const saveManualArticleTaskAction = withAdminAudit(
+  {
+    action: "manual_article.save",
+    entityType: "ai_rewrite_task",
+  },
+  saveManualArticleTaskActionImpl,
+);

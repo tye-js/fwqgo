@@ -28,6 +28,7 @@ import {
   adminActionFailure,
   adminActionSuccess,
 } from "@/lib/admin-action-result";
+import { withAdminAudit } from "@/features/cms/lib/admin-audit";
 
 const coverSchema = z.object({
   postId: formPostgresIntegerIdSchema.optional(),
@@ -100,7 +101,7 @@ async function getPostCoverRevalidationTags(postIds: number[]) {
   ]);
 }
 
-export async function generateArticleCoverImageAction(input: {
+async function generateArticleCoverImageActionImpl(input: {
   postId?: number;
   title: string;
   description?: string | null;
@@ -206,7 +207,16 @@ export async function generateArticleCoverImageAction(input: {
   }
 }
 
-export async function batchGenerateArticleCoverImagesAction(input: {
+export const generateArticleCoverImageAction = withAdminAudit(
+  {
+    action: "cover_task.generate",
+    entityType: "cover_task",
+    entityId: ([input]) => input.postId ?? null,
+  },
+  generateArticleCoverImageActionImpl,
+);
+
+async function batchGenerateArticleCoverImagesActionImpl(input: {
   postIds: number[];
 }) {
   try {
@@ -299,7 +309,16 @@ export async function batchGenerateArticleCoverImagesAction(input: {
   }
 }
 
-export async function retryCoverGenerationTaskAction(taskId: number) {
+export const batchGenerateArticleCoverImagesAction = withAdminAudit(
+  {
+    action: "cover_task.batch_generate",
+    entityType: "cover_task",
+    metadata: ([input]) => ({ requestedIds: input.postIds.slice(0, 100) }),
+  },
+  batchGenerateArticleCoverImagesActionImpl,
+);
+
+async function retryCoverGenerationTaskActionImpl(taskId: number) {
   try {
     await requireAdminSession();
     const parsedTaskId = parseTaskId(taskId);
@@ -409,7 +428,16 @@ export async function retryCoverGenerationTaskAction(taskId: number) {
   }
 }
 
-export async function cancelCoverGenerationTaskAction(taskId: number) {
+export const retryCoverGenerationTaskAction = withAdminAudit(
+  {
+    action: "cover_task.retry",
+    entityType: "cover_task",
+    entityId: ([taskId]) => taskId,
+  },
+  retryCoverGenerationTaskActionImpl,
+);
+
+async function cancelCoverGenerationTaskActionImpl(taskId: number) {
   try {
     await requireAdminSession();
     const parsedTaskId = parseTaskId(taskId);
@@ -465,7 +493,16 @@ export async function cancelCoverGenerationTaskAction(taskId: number) {
   }
 }
 
-export async function deleteCoverGenerationTaskAction(taskId: number) {
+export const cancelCoverGenerationTaskAction = withAdminAudit(
+  {
+    action: "cover_task.cancel",
+    entityType: "cover_task",
+    entityId: ([taskId]) => taskId,
+  },
+  cancelCoverGenerationTaskActionImpl,
+);
+
+async function deleteCoverGenerationTaskActionImpl(taskId: number) {
   try {
     await requireAdminSession();
     const parsedTaskId = parseTaskId(taskId);
@@ -537,6 +574,15 @@ export async function deleteCoverGenerationTaskAction(taskId: number) {
   }
 }
 
+export const deleteCoverGenerationTaskAction = withAdminAudit(
+  {
+    action: "cover_task.delete",
+    entityType: "cover_task",
+    entityId: ([taskId]) => taskId,
+  },
+  deleteCoverGenerationTaskActionImpl,
+);
+
 export async function getCoverGenerationBatchStatusAction(batchId: string) {
   try {
     await requireAdminSession();
@@ -603,7 +649,7 @@ export async function getCoverGenerationBatchStatusAction(batchId: string) {
   }
 }
 
-export async function finalizeCoverGenerationBatchAction(batchId: string) {
+async function finalizeCoverGenerationBatchActionImpl(batchId: string) {
   try {
     await requireAdminSession();
 
@@ -659,3 +705,12 @@ export async function finalizeCoverGenerationBatchAction(batchId: string) {
     };
   }
 }
+
+export const finalizeCoverGenerationBatchAction = withAdminAudit(
+  {
+    action: "cover_batch.finalize",
+    entityType: "cover_batch",
+    entityId: ([batchId]) => batchId,
+  },
+  finalizeCoverGenerationBatchActionImpl,
+);

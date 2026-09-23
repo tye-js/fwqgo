@@ -48,6 +48,7 @@ import { ilikeContains } from "@/server/db/search";
 import { getManualEnglishSourceId } from "@/features/cms/lib/manual-article";
 import { getActiveAiRewriteConfig } from "@fwqgo/ai/rewrite-config";
 import { createEnglishTranslationSource } from "@/server/ai/english-translation-source";
+import { withAdminAudit } from "@/features/cms/lib/admin-audit";
 
 const taskInputSchema = z.object({
   sourceUrl: z.string().url("请输入有效 URL"),
@@ -325,7 +326,7 @@ async function readTextFileFromForm(fileValue: FormDataEntryValue | null) {
   };
 }
 
-export async function createAiRewriteTaskAction(formData: FormData) {
+async function createAiRewriteTaskActionImpl(formData: FormData) {
   try {
     const session = await requireAdminSession();
 
@@ -476,7 +477,15 @@ export async function createAiRewriteTaskAction(formData: FormData) {
   }
 }
 
-export async function retryAiRewriteTaskAction(taskId: number) {
+export const createAiRewriteTaskAction = withAdminAudit(
+  {
+    action: "ai_rewrite_task.create",
+    entityType: "ai_rewrite_task",
+  },
+  createAiRewriteTaskActionImpl,
+);
+
+async function retryAiRewriteTaskActionImpl(taskId: number) {
   try {
     await requireAdminSession();
     const parsedTaskId = parseIntegerId(taskId);
@@ -565,7 +574,16 @@ export async function retryAiRewriteTaskAction(taskId: number) {
   }
 }
 
-export async function deleteAiRewriteTaskAction(taskId: number) {
+export const retryAiRewriteTaskAction = withAdminAudit(
+  {
+    action: "ai_rewrite_task.retry",
+    entityType: "ai_rewrite_task",
+    entityId: ([taskId]) => taskId,
+  },
+  retryAiRewriteTaskActionImpl,
+);
+
+async function deleteAiRewriteTaskActionImpl(taskId: number) {
   try {
     await requireAdminSession();
     const parsedTaskId = parseIntegerId(taskId);
@@ -627,7 +645,16 @@ export async function deleteAiRewriteTaskAction(taskId: number) {
   }
 }
 
-export async function cancelAiRewriteTaskAction(taskId: number) {
+export const deleteAiRewriteTaskAction = withAdminAudit(
+  {
+    action: "ai_rewrite_task.delete",
+    entityType: "ai_rewrite_task",
+    entityId: ([taskId]) => taskId,
+  },
+  deleteAiRewriteTaskActionImpl,
+);
+
+async function cancelAiRewriteTaskActionImpl(taskId: number) {
   try {
     await requireAdminSession();
     const parsedTaskId = parseIntegerId(taskId);
@@ -687,7 +714,16 @@ export async function cancelAiRewriteTaskAction(taskId: number) {
   }
 }
 
-export async function enqueueEnglishVersionForPostAction(postId: number) {
+export const cancelAiRewriteTaskAction = withAdminAudit(
+  {
+    action: "ai_rewrite_task.cancel",
+    entityType: "ai_rewrite_task",
+    entityId: ([taskId]) => taskId,
+  },
+  cancelAiRewriteTaskActionImpl,
+);
+
+async function enqueueEnglishVersionForPostActionImpl(postId: number) {
   try {
     await requireAdminSession();
     const parsedPostId = parseIntegerId(postId);
@@ -814,7 +850,16 @@ export async function enqueueEnglishVersionForPostAction(postId: number) {
   }
 }
 
-export async function bulkEnqueueEnglishVersionsForPostsAction(
+export const enqueueEnglishVersionForPostAction = withAdminAudit(
+  {
+    action: "ai_rewrite_task.enqueue_english",
+    entityType: "post",
+    entityId: ([postId]) => postId,
+  },
+  enqueueEnglishVersionForPostActionImpl,
+);
+
+async function bulkEnqueueEnglishVersionsForPostsActionImpl(
   postIds: number[],
 ) {
   try {
@@ -897,7 +942,16 @@ export async function bulkEnqueueEnglishVersionsForPostsAction(
   }
 }
 
-export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
+export const bulkEnqueueEnglishVersionsForPostsAction = withAdminAudit(
+  {
+    action: "ai_rewrite_task.bulk_enqueue_english",
+    entityType: "post",
+    metadata: ([postIds]) => ({ requestedIds: postIds.slice(0, 100) }),
+  },
+  bulkEnqueueEnglishVersionsForPostsActionImpl,
+);
+
+async function resolveManualRequiredAiRewriteTaskActionImpl(taskId: number) {
   try {
     await requireAdminSession();
     const parsedTaskId = parseIntegerId(taskId);
@@ -996,6 +1050,15 @@ export async function resolveManualRequiredAiRewriteTaskAction(taskId: number) {
     return { error: getErrorMessage(error) };
   }
 }
+
+export const resolveManualRequiredAiRewriteTaskAction = withAdminAudit(
+  {
+    action: "ai_rewrite_task.resolve_manual",
+    entityType: "ai_rewrite_task",
+    entityId: ([taskId]) => taskId,
+  },
+  resolveManualRequiredAiRewriteTaskActionImpl,
+);
 
 export async function getAiRewriteTaskList(
   filtersInput: AiRewriteTaskListFilters = {},

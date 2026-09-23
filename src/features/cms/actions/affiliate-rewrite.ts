@@ -6,6 +6,7 @@ import { normalizeArticleHtml } from "@fwqgo/core/content";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { type AffiliateRewriteReport } from "@/server/links/affiliate-link-rewriter";
 import { rewriteAffiliateLinks } from "@/server/links/affiliate-link-rewriter";
+import { withAdminAudit } from "@/features/cms/lib/admin-audit";
 
 const siteBaseUrl = "https://fwqgo.com";
 
@@ -26,7 +27,7 @@ type RewriteDraftAffiliateLinksResult =
     }
   | { error: string; message: string };
 
-export async function rewriteDraftAffiliateLinksAction(
+async function rewriteDraftAffiliateLinksActionImpl(
   content: string,
 ): Promise<RewriteDraftAffiliateLinksResult> {
   try {
@@ -51,3 +52,11 @@ export async function rewriteDraftAffiliateLinksAction(
     return { error: "替换返利链接失败", message: getErrorMessage(error) };
   }
 }
+
+export const rewriteDraftAffiliateLinksAction = withAdminAudit(
+  {
+    action: "post.affiliate_links.rewrite",
+    entityType: "post",
+  },
+  rewriteDraftAffiliateLinksActionImpl,
+);

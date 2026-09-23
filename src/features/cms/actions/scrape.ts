@@ -16,6 +16,7 @@ import {
   type AdminActionError,
 } from "@/lib/admin-action-result";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
+import { withAdminAudit } from "@/features/cms/lib/admin-audit";
 
 const urlSchema = z.object({
   url: z.string().trim().url().refine(isPublicHttpUrl, {
@@ -126,7 +127,7 @@ async function runScrapeJob(jobId: string) {
   }
 }
 
-export async function scrapeArticleAction(
+async function scrapeArticleActionImpl(
   prevState: ScrapeActionState,
   formData: FormData,
 ): Promise<ScrapeActionState> {
@@ -183,6 +184,14 @@ export async function scrapeArticleAction(
     return createScrapeFailure(getErrorMessage(error));
   }
 }
+
+export const scrapeArticleAction = withAdminAudit(
+  {
+    action: "article.scrape",
+    entityType: "post",
+  },
+  scrapeArticleActionImpl,
+);
 
 export async function getScrapeArticleJobStatusAction(
   jobId: string,

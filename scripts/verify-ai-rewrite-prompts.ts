@@ -85,7 +85,7 @@ assert.match(draftEditor, /navigator\.clipboard\.writeText\(content\)/);
 assert.match(draftSave, /imgUrl: DEFAULT_ARTICLE_COVER/);
 assert.match(
   coverAction,
-  /export async function generateArticleCoverImageAction/,
+  /async function generateArticleCoverImageActionImpl/,
 );
 assert.match(coverAction, /await enqueueArticleCoverGenerationTask/);
 assert.match(collector, /readEnglishTranslationSource\(task\.diagnostics\)/);
