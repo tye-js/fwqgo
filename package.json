@@ -8,7 +8,7 @@
     "build:web": "next build apps/web --turbopack",
     "build:cms": "next build apps/cms --turbopack",
     "prepare:standalone": "bun scripts/prepare-standalone-runtime.mjs",
-    "check": "bun run verify:repository && bun run verify:public-mobile-ui && bun run verify:public-ui && bun run verify:cms-mobile-ui && bun run verify:cms-ui && bun run verify:admin-audit && bun run verify:table-mobile-labels && bun run verify:ai-rewrite-prompts && bun run lint && bun run typecheck && bun run test && bun run verify:article-seo-links && bun run verify:article-markdown && bun run verify:architecture && bun run verify:deploy && bun run verify:migrations && bun run verify:knowledge && bun run verify:knowledge-content && bun run verify:knowledge-decision && bun run verify:server-sizing && bun run verify:inventory-filters && bun run verify:network-experience && bun run verify:security && bun run verify:security-runtime && bun run verify:article-workflow && bun run verify:dependencies && bun run verify:cache && bun run verify:public-seo && bun run verify:public-images && bun run verify:trust-pages",
+    "check": "bun run verify:repository && bun run verify:public-mobile-ui && bun run verify:public-ui && bun run verify:cms-mobile-ui && bun run verify:cms-ui && bun run verify:admin-audit && bun run verify:component-size && bun run verify:table-mobile-labels && bun run verify:ai-rewrite-prompts && bun run lint && bun run typecheck && bun run test && bun run verify:article-seo-links && bun run verify:article-markdown && bun run verify:architecture && bun run verify:deploy && bun run verify:migrations && bun run verify:knowledge && bun run verify:knowledge-content && bun run verify:knowledge-decision && bun run verify:server-sizing && bun run verify:inventory-filters && bun run verify:network-experience && bun run verify:security && bun run verify:security-runtime && bun run verify:article-workflow && bun run verify:dependencies && bun run verify:cache && bun run verify:public-seo && bun run verify:public-images && bun run verify:trust-pages",
     "deploy:local": "bash scripts/deploy-local-build.sh",
     "healthcheck:prod": "bash scripts/production-healthcheck.sh",
     "verify:apps": "bun scripts/verify-app-boundaries.mjs",
@@ -82,7 +82,8 @@
     "verify:article-markdown": "bun test ./scripts/verify-article-markdown.ts",
     "verify:article-navigation": "SKIP_ENV_VALIDATION=1 NEXT_PHASE=phase-production-build bun test ./scripts/verify-article-navigation.ts",
     "verify:dependencies": "bun audit",
-    "verify:admin-audit": "bun scripts/verify-admin-audit-coverage.ts && bun test ./scripts/verify-admin-audit.test.ts"
+    "verify:admin-audit": "bun scripts/verify-admin-audit-coverage.ts && bun test ./scripts/verify-admin-audit.test.ts",
+    "verify:component-size": "bun scripts/verify-client-component-size.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
