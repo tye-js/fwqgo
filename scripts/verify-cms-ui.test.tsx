@@ -321,3 +321,33 @@ void test("admin audit writes are scheduled after the response, not awaited inli
     );
   }
 });
+
+/**
+ * 发布守卫的轮询频率（P2-4）。
+ *
+ * 这个探测每次都要做一次完整会话校验（`verify:security` 要求 `api/cms/**` 全部鉴权，
+ * 所以不能改成公开的静态文件）。既然单次成本降不下来，就用**降频率**来减浪费：
+ * 兜底间隔必须是分钟级而不是秒级，且 `focus` / `visibilitychange` 要保留 ——
+ * 用户切回标签页时仍然是立即检查。
+ */
+void test("release guard polls on a multi-minute backstop and keeps focus triggers", () => {
+  const guard = stripComments(
+    readFileSync("src/features/cms/components/cms-release-guard.tsx", "utf8"),
+  );
+
+  const pollMatch = /const RELEASE_POLL_MS = ([^;]+);/.exec(guard);
+  assert.ok(pollMatch, "RELEASE_POLL_MS must be a named constant");
+  const pollExpression = (pollMatch[1] ?? "").trim();
+  assert.match(
+    pollExpression,
+    /^[0-9_]+ \* (60_000|60 \* 1_000)$/,
+    `兜底间隔必须是分钟级（当前：${pollExpression}）`,
+  );
+  const minutes = Number(/^([0-9_]+)/.exec(pollExpression)?.[1]?.replace(/_/g, ""));
+  assert.ok(minutes >= 5, `兜底间隔至少 5 分钟（当前：${minutes}）`);
+
+  // 切回标签页 / 窗口重新获得焦点时仍然是立即检查，不依赖那个定时器
+  assert.match(guard, /addEventListener\("focus", checkFocusedRelease\)/);
+  assert.match(guard, /addEventListener\("visibilitychange", checkVisibleRelease\)/);
+  assert.match(guard, /setInterval\(checkScheduledRelease, RELEASE_POLL_MS\)/);
+});
