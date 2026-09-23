@@ -42,7 +42,6 @@ function ArticleTagLabel({
   return (
     <Link
       href={`${tagPrefix}/${encodeURIComponent(tag.slug)}/page/1`}
-      prefetch
       className={className}
     >
       {content}
@@ -83,6 +82,14 @@ function ArticleCard({
     : post.tags;
   const primaryTag = visibleTags[0]?.tag;
   const secondaryTags = visibleTags.slice(1, 4);
+  /**
+   * 预取只留给首屏头条（`feature`）。
+   *
+   * `<Link>` 默认会在进入视口时预取整页 RSC，而列表页里每张卡片都是一次完整抓取
+   * （实测单篇文章预取约 59 KB），首页 9 张卡片加侧栏叠起来比页面本身还重；折线以下
+   * 的卡片改成点开再取，`list` 与 `compact` 是列表与侧栏的默认形态，所以默认关掉。
+   */
+  const shouldPrefetch = variant === "feature";
   const copy = {
     imageLabel:
       language === "en"
@@ -111,7 +118,7 @@ function ArticleCard({
       >
         <Link
           href={href}
-          prefetch
+          prefetch={shouldPrefetch}
           aria-label={copy.imageLabel}
           className={cn(
             "public-card-image relative aspect-[16/9] overflow-hidden bg-muted focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
@@ -154,7 +161,7 @@ function ArticleCard({
 
           <Link
             href={href}
-            prefetch
+            prefetch={shouldPrefetch}
             className="mt-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <h3
@@ -192,7 +199,7 @@ function ArticleCard({
 
             <Link
               href={href}
-              prefetch
+              prefetch={shouldPrefetch}
               className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-sm text-sm font-semibold text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {copy.readMore}

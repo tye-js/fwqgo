@@ -68,7 +68,7 @@ export function TagContextSidebar({
               <Link
                 key={term}
                 href={`/servers?query=${encodeURIComponent(term)}`}
-                prefetch
+                prefetch={false}
                 className="inline-flex min-h-11 items-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:min-h-8"
               >
                 <Badge

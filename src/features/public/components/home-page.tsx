@@ -71,7 +71,7 @@ function CouponLink({ offer }: { offer: HomeOffer }) {
   const className =
     "flex min-h-11 items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-muted";
   return isInternalHref(href) ? (
-    <Link href={href} className={className}>
+    <Link href={href} prefetch={false} className={className}>
       {content}
     </Link>
   ) : isHttpHref(href) ? (
@@ -98,6 +98,7 @@ function ReadingLink({
   return (
     <Link
       href={`${language === "en" ? "/en" : ""}/fwq/posts/${encodeURIComponent(post.slug)}`}
+      prefetch={false}
       className="group flex min-h-11 gap-3 border-b border-border/70 py-4 last:border-0"
     >
       <span className="public-stat mt-0.5 text-lg font-medium text-primary/70">
@@ -117,6 +118,23 @@ function ReadingLink({
   );
 }
 
+/**
+ * 首页文章区各档位取用条数。
+ *
+ * 三者之和必须不超过数据层的 `HOMEPAGE_POST_QUERY_LIMIT`（`data/post.ts`），
+ * 否则切片会静默少渲染几张卡片。
+ */
+const HOMEPAGE_LEAD_COUNT = 1;
+const HOMEPAGE_SECONDARY_COUNT = 2;
+const HOMEPAGE_FEED_COUNT = 6;
+
+/**
+ * 首页优惠码块的条数。优惠码是在内存里从最新套餐里挑的（查询按 `featured`、`createdAt`
+ * 排序，SQL 层筛不出「有优惠码」），所以取多少条最新套餐决定了这里能凑出几条优惠码：
+ * 路由层按这个数字的 2 倍取数，凑不满就少显示几条，不额外回查。
+ */
+const HOMEPAGE_COUPON_COUNT = 4;
+
 export function PublicHomePage({
   language = "zh",
   posts,
@@ -133,8 +151,14 @@ export function PublicHomePage({
   const number = (value: number) =>
     value.toLocaleString(english ? "en-US" : "zh-CN");
   const lead = posts[0];
-  const secondary = posts.slice(1, 3);
-  const feed = posts.slice(3, 9);
+  const secondary = posts.slice(
+    HOMEPAGE_LEAD_COUNT,
+    HOMEPAGE_LEAD_COUNT + HOMEPAGE_SECONDARY_COUNT,
+  );
+  const feed = posts.slice(
+    HOMEPAGE_LEAD_COUNT + HOMEPAGE_SECONDARY_COUNT,
+    HOMEPAGE_LEAD_COUNT + HOMEPAGE_SECONDARY_COUNT + HOMEPAGE_FEED_COUNT,
+  );
   const heroSlot = homepageSlots.find(
     (slot) => slot.placement === "hero_primary",
   );
@@ -148,7 +172,7 @@ export function PublicHomePage({
   const promotedPosts = sidebarData?.promotedPosts ?? [];
   const coupons = latestOffers
     .filter((offer) => offer.promoCode?.trim())
-    .slice(0, 4);
+    .slice(0, HOMEPAGE_COUPON_COUNT);
   const latestUpdate = latestOffers
     .map((offer) => offer.updatedAt ?? offer.createdAt)
     .filter((value): value is Date => value instanceof Date)
@@ -268,6 +292,7 @@ export function PublicHomePage({
                 <Link
                   key={topic.slug}
                   href={`/servers/${topic.slug}`}
+                  prefetch={false}
                   className="flex min-h-11 items-center justify-between gap-3 rounded-lg px-2 text-sm hover:bg-muted"
                 >
                   <span>
@@ -466,6 +491,7 @@ export function PublicHomePage({
                         <Link
                           key={entry.value}
                           href={`/servers/${segment}/${encodeURIComponent(entry.value)}`}
+                          prefetch={false}
                           className="flex min-h-11 items-center justify-between gap-3 rounded-lg px-2 text-sm transition-colors hover:bg-muted"
                         >
                           <span className="min-w-0 break-words capitalize">

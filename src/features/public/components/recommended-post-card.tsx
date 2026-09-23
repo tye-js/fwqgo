@@ -7,7 +7,7 @@ export function RecommendedPostCard({ post }: { post: RecommendedPost }) {
   return (
     <Link
       href={`/fwq/posts/${encodeURIComponent(post.slug)}`}
-      prefetch
+      prefetch={false}
       className="group grid min-h-24 grid-cols-[104px_minmax(0,1fr)] overflow-hidden rounded-md border border-border/70 bg-background transition-colors duration-200 hover:border-primary/35 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
       <div className="relative min-h-24 overflow-hidden border-r border-border/60 bg-muted">

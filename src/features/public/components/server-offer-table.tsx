@@ -448,7 +448,7 @@ function OfferMobileCard({
             >
               <Link
                 href={collectionHref("providers", providerName)}
-                prefetch
+                prefetch={false}
                 className="break-words hover:underline"
               >
                 {providerName}
@@ -484,7 +484,7 @@ function OfferMobileCard({
             {region ? (
               <Link
                 href={collectionHref("regions", region)}
-                prefetch
+                prefetch={false}
                 className="break-words underline-offset-4 hover:text-primary hover:underline"
               >
                 {region}
@@ -497,7 +497,7 @@ function OfferMobileCard({
             {lineType ? (
               <Link
                 href={collectionHref("lines", lineType)}
-                prefetch
+                prefetch={false}
                 className="break-words underline-offset-4 hover:text-primary hover:underline"
               >
                 {lineType}
@@ -781,7 +781,7 @@ export function ServerOfferTable({
                               "providers",
                               offer.providerName,
                             )}
-                            prefetch
+                            prefetch={false}
                             className="hover:underline"
                           >
                             {offer.providerName}
@@ -815,7 +815,7 @@ export function ServerOfferTable({
                     {offer.region ? (
                       <Link
                         href={collectionHref("regions", offer.region)}
-                        prefetch
+                        prefetch={false}
                         className="underline-offset-4 hover:text-primary hover:underline"
                       >
                         {offer.region}
@@ -828,7 +828,7 @@ export function ServerOfferTable({
                     {offer.lineType ? (
                       <Link
                         href={collectionHref("lines", offer.lineType)}
-                        prefetch
+                        prefetch={false}
                         className="underline-offset-4 hover:text-primary hover:underline"
                       >
                         {offer.lineType}

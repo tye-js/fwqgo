@@ -63,7 +63,7 @@ export function LatestPostsSidebar({
         {variant === "featured" ? (
           <Link
             href={`${postPrefix}/${encodeURIComponent(featuredPost.slug)}`}
-            prefetch
+            prefetch={false}
             className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <div className="relative aspect-[16/9] overflow-hidden bg-muted">
@@ -94,7 +94,7 @@ export function LatestPostsSidebar({
             <Link
               key={post.id}
               href={`${postPrefix}/${encodeURIComponent(post.slug)}`}
-              prefetch
+              prefetch={false}
               className="group grid min-h-16 min-w-0 grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-3 px-5 py-3 transition-colors hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <span className="flex size-7 items-center justify-center rounded-full bg-muted text-xs font-semibold tabular-nums text-muted-foreground transition-colors group-hover:bg-accent/10 group-hover:text-accent">

@@ -98,6 +98,7 @@ export function KnowledgeCard({
       <h3 className="font-editorial mt-5 text-xl font-semibold leading-7 tracking-tight">
         <Link
           href={href}
+          prefetch={false}
           className="break-words rounded-sm outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           {item.title}
@@ -166,6 +167,7 @@ export function KnowledgeCard({
         </div>
         <Link
           href={href}
+          prefetch={false}
           className="inline-flex min-h-11 items-center gap-1 rounded-sm text-sm font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           {viewLabel}

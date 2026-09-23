@@ -389,7 +389,7 @@ export function ServerOfferCollectionPage({
                 <Link
                   key={topic.slug}
                   href={`/servers/${encodeURIComponent(topic.slug)}`}
-                  prefetch
+                  prefetch={false}
                   className="flex min-h-11 items-center justify-between rounded-md border border-border/70 px-3 text-sm text-foreground transition-colors hover:border-primary/35 hover:bg-primary/5 hover:text-primary"
                 >
                   {topic.title}
@@ -398,7 +398,7 @@ export function ServerOfferCollectionPage({
               ))}
               <Link
                 href="/search"
-                prefetch
+                prefetch={false}
                 className="flex min-h-11 items-center justify-between rounded-md border border-border/70 px-3 text-sm text-foreground transition-colors hover:border-primary/35 hover:bg-primary/5 hover:text-primary"
               >
                 搜索更多服务器优惠

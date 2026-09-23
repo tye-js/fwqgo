@@ -29,7 +29,7 @@ function PromotionLink({
     return (
       <Link
         href={href}
-        prefetch
+        prefetch={false}
         rel={slot.contentType === "post" ? undefined : "nofollow sponsored"}
         className={className}
       >
