@@ -9,6 +9,7 @@ import {
   AdminSectionCard,
 } from "@/features/cms/components/admin-page-shell";
 import { HomepageSlotManager } from "@/features/cms/components/homepage-slot-manager";
+import { loadPageData } from "@/features/cms/lib/page-data";
 import {
   getAdminHomepageSlots,
   getHomepageSlotReferenceTime,
@@ -28,19 +29,13 @@ function languageHref(language: HomepageSlotLanguage) {
 }
 
 async function loadHomepageSlotData(language: HomepageSlotLanguage) {
-  try {
-    const [slots, options] = await Promise.all([
+  return loadPageData(
+    "首页推广位",
+    Promise.all([
       getAdminHomepageSlots(language),
       getHomepageSlotOptions(language),
-    ]);
-    return { ok: true as const, slots, options };
-  } catch (error) {
-    console.error("首页推广位加载失败:", error);
-    return {
-      ok: false as const,
-      message: error instanceof Error ? error.message : "未知错误",
-    };
-  }
+    ]),
+  );
 }
 
 async function HomepageSlotContent({
@@ -53,7 +48,7 @@ async function HomepageSlotContent({
   const language = normalizeLanguage(searchParams.language);
   const result = await loadHomepageSlotData(language);
 
-  if (!result.ok) {
+  if (result.error) {
     return (
       <AdminPageShell
         badge="首页运营"
@@ -65,14 +60,14 @@ async function HomepageSlotContent({
           description="请确认最新数据库迁移已执行，并检查 CMS 数据库连接。"
         >
           <p className="break-words text-sm text-destructive">
-            {result.message}
+            {result.error.message}
           </p>
         </AdminSectionCard>
       </AdminPageShell>
     );
   }
 
-  const { slots, options } = result;
+  const [slots, options] = result.data;
   const referenceTime = getHomepageSlotReferenceTime();
 
   return (

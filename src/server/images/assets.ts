@@ -42,14 +42,13 @@ import {
   uploadPathToFilePath,
   UPLOAD_PUBLIC_PREFIX,
 } from "./upload-paths";
+import {
+  isAllowedUploadMimeType,
+  MAX_UPLOAD_SIZE_BYTES,
+  UnsupportedMediaTypeError,
+  UploadTooLargeError,
+} from "./upload-errors";
 
-const MAX_UPLOAD_SIZE = 8 * 1024 * 1024;
-const ALLOWED_UPLOAD_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-]);
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp"]);
 
 export type ImageAssetRow = typeof imageAssets.$inferSelect;
@@ -540,12 +539,12 @@ export async function createImageAssetFromUpload(input: {
   sourceUrl?: string | null;
   prompt?: string | null;
 }) {
-  if (!ALLOWED_UPLOAD_TYPES.has(input.file.type)) {
-    throw new Error("Invalid file type");
+  if (!isAllowedUploadMimeType(input.file.type)) {
+    throw new UnsupportedMediaTypeError();
   }
 
-  if (input.file.size > MAX_UPLOAD_SIZE) {
-    throw new Error("Image is too large");
+  if (input.file.size > MAX_UPLOAD_SIZE_BYTES) {
+    throw new UploadTooLargeError();
   }
 
   const originalBuffer = Buffer.from(await input.file.arrayBuffer());
@@ -574,12 +573,12 @@ export async function createImageAssetFromBuffer(input: {
   sourceUrl?: string | null;
   prompt?: string | null;
 }) {
-  if (!ALLOWED_UPLOAD_TYPES.has(input.mime)) {
-    throw new Error("Invalid file type");
+  if (!isAllowedUploadMimeType(input.mime)) {
+    throw new UnsupportedMediaTypeError();
   }
 
-  if (input.buffer.length > MAX_UPLOAD_SIZE) {
-    throw new Error("Image is too large");
+  if (input.buffer.length > MAX_UPLOAD_SIZE_BYTES) {
+    throw new UploadTooLargeError();
   }
 
   const optimized = await optimizeUpload(input.buffer, input.mime);
@@ -597,9 +596,9 @@ export async function createImageAssetFromBuffer(input: {
 }
 
 export async function replaceImageAssetFile(input: { id: number; file: File }) {
-  if (!ALLOWED_UPLOAD_TYPES.has(input.file.type))
-    throw new Error("Invalid file type");
-  if (input.file.size > MAX_UPLOAD_SIZE) throw new Error("Image is too large");
+  if (!isAllowedUploadMimeType(input.file.type))
+    throw new UnsupportedMediaTypeError();
+  if (input.file.size > MAX_UPLOAD_SIZE_BYTES) throw new UploadTooLargeError();
   const originalBuffer = Buffer.from(await input.file.arrayBuffer());
 
   return withAsyncRollback(async (defer) =>

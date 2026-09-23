@@ -9,6 +9,7 @@ import {
 } from "@/features/cms/components/admin-page-shell";
 import { ProviderMonitorManager } from "@/features/cms/components/provider-monitor-manager";
 import { ProviderCatalogScanManager } from "@/features/cms/components/provider-catalog-scan-manager";
+import { loadPageData } from "@/features/cms/lib/page-data";
 import { parsePositiveInt, type SearchParamValue } from "@fwqgo/core/utils";
 import {
   getProviderMonitorCheckHistory,
@@ -26,39 +27,35 @@ type ProviderMonitorSearchParams = {
 };
 
 async function loadProviderMonitorData(requestedCandidatePage: number) {
-  try {
-    await requireAdminSession();
-    const [monitors, providers, runs, candidatePage, checks, scans] =
-      await Promise.all([
-        getProviderMonitorList(),
-        getProviderOptionsForMonitoring(),
-        getProviderMonitorRunHistory(undefined, 80),
-        getProviderOfferCandidatePage(
-          "pending",
-          requestedCandidatePage,
-          CANDIDATE_PAGE_SIZE,
-        ),
-        getProviderMonitorCheckHistory(undefined, 80),
-        getProviderCatalogScanList(100),
-      ]);
+  return loadPageData(
+    "供应商采集页面",
+    (async () => {
+      await requireAdminSession();
+      const [monitors, providers, runs, candidatePage, checks, scans] =
+        await Promise.all([
+          getProviderMonitorList(),
+          getProviderOptionsForMonitoring(),
+          getProviderMonitorRunHistory(undefined, 80),
+          getProviderOfferCandidatePage(
+            "pending",
+            requestedCandidatePage,
+            CANDIDATE_PAGE_SIZE,
+          ),
+          getProviderMonitorCheckHistory(undefined, 80),
+          getProviderCatalogScanList(100),
+        ]);
 
-    return {
-      ok: true as const,
-      monitors,
-      providers,
-      runs,
-      candidates: candidatePage.candidates,
-      candidatePagination: candidatePage.pagination,
-      checks,
-      scans,
-    };
-  } catch (error) {
-    console.error("供应商采集页面加载失败:", error);
-    return {
-      ok: false as const,
-      message: error instanceof Error ? error.message : "未知错误",
-    };
-  }
+      return {
+        monitors,
+        providers,
+        runs,
+        candidates: candidatePage.candidates,
+        candidatePagination: candidatePage.pagination,
+        checks,
+        scans,
+      };
+    })(),
+  );
 }
 
 async function ProviderMonitorContent({
@@ -72,7 +69,7 @@ async function ProviderMonitorContent({
     parsePositiveInt(searchParams.candidatePage) ?? 1;
   const result = await loadProviderMonitorData(requestedCandidatePage);
 
-  if (!result.ok) {
+  if (result.error) {
     return (
       <AdminPageShell
         badge="服务器套餐"
@@ -84,7 +81,7 @@ async function ProviderMonitorContent({
           description="请先确认最新数据库迁移已经执行，再检查 CMS 数据库连接和后台日志。"
         >
           <p className="break-words text-sm text-destructive">
-            {result.message}
+            {result.error.message}
           </p>
         </AdminSectionCard>
       </AdminPageShell>
@@ -99,7 +96,7 @@ async function ProviderMonitorContent({
     candidatePagination,
     checks,
     scans,
-  } = result;
+  } = result.data;
   const activeScanCount = scans.filter(
     (scan) => scan.status === "queued" || scan.status === "running",
   ).length;

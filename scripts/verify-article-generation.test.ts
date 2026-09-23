@@ -44,7 +44,7 @@ const config={id:7,name:"English configuration",model:"translation-model",provid
 const f={authorized:false,reads:0,configReads:0,config,post:structuredClone(source),english:null,queued:[],submitted:[]};
 const db={select(){f.reads++;let condition;const rows=()=>dialect.sqlToQuery(condition).sql.includes('"translationSourcePostId"')?(f.english?[f.english]:[]):[f.post];const q={from(){return q;},where(c){condition=c;return q;},limit:async()=>rows(),then(resolve,reject){return Promise.resolve(rows()).then(resolve,reject);}};return q;}};
 mock.module("@fwqgo/db",()=>({db}));
-mock.module("@fwqgo/auth/session",()=>({requireAdminSession:async()=>{if(!f.authorized)throw new Error("Unauthorized");return {userId:"admin"};}}));
+mock.module("@fwqgo/auth/session",()=>({requireAdminSession:async()=>{if(!f.authorized)throw new Error("Unauthorized");return {userId:"admin"};},getCurrentSession:async()=>({user:{id:"admin",role:"admin",status:"active"}})}));
 mock.module("next/cache",()=>({revalidatePath(){}}));
 mock.module("@fwqgo/ai/rewrite-config",()=>({getActiveAiRewriteConfig:async()=>{f.configReads++;return f.config;}}));
 mock.module("@/server/ai/derived-task",()=>({upsertDerivedAiTask:async(input)=>{f.submitted.push(input);return {id:41,status:"pending"};}}));
@@ -436,8 +436,8 @@ void test("AI configuration accepts simplified English templates while requiring
 import assert from "node:assert/strict";
 import {mock} from "bun:test";
 const f={authorized:true,saved:[]};
-mock.module("@fwqgo/auth/session",()=>({requireAdminSession:async()=>{if(!f.authorized)throw Error("Unauthorized");return {userId:"admin"};}}));
-mock.module("@/server/admin/audit-log",()=>({recordAdminAuditLogSafely:async()=>{}}));
+mock.module("@fwqgo/auth/session",()=>({requireAdminSession:async()=>{if(!f.authorized)throw Error("Unauthorized");return {userId:"admin"};},getCurrentSession:async()=>({user:{id:"admin",role:"admin",status:"active"}})}));
+mock.module("@/server/admin/audit-log",()=>({scheduleAdminAuditLog:()=>{},recordAdminAuditLogSafely:async()=>{}}));
 mock.module("next/cache",()=>({revalidatePath(){}}));
 mock.module("@fwqgo/ai/rewrite-status-check",()=>({checkAiRewriteConfigStatus:async()=>{}}));
 mock.module("@fwqgo/ai/rewrite-config",()=>({aiProviderOptions:["compatible"],createAiRewriteConfig:async input=>{f.saved.push(input);return {id:1};},updateAiRewriteConfig:async(id,input)=>{f.saved.push(input);return {id};},deleteAiRewriteConfig:async()=>{},getAiRewriteConfigs:async()=>[],setAiRewriteConfigEnabled:async()=>{},setDefaultAiRewriteConfig:async()=>{}}));

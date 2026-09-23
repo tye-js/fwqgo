@@ -12,6 +12,7 @@ import { categories } from "@fwqgo/db/schema";
 import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
+import { withAdminAudit } from "@/features/cms/lib/admin-audit";
 
 const updateCategorySeoSchema = z.object({
   id: postgresIntegerIdSchema,
@@ -280,7 +281,7 @@ async function generateAndSaveCategorySeo(
   );
 }
 
-export async function updateCategorySeo(
+async function updateCategorySeoImpl(
   input: z.infer<typeof updateCategorySeoSchema>,
 ): Promise<CategorySeoActionResult> {
   try {
@@ -295,7 +296,16 @@ export async function updateCategorySeo(
   }
 }
 
-export async function generateCategorySeoWithAi(
+export const updateCategorySeo = withAdminAudit(
+  {
+    action: "category.seo.update",
+    entityType: "category",
+    entityId: ([input]) => input.id,
+  },
+  updateCategorySeoImpl,
+);
+
+async function generateCategorySeoWithAiImpl(
   input: z.infer<typeof generateCategorySeoSchema>,
 ): Promise<CategorySeoActionResult> {
   try {
@@ -317,7 +327,16 @@ export async function generateCategorySeoWithAi(
   }
 }
 
-export async function batchGenerateCategorySeoWithAi(
+export const generateCategorySeoWithAi = withAdminAudit(
+  {
+    action: "category.seo.generate_ai",
+    entityType: "category",
+    entityId: ([input]) => input.id,
+  },
+  generateCategorySeoWithAiImpl,
+);
+
+async function batchGenerateCategorySeoWithAiImpl(
   input: z.infer<typeof batchGenerateCategorySeoSchema>,
 ): Promise<CategorySeoBatchActionResult> {
   try {
@@ -401,3 +420,12 @@ export async function batchGenerateCategorySeoWithAi(
     };
   }
 }
+
+export const batchGenerateCategorySeoWithAi = withAdminAudit(
+  {
+    action: "category.seo.batch_generate_ai",
+    entityType: "category",
+    metadata: ([input]) => ({ requestedIds: input.ids.slice(0, 100) }),
+  },
+  batchGenerateCategorySeoWithAiImpl,
+);

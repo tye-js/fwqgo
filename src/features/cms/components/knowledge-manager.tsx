@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   useState,
 } from "react";
 import {
@@ -340,6 +341,8 @@ export function KnowledgeManager({
   language,
   query,
   publicOrigin,
+  listTotal,
+  listFooter,
 }: {
   categories: KnowledgeCategoryRow[];
   articles: KnowledgeArticleListRow[];
@@ -348,6 +351,10 @@ export function KnowledgeManager({
   language: KnowledgeLanguage;
   query: string;
   publicOrigin: string;
+  /** 匹配到的总条数（不是当前页的条数），用于列表标题右侧的计数。 */
+  listTotal?: number;
+  /** 列表下方的附加内容（分页器）。由页面传入，组件不关心分页实现。 */
+  listFooter?: ReactNode;
 }) {
   const router = useRouter();
   const { mutate, isPending, isAnyPending } = useAdminMutation();
@@ -793,7 +800,11 @@ export function KnowledgeManager({
             <h2 className="text-sm font-semibold">
               {language === "en" ? "英文知识稿" : "中文知识稿"}
             </h2>
-            <Badge variant="outline">{articles.length} 条</Badge>
+            <Badge variant="outline">
+              {listTotal === undefined
+                ? `${articles.length} 条`
+                : `共 ${listTotal} 条`}
+            </Badge>
           </div>
           <div className="rounded-md border border-border/70 xl:max-h-[calc(100dvh-220px)] xl:overflow-y-auto">
             {articles.map((article) => {
@@ -867,6 +878,7 @@ export function KnowledgeManager({
               </div>
             ) : null}
           </div>
+          {listFooter ? <div className="mt-3">{listFooter}</div> : null}
         </section>
 
         <div id="knowledge-editor" className="min-w-0 scroll-mt-20">

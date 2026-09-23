@@ -32,6 +32,7 @@ import { normalizeOffsetPagination } from "@fwqgo/core/pagination";
 import { parsePostgresIntegerId } from "@fwqgo/core/utils";
 import { ilikeContains } from "@/server/db/search";
 import { clearOutboundAffiliateProviderCache } from "@/server/links/outbound-short-link";
+import { withAdminAudit } from "@/features/cms/lib/admin-audit";
 import { enqueueProviderMonitorTask } from "@/server/offers/provider-monitor";
 
 type AffProviderActionResult =
@@ -485,7 +486,7 @@ export async function getAffProviderCount({
   return { data: result?.count ?? 0 };
 }
 
-export async function updateAffProvider(
+async function updateAffProviderImpl(
   data: AffManData,
 ): Promise<AffProviderActionResult> {
   try {
@@ -636,7 +637,16 @@ export async function updateAffProvider(
   }
 }
 
-export async function deleteAffProvider(
+export const updateAffProvider = withAdminAudit(
+  {
+    action: "aff_provider.update",
+    entityType: "aff_provider",
+    entityId: ([data]) => data.id,
+  },
+  updateAffProviderImpl,
+);
+
+async function deleteAffProviderImpl(
   id: number,
 ): Promise<AffProviderActionResult> {
   try {
@@ -683,7 +693,16 @@ export async function deleteAffProvider(
   }
 }
 
-export async function deleteAffProviders(
+export const deleteAffProvider = withAdminAudit(
+  {
+    action: "aff_provider.delete",
+    entityType: "aff_provider",
+    entityId: ([id]) => id,
+  },
+  deleteAffProviderImpl,
+);
+
+async function deleteAffProvidersImpl(
   ids: number[],
 ): Promise<AffProviderDeleteActionResult> {
   try {
@@ -735,7 +754,16 @@ export async function deleteAffProviders(
   }
 }
 
-export async function addAffProvider(
+export const deleteAffProviders = withAdminAudit(
+  {
+    action: "aff_provider.bulk_delete",
+    entityType: "aff_provider",
+    metadata: ([ids]) => ({ requestedIds: ids.slice(0, 100) }),
+  },
+  deleteAffProvidersImpl,
+);
+
+async function addAffProviderImpl(
   data: Omit<AffManData, "id">,
 ): Promise<AffProviderActionResult> {
   try {
@@ -793,3 +821,11 @@ export async function addAffProvider(
     return { error: "新增返利商家失败", message: getErrorMessage(error) };
   }
 }
+
+export const addAffProvider = withAdminAudit(
+  {
+    action: "aff_provider.create",
+    entityType: "aff_provider",
+  },
+  addAffProviderImpl,
+);

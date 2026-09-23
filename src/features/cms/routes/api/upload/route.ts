@@ -8,6 +8,7 @@ import {
   readRequestFormDataWithLimit,
   RequestBodyTooLargeError,
 } from "@fwqgo/core/bounded-request-body";
+import { toUploadApiError } from "@/server/images/upload-errors";
 
 export async function POST(request: NextRequest) {
   if (!isSameOriginRequest(request, process.env.NEXT_PUBLIC_CMS_URL)) {
@@ -55,23 +56,22 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const message = error instanceof Error ? error.message : "Upload failed";
-    const status = message.includes("too large")
-      ? 413
-      : message.includes("Invalid file type")
-        ? 415
-        : message.includes("Invalid upload path")
-          ? 400
-          : 500;
+    // 上传链路的错误语义由类型承载，不再靠 message.includes() 猜状态码：
+    // 上游任何一句文案改动都不会再让 413 静默漂成 500。
+    const uploadError = toUploadApiError(error);
+    if (uploadError) {
+      return adminApiFailure(uploadError.message, {
+        status: uploadError.status,
+        title: uploadError.title,
+        suggestion: uploadError.suggestion,
+      });
+    }
 
-    if (status === 500) console.error("Upload error:", error);
-    return adminApiFailure(
-      status === 500 ? "图片上传失败，请稍后重试" : message,
-      {
-        status,
-        title: "上传图片失败",
-        suggestion: "请检查文件类型、大小和上传路径后再试。",
-      },
-    );
+    console.error("Upload error:", error);
+    return adminApiFailure("图片上传失败，请稍后重试", {
+      status: 500,
+      title: "上传图片失败",
+      suggestion: "请检查文件类型、大小和上传路径后再试。",
+    });
   }
 }

@@ -4,7 +4,7 @@ import {
   adminActionSuccess,
   getErrorMessage,
 } from "@/lib/admin-action-result";
-import { recordAdminAuditLogSafely } from "@/server/admin/audit-log";
+import { scheduleAdminAuditLog } from "@/server/admin/audit-log";
 
 type AdminActionDefinition<TInput, TParsed, TResult> = {
   action: string;
@@ -30,7 +30,8 @@ export function defineAdminAction<TInput, TParsed = TInput, TResult = unknown>(
         ? await definition.parse(input)
         : (input as unknown as TParsed);
       const result = await definition.execute(parsed, session);
-      await recordAdminAuditLogSafely({
+      // 审计不占请求路径：放到响应之后写（见 audit-log.ts 的 scheduleAdminAuditLog）。
+      scheduleAdminAuditLog({
         actorId,
         action: definition.action,
         entityType: definition.entityType,
@@ -43,7 +44,7 @@ export function defineAdminAction<TInput, TParsed = TInput, TResult = unknown>(
           : definition.successMessage;
       return adminActionSuccess(result, message);
     } catch (error) {
-      await recordAdminAuditLogSafely({
+      scheduleAdminAuditLog({
         actorId,
         action: definition.action,
         entityType: definition.entityType,

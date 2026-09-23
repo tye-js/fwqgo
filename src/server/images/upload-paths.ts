@@ -1,5 +1,7 @@
 import path from "node:path";
 
+import { InvalidUploadPathError } from "./upload-errors";
+
 export const UPLOAD_PUBLIC_PREFIX = "/uploads/";
 
 export function getUploadDir() {
@@ -26,7 +28,7 @@ export function normalizeUploadPath(value: string) {
   const cleaned = stripUploadUrlNoise(value);
 
   if (!cleaned.startsWith(UPLOAD_PUBLIC_PREFIX)) {
-    throw new Error("Invalid upload path");
+    throw new InvalidUploadPathError();
   }
 
   let decoded = cleaned;
@@ -38,7 +40,7 @@ export function normalizeUploadPath(value: string) {
 
   const decodedFileName = path.basename(decoded);
   if (!decodedFileName || decodedFileName === "." || decodedFileName === "..") {
-    throw new Error("Invalid upload path");
+    throw new InvalidUploadPathError();
   }
 
   return `${UPLOAD_PUBLIC_PREFIX}${path.basename(cleaned)}`;

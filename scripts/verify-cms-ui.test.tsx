@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+
+/**
+ * 剥掉源码里的注释再做字面量断言。
+ *
+ * 本项目已经四次踩到同一个坑：说明文字里几乎必然会出现被断言的字面量
+ * （「不再靠 `message.includes()` 猜状态码」「不要调 `requireAdminSession()`」…），
+ * 不剥注释就是自己判自己失败。**行注释和块注释都要剥** —— 只剥 `//` 会漏掉 JSDoc。
+ */
+function stripComments(source: string) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
 import { join } from "node:path";
 import test from "node:test";
 
@@ -148,4 +159,165 @@ for (const error of [undefined, "账号或密码不正确"]) {
     0,
     `${result.stdout}\n${result.stderr}`.slice(0, 12_000),
   );
+});
+
+/**
+ * 后台错误隔离的两层接线。
+ *
+ * 这两条不是「有没有 error.tsx」的形式检查，而是实测出来的必要条件：
+ * - `error.tsx` 必须是 Client Component，否则生产构建直接失败
+ *   （`apps/cms/app/(admin)/error.tsx must be a Client Component`）。
+ * - 只加 `(admin)/error.tsx` 是不够的：数据库停掉时先挂的是 `(admin)/layout.tsx`
+ *   （它要 requireAdminSession），而 error.tsx 接不住同层 layout 的错误，
+ *   页面会掉到框架默认错误页。所以根段必须再有一层 `app/error.tsx`。
+ */
+void test("CMS ships both error boundaries as client components", () => {
+  for (const file of [
+    "apps/cms/app/error.tsx",
+    "apps/cms/app/(admin)/error.tsx",
+  ]) {
+    assert.ok(existsSync(file), `${file} must exist`);
+    const source = readFileSync(file, "utf8");
+    assert.match(source, /^"use client";/m, `${file} must be a Client Component`);
+  }
+});
+
+void test("admin pages with a failure fallback share one loader helper", () => {
+  const helper = readFileSync("src/features/cms/lib/page-data.ts", "utf8");
+  assert.match(helper, /export async function loadPageData/);
+
+  // 这 4 个页面此前各写各的 try/catch 或本地 loadPageData（4 种实现），统一到这里。
+  for (const file of [
+    "src/features/cms/routes/admin/ai-rewrite/tasks/page.tsx",
+    "src/features/cms/routes/admin/collect/homepage-promoted/page.tsx",
+    "src/features/cms/routes/admin/knowledge/page.tsx",
+    "src/features/cms/routes/admin/servers/monitor/page.tsx",
+  ]) {
+    const source = readFileSync(file, "utf8");
+    assert.match(source, /loadPageData/, `${file} must use the shared loader`);
+    assert.doesNotMatch(
+      source,
+      /ok: false as const/,
+      `${file} must not keep its own {ok} failure shape`,
+    );
+  }
+});
+
+void test("knowledge list paginates instead of silently truncating at 300", () => {
+  const source = readFileSync("src/features/cms/actions/knowledge.ts", "utf8");
+  const overview = source.slice(
+    source.indexOf("export async function getKnowledgeAdminOverview"),
+    source.indexOf("export async function getKnowledgeAdminArticle"),
+  );
+
+  // `.limit(300)` 会让第 301 篇之后在后台列表里彻底消失且没有任何提示。
+  // 先剥掉行注释再断言 —— 源码里的说明文字本身会提到 `.limit(300)`。
+  assert.doesNotMatch(stripComments(overview), /\.limit\(300\)/);
+  assert.match(overview, /boundOffsetPaginationByTotal/);
+  assert.match(overview, /count\(\*\)::int/);
+});
+
+/**
+ * 上传路由的状态码必须由**错误类型**决定，不能靠 message 字符串匹配。
+ * 原来写成 `message.includes("too large") ? 413 : …`，上游把文案翻成中文就会
+ * 静默变成 500，类型检查与测试都拦不住。
+ */
+void test("upload route maps typed errors to status codes instead of matching messages", () => {
+  const route = readFileSync(
+    "src/features/cms/routes/api/upload/route.ts",
+    "utf8",
+  );
+  assert.doesNotMatch(stripComments(route), /message\.includes\(/);
+  assert.match(route, /toUploadApiError/);
+});
+
+void test("upload error mapping covers each typed error with a user-facing message", async () => {
+  const {
+    InvalidUploadPathError,
+    toUploadApiError,
+    UnsupportedMediaTypeError,
+    UploadTooLargeError,
+  } = await import("@/server/images/upload-errors");
+
+  assert.equal(toUploadApiError(new UploadTooLargeError())?.status, 413);
+  assert.equal(toUploadApiError(new UnsupportedMediaTypeError())?.status, 415);
+  assert.equal(toUploadApiError(new InvalidUploadPathError())?.status, 400);
+  assert.equal(toUploadApiError(new Error("boom")), null);
+
+  for (const error of [
+    new UploadTooLargeError(),
+    new UnsupportedMediaTypeError(),
+    new InvalidUploadPathError(),
+  ]) {
+    const mapped = toUploadApiError(error);
+    assert.ok(mapped, `${error.name} must be mapped`);
+    // 回给客户端的文案不能是内部英文原文
+    assert.doesNotMatch(mapped.message, /Invalid file type|too large|Invalid upload path/);
+    assert.ok(mapped.suggestion.length > 0);
+  }
+});
+
+/**
+ * 「队列状态计数」只能有一处实现。
+ *
+ * 同一段 `GROUP BY status` 聚合原本在 `data/post.ts`（运营工作台，4 张表）与
+ * `data/operations.ts`（AI任务中心，3 张表）各写一遍，重叠的 3 张表每次刷新都算两次。
+ * 现在统一走 `data/task-queue-status.ts` 的 `getTaskQueueStatusCounts()`（`"use cache"`）。
+ */
+void test("task queue status counts are computed in exactly one place", () => {
+  const shared = readFileSync(
+    "src/features/cms/data/task-queue-status.ts",
+    "utf8",
+  );
+  // 断言也走 stripComments：这个文件的注释里就写着 `"use cache"` 与 `cacheLife(`，
+  // 不剥注释的话，把真正的指令删掉测试照样绿（正向断言会被注释满足）。
+  const sharedCode = stripComments(shared);
+  assert.match(sharedCode, /"use cache"/);
+  assert.match(sharedCode, /cacheLife\(/);
+  // 缓存函数不能读 cookies —— 鉴权必须留在调用方。
+  assert.doesNotMatch(sharedCode, /requireAdminSession/);
+
+  for (const file of ["src/features/cms/data/post.ts", "src/features/cms/data/operations.ts"]) {
+    const source = readFileSync(file, "utf8");
+    assert.match(
+      source,
+      /getTaskQueueStatusCounts/,
+      `${file} must use the shared queue counts`,
+    );
+    assert.doesNotMatch(
+      source,
+      /groupBy\((aiRewriteTasks|imageCoverGenerationTasks|providerMonitorRuns|adminBackgroundJobs)\.status\)/,
+      `${file} must not re-implement the status aggregation`,
+    );
+  }
+});
+
+/**
+ * 审计写入不占请求路径（P2-6）。
+ *
+ * 原来两个包装都是 `await recordAdminAuditLogSafely(...)` 再返回响应，
+ * 等于每个写操作都串行多一跳 `INSERT INTO admin_audit_logs`（实测均值 2.32 ms）。
+ * 现在走 `scheduleAdminAuditLog`（`next/server` 的 `after()`），响应之后再落库。
+ */
+void test("admin audit writes are scheduled after the response, not awaited inline", () => {
+  const auditLog = stripComments(
+    readFileSync("src/server/admin/audit-log.ts", "utf8"),
+  );
+  assert.match(auditLog, /export function scheduleAdminAuditLog/);
+  assert.match(auditLog, /after\(\(\) => recordAdminAuditLogSafely\(event\)\)/);
+  // `.returning()` 的结果没有任何调用方使用，白白多回传一行
+  assert.doesNotMatch(auditLog, /\.returning\(/);
+
+  for (const file of [
+    "src/features/cms/lib/define-admin-action.ts",
+    "src/features/cms/lib/admin-audit.ts",
+  ]) {
+    const source = stripComments(readFileSync(file, "utf8"));
+    assert.match(source, /scheduleAdminAuditLog\(/, `${file} must schedule the audit write`);
+    assert.doesNotMatch(
+      source,
+      /await recordAdminAuditLogSafely\(/,
+      `${file} must not block the response on the audit insert`,
+    );
+  }
 });

@@ -12,6 +12,7 @@ import { requireAdminSession } from "@fwqgo/auth/session";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 import { isPriceLikeTag } from "@/features/cms/lib/tag-price-filter";
+import { withAdminAudit } from "@/features/cms/lib/admin-audit";
 
 const createTagSchema = z.object({
   name: z
@@ -205,7 +206,7 @@ async function createTagRecord(
   return { id: tag.id };
 }
 
-export async function createTag(input: z.infer<typeof createTagSchema>) {
+async function createTagImpl(input: z.infer<typeof createTagSchema>) {
   await requireAdminSession();
   const result = await createTagRecord(input);
   if (!("error" in result)) {
@@ -214,7 +215,12 @@ export async function createTag(input: z.infer<typeof createTagSchema>) {
   return result;
 }
 
-export async function createTags(inputTags: z.infer<typeof createTagSchema>[]) {
+export const createTag = withAdminAudit(
+  { action: "tag.create", entityType: "tag" },
+  createTagImpl,
+);
+
+async function createTagsImpl(inputTags: z.infer<typeof createTagSchema>[]) {
   await requireAdminSession();
 
   const resultTags = await Promise.all(
@@ -235,7 +241,16 @@ export async function createTags(inputTags: z.infer<typeof createTagSchema>[]) {
   return { data: resultTags };
 }
 
-export async function updateTagIndexable(
+export const createTags = withAdminAudit(
+  {
+    action: "tag.bulk_create",
+    entityType: "tag",
+    metadata: ([inputTags]) => ({ requested: inputTags.length }),
+  },
+  createTagsImpl,
+);
+
+async function updateTagIndexableImpl(
   input: z.infer<typeof updateTagIndexableSchema>,
 ) {
   await requireAdminSession();
@@ -266,7 +281,17 @@ export async function updateTagIndexable(
   return { data: tag };
 }
 
-export async function updateTagSeo(
+export const updateTagIndexable = withAdminAudit(
+  {
+    action: "tag.indexable.update",
+    entityType: "tag",
+    entityId: ([input]) => input.id,
+    metadata: ([input]) => ({ indexable: input.indexable }),
+  },
+  updateTagIndexableImpl,
+);
+
+async function updateTagSeoImpl(
   input: z.infer<typeof updateTagSeoSchema>,
 ): Promise<TagSeoActionResult> {
   try {
@@ -277,6 +302,15 @@ export async function updateTagSeo(
     return { error: "标签 SEO 保存失败", message: getErrorMessage(error) };
   }
 }
+
+export const updateTagSeo = withAdminAudit(
+  {
+    action: "tag.seo.update",
+    entityType: "tag",
+    entityId: ([input]) => input.id,
+  },
+  updateTagSeoImpl,
+);
 
 async function saveTagSeo(
   input: z.infer<typeof updateTagSeoSchema>,
@@ -409,7 +443,7 @@ async function generateAndSaveTagSeo(
   );
 }
 
-export async function generateTagSeoWithAi(
+async function generateTagSeoWithAiImpl(
   input: z.infer<typeof generateTagSeoSchema>,
 ): Promise<TagSeoActionResult> {
   try {
@@ -431,7 +465,16 @@ export async function generateTagSeoWithAi(
   }
 }
 
-export async function batchGenerateTagSeoWithAi(
+export const generateTagSeoWithAi = withAdminAudit(
+  {
+    action: "tag.seo.generate_ai",
+    entityType: "tag",
+    entityId: ([input]) => input.id,
+  },
+  generateTagSeoWithAiImpl,
+);
+
+async function batchGenerateTagSeoWithAiImpl(
   input: z.infer<typeof batchGenerateTagSeoSchema>,
 ): Promise<TagSeoBatchActionResult> {
   try {
@@ -514,3 +557,12 @@ export async function batchGenerateTagSeoWithAi(
     };
   }
 }
+
+export const batchGenerateTagSeoWithAi = withAdminAudit(
+  {
+    action: "tag.seo.batch_generate_ai",
+    entityType: "tag",
+    metadata: ([input]) => ({ requestedIds: input.ids.slice(0, 100) }),
+  },
+  batchGenerateTagSeoWithAiImpl,
+);

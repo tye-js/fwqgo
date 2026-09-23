@@ -21,6 +21,7 @@ import {
 } from "@/server/admin/background-jobs";
 import { getAdminRuntimeSnapshot } from "@/server/admin/runtime-observability";
 import { ilikeContains } from "@/server/db/search";
+import { getTaskQueueStatusCounts } from "@/features/cms/data/task-queue-status";
 
 type StatusCountRow = {
   status: string;
@@ -269,9 +270,7 @@ export async function getCmsTaskOperationsSummary() {
   await requireAdminSession();
 
   const [
-    aiStatusRows,
-    coverStatusRows,
-    offerStatusRows,
+    queueStatusCounts,
     aiFailures,
     coverFailures,
     offerFailures,
@@ -280,18 +279,7 @@ export async function getCmsTaskOperationsSummary() {
     offerActiveTasks,
     backgroundJobs,
   ] = await Promise.all([
-    db
-      .select({ status: aiRewriteTasks.status, count: count() })
-      .from(aiRewriteTasks)
-      .groupBy(aiRewriteTasks.status),
-    db
-      .select({ status: imageCoverGenerationTasks.status, count: count() })
-      .from(imageCoverGenerationTasks)
-      .groupBy(imageCoverGenerationTasks.status),
-    db
-      .select({ status: providerMonitorRuns.status, count: count() })
-      .from(providerMonitorRuns)
-      .groupBy(providerMonitorRuns.status),
+    getTaskQueueStatusCounts(),
     db
       .select({
         id: aiRewriteTasks.id,
@@ -509,9 +497,9 @@ export async function getCmsTaskOperationsSummary() {
     runtime: getAdminRuntimeSnapshot(),
     backgroundWorker: getAdminBackgroundWorkerRuntimeSnapshot(),
     queues: {
-      ai: toStatusSummary(aiStatusRows),
-      cover: toStatusSummary(coverStatusRows),
-      offer: toStatusSummary(offerStatusRows),
+      ai: toStatusSummary(queueStatusCounts.ai),
+      cover: toStatusSummary(queueStatusCounts.cover),
+      offer: toStatusSummary(queueStatusCounts.offer),
     },
     backgroundJobs,
     recentFailures,

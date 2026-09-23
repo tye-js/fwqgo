@@ -36,6 +36,7 @@ import { posts, categories, tags, postTags } from "@fwqgo/db/schema";
 import { desc, eq, and, inArray, ne, or, sql } from "drizzle-orm";
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 import { markPostInternalLinksStale } from "@/server/posts/internal-links";
+import { withAdminAudit } from "@/features/cms/lib/admin-audit";
 
 function normalizeTagName(name: string) {
   return name.trim();
@@ -415,7 +416,7 @@ function affiliateAuditMessage(
   return `发现 ${audit.details.invalidCount} 条无效链接。${unmatchedNote}请修复无效链接；也可以先保存为草稿，再到发布质检中人工确认。`;
 }
 
-export async function createPost(input: CreatePostInput | CreatePostParams) {
+async function createPostImpl(input: CreatePostInput | CreatePostParams) {
   try {
     await requireAdminSession();
     const postInput = "post" in input ? input.post : input;
@@ -464,7 +465,19 @@ export async function createPost(input: CreatePostInput | CreatePostParams) {
   }
 }
 
-export async function updatePostByRecommendedTagName(
+export const createPost = withAdminAudit(
+  {
+    action: "post.create",
+    entityType: "post",
+    metadata: ([input]) => {
+      const post = "post" in input ? input.post : input;
+      return { published: Boolean(post.published) };
+    },
+  },
+  createPostImpl,
+);
+
+async function updatePostByRecommendedTagNameImpl(
   postId: number,
   recommendedTagName: string,
 ) {
@@ -516,7 +529,19 @@ export async function updatePostByRecommendedTagName(
   }
 }
 
-export async function updatePost(input: {
+export const updatePostByRecommendedTagName = withAdminAudit(
+  {
+    action: "post.recommended_tag.update",
+    entityType: "post",
+    entityId: ([postId]) => postId,
+    metadata: ([, recommendedTagName]) => ({
+      recommendedTagName,
+    }),
+  },
+  updatePostByRecommendedTagNameImpl,
+);
+
+async function updatePostImpl(input: {
   id: number;
   title: string;
   slug: string;
@@ -762,6 +787,19 @@ export async function updatePost(input: {
   }
 }
 
+export const updatePost = withAdminAudit(
+  {
+    action: "post.update",
+    entityType: "post",
+    entityId: ([input]) => input.id,
+    metadata: ([input]) => ({
+      published: input.published,
+      slug: input.slug,
+    }),
+  },
+  updatePostImpl,
+);
+
 async function getAffiliateReviewTarget(postId: number) {
   const parsedPostId = parseIntegerId(postId);
   if (parsedPostId === null) {
@@ -797,7 +835,7 @@ async function revalidateAffiliateReviewTarget(
   ]);
 }
 
-export async function reviewPostAffiliateLinksAction(postId: number) {
+async function reviewPostAffiliateLinksActionImpl(postId: number) {
   try {
     await requireAdminSession();
     const post = await getAffiliateReviewTarget(postId);
@@ -840,7 +878,16 @@ export async function reviewPostAffiliateLinksAction(postId: number) {
   }
 }
 
-export async function approvePostAffiliateReviewAction(postId: number) {
+export const reviewPostAffiliateLinksAction = withAdminAudit(
+  {
+    action: "post.affiliate.review",
+    entityType: "post",
+    entityId: ([postId]) => postId,
+  },
+  reviewPostAffiliateLinksActionImpl,
+);
+
+async function approvePostAffiliateReviewActionImpl(postId: number) {
   try {
     const session = await requireAdminSession();
     const post = await getAffiliateReviewTarget(postId);
@@ -891,7 +938,16 @@ export async function approvePostAffiliateReviewAction(postId: number) {
   }
 }
 
-export async function bulkUpdatePostsPublishedAction(input: {
+export const approvePostAffiliateReviewAction = withAdminAudit(
+  {
+    action: "post.affiliate.approve",
+    entityType: "post",
+    entityId: ([postId]) => postId,
+  },
+  approvePostAffiliateReviewActionImpl,
+);
+
+async function bulkUpdatePostsPublishedActionImpl(input: {
   ids: number[];
   published: boolean;
 }) {
@@ -1089,7 +1145,19 @@ export async function bulkUpdatePostsPublishedAction(input: {
   }
 }
 
-export async function savePostEdits(input: unknown) {
+export const bulkUpdatePostsPublishedAction = withAdminAudit(
+  {
+    action: "post.publication.bulk_update",
+    entityType: "post",
+    metadata: ([input]) => ({
+      published: input.published,
+      requestedIds: input.ids.slice(0, 100),
+    }),
+  },
+  bulkUpdatePostsPublishedActionImpl,
+);
+
+async function savePostEditsImpl(input: unknown) {
   try {
     await requireAdminSession();
     const payload = postEditSchema.parse(input);
@@ -1284,7 +1352,13 @@ export async function savePostEdits(input: unknown) {
   }
 }
 
-export async function updatePostEnglishContent(input: {
+// 返回值里只有 `data.slug` 能标识是哪一篇，实体 id 由 defaultInspect 的 slug 兜底取到。
+export const savePostEdits = withAdminAudit(
+  { action: "post.edit.save", entityType: "post" },
+  savePostEditsImpl,
+);
+
+async function updatePostEnglishContentImpl(input: {
   id: number;
   enTitle: string;
   enSlug: string;
@@ -1439,7 +1513,17 @@ export async function updatePostEnglishContent(input: {
   }
 }
 
-export async function deletePostById(id: number) {
+export const updatePostEnglishContent = withAdminAudit(
+  {
+    action: "post.english_content.update",
+    entityType: "post",
+    entityId: ([input]) => input.id,
+    metadata: ([input]) => ({ enSlug: input.enSlug }),
+  },
+  updatePostEnglishContentImpl,
+);
+
+async function deletePostByIdImpl(id: number) {
   try {
     await requireAdminSession();
     const postId = parseIntegerId(id);
@@ -1495,7 +1579,16 @@ export async function deletePostById(id: number) {
   }
 }
 
-export async function deletePostsByIds(ids: number[]) {
+export const deletePostById = withAdminAudit(
+  {
+    action: "post.delete",
+    entityType: "post",
+    entityId: ([id]) => id,
+  },
+  deletePostByIdImpl,
+);
+
+async function deletePostsByIdsImpl(ids: number[]) {
   try {
     await requireAdminSession();
 
@@ -1570,6 +1663,15 @@ export async function deletePostsByIds(ids: number[]) {
     };
   }
 }
+
+export const deletePostsByIds = withAdminAudit(
+  {
+    action: "post.bulk_delete",
+    entityType: "post",
+    metadata: ([ids]) => ({ requestedIds: ids.slice(0, 100) }),
+  },
+  deletePostsByIdsImpl,
+);
 
 async function replacePostTagsInTransaction(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],

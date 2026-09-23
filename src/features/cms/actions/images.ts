@@ -24,6 +24,7 @@ import { postgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
 import { parsePostgresIntegerId } from "@fwqgo/core/utils";
 import { ilikeContains } from "@/server/db/search";
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
+import { withAdminAudit } from "@/features/cms/lib/admin-audit";
 
 function revalidateImageWorkbenches() {
   revalidatePath("/images/list");
@@ -72,21 +73,37 @@ export async function getImageAssetPickerOptions(query = "") {
   return { data: images };
 }
 
-export async function importUploadImagesAction() {
+async function importUploadImagesActionImpl() {
   await requireAdminSession();
   const data = await importExistingUploads();
   revalidateImageWorkbenches();
   return { data };
 }
 
-export async function rebuildImageReferencesAction() {
+export const importUploadImagesAction = withAdminAudit(
+  {
+    action: "image.import_uploads",
+    entityType: "image",
+  },
+  importUploadImagesActionImpl,
+);
+
+async function rebuildImageReferencesActionImpl() {
   await requireAdminSession();
   const data = await rebuildImageReferences();
   revalidateImageWorkbenches();
   return { data };
 }
 
-export async function rebuildResponsiveImageVariantsAction() {
+export const rebuildImageReferencesAction = withAdminAudit(
+  {
+    action: "image.references.rebuild",
+    entityType: "image",
+  },
+  rebuildImageReferencesActionImpl,
+);
+
+async function rebuildResponsiveImageVariantsActionImpl() {
   await requireAdminSession();
   const data = await rebuildResponsiveImageVariants();
   revalidateImageWorkbenches();
@@ -95,7 +112,15 @@ export async function rebuildResponsiveImageVariantsAction() {
   return { data };
 }
 
-export async function auditAndRepairImageAssetsAction() {
+export const rebuildResponsiveImageVariantsAction = withAdminAudit(
+  {
+    action: "image.variants.rebuild",
+    entityType: "image",
+  },
+  rebuildResponsiveImageVariantsActionImpl,
+);
+
+async function auditAndRepairImageAssetsActionImpl() {
   await requireAdminSession();
   const data = await auditAndRepairImageAssets();
   revalidateImageWorkbenches();
@@ -104,7 +129,15 @@ export async function auditAndRepairImageAssetsAction() {
   return { data };
 }
 
-export async function convertUploadImagesToWebpAction() {
+export const auditAndRepairImageAssetsAction = withAdminAudit(
+  {
+    action: "image.assets.audit_repair",
+    entityType: "image",
+  },
+  auditAndRepairImageAssetsActionImpl,
+);
+
+async function convertUploadImagesToWebpActionImpl() {
   await requireAdminSession();
   const data = await convertExistingUploadsToWebp();
   revalidateImageWorkbenches();
@@ -113,7 +146,15 @@ export async function convertUploadImagesToWebpAction() {
   return { data };
 }
 
-export async function deleteImageAssetAction(id: number) {
+export const convertUploadImagesToWebpAction = withAdminAudit(
+  {
+    action: "image.uploads.convert_webp",
+    entityType: "image",
+  },
+  convertUploadImagesToWebpActionImpl,
+);
+
+async function deleteImageAssetActionImpl(id: number) {
   await requireAdminSession();
   const imageId = parsePostgresIntegerId(id);
   if (imageId === null) return { error: "图片 ID 无效" };
@@ -124,7 +165,16 @@ export async function deleteImageAssetAction(id: number) {
   return result;
 }
 
-export async function replaceImageAssetFileAction(formData: FormData) {
+export const deleteImageAssetAction = withAdminAudit(
+  {
+    action: "image.delete",
+    entityType: "image",
+    entityId: ([id]) => id,
+  },
+  deleteImageAssetActionImpl,
+);
+
+async function replaceImageAssetFileActionImpl(formData: FormData) {
   await requireAdminSession();
   const rawId = formData.get("id");
   const id = typeof rawId === "string" ? parsePostgresIntegerId(rawId) : null;
@@ -147,7 +197,17 @@ export async function replaceImageAssetFileAction(formData: FormData) {
   };
 }
 
-export async function replaceImageReferencesAction(input: {
+export const replaceImageAssetFileAction = withAdminAudit(
+  {
+    action: "image.file.replace",
+    entityType: "image",
+    entityId: ([formData]) => { const raw = formData.get("id"); return typeof raw === "string" ? raw : null; },
+    metadata: ([formData]) => { const raw = formData.get("id"); return { imageId: typeof raw === "string" ? raw : null }; },
+  },
+  replaceImageAssetFileActionImpl,
+);
+
+async function replaceImageReferencesActionImpl(input: {
   imageId: number;
   replacementPath: string;
 }) {
@@ -162,7 +222,17 @@ export async function replaceImageReferencesAction(input: {
   return result;
 }
 
-export async function renameImageAssetFileAction(input: {
+export const replaceImageReferencesAction = withAdminAudit(
+  {
+    action: "image.references.replace",
+    entityType: "image",
+    entityId: ([input]) => input.imageId,
+    metadata: ([input]) => ({ replacementPath: input.replacementPath }),
+  },
+  replaceImageReferencesActionImpl,
+);
+
+async function renameImageAssetFileActionImpl(input: {
   id: number;
   fileName: string;
 }) {
@@ -177,7 +247,17 @@ export async function renameImageAssetFileAction(input: {
   return result;
 }
 
-export async function updateImageAssetMetadataAction(input: {
+export const renameImageAssetFileAction = withAdminAudit(
+  {
+    action: "image.file.rename",
+    entityType: "image",
+    entityId: ([input]) => input.id,
+    metadata: ([input]) => ({ fileName: input.fileName }),
+  },
+  renameImageAssetFileActionImpl,
+);
+
+async function updateImageAssetMetadataActionImpl(input: {
   id: number;
   imageType: string;
   status: string;
@@ -199,3 +279,13 @@ export async function updateImageAssetMetadataAction(input: {
   schedulePublicWebCache("image.changed");
   return result;
 }
+
+export const updateImageAssetMetadataAction = withAdminAudit(
+  {
+    action: "image.metadata.update",
+    entityType: "image",
+    entityId: ([input]) => input.id,
+    metadata: ([input]) => ({ imageType: input.imageType, status: input.status }),
+  },
+  updateImageAssetMetadataActionImpl,
+);

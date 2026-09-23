@@ -9,6 +9,7 @@ import {
   getUnifiedTaskList,
 } from "@/features/cms/data/operations";
 import { getLeafCategories } from "@/features/shared/data/category";
+import { loadPageData, type PageDataError } from "@/features/cms/lib/page-data";
 import {
   AdminPageShell,
   AdminSectionCard,
@@ -31,35 +32,6 @@ type AiRewriteTaskSearchParams = {
   query?: SearchParamValue;
   type?: SearchParamValue;
 };
-
-type PageDataError = {
-  label: string;
-  message: string;
-};
-
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  return "未知错误";
-}
-
-async function loadPageData<T>(
-  label: string,
-  promise: Promise<T>,
-): Promise<{ data: T | null; error: PageDataError | null }> {
-  try {
-    return { data: await promise, error: null };
-  } catch (error) {
-    console.error(`${label} 加载失败:`, error);
-    return {
-      data: null,
-      error: {
-        label,
-        message: getErrorMessage(error),
-      },
-    };
-  }
-}
 
 function parsePageNo(value: SearchParamValue) {
   return parsePositiveInt(value) ?? 1;

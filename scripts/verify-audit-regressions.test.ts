@@ -147,8 +147,12 @@ const touch=()=>{fixture.cacheCalls++;};
 mock.module("@fwqgo/db", () => ({db: fixture.db}));
 mock.module("@fwqgo/auth/session", () => ({
   async requireAdminSession() {if(!fixture.authorized)throw new Unauthorized();return {userId:"fixture"};},
+  // withAdminAudit 会调 getCurrentSession 取 actorId；这个 mock 少了它会让
+  // import post.ts 直接报 "Export named 'getCurrentSession' not found"。
+  async getCurrentSession() {return fixture.authorized?{user:{id:"fixture",role:"admin",status:"active"}}:null;},
   isUnauthorizedError: error=>error instanceof Unauthorized,
 }));
+mock.module("@/server/admin/audit-log", () => ({scheduleAdminAuditLog:()=>{},recordAdminAuditLogSafely:async()=>undefined,writeAdminAuditLog:async()=>undefined}));
 mock.module("next/cache", () => ({revalidatePath:touch,revalidateTag:touch,updateTag:touch,cacheTag:touch}));
 mock.module("@/server/images/assets", () => ({async syncImageReferencesForPost() {},async deleteImageReferencesForPosts() {}}));
 mock.module("@/server/posts/create-post-record", () => ({

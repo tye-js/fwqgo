@@ -11,6 +11,10 @@ import { slugify } from "@fwqgo/core/utils";
 import { db } from "@fwqgo/db";
 import { knowledgeArticles, knowledgeCategories } from "@fwqgo/db/schema";
 import { defineAdminAction } from "@/features/cms/lib/define-admin-action";
+import {
+  boundOffsetPaginationByTotal,
+  normalizeOffsetPagination,
+} from "@fwqgo/core/pagination";
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 import { ilikeContains } from "@/server/db/search";
 import {
@@ -25,6 +29,9 @@ import {
 
 const optionalText = (max: number, label: string) =>
   z.string().trim().max(max, `${label}不能超过 ${max} 个字符`).optional();
+
+/** 知识库列表每页条数。原来是一次性 `.limit(300)`，超过就静默看不见。 */
+const KNOWLEDGE_LIST_PAGE_SIZE = 30;
 
 const nullableOptionalText = (max: number, label: string) =>
   z
@@ -396,6 +403,7 @@ export const deleteKnowledgeArticle = defineAdminAction({
 export async function getKnowledgeAdminOverview(
   query = "",
   language: KnowledgeLanguage = "zh",
+  pageInput: { pageNo?: number; pageSize?: number } = {},
 ) {
   await requireAdminSession();
   const normalizedQuery = query.trim().slice(0, 120);
@@ -422,7 +430,12 @@ export async function getKnowledgeAdminOverview(
     "knowledge_translation_article",
   );
 
-  const [categories, articles] = await Promise.all([
+  // 先数总数再切页。原来的 `.limit(300)` 是个硬上限：第 301 篇之后**在后台列表里直接看不见**，
+  // 而且没有任何提示（当前 60 篇，还没触发，属于「到期静默失效」）。
+  // 计数只查 knowledge_articles 自身 —— articleCondition 只引用这一张表，
+  // 主查询里的两个 leftJoin 不影响行数（slug 唯一，英文稿至多一条）。
+  // 分类与「计数 → 取页」并行，总往返仍是两次。
+  const [categoryRows, articlePage] = await Promise.all([
     db
       .select({
         id: knowledgeCategories.id,
@@ -445,62 +458,84 @@ export async function getKnowledgeAdminOverview(
       )
       .groupBy(knowledgeCategories.id)
       .orderBy(asc(knowledgeCategories.sortOrder), asc(knowledgeCategories.id)),
-    db
-      .select({
-        id: knowledgeArticles.id,
-        title: knowledgeArticles.title,
-        slug: knowledgeArticles.slug,
-        summary: knowledgeArticles.summary,
-        definition: knowledgeArticles.definition,
-        contentRole: knowledgeArticles.contentRole,
-        language: knowledgeArticles.language,
-        categoryName: knowledgeCategories.name,
-        categoryEnName: knowledgeCategories.enName,
-        published: knowledgeArticles.published,
-        allowAiReference: knowledgeArticles.allowAiReference,
-        contentRevision: knowledgeArticles.contentRevision,
-        translatedFromRevision: knowledgeArticles.translatedFromRevision,
-        translationSourceArticleId:
-          knowledgeArticles.translationSourceArticleId,
-        sourceContentRevision: sourceArticle.contentRevision,
-        sourcePublished: sourceArticle.published,
-        translationArticleId: translationArticle.id,
-        translationPublished: translationArticle.published,
-        translationContentRevision: translationArticle.contentRevision,
-        translationTranslatedFromRevision:
-          translationArticle.translatedFromRevision,
-        contentUpdatedAt: knowledgeArticles.contentUpdatedAt,
-        updatedAt: knowledgeArticles.updatedAt,
-        createdAt: knowledgeArticles.createdAt,
-      })
-      .from(knowledgeArticles)
-      .innerJoin(
-        knowledgeCategories,
-        eq(knowledgeArticles.categoryId, knowledgeCategories.id),
-      )
-      .leftJoin(
-        sourceArticle,
-        eq(knowledgeArticles.translationSourceArticleId, sourceArticle.id),
-      )
-      .leftJoin(
-        translationArticle,
-        and(
-          eq(
-            translationArticle.translationSourceArticleId,
-            knowledgeArticles.id,
+    (async () => {
+      const [totalRow] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(knowledgeArticles)
+        .where(articleCondition);
+      const pagination = boundOffsetPaginationByTotal(
+        normalizeOffsetPagination({
+          pageNo: pageInput.pageNo,
+          pageSize: pageInput.pageSize ?? KNOWLEDGE_LIST_PAGE_SIZE,
+          defaultPageSize: KNOWLEDGE_LIST_PAGE_SIZE,
+          maxPageSize: 100,
+        }),
+        totalRow?.count ?? 0,
+      );
+      const rows = await db
+        .select({
+          id: knowledgeArticles.id,
+          title: knowledgeArticles.title,
+          slug: knowledgeArticles.slug,
+          summary: knowledgeArticles.summary,
+          definition: knowledgeArticles.definition,
+          contentRole: knowledgeArticles.contentRole,
+          language: knowledgeArticles.language,
+          categoryName: knowledgeCategories.name,
+          categoryEnName: knowledgeCategories.enName,
+          published: knowledgeArticles.published,
+          allowAiReference: knowledgeArticles.allowAiReference,
+          contentRevision: knowledgeArticles.contentRevision,
+          translatedFromRevision: knowledgeArticles.translatedFromRevision,
+          translationSourceArticleId:
+            knowledgeArticles.translationSourceArticleId,
+          sourceContentRevision: sourceArticle.contentRevision,
+          sourcePublished: sourceArticle.published,
+          translationArticleId: translationArticle.id,
+          translationPublished: translationArticle.published,
+          translationContentRevision: translationArticle.contentRevision,
+          translationTranslatedFromRevision:
+            translationArticle.translatedFromRevision,
+          contentUpdatedAt: knowledgeArticles.contentUpdatedAt,
+          updatedAt: knowledgeArticles.updatedAt,
+          createdAt: knowledgeArticles.createdAt,
+        })
+        .from(knowledgeArticles)
+        .innerJoin(
+          knowledgeCategories,
+          eq(knowledgeArticles.categoryId, knowledgeCategories.id),
+        )
+        .leftJoin(
+          sourceArticle,
+          eq(knowledgeArticles.translationSourceArticleId, sourceArticle.id),
+        )
+        .leftJoin(
+          translationArticle,
+          and(
+            eq(
+              translationArticle.translationSourceArticleId,
+              knowledgeArticles.id,
+            ),
+            eq(translationArticle.language, "en"),
           ),
-          eq(translationArticle.language, "en"),
-        ),
-      )
-      .where(articleCondition)
-      .orderBy(
-        desc(knowledgeArticles.contentUpdatedAt),
-        desc(knowledgeArticles.id),
-      )
-      .limit(300),
+        )
+        .where(articleCondition)
+        .orderBy(
+          desc(knowledgeArticles.contentUpdatedAt),
+          desc(knowledgeArticles.id),
+        )
+        .limit(pagination.pageSize)
+        .offset(pagination.offset);
+      return { rows, pagination };
+    })(),
   ]);
 
-  return { categories, articles, language };
+  return {
+    categories: categoryRows,
+    articles: articlePage.rows,
+    language,
+    pagination: articlePage.pagination,
+  };
 }
 
 export async function getKnowledgeAdminArticle(id: number) {

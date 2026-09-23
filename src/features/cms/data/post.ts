@@ -1,7 +1,7 @@
 import { db } from "@fwqgo/db";
 import { requireAdminSession } from "@fwqgo/auth/session";
+import { getTaskQueueStatusCounts } from "@/features/cms/data/task-queue-status";
 import {
-  adminBackgroundJobs,
   aiRewriteConfigs,
   aiRewriteTasks,
   imageAssetReferences,
@@ -10,7 +10,6 @@ import {
   posts,
   categories,
   postTags,
-  providerMonitorRuns,
   serverOffers,
   tags,
 } from "@fwqgo/db/schema";
@@ -531,10 +530,7 @@ export async function getDashboardStats() {
 
   const [
     [postSummary],
-    aiStatusRows,
-    coverStatusRows,
-    offerTaskStatusRows,
-    backgroundJobStatusRows,
+    queueStatusCounts,
     [offerSummary],
     [imageSummary],
     trendRows,
@@ -562,22 +558,8 @@ export async function getDashboardStats() {
         contentAttentionCount: sql<number>`(count(*) filter (where coalesce(btrim(${posts.imgUrl}), '') = '' or (${posts.published} = true and ${posts.affiliateReviewStatus} in ('pending', 'manual_required'))))::int`,
       })
       .from(posts),
-    db
-      .select({ status: aiRewriteTasks.status, count: count() })
-      .from(aiRewriteTasks)
-      .groupBy(aiRewriteTasks.status),
-    db
-      .select({ status: imageCoverGenerationTasks.status, count: count() })
-      .from(imageCoverGenerationTasks)
-      .groupBy(imageCoverGenerationTasks.status),
-    db
-      .select({ status: providerMonitorRuns.status, count: count() })
-      .from(providerMonitorRuns)
-      .groupBy(providerMonitorRuns.status),
-    db
-      .select({ status: adminBackgroundJobs.status, count: count() })
-      .from(adminBackgroundJobs)
-      .groupBy(adminBackgroundJobs.status),
+    // 这 4 张表的状态计数与「AI任务中心」共用一次计算，见 task-queue-status.ts。
+    getTaskQueueStatusCounts(),
     db
       .select({
         totalCount: sql<number>`count(*)::int`,
@@ -751,10 +733,10 @@ export async function getDashboardStats() {
         generatedAt: now,
       },
       taskOverview: {
-        ai: summarizeStatuses(aiStatusRows),
-        cover: summarizeStatuses(coverStatusRows),
-        offer: summarizeStatuses(offerTaskStatusRows),
-        background: summarizeStatuses(backgroundJobStatusRows),
+        ai: summarizeStatuses(queueStatusCounts.ai),
+        cover: summarizeStatuses(queueStatusCounts.cover),
+        offer: summarizeStatuses(queueStatusCounts.offer),
+        background: summarizeStatuses(queueStatusCounts.background),
       },
       operations: {
         offers: {

@@ -160,7 +160,7 @@ import assert from "node:assert/strict";
 import {mock} from "bun:test";
 let authorized=false,writes=0;
 class Unauthorized extends Error {}
-mock.module("@fwqgo/auth/session",()=>({requireAdminSession:async()=>{if(!authorized)throw new Unauthorized();return {userId:"fixture"};},isUnauthorizedError:error=>error instanceof Unauthorized}));
+mock.module("@fwqgo/auth/session",()=>({requireAdminSession:async()=>{if(!authorized)throw new Unauthorized();return {userId:"fixture"};},getCurrentSession:async()=>({user:{id:"fixture",role:"admin",status:"active"}}),isUnauthorizedError:error=>error instanceof Unauthorized}));
 mock.module("@/server/posts/manual-article-task",()=>({saveManualArticleTask:async()=>{writes++;return {postId:1,slug:"manual",warnings:[]};}}));
 mock.module("next/cache",()=>({revalidatePath(){}}));
 const {saveManualArticleTaskAction}=await import("./src/features/cms/actions/manual-article.ts");
@@ -246,7 +246,7 @@ const f={authorized:false,reads:0,queued:0,task:null,cover:"/img/placeholders/fw
 const name=table=>table[Symbol.for("drizzle:Name")];
 const db={select(){f.reads++;let table;const rows=()=>table==="posts"?[{id:1,title:"Manual article",imgUrl:f.cover}]:(f.task?[f.task]:[]);const q={from(t){table=name(t);return q;},where(){return q;},orderBy(){return q;},limit:async()=>rows(),then(resolve,reject){return Promise.resolve(rows()).then(resolve,reject);}};return q;}};
 mock.module("@fwqgo/db",()=>({db}));
-mock.module("@fwqgo/auth/session",()=>({requireAdminSession:async()=>{if(!f.authorized)throw new Error("Unauthorized");return {userId:"admin"};}}));
+mock.module("@fwqgo/auth/session",()=>({requireAdminSession:async()=>{if(!f.authorized)throw new Error("Unauthorized");return {userId:"admin"};},getCurrentSession:async()=>({user:{id:"admin",role:"admin",status:"active"}})}));
 mock.module("next/cache",()=>({revalidatePath(){},revalidateTag(){},updateTag(){},cacheTag(){}}));
 mock.module("@/server/cache/public-revalidation-client",()=>({schedulePublicWebCache(){}}));
 mock.module("@/server/images/generation-config",()=>({getActiveImageGenerationConfig:async()=>null}));
