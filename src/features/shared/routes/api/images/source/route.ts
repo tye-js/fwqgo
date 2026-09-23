@@ -21,6 +21,20 @@ const MAX_REMOTE_IMAGE_BYTES = 12 * 1024 * 1024;
 const REMOTE_UPLOAD_HOSTS = new Set(["fwqgo.com", "cms.fwqgo.com"]);
 const NEGATIVE_CACHE_TTL_MS = 60_000;
 const MAX_NEGATIVE_CACHE_ENTRIES = 500;
+
+/**
+ * 本地文件的缓存策略。
+ *
+ * `/uploads/<时间戳>-<名字>.webp` 只写一次（`writeNewUploadFile` 用 `wx` 标志，写不进去就失败），
+ * 真的替换内容时走 `replaceImageAssetFile`：文件路径不变，但会把 posts / knowledge / users /
+ * 推广位的引用改写成 `?v=<内容哈希>`，并给缩略图与大图变体换名。也就是说**同一个 URL 的字节
+ * 不会再变**，可以放心交给浏览器和边缘节点长期缓存。
+ *
+ * 这里曾经是 `max-age=0, must-revalidate`，等于每个访客、每个宽度变体都要回源做一次条件请求；
+ * 上传文件名带时间戳，本质上是内容寻址，那个保守策略没有必要。
+ */
+const LOCAL_IMAGE_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
 const ALLOWED_REMOTE_IMAGE_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -231,7 +245,7 @@ export async function GET(request: NextRequest) {
           new NextResponse(null, {
             status: 304,
             headers: {
-              "Cache-Control": "public, max-age=0, must-revalidate",
+              "Cache-Control": LOCAL_IMAGE_CACHE_CONTROL,
               ETag: etag,
               "Last-Modified": fileStat.mtime.toUTCString(),
               "X-Content-Type-Options": "nosniff",
@@ -244,7 +258,7 @@ export async function GET(request: NextRequest) {
       return respond(
         new NextResponse(file, {
           headers: imageHeaders({
-            cacheControl: "public, max-age=0, must-revalidate",
+            cacheControl: LOCAL_IMAGE_CACHE_CONTROL,
             contentLength: file.byteLength,
             contentType,
             etag,
