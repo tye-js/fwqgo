@@ -269,6 +269,14 @@ English Markdown:
 const englishImageRule =
   "Keep every image on its original line with its /uploads/ path byte-for-byte unchanged; translate the alt text and the caption, but never drop an image, never turn it into a plain text link, and never invent one.";
 
+/**
+ * 幂等判断用的标记文本。
+ *
+ * 导出是为了让守卫引用同一份常量——守卫里再硬编码一份副本的话，改文案时两边会
+ * 静默失配（计数恒为 0，断言看着还在，实际什么也没验到）。
+ */
+export const englishImageRuleMarker = "never drop an image";
+
 export const defaultEnglishContentPrompt = `Translate the complete Chinese VPS/server article below into clear, faithful English Markdown.
 
 Return only the English body, without an article title, SEO metadata, explanations or enclosing code fences. Keep every paragraph, table row, image and factual detail; do not summarize or invent information. Preserve Markdown structure, use headings from ##, and keep all URLs, image paths, affiliate links, prices, specifications and promo codes unchanged. ${englishImageRule}
@@ -296,11 +304,21 @@ export function resolveEnglishContentPromptTemplate(value?: string | null) {
       ? defaultEnglishContentPrompt
       : custom;
 
+  if (resolved.includes(englishImageRuleMarker)) return resolved;
+
   // 与中文路径同样在代码层补充：存库的提示词改不动，而丢图会被
   // `assertTranslatedArticleStructure` 判为失败，这条要求必须覆盖所有配置。
-  return resolved.includes("never drop an image")
-    ? resolved
-    : `${resolved}\n\n${englishImageRule}`;
+  //
+  // 插到 `{markdownContent}` **之前**，与 `defaultEnglishContentPrompt` 的结构一致。
+  // 追加到末尾的话，自定义提示词会变成「指令 → 正文 → 图片要求」，模型看到约束的
+  // 时机与默认配置不同，属可预期性上的偏差。
+  const contentAnchor = "{markdownContent}";
+  const anchorIndex = resolved.indexOf(contentAnchor);
+
+  // 没有正文占位符的配置不合规，但历史数据里可能存在，这时只能追加到末尾。
+  if (anchorIndex === -1) return `${resolved}\n\n${englishImageRule}`;
+
+  return `${resolved.slice(0, anchorIndex)}${englishImageRule}\n\n${resolved.slice(anchorIndex)}`;
 }
 
 export function resolveEnglishMetadataPromptTemplate(value?: string | null) {

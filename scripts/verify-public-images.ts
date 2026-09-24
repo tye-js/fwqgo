@@ -6,8 +6,12 @@ import { getOptimizedImageSrc } from "../packages/core/image-src";
 import { renderArticleContentHtml } from "../packages/core/content";
 import {
   ARTICLE_BODY_IMAGE_SIZES,
+  ARTICLE_BODY_IMAGE_SLOTS,
+  ARTICLE_IMAGE_MIN_SOURCE_WIDTH,
   ARTICLE_IMAGE_WIDTHS,
   KNOWLEDGE_BODY_IMAGE_SIZES,
+  KNOWLEDGE_BODY_IMAGE_SLOTS,
+  dprsForViewport,
   optimizeArticleImages,
 } from "../src/features/public/lib/article-images";
 
@@ -159,9 +163,12 @@ for (const width of articleWidths) {
 // 7b. 正文图的 `sizes` 必须折算掉正文容器的内边距。
 //
 // 正文列虽然是 820px，但 `.article-reading-surface` 还有 `padding: clamp(1.1rem,3vw,2.25rem)`，
-// 所以正文实际可用宽度是 746px（≥1280）而不是 820px。声明偏大会让浏览器挑更大的变体白传字节：
-// 实测写成 820px 时 ≥1280 会选 828w 而非 750w（28,720B vs 25,191B，多 14%）；
-// 写成 100vw 更糟，390px 下会选 640w 而非 384w（约 2 倍）。
+// 所以正文实际可用宽度是 746px（≥1280）而不是 820px（各断点的实测值见
+// `ARTICLE_BODY_IMAGE_SLOTS`）。声明偏大会让浏览器挑更大的变体白传字节：
+// 写成 820px 时 ≥1280 会选 828w 而非 750w（多 11% 像素）；写成 100vw 更糟，
+// 321px 的槽位会选 640w 而非 384w（多约 1 倍像素）。
+//
+// 这里只断言像素口径的折算关系——真实字节收益随图片内容变化，写死数字必然失效。
 const publicCss = readFileSync("src/styles/public.css", "utf8");
 assert.match(
   publicCss,
@@ -180,28 +187,64 @@ assert.ok(
   `正文图 sizes 必须按正文容器内边距折算，不能直接写列宽或 100vw：${ARTICLE_BODY_IMAGE_SIZES}`,
 );
 
-// 7c. srcset 档位必须够细，能覆盖正文的真实宽度。
+// 7c. srcset 档位必须覆盖「槽位 × 可达 DPR」，而不只是 DPR=1。
 //
-// 正文槽位实测为 321 / 345 / 659 / 757 / 746。档位太粗会白传字节——只有
-// [640, 828, 1200, 1920] 时，390px 会退而选 640（需要 322，多 55% 字节），
-// ≥1280 会选 828（需要 746，多 12%）。补上 384 与 750 后各档都能选到刚好够用的一档。
-for (const slot of [321, 345, 659, 757, 746]) {
-  const chosen = ARTICLE_IMAGE_WIDTHS.find((width) => width >= slot);
-  assert.ok(chosen, `srcset 里没有能覆盖 ${slot}px 正文槽位的档位`);
-  assert.ok(
-    chosen / slot <= 1.25,
-    `srcset 档位太粗：${slot}px 的正文槽位会选到 ${chosen}px，多传约 ${Math.round((chosen / slot - 1) * 100)}% 像素`,
-  );
+// 只看 DPR=1 会漏掉真实需求：2x 屏（Retina 笔记本／平板）要的是 slot×2 个物理像素，
+// 小视口下的 3x 手机要 slot×3。槽位表是唯一来源，这里按它逐组合断言——
+// 槽位改了而档位没跟上时会直接报错。
+//
+// 「可达 DPR」由 `dprsForViewport` 定义：3x 只存在于视口 ≤480 的设备。不排除这条
+// 就会拿「3x + 1280 视口」这种不存在的组合去要求档位，把真实的下限算成 2850px。
+const slotTables: Array<
+  [string, ReadonlyArray<{ viewport: number; slot: number }>]
+> = [
+  ["文章", ARTICLE_BODY_IMAGE_SLOTS],
+  ["知识库", KNOWLEDGE_BODY_IMAGE_SLOTS],
+];
+for (const [page, slots] of slotTables) {
+  for (const { viewport, slot } of slots) {
+    for (const dpr of dprsForViewport(viewport)) {
+      const need = Math.round(slot * dpr);
+      const chosen = ARTICLE_IMAGE_WIDTHS.find((width) => width >= need);
+      assert.ok(
+        chosen,
+        `${page}正文 ${viewport}@${dpr}x 需要 ${need}px，超过 srcset 最大档位，浏览器只能放大显示（发虚）`,
+      );
+      // 像素超采上限 1.5：`deviceSizes` 在 1200 与 1920 之间没有可用档位，
+      // 「659px 槽位 @2x = 1318 → 只能选 1920」是名单粒度的固有限制，改 srcset 消不掉。
+      assert.ok(
+        chosen / need <= 1.5,
+        `${page}正文 ${viewport}@${dpr}x 需要 ${need}px 却会选 ${chosen}px，多传约 ${Math.round(
+          (chosen / need - 1) * 100,
+        )}% 像素`,
+      );
+    }
+  }
 }
 
-// 7c. 知识库正文图同理，而且更容易写错。
+// 7d. 原图宽度下限：既要覆盖所有可达组合，又不能超过 srcset 能提供的最大档位。
 //
-// 页面给正文加了 `max-w-3xl`（768px），但 `ARTICLE_PROSE_CLASS_NAME` 里带着
-// Tailwind Typography 的 `max-w-none`，生成后的 CSS 里后者胜出——正文实际铺满
-// `.article-reading-surface`（`max-w-5xl`）的内容区。实测：390→321 / 768→659 /
-// 1024→884 / ≥1280→950。
-// 写成 `768px` 会**低估**：≥1024 时浏览器选 828w 去填 950px 的槽位，图片被拉伸约 15%
-// （发虚，比多传字节更糟）；写成 `100vw` 又会高估，390px 下选 640w 而非 384w。
+// 低于下限的原图会被优化器的 `withoutEnlargement` 截住，在大视口 2x 屏上被拉伸显示；
+// 而写下超过最大档位的下限没有意义——优化器只按档位生成，多出来的像素永不被服务。
+const maxReachableNeed = Math.max(
+  ...[...ARTICLE_BODY_IMAGE_SLOTS, ...KNOWLEDGE_BODY_IMAGE_SLOTS].flatMap(
+    ({ viewport, slot }) =>
+      dprsForViewport(viewport).map((dpr) => Math.round(slot * dpr)),
+  ),
+);
+const maxOfferedWidth = Math.max(...ARTICLE_IMAGE_WIDTHS);
+assert.ok(
+  ARTICLE_IMAGE_MIN_SOURCE_WIDTH >= maxReachableNeed,
+  `原图下限 ${ARTICLE_IMAGE_MIN_SOURCE_WIDTH}px 低于可达需求 ${maxReachableNeed}px：大视口 2x 屏上的正文图会被拉伸`,
+);
+assert.ok(
+  ARTICLE_IMAGE_MIN_SOURCE_WIDTH <= maxOfferedWidth,
+  `原图下限 ${ARTICLE_IMAGE_MIN_SOURCE_WIDTH}px 超过 srcset 最大档位 ${maxOfferedWidth}px，多出的像素不会被服务`,
+);
+
+// 7e. 知识库正文图同理，而且更容易写错：页面看着有 `max-w-3xl`，但
+// `ARTICLE_PROSE_CLASS_NAME` 里的 `max-w-none` 在生成后的 CSS 里胜出，
+// 正文实际铺满 `.article-reading-surface`（`max-w-5xl`）的内容区。
 assert.ok(
   KNOWLEDGE_BODY_IMAGE_SIZES.includes("clamp(1.1rem, 3vw, 2.25rem)") &&
     KNOWLEDGE_BODY_IMAGE_SIZES.includes("clamp(1rem, 3vw, 2rem)") &&
@@ -240,6 +283,32 @@ for (const { file, source } of renderCallers) {
   );
 }
 
+// 10. 抓取路径必须显式丢弃图片。
+//
+// `htmlToArticleMarkdown` 的默认是 `keep`（漏传 = 保留），方向上是安全的：不会静默
+// 丢图。但抓取路径**依赖**显式传 `drop` —— 来源站的第三方图片写进正文后，渲染时会被
+// 净化器全部丢掉，只留下一批无效 Markdown。风险点在**新增的抓取调用点**上，所以这里
+// 扫描整个 scrape 目录，而不是逐个文件断言。
+const scrapeDir = "src/server/scrape";
+const scrapeOffenders: string[] = [];
+for (const entry of readdirSync(scrapeDir, { recursive: true })) {
+  const file = path.join(scrapeDir, String(entry));
+  if (!file.endsWith(".ts")) continue;
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    // 注释里提到函数名不算调用
+    if (trimmed.startsWith("//") || trimmed.startsWith("*")) continue;
+    if (!trimmed.includes("htmlToArticleMarkdown(")) continue;
+    if (trimmed.includes('images: "drop"')) continue;
+    scrapeOffenders.push(`${file}: ${trimmed}`);
+  }
+}
+assert.deepEqual(
+  scrapeOffenders,
+  [],
+  `抓取路径必须显式传 images: "drop"，否则会把来源站的第三方图写进正文：${scrapeOffenders.join(" | ")}`,
+);
+
 console.log(
-  "Public image optimizer verified: uploads route through /api/images/source, webp/avif enabled, no public component opts out.",
+  "Public image optimizer verified: uploads route through /api/images/source, webp/avif enabled, no public component opts out, scraper drops source-site images.",
 );

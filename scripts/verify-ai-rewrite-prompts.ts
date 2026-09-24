@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   defaultEnglishContentPrompt,
+  englishImageRuleMarker,
   resolveEnglishContentPromptTemplate,
 } from "../packages/core/ai-rewrite-prompts";
 
@@ -152,7 +153,8 @@ assert.doesNotMatch(
 // 提示词存在数据库（`ai_rewrite_configs.englishContentPrompt`），改默认值只对新建配置生效，
 // 而 `assertTranslatedArticleStructure` 会把「改变或遗漏图片」的翻译直接判为失败。
 // 所以无论配置里存的是哪一版提示词，这条要求都必须出现且只出现一次。
-const englishImageRuleMarker = "never drop an image";
+// 标记文本从实现里 import，不在守卫里再抄一份：抄一份的话改文案时会静默失配，
+// 计数恒为 0、断言看着还在，实际什么也没验到。
 const countEnglishImageRule = (value: string) =>
   value.split(englishImageRuleMarker).length - 1;
 
@@ -187,6 +189,20 @@ assert.match(
   /\{markdownContent\}/,
   "追加图片要求后必须保留 {markdownContent} 占位符",
 );
+
+// 追加的**位置**也是契约：必须落在 `{markdownContent}` 之前。
+// 追加到正文之后会让模型先读正文、再读「不许丢图」的约束，与
+// `defaultEnglishContentPrompt` 的顺序不一致——同一个配置项，两条解析路径产出的
+// 提示词结构应当相同，否则模型看到约束的时机取决于配置是否是自定义的。
+for (const input of [null, "Custom.\n\n{markdownContent}"]) {
+  const resolvedPrompt = resolveEnglishContentPromptTemplate(input);
+  const ruleAt = resolvedPrompt.indexOf(englishImageRuleMarker);
+  const contentAt = resolvedPrompt.indexOf("{markdownContent}");
+  assert.ok(
+    ruleAt > -1 && contentAt > -1 && ruleAt < contentAt,
+    `图片保留要求必须出现在正文占位符之前（rule@${ruleAt} / content@${contentAt}），输入：${String(input)}`,
+  );
+}
 assert.match(
   rewriter,
   /resolveEnglishContentPromptTemplate\(/,
