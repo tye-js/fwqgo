@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+import {
+  ARTICLE_SLUG_ISSUE_MESSAGES,
+  ARTICLE_SLUG_MAX_LENGTH,
+  hasInvalidArticleSlugCharacters,
+} from "@fwqgo/core/article-slug";
 import { postgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
 import { isRenderableImageSrc } from "@fwqgo/core/image-src";
 
@@ -22,11 +27,13 @@ export const postEditSchema = z
     slug: z
       .string()
       .trim()
-      .min(1, "文章 slug 不能为空")
-      .max(320, "文章 slug 不能超过 320 个字符")
+      .min(1, ARTICLE_SLUG_ISSUE_MESSAGES.empty)
+      .max(ARTICLE_SLUG_MAX_LENGTH, ARTICLE_SLUG_ISSUE_MESSAGES["too-long"])
+      // 规则与创建路径、后台表单共用一份（`@fwqgo/core/article-slug`）。
+      // 这里只用字符检查：长度与非空由上面的 min/max 负责，否则会同时报两条。
       .refine(
-        (value) => !/[\s/?#\\\u0000-\u001f\u007f]/.test(value),
-        "文章 slug 含有无效字符",
+        (value) => !hasInvalidArticleSlugCharacters(value),
+        ARTICLE_SLUG_ISSUE_MESSAGES["invalid-characters"],
       ),
     published: z.boolean(),
     allowSlugChange: z.boolean().optional(),

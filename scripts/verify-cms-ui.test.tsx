@@ -351,3 +351,50 @@ void test("release guard polls on a multi-minute backstop and keeps focus trigge
   assert.match(guard, /addEventListener\("visibilitychange", checkVisibleRelease\)/);
   assert.match(guard, /setInterval\(checkScheduledRelease, RELEASE_POLL_MS\)/);
 });
+
+/**
+ * 文章 slug 的规则只能有一份（`@fwqgo/core/article-slug`）。
+ *
+ * 实测（2026-09-25）：同一条规则散在四处——创建路径与 zod schema 含反斜杠，
+ * 编辑 action 与编辑页前端只有 `[\s/?#]`，而编辑页前端还把长度上限写成 360
+ * （后端是 320）。后果是「前端放行、后端报错」。
+ *
+ * 这里两头都守：消费点不再自建正则（防漂移），新建表单确实接上了规则并能提交 slug
+ * （防功能缺失）。
+ */
+void test("article slug rules live in one module and the create form uses it", () => {
+  const ruleModule = "packages/core/article-slug.ts";
+  assert.ok(existsSync(ruleModule), `slug 规则必须住在 ${ruleModule}`);
+
+  const consumers = [
+    "src/server/posts/create-post-record.ts",
+    "src/features/cms/lib/post-edit.ts",
+    "src/features/cms/actions/post.ts",
+    "src/components/endpoint/edit-post/edit-post.tsx",
+    "src/features/cms/components/create-post-workbench.tsx",
+  ];
+  for (const file of consumers) {
+    const source = stripComments(readFileSync(file, "utf8"));
+    assert.ok(
+      !source.includes("[\\s/?#"),
+      `${file} 不应自建 slug 字符正则，改用 @fwqgo/core/article-slug`,
+    );
+  }
+
+  const formFile = "src/features/cms/components/create-post-workbench.tsx";
+  const form = stripComments(readFileSync(formFile, "utf8"));
+
+  // 表单要真的能填 slug，否则操作者只能接受标题生成的地址。
+  assert.match(form, /htmlFor="create-post-slug"/);
+  assert.match(form, /id="create-post-slug"/);
+
+  // 发布与存草稿是两条独立路径，两条都要把 slug 交给 createPost。
+  assert.equal(
+    (form.match(/slug: slug\.trim\(\) \|\| undefined/g) ?? []).length,
+    2,
+    "发布与存草稿两条路径都必须提交 slug",
+  );
+
+  // 校验复用同一份规则，而不是在表单里另写一套。
+  assert.match(form, /validateArticleSlug\(slug\)/);
+});

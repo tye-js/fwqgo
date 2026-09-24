@@ -49,6 +49,10 @@ import {
   AdminSectionCard,
 } from "@/features/cms/components/admin-page-shell";
 import { type getPostProductionContext } from "@/features/cms/data/post";
+import {
+  ARTICLE_SLUG_ISSUE_MESSAGES,
+  validateArticleSlug,
+} from "@fwqgo/core/article-slug";
 import { isRenderableImageSrc } from "@fwqgo/core/image-src";
 import { PostInternalLinkManager } from "@/features/cms/components/post-internal-link-manager";
 import type { AdminPostInternalLink } from "@/server/posts/internal-links";
@@ -180,14 +184,12 @@ export default function EditPost({
       toast.error("文章标题不能超过 300 个字符");
       return;
     }
-    if (!normalizedSlug) {
-      toast.error("请填写文章 slug");
-      return;
-    }
-    if (normalizedSlug.length > 360 || /[\s/?#]/.test(normalizedSlug)) {
-      toast.error("文章 slug 格式不正确", {
-        description: "不能超过 360 个字符，也不能包含空格、斜杠、问号或井号。",
-      });
+    // 规则与后端共用一份（`@fwqgo/core/article-slug`）。
+    // 原先这里写的是 360 字符、正则也只有 `[\s/?#]`：与后端的 320 上限、
+    // 以及含反斜杠的字符集都不一致，操作者会遇到「前端通过、后端报错」。
+    const slugIssue = validateArticleSlug(normalizedSlug);
+    if (slugIssue) {
+      toast.error(ARTICLE_SLUG_ISSUE_MESSAGES[slugIssue]);
       return;
     }
     if (!normalizedContent) {

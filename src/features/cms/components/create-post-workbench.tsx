@@ -6,6 +6,12 @@ import {
   DEFAULT_ARTICLE_COVER,
   isDefaultArticleCover,
 } from "@fwqgo/core/article-cover";
+import {
+  ARTICLE_SLUG_ISSUE_MESSAGES,
+  ARTICLE_SLUG_MAX_LENGTH,
+  validateArticleSlug,
+} from "@fwqgo/core/article-slug";
+import { slugify } from "@fwqgo/core/utils";
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,6 +56,7 @@ export function CreatePostWorkbench({
 }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
+  const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState("");
   const [imageUrl, setImageUrl] = useState(DEFAULT_ARTICLE_COVER);
@@ -72,6 +79,24 @@ export function CreatePostWorkbench({
     .map((keyword) => keyword.trim())
     .filter(Boolean)
     .slice(0, 6);
+  /**
+   * 发布后会写进 URL 的 slug：手填优先，留空时按标题生成。
+   *
+   * 用的是与后端同一个 `slugify`（含默认的 40 字符截断），所以这里预览的就是
+   * 实际地址，不会和 `createPostRecord` 里的结果漂移。
+   */
+  const slugPreview = slug.trim() || slugify(title);
+  /**
+   * 提交前的 slug 校验。
+   *
+   * **留空是合法的**：后端会按标题生成，所以 `empty` 不算错误，只有真的填了
+   * 非法内容才拦下来。规则来自 `@fwqgo/core/article-slug`，与后端同一份。
+   */
+  const slugValidationError = (() => {
+    const issue = validateArticleSlug(slug);
+    if (!issue || issue === "empty") return null;
+    return ARTICLE_SLUG_ISSUE_MESSAGES[issue];
+  })();
   const seoChecks = buildCreateSeoChecks({
     title,
     content,
@@ -86,6 +111,7 @@ export function CreatePostWorkbench({
   const failedSeoChecks = seoChecks.filter((check) => !check.ok);
   const hasUnsavedChanges = Boolean(
     title.trim() ||
+    slug.trim() ||
     description.trim() ||
     content.trim() ||
     !isDefaultArticleCover(imageUrl) ||
@@ -136,6 +162,10 @@ export function CreatePostWorkbench({
       toast.error("请先选择文章分类");
       return;
     }
+    if (slugValidationError) {
+      toast.error(slugValidationError);
+      return;
+    }
 
     try {
       mutationRef.current = "publish";
@@ -151,6 +181,8 @@ export function CreatePostWorkbench({
           categoryId: selectedCategoryId,
           recommendedTagName: recommendTag.name,
           keywords: normalizedKeywords.join(","),
+          // 留空就不传，后端按标题 slugify 生成。
+          slug: slug.trim() || undefined,
         },
         tags,
       });
@@ -189,6 +221,10 @@ export function CreatePostWorkbench({
       toast.error("请先选择文章分类");
       return;
     }
+    if (slugValidationError) {
+      toast.error(slugValidationError);
+      return;
+    }
 
     try {
       mutationRef.current = "draft";
@@ -204,6 +240,8 @@ export function CreatePostWorkbench({
           categoryId: selectedCategoryId,
           recommendedTagName: recommendTag.name,
           keywords: normalizedKeywords.join(","),
+          // 留空就不传，后端按标题 slugify 生成。
+          slug: slug.trim() || undefined,
         },
         tags,
       });
@@ -315,6 +353,27 @@ export function CreatePostWorkbench({
               <p className="text-xs text-muted-foreground">
                 当前 {title.trim().length} 字，建议 12-36
                 字，避免标题过短或堆关键词。
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="create-post-slug" className="text-sm font-medium">
+                文章 slug
+              </label>
+              <ArticleTextInput
+                id="create-post-slug"
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                maxLength={ARTICLE_SLUG_MAX_LENGTH}
+                spellCheck={false}
+                className="min-h-11 font-mono"
+                placeholder="article-url-slug"
+              />
+              <p className="break-all text-xs leading-5 text-muted-foreground">
+                前台路径：/fwq/posts/{slugPreview || "article-url-slug"}
+              </p>
+              <p className="text-xs leading-5 text-muted-foreground">
+                留空则按标题自动生成，路径预览就是发布后的实际地址。
+                发布后地址会锁定，之后再修改时旧地址会永久跳转到新地址。
               </p>
             </div>
             <div className="space-y-2">

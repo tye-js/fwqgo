@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { ImageLibraryPicker } from "@/features/cms/components/image-library-picker";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { isDefaultArticleCover } from "@fwqgo/core/article-cover";
 import {
   getOptimizedImageSrc,
   isRenderableImageSrc,
@@ -21,7 +22,21 @@ interface ImageUploadProps {
 export function ImageUpload({ onChange, value }: ImageUploadProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const hasPreview = isRenderableImageSrc(value);
+  /**
+   * 占位图**不是**可预览的封面，它的语义就是「没有封面」。
+   *
+   * 这条判断原先只写 `isRenderableImageSrc(value)`，而它对任何 `/` 开头的路径都返回
+   * true，于是 `/img/placeholders/fwq-placeholder.png`（`DEFAULT_ARTICLE_COVER`）
+   * 会走到下面的 `<Image>`；`getOptimizedImageSrc` 只改写 `/uploads/` 的路径、其余原样
+   * 返回，最终 `<Image src="/img/placeholders/...">` 撞上 CMS `next.config.js` 里
+   * `images.localPatterns` 的白名单（只有 `/api/images/source` 与 `/_next/static/media/**`），
+   * **服务端渲染直接抛错、整页 500**。新建文章页的封面初值正是这个占位图，所以它必崩；
+   * 编辑页在文章没设封面时同样崩。
+   *
+   * 排除占位图既修掉这个错误，也避免让一张静态 PNG 白过一遍图片优化器。
+   */
+  const isDefaultCover = isDefaultArticleCover(value);
+  const hasPreview = !isDefaultCover && isRenderableImageSrc(value);
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const file = e.target.files?.[0];
@@ -116,7 +131,7 @@ export function ImageUpload({ onChange, value }: ImageUploadProps) {
             onChange={(event) => onChange(event.target.value)}
             placeholder="/uploads/example.webp"
           />
-          {value && !hasPreview ? (
+          {value && !hasPreview && !isDefaultCover ? (
             <p className="text-xs leading-5 text-destructive">
               当前地址无法预览，请填写完整的 http(s) URL 或 /uploads/ 路径。
             </p>

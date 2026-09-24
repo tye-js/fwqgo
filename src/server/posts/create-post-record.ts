@@ -1,6 +1,10 @@
 import { eq, or } from "drizzle-orm";
 
 import {
+  ARTICLE_SLUG_ISSUE_MESSAGES,
+  validateArticleSlug,
+} from "@fwqgo/core/article-slug";
+import {
   looksLikeHtmlContent,
   normalizeArticleHtml,
 } from "@fwqgo/core/content";
@@ -89,6 +93,16 @@ function normalizeSeoKeywords(value?: string | null) {
     .join(",");
 
   return normalized ?? "";
+}
+
+/**
+ * slug 撞车时的提示。
+ *
+ * 原先两处分别写「文章已存在」与「文章已存在，请修改标题后重试」——操作者**手填**
+ * slug 撞车时，这句话会把人引到标题上去。现在直接点出是哪个 slug 被占用。
+ */
+function slugTakenMessage(slug: string) {
+  return `文章 slug「${slug}」已被占用，请换一个`;
 }
 
 function uniqueTagsBySlug<T extends { name: string }>(tagList: T[]) {
@@ -273,8 +287,11 @@ export async function createPostRecordInTransaction(
   if (!slug) {
     return { error: "文章标题需要包含中文、英文或数字" };
   }
-  if (/[\s/?#\\\u0000-\u001f\u007f]/.test(slug) || slug.length > 320) {
-    return { error: "文章 slug 含有无效字符或长度超过限制" };
+  // 规则来自 `@fwqgo/core/article-slug`，与后台表单的提前提示共用同一份。
+  // `slug` 到这里必非空，所以只会命中长度与非法字符两条。
+  const slugIssue = validateArticleSlug(slug);
+  if (slugIssue) {
+    return { error: ARTICLE_SLUG_ISSUE_MESSAGES[slugIssue] };
   }
 
   const normalizedContent = await prepareArticleContentForStorage(
@@ -302,7 +319,7 @@ export async function createPostRecordInTransaction(
     .limit(1);
 
   if (existingPost) {
-    return { error: "文章已存在" };
+    return { error: slugTakenMessage(slug) };
   }
 
   const tagRows = await Promise.all(
@@ -347,7 +364,7 @@ export async function createPostRecordInTransaction(
     .returning();
 
   if (!post) {
-    return { error: "文章已存在，请修改标题后重试" };
+    return { error: slugTakenMessage(slug) };
   }
 
   if (post && tagRows.length > 0) {

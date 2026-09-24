@@ -20,6 +20,10 @@ import {
   revalidateSiteContent,
   revalidateSiteContentFromRouteHandler,
 } from "@fwqgo/cache/tags";
+import {
+  ARTICLE_SLUG_ISSUE_MESSAGES,
+  validateArticleSlug,
+} from "@fwqgo/core/article-slug";
 import { postgresIntegerIdSchema } from "@fwqgo/core/postgres-id";
 import { rewriteAffiliateLinks } from "@/server/links/affiliate-link-rewriter";
 import {
@@ -571,16 +575,11 @@ async function updatePostImpl(input: {
       return { error: "文章标题不能超过 300 个字符" };
     }
 
-    if (!normalizedSlug) {
-      return { error: "文章 slug 不能为空" };
-    }
-
-    if (normalizedSlug.length > 320) {
-      return { error: "文章 slug 不能超过 320 个字符" };
-    }
-
-    if (/[\s/?#]/.test(normalizedSlug)) {
-      return { error: "文章 slug 不能包含空格、斜杠、问号或井号" };
+    // 规则来自 `@fwqgo/core/article-slug`，与创建路径、zod schema、后台表单共用一份。
+    // 原先这里是手写的 `/[\s/?#]/`，漏了反斜杠与控制字符（与 zod 那份不一致）。
+    const slugIssue = validateArticleSlug(normalizedSlug);
+    if (slugIssue) {
+      return { error: ARTICLE_SLUG_ISSUE_MESSAGES[slugIssue] };
     }
 
     if (typeof input.published !== "boolean") {
