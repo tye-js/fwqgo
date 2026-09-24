@@ -317,6 +317,10 @@ function describeProtectedContent(content: ProtectedMarkdownContent) {
       const rowCount = Math.max(0, table.markdown.split(/\r?\n/).length - 2);
       return `${table.placeholder}：原始套餐表，${rowCount} 行数据；输出时只放置该占位符。`;
     }),
+    ...content.images.map(
+      (image) =>
+        `${image.placeholder}：原始图片 ${image.markdown}；这是图片语法，输出时只放置该占位符，不要改成链接，也不要删除。`,
+    ),
     ...content.links.map(
       (link) =>
         `${link.placeholder}：原始链接 ${link.markdown}；输出时只放置该占位符。`,
@@ -325,7 +329,7 @@ function describeProtectedContent(content: ProtectedMarkdownContent) {
 
   return descriptions.length > 0
     ? descriptions.join("\n")
-    : "来源中没有需要占位保护的套餐表或链接。";
+    : "来源中没有需要占位保护的套餐表、图片或链接。";
 }
 
 function fillPromptTemplate(template: string, values: Record<string, string>) {

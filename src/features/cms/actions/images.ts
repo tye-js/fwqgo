@@ -64,6 +64,9 @@ export async function getImageAssetPickerOptions(query = "") {
       path: imageAssets.path,
       thumbPath: imageAssets.thumbPath,
       originalName: imageAssets.originalName,
+      // 正文插入图片时用它们当 alt 文案，按文章语言取值、回退文件名。
+      altZh: imageAssets.altZh,
+      altEn: imageAssets.altEn,
     })
     .from(imageAssets)
     .where(and(eq(imageAssets.status, "active"), searchCondition))

@@ -1300,6 +1300,7 @@ export function KnowledgeManager({
                     content={form.content}
                     onChange={(value) => updateForm("content", value)}
                     minHeightClassName="min-h-[420px]"
+                    imageInsertLanguage={form.language}
                   />
                 </FormField>
 

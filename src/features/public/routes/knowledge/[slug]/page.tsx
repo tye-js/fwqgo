@@ -23,6 +23,11 @@ import {
 } from "@/features/public/data/knowledge";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
 import { jsonLdScriptContent, normalizeDecodedSlug } from "@fwqgo/core/utils";
+import {
+  KNOWLEDGE_BODY_IMAGE_SIZES,
+  optimizeArticleImages,
+} from "@/features/public/lib/article-images";
+import { getUploadImageDimensions } from "@/server/images/public-image-index";
 
 const copy = {
   zh: {
@@ -175,14 +180,20 @@ async function KnowledgeArticleContent(props: {
     notFound();
   }
 
-  const [related, contentHtml] = await Promise.all([
+  const [related, imageDimensions] = await Promise.all([
     getRelatedKnowledgeArticles({
       language: props.language,
       articleId: article.id,
       categoryId: article.categoryId,
     }),
-    Promise.resolve(renderArticleContentHtml(article.content)),
+    // 走缓存的上传图片尺寸索引，冷缓存时才真的查库。
+    getUploadImageDimensions(),
   ]);
+  const contentHtml = optimizeArticleImages(
+    renderArticleContentHtml(article.content),
+    imageDimensions,
+    KNOWLEDGE_BODY_IMAGE_SIZES,
+  );
   const languageCopy = copy[props.language];
   const languageIndexPath = indexPath(props.language);
   const currentArticlePath = articlePath(props.language, article.slug);

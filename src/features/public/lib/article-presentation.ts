@@ -16,6 +16,12 @@ import {
 } from "@/features/public/data/post";
 import type { PublicArticleInternalLinks } from "@/server/posts/internal-links";
 import { readPublicPostInternalLinks } from "@/server/posts/internal-links";
+import { getUploadImageDimensions } from "@/server/images/public-image-index";
+import {
+  ARTICLE_BODY_IMAGE_SIZES,
+  optimizeArticleImages,
+  type ArticleImageDimensions,
+} from "@/features/public/lib/article-images";
 import { estimateArticleReadingMinutes } from "@/features/public/lib/article-reading-time";
 
 const configuredSlowLogMs = Number.parseInt(
@@ -66,6 +72,7 @@ function logSlowArticlePresentation(input: {
 export function renderArticlePresentation(
   content: string,
   internalLinks: PublicArticleInternalLinks,
+  images: { dimensions: ArticleImageDimensions; sizes: string },
 ) {
   const inlineLinks: RenderableInlineLink[] = internalLinks.inline.map(
     (link) => ({
@@ -80,7 +87,13 @@ export function renderArticlePresentation(
     renderedContent,
     inlineLinks,
   );
-  const contentHtml = addIdsToHeadings(linkedContent.html);
+  // 图片富化放在标题 id 之后、目录与阅读时长之前：目录只读标题，
+  // 阅读时长只读文字，两者都不受 img 属性变化影响。
+  const contentHtml = optimizeArticleImages(
+    addIdsToHeadings(linkedContent.html),
+    images.dimensions,
+    images.sizes,
+  );
 
   return {
     contentHtml,
@@ -116,12 +129,17 @@ export async function getChineseArticlePresentation(slug: string) {
     cacheTags.categories,
   );
 
+  // 走缓存的上传图片尺寸索引，冷缓存时才真的查库。
+  const imageDimensions = await getUploadImageDimensions();
   const internalLinks = await readPublicPostInternalLinks(post.id, "zh", {
     content: post.content,
     language: "zh",
   });
   const linksLoadedAt = performance.now();
-  const presentation = renderArticlePresentation(post.content, internalLinks);
+  const presentation = renderArticlePresentation(post.content, internalLinks, {
+    dimensions: imageDimensions,
+    sizes: ARTICLE_BODY_IMAGE_SIZES,
+  });
   const renderedAt = performance.now();
   logSlowArticlePresentation({
     language: "zh",
@@ -168,12 +186,17 @@ export async function getEnglishArticlePresentation(slug: string) {
     cacheTags.categories,
   );
 
+  // 走缓存的上传图片尺寸索引，冷缓存时才真的查库。
+  const imageDimensions = await getUploadImageDimensions();
   const internalLinks = await readPublicPostInternalLinks(post.id, "en", {
     content: post.content,
     language: "en",
   });
   const linksLoadedAt = performance.now();
-  const presentation = renderArticlePresentation(post.content, internalLinks);
+  const presentation = renderArticlePresentation(post.content, internalLinks, {
+    dimensions: imageDimensions,
+    sizes: ARTICLE_BODY_IMAGE_SIZES,
+  });
   const renderedAt = performance.now();
   logSlowArticlePresentation({
     language: "en",

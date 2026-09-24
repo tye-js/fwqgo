@@ -6,7 +6,7 @@ export const defaultBaseRewritePrompt = `你是服务器/VPS 文章的中文编�
 写作风格：
 ${defaultChineseRewriteStylePrompt}
 
-来源原文（唯一正文依据，表格和链接已替换为受保护占位符）：
+来源原文（唯一正文依据，表格、图片和链接已替换为受保护占位符）：
 {sourceContent}
 
 正文长度边界：
@@ -22,7 +22,7 @@ ${defaultChineseRewriteStylePrompt}
 4. 只允许使用来源原文和受保护内容。禁止引用知识库、供应商资料、搜索结果或任何其他外部信息。
 5. 不新增基础知识章节、购买建议、市场评价、适用场景、线路分析、性能测试、社区反馈、商家承诺或总结；来源已有的标题和总结可以保留并调整排版。
 6. 不得编造或修改价格、配置、优惠码、日期、库存、机房、线路、运营商、解锁能力、退款政策、测速结果、用户反馈或商家承诺。没有明确来源时，不得使用“实测显示”“官方社区反馈”“多位用户反馈”等归因句式。
-7. 每个受保护占位符必须原样出现且只出现一次。不要自行重写占位符代表的套餐表格或链接，系统会在生成后恢复原始数据。
+7. 每个受保护占位符必须原样出现且只出现一次。不要自行重写占位符代表的套餐表格、图片或链接，系统会在生成后恢复原始数据。图片占位符尤其不能改写成链接，也不能删除。
 8. 不要机械重复关键词，也不要为了 SEO 在正文中加入来源没有的信息。
 9. 正文叙述长度只能接近来源原文，不得超过长度边界；不要用空泛宣传填充篇幅。
 10. 正文清洗边界：只保留当前文章主题的正文。不要输出来源站名称、来源网址、转载声明、版权尾注、作者/发布时间等页面元信息，也不要输出非本文内容的相关推荐、相关文章、猜你喜欢、上一篇/下一篇、分享、评论或导航文案。`;
@@ -257,7 +257,7 @@ English Markdown:
 
 export const defaultEnglishContentPrompt = `Translate the complete Chinese VPS/server article below into clear, faithful English Markdown.
 
-Return only the English body, without an article title, SEO metadata, explanations or enclosing code fences. Keep every paragraph, table row and factual detail; do not summarize or invent information. Preserve Markdown structure, use headings from ##, and keep all URLs, affiliate links, prices, specifications and promo codes unchanged.
+Return only the English body, without an article title, SEO metadata, explanations or enclosing code fences. Keep every paragraph, table row, image and factual detail; do not summarize or invent information. Preserve Markdown structure, use headings from ##, and keep all URLs, image paths, affiliate links, prices, specifications and promo codes unchanged. Keep every image on its original line and keep its caption in the image syntax.
 
 Chinese Markdown:
 {markdownContent}`;

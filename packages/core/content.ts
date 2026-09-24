@@ -3,6 +3,11 @@ import { Marked } from "marked";
 import { isTag, isText, type AnyNode, type Element } from "domhandler";
 
 import { isOutboundShortLinkHref, slugify } from "@fwqgo/core/utils";
+import {
+  buildArticleImageMarkdown,
+  escapeMarkdownLinkDestination,
+  markdownEscape,
+} from "@fwqgo/core/article-image-syntax";
 
 export type ArticleDocumentBlock =
   | { type: "heading"; level: 2 | 3 | 4; text: string }
@@ -11,7 +16,17 @@ export type ArticleDocumentBlock =
   | { type: "table"; rows: string[][] }
   | { type: "quote"; text: string }
   | { type: "code"; text: string }
+  | { type: "image"; src: string; alt: string; caption: string }
   | { type: "thematic-break" };
+
+/**
+ * `images: "drop"` 保留抓取路径的既有行为：不把来源站的第三方图片写进正文。
+ * 编辑、改写与英文翻译路径必须用 `"keep"`，否则正文里的图片会在
+ * `contentToArticleMarkdown` 这一步被静默吃掉。
+ */
+export type ArticleDocumentOptions = {
+  images?: "keep" | "drop";
+};
 
 export type ArticleDocument = {
   blocks: ArticleDocumentBlock[];
@@ -47,6 +62,8 @@ const allowedArticleTags = new Set([
   "code",
   "del",
   "em",
+  "figcaption",
+  "figure",
   "h2",
   "h3",
   "h4",
@@ -139,6 +156,16 @@ function isSafeArticleHref(href: string) {
   }
 }
 
+/**
+ * 正文图片只接受站内上传资源。
+ *
+ * 第三方 http(s) 图片一律丢弃，原因是它们无法进入图片优化器：
+ * `apps/web/next.config.js` 的 `images.remotePatterns` 只放行
+ * `fwqgo.com/uploads/**`，外链图只能以原始体积直出。这正是
+ * 2026-09-04 那次「封面绕过优化器」事故的同类形态——当时 724px 的槽位
+ * 下载了 169 KB 全尺寸图（见 `scripts/verify-public-images.ts` 开头）。
+ * 外链图还额外带来热链失效与跨站追踪，收益远小于代价。
+ */
 function isSafeArticleImageSrc(src: string) {
   const trimmedSrc = src.trim();
 
@@ -146,19 +173,20 @@ function isSafeArticleImageSrc(src: string) {
     return false;
   }
 
-  if (trimmedSrc.startsWith("/uploads/") && !trimmedSrc.startsWith("//")) {
+  // `//host/path` 是协议相对 URL，不是站内路径。
+  if (!trimmedSrc.startsWith("/uploads/") || trimmedSrc.startsWith("//")) {
+    return false;
+  }
+
+  const queryIndex = trimmedSrc.indexOf("?");
+  if (queryIndex === -1) {
     return true;
   }
 
-  try {
-    const parsed = new URL(
-      trimmedSrc.startsWith("//") ? `https:${trimmedSrc}` : trimmedSrc,
-    );
-
-    return ["http:", "https:"].includes(parsed.protocol);
-  } catch {
-    return false;
-  }
+  // 查询串只承载内容版本号。`replaceImageAssetFile` 会给被替换图片的引用
+  // 写入 `?v=<内容哈希>`，用于击穿浏览器与优化器的长期缓存；其余参数
+  // 没有任何用途，出现即视为不可信。
+  return /^\?v=[A-Za-z0-9._-]+$/.test(trimmedSrc.slice(queryIndex));
 }
 
 function cleanShortTextAttribute(value: string | undefined) {
@@ -255,6 +283,16 @@ function sanitizeArticleHtml(content: string) {
     const $paragraph = $(element);
     if ($paragraph.find(articleBlockTags).length > 0) {
       $paragraph.replaceWith($paragraph.contents());
+    }
+  });
+
+  // `figure` 不是合法的 `<p>` 子元素，浏览器解析器会把它挤出来并在原位留下
+  // 一个空段落。空段落本身没有语义，但 `.article-prose :where(p) { my-5 }`
+  // 会给它上下各留 1.25rem，于是每张带图注的图片两侧凭空多出约 40px 死空白。
+  $("p").each((_, element) => {
+    const $paragraph = $(element);
+    if (!$paragraph.text().trim() && $paragraph.children().length === 0) {
+      $paragraph.remove();
     }
   });
 
@@ -396,6 +434,24 @@ const articleMarkdown = new Marked({
     link({ href, tokens }) {
       return renderArticleLink(href, this.parser.parseInline(tokens));
     },
+    image({ href, title, text }) {
+      const src = href?.trim() ?? "";
+      // 没有 src 的图片没有任何意义，净化阶段也会把它丢掉。
+      if (!src) return "";
+
+      const image = `<img src="${escapeAttribute(src)}" alt="${escapeAttribute(
+        text ?? "",
+      )}">`;
+
+      // `![alt](url "图注")` 的 title 槽位承载图注。选它是因为它是 Markdown
+      // 里唯一与图片天然相邻、可承载纯文本的位置：marked 原生解析，正文
+      // 仍然是单行，不需要引入自定义指令语法。净化阶段会把 figure 与
+      // figcaption 和 img 一起保留；没有图注时保持裸 img，避免每张图都
+      // 多包一层空 figure。
+      return title
+        ? `<figure>${image}<figcaption>${escapeHtml(title)}</figcaption></figure>`
+        : image;
+    },
     html({ text }) {
       // Retain the existing Markdown contract: literal HTML examples do not
       // become executable markup. Stored HTML follows the sanitizer path.
@@ -504,15 +560,6 @@ function normalizeArticleText(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function markdownEscape(value: string) {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/\*/g, "\\*")
-    .replace(/_/g, "\\_")
-    .replace(/\[/g, "\\[")
-    .replace(/\]/g, "\\]");
-}
-
 function markdownEscapePreservingLinks(
   value: string,
   escapeText: (text: string) => string = markdownEscape,
@@ -544,15 +591,6 @@ function markdownTableCellEscape(value: string) {
   );
 }
 
-function escapeMarkdownLinkDestination(href: string) {
-  return href
-    .trim()
-    .replace(/\s/g, "%20")
-    .replace(/\)/g, "%29")
-    .replace(/</g, "%3C")
-    .replace(/>/g, "%3E");
-}
-
 function createMarkdownLink(label: string, href: string | undefined) {
   const normalizedLabel = normalizeArticleText(label);
   const normalizedHref = href?.trim();
@@ -570,6 +608,22 @@ function createMarkdownLink(label: string, href: string | undefined) {
   )})`;
 }
 
+function htmlImageToMarkdown(
+  $image: cheerio.Cheerio<Element>,
+  caption: string,
+) {
+  const src = $image.attr("src")?.trim();
+  if (!src) return "";
+
+  return buildArticleImageMarkdown({
+    src,
+    alt: normalizeArticleText($image.attr("alt") ?? ""),
+    // 图注优先取 figcaption；裸 img 只有 title 可用。两者必须能互相还原：
+    // 图片语法的 title 槽位渲染出来就是 figcaption。
+    caption: caption || normalizeArticleText($image.attr("title") ?? ""),
+  });
+}
+
 function htmlFragmentToMarkdownText($: cheerio.CheerioAPI, element: Element) {
   const $clone = $(element).clone();
 
@@ -584,6 +638,28 @@ function htmlFragmentToMarkdownText($: cheerio.CheerioAPI, element: Element) {
     }
 
     $anchor.replaceWith(createMarkdownLink(text, href));
+  });
+
+  // figure 必须先于裸 img 处理：先把整块（图片 + 图注）换成图片语法，
+  // 否则内层 img 会被后面的 img 处理先消费掉，图注就丢了。
+  $clone.find("figure").each((_, figure) => {
+    const $figure = $(figure);
+    const $image = $figure.find("img").first();
+    const markdown = $image.length
+      ? htmlImageToMarkdown(
+          $image,
+          normalizeArticleText($figure.find("figcaption").first().text()),
+        )
+      : "";
+
+    // 没有图片的 figure 只保留其中的文字，不做静默丢弃。
+    $figure.replaceWith(markdown || normalizeArticleText($figure.text()));
+  });
+
+  // 行内图片：`<p>文字 <img> 文字</p>` 里的图片会被 text() 直接抹掉，
+  // 这里换成图片语法，正文与图片都不丢。
+  $clone.find("img").each((_, image) => {
+    $(image).replaceWith(htmlImageToMarkdown($(image), ""));
   });
 
   $clone.find("br").replaceWith("\n");
@@ -607,13 +683,21 @@ function pushTextBlock(
     return;
   }
 
+  if (block.type === "image" && !block.src) {
+    return;
+  }
+
   blocks.push(block);
 }
 
-export function htmlToArticleDocument(content: string): ArticleDocument {
+export function htmlToArticleDocument(
+  content: string,
+  options: ArticleDocumentOptions = {},
+): ArticleDocument {
   const sourceHtmlLength = content.length;
   const $ = cheerio.load(content, null, false);
   const blocks: ArticleDocumentBlock[] = [];
+  const keepImages = options.images !== "drop";
 
   $(
     [
@@ -621,20 +705,19 @@ export function htmlToArticleDocument(content: string): ArticleDocument {
       "style",
       "iframe",
       "noscript",
-      "img",
-      "picture",
       "source",
       "svg",
       "video",
       "audio",
       "canvas",
-      "figure",
-      "figcaption",
       "form",
       "button",
       "input",
       "select",
       "textarea",
+      // 图片相关标签只在「丢弃图片」模式下整体移除。保留模式下交给
+      // visitElement 转成 Markdown 图片语法（figure 的图注一并带走）。
+      ...(keepImages ? [] : ["img", "picture", "figure", "figcaption"]),
     ].join(","),
   ).remove();
 
@@ -678,6 +761,43 @@ export function htmlToArticleDocument(content: string): ArticleDocument {
 
     if (tagName === "hr") {
       pushTextBlock(blocks, { type: "thematic-break" });
+      return;
+    }
+
+    if (tagName === "figure") {
+      const imageElement = $element.find("img").get(0);
+      const src = imageElement ? $(imageElement).attr("src")?.trim() : "";
+
+      if (imageElement && src) {
+        const captionElement = $element.find("figcaption").get(0);
+        pushTextBlock(blocks, {
+          type: "image",
+          src,
+          alt: normalizeArticleText($(imageElement).attr("alt") ?? ""),
+          caption: captionElement
+            ? normalizeArticleText($(captionElement).text())
+            : normalizeArticleText($(imageElement).attr("title") ?? ""),
+        });
+        // 消费掉的图片与图注直接从 DOM 移除。只标记 visited 不够：visitNodes
+        // 会把非块级节点当行内内容拼接，而 figcaption 不在 articleBlockTags 里，
+        // 于是图注会被再输出成一段独立段落。
+        $(imageElement).remove();
+        if (captionElement) $(captionElement).remove();
+        visitNodes($element.contents().toArray());
+        return;
+      }
+    }
+
+    if (tagName === "img") {
+      const src = $element.attr("src")?.trim();
+      if (src) {
+        pushTextBlock(blocks, {
+          type: "image",
+          src,
+          alt: normalizeArticleText($element.attr("alt") ?? ""),
+          caption: normalizeArticleText($element.attr("title") ?? ""),
+        });
+      }
       return;
     }
 
@@ -741,6 +861,9 @@ export function htmlToArticleDocument(content: string): ArticleDocument {
       } else if (isTag(node)) {
         const element = $(node);
         if (
+          // 顶层裸 img 必须当块处理：作为行内内容拼接时，它会被
+          // htmlFragmentToMarkdownText 的 text() 抹掉，图片整个消失。
+          node.name === "img" ||
           element.is(articleBlockTags) ||
           element.find(articleBlockTags).length > 0
         ) {
@@ -886,6 +1009,11 @@ export function articleDocumentToMarkdown(
       continue;
     }
 
+    if (block.type === "image") {
+      append(buildArticleImageMarkdown(block));
+      continue;
+    }
+
     if (block.type === "code") {
       // A longer fence keeps embedded backticks from terminating the block.
       const longestRun = [...block.text.matchAll(/`+/g)].reduce(
@@ -924,9 +1052,9 @@ export function articleDocumentToMarkdown(
 
 export function htmlToArticleMarkdown(
   content: string,
-  options: { maxLength?: number } = {},
+  options: { maxLength?: number } & ArticleDocumentOptions = {},
 ) {
-  const document = htmlToArticleDocument(content);
+  const document = htmlToArticleDocument(content, options);
   return {
     document,
     ...articleDocumentToMarkdown(document, options),
@@ -935,7 +1063,7 @@ export function htmlToArticleMarkdown(
 
 export function contentToArticleMarkdown(
   content: string,
-  options: { maxLength?: number } = {},
+  options: { maxLength?: number } & ArticleDocumentOptions = {},
 ) {
   const trimmed = content.trim();
 

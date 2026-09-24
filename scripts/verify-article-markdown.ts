@@ -4,6 +4,7 @@ import test from "node:test";
 import * as cheerio from "cheerio";
 
 import {
+  contentToArticleMarkdown,
   htmlToArticleMarkdown,
   renderArticleContentHtml,
 } from "../packages/core/content";
@@ -256,4 +257,65 @@ void test("HTML conversion keeps loose text and purchase links around rules", ()
     ["上文", "请购买", "下文"],
   );
   assert.equal($("a").attr("href"), "https://merchant.example/buy?plan=1");
+});
+
+void test("article images render with a caption slot and lazy loading", () => {
+  const bare = render("![架构图](/uploads/arch.webp)");
+  assert.equal(bare("img").length, 1);
+  assert.equal(bare("img").attr("src"), "/uploads/arch.webp");
+  assert.equal(bare("img").attr("alt"), "架构图");
+  // 没有图注时不要多包一层空 figure。
+  assert.equal(bare("figure").length, 0);
+  // 拿不到真实尺寸时给出 16:9 占位，避免首屏 CLS；真实宽高由前台富化步骤补上。
+  assert.equal(bare("img").attr("width"), "1200");
+  assert.equal(bare("img").attr("height"), "675");
+  assert.equal(bare("img").attr("data-article-image-dimensions"), "fallback");
+  assert.equal(bare("img").attr("loading"), "lazy");
+  assert.equal(bare("img").attr("decoding"), "async");
+
+  const captioned = render('![架构图](/uploads/arch.webp "三节点部署拓扑")');
+  assert.equal(captioned("figure img").length, 1);
+  assert.equal(captioned("figcaption").text(), "三节点部署拓扑");
+  // 空段落没有语义，但 `.article-prose :where(p) { my-5 }` 会给它上下各留
+  // 1.25rem。figure 被浏览器解析器从 <p> 里挤出来后会留下这种空段落，
+  // 每张带图注的图片两侧就会凭空多出约 40px 死空白。
+  assert.equal(captioned("p").length, 0);
+});
+
+void test("only same-origin upload images survive sanitization", () => {
+  for (const source of [
+    "![外链](https://evil.example/a.png)",
+    "![协议相对](//evil.example/a.png)",
+    // 同站绝对地址也一并拒绝：remotePatterns 带 `search: ""`，带版本号的
+    // 绝对地址进不了优化器，只会以原始体积直出。正文统一用相对路径。
+    "![同站绝对](https://fwqgo.com/uploads/a.webp)",
+    "![多余参数](/uploads/a.webp?foo=1)",
+  ]) {
+    assert.equal(render(source)("img").length, 0, source);
+  }
+
+  // `?v=` 是 replaceImageAssetFile 写入的内容版本号，必须放行，
+  // 否则替换图片后浏览器与优化器会一直用旧字节。
+  const versioned = render("![图](/uploads/a.webp?v=a1b2c3d4)");
+  assert.equal(versioned("img").attr("src"), "/uploads/a.webp?v=a1b2c3d4");
+});
+
+void test("HTML conversion keeps body images and captions exactly once", () => {
+  const { markdown } = contentToArticleMarkdown(
+    '<p>上文</p><figure><img src="/uploads/a.webp" alt="图"><figcaption>图注</figcaption></figure><img src="/uploads/b.webp" alt="裸图">',
+  );
+  assert.ok(markdown.includes('![图](/uploads/a.webp "图注")'));
+  assert.ok(markdown.includes("![裸图](/uploads/b.webp)"));
+  assert.ok(markdown.includes("上文"));
+  // 图注只能出现在图片语法里，不能再被输出成一段独立正文。
+  assert.equal(markdown.split("图注").length - 1, 1);
+
+  // 抓取路径必须继续丢弃图片，否则会把来源站的第三方图片写进正文，
+  // 而渲染阶段又会把它们全部净化掉，只留下无效的 Markdown。
+  const scraped = htmlToArticleMarkdown(
+    '<p>上文</p><figure><img src="https://other.example/a.png" alt="图"><figcaption>图注</figcaption></figure>',
+    { images: "drop" },
+  );
+  assert.equal(scraped.markdown.includes("!["), false);
+  assert.ok(scraped.markdown.includes("上文"));
 });

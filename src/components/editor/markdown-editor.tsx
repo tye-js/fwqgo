@@ -6,12 +6,18 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { ArticleImageInserter } from "@/features/cms/components/article-image-inserter";
 
 type MarkdownEditorProps = {
   id?: string;
   content: string;
   onChange: (content: string) => void;
   minHeightClassName?: string;
+  /**
+   * 传入后工具栏出现「插入图片」，alt 按该语言取图片库的双语文案。
+   * 不传则编辑器保持纯 Markdown，不引入图片上传链路。
+   */
+  imageInsertLanguage?: "zh" | "en";
 };
 
 const snippets = [
@@ -47,6 +53,7 @@ export function MarkdownEditor({
   content,
   onChange,
   minHeightClassName = "min-h-[50dvh] lg:min-h-[560px]",
+  imageInsertLanguage,
 }: MarkdownEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [copying, setCopying] = useState(false);
@@ -103,6 +110,13 @@ export function MarkdownEditor({
             </Button>
           );
         })}
+        {imageInsertLanguage ? (
+          <ArticleImageInserter
+            language={imageInsertLanguage}
+            // 图片必须是独立块，前后留空行，否则会被并进上一段文字里。
+            onInsert={(markdown) => insertSnippet(`\n\n${markdown}\n\n`)}
+          />
+        ) : null}
         <Button
           type="button"
           variant="outline"

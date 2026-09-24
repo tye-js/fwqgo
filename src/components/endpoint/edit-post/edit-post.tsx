@@ -384,6 +384,7 @@ export default function EditPost({
               id="edit-post-content"
               content={content}
               onChange={setContent}
+              imageInsertLanguage={postLanguage}
             />
           </div>
 

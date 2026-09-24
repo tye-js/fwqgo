@@ -69,6 +69,19 @@ export function assertTranslatedArticleStructure(
       "英文翻译遗漏或改变了表格行，未保存草稿，请检查翻译结果后重试",
     );
   }
+  // 图片必须和链接一样逐一对齐。中文正文加图之后，模型漏掉或改写图片地址
+  // 都不会报错，草稿会静默变成没有配图的版本——这正是链接与表格早已被守住的
+  // 那类损失。只比对 src（图注是正文，本来就该被翻译），不比对图注文字。
+  const images = ($: cheerio.CheerioAPI) =>
+    $("img[src]")
+      .toArray()
+      .map((node) => $(node).attr("src") ?? "")
+      .sort();
+  if (JSON.stringify(images(original)) !== JSON.stringify(images(english))) {
+    throw new EnglishTranslationTaskError(
+      "英文翻译改变或遗漏了文章图片，未保存草稿，请检查翻译结果后重试",
+    );
+  }
 }
 
 async function updateTask(task: Task, values: TaskValues) {

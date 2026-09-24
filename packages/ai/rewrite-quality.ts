@@ -1,12 +1,13 @@
 export type ProtectedMarkdownBlock = {
   placeholder: string;
   markdown: string;
-  kind: "table" | "link";
+  kind: "table" | "link" | "image";
 };
 
 export type ProtectedMarkdownContent = {
   tables: ProtectedMarkdownBlock[];
   links: ProtectedMarkdownBlock[];
+  images: ProtectedMarkdownBlock[];
 };
 
 export type RewriteQualityMetrics = {
@@ -38,6 +39,16 @@ type MarkdownTableRange = {
 
 const markdownLinkPattern =
   /\[([^\]]+)]\((<([^>]+)>|[^)\s]+)(?:\s+"[^"]*")?\)/g;
+/**
+ * 图片必须单独识别，且必须**先于**链接处理。
+ *
+ * `markdownLinkPattern` 只匹配 `[alt](url)`，而 `![alt](url)` 里正好包含这样一段，
+ * 于是图片会被当成普通链接保护成 `{{SOURCE_LINK_n}}`，`!` 被留在原地。提示词又
+ * 明确告诉模型占位符代表「原始链接」，模型很可能只回填占位符、丢掉那个孤立的 `!`，
+ * 还原后图片就静默降级成文字链接。整段匹配（含 `!` 与 title 图注）才能避免这一点。
+ */
+const markdownImagePattern =
+  /!\[([^\]]*)]\((<([^>]+)>|[^)\s]+)(?:\s+"[^"]*")?\)/g;
 const standaloneUrlPattern = /(?:https?:\/\/|\/go\/)[^\s)<>'"]+/gi;
 const cpuModelPattern =
   /(?:\d+\s*(?:\\?\*)\s*)?(?:e[3579]-\d{3,5}[a-z]*|(?:金牌|银牌|铜牌|铂金)\s*\d{4}[a-z]*)/gi;
@@ -110,8 +121,25 @@ export function protectMarkdownContent(
     kind: "table" as const,
   }));
   const links: ProtectedMarkdownBlock[] = [];
+  const images: ProtectedMarkdownBlock[] = [];
 
-  for (const match of withoutTables.matchAll(markdownLinkPattern)) {
+  for (const match of withoutTables.matchAll(markdownImagePattern)) {
+    const raw = match[0] ?? "";
+    const href = normalizeHref(match[3] ?? match[2] ?? "");
+    if (!raw || !href) continue;
+
+    images.push({
+      placeholder: `{{SOURCE_IMAGE_${images.length + 1}}}`,
+      // 整段原样保留：alt 与 title（图注）都必须一字不差地还原。
+      markdown: raw,
+      kind: "image",
+    });
+  }
+
+  // 图片摘掉之后再找链接，否则 `![alt](url)` 会被链接规则重复认领。
+  const withoutImages = withoutTables.replace(markdownImagePattern, " ");
+
+  for (const match of withoutImages.matchAll(markdownLinkPattern)) {
     const label = match[1]?.trim();
     const href = normalizeHref(match[3] ?? match[2] ?? "");
     if (!label || !href) continue;
@@ -123,7 +151,7 @@ export function protectMarkdownContent(
     });
   }
 
-  const withoutMarkdownLinks = withoutTables.replace(markdownLinkPattern, " ");
+  const withoutMarkdownLinks = withoutImages.replace(markdownLinkPattern, " ");
   for (const match of withoutMarkdownLinks.matchAll(standaloneUrlPattern)) {
     const href = normalizeHref(match[0]);
     if (!href) continue;
@@ -134,7 +162,7 @@ export function protectMarkdownContent(
     });
   }
 
-  return { tables, links };
+  return { tables, links, images };
 }
 
 export function replaceProtectedMarkdown(
@@ -143,11 +171,14 @@ export function replaceProtectedMarkdown(
 ) {
   let prepared = markdown;
 
-  for (const table of protectedContent.tables) {
-    prepared = prepared.replace(table.markdown, table.placeholder);
-  }
-  for (const link of protectedContent.links) {
-    prepared = prepared.replace(link.markdown, link.placeholder);
+  // 图片先于链接：`[alt](url)` 是 `![alt](url)` 的子串，先换链接会把图片
+  // 拆成「孤立的 ! + 链接占位符」，还原后图片就降级成文字链接了。
+  for (const block of [
+    ...protectedContent.images,
+    ...protectedContent.tables,
+    ...protectedContent.links,
+  ]) {
+    prepared = prepared.replace(block.markdown, block.placeholder);
   }
 
   return prepared;
@@ -160,7 +191,11 @@ export function restoreProtectedMarkdown(
   let restored = markdown;
   const missingPlaceholders: string[] = [];
 
-  for (const block of [...protectedContent.tables, ...protectedContent.links]) {
+  for (const block of [
+    ...protectedContent.images,
+    ...protectedContent.tables,
+    ...protectedContent.links,
+  ]) {
     const placeholderCount = restored.split(block.placeholder).length - 1;
 
     if (placeholderCount !== 1) {

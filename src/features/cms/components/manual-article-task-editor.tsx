@@ -176,6 +176,7 @@ export function ManualArticleTaskEditor({
                 id="manual-article-content"
                 content={content}
                 onChange={setContent}
+                imageInsertLanguage={language}
               />
             </div>
           </div>

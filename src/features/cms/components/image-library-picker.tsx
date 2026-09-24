@@ -20,19 +20,24 @@ import {
 } from "@/components/ui/dialog";
 import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
 
-type PickerImage = {
+export type PickerImage = {
   id: number;
   path: string;
   thumbPath: string | null;
   originalName: string;
+  altZh: string | null;
+  altEn: string | null;
 };
 
 export function ImageLibraryPicker({
   onSelect,
   triggerLabel = "从图片库选择",
+  description = "从已入库图片中选择一张作为文章封面。",
 }: {
-  onSelect: (path: string) => void;
+  /** 第二个参数带上双语 alt，供正文插入图片时生成 alt 文案。 */
+  onSelect: (path: string, image: PickerImage) => void;
   triggerLabel?: string;
+  description?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -70,8 +75,8 @@ export function ImageLibraryPicker({
     };
   }, [open, query]);
 
-  function handleSelect(path: string) {
-    onSelect(path);
+  function handleSelect(image: PickerImage) {
+    onSelect(image.path, image);
     setOpen(false);
   }
 
@@ -86,9 +91,7 @@ export function ImageLibraryPicker({
       <DialogContent className="max-w-5xl">
         <DialogHeader>
           <DialogTitle>选择图片</DialogTitle>
-          <DialogDescription>
-            从已入库图片中选择一张作为文章封面。
-          </DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <div className="relative">
           <Label htmlFor="image-library-search" className="sr-only">
@@ -137,7 +140,7 @@ export function ImageLibraryPicker({
                   type="button"
                   className="overflow-hidden rounded-md border border-border/70 bg-background text-left transition-colors hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   aria-label={`选择图片：${image.originalName}`}
-                  onClick={() => handleSelect(image.path)}
+                  onClick={() => handleSelect(image)}
                 >
                   <div className="relative aspect-video bg-muted">
                     <Image

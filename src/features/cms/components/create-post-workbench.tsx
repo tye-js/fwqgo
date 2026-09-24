@@ -260,6 +260,7 @@ export function CreatePostWorkbench({
               id="create-post-content"
               content={content}
               onChange={setContent}
+              imageInsertLanguage="zh"
             />
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">

@@ -151,6 +151,8 @@ assert.ok(f.steps.some(v=>v.stepKey==="english_save"&&v.status==="success"));
 assert.ok(f.artifacts.length>=2);assert.ok(!JSON.stringify(f.artifacts).includes(config.apiKey));
 assert.throws(()=>assertTranslatedArticleStructure(original.content,translated.replace("pid=2&affid=33","pid=2&affid=attacker")),/链接/);
 assert.throws(()=>assertTranslatedArticleStructure("| A | B |\n| --- | --- |\n| 1 | 2 |","English prose only"),/表格/);
+assert.throws(()=>assertTranslatedArticleStructure('![架构图](/uploads/arch.webp)\n\n正文','English prose only'),/图片/);
+assert.doesNotThrow(()=>assertTranslatedArticleStructure('![架构图](/uploads/arch.webp)','![Architecture diagram](/uploads/arch.webp)'));
 `,
   );
 });

@@ -636,13 +636,15 @@ async function scrapeByRule(input: {
     const cleanedHtmlContent = $cleanedSource.html() ?? "";
 
     let rawHtml = $content.html() ?? "";
-    let preparedContent = htmlToArticleMarkdown(rawHtml);
+    // 抓取路径显式丢弃图片：正文只接受站内上传资源（见 isSafeArticleImageSrc），
+    // 把来源站的第三方图片写进正文只会在渲染时被净化掉，留下无效的 Markdown。
+    let preparedContent = htmlToArticleMarkdown(rawHtml, { images: "drop" });
     if (!preparedContent.markdown.trim()) {
       const visibleText = $content.root().text().replace(/\s+/g, " ").trim();
       if (visibleText) {
         rawHtml = normalizeArticleHtml(textToHtml(visibleText));
         $content = cheerio.load(rawHtml, null, false);
-        preparedContent = htmlToArticleMarkdown(rawHtml);
+        preparedContent = htmlToArticleMarkdown(rawHtml, { images: "drop" });
         diagnostics.warnings.push(
           "正文结构无法转换为 Markdown，已使用可读纯文本回退",
         );
