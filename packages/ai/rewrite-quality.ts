@@ -171,8 +171,10 @@ export function replaceProtectedMarkdown(
 ) {
   let prepared = markdown;
 
-  // 图片先于链接：`[alt](url)` 是 `![alt](url)` 的子串，先换链接会把图片
-  // 拆成「孤立的 ! + 链接占位符」，还原后图片就降级成文字链接了。
+  // 图片放在最前是**防御性**的，不是承重点：真正承重的是 `protectMarkdownContent`
+  // 里「先摘掉图片再扫链接」那一步——链接块是从已剔除图片的文本里扫出来的，两者
+  // markdown 不重叠，所以这里的顺序换掉也不会出错（实测把顺序反过来断言照样通过）。
+  // 保留这个顺序，是为了万一将来链接块可能包含图片文本时不至于静默降级。
   for (const block of [
     ...protectedContent.images,
     ...protectedContent.tables,

@@ -8,6 +8,11 @@ import {
   parseArticleImages,
 } from "../packages/core/article-image-syntax";
 import {
+  protectMarkdownContent,
+  replaceProtectedMarkdown,
+  restoreProtectedMarkdown,
+} from "../packages/ai/rewrite-quality";
+import {
   contentToArticleMarkdown,
   htmlToArticleMarkdown,
   renderArticleContentHtml,
@@ -387,4 +392,118 @@ void test("article image parsing ignores code examples and keeps external source
   // 解析器按语法原样报告外链图，由调用方提示「前台会被净化掉」——
   // 静默丢弃才是真正的问题。
   assert.equal(parsed[0]?.src.startsWith("/uploads/"), false);
+});
+
+/**
+ * AI 改写的占位符机制：正文图片必须能原样穿过模型。
+ *
+ * 这是图片不被降级的**唯一**保障——模型看到的正文里，图片已经被换成
+ * `{{SOURCE_IMAGE_n}}`，改完再换回来。之前这里只有一条「源码里图片模式必须先于
+ * 链接模式」的字符串断言，验不到行为；下面按真实链路走一遍。
+ */
+void test("protected markdown keeps images, captions, tables and links intact", () => {
+  const source = [
+    "## 小标题",
+    "",
+    '![架构图](/uploads/a.webp "三节点拓扑")',
+    "",
+    "| 套餐 | 价格 |",
+    "| --- | --- |",
+    "| A | $5 |",
+    "",
+    "参考 [官网](https://example.com) 与 ![无图注](/uploads/b.webp)。",
+  ].join("\n");
+
+  const protectedContent = protectMarkdownContent(source);
+  assert.equal(protectedContent.images.length, 2, "两张正文图都要被摘出来");
+  assert.equal(protectedContent.tables.length, 1);
+  assert.equal(protectedContent.links.length, 1);
+  assert.deepEqual(
+    protectedContent.images.map((block) => block.kind),
+    ["image", "image"],
+  );
+
+  const prepared = replaceProtectedMarkdown(source, protectedContent);
+  assert.equal(
+    prepared.includes("![架构图]"),
+    false,
+    "交给模型的正文里不应还留着原始图片语法",
+  );
+  assert.ok(prepared.includes("{{SOURCE_IMAGE_1}}"));
+  assert.ok(prepared.includes("{{SOURCE_IMAGE_2}}"));
+  assert.ok(prepared.includes("{{SOURCE_TABLE_1}}"));
+  assert.ok(prepared.includes("{{SOURCE_LINK_1}}"));
+
+  // 分类契约——**这才是承重的一环**：图片必须先于链接被*识别*。
+  //
+  // `markdownLinkPattern` 没有 `(?<!!)` 前瞻，`![alt](url)` 里确实含 `[alt](url)`。
+  // 若先扫链接，图片会被保护成 `{{SOURCE_LINK_n}}`、`!` 留在原地；提示词又告诉模型
+  // 占位符代表「原始链接」，模型很可能只回填占位符、丢掉那个孤立的 `!`，还原后图片
+  // 就静默降级成文字链接。
+  //
+  // 断言直接钉分类结果：链接块里不能出现任何图片地址。
+  // （注意：`replaceProtectedMarkdown` 里「图片先于链接替换」的顺序是**防御性的**，
+  // 不是承重点——因为链接块是从「已摘掉图片」的文本里扫出来的，两者文本不重叠，
+  // 换序也不会出错。实测把替换顺序反过来，断言照样通过。）
+  assert.equal(
+    protectedContent.links.some((link) => link.markdown.includes("/uploads/")),
+    false,
+    "图片地址不能被当成链接保护：那样 `!` 会留在原地，模型丢掉它图片就降级成文字链接",
+  );
+
+  // 模型原样保留占位符时，正文必须一字不差地还原（含图注与表格）。
+  const restored = restoreProtectedMarkdown(prepared, protectedContent);
+  assert.deepEqual(restored.missingPlaceholders, []);
+  assert.ok(restored.markdown.includes('![架构图](/uploads/a.webp "三节点拓扑")'));
+  assert.ok(restored.markdown.includes("![无图注](/uploads/b.webp)"));
+  assert.ok(restored.markdown.includes("| 套餐 | 价格 |"));
+  assert.ok(restored.markdown.includes("[官网](https://example.com)"));
+});
+
+void test("protected markdown reports an image the model dropped", () => {
+  const source = [
+    "正文开头。",
+    "",
+    '![架构图](/uploads/a.webp "三节点拓扑")',
+    "",
+    "正文结尾。",
+  ].join("\n");
+  const protectedContent = protectMarkdownContent(source);
+  const prepared = replaceProtectedMarkdown(source, protectedContent);
+
+  // 模拟模型把图片占位符整段丢掉（这正是加守卫要防的那类损失）。
+  const dropped = prepared.replace("{{SOURCE_IMAGE_1}}", "");
+  const restored = restoreProtectedMarkdown(dropped, protectedContent);
+
+  assert.deepEqual(
+    restored.missingPlaceholders,
+    ["{{SOURCE_IMAGE_1}}"],
+    "丢掉的图片占位符必须被报出来，调用方才能判定失败而不是静默丢图",
+  );
+  assert.equal(restored.markdown.includes("![架构图]"), false);
+});
+
+void test("protected markdown does not double-protect an image inside a table cell", () => {
+  // 表格整体作为一块被摘出，单元格里的图片不应再被算成独立的图片块——
+  // 双重保护会让还原阶段少替换一次，正文里残留占位符。
+  const source = [
+    "| 项目 | 图示 |",
+    "| --- | --- |",
+    '| 拓扑 | ![架构图](/uploads/in-cell.webp "部署拓扑") |',
+  ].join("\n");
+
+  const protectedContent = protectMarkdownContent(source);
+  assert.equal(protectedContent.tables.length, 1);
+  assert.equal(
+    protectedContent.images.length,
+    0,
+    "单元格里的图片随表格一起被保护，不应重复计入图片块",
+  );
+
+  const prepared = replaceProtectedMarkdown(source, protectedContent);
+  const restored = restoreProtectedMarkdown(prepared, protectedContent);
+  assert.deepEqual(restored.missingPlaceholders, []);
+  assert.ok(
+    restored.markdown.includes('![架构图](/uploads/in-cell.webp "部署拓扑")'),
+  );
 });
