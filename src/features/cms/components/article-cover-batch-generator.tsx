@@ -49,10 +49,8 @@ import {
   notifyInfo,
   notifySuccess,
 } from "@/lib/admin-toast";
-import {
-  getOptimizedImageSrc,
-  isRenderableImageSrc,
-} from "@fwqgo/core/image-src";
+import { hasRenderableCover } from "@fwqgo/core/article-cover";
+import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
 
 export type CoverGenerationPost = {
   id: number;
@@ -168,11 +166,13 @@ function getResultBadge(result: GenerateResult) {
 function CoverPreview({ src, title }: { src: string | null; title: string }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const hasFailed = Boolean(src) && failedSrc === src;
+  // 占位图（默认封面）也算「无封面」，不能进 next/image —— 原因见 `hasRenderableCover`。
+  const renderable = hasRenderableCover(src);
 
-  if (!isRenderableImageSrc(src) || hasFailed) {
+  if (!renderable || hasFailed) {
     return (
       <span className="inline-flex h-14 w-24 items-center justify-center rounded-md border border-dashed border-border/70 px-2 text-center text-xs text-muted-foreground">
-        {src ? "封面加载失败" : "无封面"}
+        {renderable ? "封面加载失败" : "无封面"}
       </span>
     );
   }

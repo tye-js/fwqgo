@@ -3,10 +3,8 @@ import Image from "next/image";
 
 import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import { ExternalLink, FileWarning } from "lucide-react";
-import {
-  getOptimizedImageSrc,
-  isRenderableImageSrc,
-} from "@fwqgo/core/image-src";
+import { hasRenderableCover } from "@fwqgo/core/article-cover";
+import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -280,7 +278,7 @@ export function PostQualityWorkbench({
                   )}
                 </TableCell>
                 <TableCell className="w-16">
-                  {post.imgUrl && isRenderableImageSrc(post.imgUrl) ? (
+                  {hasRenderableCover(post.imgUrl) ? (
                     <>
                       <Image
                         src={getOptimizedImageSrc(post.imgUrl)}

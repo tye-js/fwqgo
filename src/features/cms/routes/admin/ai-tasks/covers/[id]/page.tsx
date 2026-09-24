@@ -24,10 +24,8 @@ import {
   formatUnifiedTaskTime,
 } from "@/features/cms/components/unified-task-detail";
 import { getCoverTaskDetail } from "@/features/cms/data/operations";
-import {
-  getOptimizedImageSrc,
-  isRenderableImageSrc,
-} from "@fwqgo/core/image-src";
+import { hasRenderableCover } from "@fwqgo/core/article-cover";
+import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
 import { parsePostgresIntegerId } from "@fwqgo/core/utils";
 
 type PageProps = {
@@ -61,7 +59,7 @@ const requestStageLabels: Record<string, string> = {
 };
 
 function CoverPreview({ src, title }: { src: string | null; title: string }) {
-  if (!isRenderableImageSrc(src)) {
+  if (!hasRenderableCover(src)) {
     return (
       <div className="flex aspect-video items-center justify-center rounded-md border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
         <ImageIcon className="mr-2 size-4" />

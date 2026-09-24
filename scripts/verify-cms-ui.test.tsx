@@ -398,3 +398,50 @@ void test("article slug rules live in one module and the create form uses it", (
   // 校验复用同一份规则，而不是在表单里另写一套。
   assert.match(form, /validateArticleSlug\(slug\)/);
 });
+
+/**
+ * 封面渲染只能走一份判据：`hasRenderableCover`。
+ *
+ * 2026-09-25：这条判据被各写一套，后台 3 处漏了占位图检查，导致 `/posts/create`、
+ * `/posts/edit`、`/posts/drafts`、`/posts/quality` 在「库里存在占位图封面文章」时整页 500
+ * —— 而新建草稿的默认封面正是那张占位图，所以是必现路径。
+ *
+ * 根因：`isRenderableImageSrc` 对**任何** `/` 开头的路径都返回 true，于是
+ * `/img/placeholders/fwq-placeholder.png` 被放行进 `next/image`，而它不在
+ * `images.localPatterns` 白名单里 → 服务端渲染抛错。
+ */
+void test("cover rendering goes through the shared hasRenderableCover judge", () => {
+  const ruleModule = "packages/core/article-cover.ts";
+  const rule = stripComments(readFileSync(ruleModule, "utf8"));
+  assert.match(
+    rule,
+    /export function hasRenderableCover/,
+    `${ruleModule} 必须导出 hasRenderableCover`,
+  );
+  assert.ok(
+    rule.includes("isRenderableImageSrc") && rule.includes("isDefaultArticleCover"),
+    "hasRenderableCover 必须同时排除「不可渲染地址」与「默认占位图」",
+  );
+
+  const coverRenderers = [
+    "src/features/cms/components/posts-tables.tsx",
+    "src/features/cms/components/post-quality-workbench.tsx",
+    "src/features/cms/components/image-upload.tsx",
+    "src/features/cms/components/article-cover-batch-generator.tsx",
+    "src/features/cms/routes/admin/ai-tasks/covers/[id]/page.tsx",
+    "src/features/public/components/article-detail.tsx",
+    "src/features/public/components/safe-post-image.tsx",
+  ];
+
+  for (const file of coverRenderers) {
+    const source = stripComments(readFileSync(file, "utf8"));
+    assert.ok(
+      source.includes("hasRenderableCover("),
+      `${file} 渲染封面时必须用 hasRenderableCover`,
+    );
+    assert.ok(
+      !source.includes("isRenderableImageSrc("),
+      `${file} 不应直接用 isRenderableImageSrc 判断封面（它对任何 / 开头的路径都返回 true），请用 hasRenderableCover`,
+    );
+  }
+});

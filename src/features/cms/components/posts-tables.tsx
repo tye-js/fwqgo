@@ -70,10 +70,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { type posts } from "@fwqgo/db/schema";
-import {
-  getOptimizedImageSrc,
-  isRenderableImageSrc,
-} from "@fwqgo/core/image-src";
+import { hasRenderableCover } from "@fwqgo/core/article-cover";
+import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
 
 type Post = typeof posts.$inferSelect;
 type PostListProp = Pick<
@@ -1037,7 +1035,7 @@ export function PostList({
                             }
                           />
                         </div>
-                      ) : post.imgUrl && isRenderableImageSrc(post.imgUrl) ? (
+                      ) : hasRenderableCover(post.imgUrl) ? (
                         <>
                           <Image
                             src={getOptimizedImageSrc(post.imgUrl)}

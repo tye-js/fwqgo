@@ -2,13 +2,10 @@
 
 import Image from "next/image";
 import { useState } from "react";
-import { isDefaultArticleCover } from "@fwqgo/core/article-cover";
+import { hasRenderableCover } from "@fwqgo/core/article-cover";
 import { ServerCoverArt } from "./server-cover-art";
 
-import {
-  getOptimizedImageSrc,
-  isRenderableImageSrc,
-} from "@fwqgo/core/image-src";
+import { getOptimizedImageSrc } from "@fwqgo/core/image-src";
 
 export function SafePostImage({
   src,
@@ -24,7 +21,7 @@ export function SafePostImage({
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const failed = failedSrc === src;
 
-  if (!isRenderableImageSrc(src) || failed || isDefaultArticleCover(src)) {
+  if (!hasRenderableCover(src) || failed) {
     return <ServerCoverArt />;
   }
 
