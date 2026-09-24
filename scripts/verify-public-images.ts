@@ -6,6 +6,7 @@ import { getOptimizedImageSrc } from "../packages/core/image-src";
 import { renderArticleContentHtml } from "../packages/core/content";
 import {
   ARTICLE_BODY_IMAGE_SIZES,
+  ARTICLE_IMAGE_WIDTHS,
   optimizeArticleImages,
 } from "../src/features/public/lib/article-images";
 
@@ -98,9 +99,13 @@ const enriched = optimizeArticleImages(
 
 assert.match(enriched, /\/_next\/image\?url=/, "正文图必须走 /_next/image");
 assert.match(enriched, /srcset="/, "正文图必须带 srcset");
+// `sizes` 里含 `*`、`(`、`.` 等正则元字符，必须整体转义后再比对，
+// 只转义括号会让 `2 * clamp` 里的 `*` 变成量词、断言假失败。
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 assert.match(
   enriched,
-  new RegExp(`sizes="${ARTICLE_BODY_IMAGE_SIZES.replace(/[()]/g, "\\$&")}"`),
+  new RegExp(`sizes="${escapeRegExp(ARTICLE_BODY_IMAGE_SIZES)}"`),
   "正文图必须带 sizes",
 );
 // 真实宽高要覆盖净化器写入的 16:9 兜底，否则竖图与长截图会被框成灰底信箱。
@@ -147,6 +152,44 @@ for (const width of articleWidths) {
   assert.ok(
     configuredSizes.includes(width),
     `正文图宽度 ${width} 不在 deviceSizes/imageSizes 内，/_next/image 会返回 400`,
+  );
+}
+
+// 7b. 正文图的 `sizes` 必须折算掉正文容器的内边距。
+//
+// 正文列虽然是 820px，但 `.article-reading-surface` 还有 `padding: clamp(1.1rem,3vw,2.25rem)`，
+// 所以正文实际可用宽度是 746px（≥1280）而不是 820px。声明偏大会让浏览器挑更大的变体白传字节：
+// 实测写成 820px 时 ≥1280 会选 828w 而非 750w（28,720B vs 25,191B，多 14%）；
+// 写成 100vw 更糟，390px 下会选 640w 而非 384w（约 2 倍）。
+const publicCss = readFileSync("src/styles/public.css", "utf8");
+assert.match(
+  publicCss,
+  /\.public-site \.article-reading-surface\s*\{[^}]*padding:\s*clamp\(1\.1rem,\s*3vw,\s*2\.25rem\)/,
+  "正文容器内边距变了：ARTICLE_BODY_IMAGE_SIZES 里的折算要同步",
+);
+assert.match(
+  publicCss,
+  /padding-inline:\s*clamp\(1rem,\s*3vw,\s*2rem\)/,
+  "版心内边距变了：ARTICLE_BODY_IMAGE_SIZES 里的折算要同步",
+);
+assert.ok(
+  ARTICLE_BODY_IMAGE_SIZES.includes("746px") &&
+    ARTICLE_BODY_IMAGE_SIZES.includes("clamp(1.1rem, 3vw, 2.25rem)") &&
+    ARTICLE_BODY_IMAGE_SIZES.includes("clamp(1rem, 3vw, 2rem)"),
+  `正文图 sizes 必须按正文容器内边距折算，不能直接写列宽或 100vw：${ARTICLE_BODY_IMAGE_SIZES}`,
+);
+
+// 7c. srcset 档位必须够细，能覆盖正文的真实宽度。
+//
+// 正文槽位实测为 321 / 345 / 659 / 757 / 746。档位太粗会白传字节——只有
+// [640, 828, 1200, 1920] 时，390px 会退而选 640（需要 322，多 55% 字节），
+// ≥1280 会选 828（需要 746，多 12%）。补上 384 与 750 后各档都能选到刚好够用的一档。
+for (const slot of [321, 345, 659, 757, 746]) {
+  const chosen = ARTICLE_IMAGE_WIDTHS.find((width) => width >= slot);
+  assert.ok(chosen, `srcset 里没有能覆盖 ${slot}px 正文槽位的档位`);
+  assert.ok(
+    chosen / slot <= 1.25,
+    `srcset 档位太粗：${slot}px 的正文槽位会选到 ${chosen}px，多传约 ${Math.round((chosen / slot - 1) * 100)}% 像素`,
   );
 }
 
