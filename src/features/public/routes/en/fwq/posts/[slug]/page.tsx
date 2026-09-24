@@ -7,9 +7,7 @@ import {
   CalendarDays,
   ChevronRight,
   Languages,
-  RefreshCw,
   Tags,
-  Timer,
 } from "lucide-react";
 
 import {
@@ -244,7 +242,6 @@ async function EnglishPostContent({ params }: PageProps) {
     tocItems,
     internalLinks,
     relatedPostLinks,
-    readingMinutes,
   } = presentation;
   const canonicalSlug = post.enSlug ?? decodedSlug;
   const articleUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(canonicalSlug)}`;
@@ -266,12 +263,6 @@ async function EnglishPostContent({ params }: PageProps) {
   const categoryPosts = (categoryPostsResult.data ?? []).filter(
     (item) => item.id !== post.id,
   );
-  // 只有真正被改过（超过一分钟）才显示「Updated」，否则两行时间戳几乎一样，是噪音。
-  const updatedAt =
-    post.updatedAt !== null &&
-    post.updatedAt.getTime() - post.createdAt.getTime() > 60_000
-      ? post.updatedAt
-      : null;
   const showRail = tocItems.length > 0 || latestPosts.length > 0;
 
   const blogPostingJsonLd = {
@@ -378,18 +369,6 @@ async function EnglishPostContent({ params }: PageProps) {
                       <CalendarDays className="size-4" aria-hidden="true" />
                       Published {formatDate(post.createdAt, "en-US")}
                     </span>
-                    {updatedAt ? (
-                      <span className="inline-flex min-h-11 shrink-0 items-center gap-2 tabular-nums">
-                        <RefreshCw className="size-4" aria-hidden="true" />
-                        Updated {formatDate(updatedAt, "en-US")}
-                      </span>
-                    ) : null}
-                    {readingMinutes > 0 ? (
-                      <span className="inline-flex min-h-11 shrink-0 items-center gap-2 tabular-nums">
-                        <Timer className="size-4" aria-hidden="true" />
-                        {readingMinutes} min read
-                      </span>
-                    ) : null}
                     {post.chineseSlug ? (
                       <Link
                         href={`/fwq/posts/${encodeURIComponent(post.chineseSlug)}`}

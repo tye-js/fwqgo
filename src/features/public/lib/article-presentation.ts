@@ -22,7 +22,6 @@ import {
   optimizeArticleImages,
   type ArticleImageDimensions,
 } from "@/features/public/lib/article-images";
-import { estimateArticleReadingMinutes } from "@/features/public/lib/article-reading-time";
 
 const configuredSlowLogMs = Number.parseInt(
   process.env.PUBLIC_ARTICLE_SLOW_LOG_MS ?? "",
@@ -87,8 +86,7 @@ export function renderArticlePresentation(
     renderedContent,
     inlineLinks,
   );
-  // 图片富化放在标题 id 之后、目录与阅读时长之前：目录只读标题，
-  // 阅读时长只读文字，两者都不受 img 属性变化影响。
+  // 图片富化放在标题 id 之后、目录之前：目录只读标题，不受 img 属性变化影响。
   const contentHtml = optimizeArticleImages(
     addIdsToHeadings(linkedContent.html),
     images.dimensions,
@@ -98,8 +96,6 @@ export function renderArticlePresentation(
   return {
     contentHtml,
     tocItems: generateToc(contentHtml),
-    // 阅读时长随正文一起进缓存：正文动过就该重新算，和 contentHtml 同一份输入。
-    readingMinutes: estimateArticleReadingMinutes(contentHtml),
   };
 }
 

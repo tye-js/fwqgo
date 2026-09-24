@@ -22,10 +22,8 @@ import {
   CalendarDays,
   ChevronRight,
   Languages,
-  RefreshCw,
   SquareLibrary,
   Tags,
-  Timer,
 } from "lucide-react";
 import {
   ARTICLE_PROSE_CLASS_NAME,
@@ -279,7 +277,6 @@ async function PostPageContent({
     tocItems,
     internalLinks,
     relatedPostLinks,
-    readingMinutes,
   } = presentation;
   const matchedTopics = offerTopics.filter((topic) => {
     const text = `${post.title} ${post.description ?? ""} ${post.tags
@@ -305,12 +302,6 @@ async function PostPageContent({
   const categoryPosts = (categoryPostsResult.data ?? []).filter(
     (item) => item.id !== post.id,
   );
-  // 只有真正被改过（超过一分钟）才显示「更新于」，否则两行时间戳几乎一样，是噪音。
-  const updatedAt =
-    post.updatedAt !== null &&
-    post.updatedAt.getTime() - post.createdAt.getTime() > 60_000
-      ? post.updatedAt
-      : null;
   const showRail = tocItems.length > 0 || latestPosts.length > 0;
 
   const blogPostingJsonLd = {
@@ -415,18 +406,6 @@ async function PostPageContent({
                     <CalendarDays className="size-4" aria-hidden="true" />
                     发布于 {formatDate(post.createdAt)}
                   </span>
-                  {updatedAt ? (
-                    <span className="inline-flex min-h-11 shrink-0 items-center gap-2 tabular-nums">
-                      <RefreshCw className="size-4" aria-hidden="true" />
-                      更新于 {formatDate(updatedAt)}
-                    </span>
-                  ) : null}
-                  {readingMinutes > 0 ? (
-                    <span className="inline-flex min-h-11 shrink-0 items-center gap-2 tabular-nums">
-                      <Timer className="size-4" aria-hidden="true" />
-                      约 {readingMinutes} 分钟读完
-                    </span>
-                  ) : null}
                   <PostViewCount slug={decodedSlug} initialViews={post.views} />
                   {post.enSlug ? (
                     <Link
