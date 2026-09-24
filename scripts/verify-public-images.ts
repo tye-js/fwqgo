@@ -309,6 +309,36 @@ assert.deepEqual(
   `抓取路径必须显式传 images: "drop"，否则会把来源站的第三方图写进正文：${scrapeOffenders.join(" | ")}`,
 );
 
+// 11. ArticleCard 三种 variant 的图片 `sizes` 必须各自成立。
+//
+// 图片列是**固定宽度**的栅格列，减掉图片外壳自身的左外边距就是实际槽位：
+// compact 100px（`sm:112px` − 12px）、list 208 / 216px（`md:224px` / `lg:232px` − 16px）。
+// 2026-09-24 实测 390 / 700 / 768 / 900 / 1023 / 1024 / 1440 七个视口，查出两个真实缺陷：
+//
+// - feature 的断点写成 767，但两列布局要 `lg`（1024）才生效 → 768~1023 之间它其实是
+//   单列全宽，声明只给 60vw，2x 屏会拿 1080w 的图去填 720px 的槽位（拉伸 33%）。
+// - compact 与 list 共用 232px → 2x 屏选 640w；640~767 视口更糟，那时命中
+//   `calc(100vw - 2rem)`，会去选 1920w 填 100px 的槽位。
+const articleCard = readFileSync(
+  "src/features/public/components/article-card.tsx",
+  "utf8",
+);
+assert.match(
+  articleCard,
+  /variant === "feature"[\s\S]{0,120}\(max-width: 1023px\) calc\(100vw - 2rem\), \(max-width: 1279px\) 56vw, 730px/,
+  "feature 的 sizes 断点必须与 lg:grid-cols 对齐（1023，不是 767）；否则 768~1023 视口下声明低估，2x 屏上的图片会被拉伸",
+);
+assert.match(
+  articleCard,
+  /variant === "compact"[\s\S]{0,120}\(max-width: 639px\) calc\(100vw - 3\.5rem\), 100px/,
+  "compact 的图片列是 sm:112px（实际槽位 100px），sizes 必须独立声明且断点与 sm: 对齐（639）",
+);
+assert.match(
+  articleCard,
+  /return "\(max-width: 767px\) calc\(100vw - 2rem\), 232px";/,
+  "list 的图片列是 md:224px / lg:232px，两个断点下都不跨档位，sizes 保持 232px",
+);
+
 console.log(
-  "Public image optimizer verified: uploads route through /api/images/source, webp/avif enabled, no public component opts out, scraper drops source-site images.",
+  "Public image optimizer verified: uploads route through /api/images/source, webp/avif enabled, no public component opts out, scraper drops source-site images, article card sizes match their grid columns.",
 );

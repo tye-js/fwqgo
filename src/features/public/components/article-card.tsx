@@ -61,6 +61,43 @@ function formatArticleDate(value: Date | string, locale: string) {
   });
 }
 
+/**
+ * 卡片图片的 `sizes`。
+ *
+ * 三个值分别对应下面 `grid-cols` 的三套栅格，且 **media query 的断点必须与栅格断点
+ * 对齐**——这是这里最容易写错的地方（下面两条都是 2026-09-24 实测才发现并修掉的）。
+ *
+ * | variant | 栅格 | 图片实际槽位（减掉外壳外边距） |
+ * | --- | --- | --- |
+ * | feature | 无；`lg` 以上才进两列，占 1.5fr | 390→356 / 900→844 / 1440→696 |
+ * | list | `md:224px` / `lg:232px` | 208（768~1023）/ 216（≥1024） |
+ * | compact | `sm:112px` | **100**（≥640） |
+ *
+ * 实测覆盖 390 / 700 / 768 / 900 / 1023 / 1024 / 1440 七个视口。两个已修的坑：
+ *
+ * 1. **feature 原先的断点是 767，但两列布局要 `lg`（1024）才生效** ——768~1023 之间它
+ *    其实是**单列全宽**。声明只给 60vw（768 下 461px），2x 屏据此算出的需求（922px）
+ *    远小于实际（1440px），浏览器会选 1080w 去填 720px 的槽位，图片被拉伸 33%
+ *    （900 视口下 56%）。断点改为 1023，与 `lg:grid-cols` 对齐。
+ * 2. **compact 原先与 list 共用 `232px`**，而它的图片列只有 112px，实际槽位 100px。
+ *    声明 232px 会让 2x 屏去选 640w；640~767 视口更糟——那时 media query 命中
+ *    `calc(100vw - 2rem)`，会去选 1920w 填 100px 的槽位。断点改为 639，与 `sm:` 对齐。
+ *
+ * `verify:public-images` 会断言这些值，改栅格列宽时要同步改这里。
+ */
+function cardImageSizes(variant: "list" | "feature" | "compact") {
+  if (variant === "feature") {
+    return "(max-width: 1023px) calc(100vw - 2rem), (max-width: 1279px) 56vw, 730px";
+  }
+  // compact 的图片列是 sm:112px，减掉 m-3（0.75rem）就是 100px。
+  if (variant === "compact") {
+    return "(max-width: 639px) calc(100vw - 3.5rem), 100px";
+  }
+  // list 的图片列是 md:224px / lg:232px，减掉 md:m-4（1rem）后是 208 / 216px。
+  // 声明 232px 略偏大，但两个断点下都不会跨档位（416 / 432 都落在 640 档），保持简单。
+  return "(max-width: 767px) calc(100vw - 2rem), 232px";
+}
+
 function ArticleCard({
   post,
   language = "zh",
@@ -133,11 +170,7 @@ function ArticleCard({
           <SafePostImage
             src={post.imgUrl}
             alt={post.title}
-            sizes={
-              variant === "feature"
-                ? "(max-width: 767px) calc(100vw - 2rem), (max-width: 1279px) 60vw, 730px"
-                : "(max-width: 767px) calc(100vw - 2rem), 232px"
-            }
+            sizes={cardImageSizes(variant)}
             priority={variant === "feature"}
           />
         </Link>
