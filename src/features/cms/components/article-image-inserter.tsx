@@ -39,6 +39,18 @@ type PendingImage = {
   originalName: string;
 };
 
+/**
+ * alt 的预填值：图片库的双语文案 → 文件名。
+ *
+ * 图片库里的 alt 是**封面语境**的文章标题文案（例如「Zgovps VPS 套餐评测：香港三网直连…」），
+ * 直接拿来当正文图的 alt 并不贴切——正文图该描述图片本身。所以这里只做预填，
+ * 操作者可以在弹窗里改掉。
+ */
+function localizedAlt(image: PendingImage, language: "zh" | "en") {
+  const localized = (language === "en" ? image.altEn : image.altZh)?.trim();
+  return localized?.length ? localized : fallbackAlt(image.originalName);
+}
+
 export function ArticleImageInserter({
   language,
   onInsert,
@@ -51,13 +63,21 @@ export function ArticleImageInserter({
   const [open, setOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [caption, setCaption] = useState("");
+  const [alt, setAlt] = useState("");
   const [pending, setPending] = useState<PendingImage | null>(null);
 
   function reset() {
     setCaption("");
+    setAlt("");
     setPending(null);
     setIsUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  /** 选中图片时同步预填 alt，之后是否改动交给操作者。 */
+  function applyPending(image: PendingImage) {
+    setPending(image);
+    setAlt(localizedAlt(image, language));
   }
 
   function handleOpenChange(next: boolean) {
@@ -109,7 +129,7 @@ export function ArticleImageInserter({
         );
       }
 
-      setPending({
+      applyPending({
         path: uploadedPath,
         altZh: data?.data?.asset?.altZh ?? null,
         altEn: data?.data?.asset?.altEn ?? null,
@@ -130,18 +150,11 @@ export function ArticleImageInserter({
       return;
     }
 
-    const localizedAlt = (
-      language === "en" ? pending.altEn : pending.altZh
-    )?.trim();
-    // 空字符串也要回退到文件名，所以这里不能用 `??`。
-    const alt = localizedAlt?.length
-      ? localizedAlt
-      : fallbackAlt(pending.originalName);
-
     onInsert(
       buildArticleImageMarkdown({
         src: pending.path,
-        alt,
+        // 操作者清空 alt 时回退到预填值：正文图始终带 alt，不留空。
+        alt: alt.trim().length ? alt.trim() : localizedAlt(pending, language),
         caption: caption.trim(),
       }),
     );
@@ -185,6 +198,21 @@ export function ArticleImageInserter({
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="article-image-alt">替代文本 alt（可选）</Label>
+            <Input
+              id="article-image-alt"
+              value={alt}
+              onChange={(event) => setAlt(event.target.value)}
+              maxLength={300}
+              placeholder="描述这张图本身，供读屏与搜索引擎使用"
+            />
+            <p className="text-xs leading-5 text-muted-foreground">
+              选中图片时会自动填入图片库里的双语说明。若那是文章标题式的文案，建议改成描述这张图本身；
+              留空则沿用自动填入的值。
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="article-image-file">本地上传</Label>
             <Input
               id="article-image-file"
@@ -204,7 +232,7 @@ export function ArticleImageInserter({
             <ImageLibraryPicker
               description="从已入库图片中选择一张插入正文。"
               onSelect={(_path, image) => {
-                setPending({
+                applyPending({
                   path: image.path,
                   altZh: image.altZh,
                   altEn: image.altEn,
