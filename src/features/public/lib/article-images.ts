@@ -51,8 +51,25 @@ const UPLOAD_SRC_PATTERN = /^(\/uploads\/[^?]+)(?:\?v=([A-Za-z0-9._-]+))?$/;
  */
 export const ARTICLE_BODY_IMAGE_SIZES = `(min-width: 1280px) 746px, calc(min(820px, 100vw - 2 * clamp(1rem, 3vw, 2rem)) - 2 * clamp(1.1rem, 3vw, 2.25rem))`;
 
-/** 知识库详情页正文：`mx-auto max-w-3xl`（768px），外侧仍有版心内边距。 */
-export const KNOWLEDGE_BODY_IMAGE_SIZES = "(min-width: 832px) 768px, 100vw";
+/**
+ * 知识库详情页正文的实际可用宽度。
+ *
+ * **不是 768px**：页面虽然给正文加了 `max-w-3xl`，但 `ARTICLE_PROSE_CLASS_NAME`
+ * 里带着 Tailwind Typography 的 `max-w-none`，两者在生成后的 CSS 里后者胜出，
+ * 正文实际铺满 `.article-reading-surface`（`max-w-5xl`）的内容区。
+ * 实测正文宽度：390→321 / 768→659 / 1024→884 / ≥1280→950。
+ *
+ * 声明成 768px 会**低估**：≥1024 时浏览器选 828w 去填 950px 的槽位，图片被拉伸约 15%
+ * （发虚，比多传字节更糟）；断点以下写成 `100vw` 又高估，390px 下选 640w 而非 384w。
+ *
+ * 结构与文章页同源：`.article-reading-surface` 有 `padding: clamp(1.1rem,3vw,2.25rem)`
+ * 与 1px 边框，外层是版心 + `max-w-5xl`。同样地，改 CSS 时要同步这里。
+ *
+ * `calc` 扣不掉浏览器滚动条（约 15px），所以声明会略大于真实槽位。这个方向是安全的
+ * ——宁可多传一点字节，也不要像原来那样低估到发虚。实测 9 档宽度里 8 档命中
+ * 「刚好够用」，只有 872px 那一档因为滚动条把值顶过了 750→828 的边界而多选一档。
+ */
+export const KNOWLEDGE_BODY_IMAGE_SIZES = `calc(min(1024px, 100vw - 2 * clamp(1rem, 3vw, 2rem)) - 2 * clamp(1.1rem, 3vw, 2.25rem) - 2px)`;
 
 function optimizedImageUrl(localSrc: string, width: number) {
   return `/_next/image?url=${encodeURIComponent(localSrc)}&w=${width}&q=${ARTICLE_IMAGE_QUALITY}`;

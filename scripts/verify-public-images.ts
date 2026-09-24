@@ -7,6 +7,7 @@ import { renderArticleContentHtml } from "../packages/core/content";
 import {
   ARTICLE_BODY_IMAGE_SIZES,
   ARTICLE_IMAGE_WIDTHS,
+  KNOWLEDGE_BODY_IMAGE_SIZES,
   optimizeArticleImages,
 } from "../src/features/public/lib/article-images";
 
@@ -192,6 +193,21 @@ for (const slot of [321, 345, 659, 757, 746]) {
     `srcset 档位太粗：${slot}px 的正文槽位会选到 ${chosen}px，多传约 ${Math.round((chosen / slot - 1) * 100)}% 像素`,
   );
 }
+
+// 7c. 知识库正文图同理，而且更容易写错。
+//
+// 页面给正文加了 `max-w-3xl`（768px），但 `ARTICLE_PROSE_CLASS_NAME` 里带着
+// Tailwind Typography 的 `max-w-none`，生成后的 CSS 里后者胜出——正文实际铺满
+// `.article-reading-surface`（`max-w-5xl`）的内容区。实测：390→321 / 768→659 /
+// 1024→884 / ≥1280→950。
+// 写成 `768px` 会**低估**：≥1024 时浏览器选 828w 去填 950px 的槽位，图片被拉伸约 15%
+// （发虚，比多传字节更糟）；写成 `100vw` 又会高估，390px 下选 640w 而非 384w。
+assert.ok(
+  KNOWLEDGE_BODY_IMAGE_SIZES.includes("clamp(1.1rem, 3vw, 2.25rem)") &&
+    KNOWLEDGE_BODY_IMAGE_SIZES.includes("clamp(1rem, 3vw, 2rem)") &&
+    KNOWLEDGE_BODY_IMAGE_SIZES.includes("1024px"),
+  `知识库正文图 sizes 必须按正文容器内边距折算，不能直接写 768px 或 100vw：${KNOWLEDGE_BODY_IMAGE_SIZES}`,
+);
 
 // 8. 净化器只放行站内上传图片：第三方外链图进不了优化器，只会以原始体积直出。
 assert.match(renderArticleContentHtml("![本地](/uploads/body.webp)"), /<img/);
