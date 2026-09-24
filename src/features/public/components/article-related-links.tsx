@@ -48,7 +48,8 @@ export function ArticleRelatedSidebar({
   if (links.length === 0) return null;
 
   return (
-    <aside className="border-t border-border/70 pt-6 xl:sticky xl:top-20 xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0">
+    // 右栏卡片：定位与可见性由 ArticleRail 统一管，这里只管内容。
+    <aside className="rounded-xl border border-border/80 bg-card p-4">
       <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
         <SquareLibrary className="size-4 text-primary" aria-hidden="true" />
         {language === "en" ? "Related articles" : "相关文章"}

@@ -3,11 +3,11 @@
 - Issue: [#6](https://github.com/tye-js/fwqgo/issues/6)
 - 类型: Spec
 - 基线: `origin/main@331153534a4c8bff5b72e29fed8dc023568bb307`
-- 状态: 待实现
+- 状态: 已实现（2026-09-24 起函数改名为 `getAdjacentPublishedPosts` 并增加 `language` 参数，见 §3.4）
 
 ## 1. 背景
 
-中文文章详情页通过 `getPostsByPostId(id)` 获取上一篇和下一篇文章。当前两个 Drizzle 查询使用无参数 `.select()`，会读取 `posts` 表全部字段。
+文章详情页通过 `getAdjacentPublishedPosts(postId, language)` 获取上一篇和下一篇文章。当前两个 Drizzle 查询使用无参数 `.select()`，会读取 `posts` 表全部字段。
 
 页面导航只渲染相邻文章的标题和链接，但完整行包含中文正文、英文正文、返利质检明细、SEO 文本和图片 URL。正文列为 PostgreSQL `text`，行宽会随文章长度增长。
 
@@ -44,9 +44,15 @@
 - 每个非空对象只包含导航字段 `id`、`title`、`slug`
 - 保留现有错误返回结构
 
+### 3.4 语言作用域
+
+- 相邻文章只在**同一语言**内取，避免英文详情页把读者带到中文文章
+- 语言条件复用 `publicPostCondition(language)`，与列表页的可见性口径一致
+- 默认 `language = "zh"`，中文调用方无需改动
+
 ## 4. 实施计划
 
-1. 在 `getPostsByPostId()` 中定义最小字段投影。
+1. 在 `getAdjacentPublishedPosts()` 中定义最小字段投影。
 2. 两个查询复用相同投影。
 3. 不修改调用方和页面组件。
 4. 通过 TypeScript 确认调用方没有依赖其他列。
@@ -54,17 +60,17 @@
 
 ## 5. 验收标准
 
-- [ ] `getPostsByPostId()` 内不存在无参数 `.select()`
-- [ ] 两个查询只选择 `id`、`title`、`slug`
-- [ ] 上一篇过滤、排序和 limit 不变
-- [ ] 下一篇过滤、排序和 limit 不变
-- [ ] 返回顺序与 null 语义不变
-- [ ] 文章详情调用方无需修改
-- [ ] 不包含数据库迁移
-- [ ] `bun run lint` 通过
-- [ ] `bun run typecheck` 通过
-- [ ] `npm test` 通过
-- [ ] `SKIP_ENV_VALIDATION=1 bun run build` 通过
+- [x] `getAdjacentPublishedPosts()` 内不存在无参数 `.select()`
+- [x] 两个查询只选择 `id`、`title`、`slug`
+- [x] 上一篇过滤、排序和 limit 不变
+- [x] 下一篇过滤、排序和 limit 不变
+- [x] 返回顺序与 null 语义不变
+- [x] 文章详情调用方无需修改
+- [x] 不包含数据库迁移
+- [x] `bun run lint` 通过
+- [x] `bun run typecheck` 通过
+- [x] `npm test` 通过
+- [x] `SKIP_ENV_VALIDATION=1 bun run build` 通过
 
 ## 6. 风险与回退
 

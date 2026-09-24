@@ -686,7 +686,16 @@ export async function getPublishedPostsPage(
   }
 }
 
-export async function getPostsByPostId(id: number) {
+/**
+ * 同一语言下按 id 相邻的两篇已发布文章，用于详情页的「上一篇/下一篇」。
+ *
+ * 按 `id` 而不是 `createdAt` 排序：发布时间可以被补录或改写，只有 id 是稳定的
+ * 阅读顺序。返回 `[上一篇, 下一篇]`，任一侧不存在时为 `null`。
+ */
+export async function getAdjacentPublishedPosts(
+  postId: number,
+  language: PublicLanguage = "zh",
+) {
   "use cache";
   cacheLife({ stale: 300, revalidate: 900, expire: 86_400 });
   tagCache(cacheTags.posts);
@@ -701,18 +710,20 @@ export async function getPostsByPostId(id: number) {
       readDb
         .select(navigationFields)
         .from(posts)
-        .where(and(lt(posts.id, id), publishedChinesePostCondition()))
+        .where(and(lt(posts.id, postId), publicPostCondition(language)))
         .orderBy(desc(posts.id))
         .limit(1),
       readDb
         .select(navigationFields)
         .from(posts)
-        .where(and(gt(posts.id, id), publishedChinesePostCondition()))
+        .where(and(gt(posts.id, postId), publicPostCondition(language)))
         .orderBy(asc(posts.id))
         .limit(1),
     ]);
 
-    return { data: [prevRows[0] ?? null, nextRows[0] ?? null] };
+    // `as const` 保住元组形状：数组字面量默认推断成可变数组，配合
+    // `noUncheckedIndexedAccess` 解构出来会是 `T | undefined`，调用方就得多写一层判空。
+    return { data: [prevRows[0] ?? null, nextRows[0] ?? null] as const };
   } catch (error) {
     throw new Error("获取上下篇文章失败", { cause: error });
   }

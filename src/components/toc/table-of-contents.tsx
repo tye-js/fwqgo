@@ -6,11 +6,22 @@ import { useEffect, useState } from "react";
 interface TableOfContentsProps {
   items: TocItem[];
   label?: string;
+  /**
+   * 目录自身的滚动约束。
+   *
+   * 放在右栏里时由外层容器负责滚动，这里必须让出去——两层 `overflow-y-auto`
+   * 叠在一起会出现嵌套滚动条，鼠标滚轮到底后不继续滚页面。
+   */
+  navClassName?: string;
 }
+
+const DEFAULT_NAV_CLASS_NAME =
+  "toc max-h-[calc(100dvh-170px)] overflow-y-auto pr-1";
 
 export function TableOfContents({
   items,
   label = "本文目录",
+  navClassName = DEFAULT_NAV_CLASS_NAME,
 }: TableOfContentsProps) {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const toc = items;
@@ -70,10 +81,7 @@ export function TableOfContents({
   };
 
   return (
-    <nav
-      className="toc max-h-[calc(100dvh-170px)] overflow-y-auto pr-1"
-      aria-label={label}
-    >
+    <nav className={navClassName} aria-label={label}>
       <ul className="space-y-1.5">
         {toc.map((item) => (
           <li

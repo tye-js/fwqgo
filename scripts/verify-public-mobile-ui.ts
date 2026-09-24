@@ -119,7 +119,22 @@ for (const file of publicSources) {
 const articleDetail = read("src/features/public/components/article-detail.tsx");
 const articleCard = read("src/features/public/components/article-card.tsx");
 const homeView = read("src/features/public/components/home-page.tsx");
+/**
+ * 剥掉源码里的注释再做字面量断言。
+ *
+ * 这条规矩在 2026-09-23 已经被踩了六次：说明文字里几乎必然会出现被断言的字面量
+ * （「不再靠 message.includes() 猜状态码」「不要调 requireAdminSession()」
+ * 「原来这里用 @/components/ui/navigation-menu」…）。**正反两个方向都要剥** ——
+ * doesNotMatch 会被注释满足，match 也会被注释满足。
+ * 行注释和块注释都要剥，只剥 `//` 会漏掉 JSDoc。
+ */
+function stripComments(source: string) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
+
 const header = read("src/features/public/components/header.tsx");
+const desktopNav = read("src/features/public/components/desktop-nav.tsx");
+const mobileNavDrawer = read("src/features/public/components/mobile-nav-drawer.tsx");
 const inventoryResults = read(
   "src/features/public/components/server-inventory-results.tsx",
 );
@@ -200,6 +215,36 @@ for (const source of [zhArticle, enArticle]) {
     /inline-flex min-h-11 min-w-0 max-w-full items-center break-words/,
   );
 }
+/**
+ * 详情页版面契约（2026-09-24 重排后）。
+ *
+ * 这几条都对应实测踩过的坑，不是风格偏好：
+ *
+ * 1. 右栏是 `sticky` 的。实测 1280×900 下长文（目录长 + 最新文章列表）右栏高
+ *    1327px > 视口，被钉住后**底部内容永远滚不出来**。所以右栏必须自带高度上限
+ *    和滚动容器；目录卡片在右栏里必须让出滚动（`navClassName="toc"`），
+ *    否则两层 overflow 叠出嵌套滚动条。
+ * 2. `xl` 起才有右栏。之前只有 `2xl` 才有一列，1280–1535 这一段右侧整片空白。
+ * 3. 窄屏没有右栏，目录必须在正文上方有折叠入口，否则手机端长文无法跳转。
+ */
+for (const source of [zhArticle, enArticle]) {
+  assert.match(source, /<ArticleRail>/);
+  assert.match(source, /<ArticleMobileToc/);
+  assert.match(source, /<ArticleCategoryPosts/);
+  assert.match(source, /<ArticlePrevNext/);
+  assert.match(source, /xl:grid-cols-\[minmax\(0,820px\)_288px\]/);
+}
+const articleDetailCode = stripComments(articleDetail);
+assert.match(
+  articleDetailCode,
+  /xl:max-h-\[calc\(100dvh-7rem\)\] xl:overflow-y-auto/,
+  "详情页右栏必须限制高度并自带滚动，否则 sticky 元素底部不可达",
+);
+assert.match(
+  articleDetailCode,
+  /<TableOfContents items=\{items\} label=\{label\} navClassName="toc"/,
+  "右栏目录必须让出滚动，避免与右栏形成嵌套滚动条",
+);
 assert.match(select, /radix-select-content-available-height/);
 assert.match(select, /max-w-\[calc\(100vw-1\.5rem\)\]/);
 assert.match(dropdown, /radix-dropdown-menu-content-available-height/);
@@ -212,10 +257,23 @@ assert.match(
 assert.match(articleCard, /min-h-11/);
 // The expanded public navigation uses the drawer through tablet widths so
 // article categories, tools and language switching cannot squeeze the header.
-assert.match(header, /className="[^"\n]*xl:hidden"/);
-assert.match(header, /NavigationMenu className="hidden xl:block"/);
-assert.match(header, /max-h-dvh w-\[88vw\]/);
-assert.match(header, /<SheetClose asChild>/);
+//
+// 桌面导航从 2026-09-23 起搬到了 desktop-nav.tsx，并且用原生 <details> 取代了
+// Radix NavigationMenu（省掉那个每页都加载的 23.4 KB chunk）—— 所以
+// 「xl 以上才显示」这条断言改到新文件上。
+// 2026-09-23：移动端抽屉整体拆到了 mobile-nav-drawer.tsx（header.tsx 从 269 行回到 110 行），
+// 桌面导航拆到了 desktop-nav.tsx。两个断言改到新文件上。
+assert.match(mobileNavDrawer, /className="[^"\n]*xl:hidden"/);
+assert.match(desktopNav, /<nav className="hidden xl:block"/);
+assert.match(mobileNavDrawer, /max-h-dvh w-\[88vw\]/);
+assert.match(mobileNavDrawer, /<SheetClose asChild>/);
+assert.match(header, /<MobileNavDrawer/);
+// 桌面导航不能再把 Radix NavigationMenu 引回来
+assert.doesNotMatch(
+  stripComments(`${header}\n${desktopNav}`),
+  /@\/components\/ui\/navigation-menu/,
+  "桌面导航必须保持零客户端依赖（原生 <details>），不要把 Radix NavigationMenu 引回来",
+);
 
 for (const source of [inventoryResults, offerTable]) {
   assert.match(source, /grid gap-3 xl:hidden/);

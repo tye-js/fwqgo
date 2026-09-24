@@ -100,9 +100,11 @@ for (const slug of TRUST_PAGE_SLUGS) {
 
 // 2. Both navigation surfaces must cover every slug; a dropped entry turns the
 //    page into an orphan that only the sitemap can reach.
+// 2026-09-23：移动端抽屉从 header.tsx 拆到了 mobile-nav-drawer.tsx
+// （为了把它依赖的 Radix Sheet 挪出首屏），信任页链接跟着搬过去了。
 for (const file of [
   path.join("src", "features", "public", "components", "footer.tsx"),
-  path.join("src", "features", "public", "components", "header.tsx"),
+  path.join("src", "features", "public", "components", "mobile-nav-drawer.tsx"),
 ]) {
   const source = readFileSync(file, "utf8");
   for (const slug of TRUST_PAGE_SLUGS) {

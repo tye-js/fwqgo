@@ -16,6 +16,7 @@ import {
 } from "@/features/public/data/post";
 import type { PublicArticleInternalLinks } from "@/server/posts/internal-links";
 import { readPublicPostInternalLinks } from "@/server/posts/internal-links";
+import { estimateArticleReadingMinutes } from "@/features/public/lib/article-reading-time";
 
 const configuredSlowLogMs = Number.parseInt(
   process.env.PUBLIC_ARTICLE_SLOW_LOG_MS ?? "",
@@ -84,6 +85,8 @@ export function renderArticlePresentation(
   return {
     contentHtml,
     tocItems: generateToc(contentHtml),
+    // 阅读时长随正文一起进缓存：正文动过就该重新算，和 contentHtml 同一份输入。
+    readingMinutes: estimateArticleReadingMinutes(contentHtml),
   };
 }
 

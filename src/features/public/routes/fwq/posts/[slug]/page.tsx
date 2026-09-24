@@ -1,5 +1,10 @@
 import { PublicTaxonomyLink } from "@/features/public/components/public-taxonomy-link";
-import { getRecommendedPosts } from "@/features/public/data/post";
+import {
+  getAdjacentPublishedPosts,
+  getLatestPostsForSidebar,
+  getPostsWithTagsByCategoryId,
+  getRecommendedPosts,
+} from "@/features/public/data/post";
 
 import { isRenderableImageSrc } from "@fwqgo/core/image-src";
 import { resolveServerOfferAvailability } from "@fwqgo/core/server-offer-status";
@@ -14,16 +19,20 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import {
   ArrowRight,
+  CalendarDays,
   ChevronRight,
-  Clock,
   Languages,
+  RefreshCw,
   SquareLibrary,
   Tags,
+  Timer,
 } from "lucide-react";
 import {
   ARTICLE_PROSE_CLASS_NAME,
   ArticleCover,
   ArticleDetailHeader,
+  ArticleMobileToc,
+  ArticleRail,
   ArticleTocSidebar,
 } from "@/features/public/components/article-detail";
 import { PostViewCount } from "@/features/public/components/post-view-count";
@@ -32,6 +41,9 @@ import {
   ArticleRelatedKnowledge,
   ArticleRelatedSidebar,
 } from "@/features/public/components/article-related-links";
+import { ArticleCategoryPosts } from "@/features/public/components/article-category-posts";
+import { ArticlePrevNext } from "@/features/public/components/article-prev-next";
+import { LatestPostsSidebar } from "@/features/public/components/latest-posts-sidebar";
 import { WebmasterStatement } from "@/features/public/components/webmaster-statement";
 import { ArticleShareActions } from "@/features/public/components/article-share-actions";
 import { notFound } from "next/navigation";
@@ -173,7 +185,7 @@ function toFallbackRelatedPostLinks(
   }));
 }
 
-async function FallbackRelatedPostsSidebar({
+async function FallbackRelatedPosts({
   postId,
   recommendedTagId,
 }: {
@@ -261,8 +273,14 @@ async function PostPageContent({
   if (isPublicArticleStaticParamsPlaceholder(decodedSlug)) notFound();
   const presentation = await getChineseArticlePresentation(decodedSlug);
   if (!presentation) notFound();
-  const { post, contentHtml, tocItems, internalLinks, relatedPostLinks } =
-    presentation;
+  const {
+    post,
+    contentHtml,
+    tocItems,
+    internalLinks,
+    relatedPostLinks,
+    readingMinutes,
+  } = presentation;
   const matchedTopics = offerTopics.filter((topic) => {
     const text = `${post.title} ${post.description ?? ""} ${post.tags
       .map((tag) => tag.tag.name)
@@ -274,6 +292,26 @@ async function PostPageContent({
   const articleUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`;
   const categoryUrl = `/fwq/${encodeURIComponent(post.categorySlug)}/page/1`;
   const absoluteImageUrl = toAbsoluteUrl(post.imgUrl);
+
+  // 三个附加模块都是已缓存读，跟着正文一起进 ISR，不额外增加回源次数。
+  const [latestPostsResult, adjacentPostsResult, categoryPostsResult] =
+    await Promise.all([
+      getLatestPostsForSidebar(),
+      getAdjacentPublishedPosts(post.id),
+      getPostsWithTagsByCategoryId(post.categoryId, 1),
+    ]);
+  const latestPosts = latestPostsResult.data ?? [];
+  const [previousPost, nextPost] = adjacentPostsResult.data;
+  const categoryPosts = (categoryPostsResult.data ?? []).filter(
+    (item) => item.id !== post.id,
+  );
+  // 只有真正被改过（超过一分钟）才显示「更新于」，否则两行时间戳几乎一样，是噪音。
+  const updatedAt =
+    post.updatedAt !== null &&
+    post.updatedAt.getTime() - post.createdAt.getTime() > 60_000
+      ? post.updatedAt
+      : null;
+  const showRail = tocItems.length > 0 || latestPosts.length > 0;
 
   const blogPostingJsonLd = {
     "@context": "https://schema.org",
@@ -326,9 +364,13 @@ async function PostPageContent({
   };
   return (
     <div className="px-4 pb-10 pt-2 sm:px-6 md:pt-4">
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,800px)] xl:justify-center 2xl:grid-cols-[180px_minmax(0,760px)] 2xl:gap-5">
-        <ArticleTocSidebar items={tocItems} label="本文目录" />
-
+      <div
+        className={`grid items-start gap-6 ${
+          showRail
+            ? "xl:grid-cols-[minmax(0,820px)_288px] xl:justify-center xl:gap-8"
+            : "xl:grid-cols-[minmax(0,820px)] xl:justify-center"
+        }`}
+      >
         <div className="mx-auto w-full min-w-0 max-w-[820px] space-y-10 xl:mx-0 xl:max-w-none">
           <article className="article-reading-surface">
             <script
@@ -370,9 +412,21 @@ async function PostPageContent({
               meta={
                 <>
                   <span className="inline-flex min-h-11 shrink-0 items-center gap-2 tabular-nums">
-                    <Clock className="size-4" aria-hidden="true" />
-                    {formatDate(post.createdAt)}
+                    <CalendarDays className="size-4" aria-hidden="true" />
+                    发布于 {formatDate(post.createdAt)}
                   </span>
+                  {updatedAt ? (
+                    <span className="inline-flex min-h-11 shrink-0 items-center gap-2 tabular-nums">
+                      <RefreshCw className="size-4" aria-hidden="true" />
+                      更新于 {formatDate(updatedAt)}
+                    </span>
+                  ) : null}
+                  {readingMinutes > 0 ? (
+                    <span className="inline-flex min-h-11 shrink-0 items-center gap-2 tabular-nums">
+                      <Timer className="size-4" aria-hidden="true" />
+                      约 {readingMinutes} 分钟读完
+                    </span>
+                  ) : null}
                   <PostViewCount slug={decodedSlug} initialViews={post.views} />
                   {post.enSlug ? (
                     <Link
@@ -395,6 +449,11 @@ async function PostPageContent({
               <ArticleCover src={post.imgUrl} alt={post.title} />
             </div>
 
+            {/* 窄屏没有右栏，目录改成正文上方的折叠块。 */}
+            <div className="mt-6">
+              <ArticleMobileToc items={tocItems} label="本文目录" />
+            </div>
+
             <div
               className={`${ARTICLE_PROSE_CLASS_NAME} mt-8`}
               dangerouslySetInnerHTML={{ __html: contentHtml }}
@@ -408,7 +467,22 @@ async function PostPageContent({
                 />
               </Suspense>
 
-              <WebmasterStatement />
+              {relatedPostLinks.length > 0 ? (
+                <ArticleRelatedSidebar links={relatedPostLinks} />
+              ) : (
+                <Suspense fallback={null}>
+                  <FallbackRelatedPosts
+                    postId={post.id}
+                    recommendedTagId={post.recommendedTagId}
+                  />
+                </Suspense>
+              )}
+
+              <ArticleCategoryPosts
+                posts={categoryPosts}
+                categoryName={post.categoryName}
+                categoryHref={categoryUrl}
+              />
 
               <ArticleRelatedKnowledge links={internalLinks.relatedKnowledge} />
 
@@ -480,20 +554,22 @@ async function PostPageContent({
                   </div>
                 </section>
               ) : null}
+
+              <ArticlePrevNext
+                previous={previousPost}
+                next={nextPost}
+                language="zh"
+              />
+
+              <WebmasterStatement />
             </div>
           </article>
         </div>
 
-        {relatedPostLinks.length > 0 ? (
-          <ArticleRelatedSidebar links={relatedPostLinks} />
-        ) : (
-          <Suspense fallback={null}>
-            <FallbackRelatedPostsSidebar
-              postId={post.id}
-              recommendedTagId={post.recommendedTagId}
-            />
-          </Suspense>
-        )}
+        <ArticleRail>
+          <ArticleTocSidebar items={tocItems} label="本文目录" />
+          <LatestPostsSidebar posts={latestPosts} variant="compact" />
+        </ArticleRail>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import Image from "next/image";
 import type { ReactNode } from "react";
-import { BookOpenText, ImageIcon } from "lucide-react";
+import { BookOpenText, ChevronDown, ImageIcon } from "lucide-react";
 
 import { TableOfContents } from "@/components/toc/table-of-contents";
 import type { TocItem } from "@fwqgo/core/toc";
@@ -85,6 +85,26 @@ export function ArticleCover({
   );
 }
 
+/**
+ * 详情页右栏容器。
+ *
+ * `xl` 起才出现，宽度固定，`sticky` 跟随滚动。它存在的意义是把 1280–1535px
+ * 这一段主流桌面宽度里原本空着的右侧利用起来——之前只有 `2xl` 才有一列，
+ * 于是 1280/1440 下正文两侧各空一大块。
+ *
+ * 高度必须夹在视口内：`sticky` 元素一旦比视口高，被钉住后**底部永远滚不出来**
+ * （长目录 + 最新文章列表会到 1300px+）。所以这里自己做滚动容器，
+ * 目录和列表就不再各自开滚动条。
+ */
+export function ArticleRail({ children }: { children: ReactNode }) {
+  return (
+    <aside className="hidden min-w-0 space-y-5 self-start xl:sticky xl:top-24 xl:block xl:max-h-[calc(100dvh-7rem)] xl:overflow-y-auto xl:overscroll-contain xl:pr-1">
+      {children}
+    </aside>
+  );
+}
+
+/** 右栏/窄屏共用的目录卡片。目录为空（正文没有二至六级标题）时不渲染。 */
 export function ArticleTocSidebar({
   items,
   label,
@@ -92,18 +112,55 @@ export function ArticleTocSidebar({
   items: TocItem[];
   label: string;
 }) {
+  if (items.length === 0) return null;
+
   return (
-    <aside className="sticky top-28 hidden max-h-[calc(100dvh-128px)] self-start 2xl:block">
-      <div className="rounded-xl border border-border/80 bg-card p-4">
-        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+    <section className="rounded-xl border border-border/80 bg-card p-4">
+      <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <BookOpenText className="size-4 text-primary" aria-hidden="true" />
+        {label}
+      </div>
+      <div className="mt-3">
+        <TableOfContents items={items} label={label} navClassName="toc" />
+      </div>
+    </section>
+  );
+}
+
+/**
+ * `xl` 以下的目录入口。
+ *
+ * 用原生 `<details>` 而不是折叠面板组件：服务端渲染、零客户端 JS，
+ * 与桌面导航同一套取舍。
+ */
+export function ArticleMobileToc({
+  items,
+  label,
+}: {
+  items: TocItem[];
+  label: string;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <details className="group rounded-xl border border-border/80 bg-muted/20 xl:hidden">
+      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-2">
           <BookOpenText className="size-4 text-primary" aria-hidden="true" />
           {label}
-        </div>
-        <div className="mt-3">
-          <TableOfContents items={items} label={label} />
-        </div>
+        </span>
+        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          {items.length}
+          <ChevronDown
+            className="size-4 shrink-0 transition-transform group-open:rotate-180"
+            aria-hidden="true"
+          />
+        </span>
+      </summary>
+      <div className="border-t border-border/70 px-4 py-3">
+        <TableOfContents items={items} label={label} navClassName="toc" />
       </div>
-    </aside>
+    </details>
   );
 }
 
@@ -113,14 +170,8 @@ export function ArticlePageSkeleton({
   variant?: "nested" | "full";
 }) {
   const grid = (
-    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,800px)] xl:justify-center 2xl:grid-cols-[180px_minmax(0,760px)] 2xl:gap-5">
-      <div className="hidden space-y-3 pt-2 2xl:block">
-        <div className="h-4 w-24 animate-pulse rounded bg-muted" />
-        <div className="h-8 w-full animate-pulse rounded bg-muted/70" />
-        <div className="h-8 w-11/12 animate-pulse rounded bg-muted/70" />
-        <div className="h-8 w-10/12 animate-pulse rounded bg-muted/70" />
-      </div>
-      <div className="min-w-0 space-y-6">
+    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,820px)_288px] xl:justify-center xl:gap-8">
+      <div className="mx-auto w-full min-w-0 max-w-[820px] space-y-6 xl:mx-0 xl:max-w-none">
         <div className="space-y-4 border-b border-border/70 pb-6">
           <div className="h-4 w-40 animate-pulse rounded bg-muted" />
           <div className="h-10 w-11/12 animate-pulse rounded bg-muted/80 md:h-12" />
@@ -128,13 +179,17 @@ export function ArticlePageSkeleton({
           <div className="h-5 w-4/5 animate-pulse rounded bg-muted/60" />
           <div className="h-6 w-64 animate-pulse rounded bg-muted/50" />
         </div>
-        <div className="aspect-video w-full animate-pulse rounded-lg bg-muted/60 md:max-w-[640px]" />
+        <div className="aspect-video w-full animate-pulse rounded-lg bg-muted/60" />
         <div className="space-y-4">
           <div className="h-5 w-full animate-pulse rounded bg-muted/60" />
           <div className="h-5 w-11/12 animate-pulse rounded bg-muted/60" />
           <div className="h-5 w-10/12 animate-pulse rounded bg-muted/60" />
           <div className="h-32 w-full animate-pulse rounded bg-muted/40" />
         </div>
+      </div>
+      <div className="hidden space-y-5 xl:block">
+        <div className="h-56 w-full animate-pulse rounded-xl bg-muted/50" />
+        <div className="h-40 w-full animate-pulse rounded-xl bg-muted/40" />
       </div>
     </div>
   );
