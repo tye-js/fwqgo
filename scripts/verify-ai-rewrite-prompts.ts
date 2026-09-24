@@ -190,19 +190,24 @@ assert.match(
   "追加图片要求后必须保留 {markdownContent} 占位符",
 );
 
-// 追加的**位置**也是契约：必须落在 `{markdownContent}` 之前。
-// 追加到正文之后会让模型先读正文、再读「不许丢图」的约束，与
-// `defaultEnglishContentPrompt` 的顺序不一致——同一个配置项，两条解析路径产出的
-// 提示词结构应当相同，否则模型看到约束的时机取决于配置是否是自定义的。
-for (const input of [null, "Custom.\n\n{markdownContent}"]) {
-  const resolvedPrompt = resolveEnglishContentPromptTemplate(input);
-  const ruleAt = resolvedPrompt.indexOf(englishImageRuleMarker);
-  const contentAt = resolvedPrompt.indexOf("{markdownContent}");
-  assert.ok(
-    ruleAt > -1 && contentAt > -1 && ruleAt < contentAt,
-    `图片保留要求必须出现在正文占位符之前（rule@${ruleAt} / content@${contentAt}），输入：${String(input)}`,
-  );
-}
+// 追加必须落在**末尾**，操作者自定义的提示词前缀要原样保留。
+//
+// 曾试过把图片要求插到 `{markdownContent}` 之前，好让自定义配置与
+// `defaultEnglishContentPrompt` 的结构一致（默认模板里规则就在正文之前）——
+// 但那会从中间切断操作者写的提示词，`verify-article-generation.test.ts` 断言
+// 「自定义提示词解析后以原文开头」，直接报错。那条契约（不篡改存库配置）比顺序一致
+// 更重要，所以这里把「前缀原样 + 恰好一次」两个性质一起钉住，防止再被改回去。
+const customTemplate = "Custom instruction {title} {markdownContent} {enContent}";
+const resolvedCustom = resolveEnglishContentPromptTemplate(customTemplate);
+assert.ok(
+  resolvedCustom.startsWith(customTemplate),
+  "自定义英文提示词必须原样保留前缀，追加内容不能从中间切断它",
+);
+assert.equal(
+  countEnglishImageRule(resolvedCustom),
+  1,
+  "自定义英文提示词必须恰好含一次图片保留要求",
+);
 assert.match(
   rewriter,
   /resolveEnglishContentPromptTemplate\(/,

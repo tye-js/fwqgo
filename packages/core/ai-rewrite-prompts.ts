@@ -309,16 +309,12 @@ export function resolveEnglishContentPromptTemplate(value?: string | null) {
   // 与中文路径同样在代码层补充：存库的提示词改不动，而丢图会被
   // `assertTranslatedArticleStructure` 判为失败，这条要求必须覆盖所有配置。
   //
-  // 插到 `{markdownContent}` **之前**，与 `defaultEnglishContentPrompt` 的结构一致。
-  // 追加到末尾的话，自定义提示词会变成「指令 → 正文 → 图片要求」，模型看到约束的
-  // 时机与默认配置不同，属可预期性上的偏差。
-  const contentAnchor = "{markdownContent}";
-  const anchorIndex = resolved.indexOf(contentAnchor);
-
-  // 没有正文占位符的配置不合规，但历史数据里可能存在，这时只能追加到末尾。
-  if (anchorIndex === -1) return `${resolved}\n\n${englishImageRule}`;
-
-  return `${resolved.slice(0, anchorIndex)}${englishImageRule}\n\n${resolved.slice(anchorIndex)}`;
+  // **追加到末尾，不要插到 `{markdownContent}` 之前。** 后者看起来能让自定义配置与
+  // `defaultEnglishContentPrompt` 的结构一致（默认模板里规则就在正文之前），但会从中间
+  // 切断操作者自己写的提示词——`verify-article-generation.test.ts` 断言自定义模板解析后
+  // 仍以原文开头，那正是「不篡改存库配置」的契约。两害相权：默认模板是本仓库自己写的，
+  // 规则位置可以最优；操作者的自定义提示词不该被改动结构。顺序差异是这个取舍的代价。
+  return `${resolved}\n\n${englishImageRule}`;
 }
 
 export function resolveEnglishMetadataPromptTemplate(value?: string | null) {
