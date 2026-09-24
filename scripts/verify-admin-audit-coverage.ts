@@ -83,6 +83,126 @@ function detectWrapper(source: string) {
   return WRAPPERS.find((wrapper) => source.includes(wrapper)) ?? null;
 }
 
+type FunctionBody = { name: string; body: string; line: number };
+
+/** 用括号配对扫出文件里每个具名函数体。 */
+function functionBodies(source: string) {
+  const out = new Map<string, FunctionBody>();
+  const pattern =
+    /(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)\s*(?:<[^>]*>)?\s*\(/g;
+
+  let match = pattern.exec(source);
+  while (match) {
+    const name = match[1] ?? "";
+
+    // **先跳过参数列表**：参数里可能有 `input: { id: number }` 这样的类型字面量，
+    // 直接找第一个 `{` 会把函数体定位到参数内部去 —— 实现这段逻辑的第一版就是这么漏检的，
+    // 它一度报出 44 个并不存在的「未鉴权入口」。
+    let depth = 0;
+    let cursor = source.indexOf("(", match.index);
+    for (; cursor < source.length; cursor += 1) {
+      if (source[cursor] === "(") depth += 1;
+      else if (source[cursor] === ")") {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+
+    const bodyStart = source.indexOf("{", cursor + 1);
+    if (bodyStart !== -1) {
+      let bodyDepth = 0;
+      let end = bodyStart;
+      for (; end < source.length; end += 1) {
+        if (source[end] === "{") bodyDepth += 1;
+        else if (source[end] === "}") {
+          bodyDepth -= 1;
+          if (bodyDepth === 0) break;
+        }
+      }
+
+      out.set(name, {
+        name,
+        body: source.slice(bodyStart, end + 1),
+        line: source.slice(0, match.index).split("\n").length,
+      });
+    }
+
+    match = pattern.exec(source);
+  }
+
+  return out;
+}
+
+/** 取出 `withAdminAudit({...}, NAME)` / `defineAdminAction({...}, NAME)` 里的 NAME。 */
+function wrappedImplementationNames(source: string) {
+  const names: string[] = [];
+  const pattern = new RegExp(`(?:${WRAPPERS.join("|")})\\s*\\(`, "g");
+
+  let match = pattern.exec(source);
+  while (match) {
+    const open = source.indexOf("(", match.index);
+    let depth = 0;
+    let cursor = open;
+    for (; cursor < source.length; cursor += 1) {
+      if (source[cursor] === "(") depth += 1;
+      else if (source[cursor] === ")") {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+
+    const inner = source.slice(open + 1, cursor);
+    // 取最后一个**顶层**逗号之后的标识符：前面那个参数是定义对象。
+    let nested = 0;
+    let lastComma = -1;
+    for (let i = 0; i < inner.length; i += 1) {
+      const char = inner[i] ?? "";
+      if ("([{".includes(char)) nested += 1;
+      else if (")]}".includes(char)) nested -= 1;
+      else if (char === "," && nested === 0) lastComma = i;
+    }
+
+    const name = inner.slice(lastComma + 1).trim();
+    if (/^[A-Za-z0-9_$]+$/.test(name)) names.push(name);
+
+    match = pattern.exec(source);
+  }
+
+  return names;
+}
+
+/**
+ * 找出**入口实现**里没有调用 `requireAdminSession` 的那些。
+ *
+ * 为什么必须按实现逐个判、不能按文件判：一个文件里只要出现过一次
+ * `requireAdminSession()`，文件级判定就整份通过，同文件里另一个 action 漏鉴权看不出来。
+ * 而 `withAdminAudit` 自己**不做鉴权** —— 它只 `getCurrentSession().catch(() => null)`
+ * 取 actorId 去记审计日志，取不到也照样执行被包装的函数；`defineAdminAction` 同理。
+ * 所以入口的鉴权只能由实现自己提供，**漏了就等于任何人都能调用它**。
+ *
+ * 判定范围：被包装的实现（`withAdminAudit({...}, NAME)` 的 NAME）与所有 `xxxImpl` ——
+ * 它们是真正会被调用的入口。薄包装（`xxxAction` 的函数体只有一行
+ * `return xxxMutation(...)`）不在范围内，否则会报出一堆假警报。
+ */
+function findUnauthenticatedEntries(source: string) {
+  const bodies = functionBodies(source);
+  const entries = new Set(wrappedImplementationNames(source));
+
+  for (const name of bodies.keys()) {
+    if (name.endsWith("Impl")) entries.add(name);
+  }
+
+  const missing: FunctionBody[] = [];
+  for (const name of entries) {
+    const info = bodies.get(name);
+    if (!info) continue;
+    if (info.body.includes("requireAdminSession")) continue;
+    missing.push(info);
+  }
+
+  return missing;
+}
+
 const failures: string[] = [];
 const files = readdirSync(ACTIONS_DIR)
   .filter((file) => file.endsWith(".ts"))
@@ -96,6 +216,15 @@ for (const file of files) {
   const source = readFileSync(path.join(ACTIONS_DIR, file), "utf8");
   const wrapper = detectWrapper(source);
   const callsSessionDirectly = source.includes("requireAdminSession(");
+
+  // 鉴权判定要按**入口实现**逐个做，不能按文件 —— 见 findUnauthenticatedEntries。
+  for (const unauthenticated of findUnauthenticatedEntries(source)) {
+    failures.push(
+      `${file} 的 ${unauthenticated.name}()（第 ${unauthenticated.line} 行）没有调用 requireAdminSession。` +
+        `\n    ${WRAPPERS[1]} 只负责写审计日志、**不做鉴权**（取不到 session 也会继续执行），` +
+        `\n    所以入口的鉴权只能由实现自己提供；漏了就等于任何人都能调用它。`,
+    );
+  }
 
   if (delegates.has(file)) {
     const ownWrite = WRITE_PATTERNS.find((pattern) => pattern.test(source));
