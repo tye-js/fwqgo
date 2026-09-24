@@ -255,9 +255,23 @@ Source category:
 English Markdown:
 {enContent}`;
 
+/**
+ * 英文翻译的图片保留要求。
+ *
+ * 必须放在**代码层**：翻译提示词存在数据库里（`ai_rewrite_configs.englishContentPrompt`），
+ * 改这里的默认值只对新建配置生效，已有配置仍会用它自己那份。而
+ * `assertTranslatedArticleStructure` 现在会把「改变或遗漏图片」的翻译直接判为失败，
+ * 所以这条要求必须对**所有**配置生效，不能只写在默认值里。
+ *
+ * `defaultEnglishContentPrompt` 与 `resolveEnglishContentPromptTemplate` 共用这一份文案，
+ * 靠同一句标记文本做幂等判断，避免自定义提示词已经写过时重复追加。
+ */
+const englishImageRule =
+  "Keep every image on its original line with its /uploads/ path byte-for-byte unchanged; translate the alt text and the caption, but never drop an image, never turn it into a plain text link, and never invent one.";
+
 export const defaultEnglishContentPrompt = `Translate the complete Chinese VPS/server article below into clear, faithful English Markdown.
 
-Return only the English body, without an article title, SEO metadata, explanations or enclosing code fences. Keep every paragraph, table row, image and factual detail; do not summarize or invent information. Preserve Markdown structure, use headings from ##, and keep all URLs, image paths, affiliate links, prices, specifications and promo codes unchanged. Keep every image on its original line and keep its caption in the image syntax.
+Return only the English body, without an article title, SEO metadata, explanations or enclosing code fences. Keep every paragraph, table row, image and factual detail; do not summarize or invent information. Preserve Markdown structure, use headings from ##, and keep all URLs, image paths, affiliate links, prices, specifications and promo codes unchanged. ${englishImageRule}
 
 Chinese Markdown:
 {markdownContent}`;
@@ -277,9 +291,16 @@ English Markdown:
 
 export function resolveEnglishContentPromptTemplate(value?: string | null) {
   const custom = value?.trim();
-  return !custom || custom === legacyDefaultEnglishContentPrompt
-    ? defaultEnglishContentPrompt
-    : custom;
+  const resolved =
+    !custom || custom === legacyDefaultEnglishContentPrompt
+      ? defaultEnglishContentPrompt
+      : custom;
+
+  // 与中文路径同样在代码层补充：存库的提示词改不动，而丢图会被
+  // `assertTranslatedArticleStructure` 判为失败，这条要求必须覆盖所有配置。
+  return resolved.includes("never drop an image")
+    ? resolved
+    : `${resolved}\n\n${englishImageRule}`;
 }
 
 export function resolveEnglishMetadataPromptTemplate(value?: string | null) {

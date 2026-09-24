@@ -429,7 +429,12 @@ for(const field of ["enTitle","enDescription"]){responseMetadata={...metadata,[f
 responseMetadata={...metadata,enCategoryName:"Dedicated Servers",enCategorySlug:"dedicated-servers"};
 const backfill=await generateEnglishMetadata({...source,enContent,category:{name:"独立服务器",slug:"dedicated"}});prompt=requests.at(-1).messages[0].content;
 assert.ok(prompt.includes("enCategoryName"));assert.ok(prompt.includes("独立服务器"));assert.equal(backfill.enCategoryName,"Dedicated Servers");
-for(const [resolve,template] of [[resolveEnglishContentPromptTemplate,defaultEnglishContentPrompt],[resolveEnglishMetadataPromptTemplate,defaultEnglishMetadataPrompt]]){assert.equal(resolve(null),template);assert.equal(resolve("  "),template);const custom="Custom instruction {title} {markdownContent} {enContent}";assert.equal(resolve(custom),custom);}
+for(const [resolve,template] of [[resolveEnglishContentPromptTemplate,defaultEnglishContentPrompt],[resolveEnglishMetadataPromptTemplate,defaultEnglishMetadataPrompt]]){assert.equal(resolve(null),template);assert.equal(resolve("  "),template);}
+const customTemplate="Custom instruction {title} {markdownContent} {enContent}";
+assert.equal(resolveEnglishMetadataPromptTemplate(customTemplate),customTemplate);
+assert.ok(resolveEnglishContentPromptTemplate(customTemplate).startsWith(customTemplate));
+assert.equal(resolveEnglishContentPromptTemplate(customTemplate).split("never drop an image").length-1,1);
+assert.equal(resolveEnglishContentPromptTemplate(customTemplate+" never drop an image, never turn it into a link.").split("never drop an image").length-1,1);
 `);
 });
 
