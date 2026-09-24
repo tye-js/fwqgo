@@ -1,13 +1,18 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Bold, Copy, Heading2, Link2, List, Table2 } from "lucide-react";
+import { Bold, Copy, Heading2, Link2, List, Loader2, Table2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ArticleImageInserter } from "@/features/cms/components/article-image-inserter";
+import type { ArticleImageInserterHandle } from "@/features/cms/components/article-image-inserter";
 import { ArticleImageSummary } from "@/features/cms/components/article-image-summary";
+import {
+  extractClipboardImageFiles,
+  uploadArticleImageFile,
+} from "@/features/cms/lib/article-image-upload";
 
 type MarkdownEditorProps = {
   id?: string;
@@ -57,7 +62,10 @@ export function MarkdownEditor({
   imageInsertLanguage,
 }: MarkdownEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  /** 「插入图片」弹窗的句柄：粘贴截图上传完成后由这里把图送进弹窗。 */
+  const imageInserterRef = useRef<ArticleImageInserterHandle | null>(null);
   const [copying, setCopying] = useState(false);
+  const [pastingImage, setPastingImage] = useState(false);
 
   async function copyArticle() {
     if (copying || !content.trim()) return;
@@ -93,6 +101,38 @@ export function MarkdownEditor({
     });
   }
 
+  /**
+   * 粘贴截图：上传后交给「插入图片」弹窗确认，不直接写进正文。
+   *
+   * 只有剪贴板里真的是图片才拦截；普通文本粘贴必须放行浏览器默认行为，
+   * 否则正文里就粘不进文字了。没有 `imageInsertLanguage` 的编辑器（纯 Markdown）
+   * 完全不管粘贴。
+   */
+  async function handlePaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
+    if (!imageInsertLanguage || pastingImage) return;
+
+    const files = extractClipboardImageFiles(event.clipboardData);
+    const [first] = files;
+    if (!first) return;
+
+    event.preventDefault();
+
+    if (files.length > 1) {
+      toast.warning(`一次只能粘贴一张图片，已使用第一张（共 ${files.length} 张）`);
+    }
+
+    setPastingImage(true);
+    try {
+      imageInserterRef.current?.openWithImage(
+        await uploadArticleImageFile(first),
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "图片上传失败，请重试");
+    } finally {
+      setPastingImage(false);
+    }
+  }
+
   /** 点正文图片清单里的缩略图时，把光标与选区落到那段图片语法上。 */
   function locateImage({ index, length }: { index: number; length: number }) {
     const textarea = textareaRef.current;
@@ -123,6 +163,7 @@ export function MarkdownEditor({
         })}
         {imageInsertLanguage ? (
           <ArticleImageInserter
+            ref={imageInserterRef}
             language={imageInsertLanguage}
             // 图片必须是独立块，前后留空行，否则会被并进上一段文字里。
             onInsert={(markdown) => insertSnippet(`\n\n${markdown}\n\n`)}
@@ -146,10 +187,11 @@ export function MarkdownEditor({
         ref={textareaRef}
         value={content}
         onChange={(event) => onChange(event.target.value)}
+        onPaste={handlePaste}
         spellCheck={false}
         className={`${minHeightClassName} rounded-none border-0 font-mono text-sm leading-7 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0`}
         placeholder={[
-          "使用 Markdown 编写正文：",
+          "使用 Markdown 编写正文（可直接粘贴截图）：",
           "",
           "## 小标题",
           "",
@@ -161,6 +203,15 @@ export function MarkdownEditor({
         ].join("\n")}
       />
       </div>
+      {pastingImage ? (
+        <p
+          className="flex items-center gap-2 text-xs text-muted-foreground"
+          role="status"
+        >
+          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+          正在上传粘贴的图片…
+        </p>
+      ) : null}
       {imageInsertLanguage ? (
         <ArticleImageSummary content={content} onLocate={locateImage} />
       ) : null}

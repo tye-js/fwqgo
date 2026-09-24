@@ -1,7 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { ImagePlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,51 +26,37 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ImageLibraryPicker } from "@/features/cms/components/image-library-picker";
+import {
+  ARTICLE_IMAGE_ACCEPT,
+  localizedArticleImageAlt,
+  type PendingArticleImage,
+  uploadArticleImageFile,
+} from "@/features/cms/lib/article-image-upload";
 
-/** 图片库里还没有 alt 文案时，用文件名兜底——与上传接口的 fallbackImageAlt 同规则。 */
-function fallbackAlt(originalName: string) {
-  return (
-    originalName
-      .replace(/\.[^.]+$/, "")
-      .replace(/[_-]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim() || "article image"
-  );
-}
-
-type PendingImage = {
-  path: string;
-  altZh: string | null;
-  altEn: string | null;
-  originalName: string;
+export type ArticleImageInserterHandle = {
+  /**
+   * 外部把已上传的图片送进弹窗并打开它。
+   *
+   * 目前由编辑器的**粘贴截图**调用：粘贴是事件、打开弹窗是命令式动作，
+   * 用句柄比「prop 变化 → effect 里同步 state」直接，也不会触发级联渲染。
+   */
+  openWithImage: (image: PendingArticleImage) => void;
 };
 
-/**
- * alt 的预填值：图片库的双语文案 → 文件名。
- *
- * 图片库里的 alt 是**封面语境**的文章标题文案（例如「Zgovps VPS 套餐评测：香港三网直连…」），
- * 直接拿来当正文图的 alt 并不贴切——正文图该描述图片本身。所以这里只做预填，
- * 操作者可以在弹窗里改掉。
- */
-function localizedAlt(image: PendingImage, language: "zh" | "en") {
-  const localized = (language === "en" ? image.altEn : image.altZh)?.trim();
-  return localized?.length ? localized : fallbackAlt(image.originalName);
-}
-
-export function ArticleImageInserter({
-  language,
-  onInsert,
-}: {
-  language: "zh" | "en";
-  /** 由编辑器注入：把图片语法插到光标处。 */
-  onInsert: (markdown: string) => void;
-}) {
+export const ArticleImageInserter = forwardRef<
+  ArticleImageInserterHandle,
+  {
+    language: "zh" | "en";
+    /** 由编辑器注入：把图片语法插到光标处。 */
+    onInsert: (markdown: string) => void;
+  }
+>(function ArticleImageInserter({ language, onInsert }, ref) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [caption, setCaption] = useState("");
   const [alt, setAlt] = useState("");
-  const [pending, setPending] = useState<PendingImage | null>(null);
+  const [pending, setPending] = useState<PendingArticleImage | null>(null);
 
   function reset() {
     setCaption("");
@@ -75,10 +67,24 @@ export function ArticleImageInserter({
   }
 
   /** 选中图片时同步预填 alt，之后是否改动交给操作者。 */
-  function applyPending(image: PendingImage) {
-    setPending(image);
-    setAlt(localizedAlt(image, language));
-  }
+  const applyPending = useCallback(
+    (image: PendingArticleImage) => {
+      setPending(image);
+      setAlt(localizedArticleImageAlt(image, language));
+    },
+    [language],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      openWithImage(image: PendingArticleImage) {
+        applyPending(image);
+        setOpen(true);
+      },
+    }),
+    [applyPending],
+  );
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
@@ -89,52 +95,9 @@ export function ArticleImageInserter({
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
-      toast.error("请选择图片文件");
-      return;
-    }
-
-    if (file.size > 8 * 1024 * 1024) {
-      toast.error("图片大小不能超过 8MB");
-      return;
-    }
-
     setIsUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-      const data = (await response.json().catch(() => null)) as {
-        data?: {
-          url?: string;
-          asset?: { altZh?: string | null; altEn?: string | null };
-        };
-        url?: string;
-        error?: string;
-        message?: string;
-        actionError?: { message?: string };
-      } | null;
-      const uploadedPath = data?.data?.url ?? data?.url;
-
-      if (!response.ok || !uploadedPath) {
-        throw new Error(
-          data?.actionError?.message ??
-            data?.message ??
-            data?.error ??
-            `上传失败，HTTP ${response.status}`,
-        );
-      }
-
-      applyPending({
-        path: uploadedPath,
-        altZh: data?.data?.asset?.altZh ?? null,
-        altEn: data?.data?.asset?.altEn ?? null,
-        originalName: file.name,
-      });
+      applyPending(await uploadArticleImageFile(file));
       toast.success("图片已上传，确认后插入正文");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "上传失败，请重试");
@@ -154,7 +117,7 @@ export function ArticleImageInserter({
       buildArticleImageMarkdown({
         src: pending.path,
         // 操作者清空 alt 时回退到预填值：正文图始终带 alt，不留空。
-        alt: alt.trim().length ? alt.trim() : localizedAlt(pending, language),
+        alt: alt.trim().length ? alt.trim() : localizedArticleImageAlt(pending, language),
         caption: caption.trim(),
       }),
     );
@@ -218,7 +181,7 @@ export function ArticleImageInserter({
               id="article-image-file"
               ref={fileInputRef}
               type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp"
+              accept={ARTICLE_IMAGE_ACCEPT}
               onChange={handleUpload}
               disabled={isUploading}
               className="cursor-pointer"
@@ -288,4 +251,4 @@ export function ArticleImageInserter({
       </DialogContent>
     </Dialog>
   );
-}
+});

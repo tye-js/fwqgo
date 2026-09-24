@@ -87,6 +87,49 @@ assert.match(taskDetail, /ManualArticleTaskEditor/);
 assert.match(taskDetail, /language="en"/);
 assert.match(collector, /saveCollectedArticleDraft\(task, article\)/);
 assert.match(draftEditor, /navigator\.clipboard\.writeText\(content\)/);
+
+/**
+ * 编辑器必须支持**粘贴截图**（操作者的截图工作流），且必须走「上传 → 弹窗确认」。
+ *
+ * 三条契约：
+ * 1. 只有剪贴板里真的是图片才拦截。**必须先判断、再 preventDefault**——
+ *    顺序反了普通文本就粘不进正文，这是最容易写错也最难发现的一条。
+ * 2. 上传必须走共享的 `uploadArticleImageFile`：类型/大小校验、内容哈希去重、
+ *    alt 的文件名兜底只有那一份实现，不能在编辑器里再写一遍。
+ * 3. 上传完成后必须交给「插入图片」弹窗确认，不能直接写进正文——
+ *    否则截图会绕过 alt 与图注，正文里出现没有说明的图片。
+ */
+assert.match(
+  draftEditor,
+  /onPaste=\{handlePaste\}/,
+  "编辑器必须在 textarea 上挂粘贴处理",
+);
+assert.match(
+  draftEditor,
+  /extractClipboardImageFiles\(event\.clipboardData\)/,
+  "粘贴必须用共享的剪贴板解析（区分图片与普通文本）",
+);
+assert.match(
+  draftEditor,
+  /uploadArticleImageFile\(/,
+  "粘贴上传必须走共享实现，不能在编辑器里另写一份校验与上传",
+);
+assert.match(
+  draftEditor,
+  /openWithImage\(/,
+  "粘贴上传完成后必须交给「插入图片」弹窗确认，不能直接写进正文",
+);
+const pasteHandler = draftEditor.slice(
+  draftEditor.indexOf("async function handlePaste"),
+);
+const notImageReturnIndex = pasteHandler.indexOf("if (!first) return;");
+const preventDefaultIndex = pasteHandler.indexOf("event.preventDefault()");
+assert.ok(
+  notImageReturnIndex > -1 &&
+    preventDefaultIndex > -1 &&
+    notImageReturnIndex < preventDefaultIndex,
+  "必须先判断「不是图片就放行」，再 preventDefault——顺序反了正文里就粘不进文字",
+);
 assert.match(draftSave, /imgUrl: DEFAULT_ARTICLE_COVER/);
 assert.match(
   coverAction,
