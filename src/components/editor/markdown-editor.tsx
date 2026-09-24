@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ArticleImageInserter } from "@/features/cms/components/article-image-inserter";
+import { ArticleImageSummary } from "@/features/cms/components/article-image-summary";
 
 type MarkdownEditorProps = {
   id?: string;
@@ -92,8 +93,18 @@ export function MarkdownEditor({
     });
   }
 
+  /** 点正文图片清单里的缩略图时，把光标与选区落到那段图片语法上。 */
+  function locateImage({ index, length }: { index: number; length: number }) {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.focus();
+    textarea.setSelectionRange(index, index + length);
+  }
+
   return (
-    <div className="overflow-hidden rounded-md border border-border/70 bg-background">
+    <div className="space-y-3">
+      <div className="overflow-hidden rounded-md border border-border/70 bg-background">
       <div className="flex flex-wrap items-center gap-2 border-b border-border/70 bg-muted/20 px-3 py-2">
         {snippets.map((snippet) => {
           const Icon = snippet.icon;
@@ -149,6 +160,10 @@ export function MarkdownEditor({
           "| 示例 | 2核 2G | $5/月 |",
         ].join("\n")}
       />
+      </div>
+      {imageInsertLanguage ? (
+        <ArticleImageSummary content={content} onLocate={locateImage} />
+      ) : null}
     </div>
   );
 }

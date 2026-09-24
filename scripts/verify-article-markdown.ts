@@ -4,6 +4,10 @@ import test from "node:test";
 import * as cheerio from "cheerio";
 
 import {
+  buildArticleImageMarkdown,
+  parseArticleImages,
+} from "../packages/core/article-image-syntax";
+import {
   contentToArticleMarkdown,
   htmlToArticleMarkdown,
   renderArticleContentHtml,
@@ -318,4 +322,69 @@ void test("HTML conversion keeps body images and captions exactly once", () => {
   );
   assert.equal(scraped.markdown.includes("!["), false);
   assert.ok(scraped.markdown.includes("上文"));
+});
+
+void test("article image parsing mirrors the builder", () => {
+  const built = [
+    buildArticleImageMarkdown({
+      src: "/uploads/a.webp",
+      alt: "架构图",
+      caption: "三节点部署拓扑",
+    }),
+    buildArticleImageMarkdown({
+      src: "/uploads/b.webp?v=a1b2c3",
+      alt: "无图注",
+      caption: "",
+    }),
+  ].join("\n\n");
+
+  const parsed = parseArticleImages(built);
+  assert.equal(parsed.length, 2);
+  assert.deepEqual(
+    parsed.map(({ src, alt, caption }) => ({ src, alt, caption })),
+    [
+      {
+        src: "/uploads/a.webp",
+        alt: "架构图",
+        caption: "三节点部署拓扑",
+      },
+      { src: "/uploads/b.webp?v=a1b2c3", alt: "无图注", caption: "" },
+    ],
+  );
+
+  // 构建 → 解析 → 再构建必须完全等价，否则编辑器清单会和正文实际内容脱节。
+  for (const image of parsed) {
+    assert.equal(
+      buildArticleImageMarkdown({
+        src: image.src,
+        alt: image.alt,
+        caption: image.caption,
+      }),
+      image.raw,
+    );
+  }
+});
+
+void test("article image parsing ignores code examples and keeps external sources visible", () => {
+  const source = [
+    "```markdown",
+    "![示例](/uploads/in-code.webp)",
+    "```",
+    "",
+    "行内示例 `![行内](/uploads/inline.webp)` 结束。",
+    "",
+    "![外链](https://evil.example/a.png)",
+    "",
+    "![正文图](/uploads/body.webp)",
+  ].join("\n");
+
+  const parsed = parseArticleImages(source);
+  // 代码里的图片语法不算正文图片，否则编辑器清单会出现假的缩略图。
+  assert.deepEqual(
+    parsed.map((image) => image.src),
+    ["https://evil.example/a.png", "/uploads/body.webp"],
+  );
+  // 解析器按语法原样报告外链图，由调用方提示「前台会被净化掉」——
+  // 静默丢弃才是真正的问题。
+  assert.equal(parsed[0]?.src.startsWith("/uploads/"), false);
 });

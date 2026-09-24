@@ -46,3 +46,56 @@ export function buildArticleImageMarkdown(input: {
     input.src,
   )}${caption ? ` "${caption}"` : ""})`;
 }
+
+export type ParsedArticleImage = {
+  /** 匹配到的完整图片语法，含 `!` 与前后的空格。 */
+  raw: string;
+  src: string;
+  alt: string;
+  caption: string;
+  /** 在正文里的字符下标，便于定位。 */
+  index: number;
+};
+
+/**
+ * 与 `buildArticleImageMarkdown` 对称的解析器。
+ *
+ * 只识别**双引号**图注，与构建端和 `markdownLinkPattern`（`content.ts` /
+ * `packages/ai/rewrite-quality.ts`）保持一致：单引号或括号形式的 title 在整条
+ * 链路里都不被认作图片语法。
+ */
+const articleImagePattern =
+  /!\[([^\]]*)]\((<([^>]+)>|[^)\s]+)(?:\s+"([^"]*)")?\)/g;
+
+/**
+ * 去掉代码围栏与行内代码，避免把代码示例里的图片语法误判成正文图片。
+ *
+ * 这是**尽力而为**的粗筛：`~~~` 与 ``` 混用、缩进式代码块（4 空格）不会
+ * 被识别。用途是给编辑器做图片清单，误报只会多显示一个缩略图，不影响正文。
+ */
+function stripCodeContext(markdown: string) {
+  return markdown
+    .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\1[^\n]*$/gm, "")
+    .replace(/`[^`\n]*`/g, "");
+}
+
+export function parseArticleImages(markdown: string): ParsedArticleImage[] {
+  const searchable = stripCodeContext(markdown);
+  const images: ParsedArticleImage[] = [];
+
+  for (const match of searchable.matchAll(articleImagePattern)) {
+    const raw = match[0] ?? "";
+    const src = (match[3] ?? match[2] ?? "").trim();
+    if (!raw || !src) continue;
+
+    images.push({
+      raw,
+      src,
+      alt: match[1] ?? "",
+      caption: match[4] ?? "",
+      index: match.index ?? 0,
+    });
+  }
+
+  return images;
+}
