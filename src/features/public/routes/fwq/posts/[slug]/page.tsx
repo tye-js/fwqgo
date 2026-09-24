@@ -354,14 +354,29 @@ async function PostPageContent({
     ],
   };
   return (
-    <div className="px-4 pb-10 pt-2 sm:px-6 md:pt-4">
+    /*
+      不要再加 `px-*`：版心（祖先的 `.public-container`）已经给了
+      `padding-inline: clamp(1rem,3vw,2rem)`。之前这里多写了一层 `px-4 sm:px-6`，
+      把内容区从 1184px 压到 1136px——而栅格需要 288+32+820=1140px，
+      于是正文列被挤到 816px（英文页有自带 `container`，所以是完整的 820px）。
+    */
+    <div className="pb-10 pt-2 md:pt-4">
       <div
         className={`grid grid-cols-[minmax(0,1fr)] items-start gap-6 ${
           showRail
-            ? "xl:grid-cols-[minmax(0,820px)_288px] xl:justify-center xl:gap-8"
+            ? "xl:grid-cols-[288px_minmax(0,820px)] xl:justify-center xl:gap-8"
             : "xl:grid-cols-[minmax(0,820px)] xl:justify-center"
         }`}
       >
+        {/*
+          目录在左：侧栏整体镜像过来，正文列宽不变（仍是 820px）。
+          做成「目录 + 正文 + 最新文章」三栏是放不下的——版心内容区在 ≥1280px
+          只有 1184px，而 288 + 32 + 820 + 32 + 288 = 1460px。
+        */}
+        <ArticleRail>
+          <ArticleTocSidebar items={tocItems} label="本文目录" />
+          <LatestPostsSidebar posts={latestPosts} variant="compact" />
+        </ArticleRail>
         <div className="mx-auto w-full min-w-0 max-w-[820px] space-y-10 xl:mx-0 xl:max-w-none">
           <article className="article-reading-surface">
             <script
@@ -544,11 +559,6 @@ async function PostPageContent({
             </div>
           </article>
         </div>
-
-        <ArticleRail>
-          <ArticleTocSidebar items={tocItems} label="本文目录" />
-          <LatestPostsSidebar posts={latestPosts} variant="compact" />
-        </ArticleRail>
       </div>
     </div>
   );

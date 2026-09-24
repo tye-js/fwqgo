@@ -87,11 +87,15 @@ export function ArticleCover({
 }
 
 /**
- * 详情页右栏容器。
+ * 详情页侧栏容器（`xl` 起出现在**正文左侧**）。
  *
- * `xl` 起才出现，宽度固定，`sticky` 跟随滚动。它存在的意义是把 1280–1535px
- * 这一段主流桌面宽度里原本空着的右侧利用起来——之前只有 `2xl` 才有一列，
- * 于是 1280/1440 下正文两侧各空一大块。
+ * 位置：栅格是 `xl:grid-cols-[288px_minmax(0,820px)]`，侧栏是第一列，所以目录在左。
+ * **正文列宽不变（仍是 820px）**——这正是「目录不要占文本内容宽度」的要求。
+ * 做成「目录 + 正文 + 最新文章」三栏放不下：版心内容区在 ≥1280px 只有 1184px，
+ * 而 288 + 32 + 820 + 32 + 288 = 1460px，即使把目录压到 200px 也仍需 1372px。
+ *
+ * 宽度固定，`sticky` 跟随滚动。它存在的意义是把 1280–1535px 这一段主流桌面宽度里
+ * 原本空着的侧边利用起来——之前只有 `2xl` 才有一列，于是 1280/1440 下正文两侧各空一大块。
  *
  * 高度必须夹在视口内（长目录 + 最新文章列表会到 1300px+），这个不变式现在
  * 收敛在 `@/features/public/lib/sticky-rail`：前台 7 处侧栏里只有这里最初记住了
@@ -174,7 +178,12 @@ export function ArticlePageSkeleton({
   variant?: "nested" | "full";
 }) {
   const grid = (
-    <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 xl:grid-cols-[minmax(0,820px)_288px] xl:justify-center xl:gap-8">
+    <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 xl:grid-cols-[288px_minmax(0,820px)] xl:justify-center xl:gap-8">
+      {/* 占位侧栏必须排在正文之前，与真实布局的「目录在左」一致。 */}
+      <div className="hidden space-y-5 xl:block">
+        <div className="h-56 w-full animate-pulse rounded-xl bg-muted/50" />
+        <div className="h-40 w-full animate-pulse rounded-xl bg-muted/40" />
+      </div>
       <div className="mx-auto w-full min-w-0 max-w-[820px] space-y-6 xl:mx-0 xl:max-w-none">
         <div className="space-y-4 border-b border-border/70 pb-6">
           <div className="h-4 w-40 animate-pulse rounded bg-muted" />
@@ -190,10 +199,6 @@ export function ArticlePageSkeleton({
           <div className="h-5 w-10/12 animate-pulse rounded bg-muted/60" />
           <div className="h-32 w-full animate-pulse rounded bg-muted/40" />
         </div>
-      </div>
-      <div className="hidden space-y-5 xl:block">
-        <div className="h-56 w-full animate-pulse rounded-xl bg-muted/50" />
-        <div className="h-40 w-full animate-pulse rounded-xl bg-muted/40" />
       </div>
     </div>
   );

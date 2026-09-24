@@ -216,24 +216,57 @@ for (const source of [zhArticle, enArticle]) {
   );
 }
 /**
- * 详情页版面契约（2026-09-24 重排后）。
+ * 详情页版面契约（2026-09-24 重排 + 目录移到左侧）。
  *
  * 这几条都对应实测踩过的坑，不是风格偏好：
  *
- * 1. 右栏是 `sticky` 的。实测 1280×900 下长文（目录长 + 最新文章列表）右栏高
- *    1327px > 视口，被钉住后**底部内容永远滚不出来**。所以右栏必须自带高度上限
- *    和滚动容器；目录卡片在右栏里必须让出滚动（`navClassName="toc"`），
+ * 1. 侧栏是 `sticky` 的。实测 1280×900 下长文（目录长 + 最新文章列表）侧栏高
+ *    1327px > 视口，被钉住后**底部内容永远滚不出来**。所以侧栏必须自带高度上限
+ *    和滚动容器；目录卡片在侧栏里必须让出滚动（`navClassName="toc"`），
  *    否则两层 overflow 叠出嵌套滚动条。
- * 2. `xl` 起才有右栏。之前只有 `2xl` 才有一列，1280–1535 这一段右侧整片空白。
- * 3. 窄屏没有右栏，目录必须在正文上方有折叠入口，否则手机端长文无法跳转。
+ * 2. `xl` 起才有侧栏。之前只有 `2xl` 才有一列，1280–1535 这一段侧边整片空白。
+ * 3. 窄屏没有侧栏，目录必须在正文上方有折叠入口，否则手机端长文无法跳转。
+ * 4. 目录在**左**，且正文列宽保持 `820px` 不变。栅格第一列就是侧栏
+ *    （`xl:grid-cols-[288px_minmax(0,820px)]`）。做成「目录 + 正文 + 最新文章」
+ *    三栏是放不下的：版心内容区在 ≥1280px 只有 1184px，而
+ *    288 + 32 + 820 + 32 + 288 = 1460px，即使把目录压到 200px 也仍需 1372px。
+ *    栅格模板只说明第一列多宽、不保证 DOM 顺序，所以两条都要断言，
+ *    否则目录会悄悄跑回右侧、或者正文被挤窄。
  */
 for (const source of [zhArticle, enArticle]) {
   assert.match(source, /<ArticleRail>/);
   assert.match(source, /<ArticleMobileToc/);
   assert.match(source, /<ArticleCategoryPosts/);
   assert.match(source, /<ArticlePrevNext/);
-  assert.match(source, /xl:grid-cols-\[minmax\(0,820px\)_288px\]/);
+  assert.match(
+    source,
+    /xl:grid-cols-\[288px_minmax\(0,820px\)\]/,
+    "详情页栅格第一列必须是 288px 的侧栏、第二列是 820px 的正文",
+  );
+  const railIndex = source.indexOf("<ArticleRail>");
+  // 用正文列容器的类名做锚点：`ARTICLE_PROSE_CLASS_NAME` 在 import 行就先出现了。
+  const contentIndex = source.indexOf("max-w-[820px] space-y-10");
+  assert.ok(
+    railIndex > -1 && contentIndex > -1 && railIndex < contentIndex,
+    "侧栏必须排在正文之前，否则目录会渲染到正文右侧",
+  );
 }
+
+/**
+ * 详情页外壳**不要再加水平内边距**。
+ *
+ * 版心（祖先的 `.public-container`）已经给了 `padding-inline: clamp(1rem,3vw,2rem)`。
+ * 中文详情页曾经多写一层 `px-4 sm:px-6`，把内容区从 1184px 压到 1136px，而栅格需要
+ * 288 + 32 + 820 = 1140px → 正文列被挤到 816px（英文页自带 `container`，所以是完整的
+ * 820px，两个语言版本因此不一致）。实测 1280/1440/1920 三档都差这 4px。
+ */
+const zhDetailWrapper = /<div className="([^"]*\bpb-10\b[^"]*)"/.exec(zhArticle)?.[1];
+assert.ok(zhDetailWrapper, "未找到中文详情页外壳的类名，请更新这条断言");
+assert.doesNotMatch(
+  zhDetailWrapper,
+  /\bpx-\d/,
+  "中文详情页外壳不要再加水平内边距：版心已提供 padding-inline，多一层会把正文列挤到 820px 以下",
+);
 const articleDetailCode = stripComments(articleDetail);
 assert.match(
   articleDetailCode,
