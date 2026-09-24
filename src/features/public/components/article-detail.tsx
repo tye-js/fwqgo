@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { BookOpenText, ChevronDown, ImageIcon } from "lucide-react";
 
 import { TableOfContents } from "@/components/toc/table-of-contents";
+import { STICKY_RAIL_XL } from "@/features/public/lib/sticky-rail";
 import type { TocItem } from "@fwqgo/core/toc";
 import { isDefaultArticleCover } from "@fwqgo/core/article-cover";
 import { ServerCoverArt } from "./server-cover-art";
@@ -92,13 +93,16 @@ export function ArticleCover({
  * 这一段主流桌面宽度里原本空着的右侧利用起来——之前只有 `2xl` 才有一列，
  * 于是 1280/1440 下正文两侧各空一大块。
  *
- * 高度必须夹在视口内：`sticky` 元素一旦比视口高，被钉住后**底部永远滚不出来**
- * （长目录 + 最新文章列表会到 1300px+）。所以这里自己做滚动容器，
- * 目录和列表就不再各自开滚动条。
+ * 高度必须夹在视口内（长目录 + 最新文章列表会到 1300px+），这个不变式现在
+ * 收敛在 `@/features/public/lib/sticky-rail`：前台 7 处侧栏里只有这里最初记住了
+ * 高度上限，另外 6 处漏掉后底部内容永久不可达。所以这里改成引用同一个常量，
+ * 不再自己写一遍类名。目录和列表也就此不再各自开滚动条。
  */
 export function ArticleRail({ children }: { children: ReactNode }) {
   return (
-    <aside className="hidden min-w-0 space-y-5 self-start xl:sticky xl:top-24 xl:block xl:max-h-[calc(100dvh-7rem)] xl:overflow-y-auto xl:overscroll-contain xl:pr-1">
+    <aside
+      className={`hidden min-w-0 space-y-5 self-start xl:block xl:pr-1 ${STICKY_RAIL_XL}`}
+    >
       {children}
     </aside>
   );
@@ -170,7 +174,7 @@ export function ArticlePageSkeleton({
   variant?: "nested" | "full";
 }) {
   const grid = (
-    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,820px)_288px] xl:justify-center xl:gap-8">
+    <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 xl:grid-cols-[minmax(0,820px)_288px] xl:justify-center xl:gap-8">
       <div className="mx-auto w-full min-w-0 max-w-[820px] space-y-6 xl:mx-0 xl:max-w-none">
         <div className="space-y-4 border-b border-border/70 pb-6">
           <div className="h-4 w-40 animate-pulse rounded bg-muted" />

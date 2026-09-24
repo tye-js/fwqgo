@@ -2,6 +2,7 @@ import {
   resolveTagPage,
   taxonomyPageMetadata,
 } from "@/features/public/lib/taxonomy-page";
+import { STICKY_RAIL_XL } from "@/features/public/lib/sticky-rail";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -101,7 +102,7 @@ async function TagPageContent({
   };
 
   return (
-    <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -148,7 +149,7 @@ async function TagPageContent({
       </div>
 
       <aside className="hidden xl:block">
-        <div className="sticky top-24 space-y-4">
+        <div className={`space-y-4 ${STICKY_RAIL_XL}`}>
           <TagContextSidebar
             offers={relatedOffers}
             pageNo={postsWithTag.pageNo}

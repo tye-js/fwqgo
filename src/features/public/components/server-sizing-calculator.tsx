@@ -20,6 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { STICKY_RAIL_LG } from "@/features/public/lib/sticky-rail";
 import { Label } from "@/components/ui/label";
 import {
   calculateServerSizing,
@@ -863,7 +864,7 @@ export function ServerSizingCalculator({
             ) : null}
           </div>
 
-          <aside className="space-y-4 lg:sticky lg:top-24">
+          <aside className={`space-y-4 ${STICKY_RAIL_LG}`}>
             <div className="rounded-lg border border-border/70 bg-background p-5 shadow-sm md:p-6">
               <div className="flex items-start gap-3">
                 <StatusIcon status={result.status} />

@@ -237,14 +237,114 @@ for (const source of [zhArticle, enArticle]) {
 const articleDetailCode = stripComments(articleDetail);
 assert.match(
   articleDetailCode,
-  /xl:max-h-\[calc\(100dvh-7rem\)\] xl:overflow-y-auto/,
-  "详情页右栏必须限制高度并自带滚动，否则 sticky 元素底部不可达",
-);
-assert.match(
-  articleDetailCode,
   /<TableOfContents items=\{items\} label=\{label\} navClassName="toc"/,
   "右栏目录必须让出滚动，避免与右栏形成嵌套滚动条",
 );
+/**
+ * 侧栏的「吸顶偏移」与「高度上限」必须成对出现（2026-09-24 收敛到唯一来源）。
+ *
+ * `sticky` 元素一旦比视口高，被钉住后**底部永远滚不出来** —— 页面继续滚，
+ * 它不滚；而整页截图会把视口外一起画出来，所以截图看不出问题。
+ * 实测 1280×900（视口可用高 804px）：
+ *
+ * - `/fwq/page/1` 全部文章右栏 1061px → 底部 **273px** 永久不可达
+ * - `/fwq/<分类>/page/1` 分类页右栏 911px → **123px** 不可达
+ * - `/servers` 厂商筛选栏 807px → 超出视口 3px
+ *
+ * 三处都只写了 `sticky top-*`。同一个不变式在前台被重复实现了 7 次，
+ * 只有文章详情页那次记住了 —— 所以现在只允许从 `sticky-rail` 取类名，
+ * 页面里不能再自己写 `sticky`，否则下次照样会漏。
+ */
+const stickyRailPath = "src/features/public/lib/sticky-rail.tsx";
+assert.ok(
+  existsSync(join(root, stickyRailPath)),
+  "侧栏常量必须住在 .tsx 里：tailwind.config.ts 的 content 只覆盖 src 下的 .tsx，" +
+    "挪进 .ts 会导致这些类名不被生成，修复静默失效（页面不报错但样式没变）",
+);
+const stickyRail = read(stickyRailPath);
+assert.match(
+  stickyRail,
+  /xl:sticky xl:top-24 xl:max-h-\[calc\(100dvh-7rem\)\] xl:overflow-y-auto/,
+);
+assert.match(
+  stickyRail,
+  /lg:sticky lg:top-24 lg:max-h-\[calc\(100dvh-7rem\)\] lg:overflow-y-auto/,
+);
+
+/** 所有「跟随滚动」的侧栏调用点。新增侧栏必须登记到这里，否则不会被这条守卫覆盖。 */
+const stickyRailCallSites = [
+  "src/features/public/components/article-detail.tsx",
+  "src/features/public/components/all-articles-page.tsx",
+  "src/features/public/components/server-inventory-filters.tsx",
+  "src/features/public/components/server-sizing-calculator.tsx",
+  "src/features/public/routes/fwq/[category]/page/[pageNo]/page.tsx",
+  "src/features/public/routes/fwq/tags/[tagSlug]/page/[pageNo]/page.tsx",
+  "src/features/public/routes/en/fwq/[category]/page/[pageNo]/page.tsx",
+  "src/features/public/routes/en/fwq/tags/[tagSlug]/page/[pageNo]/page.tsx",
+];
+for (const callSite of stickyRailCallSites) {
+  const code = stripComments(read(callSite));
+  assert.match(
+    code,
+    /STICKY_RAIL_(XL|LG)/,
+    `${callSite} 的侧栏必须引用 sticky-rail 常量：自己写 sticky 会漏掉高度上限`,
+  );
+  // 反向断言：常量之外不得再出现裸的 sticky 工具类。
+  // 页头 `sticky top-0` 与表格 thead 不在本清单内 —— 它们高度固定，
+  // 不随内容增长，不是「跟随滚动的侧栏」。
+  // 注意排除 `sticky-rail`：那个模块路径本身含 `sticky` 一词，会误伤 import 行。
+  assert.doesNotMatch(
+    code,
+    /\bsticky\b(?!-rail)/,
+    `${callSite} 不应再出现裸的 sticky 工具类，请改用 STICKY_RAIL_XL / STICKY_RAIL_LG`,
+  );
+}
+/**
+ * 前台版心只能有一套内边距（2026-09-24 收敛）。
+ *
+ * 之前 `.public-container` 带 `padding-inline` 而 `.container` 不带，于是同一页里
+ * hero（`public-container`，32px 内边距 → 内容 1184px）和紧随其后的正文区
+ * （`container mx-auto px-4` → 内容 1216px）左边缘差 16px，内容看着「跳出去」了。
+ * 实测 1440px 视口（clientWidth 1425）：1184px vs 1216px。
+ *
+ * 断言写成「两个类名出现在同一个规则块里」而不是分别断言 —— 分开写的话，
+ * 将来给其中一个单独加规则又会分叉。
+ */
+const publicStyles = read("src/styles/public.css");
+assert.match(
+  publicStyles,
+  /\.public-site \.container,\s*\n\.public-site \.public-container\s*\{[^}]*padding-inline:\s*clamp\(1rem, 3vw, 2rem\)/,
+  "`.container` 与 `.public-container` 必须共用同一条带 padding-inline 的规则，" +
+    "否则不同页面（甚至同一页的不同区块）版心宽度不一致",
+);
+// 版心已经由上面的规则给出内边距，页面外壳再补一层 `px-*` 会二次内缩：
+// 列表页卡片会从 137px 而不是 121px 开始，和首页对不齐。
+//
+// 另外这些栅格必须显式写 `grid-cols-[minmax(0,1fr)]`。只写 `xl:grid-cols-...`
+// 的话，移动端是隐式单列 `auto`，其最小值取子项的 min-content；而分页的
+// `ul` 带 `min-w-max`（强制 max-content 宽度），会把整条轨道撑宽到超出视口。
+// 实测 /en/fwq/page/1 @390：轨道 428px、整页横向溢出 **54px**，隐藏分页后归零。
+for (const listing of [
+  "src/features/public/components/all-articles-page.tsx",
+  "src/features/public/routes/fwq/[category]/page/[pageNo]/page.tsx",
+  "src/features/public/routes/fwq/tags/[tagSlug]/page/[pageNo]/page.tsx",
+  "src/features/public/routes/en/fwq/[category]/page/[pageNo]/page.tsx",
+  "src/features/public/routes/en/fwq/tags/[tagSlug]/page/[pageNo]/page.tsx",
+  "src/features/public/routes/fwq/posts/[slug]/page.tsx",
+  "src/features/public/routes/en/fwq/posts/[slug]/page.tsx",
+]) {
+  const code = stripComments(read(listing));
+  assert.match(
+    code,
+    /grid grid-cols-\[minmax\(0,1fr\)\]/,
+    `${listing} 的栅格必须显式给移动端列模板：隐式 auto 列会被 min-w-max 的分页撑宽`,
+  );
+  assert.doesNotMatch(
+    code,
+    /gap-\d+ px-\d[^"\n]*xl:grid-cols-\[minmax\(0,1fr\)_300px\]/,
+    `${listing} 的栅格外壳不要再加 px-*：版心内边距由 public.css 统一给出`,
+  );
+}
 assert.match(select, /radix-select-content-available-height/);
 assert.match(select, /max-w-\[calc\(100vw-1\.5rem\)\]/);
 assert.match(dropdown, /radix-dropdown-menu-content-available-height/);

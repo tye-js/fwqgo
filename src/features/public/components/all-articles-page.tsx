@@ -10,6 +10,7 @@ import {
   getPublishedPostsPage,
 } from "@/features/public/data/post";
 import { PaginationComponent } from "@/features/shared/components/pagination";
+import { STICKY_RAIL_XL } from "@/features/public/lib/sticky-rail";
 import { jsonLdScriptContent } from "@fwqgo/core/utils";
 import {
   getPublicPageCount,
@@ -139,8 +140,11 @@ export async function AllArticlesPageContent({
     },
   };
 
+  // 移动端必须显式给 `minmax(0,1fr)`：隐式单列是 `auto`，最小值取子项的
+  // min-content，而分页的 `ul` 带 `min-w-max`（强制 max-content 宽度），
+  // 会把整条轨道撑到 428px、整页横向溢出。实测 /en/fwq/page/1 @390 → 溢出 54px。
   return (
-    <div className="grid gap-7 px-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-7 xl:grid-cols-[minmax(0,1fr)_300px]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -180,7 +184,7 @@ export async function AllArticlesPageContent({
       </div>
 
       <aside className="min-w-0">
-        <div className="space-y-5 xl:sticky xl:top-28">
+        <div className={`space-y-5 ${STICKY_RAIL_XL}`}>
           <LatestPostsSidebar posts={latestPosts ?? []} language={language} />
           <section className="public-panel p-4">
             <h2 className="px-3 pt-2 text-sm font-semibold">

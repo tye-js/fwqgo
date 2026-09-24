@@ -328,7 +328,7 @@ async function EnglishPostContent({ params }: PageProps) {
     <main id="main-content" className="flex-1">
       <div className="container mx-auto px-4 py-4 sm:px-6 md:py-6">
         <div
-          className={`grid items-start gap-6 ${
+          className={`grid grid-cols-[minmax(0,1fr)] items-start gap-6 ${
             showRail
               ? "xl:grid-cols-[minmax(0,820px)_288px] xl:justify-center xl:gap-8"
               : "xl:grid-cols-[minmax(0,820px)] xl:justify-center"

@@ -6,6 +6,7 @@ import { Filter, RotateCcw, Search, Store } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { STICKY_RAIL_LG } from "@/features/public/lib/sticky-rail";
 import {
   PUBLIC_INVENTORY_PRICE_ANY,
   PUBLIC_INVENTORY_PRICE_CUSTOM,
@@ -99,7 +100,9 @@ export function ServerInventoryProviderNav({
   const total = facets.providers.reduce((sum, item) => sum + item.count, 0);
 
   return (
-    <aside className="hidden min-h-0 self-start rounded-lg border border-border/70 bg-background lg:sticky lg:top-24 lg:block">
+    <aside
+      className={`hidden min-h-0 self-start rounded-lg border border-border/70 bg-background lg:block ${STICKY_RAIL_LG}`}
+    >
       <div className="border-b border-border/70 p-3">
         <div className="mb-2 flex items-center gap-2 text-sm font-medium">
           <Store className="size-4 text-primary" />
@@ -113,10 +116,14 @@ export function ServerInventoryProviderNav({
           className="min-h-11"
         />
       </div>
-      <nav
-        aria-label="按厂商筛选套餐"
-        className="max-h-[calc(100dvh-12rem)] overflow-y-auto p-2"
-      >
+      {/*
+        这里不能再给 nav 加 `max-h` / `overflow-y-auto`：滚动已经交给外层 aside
+        （`STICKY_RAIL_LG`）。两层各自带滚动会形成嵌套滚动条 ——
+        鼠标滚到内层底部后不会继续滚外层，是典型的「滚不动」投诉来源。
+        原先 nav 的 `max-h-[calc(100dvh-12rem)]` 只算了导航自身，没把上方搜索框
+        的高度算进去，导致整个 aside 高 807px、超出视口 3px。
+      */}
+      <nav aria-label="按厂商筛选套餐" className="p-2">
         <a
           href={buildPublicInventoryHref({
             ...filters,

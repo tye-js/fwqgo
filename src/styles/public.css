@@ -39,14 +39,23 @@ html.public-site.dark {
   text-rendering: optimizeLegibility;
 }
 
+/*
+ * 前台内容容器的唯一来源：两个类名必须渲染成完全一样的宽度。
+ *
+ * 之前只有 `.public-container` 带内边距，`.container` 没有，于是同一页里
+ * hero（`public-container`，32px 内边距 → 内容 1184px）和紧随其后的正文区
+ * （`container mx-auto px-4` → 内容 1216px）左边缘差 16px，内容看着「跳出去」了。
+ * 实测 1440px 视口（clientWidth 1425）：1184px vs 1216px。
+ *
+ * 注意权重：本选择器是 (0,2,0)，高于 Tailwind 的 `.px-4` (0,1,0)，
+ * 所以写在同一个元素上的 `px-*` 会被这里覆盖 —— 左右内边距只由这一处决定，
+ * 不要在调用处再补 `px-*`（补了也不生效，只会误导后来人）。
+ */
 .public-site .container,
 .public-site .public-container {
   width: 100%;
   max-width: 1248px;
   margin-inline: auto;
-}
-
-.public-site .public-container {
   padding-inline: clamp(1rem, 3vw, 2rem);
 }
 

@@ -365,7 +365,7 @@ async function PostPageContent({
   return (
     <div className="px-4 pb-10 pt-2 sm:px-6 md:pt-4">
       <div
-        className={`grid items-start gap-6 ${
+        className={`grid grid-cols-[minmax(0,1fr)] items-start gap-6 ${
           showRail
             ? "xl:grid-cols-[minmax(0,820px)_288px] xl:justify-center xl:gap-8"
             : "xl:grid-cols-[minmax(0,820px)] xl:justify-center"

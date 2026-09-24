@@ -2,6 +2,7 @@ import {
   resolveCategoryPage,
   taxonomyPageMetadata,
 } from "@/features/public/lib/taxonomy-page";
+import { STICKY_RAIL_XL } from "@/features/public/lib/sticky-rail";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -103,7 +104,7 @@ async function CategoryPageContent({
   };
 
   return (
-    <div className="grid gap-7 px-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-7 xl:grid-cols-[minmax(0,1fr)_300px]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -144,7 +145,7 @@ async function CategoryPageContent({
       </div>
 
       <aside className="hidden xl:block">
-        <div className="sticky top-28 space-y-4">
+        <div className={`space-y-4 ${STICKY_RAIL_XL}`}>
           <Card className="rounded-lg border-border/70 bg-background shadow-none">
             <CardContent className="space-y-4 p-5">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
