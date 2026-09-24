@@ -48,12 +48,12 @@ export function buildArticleImageMarkdown(input: {
 }
 
 export type ParsedArticleImage = {
-  /** 匹配到的完整图片语法，含 `!` 与前后的空格。 */
+  /** 匹配到的完整图片语法：含 `!`，不含前后的空白。 */
   raw: string;
   src: string;
   alt: string;
   caption: string;
-  /** 在正文里的字符下标，便于定位。 */
+  /** 在**原始正文**里的字符下标，便于定位。 */
   index: number;
 };
 
@@ -68,22 +68,33 @@ const articleImagePattern =
   /!\[([^\]]*)]\((<([^>]+)>|[^)\s]+)(?:\s+"([^"]*)")?\)/g;
 
 /**
- * 去掉代码围栏与行内代码，避免把代码示例里的图片语法误判成正文图片。
+ * 用等长空白遮掉代码围栏与行内代码，避免把代码示例里的图片语法误判成正文图片。
+ *
+ * **必须是等长替换，不能删掉字符。** `parseArticleImages` 返回的 `index` 是给
+ * 编辑器定位光标用的（`setSelectionRange`），必须是**原始正文**里的下标。
+ * 早先这里把代码换成空串，于是「图片之前出现过代码」的正文整体前移，
+ * 偏移量正好等于被删掉的字符数——点缩略图会跳到无关的文字上。换行保留下来，
+ * 跨行结构与原文一致。
  *
  * 这是**尽力而为**的粗筛：`~~~` 与 ``` 混用、缩进式代码块（4 空格）不会
  * 被识别。用途是给编辑器做图片清单，误报只会多显示一个缩略图，不影响正文。
  */
-function stripCodeContext(markdown: string) {
+function blankOutCodeContext(markdown: string) {
   return markdown
-    .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\1[^\n]*$/gm, "")
-    .replace(/`[^`\n]*`/g, "");
+    .replace(
+      /^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\1[^\n]*$/gm,
+      (block) => block.replace(/[^\n]/g, " "),
+    )
+    .replace(/`[^`\n]*`/g, (code) => " ".repeat(code.length));
 }
 
 export function parseArticleImages(markdown: string): ParsedArticleImage[] {
-  const searchable = stripCodeContext(markdown);
+  // 遮罩与原文等长（见 `blankOutCodeContext`），所以 `match.index` 可以直接
+  // 当作原文下标返回给调用方定位。
+  const masked = blankOutCodeContext(markdown);
   const images: ParsedArticleImage[] = [];
 
-  for (const match of searchable.matchAll(articleImagePattern)) {
+  for (const match of masked.matchAll(articleImagePattern)) {
     const raw = match[0] ?? "";
     const src = (match[3] ?? match[2] ?? "").trim();
     if (!raw || !src) continue;

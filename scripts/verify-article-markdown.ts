@@ -394,6 +394,38 @@ void test("article image parsing ignores code examples and keeps external source
   assert.equal(parsed[0]?.src.startsWith("/uploads/"), false);
 });
 
+void test("article image indexes stay anchored to the original markdown", () => {
+  // `index` 不是给人看的字段：编辑器拿它做 `setSelectionRange`，把光标落到
+  // 那段图片语法上。所以它必须是**原始正文**里的下标，不能用「剥掉代码之后」
+  // 的字符串算——那样含代码的正文会整体前移，偏移量正好等于被删掉的字符数，
+  // 点缩略图就跳到无关的文字上。
+  const source = [
+    "`npm install` 之后再看下图：",
+    "",
+    "```bash",
+    "fwq --version",
+    "```",
+    "",
+    '![正文图](/uploads/body.webp "部署拓扑")',
+    "",
+    "行内示例 `![示例](/uploads/inline.webp)` 不算，真正的第二张是 ![第二张](/uploads/second.webp)。",
+  ].join("\n");
+
+  const parsed = parseArticleImages(source);
+  assert.deepEqual(
+    parsed.map((image) => image.src),
+    ["/uploads/body.webp", "/uploads/second.webp"],
+  );
+
+  for (const image of parsed) {
+    assert.equal(
+      source.slice(image.index, image.index + image.raw.length),
+      image.raw,
+      `index 必须能在原始正文里切出同一段图片语法：${image.src}`,
+    );
+  }
+});
+
 /**
  * AI 改写的占位符机制：正文图片必须能原样穿过模型。
  *
