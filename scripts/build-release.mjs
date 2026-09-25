@@ -108,8 +108,18 @@ async function buildRelease() {
         { encoding: "utf8", timeout: 30000 },
       );
       if (ssh.status !== 0) {
+        // 把 ssh 自己的报错原样带出来。原先这里只抛一句笼统的话，CI 日志里看不出到底是
+        // 主机密钥不匹配（Host key verification failed）、认证失败（Permission denied）
+        // 还是转发被禁（administratively prohibited）—— 三者的修法完全不同，
+        // 2026-09-25 那次部署失败就是因为只看到那句话而无法定位。
+        const detail = `${ssh.stderr ?? ""}${ssh.stdout ?? ""}`.trim();
         throw new Error(
-          "Build database SSH tunnel failed; verify the pinned host key, SSH access and forwarding policy",
+          [
+            "Build database SSH tunnel failed; verify the pinned host key, SSH access and forwarding policy",
+            detail
+              ? `ssh said: ${detail}`
+              : "(ssh produced no output — check DEPLOY_KNOWN_HOSTS, SSH_PRIVATE_KEY and DEPLOY_HOST)",
+          ].join("\n"),
         );
       }
       tunnelStarted = true;
