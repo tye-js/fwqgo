@@ -2,7 +2,8 @@ import Link from "next/link";
 
 import { cn } from "@fwqgo/core/utils";
 
-import type { HeaderCopy, PublicLanguage } from "./header-copy";
+import type { HeaderCopy } from "./header-copy";
+import type { PublicNavLink, PublicNavModel } from "./public-nav";
 
 /**
  * 桌面主导航（`xl` 及以上）。
@@ -21,149 +22,122 @@ import type { HeaderCopy, PublicLanguage } from "./header-copy";
  *
  * 丢掉：Radix 的「箭头键在菜单项之间移动」、展开动画、打开延迟。
  * 保留了**悬停**与**点击**两种打开方式，与原来的手感一致：
- * - `group-hover:block` —— 鼠标移上去就展开，移开就收（对应 Radix 的 hover 打开）；
- * - `group-open:block` —— 点一下 `<summary>` 钉住，再点收起（对应 Radix 的 click 打开）。
+ * - `group-hover:*` —— 鼠标移上去就展开，移开就收；
+ * - `group-open:*` —— 点一下 `<summary>` 钉住，再点收起。
  *
- * 面板用 `absolute` 定位在 `<summary>` 正下方。header 有 `z-50`，面板是它的后代，
- * 因此不会压在页面内容下面。
+ * ## 悬停手感：为什么不是 `hidden` / `block`
+ *
+ * 面板的显示/隐藏走 `visibility` + `opacity` 过渡，并且**收起方向带 150ms 延迟**
+ * （`delay-150`，展开方向是 `delay-0`）。这样鼠标从标题移向面板的途中不会立刻消失 ——
+ * 2026-09-25 之前用 `hidden` / `group-hover:block` 切换，`display` 不可过渡，
+ * 手一抖面板就没了。
+ *
+ * 导航结构来自 `buildPublicNav()`（`./public-nav`），桌面与移动共用同一份数据，
+ * 这里只负责渲染差异。
  */
 
 const navLinkClass =
   "inline-flex min-h-11 w-max items-center justify-center rounded-md bg-transparent px-4 py-2 text-base font-medium text-foreground transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:bg-primary focus-visible:text-primary-foreground focus-visible:outline-none";
 
-/** 面板容器：默认隐藏，悬停或 `<details open>` 时显示。 */
+const summaryClass = cn(
+  navLinkClass,
+  "cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden",
+);
+
+/**
+ * 下拉面板容器。
+ *
+ * - 收起态 `invisible opacity-0` + `delay-150`：移开鼠标后有 150ms 宽限期；
+ * - 悬停或 `<details open>` 时 `delay-0`，立即出现；
+ * - `pt-2` 既是标题与面板之间的视觉间距，也保证两者之间没有可穿透的空隙
+ *   （鼠标经过时仍算在 `<details>` 内，不会触发收起）。
+ */
 const panelClass =
-  "absolute left-0 top-full z-50 hidden pt-2 group-hover:block group-open:block";
+  "invisible absolute left-0 top-full z-50 pt-2 opacity-0 transition-[opacity,visibility] duration-150 delay-150 group-hover:visible group-hover:opacity-100 group-hover:delay-0 group-open:visible group-open:opacity-100 group-open:delay-0";
 
 const panelListClass =
   "grid gap-2 rounded-md border border-border/70 bg-popover p-4 shadow-lg";
 
-function ListItem({
-  title,
-  href,
-  children,
-}: {
-  title: string;
-  href: string;
-  children: React.ReactNode;
-}) {
+const listItemClass =
+  "block select-none space-y-2 rounded-md border border-transparent p-3.5 leading-none no-underline outline-none transition-colors hover:border-border hover:bg-muted/60 focus:border-border focus:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring";
+
+function ListItem({ link }: { link: PublicNavLink }) {
   return (
     <li>
-      <Link
-        href={href}
-        prefetch={false}
-        className="block select-none space-y-2 rounded-md border border-transparent p-3.5 leading-none no-underline outline-none transition-colors hover:border-border hover:bg-muted/60 focus:border-border focus:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <div className="text-sm font-medium leading-none">{title}</div>
-        <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
-          {children}
-        </p>
+      <Link href={link.href} prefetch={false} className={listItemClass}>
+        <div className="text-sm font-medium leading-none">{link.label}</div>
+        {link.description ? (
+          <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
+            {link.description}
+          </p>
+        ) : null}
       </Link>
     </li>
   );
 }
 
+function NavGroup({
+  title,
+  links,
+  panelClassName,
+}: {
+  title: string;
+  links: PublicNavLink[];
+  panelClassName: string;
+}) {
+  return (
+    <li>
+      <details className="group relative">
+        <summary className={summaryClass}>{title}</summary>
+        <div className={panelClass}>
+          <ul className={cn(panelListClass, panelClassName)}>
+            {links.map((link) => (
+              <ListItem key={link.href} link={link} />
+            ))}
+          </ul>
+        </div>
+      </details>
+    </li>
+  );
+}
+
 export function DesktopNav({
-  language,
   copy,
-  categories,
+  nav,
   categoriesFailed,
 }: {
-  language: PublicLanguage;
   copy: HeaderCopy;
-  categories: Array<{
-    id: number;
-    name: string;
-    slug: string;
-    description: string | null;
-  }>;
+  nav: PublicNavModel;
   categoriesFailed: boolean;
 }) {
-  const articlePrefix = language === "en" ? "/en" : "";
-
   return (
     <nav className="hidden xl:block" aria-label={copy.navigationTitle}>
       <ul className="flex items-center gap-0.5">
         <li>
-          <Link href={`${articlePrefix}/fwq/page/1`} className={navLinkClass}>
-            {language === "en" ? "Journal" : "最新文章"}
+          <Link href={nav.latest.href} className={navLinkClass}>
+            {nav.latest.label}
           </Link>
         </li>
 
-        <li>
-          <details className="group relative">
-            <summary
-              className={cn(
-                navLinkClass,
-                "cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden",
-              )}
-            >
-              {copy.dealsTitle}
-            </summary>
-            <div className={panelClass}>
-              <ul
-                className={cn(
-                  panelListClass,
-                  "w-[420px] gap-3 md:w-[520px] md:grid-cols-2",
-                )}
-              >
-                <ListItem title={copy.allOffers} href="/servers">
-                  {copy.allOffersDescription}
-                </ListItem>
-                <ListItem title={copy.hongKong} href="/servers/hong-kong">
-                  {copy.hongKongDescription}
-                </ListItem>
-                <ListItem
-                  title={copy.unitedStates}
-                  href="/servers/united-states"
-                >
-                  {copy.unitedStatesDescription}
-                </ListItem>
-                <ListItem title={copy.cheapVps} href="/servers/cheap-vps">
-                  {copy.cheapVpsDescription}
-                </ListItem>
-              </ul>
-            </div>
-          </details>
-        </li>
+        <NavGroup
+          title={copy.dealsTitle}
+          links={nav.deals}
+          panelClassName="w-[420px] gap-3 md:w-[520px] md:grid-cols-2"
+        />
 
-        {categories.length > 0 ? (
-          <li>
-            <details className="group relative">
-              <summary
-                className={cn(
-                  navLinkClass,
-                  "cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden",
-                )}
-              >
-                {copy.articleCategories}
-              </summary>
-              <div className={panelClass}>
-                <ul
-                  className={cn(
-                    panelListClass,
-                    "max-h-[calc(100dvh-5rem)] w-[min(860px,calc(100vw-2rem))] overflow-y-auto md:grid-cols-2 xl:grid-cols-3",
-                  )}
-                >
-                  {categories.map((category) => (
-                    <ListItem
-                      key={category.id}
-                      title={category.name}
-                      href={`${articlePrefix}/fwq/${encodeURIComponent(category.slug)}/page/1`}
-                    >
-                      {category.description}
-                    </ListItem>
-                  ))}
-                </ul>
-              </div>
-            </details>
-          </li>
+        {nav.categories.length > 0 ? (
+          <NavGroup
+            title={copy.articleCategories}
+            links={nav.categories}
+            panelClassName="max-h-[calc(100dvh-5rem)] w-[min(860px,calc(100vw-2rem))] overflow-y-auto md:grid-cols-2 xl:grid-cols-3"
+          />
         ) : null}
 
         {categoriesFailed ? (
           <li>
             <Link
-              href="/servers"
+              // 与「服务器比价」第一项同址：分类挂了时给一条仍然可达的比价入口。
+              href={nav.deals[0]?.href ?? "/servers"}
               prefetch
               className={cn(navLinkClass, "text-muted-foreground")}
             >
@@ -172,59 +146,23 @@ export function DesktopNav({
           </li>
         ) : null}
 
-        {copy.knowledgeHref && copy.knowledgeLabel ? (
+        {nav.knowledge ? (
           <li>
-            <Link
-              href={copy.knowledgeHref}
-              prefetch
-              className={navLinkClass}
-            >
-              {copy.knowledgeLabel}
+            <Link href={nav.knowledge.href} prefetch className={navLinkClass}>
+              {nav.knowledge.label}
             </Link>
           </li>
         ) : null}
 
-        <li>
-          <details className="group relative">
-            <summary
-              className={cn(
-                navLinkClass,
-                "cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden",
-              )}
-            >
-              {language === "en" ? "Tools" : "选购工具"}
-            </summary>
-            <div className={panelClass}>
-              <ul
-                className={cn(
-                  panelListClass,
-                  "w-[min(520px,calc(100vw-2rem))] md:grid-cols-2",
-                )}
-              >
-                <ListItem
-                  href={`${articlePrefix}/tools/server-sizing`}
-                  title={language === "en" ? "Server sizing" : "服务器配置选择"}
-                >
-                  {language === "en"
-                    ? "Match CPU, memory and storage to your workload."
-                    : "结合业务规模，梳理 CPU、内存和存储需求。"}
-                </ListItem>
-                <ListItem
-                  href={`${articlePrefix}/tools/network-lines`}
-                  title={language === "en" ? "Network routes" : "网络线路选择"}
-                >
-                  {language === "en"
-                    ? "Understand routes and carrier compatibility."
-                    : "根据用户地区和运营商，比较网络线路。"}
-                </ListItem>
-              </ul>
-            </div>
-          </details>
-        </li>
+        <NavGroup
+          title={copy.toolsTitle}
+          links={nav.tools}
+          panelClassName="w-[min(520px,calc(100vw-2rem))] md:grid-cols-2"
+        />
 
         <li>
-          <Link href={copy.searchHref} prefetch className={navLinkClass}>
-            {copy.searchLabel}
+          <Link href={nav.search.href} prefetch className={navLinkClass}>
+            {nav.search.label}
           </Link>
         </li>
       </ul>

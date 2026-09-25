@@ -1,14 +1,20 @@
 /**
  * 前台 Header 的文案表与语言类型。
  *
- * 单独抽出来是为了让 `desktop-nav.tsx` / `mobile-nav.tsx` 能拿到同一份类型，
+ * 单独抽出来是为了让 `desktop-nav.tsx` / `mobile-nav-drawer.tsx` 能拿到同一份类型，
  * 而不必从 `header.tsx` 反向导入（那会形成循环依赖）。
+ *
+ * **导航里出现的所有可见文字都要在这里**，不要在 JSX 里写裸字符串：2026-09-25 之前
+ * 「最新文章」「选购工具」和两个工具项的标题/描述是硬编码的，桌面写 `Journal`、
+ * 移动写 `Latest articles` —— 同一个入口在两种视口下有两个英文名。
  */
 export type PublicLanguage = "zh" | "en";
 
 export type HeaderCopy = {
   homeLabel: string;
   languageLabel: string;
+  /** 导航顶层直链，桌面与移动共用。 */
+  latestArticles: string;
   dealsTitle: string;
   allOffers: string;
   allOffersDescription: string;
@@ -18,6 +24,11 @@ export type HeaderCopy = {
   unitedStatesDescription: string;
   cheapVps: string;
   cheapVpsDescription: string;
+  toolsTitle: string;
+  serverSizing: string;
+  serverSizingDescription: string;
+  networkLines: string;
+  networkLinesDescription: string;
   categoriesTitle: string;
   searchHref: string;
   searchLabel: string;
@@ -33,6 +44,7 @@ export const headerCopy: Record<PublicLanguage, HeaderCopy> = {
   zh: {
     homeLabel: "服务器GO Cloud Infra Research",
     languageLabel: "English",
+    latestArticles: "最新文章",
     dealsTitle: "服务器比价",
     allOffers: "全部套餐",
     allOffersDescription: "按价格、地区、线路和状态集中筛选服务器套餐。",
@@ -42,6 +54,11 @@ export const headerCopy: Record<PublicLanguage, HeaderCopy> = {
     unitedStatesDescription: "美国 VPS、独立服务器、大带宽和外贸建站套餐。",
     cheapVps: "便宜 VPS",
     cheapVpsDescription: "低价 VPS、月付优惠和适合测试的轻量套餐。",
+    toolsTitle: "选购工具",
+    serverSizing: "服务器配置选择",
+    serverSizingDescription: "结合业务规模，梳理 CPU、内存和存储需求。",
+    networkLines: "网络线路选择",
+    networkLinesDescription: "根据用户地区和运营商，比较网络线路。",
     categoriesTitle: "套餐专题",
     searchHref: "/search",
     searchLabel: "搜索",
@@ -55,6 +72,7 @@ export const headerCopy: Record<PublicLanguage, HeaderCopy> = {
   en: {
     homeLabel: "fwqgo Cloud Infra Research",
     languageLabel: "中文",
+    latestArticles: "Latest articles",
     dealsTitle: "Server deals",
     allOffers: "All offers",
     allOffersDescription:
@@ -68,6 +86,11 @@ export const headerCopy: Record<PublicLanguage, HeaderCopy> = {
     cheapVps: "Cheap VPS",
     cheapVpsDescription:
       "Low-cost VPS plans, monthly deals, and lightweight test servers.",
+    toolsTitle: "Tools",
+    serverSizing: "Server sizing",
+    serverSizingDescription: "Match CPU, memory and storage to your workload.",
+    networkLines: "Network routes",
+    networkLinesDescription: "Understand routes and carrier compatibility.",
     categoriesTitle: "Offer topics",
     searchHref: "/search?lang=en",
     searchLabel: "Search",
