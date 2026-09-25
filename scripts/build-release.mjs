@@ -132,10 +132,19 @@ async function buildRelease() {
     });
     try {
       await sql`select 1`;
-    } catch {
-      // Do not log connection URLs or substitute an empty/default site shell.
+    } catch (error) {
+      // 只带出错误的**类型/码**，连接串本身（含只读凭据）不能进日志。
+      // 但两种故障的修法完全不同，不给线索就只能靠猜：
+      //   `28P01` / password authentication failed → 凭据过期（VPS 上轮换过而 secret 没更新）
+      //   `ECONNREFUSED` → 隧道端口没人监听（隧道进程没起来或已退出）
+      const code =
+        typeof error === "object" && error !== null && "code" in error
+          ? String(error.code)
+          : error instanceof Error
+            ? error.name
+            : "unknown";
       throw new Error(
-        "Release build cannot reach its read database; verify READ_DATABASE_URL and server database access",
+        `Release build cannot reach its read database (${code}); verify READ_DATABASE_URL and server database access`,
       );
     } finally {
       await sql.end({ timeout: 5 });
