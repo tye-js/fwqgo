@@ -136,3 +136,62 @@ for(const language of ["zh","en"]){
     `${result.stdout}\n${result.stderr}`.slice(0, 12_000),
   );
 });
+
+void test("header navigation localizes article categories on the English tree and falls back per field", () => {
+  const result = spawnSync(process.execPath, ["--no-env-file", "-"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    timeout: 15_000,
+    input: String.raw`
+import assert from "node:assert/strict";
+import {buildPublicNav} from "./src/features/public/components/public-nav.ts";
+import {headerCopy} from "./src/features/public/components/header-copy.ts";
+const categories=[
+ {id:2,name:"国内服务器",slug:"fuwuqi",description:"中文描述",enName:"China Servers",enSlug:"china-servers",enDescription:"Compare China mainland VPS."},
+ {id:9,name:"日本服务器",slug:"jp-vps",description:"中文描述",enName:"Japan VPS",enSlug:"japan-vps",enDescription:"Tokyo and Osaka offers."},
+ {id:99,name:"测试分类",slug:"test-category",description:"中文描述",enName:null,enSlug:null,enDescription:null},
+];
+const zh=buildPublicNav({language:"zh",copy:headerCopy.zh,categories});
+const en=buildPublicNav({language:"en",copy:headerCopy.en,categories});
+
+// 中文侧保持直读数据库字段：分类名与描述在 CMS 里维护，走覆盖表会把改动盖掉。
+assert.equal(zh.categories[0].label,"国内服务器");
+assert.equal(zh.categories[0].href,"/fwq/fuwuqi/page/1");
+assert.equal(zh.categories[0].description,"中文描述");
+assert.deepEqual(zh.categories[0].matchPrefixes,["/fwq/fuwuqi/page/"]);
+
+// 英文侧换成英文字段 —— /en 的导航不该出现中文分类名，也不该指向中文 slug。
+assert.equal(en.categories[0].label,"China Servers");
+assert.equal(en.categories[0].href,"/en/fwq/china-servers/page/1");
+assert.equal(en.categories[0].description,"Compare China mainland VPS.");
+assert.deepEqual(en.categories[0].matchPrefixes,["/en/fwq/china-servers/page/"]);
+for(const item of en.categories.slice(0,2)){
+ assert.ok(!/\p{Script=Han}/u.test(item.label),item.label);
+ assert.ok(!/\p{Script=Han}/u.test(item.description??""),item.description);
+ assert.ok(!/\p{Script=Han}/u.test(item.href),item.href);
+}
+
+// 英文名复用 public-article-category.ts 的覆盖表，与分类页标题同源。
+assert.equal(en.categories[1].label,"Japan Servers");
+
+// 缺英文字段时按字段回落：名字回中文名，slug 回中文 slug，描述给英文兜底句。
+assert.equal(en.categories[2].label,"测试分类");
+assert.equal(en.categories[2].href,"/en/fwq/test-category/page/1");
+assert.ok(en.categories[2].description?.startsWith("Articles, reviews, and buying guides for"),en.categories[2].description);
+
+// 空白英文字段视同缺失。
+const blank=buildPublicNav({language:"en",copy:headerCopy.en,categories:[{id:98,name:"空白分类",slug:"blank-category",description:"中文描述",enName:"   ",enSlug:"  ",enDescription:"   "}]});
+assert.equal(blank.categories[0].label,"空白分类");
+assert.equal(blank.categories[0].href,"/en/fwq/blank-category/page/1");
+
+// 非分类项不受影响：比价入口故意不带语言前缀，工具项带前缀。
+assert.deepEqual(en.deals.map((item)=>item.href),["/servers","/servers/hong-kong","/servers/united-states","/servers/cheap-vps"]);
+assert.deepEqual(en.tools.map((item)=>item.href),["/en/tools/server-sizing","/en/tools/network-lines"]);
+`,
+  });
+  assert.equal(
+    result.status,
+    0,
+    `${result.stdout}\n${result.stderr}`.slice(0, 12_000),
+  );
+});

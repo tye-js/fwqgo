@@ -12,6 +12,11 @@
  * 文案仍然从 `header-copy.ts` 取，本文件里不出现裸字符串。
  */
 
+import {
+  publicArticleCategoryDescription,
+  publicArticleCategoryName,
+} from "@/features/shared/lib/public-article-category";
+
 import type { HeaderCopy, PublicLanguage } from "./header-copy";
 
 /** 导航里的一个链接。`description` 只在桌面的下拉面板里显示。 */
@@ -76,6 +81,9 @@ export function buildPublicNav(input: {
     name: string;
     slug: string;
     description?: string | null;
+    enName?: string | null;
+    enSlug?: string | null;
+    enDescription?: string | null;
   }>;
 }): PublicNavModel {
   const { language, copy, categories } = input;
@@ -114,14 +122,41 @@ export function buildPublicNav(input: {
       description: toolCopy[index]?.[1] ?? null,
       matchPrefixes: [`${prefix}${path}`],
     })),
-    categories: categories.map((category) => ({
-      label: category.name,
-      href: `${prefix}/fwq/${encodeURIComponent(category.slug)}/page/1`,
-      description: category.description ?? null,
-      matchPrefixes: [
-        `${prefix}/fwq/${encodeURIComponent(category.slug)}/page/`,
-      ],
-    })),
+    /**
+     * 分类项：中文侧直读数据库字段，英文侧换成英文字段。
+     *
+     * **中文侧刻意保持"直读 DB"**：分类名与描述在 CMS「SEO / 分类」里维护，
+     * 走覆盖表会把 CMS 的改动盖掉（`public-article-category.ts` 里那段
+     * "英文 Description 不再覆盖"的说明就是为这个踩过的坑）。
+     *
+     * 英文侧不能用 `category.name` —— 那会让 `/en` 的导航显示中文分类名，
+     * 与分类页标题也不一致。名字与描述复用 `public-article-category.ts`
+     * 那一份单一来源（它带一张英文覆盖表，`jp-vps` → "Japan Servers" 之类，
+     * 分类页标题用的就是它）；slug 用 `enSlug`，缺省回落中文 slug，
+     * 与 `taxonomyPageMetadata` 的规则一致。
+     */
+    categories: categories.map((category) => {
+      const englishSlug = category.enSlug?.trim()
+        ? category.enSlug.trim()
+        : category.slug;
+      const slug = language === "en" ? englishSlug : category.slug;
+
+      return {
+        label:
+          language === "en"
+            ? publicArticleCategoryName(category, "en")
+            : category.name,
+        href: `${prefix}/fwq/${encodeURIComponent(slug)}/page/1`,
+        description:
+          language === "en"
+            ? publicArticleCategoryDescription(
+                { ...category, description: category.description ?? null },
+                "en",
+              )
+            : (category.description ?? null),
+        matchPrefixes: [`${prefix}/fwq/${encodeURIComponent(slug)}/page/`],
+      };
+    }),
     knowledge:
       copy.knowledgeHref && copy.knowledgeLabel
         ? {
