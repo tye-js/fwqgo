@@ -449,6 +449,49 @@ assert.match(
   "当前页要带 aria-current，读屏用户也要知道自己在哪",
 );
 
+// 2026-09-26：桌面二级菜单不能常驻。
+//
+// 原生 `<details>` 的 `open` 是持久状态，而 Header 挂在根 layout 上、客户端路由切换
+// 不重建 DOM —— 点完二级菜单跳转过去，面板会跟着挂在新页面上；点页面别处也不消失。
+// 所以必须显式收起。断言用 stripComments：说明文字里几乎必然出现这些字面量。
+const activeNavLinkCode = stripComments(activeNavLinkSource);
+assert.match(
+  activeNavLinkCode,
+  /details\.open = false/,
+  "桌面导航的下拉面板必须能显式收起，否则点完二级菜单后面板会常驻",
+);
+assert.match(
+  activeNavLinkCode,
+  /addEventListener\(\s*"pointerdown"/,
+  "点面板以外的地方要能收起下拉面板",
+);
+assert.match(
+  activeNavLinkCode,
+  /"Escape"/,
+  "Escape 要能收起下拉面板",
+);
+assert.match(
+  activeNavLinkCode,
+  /onPointerLeave/,
+  "鼠标移开整组要收起：悬停打开后再点一下 <summary> 会让 group-open 盖过 hover 的收起逻辑",
+);
+assert.match(
+  activeNavLinkCode,
+  /relatedTarget/,
+  "焦点移出整组（键盘 Tab 走开）要收起下拉面板",
+);
+assert.match(
+  activeNavLinkCode,
+  /closest\(\s*"a"\s*\)/,
+  "点面板里的链接要收起下拉面板",
+);
+// 收起逻辑必须集中在客户端那一个文件里，别在服务端组件里再写一套。
+assert.doesNotMatch(
+  stripComments(desktopNav),
+  /addEventListener|details\.open/,
+  "下拉面板的收起逻辑统一在 active-nav-link.tsx，不要散到 desktop-nav.tsx",
+);
+
 for (const source of [inventoryResults, offerTable]) {
   assert.match(source, /grid gap-3 xl:hidden/);
   assert.match(source, /hidden overflow-x-auto[^"\n]*xl:block/);

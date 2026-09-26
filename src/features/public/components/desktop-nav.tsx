@@ -41,6 +41,13 @@ import type { PublicNavLink, PublicNavModel } from "./public-nav";
  *
  * 高亮要读路由，所以只有那两种元素下沉到客户端（`active-nav-link.tsx`），
  * 本文件与面板内容仍是服务端渲染。
+ *
+ * ## 2026-09-26：面板不再常驻
+ *
+ * 原生 `<details>` 的 `open` 是持久状态，而 Header 挂在根 layout 上、客户端路由
+ * 切换不重建 DOM —— 点完二级菜单跳转过去，面板会跟着挂在新页面上，点页面别处也不消失。
+ * 收起逻辑统一收在 `active-nav-link.tsx` 的 `useNavGroupDismiss` 里，
+ * 这里只负责版面，不需要（也不应该）各自加一套。
  */
 
 /** 普通导航项：默认略淡，hover 给一层浅底 —— 不再整块实心。 */
