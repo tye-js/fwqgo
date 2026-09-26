@@ -65,7 +65,17 @@ const summaryClass = cn(
 const primaryActionClass =
   "inline-flex min-h-11 w-max cursor-pointer select-none list-none items-center rounded-full bg-primary px-5 py-2 text-base font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden";
 
-const primaryActionActiveClass = "bg-primary/90";
+/**
+ * 「服务器比价」命中当前页时的表现。
+ *
+ * 它是**实心**按钮，所以不能像普通项那样用下划线 —— 同色系的浅下划线在实心底上看不出来。
+ * 也不该做成"按下态"（`bg-primary/85` 之类）：静态页面上显示"按下"语义是错的，那是交互反馈。
+ * 用**选中态**表达：留 2px 间隙加一圈同色系淡光晕。
+ *
+ * `ring` 是 box-shadow，**不占布局**，所以导航行高不会因为高亮而变化。
+ */
+const primaryActionActiveClass =
+  "ring-2 ring-primary/40 ring-offset-2 ring-offset-background";
 
 /**
  * 下拉面板容器（不含对齐方向）。
