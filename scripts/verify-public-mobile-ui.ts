@@ -408,6 +408,47 @@ assert.doesNotMatch(
   "桌面导航必须保持零客户端依赖（原生 <details>），不要把 Radix NavigationMenu 引回来",
 );
 
+// 2026-09-26 视觉重做：hover 不再是整块实心主色，并且必须有「当前页」指示。
+assert.match(
+  desktopNav,
+  /ActiveNavLink/,
+  "桌面导航要用 ActiveNavLink 渲染，否则没有当前页指示",
+);
+assert.match(desktopNav, /ActiveNavGroup/);
+assert.doesNotMatch(
+  stripComments(desktopNav),
+  /hover:bg-primary hover:text-primary-foreground/,
+  "导航项的 hover 是浅底 + 文字加深；不要回到整块实心主色（一排链接扫过去像在闪按钮）",
+);
+assert.match(desktopNav, /<Search/, "搜索项必须带图标，否则与相邻链接无差别");
+
+// 面板的对齐类必须是**完整字面量**：Tailwind 在源码里做子串匹配，
+// `panelClass.replace(...)` 这种拼出来的类名扫不到、会静默失效。
+// 必须 stripComments —— 实现里那段注释正好把这个反例写成字面量当说明，不剥就是自己判自己失败。
+assert.doesNotMatch(
+  stripComments(desktopNav),
+  /\.replace\(\s*"left-0"/,
+  "面板对齐方向要写成完整类名字面量，不要用 replace 拼",
+);
+assert.match(desktopNav, /right-0/);
+
+// 高亮判定规则住在数据层，不在渲染组件里按 href 形态猜。
+const publicNavSource = read("src/features/public/components/public-nav.ts");
+assert.match(
+  publicNavSource,
+  /matchPrefixes/,
+  "当前页匹配规则要由 public-nav.ts 提供",
+);
+const activeNavLinkSource = read(
+  "src/features/public/components/active-nav-link.tsx",
+);
+assert.match(activeNavLinkSource, /"use client"/);
+assert.match(
+  activeNavLinkSource,
+  /aria-current/,
+  "当前页要带 aria-current，读屏用户也要知道自己在哪",
+);
+
 for (const source of [inventoryResults, offerTable]) {
   assert.match(source, /grid gap-3 xl:hidden/);
   assert.match(source, /hidden overflow-x-auto[^"\n]*xl:block/);

@@ -147,6 +147,8 @@ binary as PM2 will use to launch the applications.
 - Keep `"use cache"` functions free of request-specific or dynamic arguments. For example, keep cached category reads stable and do language localization outside that cached boundary unless a separate stable cached API is introduced.
 - Preserve mobile interaction quality: navigation sheet links should close the sheet after navigation, tappable controls should be at least 44px high where practical, and data tables should not force horizontal page overflow.
 - Public article and offer tables should preserve real `href` targets when converting or rendering table-cell content; do not reduce linked cells to plain text.
+- **Client components that read URL data (`usePathname`, `useSearchParams`) must sit inside a `<Suspense>` boundary.** The public apps run with `cacheComponents: true`, so reading URL data outside one blocks prerendering and fails the build with `CLIENT_HOOK_DYNAMIC`. Keep the boundary inside the component that needs the hook — give the fallback a non-highlighted rendering — so callers do not have to remember. Examples: `src/features/public/components/active-nav-link.tsx`, and the language switch in `header.tsx`.
+- **Write Tailwind class names as complete literals.** `base.replace("left-0", "right-0")` produces a class name Tailwind cannot see, so the style silently disappears; define each variant as its own literal instead.
 
 ## Mobile Adaptation Contract
 

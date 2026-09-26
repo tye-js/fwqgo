@@ -7,7 +7,8 @@
  * - 分类链接的拼法两处各写一遍（桌面内联模板串、移动一个 `categoryHref()`）；
  * - 「选购工具」两项的标题与描述也各写一遍。
  *
- * 所以这里承担两件事：**导航结构**与 **URL 拼法**。调用方只管怎么渲染，不用再拼路径；
+ * 所以这里承担三件事：**导航结构**、**URL 拼法**、**当前页匹配规则**。
+ * 调用方只管怎么渲染，不用再拼路径、也不用按 href 形态去猜「我在哪一页」。
  * 文案仍然从 `header-copy.ts` 取，本文件里不出现裸字符串。
  */
 
@@ -18,6 +19,17 @@ export type PublicNavLink = {
   label: string;
   href: string;
   description?: string | null;
+  /**
+   * 当前路径命中其中任一前缀时，这一项视为「当前页」。
+   *
+   * 规则放在数据层而不是让渲染组件按 href 形态去猜，因为两者对不上：
+   * 「服务器分类」这一组的 href 指向第一个具体分类，但要匹配的是整个
+   * `/fwq/<分类>/page/N` 形态；「最新文章」反过来要排除分类页，只能匹配
+   * `/fwq/page/`。这些差异只有数据层知道。
+   *
+   * 不填表示这一项不参与高亮（比如下拉面板里的子项 —— 用户看不到它，高亮无意义）。
+   */
+  matchPrefixes?: readonly string[];
 };
 
 export type PublicNavModel = {
@@ -84,26 +96,45 @@ export function buildPublicNav(input: {
     latest: {
       label: copy.latestArticles,
       href: `${prefix}/fwq/page/1`,
+      // 只匹配 `/fwq/page/N`；分类页是 `/fwq/<slug>/page/N`，不能命中这里。
+      matchPrefixes: [`${prefix}/fwq/page/`],
     },
     deals: DEAL_PATHS.map((href, index) => ({
       label: dealCopy[index]?.[0] ?? "",
       href,
       description: dealCopy[index]?.[1] ?? null,
+      // 只有「全部套餐」参与高亮：它是 `/servers` 本身，前缀匹配同时覆盖
+      // `/servers/hong-kong` 这类子页，所以「服务器比价」入口在比价页面上会亮。
+      // 下拉里的另外三项不填 —— 面板里的项高亮没有意义。
+      ...(index === 0 ? { matchPrefixes: [href] } : {}),
     })),
     tools: TOOL_PATHS.map((path, index) => ({
       label: toolCopy[index]?.[0] ?? "",
       href: `${prefix}${path}`,
       description: toolCopy[index]?.[1] ?? null,
+      matchPrefixes: [`${prefix}${path}`],
     })),
     categories: categories.map((category) => ({
       label: category.name,
       href: `${prefix}/fwq/${encodeURIComponent(category.slug)}/page/1`,
       description: category.description ?? null,
+      matchPrefixes: [
+        `${prefix}/fwq/${encodeURIComponent(category.slug)}/page/`,
+      ],
     })),
     knowledge:
       copy.knowledgeHref && copy.knowledgeLabel
-        ? { label: copy.knowledgeLabel, href: copy.knowledgeHref }
+        ? {
+            label: copy.knowledgeLabel,
+            href: copy.knowledgeHref,
+            matchPrefixes: [copy.knowledgeHref],
+          }
         : null,
-    search: { label: copy.searchLabel, href: copy.searchHref },
+    search: {
+      label: copy.searchLabel,
+      // `searchHref` 带查询串（英文站是 `/search?lang=en`），匹配时要去掉它。
+      href: copy.searchHref,
+      matchPrefixes: [copy.searchHref.split("?")[0] ?? copy.searchHref],
+    },
   };
 }
