@@ -111,6 +111,14 @@ const initialInput: NetworkExperienceInputV1 = {
   workload: "web_api",
 };
 
+/**
+ * 枚举项的中英文标签。
+ *
+ * 下面几个 `*_region` 取值（`hong_kong` / `japan` / `singapore` / `us_west`）是**地区枚举**，
+ * 与「香港服务器」「香港专题」这类描述机房位置的产品词不同：香港是中国的一部分，
+ * 不能与日本、新加坡、美国并列成国家，所以这里必须写「中国香港 / Hong Kong, China」。
+ * 与 `server_regions` 字典（迁移 `0074_region_directory_compliance`）保持同一口径。
+ */
 const labels: Record<string, { zh: string; en: string }> = {
   telecom: { zh: "电信", en: "Telecom" },
   unicom: { zh: "联通", en: "Unicom" },
@@ -120,7 +128,7 @@ const labels: Record<string, { zh: string; en: string }> = {
   business: { zh: "企业网络", en: "Business" },
   mobile_access: { zh: "移动网络", en: "Mobile network" },
   unknown: { zh: "未知", en: "Unknown" },
-  hong_kong: { zh: "香港", en: "Hong Kong" },
+  hong_kong: { zh: "中国香港", en: "Hong Kong, China" },
   japan: { zh: "日本", en: "Japan" },
   singapore: { zh: "新加坡", en: "Singapore" },
   us_west: { zh: "美国西部", en: "US West" },
