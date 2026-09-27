@@ -19,6 +19,13 @@ const viewports = [
   [1280, 800],
 ];
 
+/** @param {string | undefined} value */
+function optionalEnvironmentValue(value) {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  return trimmed;
+}
+
 /** @param {Page} page @param {string} url @param {string} name @param {{expectInventory?: boolean}} [options] */
 async function checkPage(page, url, name, { expectInventory = false } = {}) {
   await page.goto(url, { waitUntil: "networkidle2", timeout: 30_000 });
@@ -165,8 +172,33 @@ async function checkInventoryFilters(page) {
 
 async function run() {
   let browser;
+  const browserPath = optionalEnvironmentValue(
+    process.env.MOBILE_SMOKE_BROWSER_PATH,
+  );
   try {
-    browser = await puppeteer.launch({ headless: true });
+    browser = await puppeteer.launch({
+      headless: true,
+      executablePath: browserPath,
+      /**
+       * `--no-sandbox` 在这里是**必需项**，不是可选优化。
+       *
+       * 在受限环境（本机 macOS 沙箱、容器）里，默认参数下浏览器能启动、`newPage()`
+       * 也正常返回，但**第一次 `setViewport` 就抛**
+       * `TargetCloseError: Protocol error (Emulation.setTouchEmulationEnabled):
+       * Session closed`。最小复现里没有任何项目代码：不加参数必崩，加上这两个参数
+       * 立刻恢复（实测 A/B，`goto` 与 `title()` 都正常）。
+       *
+       * `output/ui-optimize-followup-2026-09-23.md` 当时把原因归到「puppeteer 自带的
+       * chrome-headless-shell，换 Chrome for Testing 就好」—— 那个结论不准确：
+       * 换浏览器不解决问题，**沙箱参数才是变量**。后果是这个官方视口命令在本机长期
+       * 跑不起来，只能靠临时探针替代。
+       *
+       * 与 `smoke-cms-browser.mjs` 保持同一套写法。生产抓取
+       * （`src/server/scrape/article-scraper.ts`）**不得**带这个参数，
+       * `tests/security-hardening-regressions.test.ts` 有断言守着。
+       */
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
   } catch (error) {
     throw new Error(`真实视口未验证：Chromium 启动失败（${error instanceof Error ? error.message : String(error)}）`);
   }
