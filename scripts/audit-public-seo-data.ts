@@ -17,7 +17,7 @@ import { publicPostCondition } from "@/server/posts/public-post-policy";
 if (process.argv.includes("--apply"))
   throw new Error("此命令只生成复核清单，不修改数据。");
 
-const [invalidPosts, tagSets, unmappedOffers, providers, regions, lines] =
+const [invalidPosts, tagSets, unmappedOffers, providers, regions, lines, duplicateTitles] =
   await Promise.all([
     readDb
       .select({
@@ -87,6 +87,26 @@ const [invalidPosts, tagSets, unmappedOffers, providers, regions, lines] =
       .select()
       .from(serverNetworkLines)
       .where(eq(serverNetworkLines.active, true)),
+    /**
+     * 同一语言下**标题逐字相同**的已发布文章。
+     *
+     * 2026-09-28 用 sitemap 横向比对时发现的：`posts` id=1 与 id=7 标题完全一样、
+     * 两个 URL 都 200 —— 同一篇发了两次，是典型的重复内容。当时只能靠一次性脚本发现，
+     * 这里补进审计入口，让它变成可重复的复核清单（本命令只出清单，不改数据）。
+     */
+    readDb
+      .select({
+        language: posts.language,
+        title: posts.title,
+        count: sql<number>`count(*)::int`,
+        postIds: sql<number[]>`array_agg(${posts.id} order by ${posts.id})`,
+        slugs: sql<string[]>`array_agg(${posts.slug} order by ${posts.id})`,
+      })
+      .from(posts)
+      .where(eq(posts.published, true))
+      .groupBy(posts.language, posts.title)
+      .having(sql`count(*) > 1`)
+      .orderBy(sql`count(*) desc`, posts.title),
   ]);
 
 const overlapReview: Array<{
@@ -134,9 +154,10 @@ console.log(
     {
       readOnly: true,
       invalidPublishedPosts: invalidPosts,
+      duplicatePublishedTitlesForReview: duplicateTitles,
       overlappingTagsForIntentReview: overlapReview,
       entityAssignmentsForReview: entityReview,
-      note: "文章重叠不等于搜索意图相同。原生 IP 与住宅 IP 等不同概念不能自动合并；无可信实体映射的抓取文本不生成公开集合页。",
+      note: "文章重叠不等于搜索意图相同。原生 IP 与住宅 IP 等不同概念不能自动合并；无可信实体映射的抓取文本不生成公开集合页。标题重复的已发布文章是重复内容，需要人工决定合并（保留一条 + 另一条走 slug 历史重定向）还是差异化，本命令不自动处理。",
     },
     null,
     2,
