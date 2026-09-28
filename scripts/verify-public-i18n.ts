@@ -22,8 +22,31 @@ import path from "node:path";
  * 新增「带 `language` 的共享组件」时，把它加进 `LANGUAGE_AWARE_COMPONENTS`。
  */
 
-/** 英文路由里必须显式传 `language` 的共享组件。 */
-const LANGUAGE_AWARE_COMPONENTS = ["PaginationComponent"] as const;
+/**
+ * 英文路由里必须显式传 `language="en"` 的共享组件。
+ *
+ * 清单来源：`src/` 下所有「`language` 入参默认 `"zh"`」的公开组件（用
+ * `language\?: "zh" \| "en"` / `language = "zh"` 搜出来的）。新增这类组件时要补进来。
+ *
+ * **局限**：`jsxProps()` 只解析**自闭合**用法（`<X ... />`）。写成
+ * `<X ...>children</X>` 的用法不会被检查 —— 当前清单里的组件在英文路由中都是自闭合用法。
+ */
+const LANGUAGE_AWARE_COMPONENTS = [
+  "PaginationComponent",
+  "ArticleCard",
+  "ArticleCategoryPosts",
+  "ArticlePrevNext",
+  "ArticleRelatedKnowledge",
+  "ArticleRelatedSidebar",
+  "ArticleShareActions",
+  "Footer",
+  "Header",
+  "LatestPostsSidebar",
+  "NetworkLineSelector",
+  "PageCard",
+  "RelatedServerOfferCards",
+  "TagContextSidebar",
+] as const;
 
 /** 渲染「套餐地区」的组件：必须经过 `publicRegionLabel` 做本地化。 */
 const REGION_LABEL_COMPONENTS = [
@@ -55,10 +78,12 @@ assert.ok(
 );
 
 const missingLanguage: string[] = [];
+let parsedUsages = 0;
 for (const file of englishRouteFiles) {
   const source = fs.readFileSync(file, "utf8");
   for (const component of LANGUAGE_AWARE_COMPONENTS) {
     for (const props of jsxProps(source, component)) {
+      parsedUsages += 1;
       // 必须是 `"en"` 字面量：只判 `language=` 会被 `language="zh"` 或
       // 传了个别的值蒙过去。真需要动态值时（当前没有），再放宽并补对照。
       if (!/language\s*=\s*"en"/.test(props)) {
@@ -67,6 +92,13 @@ for (const file of englishRouteFiles) {
     }
   }
 }
+
+// 空切片会静默通过：解析到一个用法都没找到，说明正则或目录结构变了，先修守卫。
+assert.ok(
+  parsedUsages > 0,
+  `在 ${englishRouteFiles.length} 个英文路由文件里一个组件用法都没解析到 —— ` +
+    "正则或组件名清单已失效，断言会静默通过",
+);
 
 assert.deepEqual(
   missingLanguage,
