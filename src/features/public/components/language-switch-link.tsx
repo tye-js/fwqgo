@@ -4,7 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React from "react";
 
-type PublicLanguage = "zh" | "en";
+import {
+  buildLanguageSwitchFallbackHref,
+  type PublicLanguage,
+} from "@/features/public/lib/language-switch-href";
 
 type LanguageSwitchLinkProps = Omit<
   React.ComponentPropsWithoutRef<typeof Link>,
@@ -13,70 +16,6 @@ type LanguageSwitchLinkProps = Omit<
   currentLanguage: PublicLanguage;
   fallbackHref?: string;
 };
-
-function toHref(pathname: string, params: URLSearchParams) {
-  const query = params.toString();
-  return query ? `${pathname}?${query}` : pathname;
-}
-
-function buildFallbackHref(
-  pathname: string,
-  searchParams: URLSearchParams,
-  targetLanguage: PublicLanguage,
-) {
-  const params = new URLSearchParams(searchParams.toString());
-
-  if (pathname === "/search") {
-    if (targetLanguage === "en") {
-      params.set("lang", "en");
-    } else {
-      params.delete("lang");
-    }
-    return toHref("/search", params);
-  }
-
-  if (pathname === "/knowledge" || pathname.startsWith("/knowledge/")) {
-    return targetLanguage === "en" ? "/en/knowledge" : "/knowledge";
-  }
-
-  if (pathname === "/en/knowledge" || pathname.startsWith("/en/knowledge/")) {
-    return targetLanguage === "zh" ? "/knowledge" : "/en/knowledge";
-  }
-
-  // Trust pages share the same slug in both language trees, so the switch is a
-  // prefix change rather than a translation lookup.
-  const trustMatch =
-    /^\/(?:en\/)?(about|contact|privacy|terms|affiliate-disclosure)$/.exec(
-      pathname,
-    );
-  if (trustMatch) {
-    return targetLanguage === "en"
-      ? `/en/${trustMatch[1]}`
-      : `/${trustMatch[1]}`;
-  }
-
-  if (targetLanguage === "en") {
-    if (pathname === "/") return toHref("/en", params);
-    if (pathname === "/en" || pathname.startsWith("/en/")) {
-      return toHref(pathname, params);
-    }
-    if (pathname.startsWith("/fwq/posts/")) {
-      return "/en";
-    }
-    if (pathname.startsWith("/fwq/")) {
-      return toHref(`/en${pathname}`, params);
-    }
-    return "/en";
-  }
-
-  if (pathname === "/en") return toHref("/", params);
-  if (pathname.startsWith("/en/fwq/posts/")) return "/";
-  if (pathname.startsWith("/en/fwq/")) {
-    return toHref(pathname.slice(3) || "/", params);
-  }
-
-  return "/";
-}
 
 function toInternalHref(value: string) {
   try {
@@ -121,7 +60,11 @@ export const LanguageSwitchLink = React.forwardRef<
     const fallback = React.useMemo(() => {
       return (
         fallbackHref ??
-        buildFallbackHref(pathname, new URLSearchParams(), targetLanguage)
+        buildLanguageSwitchFallbackHref(
+          pathname,
+          new URLSearchParams(),
+          targetLanguage,
+        )
       );
     }, [fallbackHref, pathname, targetLanguage]);
 
@@ -132,7 +75,11 @@ export const LanguageSwitchLink = React.forwardRef<
         href:
           findAlternateHref(targetLanguage) ??
           (fallbackHref ??
-            buildFallbackHref(pathname, searchParams, targetLanguage)),
+            buildLanguageSwitchFallbackHref(
+              pathname,
+              searchParams,
+              targetLanguage,
+            )),
       });
     }, [fallbackHref, pathname, targetLanguage]);
 

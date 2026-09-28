@@ -147,12 +147,23 @@ import assert from "node:assert/strict";
 import {buildPublicNav} from "./src/features/public/components/public-nav.ts";
 import {headerCopy} from "./src/features/public/components/header-copy.ts";
 const categories=[
- {id:2,name:"国内服务器",slug:"fuwuqi",description:"中文描述",enName:"China Servers",enSlug:"china-servers",enDescription:"Compare China mainland VPS."},
- {id:9,name:"日本服务器",slug:"jp-vps",description:"中文描述",enName:"Japan VPS",enSlug:"japan-vps",enDescription:"Tokyo and Osaka offers."},
- {id:99,name:"测试分类",slug:"test-category",description:"中文描述",enName:null,enSlug:null,enDescription:null},
+ {id:2,name:"国内服务器",slug:"fuwuqi",description:"中文描述",enName:"China Servers",enSlug:"china-servers",enDescription:"Compare China mainland VPS.",zhPublishedPostCount:12,enPublishedPostCount:4},
+ {id:9,name:"日本服务器",slug:"jp-vps",description:"中文描述",enName:"Japan VPS",enSlug:"japan-vps",enDescription:"Tokyo and Osaka offers.",zhPublishedPostCount:8,enPublishedPostCount:2},
+ {id:99,name:"测试分类",slug:"test-category",description:"中文描述",enName:null,enSlug:null,enDescription:null,zhPublishedPostCount:3,enPublishedPostCount:1},
+ // 有 enSlug 但没有英文稿 → 英文树里 /en/fwq/chinese-only/page/1 会 404，不该进英文导航。
+ {id:98,name:"只有中文稿",slug:"zh-only",description:"中文描述",enName:"Chinese Only",enSlug:"chinese-only",enDescription:null,zhPublishedPostCount:5,enPublishedPostCount:0},
+ // 反方向：有 zhSlug 但没有中文稿 → 不该进中文导航。
+ {id:97,name:"只有英文稿",slug:"zh-empty",description:"中文描述",enName:"English Only",enSlug:"english-only",enDescription:"Only English posts.",zhPublishedPostCount:0,enPublishedPostCount:6},
 ];
 const zh=buildPublicNav({language:"zh",copy:headerCopy.zh,categories});
 const en=buildPublicNav({language:"en",copy:headerCopy.en,categories});
+
+// 对应语言没有已发布稿件的分类要从导航里剔掉 —— 否则就是死链（实测英文导航里 4 个分类
+// 只有 enSlug、没有英文稿，点进去全部 404）。两侧都要断言，且要有阳性对照（留下来的还在）。
+assert.deepEqual(zh.categories.map((item)=>item.href),["/fwq/fuwuqi/page/1","/fwq/jp-vps/page/1","/fwq/test-category/page/1","/fwq/zh-only/page/1"]);
+assert.deepEqual(en.categories.map((item)=>item.href),["/en/fwq/china-servers/page/1","/en/fwq/japan-vps/page/1","/en/fwq/test-category/page/1","/en/fwq/english-only/page/1"]);
+assert.ok(!en.categories.some((item)=>item.href.includes("chinese-only")),"没有英文稿的分类不该出现在英文导航里");
+assert.ok(!zh.categories.some((item)=>item.href.includes("zh-empty")),"没有中文稿的分类不该出现在中文导航里");
 
 // 中文侧保持直读数据库字段：分类名与描述在 CMS 里维护，走覆盖表会把改动盖掉。
 assert.equal(zh.categories[0].label,"国内服务器");
@@ -180,13 +191,58 @@ assert.equal(en.categories[2].href,"/en/fwq/test-category/page/1");
 assert.ok(en.categories[2].description?.startsWith("Articles, reviews, and buying guides for"),en.categories[2].description);
 
 // 空白英文字段视同缺失。
-const blank=buildPublicNav({language:"en",copy:headerCopy.en,categories:[{id:98,name:"空白分类",slug:"blank-category",description:"中文描述",enName:"   ",enSlug:"  ",enDescription:"   "}]});
+const blank=buildPublicNav({language:"en",copy:headerCopy.en,categories:[{id:96,name:"空白分类",slug:"blank-category",description:"中文描述",enName:"   ",enSlug:"  ",enDescription:"   ",zhPublishedPostCount:1,enPublishedPostCount:1}]});
 assert.equal(blank.categories[0].label,"空白分类");
 assert.equal(blank.categories[0].href,"/en/fwq/blank-category/page/1");
 
 // 非分类项不受影响：比价入口故意不带语言前缀，工具项带前缀。
 assert.deepEqual(en.deals.map((item)=>item.href),["/servers","/servers/hong-kong","/servers/united-states","/servers/cheap-vps"]);
 assert.deepEqual(en.tools.map((item)=>item.href),["/en/tools/server-sizing","/en/tools/network-lines"]);
+`,
+  });
+  assert.equal(
+    result.status,
+    0,
+    `${result.stdout}\n${result.stderr}`.slice(0, 12_000),
+  );
+});
+
+void test("language switch fallback never guesses a slug in the other language tree", () => {
+  const result = spawnSync(process.execPath, ["--no-env-file", "-"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    timeout: 15_000,
+    input: String.raw`
+import assert from "node:assert/strict";
+import {buildLanguageSwitchFallbackHref} from "./src/features/public/lib/language-switch-href.ts";
+const href=(pathname,target,query="")=>buildLanguageSwitchFallbackHref(pathname,new URLSearchParams(query),target);
+
+// 含 slug 的分类/标签页：两侧的 slug 不同，猜前缀会得到 404（实测 5 个死链）。
+// 有对应语言版本时由 hreflang alternate 接管，走到兜底说明没有 → 回目标语言首页。
+assert.equal(href("/fwq/ddos-vps/page/1","en"),"/en");
+assert.equal(href("/fwq/tags/vps优惠/page/1","en"),"/en");
+assert.equal(href("/fwq/large-bandwidth-vps/page/1","en"),"/en");
+assert.equal(href("/en/fwq/china-servers/page/1","zh"),"/");
+// 文章页 slug 也是中文的，同样不能猜。
+assert.equal(href("/fwq/posts/某篇文章","en"),"/en");
+assert.equal(href("/en/fwq/posts/some-post","zh"),"/");
+
+// 阳性对照：**不含 slug** 的分页路径仍然加/去前缀，不能一律回首页。
+assert.equal(href("/fwq/page/3","en"),"/en/fwq/page/3");
+assert.equal(href("/en/fwq/page/3","zh"),"/fwq/page/3");
+
+// 阳性对照：这几类 slug 两棵树相同，映射必须保留。
+assert.equal(href("/about","en"),"/en/about");
+assert.equal(href("/en/terms","zh"),"/terms");
+assert.equal(href("/knowledge/foo","en"),"/en/knowledge");
+assert.equal(href("/en/knowledge/bar","zh"),"/knowledge");
+assert.equal(href("/search","en"),"/search?lang=en");
+assert.equal(href("/search","zh","lang=en&q=x"),"/search?q=x");
+
+// 根路径与「已在目标语言树内」。
+assert.equal(href("/","en"),"/en");
+assert.equal(href("/en","zh"),"/");
+assert.equal(href("/en/fwq/page/1","en"),"/en/fwq/page/1");
 `,
   });
   assert.equal(

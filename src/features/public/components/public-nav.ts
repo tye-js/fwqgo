@@ -84,6 +84,15 @@ export function buildPublicNav(input: {
     enName?: string | null;
     enSlug?: string | null;
     enDescription?: string | null;
+    /**
+     * 该分类下**已发布**的稿件数（`getNavigationCategories()` 已经算好）。
+     *
+     * 用来剔除点进去就是 404 的分类：`/fwq/<slug>/page/1` 在对应语言没有已发布稿件时
+     * 会 `notFound()`。实测英文导航里有 4 个分类只有 `enSlug`、没有英文稿，
+     * 点进去全部 404（爬站抓到 3 个）。
+     */
+    zhPublishedPostCount?: number;
+    enPublishedPostCount?: number;
   }>;
 }): PublicNavModel {
   const { language, copy, categories } = input;
@@ -135,28 +144,42 @@ export function buildPublicNav(input: {
      * 分类页标题用的就是它）；slug 用 `enSlug`，缺省回落中文 slug，
      * 与 `taxonomyPageMetadata` 的规则一致。
      */
-    categories: categories.map((category) => {
-      const englishSlug = category.enSlug?.trim()
-        ? category.enSlug.trim()
-        : category.slug;
-      const slug = language === "en" ? englishSlug : category.slug;
+    categories: categories
+      /**
+       * 剔掉**对应语言没有已发布稿件**的分类。
+       *
+       * `/fwq/<slug>/page/1` 在没有已发布稿件时会 `notFound()`，所以列进导航就是死链。
+       * 实测英文导航里有 4 个分类只有 `enSlug`、没有英文稿（`ddos-protected-servers` /
+       * `free-vps` / `high-bandwidth-servers` / `international-vps`），点进去全部 404。
+       * 中英两侧用同一规则，避免新分类（还没发文）一上线就进导航。
+       */
+      .filter((category) =>
+        language === "en"
+          ? (category.enPublishedPostCount ?? 0) > 0
+          : (category.zhPublishedPostCount ?? 0) > 0,
+      )
+      .map((category) => {
+        const englishSlug = category.enSlug?.trim()
+          ? category.enSlug.trim()
+          : category.slug;
+        const slug = language === "en" ? englishSlug : category.slug;
 
-      return {
-        label:
-          language === "en"
-            ? publicArticleCategoryName(category, "en")
-            : category.name,
-        href: `${prefix}/fwq/${encodeURIComponent(slug)}/page/1`,
-        description:
-          language === "en"
-            ? publicArticleCategoryDescription(
-                { ...category, description: category.description ?? null },
-                "en",
-              )
-            : (category.description ?? null),
-        matchPrefixes: [`${prefix}/fwq/${encodeURIComponent(slug)}/page/`],
-      };
-    }),
+        return {
+          label:
+            language === "en"
+              ? publicArticleCategoryName(category, "en")
+              : category.name,
+          href: `${prefix}/fwq/${encodeURIComponent(slug)}/page/1`,
+          description:
+            language === "en"
+              ? publicArticleCategoryDescription(
+                  { ...category, description: category.description ?? null },
+                  "en",
+                )
+              : (category.description ?? null),
+          matchPrefixes: [`${prefix}/fwq/${encodeURIComponent(slug)}/page/`],
+        };
+      }),
     knowledge:
       copy.knowledgeHref && copy.knowledgeLabel
         ? {

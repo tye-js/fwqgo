@@ -235,25 +235,41 @@ for (const invariant of [
 // carry the upstream marketing text ("United States", "CMIN2 / CU9929", a
 // provider name), so falling back to it put crawlable 404s on /servers, which
 // is listed in sitemap-servers.xml.
-const inventoryResults = readFileSync(
-  "src/features/public/components/server-inventory-results.tsx",
+//
+// 2026-09-28：这条规则原先在 server-inventory-results.tsx 与 server-offer-table.tsx
+// 里**各写了一份**，而这份守卫只盯了前者 —— 于是后者继续用展示原文拼链接，
+// 又在专题页/目录页产生 404（实测爬站抓到 4 个）。现在规则只有一处实现
+// （server-collection-link.tsx），守卫改成：盯住共享组件，并断言两个消费方
+// 都不再自己拼 href、都必须走共享组件。
+const collectionLinkSource = readFileSync(
+  "src/features/public/components/server-collection-link.tsx",
   "utf8",
 );
 assert.ok(
-  inventoryResults.includes("function CollectionLink("),
+  collectionLinkSource.includes("export function ServerCollectionLink("),
   "Offer rows must render a collection label without a canonical slug as plain text",
 );
-assert.ok(
-  !/Slug \?\? offer\.(providerName|region|lineType)/.test(inventoryResults),
-  "Collection hrefs must not fall back to unmapped marketing text",
-);
-for (const raw of ["providerName", "region", "lineType"]) {
+
+const COLLECTION_LINK_CONSUMERS = [
+  "src/features/public/components/server-inventory-results.tsx",
+  "src/features/public/components/server-offer-table.tsx",
+];
+for (const consumer of COLLECTION_LINK_CONSUMERS) {
+  const consumerSource = readFileSync(consumer, "utf8");
   assert.ok(
-    !new RegExp(`collectionHref\\([^)]*offer\\.${raw}\\b`).test(
-      inventoryResults,
-    ),
-    `Collection hrefs must not be built from offer.${raw}`,
+    consumerSource.includes("<ServerCollectionLink"),
+    `Collection labels must go through the shared component: ${consumer}`,
   );
+  assert.ok(
+    !/Slug \?\? offer\.(providerName|region|lineType)/.test(consumerSource),
+    `Collection hrefs must not fall back to unmapped marketing text: ${consumer}`,
+  );
+  for (const raw of ["providerName", "region", "lineType"]) {
+    assert.ok(
+      !new RegExp(`collectionHref\\([^)]*offer\\.${raw}\\b`).test(consumerSource),
+      `Collection hrefs must not be built from offer.${raw}: ${consumer}`,
+    );
+  }
 }
 
 console.log(

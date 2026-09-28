@@ -365,6 +365,25 @@ function serverOfferPublicSelect() {
     regionEnName: sql<
       string | null
     >`(select ${serverRegions.enName} from ${serverRegions} where ${serverRegions.id} = ${serverOffers.regionId})`,
+    /**
+     * 目录 slug：**只有归一到字典的行才有**。
+     *
+     * 套餐表格此前把**展示原文**当 slug 拼链接（`/servers/lines/普通 BGP`、
+     * `/servers/providers/dedione`），未归一的行点进去就是 404 —— 实测爬站一次抓到 4 个。
+     * `server-inventory-results.tsx` 早就改成「拿不到字典 slug 就渲染纯文本」，
+     * 但这份表格（专题页 / 目录页 / 搜索页）没跟上。
+     *
+     * 同样用标量子查询，避免给使用本函数的 5 个查询各加一次 provider / line 的 join。
+     */
+    providerSlug: sql<
+      string | null
+    >`(select ${affServiceProviders.slug} from ${affServiceProviders} where ${affServiceProviders.id} = ${serverOffers.providerId})`,
+    regionSlug: sql<
+      string | null
+    >`(select ${serverRegions.slug} from ${serverRegions} where ${serverRegions.id} = ${serverOffers.regionId})`,
+    lineSlug: sql<
+      string | null
+    >`(select ${serverNetworkLines.slug} from ${serverNetworkLines} where ${serverNetworkLines.id} = ${serverOffers.lineId})`,
     lineType: serverOffers.lineType,
     ipv4: serverOffers.ipv4,
     ipv6: serverOffers.ipv6,

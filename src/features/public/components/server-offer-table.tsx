@@ -38,6 +38,8 @@ import {
   resolveMonthlyPriceUsd,
 } from "@fwqgo/core/server-offer-price";
 
+import { ServerCollectionLink } from "@/features/public/components/server-collection-link";
+
 type Offer = {
   id: number;
   title: string;
@@ -60,6 +62,13 @@ type Offer = {
    * 由 `serverOfferPublicSelect()` 的标量子查询提供，缺省为 `undefined`。
    */
   regionEnName?: string | null;
+  /**
+   * 目录 slug。**只有归一到字典的行才有** —— 未归一的行渲染成纯文本，
+   * 否则点进去是 404（见 `serverOfferPublicSelect()` 里的说明）。
+   */
+  providerSlug?: string | null;
+  regionSlug?: string | null;
+  lineSlug?: string | null;
   lineType: string | null;
   ipv4?: string | null;
   ipv6?: string | null;
@@ -413,13 +422,14 @@ function OfferActions({
   );
 }
 
-function collectionHref(
-  kind: "providers" | "regions" | "lines",
-  value: string,
-) {
-  return `/servers/${kind}/${encodeURIComponent(value)}`;
-}
-
+/**
+ * 目录单元格（商家 / 地区 / 线路）的渲染规则收在 `server-collection-link.tsx`：
+ * **只有归一到字典（拿到 slug）才渲染链接**，未归一的行渲染纯文本。
+ *
+ * 这里原先直接用**展示原文**当 slug 拼链接，未归一的行（线路「普通 BGP」「CMIN2+CUII」、
+ * 字典里没有的供应商「dedione」）点进去就是 404 —— 实测爬站一次抓到 4 个。
+ * `server-inventory-results.tsx` 里的同一规则早就修过，两份实现只修了一处。
+ */
 function OfferMobileCard({
   offer,
   language,
@@ -451,13 +461,13 @@ function OfferMobileCard({
               variant="secondary"
               className="max-w-full whitespace-normal break-words"
             >
-              <Link
-                href={collectionHref("providers", providerName)}
-                prefetch={false}
+              <ServerCollectionLink
+                kind="providers"
+                slug={offer.providerSlug}
                 className="break-words hover:underline"
               >
                 {providerName}
-              </Link>
+              </ServerCollectionLink>
             </Badge>
           ) : null}
           {productType ? (
@@ -487,26 +497,26 @@ function OfferMobileCard({
           <p className="text-xs text-muted-foreground">{copy.regionLine}</p>
           <p className="mt-1 break-words font-medium text-foreground">
             {region ? (
-              <Link
-                href={collectionHref("regions", region)}
-                prefetch={false}
+              <ServerCollectionLink
+                kind="regions"
+                slug={offer.regionSlug}
                 className="break-words underline-offset-4 hover:text-primary hover:underline"
               >
                 {region}
-              </Link>
+              </ServerCollectionLink>
             ) : (
               copy.regionMissing
             )}
           </p>
           <p className="mt-1 break-words text-xs text-muted-foreground">
             {lineType ? (
-              <Link
-                href={collectionHref("lines", lineType)}
-                prefetch={false}
+              <ServerCollectionLink
+                kind="lines"
+                slug={offer.lineSlug}
                 className="break-words underline-offset-4 hover:text-primary hover:underline"
               >
                 {lineType}
-              </Link>
+              </ServerCollectionLink>
             ) : (
               copy.lineMissing
             )}
@@ -781,16 +791,13 @@ export function ServerOfferTable({
                     <div className="flex flex-wrap gap-2">
                       {offer.providerName ? (
                         <Badge variant="secondary">
-                          <Link
-                            href={collectionHref(
-                              "providers",
-                              offer.providerName,
-                            )}
-                            prefetch={false}
+                          <ServerCollectionLink
+                            kind="providers"
+                            slug={offer.providerSlug}
                             className="hover:underline"
                           >
                             {offer.providerName}
-                          </Link>
+                          </ServerCollectionLink>
                         </Badge>
                       ) : null}
                       {offer.productType ? (
@@ -818,26 +825,26 @@ export function ServerOfferTable({
                 <td className="px-3 py-3">
                   <p className="font-medium leading-5">
                     {offer.region ? (
-                      <Link
-                        href={collectionHref("regions", offer.region)}
-                        prefetch={false}
+                      <ServerCollectionLink
+                        kind="regions"
+                        slug={offer.regionSlug}
                         className="underline-offset-4 hover:text-primary hover:underline"
                       >
                         {offer.region}
-                      </Link>
+                      </ServerCollectionLink>
                     ) : (
                       copy.regionMissing
                     )}
                   </p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
                     {offer.lineType ? (
-                      <Link
-                        href={collectionHref("lines", offer.lineType)}
-                        prefetch={false}
+                      <ServerCollectionLink
+                        kind="lines"
+                        slug={offer.lineSlug}
                         className="underline-offset-4 hover:text-primary hover:underline"
                       >
                         {offer.lineType}
-                      </Link>
+                      </ServerCollectionLink>
                     ) : (
                       copy.lineMissing
                     )}
