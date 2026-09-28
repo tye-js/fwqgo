@@ -350,6 +350,21 @@ function serverOfferPublicSelect() {
     traffic: serverOffers.traffic,
     trafficGb: serverOffers.trafficGb,
     region: serverOffers.region,
+    /**
+     * 地区字典里的英文名，供英文页使用。
+     *
+     * `serverOffers.region` 是**抓取来的原文**，1197 条里有 231 条是中文（「美国」「荷兰」
+     * 「德国」…）。英文页此前直接渲染原文，于是英文文章/列表页的套餐卡片上出现中文地区名。
+     * 这些套餐绝大多数都通过 `regionId` 归到了字典（`server_regions`），而字典同时有
+     * `name` 与 `enName`，所以英文侧应当优先用 `enName`。
+     *
+     * 用**标量子查询**而不是给使用本函数的 5 个查询各加一次 join：字典只有 10 行、按主键
+     * 命中，每页最多十几行的开销可以忽略，却省掉了在 5 处分别维护 join 与别名的风险。
+     * 原文本身**保留不改**（它是抓取事实，`region` 继续原样返回，中文页与筛选仍用它）。
+     */
+    regionEnName: sql<
+      string | null
+    >`(select ${serverRegions.enName} from ${serverRegions} where ${serverRegions.id} = ${serverOffers.regionId})`,
     lineType: serverOffers.lineType,
     ipv4: serverOffers.ipv4,
     ipv6: serverOffers.ipv6,

@@ -3,22 +3,51 @@ import { ArrowRight, SlidersHorizontal } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { publicRegionLabel } from "@/features/public/lib/public-region-label";
 
 type TagContextOffer = {
   providerName: string | null;
   region: string | null;
+  /** 地区字典英文名。英文页的 chip 文字用它，跳转 query 仍用原文。 */
+  regionEnName?: string | null;
   lineType: string | null;
 };
 
-function uniqueTerms(offers: TagContextOffer[]) {
-  return [
-    ...new Set(
-      offers
-        .flatMap((offer) => [offer.providerName, offer.region, offer.lineType])
-        .map((value) => value?.trim())
-        .filter((value): value is string => Boolean(value)),
-    ),
-  ].slice(0, 6);
+/**
+ * 侧栏 chip 的候选词。
+ *
+ * `query` 必须用**原文**：`/servers?query=` 按字典名或原文匹配
+ * （见 `public-inventory-query.ts`），英文名匹配不到任何套餐。
+ * `label` 才是屏幕上的文字 —— 英文页把地区换成字典英文名，否则英文标签页的 chip
+ * 上会出现中文地区名（实测「荷兰」「德国」）。
+ */
+type TagContextTerm = { query: string; label: string };
+
+function uniqueTerms(
+  offers: TagContextOffer[],
+  language: "zh" | "en",
+): TagContextTerm[] {
+  const seen = new Set<string>();
+  const terms: TagContextTerm[] = [];
+
+  for (const offer of offers) {
+    const candidates: Array<[string | null, string | null]> = [
+      [offer.providerName, offer.providerName],
+      [offer.region, publicRegionLabel(offer, language)],
+      [offer.lineType, offer.lineType],
+    ];
+
+    for (const [rawQuery, rawLabel] of candidates) {
+      const query = rawQuery?.trim();
+      const label = rawLabel?.trim();
+      if (!query || !label || seen.has(query)) continue;
+      seen.add(query);
+      terms.push({ query, label });
+      if (terms.length >= 6) return terms;
+    }
+  }
+
+  return terms;
 }
 
 export function TagContextSidebar({
@@ -32,7 +61,7 @@ export function TagContextSidebar({
   totalPage: number;
   language?: "zh" | "en";
 }) {
-  const terms = uniqueTerms(offers);
+  const terms = uniqueTerms(offers, language);
   const copy =
     language === "en"
       ? {
@@ -66,8 +95,8 @@ export function TagContextSidebar({
           <div className="mt-3 flex flex-wrap gap-2">
             {terms.map((term) => (
               <Link
-                key={term}
-                href={`/servers?query=${encodeURIComponent(term)}`}
+                key={term.query}
+                href={`/servers?query=${encodeURIComponent(term.query)}`}
                 prefetch={false}
                 className="inline-flex min-h-11 items-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:min-h-8"
               >
@@ -75,7 +104,7 @@ export function TagContextSidebar({
                   variant="secondary"
                   className="min-h-8 transition-colors hover:bg-primary/10 hover:text-primary"
                 >
-                  {term}
+                  {term.label}
                 </Badge>
               </Link>
             ))}

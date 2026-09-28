@@ -9,6 +9,12 @@ export const SITE_CONTACT = {
   email: "contact@fwqgo.com",
   qqGroup: {
     label: "QQ群：601090215",
+    /**
+     * 英文页要用英文写法。「QQ群」是中文平台名，英文读者读不出来；
+     * `/en/contact` 之类页面此前直接渲染了中文 label。
+     * 群号本身不变，只是前缀换成英文。
+     */
+    labelEn: "QQ group: 601090215",
     shortLabel: "QQ 群",
     href: "https://qm.qq.com/q/WCugMBGEso",
   },

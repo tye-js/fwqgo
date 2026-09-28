@@ -141,6 +141,7 @@ async function CategoryPageContent({
           pageNo={pageNo}
           totalPage={totalPage}
           basePath={`/en/fwq/${encodeURIComponent(category.slug)}`}
+          language="en"
         />
       </div>
 

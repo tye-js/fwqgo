@@ -180,6 +180,7 @@ export async function AllArticlesPageContent({
           pageNo={pageNo}
           totalPage={totalPage}
           basePath={basePath}
+          language={language}
         />
       </div>
 

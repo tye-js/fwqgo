@@ -145,6 +145,7 @@ async function TagPageContent({
           pageNo={postsWithTag.pageNo}
           totalPage={totalPage}
           basePath={`/en/fwq/tags/${encodeURIComponent(postsWithTag.slug)}`}
+          language="en"
         />
       </div>
 

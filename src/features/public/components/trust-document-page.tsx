@@ -99,7 +99,9 @@ export function TrustDocumentPage({
                 className="flex min-h-11 items-center gap-2 text-sm font-medium text-primary underline underline-offset-4 hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <MessageCircle className="size-4" aria-hidden="true" />
-                {SITE_CONTACT.qqGroup.label}
+                {english
+                  ? SITE_CONTACT.qqGroup.labelEn
+                  : SITE_CONTACT.qqGroup.label}
               </a>
               <a
                 href={SITE_CONTACT.telegram.href}

@@ -55,6 +55,11 @@ type Offer = {
   traffic: string | null;
   trafficGb?: number | null;
   region: string | null;
+  /**
+   * 地区字典的英文名。`region` 是抓取原文（可能是中文），英文页要用这个。
+   * 由 `serverOfferPublicSelect()` 的标量子查询提供，缺省为 `undefined`。
+   */
+  regionEnName?: string | null;
   lineType: string | null;
   ipv4?: string | null;
   ipv6?: string | null;

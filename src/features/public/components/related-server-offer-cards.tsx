@@ -3,6 +3,7 @@ import type { ComponentProps } from "react";
 import { ArrowRight, ExternalLink, ShoppingCart } from "lucide-react";
 
 import { type ServerOfferTable } from "@/features/public/components/server-offer-table";
+import { publicRegionLabel } from "@/features/public/lib/public-region-label";
 import { formatServerOfferAmount } from "@fwqgo/core/server-offer-price";
 import {
   isHttpHref,
@@ -104,7 +105,12 @@ export function RelatedServerOfferCards({
                 </p>
                 <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
                   {offer.providerName ?? copy.providerPending} ·{" "}
-                  {offer.region ?? copy.regionPending} ·{" "}
+                  {/*
+                    `offer.region` 是抓取原文，可能是中文（「荷兰」「德国」）。
+                    英文页优先用地区字典的英文名，拿不到才回落原文 —— 否则英文卡片上
+                    会出现中文地区名。中文页保持原文不变。
+                  */}
+                  {publicRegionLabel(offer, language) ?? copy.regionPending} ·{" "}
                   {offer.lineType ?? copy.linePending}
                 </p>
               </div>
