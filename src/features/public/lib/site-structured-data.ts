@@ -27,6 +27,19 @@ export function getSiteLogoUrl() {
   return `${getSiteUrl()}${SITE_LOGO_PATH}`;
 }
 
+/**
+ * ## 为什么每个节点都自带 `@context`
+ *
+ * 调用方把 `WebSite` 与 `Organization` 放进**一个顶层数组**（见 `routes/page.tsx`）。
+ * JSON-LD 里 `@context` 是**局部**属性：数组里某个节点带了不会作用于兄弟节点。
+ * 两个节点都不带时，整块标注里的 `WebSite` / `Organization` 只是普通字符串，
+ * 不构成 schema.org 标注 —— 搜索引擎会整块忽略，而页面上看不出任何异常。
+ *
+ * 实测（2026-09-28 资源审计）：`/`、`/about`、`/en`、`/en/about` 的站点级标注
+ * 6 个节点全部缺 `@context`，而仓库里其它 20+ 处 JSON-LD 都带。
+ */
+const SCHEMA_CONTEXT = "https://schema.org";
+
 export function buildOrganizationJsonLd(input?: {
   name?: string;
   description?: string;
@@ -35,6 +48,7 @@ export function buildOrganizationJsonLd(input?: {
   const name = input?.name ?? "服务器go";
 
   return {
+    "@context": SCHEMA_CONTEXT,
     "@type": "Organization",
     "@id": `${siteUrl}/#organization`,
     name,
@@ -69,6 +83,7 @@ export function buildWebSiteJsonLd(input: {
       : `${siteUrl}/search?q={search_term_string}`;
 
   return {
+    "@context": SCHEMA_CONTEXT,
     "@type": "WebSite",
     "@id": `${siteUrl}/#website`,
     name: input.name,

@@ -251,3 +251,45 @@ assert.equal(href("/en/fwq/page/1","en"),"/en/fwq/page/1");
     `${result.stdout}\n${result.stderr}`.slice(0, 12_000),
   );
 });
+
+void test("sitewide JSON-LD nodes each carry their own @context", () => {
+  const result = spawnSync(process.execPath, ["--no-env-file", "-"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    timeout: 15_000,
+    input: String.raw`
+import assert from "node:assert/strict";
+import {
+  buildOrganizationJsonLd,
+  buildWebSiteJsonLd,
+} from "./src/features/public/lib/site-structured-data.ts";
+
+const context = "https://schema.org";
+const website = buildWebSiteJsonLd({ language: "zh", name: "服务器go", description: "描述" });
+const websiteEn = buildWebSiteJsonLd({ language: "en", name: "fwqgo" });
+const organization = buildOrganizationJsonLd({ name: "服务器go" });
+
+// @context 是**局部**属性：数组里某个节点带了不作用于兄弟节点。
+// 调用方把它们放进同一个顶层数组，所以每个节点都必须自带。
+for (const node of [website, websiteEn, organization]) {
+  assert.equal(node["@context"], context, String(node["@type"]));
+  assert.ok(node["@type"], "每个节点都要有 @type");
+  assert.ok(node["@id"], "每个节点都要有 @id");
+}
+
+// 交叉引用靠 @id，不能被 @context 改动破坏。
+assert.equal(website.publisher["@id"], organization["@id"]);
+
+// 模拟调用方的数组形态：序列化后每个节点都带 @context（这正是审计里那条判据）。
+const serialized = JSON.parse(JSON.stringify([website, organization]));
+for (const node of serialized) {
+  assert.equal(node["@context"], context, "数组形态下每个节点都要带 @context");
+}
+`,
+  });
+  assert.equal(
+    result.status,
+    0,
+    `${result.stdout}\n${result.stderr}`.slice(0, 12_000),
+  );
+});
