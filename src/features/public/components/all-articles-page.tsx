@@ -127,7 +127,9 @@ export async function AllArticlesPageContent({
     name: copy.title,
     description: copy.description,
     url: pageUrl,
-    ...(language === "en" ? { inLanguage: "en" } : {}),
+    // 两种语言都要声明 —— 这里原先只在 en 分支写，zh 分支留空，
+    // 导致同一个 builder 在中英文下字段不一致（en 有 inLanguage、zh 没有）。
+    inLanguage: language === "en" ? "en" : "zh-CN",
     mainEntity: {
       "@type": "ItemList",
       numberOfItems: articles.length,

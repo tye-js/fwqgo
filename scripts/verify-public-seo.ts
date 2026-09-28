@@ -241,8 +241,7 @@ for (const invariant of [
 // 又在专题页/目录页产生 404（实测爬站抓到 4 个）。现在规则只有一处实现
 // （server-collection-link.tsx），守卫改成：盯住共享组件，并断言两个消费方
 // 都不再自己拼 href、都必须走共享组件。
-const collectionLinkSource = readFileSync(
-  "src/features/public/components/server-collection-link.tsx",
+const collectionLinkSource = readFileSync(  "src/features/public/components/server-collection-link.tsx",
   "utf8",
 );
 assert.ok(
@@ -271,6 +270,40 @@ for (const consumer of COLLECTION_LINK_CONSUMERS) {
     );
   }
 }
+
+// 2026-09-28：JSON-LD 的 `inLanguage` 曾**只在英文侧声明**（中文侧整片漏写）——
+// CollectionPage 29/142、BlogPosting 61/255 有该字段，差值正好是英文侧数量。
+// 同一个页面类型在中英文下字段不一致属于漂移，这里逐文件盯住。
+const JSON_LD_LANGUAGE_FILES = {
+  "zh-CN": [
+    "src/features/public/routes/fwq/[category]/page/[pageNo]/page.tsx",
+    "src/features/public/routes/fwq/tags/[tagSlug]/page/[pageNo]/page.tsx",
+    "src/features/public/routes/fwq/posts/[slug]/page.tsx",
+  ],
+  en: [
+    "src/features/public/routes/en/fwq/[category]/page/[pageNo]/page.tsx",
+    "src/features/public/routes/en/fwq/tags/[tagSlug]/page/[pageNo]/page.tsx",
+    "src/features/public/routes/en/fwq/posts/[slug]/page.tsx",
+  ],
+};
+for (const [language, files] of Object.entries(JSON_LD_LANGUAGE_FILES)) {
+  for (const file of files) {
+    const source = readFileSync(file, "utf8");
+    assert.ok(
+      source.includes(`inLanguage: "${language}"`),
+      `${file} 的 JSON-LD 必须声明 inLanguage: "${language}" —— 两种语言都要，别只写一侧`,
+    );
+  }
+}
+// 中英文共用的列表页：两种语言都要能落到，不能只在 en 分支写。
+const sharedArticlesSource = readFileSync(
+  "src/features/public/components/all-articles-page.tsx",
+  "utf8",
+);
+assert.ok(
+  sharedArticlesSource.includes('inLanguage: language === "en" ? "en" : "zh-CN"'),
+  "共享列表页的 inLanguage 要覆盖两种语言，不能只在 en 分支给值",
+);
 
 console.log(
   "Public SEO rules verified: pagination, bilingual eligibility, publication quality, aliases and cache exclusions.",

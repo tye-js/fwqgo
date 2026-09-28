@@ -54,7 +54,10 @@ import {
   parseServerOfferAmount,
 } from "@fwqgo/core/server-offer-price";
 import { getChineseArticlePresentation } from "@/features/public/lib/article-presentation";
-import { buildPublisherJsonLd } from "@/features/public/lib/site-structured-data";
+import {
+  buildOrganizationJsonLd,
+  buildPublisherJsonLd,
+} from "@/features/public/lib/site-structured-data";
 import {
   getPublicArticleStaticParams,
   isPublicArticleStaticParamsPlaceholder,
@@ -312,13 +315,11 @@ async function PostPageContent({
     description: post.description,
     datePublished: post.createdAt,
     dateModified: post.updatedAt ?? post.createdAt,
-    // No bylined individual authors exist yet, so authorship is attributed to
-    // the publisher. A `Person` whose name is the brand would be a false claim.
-    author: {
-      "@type": "Organization",
-      name: "服务器go",
-      url: getSiteUrl(),
-    },
+    // 英文侧（`routes/en/...`）一直有 inLanguage，中文侧此前漏了 —— 两种语言都要声明。
+    inLanguage: "zh-CN",
+    // 作者与出版方都走共享 builder（`site-structured-data.ts`）：
+    // 内联写法容易漏 `url`（英文侧此前就是），统一到一处就不会两边漂移。
+    author: buildOrganizationJsonLd(),
     publisher: buildPublisherJsonLd(),
     mainEntityOfPage: {
       "@type": "WebPage",

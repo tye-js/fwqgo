@@ -93,6 +93,8 @@ const CategoryPageContent = async ({
     name: categoryInfo.name,
     description: categoryInfo.description,
     url: pageUrl,
+    // 英文侧（`routes/en/...`）一直有 inLanguage，中文侧此前漏了 —— 两种语言都要声明。
+    inLanguage: "zh-CN",
     mainEntity: {
       "@type": "ItemList",
       numberOfItems: posts.length,

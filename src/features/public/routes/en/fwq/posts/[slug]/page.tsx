@@ -50,6 +50,10 @@ import {
   getPublicArticleStaticParams,
   isPublicArticleStaticParamsPlaceholder,
 } from "@/features/public/lib/article-static-params";
+import {
+  buildOrganizationJsonLd,
+  buildPublisherJsonLd,
+} from "@/features/public/lib/site-structured-data";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
@@ -274,14 +278,11 @@ async function EnglishPostContent({ params }: PageProps) {
     inLanguage: "en",
     datePublished: post.createdAt,
     dateModified: post.updatedAt ?? post.createdAt,
-    author: {
-      "@type": "Organization",
-      name: "fwqgo",
-    },
-    publisher: {
-      "@type": "Organization",
-      name: "fwqgo",
-    },
+    // 作者与出版方都走共享 builder（`site-structured-data.ts`）。
+    // 这里原先是内联的 `{"@type":"Organization","name":"fwqgo"}` —— 缺 Google 要求的
+    // `url`，而中文侧用的是 builder（带 name/url/logo），两侧字段不一致。
+    author: buildOrganizationJsonLd({ name: "fwqgo" }),
+    publisher: buildPublisherJsonLd({ name: "fwqgo" }),
     mainEntityOfPage: {
       "@type": "WebPage",
       "@id": articleUrl,
