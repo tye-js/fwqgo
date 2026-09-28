@@ -6,6 +6,11 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { bypassProxyForLoopback } from "./loopback-no-proxy.mjs";
+
+// 本脚本只访问自己起的 nginx 回环端口；不绕开代理时 Bun 的 fetch 会拿到 502。
+bypassProxyForLoopback();
+
 const nginx = process.env.NGINX_BIN ?? "nginx";
 const root = process.env.NGINX_POLICY_ROOT ?? process.cwd();
 const temp = mkdtempSync(path.join(tmpdir(), "fwqgo-nginx-check-"));

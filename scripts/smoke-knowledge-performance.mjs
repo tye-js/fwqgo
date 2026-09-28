@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import * as cheerio from "cheerio";
 
+import { bypassProxyForLoopback } from "./loopback-no-proxy.mjs";
+
+// 默认目标是回环地址；不绕开代理时 Bun 的 fetch 会把它交给代理并拿到 502。
+// 只往 NO_PROXY 追加回环地址，指定远端 KNOWLEDGE_SMOKE_URL 时仍走代理。
+bypassProxyForLoopback();
+
 const origin = new URL(process.env.KNOWLEDGE_SMOKE_URL ?? "http://127.0.0.1:3000");
 const canonicalOrigin = process.env.KNOWLEDGE_CANONICAL_ORIGIN ?? "https://fwqgo.com";
 const requireContent = process.env.KNOWLEDGE_SMOKE_REQUIRE_CONTENT !== "0";

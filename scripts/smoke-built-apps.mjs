@@ -4,6 +4,11 @@ import { createServer } from "node:net";
 import path from "node:path";
 import * as cheerio from "cheerio";
 import { checkPrerenderedArticleMetadata } from "./prerendered-article-metadata.mjs";
+import { bypassProxyForLoopback } from "./loopback-no-proxy.mjs";
+
+// 本脚本只访问自己起的回环服务（下面 fetch 的目标全是 http://127.0.0.1:<port>）。
+// 不绕开代理会看到 `web health returned 502` 这种误导性报错，详见模块注释。
+bypassProxyForLoopback();
 
 const root = process.cwd();
 const runtime = process.env.SMOKE_RUNTIME_BIN?.trim() ?? process.execPath;
