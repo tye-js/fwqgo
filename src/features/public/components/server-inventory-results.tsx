@@ -235,6 +235,7 @@ function OfferMobileCard({
           promoCode={offer.promoCode}
           articleUrl={offer.articleUrl}
           reviewUrl={offer.reviewUrl}
+          offerTitle={offer.title}
         />
       </div>
     </article>
@@ -380,6 +381,7 @@ export function ServerInventoryResults({
                       promoCode={offer.promoCode}
                       articleUrl={offer.articleUrl}
                       reviewUrl={offer.reviewUrl}
+                      offerTitle={offer.title}
                     />
                   </td>
                   <td className="px-3 py-3 text-xs leading-5 text-muted-foreground">

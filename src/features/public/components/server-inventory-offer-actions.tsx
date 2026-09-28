@@ -107,6 +107,7 @@ export function ServerInventoryOfferActions({
   promoCode,
   articleUrl,
   reviewUrl,
+  offerTitle,
 }: {
   prices: OfferPrice[];
   fallbackPrice: string | null;
@@ -117,6 +118,14 @@ export function ServerInventoryOfferActions({
   promoCode: string | null;
   articleUrl: string | null;
   reviewUrl: string | null;
+  /**
+   * 套餐标题，只用于给下面的计费周期下拉提供**可访问名称**。
+   *
+   * 列表页上每个套餐都有一个这样的下拉，此前既没有可见标签也没有 `aria-label`，
+   * 读屏用户听到的是一串没有名字的「combobox」（实测 `/servers` 一页 40+ 个）。
+   * 带上标题后每个下拉都能被区分。
+   */
+  offerTitle: string;
 }) {
   const options = useMemo(() => {
     if (prices.length > 0) return prices;
@@ -173,7 +182,10 @@ export function ServerInventoryOfferActions({
         <div className="space-y-1">
           {options.length > 1 ? (
             <Select value={selectedValue} onValueChange={setSelectedId}>
-              <SelectTrigger className="min-h-11 w-full text-xs sm:min-w-[150px]">
+              <SelectTrigger
+                className="min-h-11 w-full text-xs sm:min-w-[150px]"
+                aria-label={`${offerTitle} 计费周期`}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

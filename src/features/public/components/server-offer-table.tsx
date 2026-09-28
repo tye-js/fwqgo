@@ -125,6 +125,9 @@ const tableCopy = {
     filterTitle: "筛选套餐",
     showing: (shown: number, total: number) => `显示 ${shown} / ${total}`,
     searchPlaceholder: "搜索套餐、地区、线路、优惠码",
+    // 搜索框只有 placeholder，没有可访问名称（placeholder 不算 label，WCAG 4.1.2）。
+    // 这里给一个说明用途的短标签，placeholder 继续当提示用。
+    searchLabel: "搜索套餐",
     provider: "商家",
     allProviders: "全部商家",
     statusFilter: "状态",
@@ -186,6 +189,7 @@ const tableCopy = {
     filterTitle: "Filter offers",
     showing: (shown: number, total: number) => `Showing ${shown} / ${total}`,
     searchPlaceholder: "Search offers, regions, routes, or promo codes",
+    searchLabel: "Search offers",
     provider: "Provider",
     allProviders: "All providers",
     statusFilter: "Status",
@@ -660,10 +664,11 @@ export function ServerOfferTable({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={copy.searchPlaceholder}
+            aria-label={copy.searchLabel}
             className="min-h-11 md:col-span-2 xl:col-span-1"
           />
           <Select value={activeProvider} onValueChange={setProvider}>
-            <SelectTrigger className="min-h-11">
+            <SelectTrigger className="min-h-11" aria-label={copy.provider}>
               <SelectValue placeholder={copy.provider} />
             </SelectTrigger>
             <SelectContent>
@@ -676,7 +681,7 @@ export function ServerOfferTable({
             </SelectContent>
           </Select>
           <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="min-h-11">
+            <SelectTrigger className="min-h-11" aria-label={copy.statusFilter}>
               <SelectValue placeholder={copy.statusFilter} />
             </SelectTrigger>
             <SelectContent>
@@ -689,7 +694,7 @@ export function ServerOfferTable({
             </SelectContent>
           </Select>
           <Select value={activeRegion} onValueChange={setRegion}>
-            <SelectTrigger className="min-h-11">
+            <SelectTrigger className="min-h-11" aria-label={copy.region}>
               <SelectValue placeholder={copy.region} />
             </SelectTrigger>
             <SelectContent>
@@ -702,7 +707,7 @@ export function ServerOfferTable({
             </SelectContent>
           </Select>
           <Select value={activeLineType} onValueChange={setLineType}>
-            <SelectTrigger className="min-h-11">
+            <SelectTrigger className="min-h-11" aria-label={copy.line}>
               <SelectValue placeholder={copy.line} />
             </SelectTrigger>
             <SelectContent>
@@ -715,7 +720,7 @@ export function ServerOfferTable({
             </SelectContent>
           </Select>
           <Select value={sortKey} onValueChange={setSortKey}>
-            <SelectTrigger className="min-h-11">
+            <SelectTrigger className="min-h-11" aria-label={copy.sort}>
               <SelectValue placeholder={copy.sort} />
             </SelectTrigger>
             <SelectContent>
@@ -725,7 +730,7 @@ export function ServerOfferTable({
             </SelectContent>
           </Select>
           <Select value={promoFilter} onValueChange={setPromoFilter}>
-            <SelectTrigger className="min-h-11">
+            <SelectTrigger className="min-h-11" aria-label={copy.promotion}>
               <SelectValue placeholder={copy.promotion} />
             </SelectTrigger>
             <SelectContent>
