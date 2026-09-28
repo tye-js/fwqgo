@@ -170,6 +170,7 @@ export async function AllArticlesPageContent({
                 key={article.id}
                 post={article}
                 language={language}
+                headingLevel={2}
               />
             ))
           ) : (

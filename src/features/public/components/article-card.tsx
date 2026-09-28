@@ -103,14 +103,24 @@ function ArticleCard({
   language = "zh",
   excludedTagSlug,
   variant = "list",
+  headingLevel = 3,
 }: {
   post: PostWithTags;
   language?: "zh" | "en";
   excludedTagSlug?: string;
   variant?: "list" | "feature" | "compact";
+  /**
+   * 标题层级。默认 `3` —— 首页的卡片在 `h2` 区块里，`h3` 是对的。
+   *
+   * 但**列表页**（分类 / 标签 / 全部文章 / 搜索）只有 `PageCard` 的 `h1`，卡片直接跟在
+   * 它后面，`h3` 会跳级（实测 142 页被 a11y 审计标为 `h1 → h3`）。那里传 `2`。
+   */
+  headingLevel?: 2 | 3;
 }) {
   const postPrefix = language === "en" ? "/en/fwq/posts" : "/fwq/posts";
   const tagPrefix = language === "en" ? "/en/fwq/tags" : "/fwq/tags";
+  // 动态标签名：`h2` / `h3` 的 props 完全一致，用联合类型即可。
+  const Heading = headingLevel === 2 ? "h2" : "h3";
   const href = `${postPrefix}/${encodeURIComponent(post.slug)}`;
   const locale = language === "en" ? "en-US" : "zh-CN";
   const titleId = `article-card-title-${post.id}`;
@@ -197,7 +207,7 @@ function ArticleCard({
             prefetch={shouldPrefetch}
             className="mt-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            <h3
+            <Heading
               id={titleId}
               className={cn(
                 "font-editorial break-words font-semibold text-foreground transition-colors group-hover:text-primary",
@@ -207,7 +217,7 @@ function ArticleCard({
               )}
             >
               {post.title}
-            </h3>
+            </Heading>
           </Link>
 
           <p className="mt-1.5 line-clamp-2 text-sm leading-6 text-muted-foreground">

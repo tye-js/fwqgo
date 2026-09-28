@@ -133,6 +133,7 @@ async function TagPageContent({
                 post={post.post}
                 language="en"
                 excludedTagSlug={postsWithTag.slug}
+                headingLevel={2}
               />
             ))
           ) : (

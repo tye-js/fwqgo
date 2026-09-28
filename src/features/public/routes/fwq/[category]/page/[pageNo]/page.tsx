@@ -123,7 +123,9 @@ const CategoryPageContent = async ({
         />
         <div className="space-y-4">
           {posts.length > 0 ? (
-            posts.map((post) => <ArticleCard key={post.id} post={post} />)
+            posts.map((post) => (
+              <ArticleCard key={post.id} post={post} headingLevel={2} />
+            ))
           ) : (
             <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 p-8 text-center text-sm text-muted-foreground">
               当前分类下还没有已发布文章。

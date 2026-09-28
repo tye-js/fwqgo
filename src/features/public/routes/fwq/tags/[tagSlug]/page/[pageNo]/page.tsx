@@ -127,6 +127,7 @@ async function TagPageContent({
                 key={post.post.id}
                 post={post.post}
                 excludedTagSlug={pageSlug}
+                headingLevel={2}
               />
             ))
           ) : (
