@@ -1,3 +1,4 @@
+import { PublicAnchor } from "@/features/public/components/public-link";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -406,7 +407,7 @@ export function ServerInventoryResults({
       {page.hasMore && page.nextCursor ? (
         <div className="flex justify-center pt-2">
           <Button asChild variant="outline" size="lg">
-            <a href={buildPageHref(filters, page.nextCursor)}>查看下一页</a>
+            <PublicAnchor href={buildPageHref(filters, page.nextCursor)}>查看下一页</PublicAnchor>
           </Button>
         </div>
       ) : null}

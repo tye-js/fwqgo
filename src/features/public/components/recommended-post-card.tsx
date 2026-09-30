@@ -1,5 +1,5 @@
 import { type RecommendedPost } from "@/types/post.types";
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 import { ArrowUpRight } from "lucide-react";
 import { SafePostImage } from "@/features/public/components/safe-post-image";
 

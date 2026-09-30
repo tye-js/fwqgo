@@ -86,12 +86,15 @@ export function TableOfContents({
         {toc.map((item) => (
           <li
             key={item.id}
-            style={{ paddingLeft: `${(item.level - 2) * 0.85}rem` }}
+            style={{
+              paddingLeft: `${Math.min(Math.max(item.level - 2, 0), 3) * 0.5}rem`,
+            }}
           >
             <Link
               href={`#${item.id}`}
               onClick={(e) => handleClick(e, `#${item.id}`)}
-              className={`block min-h-11 rounded-md border-l-2 px-3 py-2 text-sm leading-6 transition-colors ${
+              aria-current={currentId === item.id ? "location" : undefined}
+              className={`block min-h-11 rounded-md border-l-2 px-3 py-2 text-sm leading-6 transition-colors [overflow-wrap:anywhere] ${
                 currentId === item.id
                   ? "border-primary bg-primary/10 font-medium text-blue-800 dark:text-blue-300"
                   : "border-transparent text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground"

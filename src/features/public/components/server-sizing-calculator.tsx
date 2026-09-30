@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 import { useMemo, useState, type ReactNode } from "react";
 import {
   AlertTriangle,

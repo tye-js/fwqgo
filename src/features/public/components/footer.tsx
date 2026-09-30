@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link, { PublicAnchor } from "@/features/public/components/public-link";
 import { Suspense } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -248,7 +248,7 @@ function ContactEmailLink({ email }: { email: string }) {
       : `mailto:${encodeURIComponent(email)}`;
 
   return (
-    <a
+    <PublicAnchor
       href={href}
       className="inline-flex min-h-11 w-fit items-center gap-2 rounded-md px-2 transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
@@ -258,7 +258,7 @@ function ContactEmailLink({ email }: { email: string }) {
         {atIndex >= 0 ? "@" : null}
         {domain}
       </span>
-    </a>
+    </PublicAnchor>
   );
 }
 
@@ -422,13 +422,13 @@ function FooterView({
                 ? "Deal data needs final checkout verification"
                 : "套餐价格以商家结算页为准"}
             </span>
-            <a
+            <PublicAnchor
               href="/feed.xml"
               className="inline-flex min-h-11 items-center gap-1.5 font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <Rss className="size-3.5" aria-hidden="true" />
               {language === "en" ? "RSS feed" : "RSS 订阅"}
-            </a>
+            </PublicAnchor>
           </div>
         </div>
       </div>

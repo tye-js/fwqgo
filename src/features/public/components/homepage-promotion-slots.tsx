@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link, { PublicAnchor } from "@/features/public/components/public-link";
 import type { ReactNode } from "react";
 import { ArrowUpRight, ImageIcon } from "lucide-react";
 
@@ -39,7 +39,7 @@ function PromotionLink({
   }
   if (isHttpHref(href) || isOutboundShortLinkHref(href)) {
     return (
-      <a
+      <PublicAnchor
         href={href}
         target="_blank"
         rel={
@@ -51,7 +51,7 @@ function PromotionLink({
         className={className}
       >
         {children}
-      </a>
+      </PublicAnchor>
     );
   }
   return <div className={className}>{children}</div>;

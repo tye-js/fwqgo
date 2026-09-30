@@ -95,7 +95,7 @@ function publicErrorResponse(request: NextRequest, status: 404 | 503) {
   return new NextResponse(
     request.method === "HEAD"
       ? null
-      : `<!doctype html><html lang="${english ? "en" : "zh-CN"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${title} - fwqgo</title></head><body style="margin:0;font-family:system-ui,sans-serif;background:#fafafa;color:#18181b"><main style="max-width:44rem;margin:auto;padding:12vh 1.5rem;overflow-wrap:anywhere"><p>${status}</p><h1>${title}</h1><p>${description}</p><a style="display:inline-flex;align-items:center;min-height:44px;color:#4338ca" href="${english ? "/en" : "/"}">${english ? "Back to home" : "返回首页"}</a></main></body></html>`,
+      : `<!doctype html><html lang="${english ? "en" : "zh-CN"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${title} - fwqgo</title></head><body style="margin:0;font-family:system-ui,sans-serif;background:#fafafa;color:#18181b"><main style="max-width:44rem;margin:auto;padding:12vh 1.5rem;overflow-wrap:anywhere"><p>${status}</p><h1>${title}</h1><p>${description}</p><a target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;min-height:44px;color:#4338ca" href="${english ? "/en" : "/"}">${english ? "Back to home" : "返回首页"}</a></main></body></html>`,
     {
       status,
       headers: {
@@ -144,6 +144,9 @@ export async function proxy(request: NextRequest) {
   if (request.method === "GET" || request.method === "HEAD") {
     if (SHARED_CACHE_INDEX_PATHS.has(pathname)) {
       const response = NextResponse.next();
+      if (pathname === "/servers" && request.nextUrl.search) {
+        response.headers.set("X-Robots-Tag", "noindex, follow");
+      }
       if (!isPublicHtmlRequest(request)) return markRequestPrivate(response);
       // This is eligibility, not a cache policy. The outer proxy must also
       // verify final status 200, HTML content type and no Set-Cookie.

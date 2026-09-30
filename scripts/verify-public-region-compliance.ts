@@ -214,6 +214,7 @@ assert.deepEqual(
 // —— 描述服务器放在哪，不构成国家声明，全树禁止会误伤这些既有文案（也改不动 SEO 标题）。
 // 真正会被读成「国家清单」的是枚举型 UI：目前是网络线路工具的「目标地区」下拉。
 const REGION_ENUMERATION_FILES = [
+  "src/features/public/components/home-page.tsx",
   "src/features/public/components/network-line-selector.tsx",
 ];
 const BARE_REGION_LABEL =

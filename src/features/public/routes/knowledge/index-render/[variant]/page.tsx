@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 
 import {
   KNOWLEDGE_INDEX_BUILD_PLACEHOLDER,
@@ -41,7 +42,7 @@ export function generateMetadata({
   return getKnowledgeIndexRenderMetadata("zh", params);
 }
 
-export async function KnowledgeIndexRenderPage({
+async function KnowledgeIndexVariantContent({
   language,
   params,
 }: {
@@ -51,6 +52,25 @@ export async function KnowledgeIndexRenderPage({
   const { variant } = await params;
   if (variant !== KNOWLEDGE_INDEX_VARIANT) notFound();
   return <KnowledgeLandingPage language={language} />;
+}
+
+export function KnowledgeIndexRenderPage(props: {
+  language: KnowledgeIndexLanguage;
+  params: KnowledgeIndexRenderParams;
+}) {
+  return (
+    <Suspense
+      fallback={
+        <main id="main-content" className="public-container py-12">
+          {props.language === "en"
+            ? "Loading the knowledge base..."
+            : "正在加载知识库..."}
+        </main>
+      }
+    >
+      <KnowledgeIndexVariantContent {...props} />
+    </Suspense>
+  );
 }
 
 export default function ChineseKnowledgeIndexRender({

@@ -143,6 +143,7 @@ async function CategoryPageContent({
           )}
         </div>
         <PaginationComponent
+          newTab
           pageNo={pageNo}
           totalPage={totalPage}
           basePath={`/en/fwq/${encodeURIComponent(category.slug)}`}

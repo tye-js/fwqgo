@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link, { PublicAnchor } from "@/features/public/components/public-link";
 import { MessageCircle, Send, ShieldCheck } from "lucide-react";
 
 import { SITE_CONTACT } from "@/features/public/lib/site-contact";
@@ -21,7 +21,7 @@ export function WebmasterStatement() {
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         联系方式：
-        <a
+        <PublicAnchor
           href={SITE_CONTACT.qqGroup.href}
           target="_blank"
           rel="noopener noreferrer"
@@ -29,8 +29,8 @@ export function WebmasterStatement() {
         >
           <MessageCircle className="size-4" aria-hidden="true" />
           {SITE_CONTACT.qqGroup.label}
-        </a>
-        <a
+        </PublicAnchor>
+        <PublicAnchor
           href={SITE_CONTACT.telegram.href}
           target="_blank"
           rel="noopener noreferrer"
@@ -39,7 +39,7 @@ export function WebmasterStatement() {
         >
           <Send className="size-4" aria-hidden="true" />
           {SITE_CONTACT.telegram.label}
-        </a>
+        </PublicAnchor>
       </div>
       <p className="mt-2 text-sm leading-7 text-muted-foreground">
         我们的编辑原则、收录与排序规则、推广关系披露，

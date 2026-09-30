@@ -216,41 +216,32 @@ for (const source of [zhArticle, enArticle]) {
   );
 }
 /**
- * 详情页版面契约（2026-09-24 重排 + 目录移到左侧）。
- *
- * 这几条都对应实测踩过的坑，不是风格偏好：
- *
- * 1. 侧栏是 `sticky` 的。实测 1280×900 下长文（目录长 + 最新文章列表）侧栏高
- *    1327px > 视口，被钉住后**底部内容永远滚不出来**。所以侧栏必须自带高度上限
- *    和滚动容器；目录卡片在侧栏里必须让出滚动（`navClassName="toc"`），
- *    否则两层 overflow 叠出嵌套滚动条。
- * 2. `xl` 起才有侧栏。之前只有 `2xl` 才有一列，1280–1535 这一段侧边整片空白。
- * 3. 窄屏没有侧栏，目录必须在正文上方有折叠入口，否则手机端长文无法跳转。
- * 4. 目录在**左**，且正文列宽保持 `820px` 不变。栅格第一列就是侧栏
- *    （`xl:grid-cols-[288px_minmax(0,820px)]`）。做成「目录 + 正文 + 最新文章」
- *    三栏是放不下的：版心内容区在 ≥1280px 只有 1184px，而
- *    288 + 32 + 820 + 32 + 288 = 1460px，即使把目录压到 200px 也仍需 1372px。
- *    栅格模板只说明第一列多宽、不保证 DOM 顺序，所以两条都要断言，
- *    否则目录会悄悄跑回右侧、或者正文被挤窄。
+ * 详情页：正文 + 最右最新文章；目录仅在宽屏扩展版心后形成独立左列。
+ * 目录开关不应改变 820px 正文宽度，窄屏保留正文上方的折叠目录和文末最新文章。
+ * 两种语言必须共用布局，防止一侧再次把目录与最新文章塞回同一个栏位。
  */
 for (const source of [zhArticle, enArticle]) {
-  assert.match(source, /<ArticleRail>/);
+  assert.match(source, /<ArticleDetailLayout/);
+  assert.match(source, /toc=\{[\s\S]*?<ArticleTocSidebar/);
+  assert.match(source, /latest=\{[\s\S]*?<LatestPostsSidebar/);
+  assert.doesNotMatch(source, /<ArticleRail/);
   assert.match(source, /<ArticleMobileToc/);
   assert.match(source, /<ArticleCategoryPosts/);
   assert.match(source, /<ArticlePrevNext/);
-  assert.match(
-    source,
-    /xl:grid-cols-\[288px_minmax\(0,820px\)\]/,
-    "详情页栅格第一列必须是 288px 的侧栏、第二列是 820px 的正文",
-  );
-  const railIndex = source.indexOf("<ArticleRail>");
-  // 用正文列容器的类名做锚点：`ARTICLE_PROSE_CLASS_NAME` 在 import 行就先出现了。
-  const contentIndex = source.indexOf("max-w-[820px] space-y-10");
-  assert.ok(
-    railIndex > -1 && contentIndex > -1 && railIndex < contentIndex,
-    "侧栏必须排在正文之前，否则目录会渲染到正文右侧",
-  );
 }
+const articleLayoutCode = stripComments(articleDetail);
+const mainColumnIndex = articleLayoutCode.indexOf('className="article-detail-content');
+const latestColumnIndex = articleLayoutCode.indexOf('article-detail-latest');
+assert.ok(mainColumnIndex > -1 && latestColumnIndex > mainColumnIndex,
+  "最新文章必须在正文之后，桌面位于最右，窄屏位于文末");
+assert.match(articleLayoutCode, /article-detail-toc[^`]*2xl:block/);
+assert.match(articleLayoutCode, /<details className="[^"\n]*2xl:hidden"/);
+const articleLayoutStyles = read("src/styles/public.css");
+assert.match(articleLayoutStyles, /grid-template-columns: minmax\(0, 1fr\)/);
+assert.match(articleLayoutStyles, /grid-template-columns: minmax\(0, 820px\) 288px/);
+assert.match(articleLayoutStyles, /grid-template-columns: 200px minmax\(0, 820px\) 288px/);
+assert.match(articleLayoutStyles, /--article-layout-width: 1356px/);
+assert.match(articleLayoutStyles, /margin-inline: calc\(\(100% - var\(--article-layout-width\)\) \/ 2\)/);
 
 /**
  * 详情页外壳**不要再加水平内边距**。
@@ -363,8 +354,6 @@ for (const listing of [
   "src/features/public/routes/fwq/tags/[tagSlug]/page/[pageNo]/page.tsx",
   "src/features/public/routes/en/fwq/[category]/page/[pageNo]/page.tsx",
   "src/features/public/routes/en/fwq/tags/[tagSlug]/page/[pageNo]/page.tsx",
-  "src/features/public/routes/fwq/posts/[slug]/page.tsx",
-  "src/features/public/routes/en/fwq/posts/[slug]/page.tsx",
 ]) {
   const code = stripComments(read(listing));
   assert.match(

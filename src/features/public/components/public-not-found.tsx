@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 import { Suspense } from "react";
 import { ArrowRight, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link, { PublicAnchor } from "@/features/public/components/public-link";
 import React from "react";
 
 import { BrandLogo } from "@/components/brand/brand-logo";
@@ -39,7 +39,7 @@ function LanguageSwitchButton({
 }) {
   const content = (
     <>
-      <Globe2 className="size-4" />
+      <Globe2 className="size-4" aria-hidden="true" />
       {label}
     </>
   );
@@ -48,7 +48,7 @@ function LanguageSwitchButton({
     <Button
       asChild
       variant="outline"
-      className="hidden shrink-0 rounded-full xl:inline-flex"
+      className="hidden min-h-11 shrink-0 rounded-xl border-border/70 xl:inline-flex"
     >
       {useSwitchLink ? (
         <LanguageSwitchLink currentLanguage={language} prefetch>
@@ -87,15 +87,15 @@ export default async function HeaderComponent({
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-card/95 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
-      <a href="#main-content" className="public-skip-link">
+      <PublicAnchor href="#main-content" className="public-skip-link">
         {language === "en" ? "Skip to content" : "跳转到正文"}
-      </a>
+      </PublicAnchor>
       <div className="public-container">
-        <div className="flex min-h-20 items-center justify-between gap-4">
+        <div className="flex min-h-[4.5rem] items-center justify-between gap-3 xl:min-h-20">
           <Link
             href={language === "en" ? "/en" : "/"}
             prefetch
-            className="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="inline-flex min-h-11 shrink-0 items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             aria-label={copy.homeLabel}
           >
             <BrandLogo compact />

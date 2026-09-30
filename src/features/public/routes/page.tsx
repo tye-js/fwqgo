@@ -61,7 +61,8 @@ export async function generateMetadata(): Promise<Metadata> {
 
 async function HomeContent() {
   "use cache";
-  cacheLife({ stale: 60, revalidate: 300, expire: 3_600 });
+  // Partial Prefetching 只将 stale >= 5 分钟的缓存纳入页面外壳。
+  cacheLife({ stale: 300, revalidate: 300, expire: 3_600 });
   tagCache(
     cacheTags.homepage,
     cacheTags.homepageSlots,

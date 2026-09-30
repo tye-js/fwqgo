@@ -16,6 +16,7 @@ export type HeaderCopy = {
   /** 导航顶层直链，桌面与移动共用。 */
   latestArticles: string;
   dealsTitle: string;
+  dealsDescription: string;
   allOffers: string;
   allOffersDescription: string;
   hongKong: string;
@@ -25,6 +26,7 @@ export type HeaderCopy = {
   cheapVps: string;
   cheapVpsDescription: string;
   toolsTitle: string;
+  toolsDescription: string;
   serverSizing: string;
   serverSizingDescription: string;
   networkLines: string;
@@ -38,6 +40,8 @@ export type HeaderCopy = {
   errorDescription: string;
   navigationTitle: string;
   articleCategories: string;
+  articleCategoriesDescription: string;
+  siteInfoTitle: string;
 };
 
 export const headerCopy: Record<PublicLanguage, HeaderCopy> = {
@@ -46,6 +50,7 @@ export const headerCopy: Record<PublicLanguage, HeaderCopy> = {
     languageLabel: "English",
     latestArticles: "最新文章",
     dealsTitle: "服务器比价",
+    dealsDescription: "从全部套餐或热门专题开始，找到适合的服务器。",
     allOffers: "全部套餐",
     allOffersDescription: "按价格、地区、线路和状态集中筛选服务器套餐。",
     hongKong: "香港服务器",
@@ -55,6 +60,7 @@ export const headerCopy: Record<PublicLanguage, HeaderCopy> = {
     cheapVps: "便宜 VPS",
     cheapVpsDescription: "低价 VPS、月付优惠和适合测试的轻量套餐。",
     toolsTitle: "选购工具",
+    toolsDescription: "先确定配置与线路，再挑选套餐。",
     serverSizing: "服务器配置选择",
     serverSizingDescription: "结合业务规模，梳理 CPU、内存和存储需求。",
     networkLines: "网络线路选择",
@@ -68,12 +74,16 @@ export const headerCopy: Record<PublicLanguage, HeaderCopy> = {
     errorDescription: "分类暂时加载失败，可以先进入服务器比价或稍后刷新页面。",
     navigationTitle: "导航",
     articleCategories: "服务器分类",
+    articleCategoriesDescription:
+      "按服务器类型与使用需求，浏览文章和选购指南。",
+    siteInfoTitle: "关于本站",
   },
   en: {
     homeLabel: "fwqgo Cloud Infra Research",
     languageLabel: "中文",
     latestArticles: "Latest articles",
     dealsTitle: "Server deals",
+    dealsDescription: "Explore all offers or start with a popular collection.",
     allOffers: "All offers",
     allOffersDescription:
       "Filter server offers by price, region, line, and status.",
@@ -87,6 +97,8 @@ export const headerCopy: Record<PublicLanguage, HeaderCopy> = {
     cheapVpsDescription:
       "Low-cost VPS plans, monthly deals, and lightweight test servers.",
     toolsTitle: "Tools",
+    toolsDescription:
+      "Plan your resources and network before choosing an offer.",
     serverSizing: "Server sizing",
     serverSizingDescription: "Match CPU, memory and storage to your workload.",
     networkLines: "Network routes",
@@ -101,5 +113,8 @@ export const headerCopy: Record<PublicLanguage, HeaderCopy> = {
       "Categories failed to load. You can open server deals or refresh later.",
     navigationTitle: "Navigation",
     articleCategories: "Article categories",
+    articleCategoriesDescription:
+      "Browse articles and guides by server type and use case.",
+    siteInfoTitle: "About this site",
   },
 };

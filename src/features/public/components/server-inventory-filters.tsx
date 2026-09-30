@@ -1,5 +1,7 @@
 "use client";
 
+import { PublicAnchor } from "@/features/public/components/public-link";
+
 import { useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Filter, RotateCcw, Search, Store } from "lucide-react";
@@ -124,7 +126,7 @@ export function ServerInventoryProviderNav({
         的高度算进去，导致整个 aside 高 807px、超出视口 3px。
       */}
       <nav aria-label="按厂商筛选套餐" className="p-2">
-        <a
+        <PublicAnchor
           href={buildPublicInventoryHref({
             ...filters,
             provider: "all",
@@ -139,9 +141,9 @@ export function ServerInventoryProviderNav({
         >
           <span>全部厂商</span>
           <span className="text-xs tabular-nums opacity-75">{total}</span>
-        </a>
+        </PublicAnchor>
         {visibleProviders.map((provider) => (
-          <a
+          <PublicAnchor
             key={provider.key}
             href={buildPublicInventoryHref({
               ...filters,
@@ -161,7 +163,7 @@ export function ServerInventoryProviderNav({
             <span className="shrink-0 text-xs tabular-nums opacity-75">
               {provider.count}
             </span>
-          </a>
+          </PublicAnchor>
         ))}
         {visibleProviders.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">
@@ -278,11 +280,10 @@ export function ServerInventoryToolbar({
           筛选套餐
         </div>
         <Button asChild size="sm" variant="ghost" className="min-h-11">
-          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Reset uses a fresh document request, like the filter form. */}
-          <a href="/servers">
+          <PublicAnchor href="/servers">
             <RotateCcw className="size-4" />
             重置
-          </a>
+          </PublicAnchor>
         </Button>
       </div>
 
@@ -296,7 +297,7 @@ export function ServerInventoryToolbar({
             ["promotion", "活动款"],
           ] as const
         ).map(([value, label]) => (
-          <a
+          <PublicAnchor
             key={value}
             aria-current={filters.kind === value ? "true" : undefined}
             href={buildPublicInventoryHref({
@@ -312,7 +313,7 @@ export function ServerInventoryToolbar({
             }`}
           >
             {label}
-          </a>
+          </PublicAnchor>
         ))}
       </nav>
 

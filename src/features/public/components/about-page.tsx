@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link, { PublicAnchor } from "@/features/public/components/public-link";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -626,12 +626,12 @@ export function AboutPage({
             eyebrow={copy.contactEyebrow}
           />
           <div className="public-panel flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <a
+            <PublicAnchor
               href={mailtoHref()}
               className="inline-flex min-h-11 items-center gap-2 break-all text-sm font-medium text-primary underline underline-offset-4 hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {SITE_CONTACT.email}
-            </a>
+            </PublicAnchor>
             <Link
               href={contactHref}
               className="inline-flex min-h-11 shrink-0 items-center gap-1.5 text-sm font-semibold text-primary hover:underline"

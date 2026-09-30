@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 import { ArrowRight, SlidersHorizontal } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";

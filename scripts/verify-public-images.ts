@@ -64,9 +64,8 @@ assert.deepEqual(
   "Public images must stay optimizable; unoptimized re-ships full-resolution uploads",
 );
 
-// 4. Both public cover paths must send uploads through the helper.
+// 4. 列表卡片的封面继续经过优化器；详情阅读区只显示作者插入的正文图。
 const coverSources = {
-  "article cover": "src/features/public/components/article-detail.tsx",
   "article card": "src/features/public/components/safe-post-image.tsx",
 };
 for (const [label, file] of Object.entries(coverSources)) {
@@ -81,13 +80,15 @@ for (const [label, file] of Object.entries(coverSources)) {
   );
 }
 
-// 5. The article cover must not fall back to the stored path for uploads, which
-//    is what silently disabled resizing even while `sizes` stayed in place.
-const articleDetail = readFileSync(coverSources["article cover"], "utf8");
-assert.ok(
-  !/startsWith\("\/uploads\/"\)\s*\?\s*src/.test(articleDetail),
-  "The article cover must not serve the stored upload path directly",
-);
+// 5. 详情页不再插入封面，封面字段仍供列表与分享元数据使用。
+for (const file of [
+  "src/features/public/routes/fwq/posts/[slug]/page.tsx",
+  "src/features/public/routes/en/fwq/posts/[slug]/page.tsx",
+]) {
+  const source = readFileSync(file, "utf8");
+  assert.doesNotMatch(source, /\bArticleCover\b/, "详情页不应重新插入封面");
+  assert.match(source, /__html: contentHtml/, "详情页必须保留正文图片渲染");
+}
 
 // 6. 正文图片必须和封面走同一条优化管线。
 //
@@ -309,29 +310,21 @@ assert.deepEqual(
   `抓取路径必须显式传 images: "drop"，否则会把来源站的第三方图写进正文：${scrapeOffenders.join(" | ")}`,
 );
 
-// 11. ArticleCard 三种 variant 的图片 `sizes` 必须各自成立。
-//
-// 图片列是**固定宽度**的栅格列，减掉图片外壳自身的左外边距就是实际槽位：
-// compact 100px（`sm:112px` − 12px）、list 208 / 216px（`md:224px` / `lg:232px` − 16px）。
-// 2026-09-24 实测 390 / 700 / 768 / 900 / 1023 / 1024 / 1440 七个视口，查出两个真实缺陷：
-//
-// - feature 的断点写成 767，但两列布局要 `lg`（1024）才生效 → 768~1023 之间它其实是
-//   单列全宽，声明只给 60vw，2x 屏会拿 1080w 的图去填 720px 的槽位（拉伸 33%）。
-// - compact 与 list 共用 232px → 2x 屏选 640w；640~767 视口更糟，那时命中
-//   `calc(100vw - 2rem)`，会去选 1920w 填 100px 的槽位。
+// 11. 首页 feature 的 sm 图文分栏、xl 主栏，与 compact 的固定缩略图需要各自的 sizes。
+// 不能复用列表卡片尺寸，否则移动端会下载过大图片，或在高密度屏幕上拉伸主图。
 const articleCard = readFileSync(
   "src/features/public/components/article-card.tsx",
   "utf8",
 );
 assert.match(
   articleCard,
-  /variant === "feature"[\s\S]{0,120}\(max-width: 1023px\) calc\(100vw - 2rem\), \(max-width: 1279px\) 56vw, 730px/,
-  "feature 的 sizes 断点必须与 lg:grid-cols 对齐（1023，不是 767）；否则 768~1023 视口下声明低估，2x 屏上的图片会被拉伸",
+  /variant === "feature"[\s\S]{0,120}\(max-width: 639px\) calc\(100vw - 2rem\), \(max-width: 1279px\) 46vw, 408px/,
+  "feature 的 sizes 必须跟随 sm 图文分栏和 xl 首页主栏宽度",
 );
 assert.match(
   articleCard,
-  /variant === "compact"[\s\S]{0,120}\(max-width: 639px\) calc\(100vw - 3\.5rem\), 100px/,
-  "compact 的图片列是 sm:112px（实际槽位 100px），sizes 必须独立声明且断点与 sm: 对齐（639）",
+  /variant === "compact"[\s\S]{0,120}\(max-width: 639px\) 76px, 100px/,
+  "compact 的图片列是 88px / 112px，减去边距后必须声明 76px / 100px",
 );
 assert.match(
   articleCard,

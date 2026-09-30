@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import Link, { PublicAnchor } from "@/features/public/components/public-link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
@@ -22,6 +22,7 @@ import {
   type PublicKnowledgeLanguage,
 } from "@/features/public/data/knowledge";
 import { renderArticleContentHtml } from "@fwqgo/core/content";
+import { openPublicContentLinksInNewTabs } from "@/features/public/lib/content-link-targets";
 import { jsonLdScriptContent, normalizeDecodedSlug } from "@fwqgo/core/utils";
 import {
   KNOWLEDGE_BODY_IMAGE_SIZES,
@@ -190,7 +191,7 @@ async function KnowledgeArticleContent(props: {
     getUploadImageDimensions(),
   ]);
   const contentHtml = optimizeArticleImages(
-    renderArticleContentHtml(article.content),
+    openPublicContentLinksInNewTabs(renderArticleContentHtml(article.content)),
     imageDimensions,
     KNOWLEDGE_BODY_IMAGE_SIZES,
   );
@@ -345,14 +346,14 @@ async function KnowledgeArticleContent(props: {
                     </span>
                   </div>
                   <p className="mt-1">{source.claimScope}</p>
-                  <a
+                  <PublicAnchor
                     className="mt-1 inline-block break-all text-primary hover:underline"
                     href={source.canonicalUrl}
                     rel="noreferrer"
                     target="_blank"
                   >
                     {source.canonicalUrl}
-                  </a>
+                  </PublicAnchor>
                 </li>
               ))}
             </ol>

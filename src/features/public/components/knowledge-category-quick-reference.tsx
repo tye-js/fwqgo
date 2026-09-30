@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 import { BookOpenText, ChevronRight } from "lucide-react";
 
 export type KnowledgeQuickCategory = {

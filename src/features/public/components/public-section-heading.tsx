@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 import { ArrowUpRight } from "lucide-react";
 
 export function PublicSectionHeading({

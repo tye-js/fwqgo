@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link, { PublicAnchor } from "@/features/public/components/public-link";
 import { Copy, ExternalLink, FileText, FlaskConical } from "lucide-react";
 import { toast } from "sonner";
 
@@ -89,9 +89,9 @@ function SafeLinkButton({
           {children}
         </Link>
       ) : (
-        <a href={href} target={anchorTarget} rel={anchorRel}>
+        <PublicAnchor href={href} target={anchorTarget} rel={anchorRel}>
           {children}
-        </a>
+        </PublicAnchor>
       )}
     </Button>
   );

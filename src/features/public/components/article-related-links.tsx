@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 import { ArrowRight, BookOpenText, SquareLibrary } from "lucide-react";
 
 import type { PublicArticleInternalLink } from "@/server/posts/internal-links";

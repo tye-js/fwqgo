@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 import { ArrowRight, Layers3, Lightbulb } from "lucide-react";
 
 import type { PublicKnowledgeLanguage } from "@/features/public/data/knowledge";

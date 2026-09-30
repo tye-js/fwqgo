@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { PublicAnchor } from "@/features/public/components/public-link";
 import {
   ArrowUpRight,
   FileText,
@@ -377,10 +377,10 @@ function SafeActionButton({
           {label}
         </Link>
       ) : (
-        <a href={href} target={linkTarget} rel={linkRel}>
+        <PublicAnchor href={href} target={linkTarget} rel={linkRel}>
           {icon}
           {label}
-        </a>
+        </PublicAnchor>
       )}
     </Button>
   );

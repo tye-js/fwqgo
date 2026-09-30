@@ -143,6 +143,7 @@ async function TagPageContent({
           )}
         </div>
         <PaginationComponent
+          newTab
           pageNo={postsWithTag.pageNo}
           totalPage={totalPage}
           basePath={`/en/fwq/tags/${encodeURIComponent(postsWithTag.slug)}`}

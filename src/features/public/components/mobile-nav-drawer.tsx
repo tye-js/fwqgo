@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 import React from "react";
 
 import { cn } from "@fwqgo/core/utils";
@@ -10,6 +10,7 @@ import {
   SheetClose,
   SheetContent,
   SheetHeader,
+  SheetDescription,
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
@@ -20,16 +21,21 @@ import {
 } from "@/features/public/lib/site-contact";
 import {
   BookOpen,
+  ChevronDown,
+  ChevronRight,
+  Layers3,
   Cpu,
   Globe2,
   Menu,
   Search,
   Server,
   ShieldCheck,
+  Wrench,
+  type LucideIcon,
 } from "lucide-react";
 
 import type { HeaderCopy, PublicLanguage } from "./header-copy";
-import type { PublicNavLink, PublicNavModel } from "./public-nav";
+import type { PublicNavModel } from "./public-nav";
 
 /**
  * 移动端导航抽屉（`xl` 以下）。
@@ -67,23 +73,21 @@ import type { PublicNavLink, PublicNavModel } from "./public-nav";
  * 键盘用户看不出焦点落在哪（同一抽屉里另外两组都有）。
  */
 const sheetLinkBase =
-  "flex min-h-11 items-center gap-2 rounded-md px-3 text-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors motion-reduce:transition-none hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 /** 分组里的一级项（比价入口、一级分类）。 */
-const sheetLinkStrong = cn(sheetLinkBase, "font-medium text-foreground");
-/** 分组里的次级项。 */
-const sheetLinkMuted = cn(
+const sheetLinkStrong = cn(
   sheetLinkBase,
-  "text-muted-foreground hover:text-foreground",
+  "font-medium text-foreground [overflow-wrap:anywhere]",
 );
 /** 独立成块的项（语言切换、知识库、搜索）。 */
 const sheetLinkCard = cn(
   sheetLinkBase,
-  "rounded-lg border border-border/70 font-medium text-foreground",
+  "rounded-xl border border-border/70 font-medium text-foreground",
 );
-/** 工具与信任页那一类：卡片内的一行，无边框。 */
+/** 信任页链接，外观弱于主导航。 */
 const sheetLinkPlain = cn(
-  "flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm transition-colors hover:bg-muted",
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+  sheetLinkBase,
+  "text-muted-foreground hover:text-foreground [overflow-wrap:anywhere]",
 );
 
 /**
@@ -138,7 +142,7 @@ function MobileLanguageSwitch({
             prefetch
             className={sheetLinkCard}
           >
-            <Globe2 className="size-4" />
+            <Globe2 className="size-4 shrink-0" aria-hidden="true" />
             {copy.languageLabel}
           </Link>
         </SheetClose>
@@ -150,11 +154,55 @@ function MobileLanguageSwitch({
           prefetch
           className={sheetLinkCard}
         >
-          <Globe2 className="size-4" />
+          <Globe2 className="size-4 shrink-0" aria-hidden="true" />
           {copy.languageLabel}
         </LanguageSwitchLink>
       </SheetClose>
     </React.Suspense>
+  );
+}
+
+/** 与桌面一样用箭头表达可展开入口，次级链接缩进到同一层。 */
+function MobileNavGroup({
+  title,
+  icon: Icon,
+  children,
+  defaultOpen = false,
+  primary = false,
+}: {
+  title: string;
+  icon: LucideIcon;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  primary?: boolean;
+}) {
+  return (
+    <details
+      name="public-mobile-navigation"
+      open={defaultOpen}
+      className={cn(
+        "group rounded-xl border border-border/70",
+        primary && "border-primary/20 bg-primary/5",
+      )}
+    >
+      <summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
+        <Icon
+          aria-hidden="true"
+          className={cn(
+            "size-4 shrink-0",
+            primary ? "text-primary" : "text-muted-foreground",
+          )}
+        />
+        <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{title}</span>
+        <ChevronDown
+          aria-hidden="true"
+          className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none"
+        />
+      </summary>
+      <div className="mx-3 mb-3 grid gap-1 border-l border-border pl-3">
+        {children}
+      </div>
+    </details>
   );
 }
 
@@ -179,121 +227,133 @@ export function MobileNavDrawer({
           className="rounded-xl xl:hidden"
           aria-label={copy.navigationTitle}
         >
-          <Menu className="size-5" />
+          <Menu className="size-5" aria-hidden="true" />
         </Button>
       </SheetTrigger>
       <SheetContent
         side="right"
-        className="max-h-dvh w-[88vw] max-w-sm overflow-y-auto"
+        className="max-h-dvh w-[88vw] max-w-sm overflow-y-auto motion-reduce:animate-none"
       >
-        <SheetHeader>
+        <SheetHeader className="border-b border-border/70 pb-4 text-left">
           <SheetTitle>{copy.navigationTitle}</SheetTitle>
+          <SheetDescription className="sr-only">
+            {copy.articleCategoriesDescription}
+          </SheetDescription>
         </SheetHeader>
-        <nav className="mt-6 grid gap-4">
-          <MobileNavLink
-            href={nav.latest.href}
-            className={cn(
-              sheetLinkBase,
-              "rounded-lg bg-primary/5 font-semibold text-primary",
-            )}
-          >
-            <BookOpen className="size-4" />
-            {nav.latest.label}
+        <nav aria-label={copy.navigationTitle} className="mt-5 grid gap-3">
+          <MobileNavLink href={nav.latest.href} className={sheetLinkStrong}>
+            <BookOpen
+              className="size-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <span className="flex-1">{nav.latest.label}</span>
+            <ChevronRight
+              className="size-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
           </MobileNavLink>
 
-          <div className="grid gap-1 rounded-lg border border-border/70 p-2">
-            <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium uppercase text-muted-foreground">
-              <Server className="size-3.5" />
-              {copy.categoriesTitle}
-            </div>
-            <MobileNavLink
-              href={nav.deals[0]?.href ?? "/servers"}
-              prefetch
-              className={sheetLinkStrong}
-            >
-              {nav.deals[0]?.label ?? copy.allOffers}
-            </MobileNavLink>
-            {nav.deals.slice(1).map((link) => (
+          <MobileNavGroup
+            title={copy.dealsTitle}
+            icon={Server}
+            defaultOpen
+            primary
+          >
+            {nav.deals.map((link) => (
               <MobileNavLink
                 key={link.href}
                 href={link.href}
                 prefetch
-                className={sheetLinkMuted}
+                className={sheetLinkStrong}
               >
                 {link.label}
               </MobileNavLink>
             ))}
-            <MobileLanguageSwitch language={language} copy={copy} />
-            {nav.knowledge ? (
-              <MobileNavLink
-                href={nav.knowledge.href}
-                prefetch
-                className={sheetLinkCard}
-              >
-                <BookOpen className="size-4" />
-                {nav.knowledge.label}
-              </MobileNavLink>
-            ) : null}
-            <MobileNavLink
-              href={nav.search.href}
-              prefetch
-              className={sheetLinkCard}
-            >
-              <Search className="size-4" />
-              {nav.search.label}
-            </MobileNavLink>
-          </div>
+          </MobileNavGroup>
 
-          <div className="grid gap-1 rounded-lg border border-border/70 p-2">
-            {nav.tools.map((link: PublicNavLink, index: number) => {
+          {nav.categories.length > 0 ? (
+            <MobileNavGroup title={copy.articleCategories} icon={Layers3}>
+              {nav.categories.map((link) => (
+                <MobileNavLink
+                  key={link.href}
+                  href={link.href}
+                  prefetch={false}
+                  className={sheetLinkStrong}
+                >
+                  {link.label}
+                </MobileNavLink>
+              ))}
+            </MobileNavGroup>
+          ) : null}
+          {categoriesFailed ? (
+            <p className="rounded-xl border border-dashed border-border/70 px-3 py-3 text-sm leading-6 text-muted-foreground">
+              {copy.errorDescription}
+            </p>
+          ) : null}
+
+          {nav.knowledge ? (
+            <MobileNavLink
+              href={nav.knowledge.href}
+              prefetch
+              className={sheetLinkStrong}
+            >
+              <BookOpen
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <span className="flex-1">{nav.knowledge.label}</span>
+              <ChevronRight
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+            </MobileNavLink>
+          ) : null}
+
+          <MobileNavGroup title={copy.toolsTitle} icon={Wrench}>
+            {nav.tools.map((link, index) => {
               const Icon = TOOL_ICONS[index] ?? Cpu;
               return (
                 <MobileNavLink
                   key={link.href}
                   href={link.href}
-                  className={sheetLinkPlain}
+                  className={sheetLinkStrong}
                 >
-                  <Icon className="size-4 text-primary" />
+                  <Icon
+                    className="size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
                   {link.label}
                 </MobileNavLink>
               );
             })}
+          </MobileNavGroup>
+
+          <MobileNavLink
+            href={nav.search.href}
+            prefetch
+            className={sheetLinkCard}
+          >
+            <Search
+              className="size-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            {nav.search.label}
+          </MobileNavLink>
+
+          <div className="mt-2 grid gap-3 border-t border-border/70 pt-4">
+            <MobileLanguageSwitch language={language} copy={copy} />
+            <MobileNavGroup title={copy.siteInfoTitle} icon={ShieldCheck}>
+              {MOBILE_TRUST_LINKS.map((link) => (
+                <MobileNavLink
+                  key={link.slug}
+                  href={trustPagePath(link.slug, language)}
+                  className={sheetLinkPlain}
+                >
+                  {language === "en" ? link.en : link.zh}
+                </MobileNavLink>
+              ))}
+            </MobileNavGroup>
           </div>
-
-          <div className="grid gap-1 rounded-lg border border-border/70 p-2">
-            {MOBILE_TRUST_LINKS.map((link) => (
-              <MobileNavLink
-                key={link.slug}
-                href={trustPagePath(link.slug, language)}
-                className={sheetLinkPlain}
-              >
-                <ShieldCheck className="size-4 text-primary" />
-                {language === "en" ? link.en : link.zh}
-              </MobileNavLink>
-            ))}
-          </div>
-
-          {nav.categories.length > 0 ? (
-            <div className="px-3 text-xs font-medium uppercase text-muted-foreground">
-              {copy.articleCategories}
-            </div>
-          ) : null}
-          {nav.categories.map((link) => (
-            <MobileNavLink
-              key={link.href}
-              href={link.href}
-              prefetch={false}
-              className={sheetLinkStrong}
-            >
-              {link.label}
-            </MobileNavLink>
-          ))}
-
-          {categoriesFailed ? (
-            <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-4 text-sm leading-6 text-muted-foreground">
-              {copy.errorDescription}
-            </div>
-          ) : null}
         </nav>
       </SheetContent>
     </Sheet>

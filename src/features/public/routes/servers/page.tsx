@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -34,7 +34,9 @@ function getSiteUrl() {
   );
 }
 
-const baseMetadata: Metadata = {
+// 筛选不改变标题与 canonical；查询页的 noindex 由 proxy 的响应头声明，
+// 避免在 metadata 中读取 searchParams、阻塞整个静态页面外壳。
+export const metadata: Metadata = {
   title: "VPS 库存与服务器比价工具 - 服务器go",
   description:
     "按厂商、库存、地区、线路、产品组、配置和标准月价筛选 VPS、云服务器与独立服务器，查看优惠码、探测时间、推广文章和购买入口。",
@@ -49,42 +51,6 @@ const baseMetadata: Metadata = {
     siteName: "服务器go",
   },
 };
-
-export async function generateMetadata({
-  searchParams,
-}: {
-  searchParams: Promise<PublicInventorySearchParams>;
-}): Promise<Metadata> {
-  const params = await searchParams;
-  const hasInventoryFilters = [
-    "q",
-    "kind",
-    "provider",
-    "group",
-    "stock",
-    "check",
-    "region",
-    "line",
-    "feature",
-    "promo",
-    "price",
-    "minPrice",
-    "maxPrice",
-    "sort",
-    "cursor",
-  ].some((key) => firstSearchParam(params[key]));
-
-  return {
-    ...baseMetadata,
-    robots: hasInventoryFilters
-      ? { index: false, follow: true }
-      : { index: true, follow: true },
-  };
-}
-
-function firstSearchParam(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] : value;
-}
 
 async function loadInventoryData(
   filters: ReturnType<typeof parsePublicInventoryFilters>,
@@ -154,7 +120,7 @@ export default function ServersPage({
     "@context": "https://schema.org",
     "@type": "ItemList",
     name: "服务器库存与比价工具",
-    description: baseMetadata.description,
+    description: metadata.description,
     url: `${getSiteUrl()}/servers`,
     itemListElement: offerTopics.map((topic, index) => ({
       "@type": "ListItem",

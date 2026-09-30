@@ -180,6 +180,7 @@ export async function AllArticlesPageContent({
           )}
         </div>
         <PaginationComponent
+          newTab
           pageNo={pageNo}
           totalPage={totalPage}
           basePath={basePath}

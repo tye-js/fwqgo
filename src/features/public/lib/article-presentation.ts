@@ -1,4 +1,5 @@
 import "server-only";
+import { openPublicContentLinksInNewTabs } from "./content-link-targets";
 
 import { cacheLife } from "next/cache";
 
@@ -88,7 +89,7 @@ export function renderArticlePresentation(
   );
   // 图片富化放在标题 id 之后、目录之前：目录只读标题，不受 img 属性变化影响。
   const contentHtml = optimizeArticleImages(
-    addIdsToHeadings(linkedContent.html),
+    addIdsToHeadings(openPublicContentLinksInNewTabs(linkedContent.html)),
     images.dimensions,
     images.sizes,
   );

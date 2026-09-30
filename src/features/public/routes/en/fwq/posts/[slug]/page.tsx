@@ -1,21 +1,15 @@
 import { PublicTaxonomyLink } from "@/features/public/components/public-taxonomy-link";
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import {
-  CalendarDays,
-  ChevronRight,
-  Languages,
-  Tags,
-} from "lucide-react";
+import { CalendarDays, ChevronRight, Languages, Tags } from "lucide-react";
 
 import {
   ARTICLE_PROSE_CLASS_NAME,
-  ArticleCover,
   ArticleDetailHeader,
   ArticleMobileToc,
-  ArticleRail,
+  ArticleDetailLayout,
   ArticleTocSidebar,
 } from "@/features/public/components/article-detail";
 import { ArticleShareActions } from "@/features/public/components/article-share-actions";
@@ -240,13 +234,8 @@ async function EnglishPostContent({ params }: PageProps) {
   if (isPublicArticleStaticParamsPlaceholder(decodedSlug)) notFound();
   const presentation = await getEnglishArticlePresentation(decodedSlug);
   if (!presentation) notFound();
-  const {
-    post,
-    contentHtml,
-    tocItems,
-    internalLinks,
-    relatedPostLinks,
-  } = presentation;
+  const { post, contentHtml, tocItems, internalLinks, relatedPostLinks } =
+    presentation;
   const canonicalSlug = post.enSlug ?? decodedSlug;
   const articleUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(canonicalSlug)}`;
   const absoluteImageUrl = toAbsoluteImageUrl(post.imgUrl);
@@ -267,7 +256,6 @@ async function EnglishPostContent({ params }: PageProps) {
   const categoryPosts = (categoryPostsResult.data ?? []).filter(
     (item) => item.id !== post.id,
   );
-  const showRail = tocItems.length > 0 || latestPosts.length > 0;
 
   const blogPostingJsonLd = {
     "@context": "https://schema.org",
@@ -319,168 +307,156 @@ async function EnglishPostContent({ params }: PageProps) {
   return (
     <main id="main-content" className="flex-1">
       <div className="container mx-auto px-4 py-4 sm:px-6 md:py-6">
-        <div
-          className={`grid grid-cols-[minmax(0,1fr)] items-start gap-6 ${
-            showRail
-              ? "xl:grid-cols-[288px_minmax(0,820px)] xl:justify-center xl:gap-8"
-              : "xl:grid-cols-[minmax(0,820px)] xl:justify-center"
-          }`}
+        <ArticleDetailLayout
+          toc={
+            tocItems.length > 0 ? (
+              <ArticleTocSidebar items={tocItems} label="Contents" />
+            ) : null
+          }
+          latest={
+            latestPosts.length > 0 ? (
+              <LatestPostsSidebar
+                posts={latestPosts}
+                language="en"
+                variant="compact"
+              />
+            ) : null
+          }
         >
-          {/*
-            目录在左：侧栏整体镜像过来，正文列宽不变（仍是 820px）。
-            三栏（目录 + 正文 + 最新文章）放不下——版心内容区在 ≥1280px 只有 1184px。
-          */}
-          <ArticleRail>
-            <ArticleTocSidebar items={tocItems} label="Contents" />
-            <LatestPostsSidebar
-              posts={latestPosts}
-              language="en"
-              variant="compact"
+          <article className="article-reading-surface">
+            <script
+              type="application/ld+json"
+              dangerouslySetInnerHTML={{
+                __html: jsonLdScriptContent([
+                  blogPostingJsonLd,
+                  breadcrumbJsonLd,
+                ]),
+              }}
             />
-          </ArticleRail>
-          <div className="mx-auto w-full min-w-0 max-w-[820px] space-y-10 xl:mx-0 xl:max-w-none">
-            <article className="article-reading-surface">
-              <script
-                type="application/ld+json"
-                dangerouslySetInnerHTML={{
-                  __html: jsonLdScriptContent([
-                    blogPostingJsonLd,
-                    breadcrumbJsonLd,
-                  ]),
-                }}
-              />
-              <ArticleDetailHeader
-                eyebrow={
-                  <nav
-                    aria-label="Breadcrumb"
-                    className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm text-muted-foreground"
+            <ArticleDetailHeader
+              eyebrow={
+                <nav
+                  aria-label="Breadcrumb"
+                  className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm text-muted-foreground"
+                >
+                  <Link
+                    href="/en"
+                    className="inline-flex min-h-11 items-center hover:text-primary"
                   >
+                    Home
+                  </Link>
+                  <ChevronRight className="size-3.5 shrink-0" aria-hidden />
+                  <PublicTaxonomyLink
+                    indexable={post.categoryPubliclyIndexable}
+                    href={categoryUrl}
+                    className="inline-flex min-h-11 min-w-0 max-w-full items-center break-words hover:text-primary"
+                  >
+                    {categoryName}
+                  </PublicTaxonomyLink>
+                </nav>
+              }
+              title={post.title}
+              description={
+                post.description ??
+                "Server deal details, network information, pricing, and buying notes."
+              }
+              meta={
+                <>
+                  <span className="inline-flex min-h-11 shrink-0 items-center gap-2 tabular-nums">
+                    <CalendarDays className="size-4" aria-hidden="true" />
+                    Published {formatDate(post.createdAt, "en-US")}
+                  </span>
+                  {post.chineseSlug ? (
                     <Link
-                      href="/en"
-                      className="inline-flex min-h-11 items-center hover:text-primary"
+                      href={`/fwq/posts/${encodeURIComponent(post.chineseSlug)}`}
+                      prefetch={false}
+                      className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      Home
+                      <Languages className="size-4" aria-hidden="true" />
+                      中文
                     </Link>
-                    <ChevronRight className="size-3.5 shrink-0" aria-hidden />
-                    <PublicTaxonomyLink
-                      indexable={post.categoryPubliclyIndexable}
-                      href={categoryUrl}
-                      className="inline-flex min-h-11 min-w-0 max-w-full items-center break-words hover:text-primary"
-                    >
-                      {categoryName}
-                    </PublicTaxonomyLink>
-                  </nav>
-                }
-                title={post.title}
-                description={
-                  post.description ??
-                  "Server deal details, network information, pricing, and buying notes."
-                }
-                meta={
-                  <>
-                    <span className="inline-flex min-h-11 shrink-0 items-center gap-2 tabular-nums">
-                      <CalendarDays className="size-4" aria-hidden="true" />
-                      Published {formatDate(post.createdAt, "en-US")}
-                    </span>
-                    {post.chineseSlug ? (
-                      <Link
-                        href={`/fwq/posts/${encodeURIComponent(post.chineseSlug)}`}
-                        prefetch={false}
-                        className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <Languages className="size-4" aria-hidden="true" />
-                        中文
-                      </Link>
-                    ) : null}
-                  </>
-                }
-                actions={
-                  <ArticleShareActions
-                    title={post.title}
-                    url={articleUrl}
-                    language="en"
-                  />
-                }
+                  ) : null}
+                </>
+              }
+              actions={
+                <ArticleShareActions
+                  title={post.title}
+                  url={articleUrl}
+                  language="en"
+                />
+              }
+            />
+
+            {/* 窄屏没有右栏，目录改成正文上方的折叠块。 */}
+            <div className="mt-6">
+              <ArticleMobileToc items={tocItems} label="Contents" />
+            </div>
+
+            <div
+              className={`${ARTICLE_PROSE_CLASS_NAME} mt-8`}
+              dangerouslySetInnerHTML={{ __html: contentHtml }}
+            />
+
+            <div className="mt-10 space-y-8">
+              <Suspense fallback={null}>
+                <RelatedOffersSection
+                  postId={relatedPostId}
+                  tagNames={post.tags.map((tag) => tag.tag.name)}
+                />
+              </Suspense>
+
+              <ArticleRelatedSidebar links={relatedPostLinks} language="en" />
+
+              <ArticleCategoryPosts
+                posts={categoryPosts}
+                language="en"
+                categoryName={categoryName}
+                categoryHref={categoryUrl}
               />
 
-              <div className="mt-5">
-                <ArticleCover src={post.imgUrl} alt={post.title} />
-              </div>
-
-              {/* 窄屏没有右栏，目录改成正文上方的折叠块。 */}
-              <div className="mt-6">
-                <ArticleMobileToc items={tocItems} label="Contents" />
-              </div>
-
-              <div
-                className={`${ARTICLE_PROSE_CLASS_NAME} mt-8`}
-                dangerouslySetInnerHTML={{ __html: contentHtml }}
+              <ArticleRelatedKnowledge
+                links={internalLinks.relatedKnowledge}
+                language="en"
               />
 
-              <div className="mt-10 space-y-8">
-                <Suspense fallback={null}>
-                  <RelatedOffersSection
-                    postId={relatedPostId}
-                    tagNames={post.tags.map((tag) => tag.tag.name)}
-                  />
-                </Suspense>
+              {post.tags.length > 0 ? (
+                <section className="border-t border-border/70 pt-5">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Tags className="size-4 text-primary" aria-hidden="true" />
+                    Tags
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                    {post.tags.map((tag) =>
+                      tag.tag.publiclyIndexable ? (
+                        <Link
+                          key={tag.tag.id}
+                          href={`/en/fwq/tags/${encodeURIComponent(tag.tag.slug)}/page/1`}
+                          prefetch={false}
+                          className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          #{tag.tag.name}
+                        </Link>
+                      ) : (
+                        <span
+                          key={tag.tag.id}
+                          className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground"
+                        >
+                          #{tag.tag.name}
+                        </span>
+                      ),
+                    )}
+                  </div>
+                </section>
+              ) : null}
 
-                <ArticleRelatedSidebar
-                  links={relatedPostLinks}
-                  language="en"
-                />
-
-                <ArticleCategoryPosts
-                  posts={categoryPosts}
-                  language="en"
-                  categoryName={categoryName}
-                  categoryHref={categoryUrl}
-                />
-
-                <ArticleRelatedKnowledge
-                  links={internalLinks.relatedKnowledge}
-                  language="en"
-                />
-
-                {post.tags.length > 0 ? (
-                  <section className="border-t border-border/70 pt-5">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                      <Tags className="size-4 text-primary" aria-hidden="true" />
-                      Tags
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-                      {post.tags.map((tag) =>
-                        tag.tag.publiclyIndexable ? (
-                          <Link
-                            key={tag.tag.id}
-                            href={`/en/fwq/tags/${encodeURIComponent(tag.tag.slug)}/page/1`}
-                            prefetch={false}
-                            className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                          >
-                            #{tag.tag.name}
-                          </Link>
-                        ) : (
-                          <span
-                            key={tag.tag.id}
-                            className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground"
-                          >
-                            #{tag.tag.name}
-                          </span>
-                        ),
-                      )}
-                    </div>
-                  </section>
-                ) : null}
-
-                <ArticlePrevNext
-                  previous={previousPost}
-                  next={nextPost}
-                  language="en"
-                />
-              </div>
-            </article>
-          </div>
-        </div>
+              <ArticlePrevNext
+                previous={previousPost}
+                next={nextPost}
+                language="en"
+              />
+            </div>
+          </article>
+        </ArticleDetailLayout>
       </div>
     </main>
   );

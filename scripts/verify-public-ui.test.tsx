@@ -1,5 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 void test("public home renders bilingual content, source-backed counts and independent article destinations", () => {
@@ -28,6 +38,7 @@ for(const language of ["zh","en"]){
  for(const href of [prefix+"/fwq/page/1",prefix+"/knowledge",prefix+"/tools/network-lines",prefix+"/tools/server-sizing","/servers"]){assert.ok($('a[href="'+href+'"]').length>0,href);}
  if(language==="en"){assert.equal($('a[href^="/fwq/posts/"]').length,0);assert.equal($('input[name="lang"]').attr("value"),"en");}
  assert.ok(!html.includes("undefined"));assert.ok(!html.includes("NaN"));
+ $("a[href]").each((_,a)=>{const href=$(a).attr("href");if(href&&!/^(#|mailto:|tel:)/.test(href))assert.equal($(a).attr("target"),"_blank",href);});
  assert.equal($("aside .public-stat").first().text(),"7");
  const empty=cheerio.load(renderToStaticMarkup(React.createElement(PublicHomePage,{...props,language,posts:[],offerCounts:[],totalOfferCount:0})));
  assert.equal(empty("h1").length,1);assert.equal(empty("[data-testid=article-card]").length,0);
@@ -292,4 +303,225 @@ for (const node of serialized) {
     0,
     `${result.stdout}\n${result.stderr}`.slice(0, 12_000),
   );
+});
+
+void test("collection queries preserve canonical links and leave unmapped labels as text", () => {
+  const result = spawnSync(process.execPath, ["--no-env-file", "-"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    timeout: 15_000,
+    input: String.raw`
+import assert from "node:assert/strict";
+import React from "react";
+import {renderToStaticMarkup} from "react-dom/server";
+import * as cheerio from "cheerio";
+import {Database} from "bun:sqlite";
+import {getTableColumns, getTableName} from "drizzle-orm";
+import {drizzle} from "drizzle-orm/pg-proxy";
+import {mock} from "bun:test";
+import {affServiceProviders, serverRegions, serverNetworkLines, serverOffers} from "./packages/db/schema.ts";
+const database = new Database(":memory:");
+// Run the real projection, joins/subqueries and row mapping against SQL.
+for (const table of [affServiceProviders, serverRegions, serverNetworkLines, serverOffers]) {
+  const columns = Object.values(getTableColumns(table)).map(column =>
+    '"' + column.name + '" ' + (["number", "boolean"].includes(column.dataType) ? "NUMERIC" : "TEXT"));
+  database.exec('CREATE TABLE "' + getTableName(table) + '" (' + columns.join(", ") + ')');
+}
+function insert(table, row) {
+  const keys = Object.keys(row);
+  database.run('INSERT INTO "' + table + '" (' + keys.map(key => '"' + key + '"').join(",") + ') VALUES (' + keys.map(() => '?').join(",") + ')', Object.values(row));
+}
+insert("aff_service_providers", {id:1, name:"Fixture Provider", slug:"fixture-provider"});
+insert("server_regions", {id:1, name:"美国", enName:"United States", slug:"united-states", active:1});
+insert("server_network_lines", {id:1, name:"CN2 GIA", slug:"cn2-gia", active:1});
+const offer = {id:1, title:"Fixture VPS", slug:"fixture-vps", providerId:1, providerName:"Fixture Provider", regionId:1, region:"美国", lineId:1, lineType:"CN2 GIA", priceAmount:"5", monthlyPriceUsd:"5", currency:"USD", billingCycle:"monthly", purchaseUrl:"https://example.test/buy", status:"in_stock", visible:1, featured:0, createdAt:"2026-09-01T00:00:00Z"};
+insert("server_offers", offer);
+const readDb = drizzle(async (query, params) => ({rows:database.query(query).values(...params.map(value => typeof value === "boolean" ? Number(value) : value))}));
+mock.module("@fwqgo/db", () => ({db:readDb, readDb}));
+mock.module("next/cache", () => ({cacheLife(){}, unstable_cache:fn=>fn}));
+mock.module("@fwqgo/cache/tags", () => ({cacheTags:{serverOffers:"offers"}, tagCache(){}, revalidateSiteContent(){}}));
+mock.module("@fwqgo/auth/session", () => ({requireAdminSession(){throw new Error("Unexpected admin mutation");}}));
+const {getServerOfferCollection} = await import("./src/server/offers/server-offers.ts");
+const {ServerOfferTable} = await import("./src/features/public/components/server-offer-table.tsx");
+const selector = 'a[href^="/servers/providers/"],a[href^="/servers/regions/"],a[href^="/servers/lines/"]';
+function render(offers) {return cheerio.load(renderToStaticMarkup(React.createElement(ServerOfferTable, {offers})));}
+try {
+  for (const [kind, slug] of [["provider", "fixture-provider"], ["region", "united-states"], ["line", "cn2-gia"]]) {
+    const data = await getServerOfferCollection({kind, value:slug});
+    assert.ok(data, kind);
+    const row = data.offers[0];
+    assert.equal(row.providerSlug, "fixture-provider");
+    assert.equal(row.regionSlug, "united-states");
+    assert.equal(row.lineSlug, "cn2-gia");
+    assert.equal(row.regionEnName, "United States");
+    const $ = render(data.offers);
+    for (const href of ["/servers/providers/fixture-provider", "/servers/regions/united-states", "/servers/lines/cn2-gia"]) {
+      assert.equal($('a[href="' + href + '"]').length, 2, kind + ": desktop and mobile links " + href);
+    }
+  }
+  // The provider is mapped, while region/line retain source labels without dictionary IDs.
+  database.run('UPDATE server_offers SET "regionId" = NULL, "lineId" = NULL');
+  const partial = await getServerOfferCollection({kind:"provider", value:"fixture-provider"});
+  assert.equal(partial.offers[0].regionSlug, null);
+  assert.equal(partial.offers[0].lineSlug, null);
+  const $ = render(partial.offers);
+  assert.equal($(selector).length, 2, "Only the provider stays linked in both layouts");
+  assert.ok($.text().includes("美国"));
+  assert.ok($.text().includes("CN2 GIA"));
+  assert.equal(await getServerOfferCollection({kind:"provider", value:"unknown-provider"}), null);
+} finally {database.close();}
+`,
+  });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+});
+
+function runA11yFixture(source: string) {
+  const cwd = mkdtempSync(path.join(tmpdir(), "fwqgo-a11y-"));
+  try {
+    const directory = path.join(cwd, "src/features/public/components");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, "fixture.tsx"), source);
+    return spawnSync(
+      process.execPath,
+      ["--no-env-file", path.resolve("scripts/verify-public-a11y.ts")],
+      {
+        cwd,
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+void test("a11y guard rejects a missing search label after an arrow callback", () => {
+  const source = readFileSync(
+    "src/features/public/components/server-offer-table.tsx",
+    "utf8",
+  );
+  const labelled = runA11yFixture(source);
+  assert.equal(labelled.status, 0, `${labelled.stdout}\n${labelled.stderr}`);
+  const unlabelled = source.replace("aria-label={copy.searchLabel}", "");
+  assert.notEqual(
+    unlabelled,
+    source,
+    "The regression must remove the real search label",
+  );
+  const result = runA11yFixture(unlabelled);
+  assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stderr, /搜索框只有 placeholder，没有可访问名称/);
+});
+
+void test("a11y guard accepts associated labels and ignores label text on other nodes", () => {
+  const hero = readFileSync(
+    "src/features/public/components/hero-tag-search.tsx",
+    "utf8",
+  );
+  const fixture =
+    '<SelectTrigger onClick={() => {}} aria-label="Choose"><SelectValue /></SelectTrigger>;' +
+    hero;
+  const result = runA11yFixture(fixture);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const noAssociation = runA11yFixture(
+    fixture.replace('htmlFor="hero-tag-search"', 'htmlFor="unrelated"'),
+  );
+  assert.equal(
+    noAssociation.status,
+    1,
+    `${noAssociation.stdout}\n${noAssociation.stderr}`,
+  );
+  const fakeLabel = runA11yFixture(
+    '<SelectTrigger title="aria-label"><span aria-label="Child" /></SelectTrigger>',
+  );
+  assert.equal(fakeLabel.status, 1, `${fakeLabel.stdout}\n${fakeLabel.stderr}`);
+});
+
+void test("public links open new tabs in SSR and preserve anchor and affiliate behavior", () => {
+  const result = spawnSync(process.execPath, ["--no-env-file", "-"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    timeout: 15_000,
+    input: String.raw`
+import assert from "node:assert/strict";
+import React from "react";
+import {renderToStaticMarkup} from "react-dom/server";
+import * as cheerio from "cheerio";
+import {mock} from "bun:test";
+mock.module("next/navigation", () => ({usePathname:()=>"/posts",useSearchParams:()=>new URLSearchParams()}));
+const {default: PublicLink, PublicAnchor} = await import("./src/features/public/components/public-link.tsx");
+const {PaginationComponent} = await import("./src/features/shared/components/pagination.tsx");
+const {openPublicContentLinksInNewTabs} = await import("./src/features/public/lib/content-link-targets.ts");
+function anchor(Component, props) {return cheerio.load(renderToStaticMarkup(React.createElement(Component, props, "Link")))("a");}
+for (const Component of [PublicLink, PublicAnchor]) {
+  for (const href of ["/fwq/posts/example", "/en/fwq/posts/example", "/servers?provider=one#inventory-results", "https://example.test/buy?pid=1&aff=2", "/go/merchant"]) {
+    const a = anchor(Component, {href,rel:"nofollow sponsored"});
+    assert.equal(a.attr("href"), href);
+    assert.equal(a.attr("target"), "_blank");
+    assert.deepEqual(new Set(a.attr("rel").split(" ")), new Set(["nofollow","sponsored","noopener","noreferrer"]));
+  }
+  for (const href of ["#main-content", "mailto:contact@example.test", "tel:+123456"]) {
+    assert.equal(anchor(Component, {href}).attr("target"), undefined, href);
+  }
+}
+assert.equal(anchor(PublicLink, {href:{pathname:"/en/fwq/page/2",query:{sort:"new"}}}).attr("target"), "_blank");
+assert.equal(anchor(PublicLink, {href:{hash:"section"}}).attr("target"), undefined);
+for (const language of ["zh", "en"]) {
+  const $=cheerio.load(renderToStaticMarkup(React.createElement(PaginationComponent,{pageNo:2,totalPage:4,basePath:language==="en"?"/en/fwq":"/fwq",language,newTab:true})));
+  assert.ok($("a").length>0);
+  $("a").each((_,a)=>assert.equal($(a).attr("target"),"_blank"));
+}
+const cms=cheerio.load(renderToStaticMarkup(React.createElement(PaginationComponent,{pageNo:2,totalPage:4})));
+cms("a").each((_,a)=>assert.equal(cms(a).attr("target"),undefined,"CMS keeps existing pagination behavior"));
+const html='<h2 id="section">Section</h2><a href="#section">TOC</a><a href="/fwq/tags/cn2-gia/page/1" data-internal-link="tag:1">CN2</a><table><tr><td><a href="/go/deal-a?pid=1&amp;aff=2" rel="nofollow sponsored">Buy A</a></td><td><a href="https://example.test/buy?pid=2&amp;aff=2" rel="nofollow">Buy B</a></td></tr></table>';
+const before=cheerio.load(html), after=cheerio.load(openPublicContentLinksInNewTabs(html));
+assert.deepEqual(after("a").map((_,a)=>after(a).attr("href")).get(),before("a").map((_,a)=>before(a).attr("href")).get());
+assert.equal(after('a[href="#section"]').attr("target"),undefined);
+assert.equal(after("[data-internal-link]").attr("target"),"_blank");
+after("td a").each((_,a)=>{assert.equal(after(a).attr("target"),"_blank");assert.ok(after(a).attr("rel").includes("nofollow"));});
+assert.equal(after("table tr").length,1);
+`,
+  });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+});
+
+void test("public routes use the shared link policy including pagination and body HTML", () => {
+  const root = "src/features/public";
+  function visit(directory: string): string[] {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const file = path.join(directory, entry.name);
+      return entry.isDirectory() ? visit(file) : [file];
+    });
+  }
+  for (const file of visit(root).filter(
+    (file) => file.endsWith(".tsx") && !file.endsWith("/public-link.tsx"),
+  )) {
+    const source = readFileSync(file, "utf8");
+    assert.ok(
+      !source.includes('from "next/link"'),
+      `${file}: use the public link component`,
+    );
+    assert.ok(
+      !/<a\b/.test(source),
+      `${file}: native links must use PublicAnchor`,
+    );
+    for (const match of source.matchAll(
+      /<PaginationComponent\b([\s\S]*?)\/>/g,
+    )) {
+      assert.match(
+        match[1] ?? "",
+        /\bnewTab\b/,
+        `${file}: public pagination must open new tabs`,
+      );
+    }
+  }
+  for (const file of [
+    "src/features/public/lib/article-presentation.ts",
+    "src/features/public/routes/knowledge/[slug]/page.tsx",
+  ]) {
+    assert.ok(
+      readFileSync(file, "utf8").includes("openPublicContentLinksInNewTabs("),
+      `${file}: rendered content links need the public policy`,
+    );
+  }
 });

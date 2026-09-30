@@ -436,26 +436,9 @@ async function loadServerOfferCollection(
     kind === "provider" ? "商家" : kind === "region" ? "地区" : "线路";
 
   try {
-    const rows = await readDb
-      .select({
-        ...serverOfferPublicSelect(),
-        providerSlug: affServiceProviders.slug,
-        canonicalProviderName: affServiceProviders.name,
-        regionSlug: serverRegions.slug,
-        canonicalRegionName: serverRegions.name,
-        lineSlug: serverNetworkLines.slug,
-        canonicalLineName: serverNetworkLines.name,
-      })
+    const offers = await readDb
+      .select(serverOfferPublicSelect())
       .from(serverOffers)
-      .leftJoin(
-        affServiceProviders,
-        eq(serverOffers.providerId, affServiceProviders.id),
-      )
-      .leftJoin(serverRegions, eq(serverOffers.regionId, serverRegions.id))
-      .leftJoin(
-        serverNetworkLines,
-        eq(serverOffers.lineId, serverNetworkLines.id),
-      )
       .where(and(publicPurchasableOfferBaseWhere(), matchCondition))
       .orderBy(
         desc(serverOffers.featured),
@@ -464,20 +447,9 @@ async function loadServerOfferCollection(
       )
       .limit(30);
 
-    if (rows.length === 0) return null;
+    if (offers.length === 0) return null;
     const label = entity.name;
     const slug = entity.slug;
-    const offers = rows.map(
-      ({
-        providerSlug: _providerSlug,
-        canonicalProviderName: _canonicalProviderName,
-        regionSlug: _regionSlug,
-        canonicalRegionName: _canonicalRegionName,
-        lineSlug: _lineSlug,
-        canonicalLineName: _canonicalLineName,
-        ...offer
-      }) => offer,
-    );
     const filterKey =
       kind === "provider" ? "provider" : kind === "region" ? "region" : "line";
 

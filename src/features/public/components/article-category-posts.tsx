@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 import { ArrowRight, CalendarDays, Layers } from "lucide-react";
 
 import { SafePostImage } from "@/features/public/components/safe-post-image";

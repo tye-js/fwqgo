@@ -1,9 +1,8 @@
-import Link from "next/link";
+import Link, { PublicAnchor } from "@/features/public/components/public-link";
 import {
   ArrowRight,
   ArrowUpRight,
   BadgePercent,
-  BookOpen,
   CircleCheck,
   Globe2,
   Search,
@@ -69,20 +68,20 @@ function CouponLink({ offer }: { offer: HomeOffer }) {
     </>
   );
   const className =
-    "flex min-h-11 items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-muted";
+    "flex min-h-11 items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
   return isInternalHref(href) ? (
     <Link href={href} prefetch={false} className={className}>
       {content}
     </Link>
   ) : isHttpHref(href) ? (
-    <a
+    <PublicAnchor
       href={href}
       target="_blank"
       rel="noopener noreferrer"
       className={className}
     >
       {content}
-    </a>
+    </PublicAnchor>
   ) : null;
 }
 
@@ -99,7 +98,7 @@ function ReadingLink({
     <Link
       href={`${language === "en" ? "/en" : ""}/fwq/posts/${encodeURIComponent(post.slug)}`}
       prefetch={false}
-      className="group flex min-h-11 gap-3 border-b border-border/70 py-4 last:border-0"
+      className="group flex min-h-11 gap-3 rounded-sm border-b border-border/70 py-3 last:border-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span className="public-stat mt-0.5 text-lg font-medium text-primary/70">
         {String(index + 1).padStart(2, "0")}
@@ -134,6 +133,12 @@ const HOMEPAGE_FEED_COUNT = 6;
  * 路由层按这个数字的 2 倍取数，凑不满就少显示几条，不额外回查。
  */
 const HOMEPAGE_COUPON_COUNT = 4;
+
+// 地区目录是枚举；用完整地区名，与服务器位置描述区分。
+const HOME_REGION_LABELS: Record<string, { zh: string; en: string }> = {
+  "hong-kong": { zh: "中国香港", en: "Hong Kong, China" },
+  taiwan: { zh: "中国台湾", en: "Taiwan, China" },
+};
 
 export function PublicHomePage({
   language = "zh",
@@ -179,7 +184,7 @@ export function PublicHomePage({
     .sort((a, b) => b.getTime() - a.getTime())[0];
   const quickLinks: Array<[string, string]> = english
     ? [
-        ["Hong Kong", "/servers/hong-kong"],
+        ["Hong Kong servers", "/servers/hong-kong"],
         ["US servers", "/servers/united-states"],
         ["Cheap VPS", "/servers/cheap-vps"],
         ["CN2 routes", "/search?lang=en&q=CN2"],
@@ -194,24 +199,24 @@ export function PublicHomePage({
   return (
     <main id="main-content" className="min-w-0 flex-1">
       <section className="public-hero">
-        <div className="public-container grid gap-7 py-9 md:py-12 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-center">
+        <div className="public-container grid gap-5 py-6 md:py-7 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-center xl:gap-6">
           <div className="min-w-0">
             <p className="public-kicker">
               {english
                 ? "CLOUD INFRASTRUCTURE, MADE CLEAR"
                 : "服务器优惠 · 技术阅读 · 理性选购"}
             </p>
-            <h1 className="font-editorial mt-4 max-w-3xl break-words text-3xl font-semibold leading-tight tracking-tight sm:text-4xl xl:text-5xl">
+            <h1 className="font-editorial mt-2 max-w-3xl break-words text-2xl font-semibold leading-tight tracking-tight sm:text-3xl xl:text-4xl">
               {english
-                ? "Your next server starts here."
-                : "发现好服务器，读懂每个选择。"}
+                ? "Server deals & buying guides"
+                : "服务器优惠与选购指南"}
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
               {english
-                ? "Explore offers, understand the technology, and compare the details that matter to your next project."
-                : "从最新优惠到技术指南，把价格、配置和线路看清楚，为下一个项目找到合适的服务器。"}
+                ? "Find the latest offers, read practical guides, and compare your next server."
+                : "看最新优惠，读实用指南，比较价格、配置与线路。"}
             </p>
-            <div className="mt-6 max-w-2xl">
+            <div className="mt-4 max-w-2xl">
               {english ? (
                 <form
                   action="/search"
@@ -245,21 +250,35 @@ export function PublicHomePage({
             </div>
             <nav
               aria-label={english ? "Popular searches" : "热门搜索"}
-              className="mt-3 flex flex-wrap gap-x-4 gap-y-1"
+              className="mt-2 flex flex-wrap gap-2"
             >
-              {quickLinks.map(([label, href]) => (
-                <Link
-                  key={href}
-                  href={href}
-                  className="inline-flex min-h-11 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-primary"
-                >
-                  {label}
-                  <ArrowUpRight className="size-3.5" aria-hidden="true" />
-                </Link>
-              ))}
+              {quickLinks.map(([label, href]) => {
+                const count = offerCounts.find(
+                  (topic) => href === `/servers/${topic.slug}`,
+                )?.count;
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border/70 bg-card/70 px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-primary"
+                  >
+                    {label}
+                    {count !== undefined ? (
+                      <span className="tabular-nums text-foreground">
+                        {number(count)}
+                        <span className="sr-only">
+                          {english ? " offers" : " 个套餐"}
+                        </span>
+                      </span>
+                    ) : (
+                      <ArrowUpRight className="size-3.5" aria-hidden="true" />
+                    )}
+                  </Link>
+                );
+              })}
             </nav>
           </div>
-          <aside className="public-panel relative p-5 sm:p-6">
+          <aside className="public-panel p-4 xl:p-5">
             <div className="flex items-center justify-between gap-3 text-xs font-semibold text-muted-foreground">
               <span>
                 {english ? "EXPLORE THE INVENTORY" : "从真实库存开始选购"}
@@ -268,7 +287,7 @@ export function PublicHomePage({
             </div>
             {totalOfferCount > 0 ? (
               <p className="mt-3 flex flex-wrap items-baseline gap-2">
-                <span className="public-stat text-4xl font-semibold">
+                <span className="public-stat text-3xl font-semibold">
                   {number(totalOfferCount)}
                 </span>
                 <span className="text-sm text-muted-foreground">
@@ -287,38 +306,6 @@ export function PublicHomePage({
                   ? "Price, location, network and availability in one place."
                   : "集中查看价格、地区、线路与库存状态。"}
             </p>
-            <div className="mt-4 space-y-2 border-t border-border pt-4">
-              {offerCounts.slice(0, 3).map((topic) => (
-                <Link
-                  key={topic.slug}
-                  href={`/servers/${topic.slug}`}
-                  prefetch={false}
-                  className="flex min-h-11 items-center justify-between gap-3 rounded-lg px-2 text-sm hover:bg-muted"
-                >
-                  <span>
-                    {topic.slug === "hong-kong"
-                      ? english
-                        ? "Hong Kong"
-                        : "香港服务器"
-                      : topic.slug === "united-states"
-                        ? english
-                          ? "United States"
-                          : "美国服务器"
-                        : topic.slug === "cheap-vps"
-                          ? english
-                            ? "Cheap VPS"
-                            : "便宜 VPS"
-                          : topic.slug}
-                  </span>
-                  <span className="tabular-nums text-muted-foreground">
-                    {number(topic.count)}
-                    <span className="sr-only">
-                      {english ? " offers" : " 个套餐"}
-                    </span>
-                  </span>
-                </Link>
-              ))}
-            </div>
             <Link
               href="/servers"
               className="mt-3 flex min-h-11 items-center justify-between gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground"
@@ -330,191 +317,87 @@ export function PublicHomePage({
         </div>
       </section>
 
-      <div className="public-container space-y-10 py-8 md:space-y-14 md:py-10">
-        {lead ? (
-          <section>
-            <PublicSectionHeading
-              title={english ? "Fresh from the journal" : "新近发布，值得一读"}
-              eyebrow={english ? "THE LATEST" : "发现新内容"}
-              href={`${prefix}/fwq/page/1`}
-              linkLabel={english ? "All articles" : "浏览全部文章"}
-            />
-            <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-              <ArticleCard post={lead} language={language} variant="feature" />
-              <div className="grid gap-4">
-                {secondary.map((post) => (
-                  <ArticleCard
-                    key={post.id}
-                    post={post}
-                    language={language}
-                    variant="compact"
-                  />
-                ))}
-                <div className="rounded-xl border border-primary/15 bg-primary/5 p-5">
-                  <p className="flex items-center gap-2 text-sm font-semibold">
-                    <BookOpen
-                      className="size-4 text-primary"
-                      aria-hidden="true"
-                    />
-                    {english
-                      ? "A useful place to begin"
-                      : "准备入手第一台服务器？"}
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    {english
-                      ? "Start with the users, workload and budget. Our knowledge base helps you ask the right questions."
-                      : "先明确用户、用途和预算。用知识库补齐基础，再比较套餐细节。"}
-                  </p>
-                  <Link
-                    href={`${prefix}/knowledge`}
-                    className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-primary"
-                  >
-                    {english ? "Explore the knowledge base" : "打开选购知识库"}
-                    <ArrowRight className="size-4" aria-hidden="true" />
-                  </Link>
-                </div>
+      <div className="public-container space-y-8 py-6 md:space-y-10 md:py-8">
+        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <section className="min-w-0" aria-labelledby="home-articles-title">
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-border/70 pb-3">
+              <div>
+                <p className="public-kicker mb-1">
+                  {english ? "THE JOURNAL" : "持续更新"}
+                </p>
+                <h2 id="home-articles-title" className="public-section-title">
+                  {english ? "Latest articles" : "最新文章"}
+                </h2>
               </div>
+              <Link
+                href={`${prefix}/fwq/page/1`}
+                className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+              >
+                {english ? "All articles" : "全部文章"}
+                <ArrowUpRight className="size-4" aria-hidden="true" />
+              </Link>
             </div>
-          </section>
-        ) : null}
-
-        <section>
-          <PublicSectionHeading
-            title={
-              english
-                ? "A clearer path to the right server"
-                : "选服务器，从你的需求出发"
-            }
-            description={
-              english
-                ? "Practical resources for each step, from understanding the basics to comparing your shortlist."
-                : "把选购拆成几个简单的问题，找到适合自己的下一步。"
-            }
-          />
-          <PublicDiscovery language={language} />
-        </section>
-
-        {promoSlots.length > 0 ? (
-          <section>
-            <PublicSectionHeading
-              title={english ? "In the spotlight" : "特别推荐"}
-            />
-            <HomepagePromotionGrid slots={promoSlots} />
-          </section>
-        ) : null}
-
-        <div className="grid items-start gap-7 xl:grid-cols-[minmax(0,1fr)_310px]">
-          <div className="min-w-0 space-y-10">
-            {feed.length > 0 ? (
-              <section>
-                <PublicSectionHeading
-                  title={
-                    english
-                      ? "Deals, reviews & perspectives"
-                      : "优惠、测评与选购指南"
-                  }
-                  description={
-                    english
-                      ? "Keep reading the latest published articles."
-                      : "继续阅读近期更新，从不同角度了解服务器与云产品。"
-                  }
+            {lead ? (
+              <div className="space-y-4">
+                <ArticleCard
+                  post={lead}
+                  language={language}
+                  variant="feature"
                 />
-                <div className="space-y-4">
-                  {feed.map((post) => (
-                    <ArticleCard
-                      key={post.id}
-                      post={post}
-                      language={language}
-                    />
-                  ))}
-                </div>
+                {secondary.length > 0 ? (
+                  <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2">
+                    {secondary.map((post) => (
+                      <ArticleCard
+                        key={post.id}
+                        post={post}
+                        language={language}
+                        variant="compact"
+                      />
+                    ))}
+                  </div>
+                ) : null}
+                {feed.length > 0 ? (
+                  <div className="space-y-4 border-t border-border/70 pt-4">
+                    {feed.map((post) => (
+                      <ArticleCard
+                        key={post.id}
+                        post={post}
+                        language={language}
+                      />
+                    ))}
+                  </div>
+                ) : null}
                 <Link
                   href={`${prefix}/fwq/page/1`}
-                  className="mt-5 flex min-h-12 items-center justify-center gap-2 rounded-xl border border-border bg-card text-sm font-semibold transition-colors hover:border-primary/40 hover:text-primary"
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-border bg-card text-sm font-semibold transition-colors hover:border-primary/40 hover:text-primary"
                 >
                   {english ? "Continue to all articles" : "继续浏览全部文章"}
                   <ArrowRight className="size-4" aria-hidden="true" />
                 </Link>
-              </section>
-            ) : !lead ? (
-              <section className="public-panel p-7">
-                <PublicSectionHeading
-                  title={
-                    english
-                      ? "The journal is getting ready"
-                      : "更多文章正在准备中"
-                  }
-                  description={
-                    english
-                      ? "Explore the knowledge base and server tools while new articles are being added."
-                      : "你可以先浏览知识库，或使用选购工具梳理需求。"
-                  }
+              </div>
+            ) : (
+              <div className="public-panel p-6">
+                <p className="text-base font-semibold">
+                  {english
+                    ? "New articles are on their way"
+                    : "更多文章正在准备中"}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  {english
+                    ? "Explore the knowledge base and buying tools in the meantime."
+                    : "你可以先浏览知识库，或使用选购工具梳理需求。"}
+                </p>
+                <Link
                   href={`${prefix}/knowledge`}
-                  linkLabel={english ? "Browse knowledge" : "浏览知识库"}
-                />
-              </section>
-            ) : null}
-
-            {collections.regions.length > 0 ||
-            collections.providers.length > 0 ? (
-              <section className="public-panel p-5 sm:p-6">
-                <PublicSectionHeading
-                  title={
-                    english
-                      ? "Explore the server directory"
-                      : "按地区与商家继续探索"
-                  }
-                  href="/servers"
-                  linkLabel={english ? "Full directory" : "完整库存"}
-                />
-                <div className="grid gap-6 sm:grid-cols-2">
-                  {[
-                    {
-                      icon: Globe2,
-                      label: english ? "Regions" : "热门地区",
-                      segment: "regions",
-                      entries: collections.regions,
-                    },
-                    {
-                      icon: Store,
-                      label: english ? "Providers" : "收录商家",
-                      segment: "providers",
-                      entries: collections.providers,
-                    },
-                  ].map(({ icon: Icon, label, segment, entries }) => (
-                    <div key={segment} className="min-w-0">
-                      <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-                        <Icon className="size-4" aria-hidden="true" />
-                        {label}
-                      </h3>
-                      {entries.slice(0, 5).map((entry) => (
-                        <Link
-                          key={entry.value}
-                          href={`/servers/${segment}/${encodeURIComponent(entry.value)}`}
-                          prefetch={false}
-                          className="flex min-h-11 items-center justify-between gap-3 rounded-lg px-2 text-sm transition-colors hover:bg-muted"
-                        >
-                          <span className="min-w-0 break-words capitalize">
-                            {english && segment === "regions"
-                              ? entry.value.replaceAll("-", " ")
-                              : entry.label}
-                          </span>
-                          <span className="shrink-0 tabular-nums text-muted-foreground">
-                            {number(entry.count)}
-                          </span>
-                        </Link>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-          </div>
-
+                  className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-primary"
+                >
+                  {english ? "Browse knowledge" : "浏览知识库"}
+                  <ArrowRight className="size-4" aria-hidden="true" />
+                </Link>
+              </div>
+            )}
+          </section>
           <aside className="min-w-0 space-y-5">
-            {heroSlot ? (
-              <HomepagePrimaryPromotion slot={heroSlot} language={language} />
-            ) : null}
             {coupons.length > 0 ? (
               <section className="public-panel p-5">
                 <h2 className="mb-3 flex items-center gap-2 text-base font-semibold">
@@ -535,6 +418,9 @@ export function PublicHomePage({
                   ))}
                 </div>
               </section>
+            ) : null}
+            {heroSlot ? (
+              <HomepagePrimaryPromotion slot={heroSlot} language={language} />
             ) : null}
             {editorPicks.length > 0 ? (
               <section className="public-panel p-5">
@@ -577,6 +463,12 @@ export function PublicHomePage({
                 )}
               </section>
             ) : null}
+            <section className="public-panel p-5">
+              <h2 className="mb-2 text-base font-semibold">
+                {english ? "Tools & knowledge" : "选购工具与知识"}
+              </h2>
+              <PublicDiscovery language={language} compact />
+            </section>
             <section className="rounded-xl border border-primary/15 bg-primary/5 p-5">
               <h2 className="text-base font-semibold">
                 {english ? "Before you check out" : "下单前，再确认三件事"}
@@ -606,6 +498,15 @@ export function PublicHomePage({
             </section>
           </aside>
         </div>
+
+        {promoSlots.length > 0 ? (
+          <section>
+            <PublicSectionHeading
+              title={english ? "In the spotlight" : "特别推荐"}
+            />
+            <HomepagePromotionGrid slots={promoSlots} />
+          </section>
+        ) : null}
 
         {knowledge.length > 0 ? (
           <section>
@@ -645,6 +546,67 @@ export function PublicHomePage({
                   viewLabel={english ? "Read guide" : "阅读指南"}
                 />
               ))}
+            </div>
+          </section>
+        ) : null}
+
+        {collections.regions.length > 0 || collections.providers.length > 0 ? (
+          <section className="public-panel p-5 sm:p-6">
+            <PublicSectionHeading
+              title={
+                english
+                  ? "Explore the server directory"
+                  : "按地区与商家继续探索"
+              }
+              href="/servers"
+              linkLabel={english ? "Full directory" : "完整库存"}
+            />
+            <div
+              className={`grid gap-6 ${collections.regions.length > 0 && collections.providers.length > 0 ? "sm:grid-cols-2" : ""}`}
+            >
+              {[
+                {
+                  icon: Globe2,
+                  label: english ? "Regions" : "热门地区",
+                  segment: "regions",
+                  entries: collections.regions,
+                },
+                {
+                  icon: Store,
+                  label: english ? "Providers" : "收录商家",
+                  segment: "providers",
+                  entries: collections.providers,
+                },
+              ]
+                .filter(({ entries }) => entries.length > 0)
+                .map(({ icon: Icon, label, segment, entries }) => (
+                  <div key={segment} className="min-w-0">
+                    <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                      <Icon className="size-4" aria-hidden="true" />
+                      {label}
+                    </h3>
+                    {entries.slice(0, 5).map((entry) => (
+                      <Link
+                        key={entry.value}
+                        href={`/servers/${segment}/${encodeURIComponent(entry.value)}`}
+                        prefetch={false}
+                        className="flex min-h-11 items-center justify-between gap-3 rounded-lg px-2 text-sm transition-colors hover:bg-muted"
+                      >
+                        <span className="min-w-0 break-words capitalize">
+                          {segment === "regions"
+                            ? (HOME_REGION_LABELS[entry.value]?.[language] ??
+                              (english
+                                ? entry.value.replaceAll("-", " ")
+                                : entry.label))
+                            : entry.label}
+                        </span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {number(entry.count)}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                ))}
             </div>
           </section>
         ) : null}

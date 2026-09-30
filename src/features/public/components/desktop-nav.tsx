@@ -1,58 +1,21 @@
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 
 import { cn } from "@fwqgo/core/utils";
-import { Search } from "lucide-react";
+import { ArrowUpRight, Search } from "lucide-react";
 
 import { ActiveNavGroup, ActiveNavLink } from "./active-nav-link";
 import type { HeaderCopy } from "./header-copy";
 import type { PublicNavLink, PublicNavModel } from "./public-nav";
 
 /**
- * 桌面主导航（`xl` 及以上）。
- *
- * ## 为什么不用 Radix NavigationMenu
- *
- * 原来这里用 `@/components/ui/navigation-menu`（Radix）。那个 chunk 是 **73.9 KB 源码 /
- * 23.4 KB 传输**，而且**每个页面**都会加载 —— 但这段导航只在 `xl` 以上可见，
- * 手机上用户看到的是另一个抽屉。`navigation-menu` 全仓只有这一处用，
- * 换成原生 `<details>` 之后这个依赖可以整个省掉。
- *
- * 换来：无 JS 时也能展开（`<summary>` 是原生按钮，键盘 Enter/Space 可切换，
- * 屏幕阅读器会播报展开状态）。丢掉：Radix 的箭头键导航与展开动画。
- *
- * ## 悬停手感：为什么不是 `hidden` / `block`
- *
- * 面板的显示/隐藏走 `visibility` + `opacity` 过渡，并且**收起方向带 150ms 延迟**
- * （`delay-150`，展开方向是 `delay-0`）。这样鼠标从标题移向面板的途中不会立刻消失 ——
- * 2026-09-25 之前用 `hidden` / `group-hover:block` 切换，`display` 不可过渡，手一抖面板就没了。
- *
- * ## 2026-09-26 的视觉重做
- *
- * 四个问题与对应处理：
- *
- * 1. **hover 是整块变实心主色** → 改为浅底（`hover:bg-muted`）+ 文字加深。原先把一排链接
- *    都做成"看起来像按钮"的实心反馈，鼠标扫过时整条导航都在闪；
- * 2. **没有当前页指示** → 加 `ActiveNavLink` / `ActiveNavGroup`（主色文字 + 贴底下划线 +
- *    `aria-current="page"`），判定规则来自数据层的 `matchPrefixes`；
- * 3. **搜索是纯文字、与相邻项无差别** → 加放大镜图标；
- * 4. **「服务器比价」是核心转化入口却与其它项同权** → 移到最右、做成主按钮外观。
- *    ⚠️ 它**仍然是 `<details>`**：改成纯按钮会丢掉面板里「全部套餐 / 香港 / 美国 / 便宜 VPS」
- *    四个入口，所以只把 `<summary>` 画成主按钮，展开行为不变。
- *
- * 高亮要读路由，所以只有那两种元素下沉到客户端（`active-nav-link.tsx`），
- * 本文件与面板内容仍是服务端渲染。
- *
- * ## 2026-09-26：面板不再常驻
- *
- * 原生 `<details>` 的 `open` 是持久状态，而 Header 挂在根 layout 上、客户端路由
- * 切换不重建 DOM —— 点完二级菜单跳转过去，面板会跟着挂在新页面上，点页面别处也不消失。
- * 收起逻辑统一收在 `active-nav-link.tsx` 的 `useNavGroupDismiss` 里，
- * 这里只负责版面，不需要（也不应该）各自加一套。
+ * 桌面导航保持服务端渲染，原生 details 在无 JS 时也可点击展开。
+ * 路由高亮、悬停和收起行为统一由 ActiveNavGroup 管理；面板只跟随 open，
+ * 避免 CSS hover 在 Escape 或点击链接后把已收起的面板重新显示出来。
  */
 
 /** 普通导航项：默认略淡，hover 给一层浅底 —— 不再整块实心。 */
 const navLinkClass =
-  "inline-flex min-h-11 w-max items-center gap-1.5 rounded-md px-3.5 py-2 text-base font-medium text-foreground/75 transition-colors hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "inline-flex min-h-11 w-max items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground motion-reduce:transition-none focus-visible:bg-muted focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * 当前页：主色文字 + 一条贴底的下划线。
@@ -60,17 +23,17 @@ const navLinkClass =
  * 用 `after` 伪元素而不是 `border-b-2` —— 后者会把元素撑高 2px，一行里的项就不齐了。
  */
 const activeNavLinkClass =
-  "relative text-primary hover:text-primary after:absolute after:inset-x-3.5 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary";
+  "relative text-primary hover:text-primary after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary";
 
 /** 普通下拉的 `<summary>`：外观同导航项，另加原生 details 的复位。 */
 const summaryClass = cn(
   navLinkClass,
-  "cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden",
+  "cursor-pointer select-none list-none group-open:bg-muted group-open:text-foreground [&::-webkit-details-marker]:hidden",
 );
 
 /** 「服务器比价」的 `<summary>`：主按钮外观。 */
 const primaryActionClass =
-  "inline-flex min-h-11 w-max cursor-pointer select-none list-none items-center rounded-full bg-primary px-5 py-2 text-base font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden";
+  "inline-flex min-h-11 w-max cursor-pointer select-none list-none items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 group-open:bg-primary/90 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden";
 
 /**
  * 「服务器比价」命中当前页时的表现。
@@ -84,19 +47,8 @@ const primaryActionClass =
 const primaryActionActiveClass =
   "ring-2 ring-primary/40 ring-offset-2 ring-offset-background";
 
-/**
- * 下拉面板容器（不含对齐方向）。
- *
- * - 收起态 `invisible opacity-0` + `delay-150`：移开鼠标后有 150ms 宽限期；
- * - 悬停或 `<details open>` 时 `delay-0`，立即出现；
- * - `pt-2` 既是标题与面板之间的视觉间距，也保证两者之间没有可穿透的空隙。
- *
- * **对齐方向必须写成完整字面量**（下面各一份），不能用
- * `panelBaseClass.replace("left-0", "right-0")` 去拼 —— Tailwind 在源码里做子串匹配，
- * 拼出来的类名扫不到，样式会**静默失效**。
- */
-const panelBaseClass =
-  "invisible absolute top-full z-50 pt-2 opacity-0 transition-[opacity,visibility] duration-150 delay-150 group-hover:visible group-hover:opacity-100 group-hover:delay-0 group-open:visible group-open:opacity-100 group-open:delay-0";
+/** pt-3 保留标题到面板的指针通道；收起宽限时间在客户端统一处理。 */
+const panelBaseClass = "absolute top-full z-50 pt-3";
 
 /** 内容入口组的面板：左对齐。 */
 const panelClass = cn(panelBaseClass, "left-0");
@@ -105,21 +57,29 @@ const panelClass = cn(panelBaseClass, "left-0");
 const primaryPanelClass = cn(panelBaseClass, "right-0");
 
 const panelListClass =
-  "grid gap-2 rounded-md border border-border/70 bg-popover p-4 shadow-lg";
+  "overflow-y-auto overscroll-contain rounded-2xl border border-border/80 bg-popover text-popover-foreground shadow-xl shadow-black/10";
 
 const listItemClass =
-  "block select-none space-y-2 rounded-md border border-transparent p-3.5 leading-none no-underline outline-none transition-colors hover:border-border hover:bg-muted/60 focus:border-border focus:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring";
+  "group/item flex min-h-11 items-start gap-3 rounded-xl p-3 no-underline outline-none transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none";
 
 function ListItem({ link }: { link: PublicNavLink }) {
   return (
-    <li>
+    <li className="min-w-0">
       <Link href={link.href} prefetch={false} className={listItemClass}>
-        <div className="text-sm font-medium leading-none">{link.label}</div>
-        {link.description ? (
-          <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
-            {link.description}
-          </p>
-        ) : null}
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="text-sm font-semibold leading-5 [overflow-wrap:anywhere] group-hover/item:text-primary">
+            {link.label}
+          </div>
+          {link.description ? (
+            <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
+              {link.description}
+            </p>
+          ) : null}
+        </div>
+        <ArrowUpRight
+          aria-hidden="true"
+          className="mt-0.5 size-4 shrink-0 text-muted-foreground group-hover/item:text-primary"
+        />
       </Link>
     </li>
   );
@@ -131,18 +91,38 @@ function groupPrefixes(links: PublicNavLink[]) {
 }
 
 function NavGroupPanel({
+  title,
+  description,
   links,
   panelClassName,
+  listClassName,
 }: {
+  title: string;
+  description: string;
   links: PublicNavLink[];
   panelClassName: string;
+  listClassName?: string;
 }) {
   return (
-    <ul className={cn(panelListClass, panelClassName)}>
-      {links.map((link) => (
-        <ListItem key={link.href} link={link} />
-      ))}
-    </ul>
+    <div
+      className={cn(
+        panelListClass,
+        "max-h-[calc(100dvh-7rem)]",
+        panelClassName,
+      )}
+    >
+      <div className="border-b border-border/60 bg-muted/40 px-5 py-4">
+        <p className="text-sm font-semibold">{title}</p>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {description}
+        </p>
+      </div>
+      <ul className={cn("grid gap-1 p-2", listClassName)}>
+        {links.map((link) => (
+          <ListItem key={link.href} link={link} />
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -176,8 +156,11 @@ export function DesktopNav({
             panelClassName={panelClass}
           >
             <NavGroupPanel
+              title={copy.articleCategories}
+              description={copy.articleCategoriesDescription}
               links={nav.categories}
-              panelClassName="max-h-[calc(100dvh-5rem)] w-[min(860px,calc(100vw-2rem))] overflow-y-auto md:grid-cols-2 xl:grid-cols-3"
+              panelClassName="w-[min(680px,calc(100vw-2rem))]"
+              listClassName="grid-cols-3"
             />
           </ActiveNavGroup>
         ) : null}
@@ -214,8 +197,10 @@ export function DesktopNav({
           panelClassName={panelClass}
         >
           <NavGroupPanel
+            title={copy.toolsTitle}
+            description={copy.toolsDescription}
             links={nav.tools}
-            panelClassName="w-[min(520px,calc(100vw-2rem))] md:grid-cols-2"
+            panelClassName="w-[min(420px,calc(100vw-2rem))]"
           />
         </ActiveNavGroup>
 
@@ -240,8 +225,11 @@ export function DesktopNav({
           panelClassName={primaryPanelClass}
         >
           <NavGroupPanel
+            title={copy.dealsTitle}
+            description={copy.dealsDescription}
             links={nav.deals}
-            panelClassName="w-[420px] gap-3 md:w-[520px] md:grid-cols-2"
+            panelClassName="w-[min(520px,calc(100vw-2rem))]"
+            listClassName="grid-cols-2"
           />
         </ActiveNavGroup>
       </ul>

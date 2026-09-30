@@ -1,18 +1,35 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 import { usePathname } from "next/navigation";
+import { ChevronDown } from "lucide-react";
 import {
   Suspense,
   useCallback,
   useEffect,
   useRef,
+  useSyncExternalStore,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 
 import { cn } from "@fwqgo/core/utils";
 
 import type { PublicNavLink } from "./public-nav";
+
+const subscribeToHydration = () => () => undefined;
+const hydratedSnapshot = () => true;
+const serverSnapshot = () => false;
+
+// 动态路由的 fallback 参数没有完整 pathname。首屏始终输出可用但不高亮的导航，
+// 水合后再订阅真实 URL，避免 Next 预渲染中已中止的参数 Promise 再次被读取。
+function useNavigationHydrated() {
+  return useSyncExternalStore(
+    subscribeToHydration,
+    hydratedSnapshot,
+    serverSnapshot,
+  );
+}
 
 /**
  * 带「当前页」高亮的导航元素。
@@ -109,17 +126,19 @@ type ActiveNavLinkProps = {
 function ActiveNavLinkInner(props: ActiveNavLinkProps) {
   const pathname = usePathname();
   return (
-    <NavLinkShell
-      {...props}
-      active={isCurrentNavLink(props.link, pathname)}
-    />
+    <NavLinkShell {...props} active={isCurrentNavLink(props.link, pathname)} />
   );
 }
 
 export function ActiveNavLink(props: ActiveNavLinkProps) {
+  const hydrated = useNavigationHydrated();
   return (
     <Suspense fallback={<NavLinkShell {...props} active={false} />}>
-      <ActiveNavLinkInner {...props} />
+      {hydrated ? (
+        <ActiveNavLinkInner {...props} />
+      ) : (
+        <NavLinkShell {...props} active={false} />
+      )}
     </Suspense>
   );
 }
@@ -135,47 +154,58 @@ type ActiveNavGroupProps = {
 };
 
 /**
- * 下拉组「用完即收」的行为（2026-09-26）。
- *
- * ## 为什么必须显式收起
- *
- * 原生 `<details>` 的 `open` 是**持久状态**：点开之后只有再点一次 `<summary>`
- * 才会合上。这在页头里不成立 —— Header 挂在根 layout 上，客户端路由切换**不会**
- * 重建 DOM，所以点完二级菜单跳转过去，面板会跟着挂在新页面上；点页面别处同样不消失。
- * 实测复现的就是这两个现象。
- *
- * ## 五种收起时机
- *
- * 原生行为全部保留（JS 不可用时只是退回旧表现）：
- *
- * 1. 点面板里的链接 —— 触发跳转的那一次点击；
- * 2. 在整组之外按下指针（用 `pointerdown` 而不是 `click`：按住鼠标拖出面板也能收）；
- * 3. `Escape`；
- * 4. 焦点移出整组 —— 键盘 Tab 走到下一个导航项；
- * 5. 路由变化 —— 兜底，覆盖浏览器前进/后退这类不经过面板点击的跳转。
- *
- * ## 为什么指针移开也要收
- *
- * 悬停本身就会显示面板（`group-hover`）。用户顺手点一下 `<summary>` 会把 `open`
- * 变成 true，而 `group-open:visible` **盖过** hover 的收起逻辑 —— 鼠标移开后面板
- * 永久留在页面上，只能再点一次标题才能关掉。
- *
- * 只处理 `pointerType === "mouse"`：触摸设备上 `pointerleave` 在抬手后立刻触发，
- * 会把「点一下展开」变成「点了没反应」。
- *
- * ## 为什么 `pathname` 是参数而不是在这里 `usePathname()`
- *
- * 这个 hook 跑在 `NavGroupShell` 里，而它**同时是 `Suspense` 的 fallback**。
- * fallback 里读 URL 数据会让预渲染重新失去边界，所以只让 `ActiveNavGroupInner`
- * 读、再传进来；fallback 拿到 `undefined`，少最后一条兜底而已（它本来就是过渡态）。
+ * 导航组统一管理 open：悬停、点击和键盘看到的展开状态始终一致。
+ * 链接点击、组外按下、Escape、焦点移出和路由变化立即收起；鼠标移出保留
+ * 150ms 宽限，触摸抬手不收起。pathname 由 Suspense 内传入，fallback 不读 URL。
  */
 function useNavGroupDismiss(pathname?: string) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openedByHover = useRef(false);
+
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  }, []);
 
   const close = useCallback(() => {
+    cancelClose();
+    openedByHover.current = false;
     const details = detailsRef.current;
-    if (details?.open) details.open = false;
+    if (!details?.open) return;
+    // 收起后不能把键盘焦点留在不可见的二级链接上。
+    if (details.contains(document.activeElement)) {
+      details.querySelector("summary")?.focus();
+    }
+    details.open = false;
+  }, [cancelClose]);
+
+  const open = useCallback(
+    (fromHover = false) => {
+      cancelClose();
+      const details = detailsRef.current;
+      if (details && !details.open) {
+        openedByHover.current = fromHover;
+        details.open = true;
+      }
+    },
+    [cancelClose],
+  );
+
+  const onSummaryClick = useCallback((event: MouseEvent<HTMLElement>) => {
+    // 点击前会先触发 pointerenter；首次点击确认悬停展开，避免立即反向收起。
+    if (event.detail > 0 && openedByHover.current && detailsRef.current?.open) {
+      event.preventDefault();
+    }
+    openedByHover.current = false;
   }, []);
+
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    closeTimer.current = setTimeout(close, 150);
+  }, [cancelClose, close]);
+
+  useEffect(() => cancelClose, [cancelClose]);
 
   useEffect(() => {
     close();
@@ -202,7 +232,7 @@ function useNavGroupDismiss(pathname?: string) {
     };
   }, [close]);
 
-  return { detailsRef, close };
+  return { detailsRef, close, open, scheduleClose, onSummaryClick };
 }
 
 /**
@@ -217,22 +247,26 @@ function NavGroupShell({
   pathname,
   children,
 }: ActiveNavGroupProps & { active: boolean; pathname?: string }) {
-  const { detailsRef, close } = useNavGroupDismiss(pathname);
+  const { detailsRef, close, open, scheduleClose, onSummaryClick } =
+    useNavGroupDismiss(pathname);
 
   return (
     <li>
       <details
         ref={detailsRef}
+        name="public-desktop-navigation"
         className="group relative"
-        // 点面板里的链接就收起。`<summary>` 上的点击**不能**拦 —— 那是原生的开合
-        // 开关，拦掉之后键盘用户和无悬停场景就再也打不开了。
+        // 链接点击后收起；summary 保留原生开合，只校正首次鼠标点击的悬停竞态。
         onClick={(event) => {
           if (event.target instanceof Element && event.target.closest("a")) {
             close();
           }
         }}
+        onPointerEnter={(event) => {
+          if (event.pointerType === "mouse") open(true);
+        }}
         onPointerLeave={(event) => {
-          if (event.pointerType === "mouse") close();
+          if (event.pointerType === "mouse") scheduleClose();
         }}
         onBlur={(event) => {
           const next = event.relatedTarget;
@@ -244,8 +278,19 @@ function NavGroupShell({
         <summary
           aria-current={active ? "page" : undefined}
           className={cn(summaryClassName, active && activeClassName)}
+          onClick={onSummaryClick}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowDown") return;
+            event.preventDefault();
+            open();
+            detailsRef.current?.querySelector("a")?.focus();
+          }}
         >
-          {title}
+          <span>{title}</span>
+          <ChevronDown
+            aria-hidden="true"
+            className="size-4 shrink-0 opacity-70 transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none"
+          />
         </summary>
         <div className={panelClassName}>{children}</div>
       </details>
@@ -259,8 +304,7 @@ function ActiveNavGroupInner(props: ActiveNavGroupProps) {
     <NavGroupShell
       {...props}
       active={
-        props.prefixes.length > 0 &&
-        matchesPrefixes(props.prefixes, pathname)
+        props.prefixes.length > 0 && matchesPrefixes(props.prefixes, pathname)
       }
       pathname={pathname}
     />
@@ -277,9 +321,14 @@ function ActiveNavGroupInner(props: ActiveNavGroupProps) {
  * 都会收起（实现在 `useNavGroupDismiss`）。新增调用方不需要做任何事。
  */
 export function ActiveNavGroup(props: ActiveNavGroupProps) {
+  const hydrated = useNavigationHydrated();
   return (
     <Suspense fallback={<NavGroupShell {...props} active={false} />}>
-      <ActiveNavGroupInner {...props} />
+      {hydrated ? (
+        <ActiveNavGroupInner {...props} />
+      ) : (
+        <NavGroupShell {...props} active={false} />
+      )}
     </Suspense>
   );
 }

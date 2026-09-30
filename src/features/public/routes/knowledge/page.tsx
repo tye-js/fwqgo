@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import Link from "@/features/public/components/public-link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -354,6 +354,7 @@ async function KnowledgeIndexContent(props: {
 
         <div className="mt-8">
           <PaginationComponent
+            newTab
             pageNo={result.page}
             totalPage={result.totalPages}
             queryParam="page"

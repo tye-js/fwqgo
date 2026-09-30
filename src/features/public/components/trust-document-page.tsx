@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link, { PublicAnchor } from "@/features/public/components/public-link";
 import {
   ArrowRight,
   Mail,
@@ -64,7 +64,7 @@ export function TrustDocumentPage({
             />
             <div className="grid gap-4 sm:grid-cols-2">
               {doc.channels.map((channel) => (
-                <a
+                <PublicAnchor
                   key={channel.id}
                   href={
                     channel.href === "email"
@@ -87,12 +87,12 @@ export function TrustDocumentPage({
                     {SITE_CONTACT.email}
                     <ArrowRight className="size-4" aria-hidden="true" />
                   </span>
-                </a>
+                </PublicAnchor>
               ))}
             </div>
 
             <div className="public-panel mt-4 grid gap-3 p-5 sm:grid-cols-2">
-              <a
+              <PublicAnchor
                 href={SITE_CONTACT.qqGroup.href}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -102,8 +102,8 @@ export function TrustDocumentPage({
                 {english
                   ? SITE_CONTACT.qqGroup.labelEn
                   : SITE_CONTACT.qqGroup.label}
-              </a>
-              <a
+              </PublicAnchor>
+              <PublicAnchor
                 href={SITE_CONTACT.telegram.href}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -111,7 +111,7 @@ export function TrustDocumentPage({
               >
                 <Send className="size-4" aria-hidden="true" />
                 {SITE_CONTACT.telegram.label}
-              </a>
+              </PublicAnchor>
             </div>
           </section>
         ) : null}
