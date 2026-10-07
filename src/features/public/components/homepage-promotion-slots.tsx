@@ -43,8 +43,7 @@ function PromotionLink({
         href={href}
         target="_blank"
         rel={
-          slot.contentType === "offer"
-            || slot.contentType === "image_link"
+          slot.contentType === "offer" || slot.contentType === "image_link"
             ? "nofollow sponsored noopener noreferrer"
             : "noopener noreferrer"
         }
@@ -75,8 +74,7 @@ export function HomepagePrimaryPromotion({
         <SafePostImage
           src={imageUrl}
           alt={slot.resolvedAltText}
-          priority
-          sizes="(max-width: 1023px) 100vw, 330px"
+          sizes="(max-width: 1279px) calc(100vw - 2rem), 300px"
         />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center bg-muted text-muted-foreground">
@@ -84,21 +82,11 @@ export function HomepagePrimaryPromotion({
         </div>
       )}
       <div className="absolute inset-0 bg-black/55" />
-      <div className="absolute inset-x-0 bottom-0 p-4 text-white">
+      <div className="relative flex min-h-64 flex-col justify-end p-4 text-white">
         <Badge className="mb-2 border-white/20 bg-black/35 text-white hover:bg-black/35">
-          {slot.contentType === "post"
-            ? language === "en"
-              ? "Featured article"
-              : "推广文章"
-            : slot.contentType === "offer"
-              ? language === "en"
-                ? "Featured offer"
-                : "精选套餐"
-              : language === "en"
-                ? "Special pick"
-                : "特别推荐"}
+          {language === "en" ? "Sponsored" : "推广"}
         </Badge>
-        <h2 className="line-clamp-2 text-lg font-semibold leading-7">
+        <h2 className="break-words text-lg font-semibold leading-7 [overflow-wrap:anywhere]">
           {slot.resolvedTitle}
         </h2>
         {slot.resolvedDescription ? (
@@ -143,7 +131,7 @@ export function HomepagePromotionGrid({
             </div>
             <div className="p-3">
               <div className="flex items-start justify-between gap-3">
-                <h3 className="line-clamp-2 text-sm font-semibold leading-6 text-foreground group-hover:text-primary">
+                <h3 className="break-words text-sm font-semibold leading-6 text-foreground [overflow-wrap:anywhere] group-hover:text-primary">
                   {slot.resolvedTitle}
                 </h3>
                 <ArrowUpRight className="mt-1 size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
@@ -175,7 +163,7 @@ export function HomepageSidebarPromotions({
           slot={slot}
           className="group flex min-h-11 items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm transition-colors hover:border-primary/35 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="line-clamp-2 font-medium text-foreground group-hover:text-primary">
+          <span className="min-w-0 break-words font-medium text-foreground [overflow-wrap:anywhere] group-hover:text-primary">
             {slot.resolvedTitle}
           </span>
           <ArrowUpRight className="size-4 shrink-0 text-muted-foreground" />

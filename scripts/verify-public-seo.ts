@@ -241,7 +241,8 @@ for (const invariant of [
 // 又在专题页/目录页产生 404（实测爬站抓到 4 个）。现在规则只有一处实现
 // （server-collection-link.tsx），守卫改成：盯住共享组件，并断言两个消费方
 // 都不再自己拼 href、都必须走共享组件。
-const collectionLinkSource = readFileSync(  "src/features/public/components/server-collection-link.tsx",
+const collectionLinkSource = readFileSync(
+  "src/features/public/components/server-collection-link.tsx",
   "utf8",
 );
 assert.ok(
@@ -265,7 +266,9 @@ for (const consumer of COLLECTION_LINK_CONSUMERS) {
   );
   for (const raw of ["providerName", "region", "lineType"]) {
     assert.ok(
-      !new RegExp(`collectionHref\\([^)]*offer\\.${raw}\\b`).test(consumerSource),
+      !new RegExp(`collectionHref\\([^)]*offer\\.${raw}\\b`).test(
+        consumerSource,
+      ),
       `Collection hrefs must not be built from offer.${raw}: ${consumer}`,
     );
   }
@@ -278,12 +281,10 @@ const JSON_LD_LANGUAGE_FILES = {
   "zh-CN": [
     "src/features/public/routes/fwq/[category]/page/[pageNo]/page.tsx",
     "src/features/public/routes/fwq/tags/[tagSlug]/page/[pageNo]/page.tsx",
-    "src/features/public/routes/fwq/posts/[slug]/page.tsx",
   ],
   en: [
     "src/features/public/routes/en/fwq/[category]/page/[pageNo]/page.tsx",
     "src/features/public/routes/en/fwq/tags/[tagSlug]/page/[pageNo]/page.tsx",
-    "src/features/public/routes/en/fwq/posts/[slug]/page.tsx",
   ],
 };
 for (const [language, files] of Object.entries(JSON_LD_LANGUAGE_FILES)) {
@@ -295,13 +296,31 @@ for (const [language, files] of Object.entries(JSON_LD_LANGUAGE_FILES)) {
     );
   }
 }
+// 文章详情已统一在缓存的 presentation 中生成，两种语言复用同一套字段。
+const articlePresentation = readFileSync(
+  "src/features/public/lib/article-presentation.ts",
+  "utf8",
+);
+for (const language of ["zh-CN", "en"]) {
+  assert.ok(articlePresentation.includes(`inLanguage: "${language}"`));
+}
+for (const file of [
+  "src/features/public/routes/fwq/posts/[slug]/page.tsx",
+  "src/features/public/routes/en/fwq/posts/[slug]/page.tsx",
+]) {
+  const source = readFileSync(file, "utf8");
+  assert.match(source, /return presentation\.seo\.metadata/);
+  assert.match(source, /blogPostingJsonLd = seo\.jsonLd/);
+}
 // 中英文共用的列表页：两种语言都要能落到，不能只在 en 分支写。
 const sharedArticlesSource = readFileSync(
   "src/features/public/components/all-articles-page.tsx",
   "utf8",
 );
 assert.ok(
-  sharedArticlesSource.includes('inLanguage: language === "en" ? "en" : "zh-CN"'),
+  sharedArticlesSource.includes(
+    'inLanguage: language === "en" ? "en" : "zh-CN"',
+  ),
   "共享列表页的 inLanguage 要覆盖两种语言，不能只在 en 分支给值",
 );
 

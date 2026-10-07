@@ -4,17 +4,10 @@ import {
   getHomepagePostsWithTags,
   getHomepageSidebarData,
 } from "@/features/public/data/post";
-import { listPublishedKnowledgeArticles } from "@/features/public/data/knowledge";
+import { getHomepageTopics } from "@/features/public/data/homepage-topics";
 import { PublicHomePage } from "@/features/public/components/home-page";
 import Header from "@/features/public/components/header";
 import Footer from "@/features/public/components/footer";
-import {
-  HOMEPAGE_LATEST_OFFER_LIMIT,
-  getLatestServerOffers,
-  getPublicServerOfferCount,
-  getServerOfferTopicCounts,
-  getServerOfferCollectionIndex,
-} from "@/server/offers/server-offers";
 import { getSiteSeoConfig } from "@/features/shared/data/site-seo";
 import { getActiveHomepageSlots } from "@/server/homepage/homepage-slots";
 import {
@@ -71,42 +64,23 @@ async function HomeContent() {
     cacheTags.tags,
     cacheTags.sidebar,
     cacheTags.serverOffers,
-    cacheTags.knowledge,
   );
   // Local verification builds never require a production database.
   if (isDatabaseFreeBuild()) return null;
-  const [
-    { data: posts },
-    { data: sidebarData },
-    offerCounts,
-    latestOffers,
-    totalOfferCount,
-    homepageSlots,
-    collections,
-    knowledge,
-  ] = await Promise.all([
-    getHomepagePostsWithTags("zh"),
-    getHomepageSidebarData("zh"),
-    getServerOfferTopicCounts(),
-    // 首页只用 4 条优惠码 + 一个「最近更新」时间戳（`home-page.tsx`），
-    // 按优惠码块约定的条数取，不必按 24 条拉全量字段。
-    getLatestServerOffers(HOMEPAGE_LATEST_OFFER_LIMIT),
-    getPublicServerOfferCount(),
-    getActiveHomepageSlots("zh"),
-    getServerOfferCollectionIndex(5),
-    listPublishedKnowledgeArticles({ language: "zh", page: 1 }),
-  ]);
+  const [{ data: posts }, { data: sidebarData }, homepageSlots, topics] =
+    await Promise.all([
+      getHomepagePostsWithTags("zh"),
+      getHomepageSidebarData("zh"),
+      getActiveHomepageSlots("zh"),
+      getHomepageTopics("zh"),
+    ]);
   return (
     <PublicHomePage
       language="zh"
-      posts={posts ?? []}
+      posts={posts}
       sidebarData={sidebarData}
-      offerCounts={offerCounts}
-      latestOffers={latestOffers}
-      totalOfferCount={totalOfferCount}
       homepageSlots={homepageSlots}
-      collections={collections}
-      knowledge={knowledge.items}
+      topics={topics}
     />
   );
 }

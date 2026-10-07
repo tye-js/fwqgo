@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function HeroTagSearch() {
+export function HeroTagSearch({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -58,30 +58,42 @@ export function HeroTagSearch() {
   return (
     <form onSubmit={handleSubmit} className="space-y-2">
       <Label htmlFor="hero-tag-search" className="sr-only">
-        搜索服务器套餐、商家、地区和优惠码
+        搜索商家、地区、线路或文章
       </Label>
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <div className="relative flex-1">
+      <div
+        className={compact ? "flex gap-2" : "flex flex-col gap-2 sm:flex-row"}
+      >
+        <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             id="hero-tag-search"
+            type="search"
+            name="q"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
               if (errorMessage) setErrorMessage("");
             }}
-            placeholder="搜索套餐、商家、地区、优惠码，例如：香港 CN2"
+            placeholder="搜索商家、地区、线路或文章"
             aria-describedby={
               errorMessage ? "hero-tag-search-error" : undefined
             }
             aria-invalid={Boolean(errorMessage)}
-            className="h-14 rounded-xl border-border bg-card pl-10 text-base shadow-sm"
+            className={
+              compact
+                ? "h-11 rounded-lg border-border bg-card pl-10 text-base"
+                : "h-14 rounded-xl border-border bg-card pl-10 text-base shadow-sm"
+            }
           />
         </div>
         <Button
           type="submit"
           disabled={isPending}
-          className="h-14 rounded-xl px-6 text-sm font-medium"
+          className={
+            compact
+              ? "h-11 shrink-0 rounded-lg px-4 text-sm font-medium"
+              : "h-14 rounded-xl px-6 text-sm font-medium"
+          }
         >
           {isPending ? "搜索中..." : "搜索"}
         </Button>

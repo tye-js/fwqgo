@@ -276,7 +276,10 @@ for (const entry of readdirSync("src/features/public", { recursive: true })) {
   if (!source.includes("renderArticleContentHtml(")) continue;
   renderCallers.push({ file, source });
 }
-assert.ok(renderCallers.length > 0, "未找到调用 renderArticleContentHtml 的文件");
+assert.ok(
+  renderCallers.length > 0,
+  "未找到调用 renderArticleContentHtml 的文件",
+);
 for (const { file, source } of renderCallers) {
   assert.ok(
     source.includes("optimizeArticleImages("),
@@ -310,12 +313,18 @@ assert.deepEqual(
   `抓取路径必须显式传 images: "drop"，否则会把来源站的第三方图写进正文：${scrapeOffenders.join(" | ")}`,
 );
 
-// 11. 首页 feature 的 sm 图文分栏、xl 主栏，与 compact 的固定缩略图需要各自的 sizes。
+// 11. 共享 feature 的 sm 图文分栏、xl 主栏，与 compact 的固定缩略图需要各自的 sizes。
 // 不能复用列表卡片尺寸，否则移动端会下载过大图片，或在高密度屏幕上拉伸主图。
 const articleCard = readFileSync(
   "src/features/public/components/article-card.tsx",
   "utf8",
 );
+assert.match(
+  articleCard,
+  /variant === "home-list"[\s\S]{0,120}\(max-width: 639px\) 80px, 144px/,
+);
+assert.match(articleCard, /grid-cols-\[80px_minmax\(0,1fr\)\]/);
+assert.match(articleCard, /sm:grid-cols-\[144px_minmax\(0,1fr\)\]/);
 assert.match(
   articleCard,
   /variant === "feature"[\s\S]{0,120}\(max-width: 639px\) calc\(100vw - 2rem\), \(max-width: 1279px\) 46vw, 408px/,

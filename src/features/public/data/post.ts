@@ -253,13 +253,8 @@ export async function searchPublishedPosts(input: {
   }
 }
 
-/**
- * 首页文章区一次取多少条。
- *
- * 首页最多渲染 9 张卡片（`home-page.tsx` 的 1 篇头条 + 2 篇次条 + 6 篇列表），
- * 这里留 3 条余量，卡片数量微调时不必同时动数据层；若要再往上加，注意两边一起改。
- */
-export const HOMEPAGE_POST_QUERY_LIMIT = 12;
+/** 首页单列展示 9 篇；不改变其他归档页的查询上限。 */
+export const HOMEPAGE_POST_QUERY_LIMIT = 9;
 
 export async function getHomepagePostsWithTags(
   language: PublicLanguage = "zh",

@@ -6,10 +6,8 @@ import {
   getRecommendedPosts,
 } from "@/features/public/data/post";
 
-import { isRenderableImageSrc } from "@fwqgo/core/image-src";
 import { resolveServerOfferAvailability } from "@fwqgo/core/server-offer-status";
 import {
-  formatDate,
   jsonLdScriptContent,
   normalizeDecodedSlug,
   toAbsoluteHttpUrl,
@@ -19,7 +17,6 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import {
   ArrowRight,
-  CalendarDays,
   ChevronRight,
   Languages,
   SquareLibrary,
@@ -28,6 +25,7 @@ import {
 import {
   ARTICLE_PROSE_CLASS_NAME,
   ArticleDetailHeader,
+  ArticlePublicationMeta,
   ArticleMobileToc,
   ArticleDetailLayout,
   ArticleTocSidebar,
@@ -54,10 +52,6 @@ import {
 } from "@fwqgo/core/server-offer-price";
 import { getChineseArticlePresentation } from "@/features/public/lib/article-presentation";
 import {
-  buildOrganizationJsonLd,
-  buildPublisherJsonLd,
-} from "@/features/public/lib/site-structured-data";
-import {
   getPublicArticleStaticParams,
   isPublicArticleStaticParamsPlaceholder,
 } from "@/features/public/lib/article-static-params";
@@ -68,16 +62,6 @@ function getSiteUrl() {
     /\/+$/,
     "",
   );
-}
-
-function toAbsoluteUrl(value: string | null | undefined) {
-  if (!isRenderableImageSrc(value)) return undefined;
-  if (!value) return undefined;
-  try {
-    return new URL(value, getSiteUrl()).toString();
-  } catch {
-    return undefined;
-  }
 }
 
 async function RelatedOffersSection({
@@ -201,58 +185,18 @@ async function FallbackRelatedPosts({
   );
 }
 
-export async function generateMetadata(props: {
+export async function generateMetadata({
+  params,
+}: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
-  const params = await props.params;
-  const decodedSlug = normalizeDecodedSlug(params.slug);
-  if (!decodedSlug) return {};
-  if (isPublicArticleStaticParamsPlaceholder(decodedSlug)) notFound();
-
-  const canonicalUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`;
-  const readableTitle = decodedSlug.replace(/[-_]+/g, " ");
+  const { slug } = await params;
+  const decodedSlug = normalizeDecodedSlug(slug);
+  if (!decodedSlug || isPublicArticleStaticParamsPlaceholder(decodedSlug))
+    notFound();
   const presentation = await getChineseArticlePresentation(decodedSlug);
   if (!presentation) notFound();
-  const post = presentation.post;
-  const title = post?.title ?? readableTitle;
-  const description =
-    post?.description ??
-    `${readableTitle}相关的服务器优惠、VPS 活动、线路和购买建议。`;
-  const image = toAbsoluteUrl(post?.imgUrl);
-  const englishUrl = post?.enSlug
-    ? `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(post.enSlug)}`
-    : undefined;
-
-  return {
-    title: `${title} - 服务器go`,
-    description,
-    keywords: post?.keywords ?? readableTitle,
-    robots: post
-      ? { index: true, follow: true }
-      : { index: false, follow: true },
-    alternates: {
-      canonical: canonicalUrl,
-      languages: {
-        "zh-CN": canonicalUrl,
-        ...(englishUrl ? { en: englishUrl } : {}),
-        "x-default": canonicalUrl,
-      },
-    },
-    openGraph: {
-      type: "article",
-      title: `${title} - 服务器go`,
-      description,
-      url: canonicalUrl,
-      siteName: "服务器go",
-      images: image ? [{ url: image, alt: title }] : undefined,
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: `${title} - 服务器go`,
-      description,
-      images: image ? [image] : undefined,
-    },
-  };
+  return presentation.seo.metadata;
 }
 
 export async function generateStaticParams() {
@@ -273,7 +217,7 @@ async function PostPageContent({
   if (isPublicArticleStaticParamsPlaceholder(decodedSlug)) notFound();
   const presentation = await getChineseArticlePresentation(decodedSlug);
   if (!presentation) notFound();
-  const { post, contentHtml, tocItems, internalLinks, relatedPostLinks } =
+  const { post, contentHtml, tocItems, internalLinks, relatedPostLinks, seo } =
     presentation;
   const matchedTopics = offerTopics.filter((topic) => {
     const text = `${post.title} ${post.description ?? ""} ${post.tags
@@ -283,9 +227,8 @@ async function PostPageContent({
       text.toLowerCase().includes(keyword.toLowerCase()),
     );
   });
-  const articleUrl = `${getSiteUrl()}/fwq/posts/${encodeURIComponent(decodedSlug)}`;
+  const articleUrl = seo.articleUrl;
   const categoryUrl = `/fwq/${encodeURIComponent(post.categorySlug)}/page/1`;
-  const absoluteImageUrl = toAbsoluteUrl(post.imgUrl);
 
   // 三个附加模块都是已缓存读，跟着正文一起进 ISR，不额外增加回源次数。
   const [latestPostsResult, adjacentPostsResult, categoryPostsResult] =
@@ -300,25 +243,7 @@ async function PostPageContent({
     (item) => item.id !== post.id,
   );
 
-  const blogPostingJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "BlogPosting",
-    headline: post.title,
-    image: absoluteImageUrl,
-    description: post.description,
-    datePublished: post.createdAt,
-    dateModified: post.updatedAt ?? post.createdAt,
-    // 英文侧（`routes/en/...`）一直有 inLanguage，中文侧此前漏了 —— 两种语言都要声明。
-    inLanguage: "zh-CN",
-    // 作者与出版方都走共享 builder（`site-structured-data.ts`）：
-    // 内联写法容易漏 `url`（英文侧此前就是），统一到一处就不会两边漂移。
-    author: buildOrganizationJsonLd(),
-    publisher: buildPublisherJsonLd(),
-    mainEntityOfPage: {
-      "@type": "WebPage",
-      "@id": articleUrl,
-    },
-  };
+  const blogPostingJsonLd = seo.jsonLd;
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -394,16 +319,13 @@ async function PostPageContent({
               </nav>
             }
             title={post.title}
-            description={
-              post.description ??
-              "这篇文章包含线路、机房、价格与使用场景的完整信息，适合继续深入阅读。"
-            }
+            description={seo.description}
             meta={
               <>
-                <span className="inline-flex min-h-11 shrink-0 items-center gap-2 tabular-nums">
-                  <CalendarDays className="size-4" aria-hidden="true" />
-                  发布于 {formatDate(post.createdAt)}
-                </span>
+                <ArticlePublicationMeta
+                  publishedTime={seo.publishedTime}
+                  modifiedTime={seo.modifiedTime}
+                />
                 <PostViewCount slug={decodedSlug} initialViews={post.views} />
                 {post.enSlug ? (
                   <Link

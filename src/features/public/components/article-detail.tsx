@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { cn } from "@fwqgo/core/utils";
-import { BookOpenText, ChevronDown } from "lucide-react";
+import { cn, formatDate } from "@fwqgo/core/utils";
+import { BookOpenText, CalendarDays, ChevronDown } from "lucide-react";
 
 import { TableOfContents } from "@/components/toc/table-of-contents";
 import { STICKY_RAIL_XL } from "@/features/public/lib/sticky-rail";
@@ -8,6 +8,39 @@ import type { TocItem } from "@fwqgo/core/toc";
 
 export const ARTICLE_PROSE_CLASS_NAME =
   "article-prose font-ui prose-headings:font-editorial prose-blockquote:font-ui prose-code:font-ui prose prose-zinc max-w-none prose-p:text-base prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-primary prose-a:underline prose-a:decoration-primary/60 prose-a:underline-offset-4 prose-a:transition-colors hover:prose-a:text-blue-700 hover:prose-a:decoration-blue-700 prose-blockquote:text-base prose-strong:text-foreground prose-code:text-sm prose-li:text-foreground/90";
+
+export function ArticlePublicationMeta({
+  publishedTime,
+  modifiedTime,
+  language = "zh",
+}: {
+  publishedTime?: string;
+  modifiedTime?: string;
+  language?: "zh" | "en";
+}) {
+  if (!publishedTime) return null;
+  const english = language === "en";
+  const locale = english ? "en-US" : "zh-CN";
+  return (
+    <>
+      <span className="inline-flex min-h-11 flex-wrap items-center gap-2 tabular-nums">
+        <CalendarDays className="size-4 shrink-0" aria-hidden="true" />
+        {english ? "Published" : "发布于"}
+        <time dateTime={publishedTime}>
+          {formatDate(publishedTime, locale)}
+        </time>
+      </span>
+      {modifiedTime && modifiedTime > publishedTime ? (
+        <span className="inline-flex min-h-11 flex-wrap items-center gap-2 tabular-nums">
+          {english ? "Updated" : "更新于"}
+          <time dateTime={modifiedTime}>
+            {formatDate(modifiedTime, locale)}
+          </time>
+        </span>
+      ) : null}
+    </>
+  );
+}
 
 export function ArticleDetailHeader({
   title,

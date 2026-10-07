@@ -1,5 +1,6 @@
 import "server-only";
 import { openPublicContentLinksInNewTabs } from "./content-link-targets";
+import { buildArticleSeo, extractArticleSeoContent } from "./article-seo";
 
 import { cacheLife } from "next/cache";
 
@@ -72,7 +73,11 @@ function logSlowArticlePresentation(input: {
 export function renderArticlePresentation(
   content: string,
   internalLinks: PublicArticleInternalLinks,
-  images: { dimensions: ArticleImageDimensions; sizes: string },
+  images: {
+    dimensions: ArticleImageDimensions;
+    sizes: string;
+    coverSrc?: string | null;
+  },
 ) {
   const inlineLinks: RenderableInlineLink[] = internalLinks.inline.map(
     (link) => ({
@@ -97,6 +102,11 @@ export function renderArticlePresentation(
   return {
     contentHtml,
     tocItems: generateToc(contentHtml),
+    seoContent: extractArticleSeoContent(
+      renderedContent,
+      images.dimensions,
+      images.coverSrc,
+    ),
   };
 }
 
@@ -136,6 +146,7 @@ export async function getChineseArticlePresentation(slug: string) {
   const presentation = renderArticlePresentation(post.content, internalLinks, {
     dimensions: imageDimensions,
     sizes: ARTICLE_BODY_IMAGE_SIZES,
+    coverSrc: post.imgUrl,
   });
   const renderedAt = performance.now();
   logSlowArticlePresentation({
@@ -153,6 +164,13 @@ export async function getChineseArticlePresentation(slug: string) {
   return {
     post: postWithoutContent,
     ...presentation,
+    seo: buildArticleSeo({
+      inLanguage: "zh-CN",
+      slug: decodedSlug,
+      alternateSlug: post.enSlug,
+      post,
+      content: presentation.seoContent,
+    }),
     internalLinks,
     relatedPostLinks: internalLinks.relatedPosts,
   };
@@ -193,6 +211,7 @@ export async function getEnglishArticlePresentation(slug: string) {
   const presentation = renderArticlePresentation(post.content, internalLinks, {
     dimensions: imageDimensions,
     sizes: ARTICLE_BODY_IMAGE_SIZES,
+    coverSrc: post.imgUrl,
   });
   const renderedAt = performance.now();
   logSlowArticlePresentation({
@@ -210,6 +229,16 @@ export async function getEnglishArticlePresentation(slug: string) {
   return {
     post: postWithoutContent,
     ...presentation,
+    seo: buildArticleSeo({
+      inLanguage: "en",
+      slug: post.enSlug,
+      alternateSlug: post.chineseSlug,
+      categoryName: post.categoryEnName?.trim().length
+        ? post.categoryEnName.trim()
+        : post.categoryName,
+      post,
+      content: presentation.seoContent,
+    }),
     internalLinks,
     relatedPostLinks: internalLinks.relatedPosts,
   };

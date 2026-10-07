@@ -3,11 +3,12 @@ import Link from "@/features/public/components/public-link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { CalendarDays, ChevronRight, Languages, Tags } from "lucide-react";
+import { ChevronRight, Languages, Tags } from "lucide-react";
 
 import {
   ARTICLE_PROSE_CLASS_NAME,
   ArticleDetailHeader,
+  ArticlePublicationMeta,
   ArticleMobileToc,
   ArticleDetailLayout,
   ArticleTocSidebar,
@@ -26,10 +27,8 @@ import {
   getLatestPostsForSidebar,
   getPostsWithTagsByCategoryId,
 } from "@/features/public/data/post";
-import { isRenderableImageSrc } from "@fwqgo/core/image-src";
 import { resolveServerOfferAvailability } from "@fwqgo/core/server-offer-status";
 import {
-  formatDate,
   jsonLdScriptContent,
   normalizeDecodedSlug,
   toAbsoluteHttpUrl,
@@ -44,26 +43,12 @@ import {
   getPublicArticleStaticParams,
   isPublicArticleStaticParamsPlaceholder,
 } from "@/features/public/lib/article-static-params";
-import {
-  buildOrganizationJsonLd,
-  buildPublisherJsonLd,
-} from "@/features/public/lib/site-structured-data";
 
 function getSiteUrl() {
   return (process.env.NEXT_PUBLIC_URL ?? "https://fwqgo.com").replace(
     /\/+$/,
     "",
   );
-}
-
-function toAbsoluteImageUrl(value: string | null | undefined) {
-  if (!isRenderableImageSrc(value)) return undefined;
-
-  try {
-    return new URL(value, getSiteUrl()).toString();
-  } catch {
-    return undefined;
-  }
 }
 
 async function RelatedOffersSection({
@@ -168,56 +153,16 @@ type PageProps = {
 
 export async function generateMetadata({
   params,
-}: PageProps): Promise<Metadata> {
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
   const { slug } = await params;
   const decodedSlug = normalizeDecodedSlug(slug);
-  if (!decodedSlug) return {};
-  if (isPublicArticleStaticParamsPlaceholder(decodedSlug)) notFound();
-
+  if (!decodedSlug || isPublicArticleStaticParamsPlaceholder(decodedSlug))
+    notFound();
   const presentation = await getEnglishArticlePresentation(decodedSlug);
   if (!presentation) notFound();
-  const post = presentation.post;
-  const canonicalSlug = post?.enSlug ?? decodedSlug;
-  const canonicalUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(canonicalSlug)}`;
-  const chineseUrl = post?.chineseSlug
-    ? `${getSiteUrl()}/fwq/posts/${encodeURIComponent(post.chineseSlug)}`
-    : undefined;
-  const readableTitle = decodedSlug.replace(/[-_]+/g, " ");
-  const title = post?.title ?? readableTitle;
-  const description =
-    post?.description ?? `${readableTitle} server and VPS deal article.`;
-  const image = toAbsoluteImageUrl(post?.imgUrl);
-
-  return {
-    title: `${title} - fwqgo`,
-    description,
-    keywords: post?.keywords ?? readableTitle,
-    robots: post
-      ? { index: true, follow: true }
-      : { index: false, follow: true },
-    alternates: {
-      canonical: canonicalUrl,
-      languages: {
-        ...(chineseUrl ? { "zh-CN": chineseUrl } : {}),
-        en: canonicalUrl,
-        "x-default": chineseUrl ?? canonicalUrl,
-      },
-    },
-    openGraph: {
-      type: "article",
-      title: `${title} - fwqgo`,
-      description,
-      url: canonicalUrl,
-      siteName: "fwqgo",
-      images: image ? [{ url: image, alt: title }] : undefined,
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: `${title} - fwqgo`,
-      description,
-      images: image ? [image] : undefined,
-    },
-  };
+  return presentation.seo.metadata;
 }
 
 export async function generateStaticParams() {
@@ -234,11 +179,9 @@ async function EnglishPostContent({ params }: PageProps) {
   if (isPublicArticleStaticParamsPlaceholder(decodedSlug)) notFound();
   const presentation = await getEnglishArticlePresentation(decodedSlug);
   if (!presentation) notFound();
-  const { post, contentHtml, tocItems, internalLinks, relatedPostLinks } =
+  const { post, contentHtml, tocItems, internalLinks, relatedPostLinks, seo } =
     presentation;
-  const canonicalSlug = post.enSlug ?? decodedSlug;
-  const articleUrl = `${getSiteUrl()}/en/fwq/posts/${encodeURIComponent(canonicalSlug)}`;
-  const absoluteImageUrl = toAbsoluteImageUrl(post.imgUrl);
+  const articleUrl = seo.articleUrl;
   const relatedPostId = post.translationSourcePostId ?? post.id;
   const categorySlug = nonEmptyValue(post.categoryEnSlug) ?? post.categorySlug;
   const categoryName = nonEmptyValue(post.categoryEnName) ?? post.categoryName;
@@ -257,25 +200,7 @@ async function EnglishPostContent({ params }: PageProps) {
     (item) => item.id !== post.id,
   );
 
-  const blogPostingJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "BlogPosting",
-    headline: post.title,
-    image: absoluteImageUrl,
-    description: post.description,
-    inLanguage: "en",
-    datePublished: post.createdAt,
-    dateModified: post.updatedAt ?? post.createdAt,
-    // 作者与出版方都走共享 builder（`site-structured-data.ts`）。
-    // 这里原先是内联的 `{"@type":"Organization","name":"fwqgo"}` —— 缺 Google 要求的
-    // `url`，而中文侧用的是 builder（带 name/url/logo），两侧字段不一致。
-    author: buildOrganizationJsonLd({ name: "fwqgo" }),
-    publisher: buildPublisherJsonLd({ name: "fwqgo" }),
-    mainEntityOfPage: {
-      "@type": "WebPage",
-      "@id": articleUrl,
-    },
-  };
+  const blogPostingJsonLd = seo.jsonLd;
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -356,16 +281,14 @@ async function EnglishPostContent({ params }: PageProps) {
                 </nav>
               }
               title={post.title}
-              description={
-                post.description ??
-                "Server deal details, network information, pricing, and buying notes."
-              }
+              description={seo.description}
               meta={
                 <>
-                  <span className="inline-flex min-h-11 shrink-0 items-center gap-2 tabular-nums">
-                    <CalendarDays className="size-4" aria-hidden="true" />
-                    Published {formatDate(post.createdAt, "en-US")}
-                  </span>
+                  <ArticlePublicationMeta
+                    publishedTime={seo.publishedTime}
+                    modifiedTime={seo.modifiedTime}
+                    language="en"
+                  />
                   {post.chineseSlug ? (
                     <Link
                       href={`/fwq/posts/${encodeURIComponent(post.chineseSlug)}`}

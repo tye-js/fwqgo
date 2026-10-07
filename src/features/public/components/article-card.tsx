@@ -29,7 +29,7 @@ function ArticleTagLabel({
     ? "relative z-10 inline-flex min-h-11 items-center gap-1.5 rounded-sm font-medium text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     : "relative z-10 inline-flex min-h-11 items-center text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 
-  if (!tag.publiclyIndexable) {
+  if (!tag.publiclyIndexable || !tag.slug.trim()) {
     return (
       <span
         className={primary ? className : `${className} pointer-events-none`}
@@ -62,11 +62,14 @@ function formatArticleDate(value: Date | string, locale: string) {
 }
 
 /**
- * 首页主文章在 sm 起图文并排（图片占 47.5%），xl 起进入 860px 的首页主栏。
+ * home-list 使用 80 / 144px 的固定缩略图；旧 feature 保留原有图文分栏尺寸。
  * compact 始终使用缩略图：窄屏 88px 列减去 12px 边距，sm 起为 112px 列。
  * 列表页维持原有 md/lg 图片尺寸。调整栅格时同步更新 verify:public-images。
  */
-function cardImageSizes(variant: "list" | "feature" | "compact") {
+function cardImageSizes(variant: "list" | "feature" | "compact" | "home-list") {
+  if (variant === "home-list") {
+    return "(max-width: 639px) 80px, 144px";
+  }
   if (variant === "feature") {
     return "(max-width: 639px) calc(100vw - 2rem), (max-width: 1279px) 46vw, 408px";
   }
@@ -82,11 +85,12 @@ function ArticleCard({
   excludedTagSlug,
   variant = "list",
   headingLevel = 3,
+  priority,
 }: {
   post: PostWithTags;
   language?: "zh" | "en";
   excludedTagSlug?: string;
-  variant?: "list" | "feature" | "compact";
+  variant?: "list" | "feature" | "compact" | "home-list";
   /**
    * 标题层级。默认 `3` —— 首页的卡片在 `h2` 区块里，`h3` 是对的。
    *
@@ -94,6 +98,7 @@ function ArticleCard({
    * 它后面，`h3` 会跳级（实测 142 页被 a11y 审计标为 `h1 → h3`）。那里传 `2`。
    */
   headingLevel?: 2 | 3;
+  priority?: boolean;
 }) {
   const postPrefix = language === "en" ? "/en/fwq/posts" : "/fwq/posts";
   const tagPrefix = language === "en" ? "/en/fwq/tags" : "/fwq/tags";
@@ -118,6 +123,64 @@ function ArticleCard({
         : "查看详细测评、优惠信息与适用场景。",
     readMore: language === "en" ? "Read article" : "阅读全文",
   };
+
+  if (variant === "home-list") {
+    const date = formatArticleDate(post.createdAt, locale);
+    return (
+      <article
+        aria-labelledby={titleId}
+        data-testid="article-card"
+        data-variant="home-list"
+        className="grid min-w-0 grid-cols-[80px_minmax(0,1fr)] items-start gap-x-3 border-b border-border/70 py-4 first:pt-0 last:border-0 sm:grid-cols-[144px_minmax(0,1fr)] sm:gap-x-5 sm:py-5"
+      >
+        <Link
+          href={href}
+          aria-label={copy.imageLabel}
+          className="relative block aspect-[4/3] overflow-hidden rounded-md bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:aspect-[8/5]"
+        >
+          <SafePostImage
+            src={post.imgUrl}
+            alt={post.title}
+            sizes={cardImageSizes(variant)}
+            priority={priority ?? false}
+          />
+        </Link>
+        <div className="min-w-0">
+          <Link
+            href={href}
+            className="flex min-h-11 items-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <Heading
+              id={titleId}
+              className="font-editorial break-words text-base font-semibold leading-6 text-foreground [overflow-wrap:anywhere] hover:text-primary sm:text-lg sm:leading-7"
+            >
+              {post.title}
+            </Heading>
+          </Link>
+          {post.description?.trim() ? (
+            <p className="mt-1 line-clamp-2 break-words text-sm leading-6 text-muted-foreground">
+              {post.description}
+            </p>
+          ) : null}
+          {date ? (
+            <time
+              dateTime={new Date(post.createdAt).toISOString()}
+              className="mt-2 block text-xs tabular-nums text-muted-foreground"
+            >
+              {date}
+            </time>
+          ) : null}
+        </div>
+        {visibleTags.length > 0 ? (
+          <div className="col-span-2 flex min-w-0 flex-wrap gap-x-3 break-words text-xs [overflow-wrap:anywhere] sm:col-span-1 sm:col-start-2 [&_a]:min-w-11 [&_a]:max-w-full">
+            {visibleTags.slice(0, 3).map(({ tag }) => (
+              <ArticleTagLabel key={tag.id} tag={tag} tagPrefix={tagPrefix} />
+            ))}
+          </div>
+        ) : null}
+      </article>
+    );
+  }
 
   return (
     <article
@@ -153,7 +216,7 @@ function ArticleCard({
             src={post.imgUrl}
             alt={post.title}
             sizes={cardImageSizes(variant)}
-            priority={variant === "feature"}
+            priority={priority ?? variant === "feature"}
           />
         </Link>
 

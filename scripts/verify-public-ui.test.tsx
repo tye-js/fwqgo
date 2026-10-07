@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-void test("public home renders bilingual content, source-backed counts and independent article destinations", () => {
+void test("homepage renders an ordered bilingual feed, qualified topics, distinct picks and existing promotion placements", () => {
   const result = spawnSync(process.execPath, ["--no-env-file", "-"], {
     cwd: process.cwd(),
     env: { ...process.env, NODE_ENV: "test" },
@@ -26,31 +26,36 @@ import * as cheerio from "cheerio";
 import {mock} from "bun:test";
 mock.module("next/navigation",()=>({useRouter:()=>({push(){}})}));
 const {PublicHomePage}=await import("./src/features/public/components/home-page.tsx");
-const posts=Array.from({length:8},(_,i)=>({id:i+1,title:"Server guide "+(i+1),slug:"guide-"+(i+1),description:"A complete guide description with a clear source.",imgUrl:"/img/placeholders/fwq-placeholder.png",createdAt:new Date("2026-09-01T00:00:00Z"),tags:[]}));
-const props={posts,sidebarData:{promotedPosts:[],editorPicks:[]},latestOffers:[],offerCounts:[{slug:"hong-kong",count:7}],totalOfferCount:7,homepageSlots:[],collections:{providers:[],regions:[],lines:[]},knowledge:[]};
+const posts=Array.from({length:13},(_,i)=>({id:i+1,title:"Server guide "+(i+1),slug:"guide-"+(i+1),description:i===0?null:"A saved description.",imgUrl:"/uploads/example.webp",createdAt:new Date("2026-09-01T00:00:00Z"),tags:[]}));
 for(const language of ["zh","en"]){
- const html=renderToStaticMarkup(React.createElement(PublicHomePage,{...props,language}));
- const $=cheerio.load(html),prefix=language==="en"?"/en":"";
+ const prefix=language==="en"?"/en":"";
+ const topics={regions:[{label:language==="en"?"Hong Kong, China":"中国香港",href:prefix+"/fwq/"+(language==="en"?"hong-kong-vps":"hk-vps")+"/page/1"}],lines:[{label:"CN2 GIA",href:prefix+"/fwq/tags/cn2-gia/page/1"}]};
+ const props={language,posts:[posts[0],...posts],sidebarData:{promotedPosts:[],editorPicks:[posts[0],posts[9],posts[9],...posts.slice(10)]},homepageSlots:[],topics};
+ const html=renderToStaticMarkup(React.createElement(PublicHomePage,props));const $=cheerio.load(html);
  assert.equal($("main#main-content").length,1);assert.equal($("h1").length,1);
- assert.equal($("[data-testid=article-card]").length,8);
- assert.equal(new Set($("[data-testid=article-card] h3").toArray().map(node=>$(node).attr("id"))).size,8);
- for(const post of posts)assert.ok($('a[href="'+prefix+'/fwq/posts/'+post.slug+'"]').length>0);
- for(const href of [prefix+"/fwq/page/1",prefix+"/knowledge",prefix+"/tools/network-lines",prefix+"/tools/server-sizing","/servers"]){assert.ok($('a[href="'+href+'"]').length>0,href);}
- if(language==="en"){assert.equal($('a[href^="/fwq/posts/"]').length,0);assert.equal($('input[name="lang"]').attr("value"),"en");}
+ assert.deepEqual($("[data-testid=home-feed] h3").toArray().map(node=>$(node).text()),posts.slice(0,9).map(post=>post.title));
+ assert.equal($("[data-variant=home-list]").length,9);
+ assert.equal($("[data-testid=home-feed] img[loading=eager]").length,1);
+ assert.equal($("[data-testid=home-feed] img[loading=lazy]").length,8);
+ assert.equal($("[data-testid=home-feed] article").first().find("p").length,0);
+ assert.deepEqual($("[data-testid=home-editor-picks] a").toArray().map(node=>$(node).attr("href")),posts.slice(9,12).map(post=>prefix+"/fwq/posts/"+post.slug));
+ assert.deepEqual($("[data-testid=home-topics] a").toArray().map(node=>$(node).attr("href")),[topics.regions[0].href,topics.lines[0].href]);
+ assert.ok(html.indexOf('data-testid="home-topics"')<html.indexOf('data-testid="home-feed"'));
+ for(const href of [prefix+"/fwq/page/1",prefix+"/knowledge",prefix+"/tools/network-lines",prefix+"/tools/server-sizing"]){assert.ok($('a[href="'+href+'"]').length>0,href);}
+ assert.equal($('main a[href="/servers"]').length,1);
+ if(language==="en"){assert.equal($('a[href^="/fwq/"]').length,0);assert.equal($('input[name="lang"]').attr("value"),"en");assert.match($('a[href="/servers"]').text(),/Chinese/);}
  assert.ok(!html.includes("undefined"));assert.ok(!html.includes("NaN"));
- $("a[href]").each((_,a)=>{const href=$(a).attr("href");if(href&&!/^(#|mailto:|tel:)/.test(href))assert.equal($(a).attr("target"),"_blank",href);});
- assert.equal($("aside .public-stat").first().text(),"7");
- const empty=cheerio.load(renderToStaticMarkup(React.createElement(PublicHomePage,{...props,language,posts:[],offerCounts:[],totalOfferCount:0})));
- assert.equal(empty("h1").length,1);assert.equal(empty("[data-testid=article-card]").length,0);
- assert.equal(empty("aside .public-stat").length,0);
- assert.ok(empty('a[href="'+prefix+'/knowledge"]').length>0);
- const withPicks=cheerio.load(renderToStaticMarkup(React.createElement(PublicHomePage,{...props,language,sidebarData:{editorPicks:posts.slice(0,5),promotedPosts:posts.slice(5,6)}})));
- const heading=language==="en"?"Editor's picks":"站长推荐";
- const picks=withPicks("aside section").filter((_,node)=>withPicks(node).find("h2").text()===heading);
- assert.equal(picks.length,1);assert.equal(picks.find("a").length,5);
- assert.deepEqual(picks.find("a").toArray().map(node=>withPicks(node).attr("href")),posts.slice(0,5).map(post=>prefix+"/fwq/posts/"+post.slug));
- assert.ok(withPicks("aside").text().includes(language==="en"?"Featured promotions":"精选推广"));
- assert.ok(!withPicks("aside").text().includes(language==="en"?"all-time article views":"累计浏览量"));
+ $("a[href]").each((_,a)=>{assert.equal($(a).attr("target"),"_blank");assert.equal($(a).find("a").length,0);});
+ const empty=cheerio.load(renderToStaticMarkup(React.createElement(PublicHomePage,{...props,posts:[],sidebarData:{editorPicks:[],promotedPosts:[]},topics:{regions:[],lines:[]}})));
+ assert.equal(empty("h1").length,1);assert.equal(empty("[data-testid=article-card]").length,0);assert.equal(empty("[data-testid=home-topics]").length,0);assert.equal(empty("[data-testid=home-editor-picks]").length,0);
+ const overlap=cheerio.load(renderToStaticMarkup(React.createElement(PublicHomePage,{...props,sidebarData:{editorPicks:posts.slice(0,5),promotedPosts:[]}})));
+ assert.equal(overlap("[data-testid=home-editor-picks]").length,0);
+ const slots=["hero_primary",...Array(7).fill("sidebar"),...Array(7).fill("promo_grid"),"featured_offers"].map((placement,id)=>({id,placement,contentType:"image_link",resolvedTargetUrl:"https://example.com/promo-"+id,resolvedTitle:"Promotion "+id,resolvedImageUrl:null,resolvedDescription:null,resolvedAltText:""}));
+ const promoted=cheerio.load(renderToStaticMarkup(React.createElement(PublicHomePage,{...props,homepageSlots:slots})));
+ assert.equal(promoted('a[href^="https://example.com/promo-"]').length,13);
+ assert.equal(promoted('[data-testid=home-sidebar-promotions] a').length,6);assert.equal(promoted('[data-testid=home-promotion-grid] a').length,6);
+ assert.equal(promoted('a[href="https://example.com/promo-15"]').length,0);
+ assert.ok(promoted('aside').text().includes(language==="en"?"Sponsored":"推广"));
 }
 `,
   });
@@ -118,6 +123,64 @@ try{
   );
 });
 
+void test("homepage topics batch exact entities and count the full public corpus separately per language", () => {
+  const result = spawnSync(process.execPath, ["--no-env-file", "-"], {
+    cwd: process.cwd(),
+    env: { ...process.env, NODE_ENV: "test" },
+    encoding: "utf8",
+    timeout: 15_000,
+    input: String.raw`
+import assert from "node:assert/strict";
+import {Database} from "bun:sqlite";
+import {drizzle} from "drizzle-orm/pg-proxy";
+import {mock} from "bun:test";
+const database=new Database(":memory:");
+database.exec('CREATE TABLE categories (id INTEGER PRIMARY KEY, slug TEXT, enSlug TEXT); CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT, slug TEXT, enName TEXT, enSlug TEXT, indexable INTEGER); CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT, slug TEXT, categoryId INTEGER, language TEXT, published INTEGER, content TEXT); CREATE TABLE post_tags (postId INTEGER, tagId INTEGER);');
+for(const [id,slug,enSlug] of [[1,"hk-vps","hong-kong-vps"],[2,"usa-vps","us-vps"],[3,"jp-vps","japan-vps"],[4,"kr-vps","korea-vps"],[5,"fuwuqi","china-servers"]])database.run('INSERT INTO categories VALUES (?,?,?)',[id,slug,enSlug]);
+for(const row of [[1,"CN2 GIA","cn2-gia","CN2 GIA","cn2-gia",1],[2,"CMI","cmi",null,null,1],[3,"CMIN2","cmin2","CMIN2","cmin2",0],[4,"AS9929","as9929","AS9929","as9929",1],[5,"CN2 GIA marketing","cn2-gia-marketing",null,null,1]])database.run('INSERT INTO tags VALUES (?,?,?,?,?,?)',row);
+let nextId=1;
+function put(categoryId,language,tagIds=[],overrides={}){
+ const row={id:nextId++,title:"Saved title",slug:"article-"+nextId,categoryId,language,published:1,content:"Complete prose. ".repeat(40),...overrides};
+ database.run('INSERT INTO posts VALUES (?,?,?,?,?,?,?)',Object.values(row));
+ for(const tagId of tagIds)database.run('INSERT INTO post_tags VALUES (?,?)',[row.id,tagId]);
+}
+// Far more than nine articles: qualification must not be inferred from a feed.
+for(const lang of ["zh","en"]){for(let i=0;i<3;i++)put(1,lang,[1,3,4]);for(let i=0;i<15;i++)put(2,lang,[5]);}
+for(let i=0;i<3;i++)put(3,"zh",[2]);
+for(let i=0;i<2;i++)put(3,"en",[2]);
+for(let i=0;i<3;i++)put(4,"zh",[]);
+for(let i=0;i<3;i++)put(5,"zh",[]);
+for(const patch of [{published:0},{title:" "},{slug:" "},{content:"short"}])put(3,"en",[2],patch);
+let statements=0,fail=false;const cacheTags=new Set();
+const readDb=drizzle(async(query,params)=>{
+ statements++;if(fail)throw new Error("Fixture database failure");
+ return {rows:database.query(query.replaceAll("char_length(","length(").replaceAll("btrim(","trim(")).values(...params.map(value=>typeof value==="boolean"?Number(value):value))};
+});
+mock.module("@fwqgo/db",()=>({readDb}));
+mock.module("next/cache",()=>({cacheLife(){},cacheTag(...tags){tags.forEach(tag=>cacheTags.add(tag));},revalidatePath(){},revalidateTag(){},updateTag(){}}));
+const {getHomepageTopics}=await import("./src/features/public/data/homepage-topics.ts");
+try{
+ const zh=await getHomepageTopics("zh");assert.equal(statements,4,"Two entity reads plus two grouped corpus counts");
+ assert.deepEqual(zh.regions.map(x=>x.href),["hk-vps","usa-vps","jp-vps","kr-vps"].map(slug=>"/fwq/"+slug+"/page/1"));
+ assert.equal(zh.regions[0].label,"中国香港");assert.deepEqual(zh.lines.map(x=>x.label),["CN2 GIA","CMI","AS9929"]);
+ const en=await getHomepageTopics("en");assert.equal(statements,8);
+ assert.deepEqual(en.regions.map(x=>x.href),["/en/fwq/hong-kong-vps/page/1","/en/fwq/us-vps/page/1"]);
+ assert.equal(en.regions[0].label,"Hong Kong, China");assert.deepEqual(en.lines.map(x=>x.href),["/en/fwq/tags/cn2-gia/page/1","/en/fwq/tags/as9929/page/1"]);
+ database.run('UPDATE tags SET name=?,enName=NULL,enSlug=NULL WHERE id=4',["中文线路"]);
+ assert.equal((await getHomepageTopics("en")).lines.length,1,"Missing English identity must not leak Chinese labels");
+ for(const tag of ["homepage","posts","categories","tags"])assert.ok(cacheTags.has(tag),tag);
+ database.exec('DELETE FROM posts;');assert.deepEqual(await getHomepageTopics("zh"),{regions:[],lines:[]});
+ fail=true;await assert.rejects(getHomepageTopics("zh"),"Database failures must propagate");
+}finally{database.close();}
+`,
+  });
+  assert.equal(
+    result.status,
+    0,
+    `${result.stdout}\n${result.stderr}`.slice(0, 12_000),
+  );
+});
+
 void test("article cards preserve published tag URLs and image loading priority", () => {
   const result = spawnSync(process.execPath, ["--no-env-file", "-"], {
     cwd: process.cwd(),
@@ -131,12 +194,18 @@ import * as cheerio from "cheerio";
 import ArticleCard from "./src/features/public/components/article-card.tsx";
 const post={id:1,title:"Article",slug:"article",description:"Description",createdAt:new Date("2026-09-01"),imgUrl:"/uploads/example.webp",tags:[{tag:{id:1,name:"CN2 GIA",slug:"cn2-gia",publiclyIndexable:true}},{tag:{id:2,name:"Private topic",slug:"private-topic",publiclyIndexable:false}}]};
 for(const language of ["zh","en"]){
- for(const variant of ["feature","list","compact"]){
+ for(const variant of ["feature","list","compact","home-list"]){
   const $=cheerio.load(renderToStaticMarkup(React.createElement(ArticleCard,{post,language,variant}))),prefix=language==="en"?"/en":"";
   assert.ok($('a[href="'+prefix+'/fwq/tags/cn2-gia/page/1"]').length>0);
   assert.equal($('a[href*="private-topic"]').length,0);
   assert.equal($("img").attr("loading"),variant==="feature"?"eager":"lazy");
   assert.equal($("img").attr("alt"),"Article");
+  if(variant==="home-list"){
+   assert.equal($("img").attr("sizes"),"(max-width: 639px) 80px, 144px");
+   assert.equal($("time").length,1);
+   const sparse=cheerio.load(renderToStaticMarkup(React.createElement(ArticleCard,{post:{...post,description:null,imgUrl:null,createdAt:"bad date",tags:[{tag:{id:9,name:"Missing slug",slug:" ",publiclyIndexable:true}}]},language,variant})));
+   assert.equal(sparse("time").length,0);assert.equal(sparse("p").length,0);assert.equal(sparse('a[href*="/tags/"]').length,0);assert.equal(sparse("svg").length,1);
+  }
  }
 }
 `,

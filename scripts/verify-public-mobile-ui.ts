@@ -185,11 +185,20 @@ assert.match(knowledgeCard, /flex min-w-0 flex-wrap/);
 assert.match(knowledgeCard, /className="break-words"/);
 assert.match(fwqLayout, /flex min-h-dvh flex-col/);
 assert.doesNotMatch(fwqLayout, /min-h-\[90vh\]/);
-// Both language routes share the same responsive presentation; coupon codes
-// must still wrap in that component instead of overflowing a narrow screen.
-for (const home of [zhHome, enHome]) assert.match(home, /<PublicHomePage/);
-assert.match(homeView, /min-w-0 flex-1 break-words text-foreground/);
-assert.match(homeView, /max-w-\[45%\] shrink-0 break-all/);
+// The shared homepage presents article topics before its continuous feed.
+for (const home of [zhHome, enHome]) {
+  assert.match(home, /<PublicHomePage/);
+  assert.match(home, /getHomepageTopics/);
+  assert.doesNotMatch(
+    home,
+    /getLatestServerOffers|getServerOfferTopicCounts|getServerOfferCollectionIndex|listPublishedKnowledgeArticles/,
+  );
+}
+assert.match(homeView, /variant="home-list"/);
+assert.match(homeView, /data-testid="home-topics"/);
+assert.match(homeView, /flex min-w-0 flex-wrap/);
+assert.match(homeView, /xl:grid-cols-\[minmax\(0,1fr\)_300px\]/);
+assert.doesNotMatch(homeView, /CouponLink|totalOfferCount|latestUpdate/);
 assert.match(
   sizingCalculator,
   /whitespace-normal break-words px-2 text-center/,

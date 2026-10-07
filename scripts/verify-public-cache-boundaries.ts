@@ -254,7 +254,7 @@ for (const [relativePath, name] of [
     "tags",
     "sidebar",
     "serverOffers",
-    "knowledge",
+    "categories",
   ]) {
     if (!body.includes(`cacheTags.${tag}`)) {
       errors.push(

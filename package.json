@@ -73,7 +73,7 @@
     "typecheck": "tsc --noEmit",
     "format:write": "prettier --write \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
-    "verify:public-seo": "bun scripts/verify-public-seo.ts",
+    "verify:public-seo": "bun scripts/verify-public-seo.ts && bun test ./scripts/verify-article-detail-seo.test.tsx",
     "verify:public-images": "bun scripts/verify-public-images.ts",
     "verify:trust-pages": "bun scripts/verify-trust-pages.ts",
     "verify:public-region-compliance": "bun scripts/verify-public-region-compliance.ts",
