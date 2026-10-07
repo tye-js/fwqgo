@@ -429,7 +429,8 @@ void test("cover rendering goes through the shared hasRenderableCover judge", ()
     "src/features/cms/components/image-upload.tsx",
     "src/features/cms/components/article-cover-batch-generator.tsx",
     "src/features/cms/routes/admin/ai-tasks/covers/[id]/page.tsx",
-    "src/features/public/components/article-detail.tsx",
+    // 公开前台的封面渲染收在 safe-post-image 一处：文章卡片、首页列表与
+    // 文章详情都经它出图，article-detail 只管正文排版，不再自己渲染封面。
     "src/features/public/components/safe-post-image.tsx",
   ];
 
@@ -442,6 +443,20 @@ void test("cover rendering goes through the shared hasRenderableCover judge", ()
     assert.ok(
       !source.includes("isRenderableImageSrc("),
       `${file} 不应直接用 isRenderableImageSrc 判断封面（它对任何 / 开头的路径都返回 true），请用 hasRenderableCover`,
+    );
+  }
+
+  // 反向约束：清单不能挂着已经不渲染封面的组件，否则它会在文件里凭空
+  // 要求一个不存在的判据调用。b7a75df把封面渲染移出 article-detail 后，
+  // 这条断言一直失败，实际却没有任何封面路径失去保护。
+  const knownNonRenderers = [
+    "src/features/public/components/article-detail.tsx",
+  ];
+  for (const file of knownNonRenderers) {
+    const source = stripComments(readFileSync(file, "utf8"));
+    assert.ok(
+      !source.includes("hasRenderableCover("),
+      `${file} 已不渲染封面，不应出现在封面渲染清单里；若它重新开始渲染封面，请改回 coverRenderers 并让它调用 hasRenderableCover`,
     );
   }
 });
