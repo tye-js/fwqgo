@@ -9,6 +9,16 @@ import type { TocItem } from "@fwqgo/core/toc";
 export const ARTICLE_PROSE_CLASS_NAME =
   "article-prose font-ui prose-headings:font-editorial prose-blockquote:font-ui prose-code:font-ui prose prose-zinc max-w-none prose-p:text-base prose-p:leading-8 prose-p:text-foreground/90 prose-a:text-primary prose-a:underline prose-a:decoration-primary/60 prose-a:underline-offset-4 prose-a:transition-colors hover:prose-a:text-blue-700 hover:prose-a:decoration-blue-700 prose-blockquote:text-base prose-strong:text-foreground prose-code:text-sm prose-li:text-foreground/90";
 
+/**
+ * 文章页头的日期信息。
+ *
+ * 只在文章被实质性修改过时显示「更新于」：发布时间按站内约定不向读者展示。
+ * `modifiedTime === publishedTime` 表示文章从未被修改（或历史数据里更新时间早于
+ * 创建时间），此时不输出任何日期，避免在页头留下一个只剩图标或空白的行。
+ *
+ * SEO 侧的 `datePublished` / `dateModified` 由 `buildArticleSeo` 独立产出，
+ * 不受这里的展示取舍影响。
+ */
 export function ArticlePublicationMeta({
   publishedTime,
   modifiedTime,
@@ -19,26 +29,16 @@ export function ArticlePublicationMeta({
   language?: "zh" | "en";
 }) {
   if (!publishedTime) return null;
+  // 文章未被实质修改时（含历史数据里更新时间早于创建时间的回落）不显示任何日期。
+  if (!modifiedTime || modifiedTime <= publishedTime) return null;
   const english = language === "en";
   const locale = english ? "en-US" : "zh-CN";
   return (
-    <>
-      <span className="inline-flex min-h-11 flex-wrap items-center gap-2 tabular-nums">
-        <CalendarDays className="size-4 shrink-0" aria-hidden="true" />
-        {english ? "Published" : "发布于"}
-        <time dateTime={publishedTime}>
-          {formatDate(publishedTime, locale)}
-        </time>
-      </span>
-      {modifiedTime && modifiedTime > publishedTime ? (
-        <span className="inline-flex min-h-11 flex-wrap items-center gap-2 tabular-nums">
-          {english ? "Updated" : "更新于"}
-          <time dateTime={modifiedTime}>
-            {formatDate(modifiedTime, locale)}
-          </time>
-        </span>
-      ) : null}
-    </>
+    <span className="inline-flex min-h-11 flex-wrap items-center gap-2 tabular-nums">
+      <CalendarDays className="size-4 shrink-0" aria-hidden="true" />
+      {english ? "Updated" : "更新于"}
+      <time dateTime={modifiedTime}>{formatDate(modifiedTime, locale)}</time>
+    </span>
   );
 }
 
