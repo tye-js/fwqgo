@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { cacheLife } from "next/cache";
 import {
+  getHomepageFallbackPromotions,
   getHomepagePostsWithTags,
   getHomepageSidebarData,
 } from "@/features/public/data/post";
@@ -74,11 +75,20 @@ async function EnglishHomeContent() {
       getActiveHomepageSlots("en"),
       getHomepageTopics("en"),
     ]);
+  // 「推广」区只在没有任何 sidebar 运营位时才退回到这批文章；存在运营位时
+  // 它的结果必然被丢弃，所以不要为它发起查询。
+  const hasSidebarSlot = homepageSlots.some(
+    (slot) => slot.placement === "sidebar",
+  );
+  const promotedPosts = hasSidebarSlot
+    ? []
+    : await getHomepageFallbackPromotions("en");
   return (
     <PublicHomePage
       language="en"
       posts={posts}
       sidebarData={sidebarData}
+      promotedPosts={promotedPosts}
       homepageSlots={homepageSlots}
       topics={topics}
     />

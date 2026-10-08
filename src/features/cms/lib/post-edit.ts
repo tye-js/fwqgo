@@ -37,7 +37,14 @@ export const postEditSchema = z
       ),
     published: z.boolean(),
     allowSlugChange: z.boolean().optional(),
-    expectedUpdatedAt: z.iso.datetime().nullable().optional(),
+    // 必填（可为 null，但不能整个缺失）。
+    //
+    // 保存是整篇覆盖，冲突检测是唯一的防线：这里曾是 `.optional()`，而
+    // `savePostEdits` 在字段为 undefined 时会跳过整个比对，退化为无条件覆盖。
+    // API 端点又是全量透传客户端 JSON，所以任何登录管理员都能省略它来静默覆盖
+    // 整篇正文（含联盟链接）。字段缺失在 schema 层就该被拒，而不是留到业务分支里。
+    // 客户端 `edit-post.tsx` 一直传 `updatedAt?.toISOString() ?? null`。
+    expectedUpdatedAt: z.iso.datetime().nullable(),
     description: z.string().trim().max(800, "文章简述不能超过 800 个字符"),
     content: z.string().trim().min(1, "文章正文不能为空"),
     imgUrl: z

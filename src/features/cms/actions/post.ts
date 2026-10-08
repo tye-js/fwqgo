@@ -1185,10 +1185,9 @@ async function savePostEditsImpl(input: unknown) {
         .limit(1)
         .for("update");
       if (!current) throw new PostEditValidationError("文章不存在或已被删除");
-      if (
-        payload.expectedUpdatedAt !== undefined &&
-        payload.expectedUpdatedAt !== (current.updatedAt?.toISOString() ?? null)
-      ) {
+      // 无条件比对：schema 已保证 expectedUpdatedAt 必填（可为 null），
+      // 早前这里写成 `!== undefined &&…`，字段缺失时会整段跳过，等于没有并发保护。
+      if (payload.expectedUpdatedAt !== (current.updatedAt?.toISOString() ?? null)) {
         throw new PostEditValidationError(
           "文章已被其他操作更新，请刷新页面并确认最新内容后再保存",
           409,

@@ -9,7 +9,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PostWithTags } from "@/types";
-import type { getHomepageSidebarData } from "@/features/public/data/post";
+import type {
+  getHomepageFallbackPromotions,
+  getHomepageSidebarData,
+} from "@/features/public/data/post";
 import type { HomepageTopics } from "@/features/public/data/homepage-topics";
 import ArticleCard from "./article-card";
 import { HeroTagSearch } from "./hero-tag-search";
@@ -26,10 +29,20 @@ type SidebarPost = {
   slug: string;
   description: string | null;
 };
+/** `getHomepageFallbackPromotions` 的返回项，含 imgUrl / views / createdAt。 */
+type FallbackPromotion = Awaited<
+  ReturnType<typeof getHomepageFallbackPromotions>
+>[number];
 export type PublicHomePageProps = {
   language?: "zh" | "en";
   posts: PostWithTags[];
   sidebarData: Awaited<ReturnType<typeof getHomepageSidebarData>>["data"];
+  /**
+   * 「推广」区在没有任何 sidebar 运营位时的兜底文章。
+   *
+   * 由页面层按需取：存在 sidebar 运营位时这批数据必然被丢弃，不该发起查询。
+   */
+  promotedPosts: FallbackPromotion[];
   homepageSlots: ActiveHomepageSlot[];
   topics: HomepageTopics;
 };
@@ -70,6 +83,7 @@ export function PublicHomePage({
   language = "zh",
   posts,
   sidebarData,
+  promotedPosts,
   homepageSlots,
   topics,
 }: PublicHomePageProps) {
@@ -93,7 +107,6 @@ export function PublicHomePage({
       return true;
     })
     .slice(0, 3);
-  const promotedPosts = sidebarData?.promotedPosts ?? [];
   const heroSlot = homepageSlots.find(
     (slot) => slot.placement === "hero_primary",
   );

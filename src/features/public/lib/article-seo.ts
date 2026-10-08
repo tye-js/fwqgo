@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { load } from "cheerio";
+import { load, type CheerioAPI } from "cheerio";
 
 import { hasRenderableCover } from "@fwqgo/core/article-cover";
 import { isRenderableImageSrc } from "@fwqgo/core/image-src";
@@ -33,16 +33,7 @@ export function extractArticleSeoContent(
   cover?: string | null,
 ): ArticleSeoContent {
   const $ = load(html, null, false);
-  const excerpt = $("p")
-    .filter(
-      (_, node) =>
-        $(node).parents("table, pre, blockquote, figure").length === 0,
-    )
-    .map((_, node) => cleanText($(node).text()))
-    .get()
-    .filter(Boolean)
-    .slice(0, 3)
-    .join(" ");
+  const excerpt = extractExcerpt($);
   const candidates: Array<{ src: string; alt: string }> = [];
   const coverSrc = cover?.trim();
   if (hasRenderableCover(coverSrc)) {
@@ -65,6 +56,50 @@ export function extractArticleSeoContent(
     if (images.length === 4) break;
   }
   return { excerpt, images };
+}
+
+/**
+ * 抽取可读的正文摘要。
+ *
+ * 优先用正文段落——这是唯一能保证「与文章内容相关且成句」的来源。
+ * 但本站的主力内容形态是 VPS 套餐类文章，首屏往往是规格表格而正文段落很少或没有
+ * （实测「只有 h2 + 表格」与「表格 + 列表」两种正文的段落数为 0）。此时若只认段落，
+ * 摘要会为空，description 只能回落到标题，导致 `<meta name="description">`
+ * 与 `<title>` 完全相同——而这个副标题同时会显示在页头 `<h1>` 下方。
+ *
+ * 因此在没有可用段落时逐级降级：
+ * 1. 列表项 `<li>`：通常是「CN2 GIA 优质线路」这类完整短语，可读。
+ * 2. 表格的表头行 `<th>`：只取表头，不取数据单元格——「CPU / 内存 / 带宽」
+ *    是规格名，而「2 核 / 4 GB」这类值拼在一起不成句。
+ *
+ * 三级都取不到才返回空串，由 `buildArticleSeo` 回落到标题。
+ */
+function extractExcerpt($: CheerioAPI): string {
+  const paragraphs = $("p")
+    .filter(
+      (_, node) =>
+        $(node).parents("table, pre, blockquote, figure").length === 0,
+    )
+    .map((_, node) => cleanText($(node).text()))
+    .get()
+    .filter(Boolean)
+    .slice(0, 3);
+  if (paragraphs.length > 0) return paragraphs.join(" ");
+
+  const listItems = $("li")
+    .filter((_, node) => $(node).parents("table, pre, figure").length === 0)
+    .map((_, node) => cleanText($(node).text()))
+    .get()
+    .filter(Boolean)
+    .slice(0, 3);
+  if (listItems.length > 0) return listItems.join(" ");
+
+  const headers = $("th")
+    .map((_, node) => cleanText($(node).text()))
+    .get()
+    .filter(Boolean)
+    .slice(0, 8);
+  return headers.join(" ");
 }
 
 function excerptDescription(text: string, inLanguage: "zh-CN" | "en") {
@@ -112,6 +147,20 @@ export function buildArticleSeo(input: {
   const alternateUrl = input.alternateSlug
     ? `${siteUrl}${english ? "" : "/en"}/fwq/posts/${encodeURIComponent(input.alternateSlug)}`
     : undefined;
+  // 与集合页（`public-content-policy.ts` 的 articleAlternates）保持同一约定：
+  // 只有中英文两侧都存在时才输出 hreflang 集合，x-default 指向中文（主语言）页。
+  //
+  // 早期实现在无配对时也输出 `x-default` 指向本页自己，英文侧因此产出只含自引用的
+  // 集合（如 `{en: 本页, x-default: 本页}`）——等于向搜索引擎声明「英文是所有语言的
+  // 兜底」，而这些文章根本没有中文版本。这类集合会被忽略或告警，损害的恰恰是
+  // 最需要良好信号的内容。
+  const languageAlternates = alternateUrl
+    ? {
+        [inLanguage]: articleUrl,
+        [english ? "zh-CN" : "en"]: alternateUrl,
+        "x-default": english ? alternateUrl : articleUrl,
+      }
+    : undefined;
   const title = cleanText(post.title);
   const description =
     cleanText(post.description) ||
@@ -149,11 +198,7 @@ export function buildArticleSeo(input: {
     robots: { index: true, follow: true, "max-image-preview": "large" },
     alternates: {
       canonical: articleUrl,
-      languages: {
-        [inLanguage]: articleUrl,
-        ...(alternateUrl ? { [english ? "zh-CN" : "en"]: alternateUrl } : {}),
-        "x-default": english ? (alternateUrl ?? articleUrl) : articleUrl,
-      },
+      languages: languageAlternates,
     },
     openGraph: {
       type: "article",

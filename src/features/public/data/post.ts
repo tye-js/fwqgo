@@ -281,48 +281,6 @@ export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
     cacheTags.categories,
   );
 
-  const promotedPostsPromise = (async () => {
-    try {
-      return await readDb
-        .select({
-          id: posts.id,
-          title: posts.title,
-          slug: posts.slug,
-          description: posts.description,
-          imgUrl: posts.imgUrl,
-          views: posts.views,
-          createdAt: posts.createdAt,
-        })
-        .from(homepageSlots)
-        .innerJoin(posts, eq(homepageSlots.postId, posts.id))
-        .where(
-          and(
-            eq(homepageSlots.language, language),
-            eq(homepageSlots.placement, "sidebar"),
-            eq(homepageSlots.contentType, "post"),
-            eq(homepageSlots.enabled, true),
-            or(
-              isNull(homepageSlots.startsAt),
-              lte(homepageSlots.startsAt, new Date()),
-            ),
-            or(
-              isNull(homepageSlots.endsAt),
-              gt(homepageSlots.endsAt, new Date()),
-            ),
-            publicPostCondition(language),
-          ),
-        )
-        .orderBy(
-          asc(homepageSlots.sortOrder),
-          desc(homepageSlots.createdAt),
-          desc(homepageSlots.id),
-        )
-        .limit(6);
-    } catch (error) {
-      throw new Error("获取首页推广文章失败", { cause: error });
-    }
-  })();
-
   const editorPicksPromise = (async () => {
     try {
       return await readDb
@@ -349,17 +307,76 @@ export async function getHomepageSidebarData(language: PublicLanguage = "zh") {
     }
   })();
 
-  const [promotedPosts, editorPicks] = await Promise.all([
-    promotedPostsPromise,
-    editorPicksPromise,
-  ]);
+  const [editorPicks] = await Promise.all([editorPicksPromise]);
 
   return {
     data: {
-      promotedPosts,
       editorPicks,
     },
   };
+}
+
+/**
+ * 首页「推广」区在没有任何 sidebar 运营位时的兜底文章。
+ *
+ * 单独拆出来而不是挂在 `getHomepageSidebarData` 里：只要运营位里存在 sidebar 位，
+ * `getActiveHomepageSlots` 返回的 `sidebarSlots` 就非空，首页会走
+ * `HomepageSidebarPromotions` 而**完全不用**这批数据——而
+ * `getActiveHomepageSlots` 的where 条件（post 分支只需 published + 语言匹配）
+ * 覆盖了这里的全部条件（这里还多筛一个 placement），因此这条三表 join 的结果
+ * 必然被丢弃。让调用方按需触发，而不是每轮 ISR 都白跑一次。
+ */
+export async function getHomepageFallbackPromotions(
+  language: PublicLanguage = "zh",
+) {
+  "use cache";
+  cacheLife({ stale: 300, revalidate: 300, expire: 3_600 });
+  tagCache(
+    cacheTags.homepage,
+    cacheTags.sidebar,
+    cacheTags.homepageSlots,
+    cacheTags.posts,
+  );
+
+  try {
+    return await readDb
+      .select({
+        id: posts.id,
+        title: posts.title,
+        slug: posts.slug,
+        description: posts.description,
+        imgUrl: posts.imgUrl,
+        views: posts.views,
+        createdAt: posts.createdAt,
+      })
+      .from(homepageSlots)
+      .innerJoin(posts, eq(homepageSlots.postId, posts.id))
+      .where(
+        and(
+          eq(homepageSlots.language, language),
+          eq(homepageSlots.placement, "sidebar"),
+          eq(homepageSlots.contentType, "post"),
+          eq(homepageSlots.enabled, true),
+          or(
+            isNull(homepageSlots.startsAt),
+            lte(homepageSlots.startsAt, new Date()),
+          ),
+          or(
+            isNull(homepageSlots.endsAt),
+            gt(homepageSlots.endsAt, new Date()),
+          ),
+          publicPostCondition(language),
+        ),
+      )
+      .orderBy(
+        asc(homepageSlots.sortOrder),
+        desc(homepageSlots.createdAt),
+        desc(homepageSlots.id),
+      )
+      .limit(6);
+  } catch (error) {
+    throw new Error("获取首页推广文章失败", { cause: error });
+  }
 }
 
 export async function getRecommendedPosts(

@@ -30,7 +30,7 @@ const posts=Array.from({length:13},(_,i)=>({id:i+1,title:"Server guide "+(i+1),s
 for(const language of ["zh","en"]){
  const prefix=language==="en"?"/en":"";
  const topics={regions:[{label:language==="en"?"Hong Kong, China":"中国香港",href:prefix+"/fwq/"+(language==="en"?"hong-kong-vps":"hk-vps")+"/page/1"}],lines:[{label:"CN2 GIA",href:prefix+"/fwq/tags/cn2-gia/page/1"}]};
- const props={language,posts:[posts[0],...posts],sidebarData:{promotedPosts:[],editorPicks:[posts[0],posts[9],posts[9],...posts.slice(10)]},homepageSlots:[],topics};
+ const props={language,posts:[posts[0],...posts],sidebarData:{editorPicks:[posts[0],posts[9],posts[9],...posts.slice(10)]},promotedPosts:[],homepageSlots:[],topics};
  const html=renderToStaticMarkup(React.createElement(PublicHomePage,props));const $=cheerio.load(html);
  assert.equal($("main#main-content").length,1);assert.equal($("h1").length,1);
  assert.deepEqual($("[data-testid=home-feed] h3").toArray().map(node=>$(node).text()),posts.slice(0,9).map(post=>post.title));
@@ -46,9 +46,9 @@ for(const language of ["zh","en"]){
  if(language==="en"){assert.equal($('a[href^="/fwq/"]').length,0);assert.equal($('input[name="lang"]').attr("value"),"en");assert.match($('a[href="/servers"]').text(),/Chinese/);}
  assert.ok(!html.includes("undefined"));assert.ok(!html.includes("NaN"));
  $("a[href]").each((_,a)=>{assert.equal($(a).attr("target"),"_blank");assert.equal($(a).find("a").length,0);});
- const empty=cheerio.load(renderToStaticMarkup(React.createElement(PublicHomePage,{...props,posts:[],sidebarData:{editorPicks:[],promotedPosts:[]},topics:{regions:[],lines:[]}})));
- assert.equal(empty("h1").length,1);assert.equal(empty("[data-testid=article-card]").length,0);assert.equal(empty("[data-testid=home-topics]").length,0);assert.equal(empty("[data-testid=home-editor-picks]").length,0);
- const overlap=cheerio.load(renderToStaticMarkup(React.createElement(PublicHomePage,{...props,sidebarData:{editorPicks:posts.slice(0,5),promotedPosts:[]}})));
+  const empty=cheerio.load(renderToStaticMarkup(React.createElement(PublicHomePage,{...props,posts:[],sidebarData:{editorPicks:[]},promotedPosts:[],topics:{regions:[],lines:[]}})));
+  assert.equal(empty("h1").length,1);assert.equal(empty("[data-testid=article-card]").length,0);assert.equal(empty("[data-testid=home-topics]").length,0);assert.equal(empty("[data-testid=home-editor-picks]").length,0);
+  const overlap=cheerio.load(renderToStaticMarkup(React.createElement(PublicHomePage,{...props,sidebarData:{editorPicks:posts.slice(0,5)},promotedPosts:[]})));
  assert.equal(overlap("[data-testid=home-editor-picks]").length,0);
  const slots=["hero_primary",...Array(7).fill("sidebar"),...Array(7).fill("promo_grid"),"featured_offers"].map((placement,id)=>({id,placement,contentType:"image_link",resolvedTargetUrl:"https://example.com/promo-"+id,resolvedTitle:"Promotion "+id,resolvedImageUrl:null,resolvedDescription:null,resolvedAltText:""}));
  const promoted=cheerio.load(renderToStaticMarkup(React.createElement(PublicHomePage,{...props,homepageSlots:slots})));
@@ -102,14 +102,21 @@ const readDb=drizzle(async(query,params)=>{
 });
 mock.module("@fwqgo/db",()=>({readDb}));
 mock.module("next/cache",()=>({cacheLife(){},cacheTag(...tags){tags.forEach(tag=>cacheTags.add(tag));},revalidatePath(){},revalidateTag(){},updateTag(){}}));
-const {getHomepageSidebarData}=await import("./src/features/public/data/post.ts");
+const {getHomepageSidebarData,getHomepageFallbackPromotions}=await import("./src/features/public/data/post.ts");
 try{
  for(const [language,offset] of [["zh",0],["en",100]]){
   const {data}=await getHomepageSidebarData(language);
   assert.deepEqual(data.editorPicks.map(post=>post.id),[7,6,5,4,3].map(id=>id+offset));
-  assert.equal(data.promotedPosts[0].id,offset+7,"Promotion placement must not remove the newest category article");
+  const fallback=await getHomepageFallbackPromotions(language);
+  assert.equal(fallback[0].id,offset+7,"Promotion placement must not remove the newest category article");
  }
  assert.ok(cacheTags.has("categories"));assert.ok(cacheTags.has("posts"));
+ // M1：兜底推广文章独立成函数后仍需注册自己的失效标签，否则运营位改动后
+ // 这块缓存不会失效。标签在调用时收集，所以先清空再调用。
+ cacheTags.clear();
+ const fallbackRows=await getHomepageFallbackPromotions("zh");
+ assert.ok(fallbackRows.length>0,"兜底推广位应能读到数据");
+ for(const tag of ["homepage","homepage-slots","posts"])assert.ok(cacheTags.has(tag),"兜底推广缓存缺少失效标签 "+tag);
  database.run("UPDATE categories SET name = ? WHERE id = 1",["已更名分类"]);
  for(const language of ["zh","en"])assert.deepEqual((await getHomepageSidebarData(language)).data.editorPicks,[],"Do not fill an absent category with unrelated popular articles");
  fail=true;await assert.rejects(getHomepageSidebarData("zh"),/获取首页站长推荐文章失败/);

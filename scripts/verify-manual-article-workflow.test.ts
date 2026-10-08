@@ -146,11 +146,17 @@ void test("draft editing permits unfinished SEO while publishing still requires 
   isolated(String.raw`
 import assert from "node:assert/strict";
 import {postEditSchema} from "./src/features/cms/lib/post-edit.ts";
-const draft={id:1,title:"Source title",slug:"source-1",content:"Full source body",published:false,description:"",keywords:"",categoryId:1,recommendTagName:"",newTags:[]};
+const draft={id:1,title:"Source title",slug:"source-1",content:"Full source body",published:false,description:"",keywords:"",categoryId:1,recommendTagName:"",newTags:[],expectedUpdatedAt:null};
 assert.equal(postEditSchema.safeParse(draft).success,true);
 assert.equal(postEditSchema.safeParse({...draft,published:true}).success,false);
 assert.equal(postEditSchema.safeParse({...draft,published:true,description:"Human SEO",newTags:[{tag:{name:"VPS",slug:"vps"}}]}).success,true);
 assert.equal(postEditSchema.safeParse({...draft,slug:"bad/slug"}).success,false);
+// 乐观锁字段必填：整个缺失必须被 schema 拒绝。早前它是 .optional()，
+// savePostEdits 在 undefined 时跳过整个比对，整篇覆盖没有任何并发保护。
+const {expectedUpdatedAt:_omitted,...withoutLock}=draft;
+assert.equal(postEditSchema.safeParse(withoutLock).success,false,"缺少 expectedUpdatedAt 必须被拒");
+assert.equal(postEditSchema.safeParse({...draft,expectedUpdatedAt:"not-a-date"}).success,false);
+assert.equal(postEditSchema.safeParse({...draft,expectedUpdatedAt:"2026-09-20T03:00:00.000Z"}).success,true);
 `);
 });
 
