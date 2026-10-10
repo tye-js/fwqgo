@@ -7,6 +7,7 @@ import {
   normalizeArticleHtml,
 } from "@fwqgo/core/content";
 import { getManualEnglishSourceId } from "@/features/cms/lib/manual-article";
+import { PostEditValidationError } from "@/features/cms/lib/post-edit";
 import { structuredLog } from "@fwqgo/core/structured-log";
 import {
   createTaskLeaseOwner,
@@ -44,6 +45,59 @@ class DraftSaveError extends Error {
   constructor(cause: unknown) {
     super("正文已清洗，但草稿保存失败，请稍后重试", { cause });
   }
+}
+
+/**
+ * 把一次任务失败翻译成「失败步骤 + 给管理员看的文案」。
+ *
+ * 抽成纯函数是为了能直接测：这段分类逻辑原来埋在 catch 里，没有任何覆盖，
+ * 于是「保存英文草稿时标签校验失败」被显示成「英文翻译未完成，请检查模型配置」
+ * 也没人发现（tasks/207 连续三次重试都被这样误诊）。
+ *
+ * `translating` 为真时**不能**一律兜底成「翻译未完成」——翻译内容此时已经产出
+ * （已 checkpoint），真正失败的往往是后面的保存。只有确实无法归类的异常才用兜底。
+ */
+export function describeArticleCollectionFailure(
+  error: unknown,
+  context: { translating: boolean; interrupted: boolean },
+): { stepKey: string; stepName: string; message: string } {
+  // 英文流程里保存草稿的业务校验错误（例如「标签“X”缺少英文名称或 slug，
+  // 请先在标签管理中补全」）自带可操作提示，必须原样透传。
+  const englishDraftSaveFailed =
+    context.translating && error instanceof PostEditValidationError;
+  const draftSaveFailed = error instanceof DraftSaveError;
+  const rawMessage = error instanceof Error ? error.message : "";
+
+  let message: string;
+  if (englishDraftSaveFailed || draftSaveFailed) {
+    message = rawMessage;
+  } else if (context.translating) {
+    message =
+      error instanceof EnglishTranslationTaskError || context.interrupted
+        ? rawMessage
+        : "英文翻译未完成，请检查模型配置和任务记录后重试";
+  } else {
+    message = "素材读取失败，请检查来源地址和正文内容后重试";
+  }
+
+  // 失败阶段要用真实阶段命名：详情页的「处理流程」按 stepKey 取步骤，
+  // 保存阶段失败却记成 english_task_error 时，第三个格子会一直显示「等待中」。
+  const stepKey = englishDraftSaveFailed
+    ? "english_save"
+    : context.translating
+      ? "english_task_error"
+      : draftSaveFailed
+        ? "draft_save"
+        : "source_collect";
+  const stepName = englishDraftSaveFailed
+    ? "保存英文草稿"
+    : context.translating
+      ? "英文翻译"
+      : draftSaveFailed
+        ? "保存草稿"
+        : "抓取/读取素材";
+
+  return { stepKey, stepName, message };
 }
 
 async function updateTask(
@@ -436,33 +490,21 @@ export async function runAiRewriteTask(taskId: number) {
   } catch (error) {
     if (error instanceof TaskLeaseLostError) return;
     structuredLog("error", "article.collection_failed", { taskId, error });
-    const draftSaveFailed = error instanceof DraftSaveError;
     const translating =
       task.sourceType === "english" &&
       Boolean(readEnglishTranslationSource(task.diagnostics));
     const interrupted =
       translating && error instanceof AiRequestConnectionInterruptedError;
-    const message = translating
-      ? error instanceof EnglishTranslationTaskError || interrupted
-        ? error.message
-        : "英文翻译未完成，请检查模型配置和任务记录后重试"
-      : draftSaveFailed
-        ? error.message
-        : "素材读取失败，请检查来源地址和正文内容后重试";
+    const { stepKey, stepName, message } = describeArticleCollectionFailure(
+      error,
+      { translating, interrupted },
+    );
     try {
       await renewAiTaskLease(task);
       try {
         await upsertTaskStep(task, {
-          key: translating
-            ? "english_task_error"
-            : draftSaveFailed
-              ? "draft_save"
-              : "source_collect",
-          name: translating
-            ? "英文翻译"
-            : draftSaveFailed
-              ? "保存草稿"
-              : "抓取/读取素材",
+          key: stepKey,
+          name: stepName,
           status: "failed",
           progress: 100,
           message,

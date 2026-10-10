@@ -169,6 +169,59 @@ await run();assert.equal(f.english.length,1);assert.equal(f.bodyCalls,1);assert.
   );
 });
 
+void test("a failed English draft save reports its real reason instead of blaming the model", () => {
+  isolated(
+    String.raw`
+import assert from "node:assert/strict";
+import { describeArticleCollectionFailure } from "./src/server/ai/rewrite-task-runner.ts";
+import { PostEditValidationError } from "./src/features/cms/lib/post-edit.ts";
+import { EnglishTranslationTaskError } from "./src/server/ai/english-translation-task.ts";
+
+const translating = { translating: true, interrupted: false };
+
+// 保存英文草稿时的标签校验失败：文案必须原样透传，失败步骤落在「保存英文草稿」。
+// 早前这段分类逻辑会把任何非 EnglishTranslationTaskError 兜底成「英文翻译未完成，
+// 请检查模型配置」，把排查方向整个带偏（实测 tasks/207 连续三次被误诊为模型问题）。
+const tagFailure = describeArticleCollectionFailure(
+  new PostEditValidationError("标签“QQG.NET”缺少英文名称或 slug，请先在标签管理中补全"),
+  translating,
+);
+assert.equal(tagFailure.message, "标签“QQG.NET”缺少英文名称或 slug，请先在标签管理中补全");
+assert.equal(tagFailure.stepKey, "english_save");
+assert.equal(tagFailure.stepName, "保存英文草稿");
+assert.ok(!tagFailure.message.includes("模型配置"), "标签问题不得被说成模型配置问题");
+
+// 翻译自身故障仍按原样透传，步骤落在英文翻译。
+const translationFailure = describeArticleCollectionFailure(
+  new EnglishTranslationTaskError("模型返回为空"),
+  translating,
+);
+assert.equal(translationFailure.message, "模型返回为空");
+assert.equal(translationFailure.stepKey, "english_task_error");
+
+// 只有无法归类的异常才用兜底文案。
+const unknownFailure = describeArticleCollectionFailure(new Error("socket hang up"), translating);
+assert.equal(unknownFailure.message, "英文翻译未完成，请检查模型配置和任务记录后重试");
+assert.equal(unknownFailure.stepKey, "english_task_error");
+
+// 连接中断（调用方据此标记需人工处理）同样透传原始原因。
+const interruptedFailure = describeArticleCollectionFailure(new Error("connection reset"), {
+  translating: true,
+  interrupted: true,
+});
+assert.equal(interruptedFailure.message, "connection reset");
+
+// 非英文流程沿用原来的文案与步骤。
+const collectFailure = describeArticleCollectionFailure(new Error("boom"), {
+  translating: false,
+  interrupted: false,
+});
+assert.equal(collectFailure.message, "素材读取失败，请检查来源地址和正文内容后重试");
+assert.equal(collectFailure.stepKey, "source_collect");
+`,
+  );
+});
+
 void test("metadata retries reuse the complete English body", () => {
   isolated(
     translationFixture +
