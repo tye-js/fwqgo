@@ -526,6 +526,13 @@
       "when": 1790473354842,
       "tag": "0074_region_directory_compliance",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1791730656482,
+      "tag": "0075_promo_category",
+      "breakpoints": true
     }
   ]
 }
