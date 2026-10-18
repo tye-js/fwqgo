@@ -290,13 +290,13 @@ export function ServerInventoryResults({
         <table className="w-full min-w-[1120px] table-fixed text-[13px]">
           <thead className="sticky top-0 z-10 border-b border-border/70 bg-muted/95 text-left text-xs text-muted-foreground backdrop-blur">
             <tr>
-              <th className="w-[25%] px-3 py-3 font-medium">产品</th>
-              <th className="w-[16%] px-3 py-3 font-medium">规格</th>
-              <th className="w-[12%] px-3 py-3 font-medium">机房 / 线路</th>
-              <th className="w-[13%] px-3 py-3 font-medium">产品组</th>
-              <th className="w-[9%] px-3 py-3 font-medium">状态</th>
-              <th className="w-[14%] px-3 py-3 font-medium">价格 / 操作</th>
-              <th className="w-[11%] px-3 py-3 font-medium">
+              <th className="w-[25%] px-3 py-2 font-medium">产品</th>
+              <th className="w-[16%] px-3 py-2 font-medium">规格</th>
+              <th className="w-[12%] px-3 py-2 font-medium">机房 / 线路</th>
+              <th className="w-[13%] px-3 py-2 font-medium">产品组</th>
+              <th className="w-[9%] px-3 py-2 font-medium">状态</th>
+              <th className="w-[14%] px-3 py-2 font-medium">价格 / 操作</th>
+              <th className="w-[11%] px-3 py-2 font-medium">
                 {filters.kind === "promotion" ? "上次探测" : "资料更新"}
               </th>
             </tr>
@@ -306,7 +306,7 @@ export function ServerInventoryResults({
               const specs = specText(offer);
               return (
                 <tr key={offer.id} className="align-top hover:bg-muted/20">
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-1.5">
                     <p className="line-clamp-2 font-semibold leading-5 text-foreground">
                       {offer.title}
                     </p>
@@ -337,10 +337,10 @@ export function ServerInventoryResults({
                       ))}
                     </div>
                   </td>
-                  <td className="px-3 py-3 leading-5 text-muted-foreground">
+                  <td className="px-3 py-1.5 leading-5 text-muted-foreground">
                     {specs ? specs : "配置待补充"}
                   </td>
-                  <td className="px-3 py-3 leading-5">
+                  <td className="px-3 py-1.5 leading-5">
                     {offer.region ? (
                       <ServerCollectionLink
                         stayInTool
@@ -364,12 +364,12 @@ export function ServerInventoryResults({
                       </ServerCollectionLink>
                     ) : null}
                   </td>
-                  <td className="px-3 py-3 leading-5 text-muted-foreground">
+                  <td className="px-3 py-1.5 leading-5 text-muted-foreground">
                     {cleanText(offer.productGroup) ??
                       cleanText(offer.productType) ??
                       "未分组"}
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-1.5">
                     <StatusCell
                       status={offer.status}
                       offerKind={offer.offerKind}
@@ -377,7 +377,7 @@ export function ServerInventoryResults({
                       isStale={offer.isStale}
                     />
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-1.5">
                     <ServerInventoryOfferActions
                       prices={offer.prices}
                       fallbackPrice={offer.priceAmount}
@@ -391,7 +391,7 @@ export function ServerInventoryResults({
                       offerTitle={offer.title}
                     />
                   </td>
-                  <td className="px-3 py-3 text-xs leading-5 text-muted-foreground">
+                  <td className="px-3 py-1.5 text-xs leading-5 text-muted-foreground">
                     {formatCheckedAt(
                       offer.offerKind === "promotion"
                         ? offer.lastCheckedAt

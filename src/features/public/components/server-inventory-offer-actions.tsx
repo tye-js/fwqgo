@@ -81,7 +81,10 @@ function SafeLinkButton({
       asChild
       size="sm"
       variant={variant}
-      className="min-h-11"
+      // 桌面表格（`server-inventory-results` 的 xl 表格）一屏要放尽量多行，所以那里
+      // 把按钮压到 32px；窄屏走卡片布局，仍然按 44px 的触控目标来。
+      // `xl:` 变体排在基础工具类之后，所以能盖住 Button 基础样式里的 `min-h-11`。
+      className="min-h-11 xl:h-8 xl:min-h-8 xl:px-2"
       aria-label={ariaLabel}
     >
       {internal && !shortLink ? (
@@ -177,13 +180,13 @@ export function ServerInventoryOfferActions({
   }
 
   return (
-    <div className="w-full min-w-0 space-y-2 sm:w-auto">
+    <div className="w-full min-w-0 space-y-2 sm:w-auto xl:space-y-1">
       {selected ? (
-        <div className="space-y-1">
+        <div className="space-y-1 xl:space-y-0.5">
           {options.length > 1 ? (
             <Select value={selectedValue} onValueChange={setSelectedId}>
               <SelectTrigger
-                className="min-h-11 w-full text-xs sm:min-w-[150px]"
+                className="min-h-11 w-full text-xs sm:min-w-[150px] xl:min-h-8"
                 aria-label={`${offerTitle} 计费周期`}
               >
                 <SelectValue />
@@ -198,13 +201,13 @@ export function ServerInventoryOfferActions({
               </SelectContent>
             </Select>
           ) : (
-            <p className="font-semibold tabular-nums text-foreground">
+            <p className="font-semibold leading-4 tabular-nums text-foreground">
               {cycleLabels[selected.billingCycle] ?? selected.billingCycle} ·{" "}
               {formatMoney(selected.amount, selected.currency)}
             </p>
           )}
           {selectedMonthlyPrice !== null ? (
-            <p className="text-xs tabular-nums text-muted-foreground">
+            <p className="text-xs leading-none tabular-nums text-muted-foreground">
               约 ${selectedMonthlyPrice.toFixed(2)} / 月
             </p>
           ) : (
@@ -219,7 +222,7 @@ export function ServerInventoryOfferActions({
         <button
           type="button"
           onClick={copyPromoCode}
-          className="inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1.5 text-left font-mono text-xs font-medium text-primary hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1.5 text-left font-mono text-xs font-medium text-primary hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:min-h-7 xl:py-0.5"
         >
           <span className="min-w-0 break-all">{promoCode}</span>
           <Copy className="size-3.5 shrink-0" />
