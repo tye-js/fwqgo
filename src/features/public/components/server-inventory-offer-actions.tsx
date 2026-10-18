@@ -182,11 +182,13 @@ export function ServerInventoryOfferActions({
   return (
     <div className="w-full min-w-0 space-y-2 sm:w-auto xl:space-y-1">
       {selected ? (
-        <div className="space-y-1 xl:space-y-0.5">
+        // 桌面表格里价格与「约 $X / 月」原本各占一行。列宽提到 22% 之后它们能并排，
+        // 省下的一行直接变成行高。空间不够时 flex-wrap 会退回上下两行，不会挤坏。
+        <div className="space-y-1 xl:flex xl:flex-wrap xl:items-baseline xl:gap-x-2 xl:gap-y-0.5 xl:space-y-0">
           {options.length > 1 ? (
             <Select value={selectedValue} onValueChange={setSelectedId}>
               <SelectTrigger
-                className="min-h-11 w-full text-xs sm:min-w-[150px] xl:min-h-8"
+                className="min-h-11 w-full text-xs sm:min-w-[150px] xl:w-auto xl:min-w-[8rem] xl:min-h-8"
                 aria-label={`${offerTitle} 计费周期`}
               >
                 <SelectValue />
