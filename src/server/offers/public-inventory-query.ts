@@ -9,6 +9,7 @@ import {
   eq,
   gt,
   inArray,
+  isNotNull,
   isNull,
   lt,
   or,
@@ -66,7 +67,20 @@ export {
 function publicInventoryAvailableWhere(kind: ServerOfferKind) {
   return and(
     eq(serverOffers.visible, true),
-    eq(serverOffers.offerKind, kind),
+    // 活动款取并集：标了 promotion 的，或带优惠码的。
+    //
+    // 库里 offerKind 几乎全是 regular（历史数据从没标过活动款），只按 kind 匹配会让
+    // 「活动款」筛选和 /servers/promotion 专题都变成空页。带优惠码的确实是活动价，
+    // 所以并进来；常规款保持严格匹配，否则常规列表会把活动款也算了进去。
+    kind === "promotion"
+      ? or(
+          eq(serverOffers.offerKind, "promotion"),
+          and(
+            isNotNull(serverOffers.promoCode),
+            sql`btrim(${serverOffers.promoCode}) <> ''`,
+          ),
+        )
+      : eq(serverOffers.offerKind, kind),
     sql`nullif(trim(${serverOffers.purchaseUrl}), '') is not null`,
     publicOfferAvailableStatusWhere(),
   );

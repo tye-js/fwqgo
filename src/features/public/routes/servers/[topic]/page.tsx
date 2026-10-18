@@ -80,7 +80,11 @@ async function ServerTopicContent({
   const inventoryHref =
     topicInfo.slug === "cheap-vps"
       ? "/servers?maxPrice=8&stock=all"
-      : `/servers?region=${topicInfo.slug}&stock=all`;
+      : topicInfo.slug === "promotion"
+        ? // 活动款走的是 kind 维度，不是地区。之前统一拼 region=<slug> 会得到
+          // /servers?region=promotion 这种查不到任何东西的链接。
+          "/servers?kind=promotion&stock=all"
+        : `/servers?region=${topicInfo.slug}&stock=all`;
   const inStockCount = offers.filter((offer) =>
     isPublicInStock(offer.status),
   ).length;

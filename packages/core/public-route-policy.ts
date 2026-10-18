@@ -5,6 +5,7 @@ export const PUBLIC_SERVER_TOPIC_SLUGS = [
   "hong-kong",
   "united-states",
   "cheap-vps",
+  "promotion",
 ] as const;
 export type PublicResourceRoute =
   | { kind: "post" | "knowledge"; language: PublicLanguage; slug: string }

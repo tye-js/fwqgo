@@ -100,6 +100,21 @@ export const offerTopics: Array<{
   filters: {
     regions?: string[];
     maxMonthlyUsd?: number;
+    /**
+     * 只看活动款。
+     *
+     * 库里的 `offerKind` 几乎全是 `regular`（历史数据从没标过活动款），而带优惠码的套餐
+     * 确实是活动价——所以这里取并集：`offerKind = 'promotion'` 或 `promoCode` 非空。
+     * 既尊重运营以后标注的活动款，也让专区在当前数据上立刻有内容，不用等一次全量标注。
+     */
+    promotionOnly?: boolean;
+    /**
+     * 该专题最多展示多少条，默认 30。
+     *
+     * 活动款的数量级和地区专题不同（一次活动可能几十上百条），固定 30 条会让「看全」落空，
+     * 所以允许按专题放宽。
+     */
+    limit?: number;
   };
 }> = [
   {
@@ -181,6 +196,39 @@ export const offerTopics: Array<{
     ],
     filters: {
       maxMonthlyUsd: 8,
+    },
+  },
+  {
+    slug: "promotion",
+    title: "促销服务器",
+    seoTitle: "促销服务器活动套餐对比：限时折扣 VPS 与优惠码汇总",
+    h1: "促销服务器活动套餐对比",
+    shortTitle: "促销",
+    description:
+      "汇总当前在活动期的 VPS、云服务器与独立服务器套餐，标出优惠码、活动价格与购买入口，方便同时对比配置和折扣力度。",
+    intro:
+      "促销套餐的麻烦在于时效：折扣会结束、优惠码会失效，而常规配置表通常只写原价。这里把在活动期的套餐单独挑出来，和常规款放在同一套字段下比较；带优惠码的会单独标出。下单前请核对优惠码是否仍可用，以及续费价是否回到原价。",
+    keywords: ["促销", "活动", "优惠码", "限时", "折扣", "VPS 优惠"],
+    faq: [
+      {
+        question: "这里的促销套餐和常规套餐有什么区别？",
+        answer:
+          "促销套餐通常有更低的年付价或可用的优惠码，但有效期更短、续费价可能回到原价；常规套餐价格稳定，更适合长期使用。",
+      },
+      {
+        question: "优惠码为什么需要自己再核对一次？",
+        answer:
+          "优惠码由商家随时调整，抓取到的码可能已经过期，或只限特定机房与付款周期。下单前请在结算页确认它是否仍然生效。",
+      },
+      {
+        question: "促销期间买长期套餐划算吗？",
+        answer:
+          "要看续费价，而不只是首年价。如果续费恢复原价，先把多年摊薄后的月成本算出来，再和常规款比较。",
+      },
+    ],
+    filters: {
+      promotionOnly: true,
+      limit: 100,
     },
   },
 ];
@@ -278,6 +326,20 @@ function topicWhere(topic: (typeof offerTopics)[number]) {
       ilike(serverOffers.region, `%${region}%`),
     ) ?? [];
 
+  // 活动款优先判断：它是个独立维度，和地区/价格不是一个轴，所以不参与下面的早退分支。
+  if (topic.filters.promotionOnly) {
+    return and(
+      base,
+      or(
+        eq(serverOffers.offerKind, "promotion"),
+        and(
+          isNotNull(serverOffers.promoCode),
+          sql`btrim(${serverOffers.promoCode}) <> ''`,
+        ),
+      ),
+    );
+  }
+
   if (topic.filters.maxMonthlyUsd) {
     return and(
       base,
@@ -321,7 +383,7 @@ export async function getServerOfferTopic(slug: string) {
         asc(serverOffers.monthlyPriceUsd),
         desc(serverOffers.createdAt),
       )
-      .limit(30);
+      .limit(topic.filters.limit ?? 30);
 
     return { topic, offers };
   } catch (error) {

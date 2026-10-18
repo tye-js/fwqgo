@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import {
   ArrowRight,
+  BadgePercent,
   Database,
   MapPin,
   Server,
@@ -181,14 +182,16 @@ export default function ServersPage({
                 从选购说明、常见问题和相关文章入手，了解地区与线路的差异。
               </p>
             </div>
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {offerTopics.map((topic) => {
                 const Icon =
                   topic.slug === "hong-kong"
                     ? MapPin
                     : topic.slug === "cheap-vps"
                       ? ShieldCheck
-                      : Server;
+                      : topic.slug === "promotion"
+                        ? BadgePercent
+                        : Server;
                 return (
                   <Link
                     key={topic.slug}
