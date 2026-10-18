@@ -522,7 +522,8 @@ async function loadServerOfferCollection(
       kind,
       value: label,
       slug,
-      toolHref: `/servers?${filterKey}=${encodeURIComponent(slug)}&stock=all`,
+      // 集合页只列还能买的套餐，跳转也用默认的「有货」视图，不把缺货一起带出来。
+      toolHref: `/servers?${filterKey}=${encodeURIComponent(slug)}`,
       indexable: offers.length >= MIN_INDEXABLE_SERVER_COLLECTION_OFFERS,
       updatedAt: getLatestDateValue(
         offers.map((offer) => offer.updatedAt ?? offer.createdAt),

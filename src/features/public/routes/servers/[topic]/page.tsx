@@ -77,14 +77,17 @@ async function ServerTopicContent({
   }
 
   const { topic: topicInfo, offers } = data;
+  // 不带 stock=all：专题页本身就只列还能买的套餐（publicPurchasableOfferBaseWhere），
+  // 库存工具的默认视图也是「有货」。带上 stock=all 会把缺货和停产一起放出来，
+  // 跟专题页对不上，也让默认视图白多一堆买不到的行。
   const inventoryHref =
     topicInfo.slug === "cheap-vps"
-      ? "/servers?maxPrice=8&stock=all"
+      ? "/servers?maxPrice=8"
       : topicInfo.slug === "promotion"
         ? // 活动款走的是 kind 维度，不是地区。之前统一拼 region=<slug> 会得到
           // /servers?region=promotion 这种查不到任何东西的链接。
-          "/servers?kind=promotion&stock=all"
-        : `/servers?region=${topicInfo.slug}&stock=all`;
+          "/servers?kind=promotion"
+        : `/servers?region=${topicInfo.slug}`;
   const inStockCount = offers.filter((offer) =>
     isPublicInStock(offer.status),
   ).length;
