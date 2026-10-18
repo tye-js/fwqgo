@@ -41,7 +41,7 @@ const stockLabels: Record<PublicInventoryStock, string> = {
 };
 
 const selectClassName =
-  "min-h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "min-h-11 sm:min-h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 function submitSelect(event: ChangeEvent<HTMLSelectElement>) {
   event.currentTarget.form?.requestSubmit();
@@ -115,7 +115,7 @@ export function ServerInventoryProviderNav({
           onChange={(event) => setProviderSearch(event.target.value)}
           placeholder="搜索厂商"
           aria-label="搜索库存厂商"
-          className="min-h-11"
+          className="min-h-11 sm:min-h-9"
         />
       </div>
       {/*
@@ -133,7 +133,7 @@ export function ServerInventoryProviderNav({
             cursor: "",
           })}
           aria-current={filters.provider === "all" ? "true" : undefined}
-          className={`flex min-h-11 w-full items-center justify-between rounded-md px-3 text-left text-sm transition-colors ${
+          className={`flex min-h-11 sm:min-h-9 w-full items-center justify-between rounded-md px-3 text-left text-sm transition-colors ${
             filters.provider === "all"
               ? "bg-primary text-primary-foreground"
               : "hover:bg-muted"
@@ -153,7 +153,7 @@ export function ServerInventoryProviderNav({
             aria-current={
               filters.provider === provider.key ? "true" : undefined
             }
-            className={`mt-1 flex min-h-11 w-full items-center justify-between gap-2 rounded-md px-3 text-left text-sm transition-colors ${
+            className={`mt-1 flex min-h-11 sm:min-h-9 w-full items-center justify-between gap-2 rounded-md px-3 text-left text-sm transition-colors ${
               filters.provider === provider.key
                 ? "bg-primary text-primary-foreground"
                 : "hover:bg-muted"
@@ -274,48 +274,57 @@ export function ServerInventoryToolbar({
       className="rounded-lg border border-border/70 bg-background p-3 shadow-sm"
     >
       <input type="hidden" name="kind" value={filters.kind} />
-      <div className="mb-3 flex items-center justify-between gap-3">
+      {/*
+        「常规款 / 活动款」原本独占一整行，加上搜索、四列下拉和「更多筛选」，
+        筛选卡片一共要占五行的纵向空间。这里把它并进标题行：桌面端跟在「筛选套餐」
+        后面变成一小段分段控件，只有窄屏（不足以并排）才落回自己一行。
+      */}
+      <div className="mb-2 flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           <Filter className="size-4 text-primary" />
           筛选套餐
         </div>
-        <Button asChild size="sm" variant="ghost" className="min-h-11">
+        <nav
+          className="order-last grid w-full grid-cols-2 rounded-md border border-border/70 bg-muted/30 p-0.5 sm:order-none sm:w-auto sm:min-w-52 sm:flex-1 sm:max-w-64"
+          aria-label="套餐属性"
+        >
+          {(
+            [
+              ["regular", "常规款"],
+              ["promotion", "活动款"],
+            ] as const
+          ).map(([value, label]) => (
+            <PublicAnchor
+              key={value}
+              aria-current={filters.kind === value ? "true" : undefined}
+              href={buildPublicInventoryHref({
+                ...filters,
+                kind: value,
+                check: "all",
+                cursor: "",
+              })}
+              className={`flex min-h-11 sm:min-h-9 items-center justify-center rounded-sm px-3 text-sm font-medium transition-colors ${
+                filters.kind === value
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {label}
+            </PublicAnchor>
+          ))}
+        </nav>
+        <Button
+          asChild
+          size="sm"
+          variant="ghost"
+          className="ml-auto min-h-11 sm:min-h-9"
+        >
           <PublicAnchor href="/servers">
             <RotateCcw className="size-4" />
             重置
           </PublicAnchor>
         </Button>
       </div>
-
-      <nav
-        className="mb-3 grid grid-cols-2 rounded-md border border-border/70 bg-muted/30 p-1"
-        aria-label="套餐属性"
-      >
-        {(
-          [
-            ["regular", "常规款"],
-            ["promotion", "活动款"],
-          ] as const
-        ).map(([value, label]) => (
-          <PublicAnchor
-            key={value}
-            aria-current={filters.kind === value ? "true" : undefined}
-            href={buildPublicInventoryHref({
-              ...filters,
-              kind: value,
-              check: "all",
-              cursor: "",
-            })}
-            className={`flex min-h-11 items-center justify-center rounded-sm px-3 text-sm font-medium transition-colors ${
-              filters.kind === value
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {label}
-          </PublicAnchor>
-        ))}
-      </nav>
 
       <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
         <Input
@@ -325,16 +334,16 @@ export function ServerInventoryToolbar({
           maxLength={80}
           placeholder="搜索名称、厂商、机房、线路或规格"
           aria-label="搜索服务器套餐"
-          className="min-h-11"
+          className="min-h-11 sm:min-h-9"
         />
-        <Button type="submit" className="min-h-11">
+        <Button type="submit" className="min-h-11 sm:min-h-9">
           <Search className="size-4" />
           搜索
         </Button>
       </div>
 
       {/* 核心筛选常驻：先按地区、线路、价格缩小范围，其余维度折叠在下方。 */}
-      <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-4">
         <FacetSelect
           name="region"
           value={filters.region}
@@ -376,12 +385,12 @@ export function ServerInventoryToolbar({
 
       <details
         open={hasAdvancedFilters}
-        className="mt-2 rounded-md border border-border/60 bg-muted/15 px-3 py-2"
+        className="mt-1.5 rounded-md border border-border/60 bg-muted/15 px-3 py-1.5"
       >
-        <summary className="flex min-h-11 cursor-pointer select-none items-center text-sm font-medium text-foreground">
+        <summary className="flex min-h-11 sm:min-h-9 cursor-pointer select-none items-center text-sm font-medium text-foreground">
           更多筛选
         </summary>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-4">
           <select
             name="stock"
             key={filters.stock}
@@ -455,7 +464,7 @@ export function ServerInventoryToolbar({
               onInput={markCustomPriceRange}
               placeholder="最低月价 USD"
               aria-label="最低美元月价"
-              className="min-h-11"
+              className="min-h-11 sm:min-h-9"
             />
             <Input
               key={`max-${filters.maxPrice ?? ""}`}
@@ -469,13 +478,13 @@ export function ServerInventoryToolbar({
               onInput={markCustomPriceRange}
               placeholder="最高月价 USD"
               aria-label="最高美元月价"
-              className="min-h-11"
+              className="min-h-11 sm:min-h-9"
             />
             <Button
               type="submit"
               variant="outline"
               size="sm"
-              className="min-h-11"
+              className="min-h-11 sm:min-h-9"
             >
               应用价格
             </Button>
