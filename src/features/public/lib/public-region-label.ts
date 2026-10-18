@@ -17,7 +17,7 @@ export type LocalizableServerRegion = {
  *
  * ## 只用于展示，不要用来拼 URL
  *
- * `/servers?query=` 的筛选按**字典名或原文**匹配（见 `public-inventory-query.ts`），
+ * `/servers?q=` 的筛选按**字典名或原文**匹配（见 `public-inventory-query.ts`），
  * 英文名匹配不到任何套餐。所以跳转链接必须继续用 `offer.region` 原文，
  * 只有屏幕上的文字换成英文名。
  */

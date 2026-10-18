@@ -53,6 +53,8 @@ function highlightParts(value: string) {
   if (!match) return null;
   return {
     label: match[1]?.trim() ?? "",
+    // 原文自带的冒号（中文「：」或英文「:」），没有时由调用方按语言兜底
+    colon: match[2] ?? null,
     description: match[3]?.trim() ?? "",
   };
 }
@@ -129,7 +131,10 @@ export function KnowledgeCard({
                         {parts.label}
                       </strong>
                       {parts.description ? (
-                        <>：{inlineCode(parts.description)}</>
+                        <>
+                          {parts.colon ?? (language === "en" ? ":" : "：")}
+                          {inlineCode(parts.description)}
+                        </>
                       ) : null}
                     </>
                   ) : (

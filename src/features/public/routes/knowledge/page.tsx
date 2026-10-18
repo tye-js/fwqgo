@@ -411,14 +411,12 @@ export function KnowledgeIndexPage(props: {
       <Header language={props.language} />
       <Suspense
         fallback={
-          <main
-            id="main-content"
-            className="container mx-auto flex flex-1 items-center px-4 py-12"
-          >
+          // 骨架不用 <main>：正文自带 main#main-content，避免流式期间地标重复
+          <div className="container mx-auto flex flex-1 items-center px-4 py-12">
             <div className="w-full rounded-md border border-border/70 p-6 text-sm text-muted-foreground">
               {copy[props.language].loading}
             </div>
-          </main>
+          </div>
         }
       >
         <KnowledgeSearchContent

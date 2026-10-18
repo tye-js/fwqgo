@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -13,9 +13,13 @@ export function HeroTagSearch({ compact = false }: { compact?: boolean }) {
   const [query, setQuery] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isPending, setIsPending] = useState(false);
+  // 提交序号：回车可以在 isPending 期间再次触发 submit（按钮 disabled 挡不住），
+  // 用序号保证只有最后一次提交会导航，慢速的旧响应不会把用户导到旧关键词。
+  const submitSeq = useRef(0);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isPending) return;
 
     const normalizedQuery = query.trim();
     if (!normalizedQuery) {
@@ -25,6 +29,7 @@ export function HeroTagSearch({ compact = false }: { compact?: boolean }) {
 
     setIsPending(true);
     setErrorMessage("");
+    const seq = ++submitSeq.current;
 
     const searchHref = `/search?q=${encodeURIComponent(normalizedQuery)}`;
 
@@ -42,6 +47,8 @@ export function HeroTagSearch({ compact = false }: { compact?: boolean }) {
         slug?: string;
       };
 
+      if (seq !== submitSeq.current) return;
+
       if (response.ok && result.found && result.slug) {
         router.push(`/fwq/tags/${encodeURIComponent(result.slug)}/page/1`);
         return;
@@ -49,9 +56,10 @@ export function HeroTagSearch({ compact = false }: { compact?: boolean }) {
 
       router.push(searchHref);
     } catch {
+      if (seq !== submitSeq.current) return;
       router.push(searchHref);
     } finally {
-      setIsPending(false);
+      if (seq === submitSeq.current) setIsPending(false);
     }
   }
 

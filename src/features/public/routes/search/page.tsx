@@ -255,14 +255,13 @@ export default function SearchPage(props: SearchPageProps) {
       </Suspense>
       <Suspense
         fallback={
-          <main
-            id="main-content"
-            className="container mx-auto flex flex-1 items-center px-4 py-12"
-          >
+          // 骨架不用 <main>：正文 SearchContent 自带 main#main-content，
+          // 流式期间两个同 id 地标会并存
+          <div className="container mx-auto flex flex-1 items-center px-4 py-12">
             <div className="w-full rounded-md border border-border/70 bg-card p-6 text-sm text-muted-foreground">
               正在加载搜索页...
             </div>
-          </main>
+          </div>
         }
       >
         <SearchContent searchParams={props.searchParams} />

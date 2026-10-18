@@ -135,7 +135,7 @@ export async function AllArticlesPageContent({
       numberOfItems: articles.length,
       itemListElement: articles.map((article, index) => ({
         "@type": "ListItem",
-        position: (pageNo - 1) * 10 + index + 1,
+        position: (pageNo - 1) * PUBLIC_ARTICLE_PAGE_SIZE + index + 1,
         url: `${getSiteUrl()}${articlePath}/${encodeURIComponent(article.slug)}`,
         name: article.title,
       })),

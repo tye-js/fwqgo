@@ -1,4 +1,8 @@
 import Link from "@/features/public/components/public-link";
+import {
+  buildPublicInventoryHref,
+  publicInventoryFilterDefaults,
+} from "@fwqgo/core/public-inventory-filters";
 import { ArrowRight, SlidersHorizontal } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -16,8 +20,10 @@ type TagContextOffer = {
 /**
  * 侧栏 chip 的候选词。
  *
- * `query` 必须用**原文**：`/servers?query=` 按字典名或原文匹配
+ * `query` 必须用**原文**：`/servers?q=` 按字典名或原文匹配
  * （见 `public-inventory-query.ts`），英文名匹配不到任何套餐。
+ * 注意参数名是 `q` 不是 `query`（后者是 CMS 后台的参数名，前台会被静默丢弃），
+ * 所以链接统一走 `buildPublicInventoryHref` 序列化。
  * `label` 才是屏幕上的文字 —— 英文页把地区换成字典英文名，否则英文标签页的 chip
  * 上会出现中文地区名（实测「荷兰」「德国」）。
  */
@@ -96,7 +102,10 @@ export function TagContextSidebar({
             {terms.map((term) => (
               <Link
                 key={term.query}
-                href={`/servers?query=${encodeURIComponent(term.query)}`}
+                href={buildPublicInventoryHref({
+                  ...publicInventoryFilterDefaults,
+                  query: term.query,
+                })}
                 prefetch={false}
                 className="inline-flex min-h-11 items-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:min-h-8"
               >

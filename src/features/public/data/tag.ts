@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, or, sql } from "drizzle-orm";
 import { cacheLife } from "next/cache";
 
 import { slugify } from "@fwqgo/core/utils";
+import { getPublicPageCount } from "@fwqgo/core/public-content-policy";
 import { cacheTags, tagCache } from "@fwqgo/cache/tags";
 import { readDb } from "@fwqgo/db";
 import { attachTagsToPosts } from "@/features/public/data/post-tags";
@@ -152,7 +153,7 @@ export async function getPostsWithTagsByTagSlug(
       .innerJoin(posts, eq(posts.id, postTags.postId))
       .where(and(eq(postTags.tagId, tag.id), publicPostCondition(language)));
     const totalCount = countResult?.count ?? 0;
-    const totalPage = Math.ceil(totalCount / 10);
+    const totalPage = getPublicPageCount(totalCount);
     const tagPosts =
       currentPage > Math.max(totalPage, 1)
         ? []

@@ -31,16 +31,8 @@ export function slugify(text: string, maxLength = 40): string {
     // 避免长度截断后留下不完整的小数点
     .replace(/\.$/, "");
 
-  // URL 编码，处理中文字符
-  return processedText
-    .split("")
-    .map((char) => {
-      // 如果是英文字母、数字或连字符，保持原样
-      if (/[a-z0-9-]/.test(char)) return char;
-      // 其他字符（包括中文）进行 URL 编码
-      return char;
-    })
-    .join("");
+  // 中文等非 ASCII 字符原样保留，由调用方在拼 URL 时 encodeURIComponent
+  return processedText;
 }
 
 export function formatDate(date: Date | string, locale = "zh-CN") {

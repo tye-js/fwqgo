@@ -61,11 +61,12 @@ export function KnowledgeIndexRenderPage(props: {
   return (
     <Suspense
       fallback={
-        <main id="main-content" className="public-container py-12">
+        // 骨架不用 <main>：正文自带 main#main-content，避免流式期间地标重复
+        <div className="public-container py-12">
           {props.language === "en"
             ? "Loading the knowledge base..."
             : "正在加载知识库..."}
-        </main>
+        </div>
       }
     >
       <KnowledgeIndexVariantContent {...props} />

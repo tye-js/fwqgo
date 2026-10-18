@@ -550,7 +550,7 @@ function planMetric(
   language: PublicKnowledgeLanguage,
 ) {
   const value = plan[key];
-  const unit = key === "vcpu" ? "vCPU" : key === "memoryGiB" ? "GiB" : "GiB";
+  const unit = key === "vcpu" ? "vCPU" : "GiB";
   const format = copy[language].range;
   return format(value.min, value.max, unit);
 }
@@ -581,7 +581,13 @@ export function ServerSizingCalculator({
       ),
     [input, ruleSet],
   );
-  const activePlan = result[planKey];
+  // 选中方案可能因输入变化而失效（result[planKey] 变成 null）：
+  // 此时回退到第一个可用方案，避免卡在「禁用的已选中 tab + 空面板」。
+  const activePlanKey = result[planKey]
+    ? planKey
+    : ((["recommended", "start", "ha"] as const).find((key) => result[key]) ??
+      planKey);
+  const activePlan = result[activePlanKey];
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -890,18 +896,25 @@ export function ServerSizingCalculator({
                     key={key}
                     type="button"
                     role="tab"
-                    aria-selected={planKey === key}
+                    id={`sizing-tab-${key}`}
+                    aria-controls="sizing-plan-panel"
+                    aria-selected={activePlanKey === key}
                     disabled={!result[key]}
                     onClick={() => setPlanKey(key)}
-                    className={`min-h-11 whitespace-normal break-words px-2 text-center text-sm font-medium leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${planKey === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"} disabled:cursor-not-allowed disabled:opacity-50`}
+                    className={`min-h-11 whitespace-normal break-words px-2 text-center text-sm font-medium leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${activePlanKey === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"} disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     {text.plans[key]}
                   </button>
                 ))}
               </div>
 
-              {activePlan ? (
-                <div className="mt-5 space-y-4">
+              <div
+                id="sizing-plan-panel"
+                role="tabpanel"
+                aria-labelledby={`sizing-tab-${activePlanKey}`}
+              >
+                {activePlan ? (
+                  <div className="mt-5 space-y-4">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                     <Metric
                       icon={Gauge}
@@ -960,11 +973,12 @@ export function ServerSizingCalculator({
                     ))}
                   </div>
                 </div>
-              ) : (
-                <p className="mt-5 text-sm text-muted-foreground">
-                  {text.noPlan}
-                </p>
-              )}
+                ) : (
+                  <p className="mt-5 text-sm text-muted-foreground">
+                    {text.noPlan}
+                  </p>
+                )}
+              </div>
 
               <div className="mt-6 space-y-5 border-t border-border/70 pt-5">
                 <ReasonList

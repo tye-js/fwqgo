@@ -8,13 +8,10 @@ import { Button } from "@/components/ui/button";
 export function ScrollToTop() {
   const [isVisible, setIsVisible] = useState(false);
 
-  // 检查滚动位置
+  // 检查滚动位置（函数式 set，同值时 React 直接 bail，不重复调度）
   const toggleVisibility = () => {
-    if (window.scrollY > 300) {
-      setIsVisible(true);
-    } else {
-      setIsVisible(false);
-    }
+    const visible = window.scrollY > 300;
+    setIsVisible((current) => (current === visible ? current : visible));
   };
 
   // 滚动到顶部
@@ -26,7 +23,7 @@ export function ScrollToTop() {
   };
 
   useEffect(() => {
-    window.addEventListener("scroll", toggleVisibility);
+    window.addEventListener("scroll", toggleVisibility, { passive: true });
     return () => {
       window.removeEventListener("scroll", toggleVisibility);
     };

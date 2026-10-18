@@ -2,6 +2,7 @@ import {
   resolveTagPage,
   taxonomyPageMetadata,
 } from "@/features/public/lib/taxonomy-page";
+import { getPublicPageCount } from "@fwqgo/core/public-content-policy";
 import { STICKY_RAIL_XL } from "@/features/public/lib/sticky-rail";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -66,7 +67,7 @@ async function TagPageContent({
   }
 
   const posts = postsWithTag.posts;
-  const totalPage = Math.ceil((postsWithTag.totalCount ?? 0) / 10);
+  const totalPage = getPublicPageCount(postsWithTag.totalCount ?? 0);
 
   if (postsWithTag.pageNo > totalPage) {
     notFound();

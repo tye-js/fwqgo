@@ -284,12 +284,10 @@ export default function ServerTopicPage({
       <Header />
       <Suspense
         fallback={
-          <main
-            id="main-content"
-            className="flex-1 px-4 py-10 text-center text-sm text-muted-foreground"
-          >
+          // 骨架不用 <main>：正文自带 main#main-content，避免流式期间地标重复
+          <div className="flex-1 px-4 py-10 text-center text-sm text-muted-foreground">
             正在加载专题套餐...
-          </main>
+          </div>
         }
       >
         <ServerTopicContent params={params} />

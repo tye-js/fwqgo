@@ -88,7 +88,8 @@ export default function ServerLinePage({ params }: PageProps) {
       <Header />
       <Suspense
         fallback={
-          <main id="main-content" className="flex-1">
+          // 骨架不用 <main>：正文自带 main#main-content，避免流式期间地标重复
+          <div className="flex-1">
             <section className="container mx-auto px-4 py-10">
               <Card className="border-border/70 bg-background shadow-sm">
                 <CardContent className="p-8 text-center text-sm text-muted-foreground">
@@ -96,7 +97,7 @@ export default function ServerLinePage({ params }: PageProps) {
                 </CardContent>
               </Card>
             </section>
-          </main>
+          </div>
         }
       >
         <LineContent params={params} />
