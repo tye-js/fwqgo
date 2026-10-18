@@ -290,7 +290,7 @@ export function ServerOfferCollectionPage({
         }}
       />
       <section className="public-hero">
-        <div className="container mx-auto px-4 py-7 md:py-9">
+        <div className="public-container public-container--wide py-7 md:py-9">
           <Link
             href="/servers"
             prefetch
@@ -346,11 +346,11 @@ export function ServerOfferCollectionPage({
         </div>
       </section>
 
-      <section className="container mx-auto px-4 py-8 md:py-10">
+      <section className="public-container public-container--wide py-8 md:py-10">
         <ServerOfferTable offers={offers} />
       </section>
 
-      <section className="container mx-auto px-4 pb-12">
+      <section className="public-container public-container--wide pb-12">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="rounded-lg border border-border/70 bg-background p-5 shadow-sm">
             <h2 className="text-lg font-semibold tracking-tight text-foreground">

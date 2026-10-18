@@ -59,6 +59,19 @@ html.public-site.dark {
   padding-inline: clamp(1rem, 3vw, 2rem);
 }
 
+/*
+ * 工具型页面（/servers 比价与它的专题页）铺满视口。
+ *
+ * 这类页面横向是表格和筛选器，性质更接近后台，1248px 会把列挤得很难读；
+ * 而普通内容页（文章、分类）保留限宽更好扫读。所以只在显式加了
+ * `public-container--wide` 的容器上去掉上限，其他页面不受影响。
+ *
+ * 必须写在上一条规则之后：两者选择器权重相同，靠顺序生效。
+ */
+.public-site .public-container--wide {
+  max-width: none;
+}
+
 .public-site .public-panel {
   border: 1px solid hsl(var(--border) / 0.85);
   border-radius: 1rem;

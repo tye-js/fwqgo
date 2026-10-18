@@ -192,7 +192,7 @@ async function ServerTopicContent({
         }}
       />
       <section className="public-hero">
-        <div className="container mx-auto px-4 py-7 md:py-9">
+        <div className="public-container public-container--wide py-7 md:py-9">
           <Link
             href="/servers"
             prefetch
@@ -243,11 +243,11 @@ async function ServerTopicContent({
         </div>
       </section>
 
-      <section className="container mx-auto px-4 py-8 md:py-10">
+      <section className="public-container public-container--wide py-8 md:py-10">
         <ServerOfferTable offers={offers} />
       </section>
 
-      <section className="container mx-auto px-4 pb-12">
+      <section className="public-container public-container--wide pb-12">
         <h2 className="text-xl font-semibold tracking-tight text-foreground md:text-2xl">
           常见问题
         </h2>

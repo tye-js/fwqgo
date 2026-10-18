@@ -143,7 +143,7 @@ export default function ServersPage({
         />
 
         <section className="public-hero">
-          <div className="public-container py-8 md:py-10">
+          <div className="public-container public-container--wide py-8 md:py-10">
             <div className="flex flex-wrap items-center gap-2">
               <Badge
                 variant="outline"
@@ -166,14 +166,14 @@ export default function ServersPage({
           </div>
         </section>
 
-        <section className="container mx-auto px-4 py-6 md:py-8">
+        <section className="public-container public-container--wide py-6 md:py-8">
           <Suspense fallback={<InventoryFallback />}>
             <InventoryRuntime searchParamsPromise={searchParams} />
           </Suspense>
         </section>
 
         <section className="border-t border-border/60 bg-muted/15">
-          <div className="container mx-auto px-4 py-8">
+          <div className="public-container public-container--wide py-8">
             <div className="mb-4">
               <h2 className="text-xl font-semibold text-foreground">
                 服务器选购专题

@@ -596,7 +596,7 @@ export function ServerSizingCalculator({
     <div className="flex min-h-dvh flex-col bg-background">
       <main id="main-content" className="flex-1">
         <section className="public-hero">
-          <div className="container mx-auto px-4 py-10 md:py-14">
+          <div className="public-container public-container--wide py-10 md:py-14">
             <div className="max-w-4xl">
               <Badge variant="outline" className="gap-1.5 bg-background">
                 <Calculator className="size-3.5" aria-hidden="true" />
@@ -624,7 +624,7 @@ export function ServerSizingCalculator({
           </div>
         </section>
 
-        <section className="container mx-auto grid gap-8 px-4 py-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)] lg:items-start lg:py-10">
+        <section className="public-container public-container--wide grid gap-8 py-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)] lg:items-start lg:py-10">
           <div className="rounded-lg border border-border/70 bg-background p-5 shadow-sm md:p-7">
             <div className="flex items-start justify-between gap-4 border-b border-border/70 pb-5">
               <div>
