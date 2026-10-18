@@ -14,9 +14,38 @@ import {
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import { createPostRecordInTransaction } from "@/server/posts/create-post-record";
+import type { AffiliateRewriteReport } from "@/server/links/affiliate-link-rewriter";
 import type { ScrapedArticle } from "@/server/scrape/article-scraper";
 
 type CollectionTask = typeof aiRewriteTasks.$inferSelect;
+
+/**
+ * 把采集时的返利盘点结果序列化成 `posts.affiliateReviewDetails` 的结构。
+ *
+ * 字段与发布审核写入的那份保持一致（这样列表里的「命中/未命中/无效」计数逻辑只有一套），
+ * 额外带 `source: "collection"` 以便区分这份快照是入稿时写的、还是发布时写的。
+ */
+function serializeCollectedAffiliateDetails(report: AffiliateRewriteReport) {
+  return JSON.stringify({
+    totalLinks: report.totalLinks,
+    matchedCount: report.matchedLinks.length,
+    unmatchedCount: report.unmatchedLinks.length,
+    invalidCount: report.invalidLinks.length,
+    internalLinksRemoved: report.internalLinksRemoved,
+    matchedLinks: report.matchedLinks,
+    unmatchedLinks: report.unmatchedLinks,
+    invalidLinks: report.invalidLinks,
+    manualHosts: [
+      ...new Set(
+        report.invalidLinks
+          .map((item) => item.host)
+          .filter((host): host is string => Boolean(host)),
+      ),
+    ],
+    checkedAt: new Date().toISOString(),
+    source: "collection",
+  });
+}
 
 export async function saveCollectedArticleDraft(
   task: CollectionTask,
@@ -66,6 +95,14 @@ export async function saveCollectedArticleDraft(
           published: false,
           imgUrl: DEFAULT_ARTICLE_COVER,
           keywords: "",
+          // 采集阶段已经盘点过链接，把结果留在文章上，「未命中」才不会在草稿箱里隐身。
+          // 用可选链：类型上 diagnostics 是必填，但手工构造的 article（测试、历史调用）
+          // 可能没有，读崩了会让整个入稿失败——这比少一条标记严重得多。
+          affiliateReviewDetails: article.diagnostics?.affiliateReport
+            ? serializeCollectedAffiliateDetails(
+                article.diagnostics.affiliateReport,
+              )
+            : null,
         },
         tx,
       );

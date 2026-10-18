@@ -30,6 +30,14 @@ type PostQualityIssue = {
 };
 
 export type PostAffiliateReviewSummary = {
+  /**
+   * 是否真的盘点过链接。
+   *
+   * 存量文章与从未审核过的草稿 `affiliateReviewDetails` 为空，此时三个计数都是 0。
+   * 没有这个标记就分不清「盘点过但一条都没命中」和「根本没盘点」——前者要标出来，
+   * 后者不能误标。
+   */
+  checked: boolean;
   matchedCount: number;
   unmatchedCount: number;
   invalidCount: number;
@@ -82,6 +90,7 @@ function parseAffiliateReviewDetails(
   value: string | null,
 ): PostAffiliateReviewSummary {
   const empty = {
+    checked: false,
     matchedCount: 0,
     unmatchedCount: 0,
     invalidCount: 0,
@@ -106,6 +115,7 @@ function parseAffiliateReviewDetails(
       : 0;
 
     return {
+      checked: true,
       matchedCount: countValue(source.matchedCount, matchedLinks),
       unmatchedCount: countValue(source.unmatchedCount, unmatchedLinks),
       invalidCount: countValue(source.invalidCount, invalidLinks),

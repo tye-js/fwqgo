@@ -313,6 +313,25 @@ export function PostQualityWorkbench({
                     >
                       返利 {affiliateStatusLabel(post.affiliateReviewStatus)}
                     </Badge>
+                    {/*
+                      只在「确实盘点过、且一条都没命中」时才标。
+                      checked 为 false 的是从未盘点的存量文章，它们的计数全是 0，
+                      直接看 matchedCount 会把这类文章全部误标成未命中。
+                    */}
+                    {post.affiliateReview.checked &&
+                    post.affiliateReview.matchedCount === 0 ? (
+                      <Badge
+                        variant={
+                          post.affiliateReview.unmatchedCount > 0
+                            ? "destructive"
+                            : "outline"
+                        }
+                      >
+                        {post.affiliateReview.unmatchedCount > 0
+                          ? `未命中 ${post.affiliateReview.unmatchedCount} 条`
+                          : "无外链"}
+                      </Badge>
+                    ) : null}
                     <p className="text-xs leading-5 text-muted-foreground">
                       命中 {post.affiliateReview.matchedCount} · 未命中{" "}
                       {post.affiliateReview.unmatchedCount} · 无效{" "}

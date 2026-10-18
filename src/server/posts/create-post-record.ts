@@ -37,6 +37,15 @@ export interface CreatePostInput {
   categoryId: number;
   recommendedTagName?: string | null;
   keywords?: string | null;
+  /**
+   * 采集入稿时的返利链接盘点快照（JSON）。
+   *
+   * 采集已经算出了 `affiliateReport`（命中/未命中/无效各有哪些链接），但它原先只留在任务
+   * 的 diagnostics 里，文章的 `affiliateReviewDetails` 要到发布审核才会写。结果草稿箱里
+   * 的「命中 0 · 未命中 0」是默认值，运营分不清「真的没命中返利」和「根本没盘点过」。
+   * 由 saveCollectedArticleDraft 传入，让「未命中」在入稿时就能被看见。
+   */
+  affiliateReviewDetails?: string | null;
 }
 
 interface CreatePostRecordOptions {

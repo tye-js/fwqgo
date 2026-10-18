@@ -139,6 +139,19 @@ f.posts[0].content="Human edit that must survive retries";f.posts[0].published=t
 f.task={...f.task,status:"running",leaseOwner:"retry-owner",attempts:2};
 await saveCollectedArticleDraft(structuredClone(f.task),article);
 assert.equal(f.posts.length,1);assert.equal(f.posts[0].content,"Human edit that must survive retries");assert.equal(f.posts[0].published,true);
+
+// 没有 diagnostics 的入参不能崩，也不能伪造一份「已盘点」的快照——
+// 否则列表会把「根本没盘点」误显示成「未命中」。
+assert.equal(f.posts[0].affiliateReviewDetails ?? null,null);
+
+// 采集时盘点过链接，就要落到文章上：草稿箱靠它区分「未命中」和「未盘点」。
+f.posts=[];f.task={...f.task,status:"running",leaseOwner:"owner-3",attempts:3,postId:null,sourceMaterialId:null};
+const reported=await saveCollectedArticleDraft(structuredClone(f.task),{...article,diagnostics:{affiliateReport:{totalLinks:2,internalLinksRemoved:1,matchedLinks:[],unmatchedLinks:[{href:"https://unknown.example/buy",host:"unknown.example",reason:"no-provider"}],invalidLinks:[]}}});
+const affiliateDetails=JSON.parse(reported.affiliateReviewDetails);
+assert.equal(affiliateDetails.matchedCount,0);
+assert.equal(affiliateDetails.unmatchedCount,1);
+assert.equal(affiliateDetails.source,"collection");
+assert.ok(affiliateDetails.checkedAt);
 `);
 });
 
