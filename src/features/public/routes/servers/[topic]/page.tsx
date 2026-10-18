@@ -196,6 +196,7 @@ async function ServerTopicContent({
           <Link
             href="/servers"
             prefetch
+            stayInTool
             className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
           >
             <ArrowLeft className="size-4" />
@@ -235,6 +236,7 @@ async function ServerTopicContent({
           <Link
             href={inventoryHref}
             prefetch
+            stayInTool
             className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             在库存工具中筛选全部套餐
@@ -244,7 +246,7 @@ async function ServerTopicContent({
       </section>
 
       <section className="public-container public-container--wide py-8 md:py-10">
-        <ServerOfferTable offers={offers} />
+        <ServerOfferTable offers={offers} stayInTool />
       </section>
 
       <section className="public-container public-container--wide pb-12">

@@ -39,6 +39,10 @@ import {
 } from "@fwqgo/core/server-offer-price";
 
 import { ServerCollectionLink } from "@/features/public/components/server-collection-link";
+import {
+  getTableCopy,
+  type OfferLanguage,
+} from "@/features/public/components/server-offer-table-copy";
 
 type Offer = {
   id: number;
@@ -86,141 +90,6 @@ type Offer = {
   updatedAt?: Date | string | null;
   createdAt?: Date | string | null;
 };
-
-type OfferLanguage = "zh" | "en";
-
-const tableCopy = {
-  zh: {
-    status: {
-      in_stock: "有货",
-      out_of_stock: "没货",
-      discontinued: "停售",
-      preorder: "预售",
-    },
-    billingCycle: {
-      monthly: "月付",
-      quarterly: "季付",
-      semiannual: "半年",
-      yearly: "年付",
-    },
-    missingPrice: "待补充",
-    invalidPrice: "待确认",
-    unknownCycle: "周期待确认",
-    notChecked: "未核验",
-    buy: "购买",
-    source: "来源",
-    review: "测评",
-    promoCode: "优惠码",
-    price: "价格",
-    regionLine: "地区 / 线路",
-    regionMissing: "地区待补充",
-    lineMissing: "线路待补充",
-    dataStatus: "数据状态",
-    lastChecked: "最近核验",
-    validUntil: "有效期至",
-    specs: "配置",
-    specsMissing: "配置待补充",
-    emptyTitle: "暂无结构化套餐",
-    emptyDescription: "供应商官网采集或人工补充后，套餐会显示在这里。",
-    filterTitle: "筛选套餐",
-    showing: (shown: number, total: number) => `显示 ${shown} / ${total}`,
-    searchPlaceholder: "搜索套餐、地区、线路、优惠码",
-    // 搜索框只有 placeholder，没有可访问名称（placeholder 不算 label，WCAG 4.1.2）。
-    // 这里给一个说明用途的短标签，placeholder 继续当提示用。
-    searchLabel: "搜索套餐",
-    provider: "商家",
-    allProviders: "全部商家",
-    statusFilter: "状态",
-    allStatuses: "全部状态",
-    region: "地区",
-    allRegions: "全部地区",
-    line: "线路",
-    allLines: "全部线路",
-    sort: "排序",
-    priceAsc: "价格从低到高",
-    priceDesc: "价格从高到低",
-    latest: "最新优先",
-    promotion: "优惠码",
-    allPromotions: "全部优惠",
-    withPromotion: "有优惠码",
-    withoutPromotion: "无优惠码",
-    currentShowing: (shown: number, total: number) =>
-      `当前显示 ${shown} / ${total} 个套餐`,
-    noMatchTitle: "没有匹配的套餐",
-    noMatchDescription: "试试减少筛选条件，或改用地区、线路、商家关键词搜索。",
-    package: "套餐",
-    regionLineHeader: "地区/线路",
-    entry: "入口",
-    sortLabel: (value: string) => value,
-  },
-  en: {
-    status: {
-      in_stock: "In stock",
-      out_of_stock: "Out of stock",
-      discontinued: "Discontinued",
-      preorder: "Pre-order",
-    },
-    billingCycle: {
-      monthly: "Monthly",
-      quarterly: "Quarterly",
-      semiannual: "Semiannual",
-      yearly: "Yearly",
-    },
-    missingPrice: "Not provided",
-    invalidPrice: "Needs review",
-    unknownCycle: "Billing cycle unavailable",
-    notChecked: "Not checked",
-    buy: "Buy",
-    source: "Source",
-    review: "Review",
-    promoCode: "Promo code",
-    price: "Price",
-    regionLine: "Region / route",
-    regionMissing: "Region unavailable",
-    lineMissing: "Route unavailable",
-    dataStatus: "Data status",
-    lastChecked: "Last checked",
-    validUntil: "Valid until",
-    specs: "Specifications",
-    specsMissing: "Specifications unavailable",
-    emptyTitle: "No structured offers",
-    emptyDescription:
-      "Offers will appear here after supplier collection or manual entry.",
-    filterTitle: "Filter offers",
-    showing: (shown: number, total: number) => `Showing ${shown} / ${total}`,
-    searchPlaceholder: "Search offers, regions, routes, or promo codes",
-    searchLabel: "Search offers",
-    provider: "Provider",
-    allProviders: "All providers",
-    statusFilter: "Status",
-    allStatuses: "All statuses",
-    region: "Region",
-    allRegions: "All regions",
-    line: "Route",
-    allLines: "All routes",
-    sort: "Sort",
-    priceAsc: "Lowest price",
-    priceDesc: "Highest price",
-    latest: "Newest first",
-    promotion: "Promo code",
-    allPromotions: "All promotions",
-    withPromotion: "With promo code",
-    withoutPromotion: "Without promo code",
-    currentShowing: (shown: number, total: number) =>
-      `Showing ${shown} / ${total} offers`,
-    noMatchTitle: "No matching offers",
-    noMatchDescription:
-      "Try fewer filters, or search by provider, region, or route.",
-    package: "Offer",
-    regionLineHeader: "Region / route",
-    entry: "Actions",
-    sortLabel: (value: string) => value,
-  },
-} as const;
-
-function getTableCopy(language: OfferLanguage) {
-  return tableCopy[language];
-}
 
 function cleanText(value: string | null | undefined) {
   const trimmed = value?.trim();
@@ -437,9 +306,11 @@ function OfferActions({
 function OfferMobileCard({
   offer,
   language,
+  stayInTool = false,
 }: {
   offer: Offer;
   language: OfferLanguage;
+  stayInTool?: boolean;
 }) {
   const copy = getTableCopy(language);
   const providerName = cleanText(offer.providerName);
@@ -450,7 +321,7 @@ function OfferMobileCard({
 
   return (
     <article className="min-w-0 space-y-4 rounded-lg border border-border/70 bg-background p-4 shadow-sm">
-      <div className="space-y-2">
+      <div className="space-y-1">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <h2 className="min-w-0 flex-1 break-words text-base font-semibold leading-6 text-foreground">
             {offer.title}
@@ -466,6 +337,7 @@ function OfferMobileCard({
               className="max-w-full whitespace-normal break-words"
             >
               <ServerCollectionLink
+                stayInTool={stayInTool}
                 kind="providers"
                 slug={offer.providerSlug}
                 className="break-words hover:underline"
@@ -502,6 +374,7 @@ function OfferMobileCard({
           <p className="mt-1 break-words font-medium text-foreground">
             {region ? (
               <ServerCollectionLink
+                stayInTool={stayInTool}
                 kind="regions"
                 slug={offer.regionSlug}
                 className="break-words underline-offset-4 hover:text-primary hover:underline"
@@ -515,6 +388,7 @@ function OfferMobileCard({
           <p className="mt-1 break-words text-xs text-muted-foreground">
             {lineType ? (
               <ServerCollectionLink
+                stayInTool={stayInTool}
                 kind="lines"
                 slug={offer.lineSlug}
                 className="break-words underline-offset-4 hover:text-primary hover:underline"
@@ -554,9 +428,15 @@ function OfferMobileCard({
 export function ServerOfferTable({
   offers,
   language = "zh",
+  stayInTool = false,
 }: {
   offers: Offer[];
   language?: OfferLanguage;
+  /**
+   * 当前页是 `/servers` 工具时传 `true`：表格里的商家/地区/线路是工具内部跳转，
+   * 留在当前标签。`/search` 引用同一张表格时不传，那里仍然按站点默认新开。
+   */
+  stayInTool?: boolean;
 }) {
   const copy = getTableCopy(language);
   const [query, setQuery] = useState("");
@@ -763,7 +643,12 @@ export function ServerOfferTable({
       ) : null}
       <div className="grid gap-3 xl:hidden">
         {filteredOffers.map((offer) => (
-          <OfferMobileCard key={offer.id} offer={offer} language={language} />
+          <OfferMobileCard
+            key={offer.id}
+            offer={offer}
+            language={language}
+            stayInTool={stayInTool}
+          />
         ))}
       </div>
 
@@ -771,16 +656,16 @@ export function ServerOfferTable({
         <table className="w-full min-w-[920px] table-fixed text-[13px]">
           <thead className="border-b border-border/70 bg-muted/30 text-left text-xs uppercase text-muted-foreground">
             <tr>
-              <th className="w-[25%] px-3 py-3 font-medium">{copy.package}</th>
-              <th className="w-[15%] px-3 py-3 font-medium">{copy.price}</th>
-              <th className="w-[14%] px-3 py-3 font-medium">
+              <th className="w-[25%] px-3 py-1.5 font-medium">{copy.package}</th>
+              <th className="w-[15%] px-3 py-1.5 font-medium">{copy.price}</th>
+              <th className="w-[14%] px-3 py-1.5 font-medium">
                 {copy.regionLineHeader}
               </th>
-              <th className="w-[24%] px-3 py-3 font-medium">{copy.specs}</th>
-              <th className="w-[9%] px-3 py-3 font-medium">
+              <th className="w-[24%] px-3 py-1.5 font-medium">{copy.specs}</th>
+              <th className="w-[9%] px-3 py-1.5 font-medium">
                 {copy.statusFilter}
               </th>
-              <th className="w-[13%] px-3 py-3 text-right font-medium">
+              <th className="w-[13%] px-3 py-1.5 text-right font-medium">
                 {copy.entry}
               </th>
             </tr>
@@ -788,8 +673,8 @@ export function ServerOfferTable({
           <tbody className="divide-y divide-border/70">
             {filteredOffers.map((offer) => (
               <tr key={offer.id} className="align-top hover:bg-muted/20">
-                <td className="px-3 py-3">
-                  <div className="space-y-2">
+                <td className="px-3 py-1.5">
+                  <div className="space-y-1">
                     <p className="line-clamp-2 font-medium leading-5 text-foreground">
                       {offer.title}
                     </p>
@@ -797,6 +682,7 @@ export function ServerOfferTable({
                       {offer.providerName ? (
                         <Badge variant="secondary">
                           <ServerCollectionLink
+                            stayInTool={stayInTool}
                             kind="providers"
                             slug={offer.providerSlug}
                             className="hover:underline"
@@ -811,26 +697,27 @@ export function ServerOfferTable({
                     </div>
                   </div>
                 </td>
-                <td className="px-3 py-3">
+                <td className="px-3 py-1.5">
                   <p className="font-semibold tabular-nums leading-5 text-foreground">
                     {formatPrice(offer, language)}
                   </p>
                   {offer.promoCode ? (
-                    <p className="mt-2 text-xs">
+                    <p className="mt-1 text-xs">
                       <span className="rounded-sm bg-primary/10 px-1.5 py-0.5 font-mono font-medium text-primary">
                         {offer.promoCode}
                       </span>
                     </p>
                   ) : null}
-                  <p className="mt-2 text-xs text-muted-foreground">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {copy.lastChecked}:{" "}
                     {getOfferFreshnessLabel(offer, language)}
                   </p>
                 </td>
-                <td className="px-3 py-3">
+                <td className="px-3 py-1.5">
                   <p className="font-medium leading-5">
                     {offer.region ? (
                       <ServerCollectionLink
+                        stayInTool={stayInTool}
                         kind="regions"
                         slug={offer.regionSlug}
                         className="underline-offset-4 hover:text-primary hover:underline"
@@ -844,6 +731,7 @@ export function ServerOfferTable({
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
                     {offer.lineType ? (
                       <ServerCollectionLink
+                        stayInTool={stayInTool}
                         kind="lines"
                         slug={offer.lineSlug}
                         className="underline-offset-4 hover:text-primary hover:underline"
@@ -855,12 +743,12 @@ export function ServerOfferTable({
                     )}
                   </p>
                 </td>
-                <td className="px-3 py-3">
-                  <p className="line-clamp-3 leading-5 text-muted-foreground">
+                <td className="px-3 py-1.5">
+                  <p className="line-clamp-2 leading-5 text-muted-foreground">
                     {specsText(offer) || copy.specsMissing}
                   </p>
                 </td>
-                <td className="px-3 py-3">
+                <td className="px-3 py-1.5">
                   <Badge
                     variant="outline"
                     className={getStatusClassName(offer.status)}
@@ -868,7 +756,7 @@ export function ServerOfferTable({
                     {publicOfferStatusLabel(copy.status, offer.status)}
                   </Badge>
                 </td>
-                <td className="px-3 py-3">
+                <td className="px-3 py-1.5">
                   <OfferActions offer={offer} language={language} />
                 </td>
               </tr>

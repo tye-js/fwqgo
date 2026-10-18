@@ -196,6 +196,7 @@ export default function ServersPage({
                   <Link
                     key={topic.slug}
                     href={`/servers/${topic.slug}`}
+                    stayInTool
                     className="group rounded-lg border border-border/70 bg-background p-4 transition-colors hover:border-primary/40 hover:bg-primary/5"
                   >
                     <div className="flex items-start justify-between gap-3">

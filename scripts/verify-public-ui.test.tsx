@@ -542,6 +542,15 @@ for (const Component of [PublicLink, PublicAnchor]) {
 }
 assert.equal(anchor(PublicLink, {href:{pathname:"/en/fwq/page/2",query:{sort:"new"}}}).attr("target"), "_blank");
 assert.equal(anchor(PublicLink, {href:{hash:"section"}}).attr("target"), undefined);
+// 「/servers 留在当前标签」是工具页显式开启的豁免，不是按目标地址全局生效的：
+// 否则文章页底部的相关套餐入口会把正在读的文章顶掉。
+for (const Component of [PublicLink, PublicAnchor]) {
+  assert.equal(anchor(Component, {href:"/servers?provider=one",stayInTool:true}).attr("target"), undefined, "in-tool navigation stays");
+  assert.equal(anchor(Component, {href:"/servers/hong-kong",stayInTool:true}).attr("target"), undefined, "in-tool topic stays");
+  assert.equal(anchor(Component, {href:"/fwq/posts/example",stayInTool:true}).attr("target"), "_blank", "leaving the tool still opens a tab");
+  assert.equal(anchor(Component, {href:"https://example.test/buy",stayInTool:true}).attr("target"), "_blank", "purchase links always open a tab");
+  assert.equal(anchor(Component, {href:"/servers?provider=one",stayInTool:true,target:"_blank"}).attr("target"), "_blank", "explicit target wins");
+}
 for (const language of ["zh", "en"]) {
   const $=cheerio.load(renderToStaticMarkup(React.createElement(PaginationComponent,{pageNo:2,totalPage:4,basePath:language==="en"?"/en/fwq":"/fwq",language,newTab:true})));
   assert.ok($("a").length>0);

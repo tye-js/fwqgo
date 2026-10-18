@@ -34,6 +34,7 @@ export function ServerCollectionLink({
   slug,
   className,
   prefetch = false,
+  stayInTool = false,
   children,
 }: {
   kind: ServerCollectionKind;
@@ -41,6 +42,11 @@ export function ServerCollectionLink({
   slug: string | null | undefined;
   className?: string;
   prefetch?: boolean;
+  /**
+   * 当前页就是 `/servers` 工具时传 `true`：目录链接是工具内部的原地跳转，
+   * 不该每点一次就多一个标签页。`/search` 这类页面引用同一张表格时不传。
+   */
+  stayInTool?: boolean;
   children: ReactNode;
 }) {
   const canonical = slug?.trim();
@@ -49,6 +55,7 @@ export function ServerCollectionLink({
     <Link
       href={collectionHref(kind, canonical)}
       prefetch={prefetch}
+      stayInTool={stayInTool}
       className={className}
     >
       {children}

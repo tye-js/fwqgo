@@ -279,18 +279,19 @@ void test("every public page reads the same restocking-aware status vocabulary",
   }
 });
 
-void test("the core filters stay outside 更多筛选 while advanced ones open it", () => {
-  for (const input of [
-    { region: "hong-kong" },
-    { line: "cn2-gia" },
-    { sort: "latest" },
-    { price: "5-10" },
-  ]) {
-    assert.equal(
-      renderToolbar(input)("details").is("[open]"),
-      false,
-      JSON.stringify(input),
-    );
+void test("every core filter renders as a visible control in the toolbar", () => {
+  // 原先这条断言是「核心筛选不进折叠区」。折叠区取消后它恒真，改成直接验证
+  // 这些条件确实以可见控件的形态带着当前值出现在工具栏里。
+  for (const [name, input, expected] of [
+    ["region", { region: "hong-kong" }, "hong-kong"],
+    ["line", { line: "cn2-gia" }, "cn2-gia"],
+    ["sort", { sort: "latest" }, "latest"],
+    ["price", { price: "5-10" }, "5-10"],
+  ] as const) {
+    const $ = renderToolbar(input);
+    assert.equal($("form details").length, 0, name);
+    assert.equal($(`select[name="${name}"]`).length, 1, name);
+    assert.equal(formParams($).get(name), expected, name);
   }
 });
 
@@ -367,7 +368,10 @@ void test("combined filters survive form submission while the old cursor is clea
   const $ = renderToolbar(input);
   const submitted = formParams($);
   assert.equal(submitted.has("cursor"), false);
-  assert.equal($("details").is("[open]"), true);
+  // 工具栏不再有折叠区：任何条件都不该被藏起来，feature / promo 靠隐藏域接住。
+  assert.equal($("form details").length, 0);
+  assert.equal(submitted.get("feature"), "ipv6");
+  assert.equal(submitted.get("promo"), "with");
   assert.deepEqual(parsePublicInventoryFilters(Object.fromEntries(submitted)), {
     ...parsePublicInventoryFilters(input),
     cursor: "",
@@ -388,8 +392,9 @@ void test("an active facet outside the cached options is preserved on the next s
 });
 
 void test("advanced filters and price boundaries remain visible in a refreshed page", () => {
-  assert.equal(renderToolbar()("details").is("[open]"), false);
+  // 折叠区已经取消：不存在「条件生效但被折叠藏住」的状态，所以直接断言没有折叠区。
   for (const input of [
+    {},
     { feature: "ipv6" },
     { promo: "without" },
     { stock: "all" },
@@ -398,7 +403,19 @@ void test("advanced filters and price boundaries remain visible in a refreshed p
     { maxPrice: "3" },
     { kind: "promotion", check: "failed" },
   ])
-    assert.equal(renderToolbar(input)("details").is("[open]"), true);
+    assert.equal(renderToolbar(input)("form details").length, 0);
+  // 没有可见控件的条件（feature / promo）仍然要随表单回传，不能被静默清掉。
+  for (const [input, name, expected] of [
+    [{ feature: "ipv6" }, "feature", "ipv6"],
+    [{ promo: "without" }, "promo", "without"],
+    [{}, "feature", "all"],
+    [{}, "promo", "all"],
+  ] as const)
+    assert.equal(
+      formParams(renderToolbar(input)).get(name),
+      expected,
+      `${name} round-trips through the form`,
+    );
   const prices = formParams(renderToolbar({ minPrice: "30", maxPrice: "5" }));
   assert.equal(prices.get("minPrice"), "5");
   assert.equal(prices.get("maxPrice"), "30");

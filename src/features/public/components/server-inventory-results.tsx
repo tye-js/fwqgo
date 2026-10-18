@@ -139,6 +139,7 @@ function OfferMobileCard({
           <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
             {offer.providerName ? (
               <ServerCollectionLink
+                stayInTool
                 kind="providers"
                 slug={offer.providerSlug}
                 className="min-h-11 max-w-full break-words py-3 text-primary underline-offset-4 hover:underline"
@@ -167,6 +168,7 @@ function OfferMobileCard({
           <dd className="mt-1 break-words font-medium text-foreground">
             {offer.region ? (
               <ServerCollectionLink
+                stayInTool
                 kind="regions"
                 slug={offer.regionSlug}
                 className="min-h-11 break-words underline-offset-4 hover:text-primary hover:underline"
@@ -178,6 +180,7 @@ function OfferMobileCard({
             )}
             {offer.lineType ? (
               <ServerCollectionLink
+                stayInTool
                 kind="lines"
                 slug={offer.lineSlug}
                 className="ml-1 inline-flex min-h-11 items-center break-words underline-offset-4 hover:text-primary hover:underline"
@@ -310,6 +313,7 @@ export function ServerInventoryResults({
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {offer.providerName ? (
                         <ServerCollectionLink
+                          stayInTool
                           kind="providers"
                           slug={offer.providerSlug}
                           className="text-xs text-primary underline-offset-4 hover:underline"
@@ -339,6 +343,7 @@ export function ServerInventoryResults({
                   <td className="px-3 py-3 leading-5">
                     {offer.region ? (
                       <ServerCollectionLink
+                        stayInTool
                         kind="regions"
                         slug={offer.regionSlug}
                         className="font-medium underline-offset-4 hover:text-primary hover:underline"
@@ -350,6 +355,7 @@ export function ServerInventoryResults({
                     )}
                     {offer.lineType ? (
                       <ServerCollectionLink
+                        stayInTool
                         kind="lines"
                         slug={offer.lineSlug}
                         className="mt-1 block text-xs text-muted-foreground underline-offset-4 hover:text-primary hover:underline"
@@ -407,7 +413,9 @@ export function ServerInventoryResults({
       {page.hasMore && page.nextCursor ? (
         <div className="flex justify-center pt-2">
           <Button asChild variant="outline" size="lg">
-            <PublicAnchor href={buildPageHref(filters, page.nextCursor)}>查看下一页</PublicAnchor>
+            <PublicAnchor href={buildPageHref(filters, page.nextCursor)} stayInTool>
+              查看下一页
+            </PublicAnchor>
           </Button>
         </div>
       ) : null}

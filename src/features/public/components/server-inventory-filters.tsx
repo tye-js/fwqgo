@@ -14,7 +14,6 @@ import {
   PUBLIC_INVENTORY_PRICE_CUSTOM,
   buildPublicInventoryHref,
   parsePublicInventoryFilters,
-  publicInventoryDefaultStock,
   publicInventoryPriceRanges,
   publicInventoryStocks,
   resolvePublicInventoryPriceRange,
@@ -132,6 +131,7 @@ export function ServerInventoryProviderNav({
             provider: "all",
             cursor: "",
           })}
+          stayInTool
           aria-current={filters.provider === "all" ? "true" : undefined}
           className={`flex min-h-11 sm:min-h-9 w-full items-center justify-between rounded-md px-3 text-left text-sm transition-colors ${
             filters.provider === "all"
@@ -150,6 +150,7 @@ export function ServerInventoryProviderNav({
               provider: provider.key,
               cursor: "",
             })}
+            stayInTool
             aria-current={
               filters.provider === provider.key ? "true" : undefined
             }
@@ -256,15 +257,9 @@ export function ServerInventoryToolbar({
     filters.minPrice,
     filters.maxPrice,
   );
-  // 折叠区未展开时用户看不到生效中的条件，所以任何非默认条件都要把折叠区打开。
-  // 库存状态不在「地区 / 线路 / 价格」这一档里，但它一旦离开默认值就必须可见。
-  const hasAdvancedFilters =
-    filters.feature !== "all" ||
-    filters.promo !== "all" ||
-    filters.stock !== publicInventoryDefaultStock ||
-    (filters.kind === "promotion" && filters.check !== "all") ||
-    priceRange === PUBLIC_INVENTORY_PRICE_CUSTOM;
-
+  // 特征 / 优惠码这两个条件已经不在可见控件里了（下拉框撤掉，工具栏压成一行），
+  // 但查询层仍在按它们过滤，旧链接和专题跳转也可能带着。用隐藏域把值接住：
+  // 否则用户在这个页面上改任一条件，生效中的 feature / promo 会被静默清掉。
   return (
     <form
       action="/servers"
@@ -274,6 +269,8 @@ export function ServerInventoryToolbar({
       className="rounded-lg border border-border/70 bg-background p-3 shadow-sm"
     >
       <input type="hidden" name="kind" value={filters.kind} />
+      <input type="hidden" name="feature" value={filters.feature} />
+      <input type="hidden" name="promo" value={filters.promo} />
       {/*
         「常规款 / 活动款」原本独占一整行，加上搜索、四列下拉和「更多筛选」，
         筛选卡片一共要占五行的纵向空间。这里把它并进标题行：桌面端跟在「筛选套餐」
@@ -297,6 +294,7 @@ export function ServerInventoryToolbar({
             <PublicAnchor
               key={value}
               aria-current={filters.kind === value ? "true" : undefined}
+              stayInTool
               href={buildPublicInventoryHref({
                 ...filters,
                 kind: value,
@@ -319,7 +317,7 @@ export function ServerInventoryToolbar({
           variant="ghost"
           className="ml-auto min-h-11 sm:min-h-9"
         >
-          <PublicAnchor href="/servers">
+          <PublicAnchor href="/servers" stayInTool>
             <RotateCcw className="size-4" />
             重置
           </PublicAnchor>
@@ -343,7 +341,12 @@ export function ServerInventoryToolbar({
       </div>
 
       {/* 核心筛选常驻：先按地区、线路、价格缩小范围，其余维度折叠在下方。 */}
-      <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-4">
+      {/*
+        筛选全部摊开在一行：原先库存、产品组、探测收在「更多筛选」折叠区里，
+        特征与优惠码两个维度整个去掉（低频且被地区/线路/搜索覆盖）。
+        宽屏（2xl）七个下拉一行；中等屏降列数；窄屏单列。
+      */}
+      <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-7">
         <FacetSelect
           name="region"
           value={filters.region}
@@ -371,7 +374,43 @@ export function ServerInventoryToolbar({
           <option value="price-desc">月价从高到低</option>
           <option value="latest">最近更新</option>
         </select>
-        {/* 厂商在 lg 以上由侧栏承担，窄屏只能靠这个下拉框，不能收进折叠区。 */}
+        <FacetSelect
+          name="group"
+          value={filters.group}
+          label="产品组"
+          allLabel="全部产品组"
+          items={facets.groups}
+        />
+        <select
+          name="stock"
+          key={filters.stock}
+          defaultValue={filters.stock}
+          aria-label="库存状态"
+          onChange={submitSelect}
+          className={selectClassName}
+        >
+          {publicInventoryStocks.map((stock) => (
+            <option key={stock} value={stock}>
+              {stockLabels[stock]}
+            </option>
+          ))}
+        </select>
+        {filters.kind === "promotion" ? (
+          <select
+            name="check"
+            key={filters.check}
+            defaultValue={filters.check}
+            aria-label="探测状态"
+            onChange={submitSelect}
+            className={selectClassName}
+          >
+            <option value="all">全部探测状态</option>
+            <option value="ok">探测正常</option>
+            <option value="failed">探测失败</option>
+            <option value="unknown">尚未探测</option>
+          </select>
+        ) : null}
+        {/* 厂商在 lg 以上由侧栏承担，窄屏只能靠这个下拉框。 */}
         <div className="lg:hidden">
           <FacetSelect
             name="provider"
@@ -383,114 +422,50 @@ export function ServerInventoryToolbar({
         </div>
       </div>
 
-      <details
-        open={hasAdvancedFilters}
-        className="mt-1.5 rounded-md border border-border/60 bg-muted/15 px-3 py-1.5"
-      >
-        <summary className="flex min-h-11 sm:min-h-9 cursor-pointer select-none items-center text-sm font-medium text-foreground">
-          更多筛选
-        </summary>
-        <div className="mt-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-4">
-          <select
-            name="stock"
-            key={filters.stock}
-            defaultValue={filters.stock}
-            aria-label="库存状态"
-            onChange={submitSelect}
-            className={selectClassName}
-          >
-            {publicInventoryStocks.map((stock) => (
-              <option key={stock} value={stock}>
-                {stockLabels[stock]}
-              </option>
-            ))}
-          </select>
-          <FacetSelect
-            name="group"
-            value={filters.group}
-            label="产品组"
-            allLabel="全部产品组"
-            items={facets.groups}
-          />
-          <FacetSelect
-            name="feature"
-            value={filters.feature}
-            label="特征"
-            allLabel="全部特征"
-            items={facets.features}
-          />
-          <select
-            name="promo"
-            key={filters.promo}
-            defaultValue={filters.promo}
-            aria-label="优惠码"
-            onChange={submitSelect}
-            className={selectClassName}
-          >
-            <option value="all">全部优惠码</option>
-            <option value="with">有优惠码</option>
-            <option value="without">无优惠码</option>
-          </select>
-          {filters.kind === "promotion" ? (
-            <select
-              name="check"
-              key={filters.check}
-              defaultValue={filters.check}
-              aria-label="探测状态"
-              onChange={submitSelect}
-              className={selectClassName}
-            >
-              <option value="all">全部探测状态</option>
-              <option value="ok">探测正常</option>
-              <option value="failed">探测失败</option>
-              <option value="unknown">尚未探测</option>
-            </select>
-          ) : null}
-        </div>
-        <div className="mt-3">
-          <p className="text-xs text-muted-foreground">
-            自定义月价（USD）：改动这里会把上方「月价区间」切到自定义档。
-          </p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,160px)_minmax(0,160px)_auto]">
-            <Input
-              key={`min-${filters.minPrice ?? ""}`}
-              name="minPrice"
-              type="number"
-              inputMode="decimal"
-              min="0"
-              max="1000000"
-              step="0.01"
-              defaultValue={filters.minPrice}
-              onInput={markCustomPriceRange}
-              placeholder="最低月价 USD"
-              aria-label="最低美元月价"
-              className="min-h-11 sm:min-h-9"
-            />
-            <Input
-              key={`max-${filters.maxPrice ?? ""}`}
-              name="maxPrice"
-              type="number"
-              inputMode="decimal"
-              min="0"
-              max="1000000"
-              step="0.01"
-              defaultValue={filters.maxPrice}
-              onInput={markCustomPriceRange}
-              placeholder="最高月价 USD"
-              aria-label="最高美元月价"
-              className="min-h-11 sm:min-h-9"
-            />
-            <Button
-              type="submit"
-              variant="outline"
-              size="sm"
-              className="min-h-11 sm:min-h-9"
-            >
-              应用价格
-            </Button>
-          </div>
-        </div>
-      </details>
+      {/*
+        自定义月价：原先埋在「更多筛选」里，现在摊成一行内联控件。
+        改动输入会把上方的「月价区间」切到自定义档。
+      */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+        <span>自定义月价 USD</span>
+        <Input
+          key={`min-${filters.minPrice ?? ""}`}
+          name="minPrice"
+          type="number"
+          inputMode="decimal"
+          min="0"
+          max="1000000"
+          step="0.01"
+          defaultValue={filters.minPrice}
+          onInput={markCustomPriceRange}
+          placeholder="最低"
+          aria-label="最低美元月价"
+          className="h-9 w-24 px-2 py-1 text-xs"
+        />
+        <span aria-hidden="true">–</span>
+        <Input
+          key={`max-${filters.maxPrice ?? ""}`}
+          name="maxPrice"
+          type="number"
+          inputMode="decimal"
+          min="0"
+          max="1000000"
+          step="0.01"
+          defaultValue={filters.maxPrice}
+          onInput={markCustomPriceRange}
+          placeholder="最高"
+          aria-label="最高美元月价"
+          className="h-9 w-24 px-2 py-1 text-xs"
+        />
+        <Button
+          type="submit"
+          variant="outline"
+          size="sm"
+          className="h-9 px-3 text-xs"
+        >
+          应用
+        </Button>
+      </div>
     </form>
   );
 }

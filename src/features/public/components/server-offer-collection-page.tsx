@@ -292,6 +292,7 @@ export function ServerOfferCollectionPage({
       <section className="public-hero">
         <div className="public-container public-container--wide py-7 md:py-9">
           <Link
+            stayInTool
             href="/servers"
             prefetch
             className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
@@ -336,6 +337,7 @@ export function ServerOfferCollectionPage({
             ))}
           </dl>
           <Link
+            stayInTool
             href={toolHref}
             prefetch
             className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -347,7 +349,7 @@ export function ServerOfferCollectionPage({
       </section>
 
       <section className="public-container public-container--wide py-8 md:py-10">
-        <ServerOfferTable offers={offers} />
+        <ServerOfferTable offers={offers} stayInTool />
       </section>
 
       <section className="public-container public-container--wide pb-12">
@@ -378,6 +380,7 @@ export function ServerOfferCollectionPage({
             </h2>
             <div className="mt-4 grid gap-2">
               <Link
+                stayInTool
                 href={toolHref}
                 prefetch
                 className="flex min-h-11 items-center justify-between rounded-md border border-primary/30 bg-primary/5 px-3 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
@@ -388,6 +391,7 @@ export function ServerOfferCollectionPage({
               {topicLinks.map((topic) => (
                 <Link
                   key={topic.slug}
+                  stayInTool
                   href={`/servers/${encodeURIComponent(topic.slug)}`}
                   prefetch={false}
                   className="flex min-h-11 items-center justify-between rounded-md border border-border/70 px-3 text-sm text-foreground transition-colors hover:border-primary/35 hover:bg-primary/5 hover:text-primary"
@@ -397,6 +401,7 @@ export function ServerOfferCollectionPage({
                 </Link>
               ))}
               <Link
+                stayInTool
                 href="/search"
                 prefetch={false}
                 className="flex min-h-11 items-center justify-between rounded-md border border-border/70 px-3 text-sm text-foreground transition-colors hover:border-primary/35 hover:bg-primary/5 hover:text-primary"
