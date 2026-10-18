@@ -9,7 +9,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ServerCollectionLink } from "@/features/public/components/server-collection-link";
-import { ServerInventoryOfferActions } from "@/features/public/components/server-inventory-offer-actions";
+import {
+  ServerInventoryOfferActions,
+  ServerInventoryPriceActionCells,
+} from "@/features/public/components/server-inventory-offer-actions";
 import { buildPublicInventoryHref } from "@fwqgo/core/public-inventory-filters";
 import { DISPLAY_TIME_ZONE } from "@fwqgo/core/display-time-zone";
 import type {
@@ -291,18 +294,19 @@ export function ServerInventoryResults({
           <thead className="sticky top-0 z-10 border-b border-border/70 bg-muted/95 text-left text-xs text-muted-foreground backdrop-blur">
             <tr>
               {/*
-                「价格 / 操作」原来只有 14%，窄到放不下「购买 / 推广 / 测评」三个按钮，
-                它们会折成两行 —— 这才是这一列把整行撑高的真正原因（不是价格文字本身）。
-                所以把它的宽度提到 22%，从「机房 / 线路」（12→10）和「资料更新」（11→9）
-                以及产品 / 规格 / 产品组各匀一点出来，合计仍是 100%。
+                「价格 / 操作」拆成两列：价格、操作（优惠码也挪到操作列）。
+                行高由操作列的按钮决定；产品/规格/机房/产品组各匀一点出来凑成 100%。
+                「资料更新」收窄到 8%，日期在表宽压到 1120px 下限时会折成两行，
+                但它不是行高的驱动项，可接受。
               */}
-              <th className="w-[23%] px-3 py-2 font-medium">产品</th>
+              <th className="w-[22%] px-3 py-2 font-medium">产品</th>
               <th className="w-[15%] px-3 py-2 font-medium">规格</th>
               <th className="w-[10%] px-3 py-2 font-medium">机房 / 线路</th>
               <th className="w-[12%] px-3 py-2 font-medium">产品组</th>
               <th className="w-[9%] px-3 py-2 font-medium">状态</th>
-              <th className="w-[22%] px-3 py-2 font-medium">价格 / 操作</th>
-              <th className="w-[9%] px-3 py-2 font-medium">
+              <th className="w-[12%] px-3 py-2 font-medium">价格</th>
+              <th className="w-[12%] px-3 py-2 font-medium">操作</th>
+              <th className="w-[8%] px-3 py-2 font-medium">
                 {filters.kind === "promotion" ? "上次探测" : "资料更新"}
               </th>
             </tr>
@@ -383,20 +387,18 @@ export function ServerInventoryResults({
                       isStale={offer.isStale}
                     />
                   </td>
-                  <td className="px-3 py-1.5">
-                    <ServerInventoryOfferActions
-                      prices={offer.prices}
-                      fallbackPrice={offer.priceAmount}
-                      fallbackMonthlyPriceUsd={offer.monthlyPriceUsd}
-                      fallbackCurrency={offer.currency}
-                      fallbackCycle={offer.billingCycle}
-                      purchaseUrl={offer.purchaseUrl}
-                      promoCode={offer.promoCode}
-                      articleUrl={offer.articleUrl}
-                      reviewUrl={offer.reviewUrl}
-                      offerTitle={offer.title}
-                    />
-                  </td>
+                  <ServerInventoryPriceActionCells
+                    prices={offer.prices}
+                    fallbackPrice={offer.priceAmount}
+                    fallbackMonthlyPriceUsd={offer.monthlyPriceUsd}
+                    fallbackCurrency={offer.currency}
+                    fallbackCycle={offer.billingCycle}
+                    purchaseUrl={offer.purchaseUrl}
+                    promoCode={offer.promoCode}
+                    articleUrl={offer.articleUrl}
+                    reviewUrl={offer.reviewUrl}
+                    offerTitle={offer.title}
+                  />
                   <td className="px-3 py-1.5 text-xs leading-5 text-muted-foreground">
                     {formatCheckedAt(
                       offer.offerKind === "promotion"
