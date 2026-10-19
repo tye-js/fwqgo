@@ -591,6 +591,47 @@ if (outputCount !== 1) {
   );
 }
 
+// A release build prerenders every static page against the live read database
+// over the deploy tunnel. The runtime statement guard is sized for a request
+// that must fail fast; if the build inherits it, one queued read cancels with
+// 57014 and aborts the whole release (happened on 2026-10-18 for
+// /fwq/posts/[slug]). The build environment must widen it.
+const releaseBuildSource = fs.readFileSync(
+  path.resolve("scripts/build-release.mjs"),
+  "utf8",
+);
+const dbClientSource = fs.readFileSync(
+  path.resolve("packages/db/index.ts"),
+  "utf8",
+);
+const buildTimeoutMatch =
+  /DB_STATEMENT_TIMEOUT_MS:\s*"(?<value>\d+)"/.exec(releaseBuildSource);
+if (!buildTimeoutMatch?.groups?.value) {
+  throw new Error(
+    "scripts/build-release.mjs must set DB_STATEMENT_TIMEOUT_MS for prerender reads",
+  );
+}
+if (!dbClientSource.includes("process.env.DB_STATEMENT_TIMEOUT_MS")) {
+  throw new Error(
+    "packages/db/index.ts must read DB_STATEMENT_TIMEOUT_MS into connection.statement_timeout",
+  );
+}
+const runtimeDefaultMatch =
+  /const fallback = (?<value>\d+);[\s\S]*?process\.env\.DB_STATEMENT_TIMEOUT_MS/.exec(
+    dbClientSource,
+  );
+const runtimeDefault = Number(runtimeDefaultMatch?.groups?.value ?? 0);
+if (!Number.isFinite(runtimeDefault) || runtimeDefault <= 0) {
+  throw new Error(
+    "packages/db/index.ts must keep a positive runtime statement timeout fallback",
+  );
+}
+if (Number(buildTimeoutMatch.groups.value) <= runtimeDefault) {
+  throw new Error(
+    `Release build statement timeout (${buildTimeoutMatch.groups.value}ms) must exceed the runtime default (${runtimeDefault}ms)`,
+  );
+}
+
 console.log(
-  "Deployment workflow verified: remote activation, HEAD smoke probes, and secure database backups are valid",
+  "Deployment workflow verified: remote activation, HEAD smoke probes, secure database backups and release-build statement budget are valid",
 );

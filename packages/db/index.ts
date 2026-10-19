@@ -35,6 +35,25 @@ function resolveMaxConnections() {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function resolveStatementTimeout() {
+  // The runtime default protects the live process: a stuck statement must not
+  // pin one of the ten pool slots while user requests queue behind it.
+  // A release build is a different shape of workload —— it prerenders every
+  // static page against the same small read database over the deploy SSH
+  // tunnel, and queueing alone can push a single read past that default even
+  // though the query itself is trivial. `scripts/build-release.mjs` raises it
+  // for the build; each page is still bounded by
+  // `staticPageGenerationTimeout`, so a genuinely stuck statement cannot hang
+  // the build indefinitely.
+  const fallback = 15_000;
+  const parsed = Number.parseInt(
+    process.env.DB_STATEMENT_TIMEOUT_MS ?? "",
+    10,
+  );
+
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 const connectionOptions = {
   connect_timeout: 10,
   idle_timeout: 20,
@@ -45,7 +64,7 @@ const connectionOptions = {
   // above, a handful of stuck statements starves the whole app.
   connection: {
     TimeZone: "UTC",
-    statement_timeout: 15_000,
+    statement_timeout: resolveStatementTimeout(),
     idle_in_transaction_session_timeout: 10_000,
   },
 };

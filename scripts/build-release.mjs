@@ -39,6 +39,15 @@ export function getReleaseBuildConfig(environment) {
     READ_DATABASE_URL: databaseUrl,
     ANALYTICS_DATABASE_URL: databaseUrl,
     ENABLE_CMS_BACKGROUND_WORKERS: "false",
+    // Prerender fans out every static page against one small read database that
+    // is also serving the live site, so individual statements queue far behind
+    // their own runtime cost. The runtime guard (15s, see packages/db/index.ts)
+    // is sized for a request that must fail fast, not for a build that only has
+    // to finish: hitting it aborts the whole release, as it did on 2026-10-18
+    // when `/fwq/posts/[slug]` pages were cancelled with 57014. Each page stays
+    // bounded by `staticPageGenerationTimeout`, so this only widens the
+    // per-statement budget.
+    DB_STATEMENT_TIMEOUT_MS: "120000",
   };
   for (const key of [
     "SKIP_ENV_VALIDATION",
