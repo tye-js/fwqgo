@@ -1114,7 +1114,7 @@ export const imageGenerationConfigs = pgTable(
     model: text("model").notNull(),
     promptTemplate: text("promptTemplate").notNull(),
     englishPromptTemplate: text("englishPromptTemplate"),
-    size: varchar("size", { length: 40 }).default("1024x576").notNull(),
+    size: varchar("size", { length: 40 }).default("1500x600").notNull(),
     quality: varchar("quality", { length: 40 }).default("standard").notNull(),
     timeoutSeconds: integer("timeoutSeconds").default(180).notNull(),
     enabled: boolean("enabled").default(false).notNull(),

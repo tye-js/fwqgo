@@ -34,6 +34,10 @@ import {
   DEFAULT_ARTICLE_COVER,
   isDefaultArticleCover,
 } from "@fwqgo/core/article-cover";
+import {
+  buildArticleImageMarkdown,
+  upsertLeadingArticleImage,
+} from "@fwqgo/core/article-image-syntax";
 import { cacheTags, revalidateSiteContent } from "@fwqgo/cache/tags";
 import { enqueueAdminBackgroundJob } from "@/server/admin/background-jobs";
 import { schedulePublicWebCache } from "@/server/cache/public-revalidation-client";
@@ -651,6 +655,7 @@ async function processCoverGenerationTask(
             keywords: posts.keywords,
             categoryId: posts.categoryId,
             language: posts.language,
+            content: posts.content,
           })
           .from(posts)
           .where(eq(posts.id, task.postId))
@@ -859,6 +864,36 @@ async function processCoverGenerationTask(
       return generated;
     }
     throw new Error("封面写入文章失败");
+  }
+
+  signal.throwIfAborted();
+
+  // 同一张图既作为封面，也作为正文首屏配图：插在标题与正文之间。
+  // 失败只记日志，封面已写入，不能让正文写入把整条任务判成失败。
+  try {
+    const coverImageMarkdown = buildArticleImageMarkdown({
+      src: generated.asset.path,
+      alt: post.title,
+      caption: "",
+    });
+    const previousContent = post.content ?? "";
+    const nextContent = upsertLeadingArticleImage(
+      previousContent,
+      coverImageMarkdown,
+    );
+
+    if (nextContent !== previousContent) {
+      await db
+        .update(posts)
+        .set({ content: nextContent, updatedAt: new Date() })
+        .where(eq(posts.id, updatedPost.id));
+    }
+  } catch (error) {
+    structuredLog("warn", "cover.content_image_insert_failed", {
+      taskId: task.id,
+      postId: updatedPost.id,
+      error,
+    });
   }
 
   signal.throwIfAborted();

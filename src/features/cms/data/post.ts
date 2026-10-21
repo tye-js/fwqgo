@@ -335,6 +335,7 @@ export async function getPostProductionContext(postId: number) {
             title: imageCoverGenerationTasks.title,
             status: imageCoverGenerationTasks.status,
             outputUrl: imageCoverGenerationTasks.outputUrl,
+            prompt: imageCoverGenerationTasks.prompt,
             errorTitle: imageCoverGenerationTasks.errorTitle,
             errorDetail: imageCoverGenerationTasks.errorDetail,
             createdAt: imageCoverGenerationTasks.createdAt,
@@ -378,6 +379,9 @@ export async function getPostProductionContext(postId: number) {
       updatedAt: serializeDate(task.updatedAt),
       finishedAt: serializeDate(task.finishedAt),
     })),
+    // 最近一次真正落库的生图提示词：文章详情页要展示并支持一键复制。
+    latestCoverPrompt:
+      coverTasks.find((task) => task.prompt?.trim())?.prompt?.trim() ?? null,
   };
 }
 

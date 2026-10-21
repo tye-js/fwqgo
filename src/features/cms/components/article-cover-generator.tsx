@@ -110,8 +110,9 @@ export function ArticleCoverGenerator({
             onGenerated(generated.url);
             if (postId) router.refresh();
             notifySuccess({
-              title: "封面图已生成",
+              title: "首图已生成",
               description: describeAdminResult([
+                "同一张图已写入文章封面与正文首图",
                 generated.url,
                 generated.assetId ? `图片资产 ID：${generated.assetId}` : null,
               ]),
@@ -234,10 +235,10 @@ export function ArticleCoverGenerator({
       className="min-h-11"
       disabled={isGenerating}
       onClick={handleGenerate}
-      title="根据当前文章描述和 AI 生图配置生成封面"
+      title="按 5:2 生成一张首图：同时写为文章封面与正文首图"
     >
       <ImagePlus className="size-4" />
-      {isGenerating ? "后台生成中..." : "生成封面图"}
+      {isGenerating ? "后台生成中..." : "生成首图/封面"}
     </Button>
   );
 }

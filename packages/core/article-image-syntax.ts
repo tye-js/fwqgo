@@ -110,3 +110,33 @@ export function parseArticleImages(markdown: string): ParsedArticleImage[] {
 
   return images;
 }
+
+/**
+ * 把正文首图换成指定的图片语法，返回新正文。
+ *
+ * 用途：AI 生图完成后，同一张图既要作为文章封面，也要作为正文首屏配图。
+ * 规则只有两条：
+ *
+ * 1. 正文**开头已经是一张图**（图片语法紧贴正文起点）时，用新图替换它，
+ *    避免重新生成后新旧两张首图叠在一起；
+ * 2. 否则把新图插到正文最前面——文章标题是独立字段，所以这里正好是
+ *    「标题与正文之间」。
+ *
+ * 纯字符串操作、无依赖，服务端写入与客户端预览可以共用。
+ */
+export function upsertLeadingArticleImage(
+  markdown: string,
+  imageMarkdown: string,
+) {
+  const trimmed = markdown.replace(/^\s+/, "");
+  const leadingImage = parseArticleImages(trimmed)[0];
+
+  if (leadingImage?.index === 0) {
+    const rest = trimmed
+      .slice(leadingImage.raw.length)
+      .replace(/^\s+/, "");
+    return rest ? `${imageMarkdown}\n\n${rest}` : imageMarkdown;
+  }
+
+  return trimmed ? `${imageMarkdown}\n\n${trimmed}` : imageMarkdown;
+}
