@@ -27,6 +27,11 @@ import {
 } from "drizzle-orm";
 import { decodeSlug } from "@fwqgo/core/utils";
 import { normalizeOffsetPagination } from "@fwqgo/core/pagination";
+import {
+  buildArticleCoverPrompt,
+  defaultEnglishCoverPromptTemplate,
+} from "@fwqgo/core/image-generation-prompts";
+import { getActiveImageGenerationConfig } from "@/server/images/generation-config";
 import { ilikeContains } from "@/server/db/search";
 
 export type PostLanguageFilter = "all" | "zh" | "en";
@@ -216,6 +221,42 @@ export async function getPostBySlug(slug: string) {
   }
 }
 
+/**
+ * 按当前启用的生图配置，把这篇文的提示词先拼出来。
+ *
+ * 生图提示词原本只有任务跑起来才落库，文章没生成过封面时后台只能显示一句
+ * 「还没有保存过提示词」——用户看不到系统到底会发什么。这里复用生图时的
+ * 同一个 `buildArticleCoverPrompt`，输入也完全一致（标题、描述、关键词、语言），
+ * 所以预览与真正发送的内容逐字相同，除非中途改了模板或文章字段。
+ *
+ * 缺描述或没有启用的配置时返回 null：这两种情况下生图本身也跑不起来。
+ */
+async function buildCoverPromptPreview(post: {
+  title: string;
+  description: string | null;
+  keywords: string | null;
+  language: string;
+}) {
+  if (!post.description?.trim()) return null;
+
+  const config = await getActiveImageGenerationConfig();
+  if (!config) return null;
+
+  return {
+    prompt: buildArticleCoverPrompt(
+      config.promptTemplate,
+      config.englishPromptTemplate ?? defaultEnglishCoverPromptTemplate,
+      {
+        language: post.language === "en" ? "en" : "zh",
+        title: post.title,
+        description: post.description,
+        keywords: post.keywords,
+      },
+    ),
+    configName: config.name,
+  };
+}
+
 export async function getPostProductionContext(postId: number) {
   await requireAdminSession();
 
@@ -348,6 +389,13 @@ export async function getPostProductionContext(postId: number) {
           .limit(6)
       : [];
 
+  const coverPromptPreview = await buildCoverPromptPreview(currentPost).catch(
+    (previewError: unknown) => {
+      console.error("生图提示词预览生成失败:", previewError);
+      return null;
+    },
+  );
+
   return {
     currentPost: {
       ...currentPost,
@@ -382,6 +430,8 @@ export async function getPostProductionContext(postId: number) {
     // 最近一次真正落库的生图提示词：文章详情页要展示并支持一键复制。
     latestCoverPrompt:
       coverTasks.find((task) => task.prompt?.trim())?.prompt?.trim() ?? null,
+    // 还没生成过时，按当前配置预拼一份，避免详情页只剩一句「没有提示词」。
+    coverPromptPreview,
   };
 }
 

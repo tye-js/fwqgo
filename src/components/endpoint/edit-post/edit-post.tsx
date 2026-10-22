@@ -554,7 +554,15 @@ export default function EditPost({
               <div className="space-y-2">
                 <span className="text-sm font-medium">AI 生图提示词</span>
                 <CoverTaskPromptCopy
-                  prompt={productionContext?.latestCoverPrompt ?? null}
+                  prompt={
+                    productionContext?.latestCoverPrompt ??
+                    productionContext?.coverPromptPreview?.prompt ??
+                    null
+                  }
+                  isPreview={
+                    !productionContext?.latestCoverPrompt &&
+                    Boolean(productionContext?.coverPromptPreview?.prompt)
+                  }
                   compact
                 />
               </div>

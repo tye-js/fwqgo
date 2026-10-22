@@ -9,6 +9,7 @@ import { notifyError, notifySuccess } from "@/lib/admin-toast";
 export function CoverTaskPromptCopy({
   prompt,
   compact = false,
+  isPreview = false,
 }: {
   prompt: string | null;
   /**
@@ -16,6 +17,8 @@ export function CoverTaskPromptCopy({
    * 任务详情页仍用完整版，便于逐行核对。
    */
   compact?: boolean;
+  /** 提示词还没落库、由当前配置预拼出来时置为 true。 */
+  isPreview?: boolean;
 }) {
   const normalizedPrompt = prompt?.trim() ?? "";
 
@@ -40,7 +43,7 @@ export function CoverTaskPromptCopy({
     return (
       <p className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-3 text-sm leading-6 text-muted-foreground">
         {compact
-          ? "该文章还没有保存过生图提示词。执行一次 AI 生图后，系统会在调用生图接口前保存完整提示词。"
+          ? "填写文章描述、并在生图接口配置里启用一套配置后，这里会自动拼好提示词。"
           : "该任务在生成提示词前失败，或属于尚未保存提示词的历史任务。重新执行后，系统会在调用生图接口前保存完整提示词。"}
       </p>
     );
@@ -50,9 +53,11 @@ export function CoverTaskPromptCopy({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm leading-6 text-muted-foreground">
-          {compact
-            ? "这是最近一次生图使用的完整提示词，可直接复制到其他生图工具。"
-            : "这是任务最后一次生图尝试使用的完整提示词。"}
+          {isPreview
+            ? "按当前生图配置预拼，实际生成时原样发送；改动文章标题/描述/关键词或换配置后会重新拼。"
+            : compact
+              ? "这是最近一次生图使用的完整提示词，可直接复制到其他生图工具。"
+              : "这是任务最后一次生图尝试使用的完整提示词。"}
         </p>
         <Button type="button" variant="outline" size="sm" onClick={copyPrompt}>
           <Copy className="size-4" />
