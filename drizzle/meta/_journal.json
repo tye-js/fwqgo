@@ -540,6 +540,13 @@
       "when": 1792589512606,
       "tag": "0076_noisy_cobalt_man",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1792651613419,
+      "tag": "0077_large_santa_claus",
+      "breakpoints": true
     }
   ]
 }

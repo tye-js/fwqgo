@@ -103,16 +103,18 @@ export function ArticleCoverGenerator({
             currentCoverRef.current !== requestedCoverRef.current
           ) {
             notifyInfo({
-              title: "封面图已生成，已保留当前选择的封面",
-              description: "生成图片已存入图片管理，可按需选择使用。",
+              title: "媒体图已生成，已保留当前封面",
+              description: "图片已存入图片管理，正文首图与分享图已更新。",
             });
+            // 封面没被覆盖，但正文与分享图变了：刷新一次让提示词和正文回显最新状态。
+            if (postId) router.refresh();
           } else {
             onGenerated(generated.url);
             if (postId) router.refresh();
             notifySuccess({
-              title: "首图已生成",
+              title: "媒体图已生成",
               description: describeAdminResult([
-                "同一张图已写入文章封面与正文首图",
+                "已插入正文首图，并作为分享图",
                 generated.url,
                 generated.assetId ? `图片资产 ID：${generated.assetId}` : null,
               ]),
@@ -235,10 +237,10 @@ export function ArticleCoverGenerator({
       className="min-h-11"
       disabled={isGenerating}
       onClick={handleGenerate}
-      title="按 5:2 生成一张首图：同时写为文章封面与正文首图"
+      title="按 5:2 生成媒体图：插入标题与正文之间，并作为分享图"
     >
       <ImagePlus className="size-4" />
-      {isGenerating ? "后台生成中..." : "生成首图/封面"}
+      {isGenerating ? "后台生成中..." : "生成媒体图"}
     </Button>
   );
 }

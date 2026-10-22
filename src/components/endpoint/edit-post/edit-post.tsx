@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { ImageUpload } from "@/features/cms/components/image-upload";
-import { ArticleCoverGenerator } from "@/features/cms/components/article-cover-generator";
-import { CoverTaskPromptCopy } from "@/features/cms/components/cover-task-prompt-copy";
+import { ArticleMediaImageField } from "@/features/cms/components/article-media-image-field";
 import { GenerateEnglishArticleButton } from "@/features/cms/components/generate-english-article-button";
 import { AffiliateRewriteAudit } from "@/features/cms/components/affiliate-rewrite-audit";
 import { PostProductionContextPanel } from "@/features/cms/components/post-production-context-panel";
@@ -533,39 +532,28 @@ export default function EditPost({
               </div>
 
               <div className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-medium">封面图片</span>
-                  <ArticleCoverGenerator
-                    postId={post.post.id}
-                    title={title}
-                    description={description ?? ""}
-                    fileSlug={slug}
-                    language={postLanguage}
-                    currentCoverUrl={imageUrl}
-                    onGenerated={setImageUrl}
-                  />
-                </div>
+                <span className="text-sm font-medium">封面图片</span>
                 <ImageUpload value={imageUrl} onChange={setImageUrl} />
-                <p className="text-xs leading-5 text-muted-foreground">
-                  生成后同一张图会同时作为正文首图，插在标题与正文之间。
-                </p>
               </div>
 
-              <div className="space-y-2">
-                <span className="text-sm font-medium">AI 生图提示词</span>
-                <CoverTaskPromptCopy
-                  prompt={
-                    productionContext?.latestCoverPrompt ??
-                    productionContext?.coverPromptPreview?.prompt ??
-                    null
-                  }
-                  isPreview={
-                    !productionContext?.latestCoverPrompt &&
-                    Boolean(productionContext?.coverPromptPreview?.prompt)
-                  }
-                  compact
-                />
-              </div>
+              <ArticleMediaImageField
+                postId={post.post.id}
+                title={title}
+                description={description ?? ""}
+                fileSlug={slug}
+                language={postLanguage}
+                currentCoverUrl={imageUrl}
+                onGenerated={setImageUrl}
+                prompt={
+                  productionContext?.latestCoverPrompt ??
+                  productionContext?.coverPromptPreview?.prompt ??
+                  null
+                }
+                isPreview={
+                  !productionContext?.latestCoverPrompt &&
+                  Boolean(productionContext?.coverPromptPreview?.prompt)
+                }
+              />
 
               <div className="grid gap-4">
                 <div className="space-y-2">

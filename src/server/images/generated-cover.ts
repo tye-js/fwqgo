@@ -454,6 +454,8 @@ export async function generateArticleCoverImage(
     altEn:
       input.language === "en" ? input.title : toEnglishFileSlug(input.title),
     prompt,
+    // 分享图会被社交平台二次压缩，落盘时不再砍到 1600 宽，WebP 质量也提到 92。
+    optimize: { maxDimension: 2400, webpQuality: 92 },
   });
   await input.onAssetPersisted?.(asset);
   throwIfAborted(input.signal);

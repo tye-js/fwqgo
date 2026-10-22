@@ -205,7 +205,11 @@ function buildRenamedPublicPath(input: {
   return `${UPLOAD_PUBLIC_PREFIX}${baseName}${ext}`;
 }
 
-async function optimizeUpload(buffer: Buffer, mime: string) {
+async function optimizeUpload(
+  buffer: Buffer,
+  mime: string,
+  options: { maxDimension?: number; webpQuality?: number } = {},
+) {
   if (mime === "image/gif") {
     return { buffer, mime };
   }
@@ -217,15 +221,20 @@ async function optimizeUpload(buffer: Buffer, mime: string) {
     );
   }
 
+  // AI 生图是分享图，会被社交平台再压一次，所以这里放宽长边上限、提高 WebP 质量，
+  // 普通上传仍走原来的 1600 / 82，避免体积失控。
+  const maxDimension = options.maxDimension ?? 1600;
+  const webpQuality = options.webpQuality ?? 82;
+
   const optimized = await sharp(buffer)
     .rotate()
     .resize({
-      width: 1600,
-      height: 1600,
+      width: maxDimension,
+      height: maxDimension,
       fit: "inside",
       withoutEnlargement: true,
     })
-    .webp({ quality: 82, effort: 4 })
+    .webp({ quality: webpQuality, effort: 5 })
     .toBuffer();
 
   return { buffer: optimized, mime: "image/webp" };
@@ -572,6 +581,8 @@ export async function createImageAssetFromBuffer(input: {
   imageType?: string | null;
   sourceUrl?: string | null;
   prompt?: string | null;
+  /** 分享图需要更高的分辨率与编码质量，普通上传保持默认。 */
+  optimize?: { maxDimension?: number; webpQuality?: number };
 }) {
   if (!isAllowedUploadMimeType(input.mime)) {
     throw new UnsupportedMediaTypeError();
@@ -581,7 +592,11 @@ export async function createImageAssetFromBuffer(input: {
     throw new UploadTooLargeError();
   }
 
-  const optimized = await optimizeUpload(input.buffer, input.mime);
+  const optimized = await optimizeUpload(
+    input.buffer,
+    input.mime,
+    input.optimize,
+  );
   return persistOptimizedImageAsset({
     buffer: optimized.buffer,
     mime: optimized.mime,

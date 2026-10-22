@@ -346,3 +346,22 @@ void test("historical backwards or invalid modified dates never create false fre
   assert.ok($.text().includes("Updated"));
   assert.ok(!$.text().includes("Published"));
 });
+
+void test("正文开头的媒体图优先作为分享图，正文不是以图开头时回落到封面", () => {
+  const withLeading = `<figure><img src="/uploads/media.webp" alt="媒体图"></figure><h2>正文</h2><p>内容</p>`;
+  const withoutLeading = `<h2>正文</h2><p>内容</p>`;
+
+  const leading = extractArticleSeoContent(
+    withLeading,
+    dimensions,
+    "/uploads/cover.webp",
+  );
+  assert.ok(leading.images[0]?.url.endsWith("/uploads/media.webp"));
+
+  const fallback = extractArticleSeoContent(
+    withoutLeading,
+    dimensions,
+    "/uploads/cover.webp",
+  );
+  assert.ok(fallback.images[0]?.url.endsWith("/uploads/cover.webp"));
+});

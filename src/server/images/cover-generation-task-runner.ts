@@ -32,6 +32,7 @@ import {
 import { structuredLog } from "@fwqgo/core/structured-log";
 import {
   DEFAULT_ARTICLE_COVER,
+  hasRenderableCover,
   isDefaultArticleCover,
 } from "@fwqgo/core/article-cover";
 import {
@@ -656,6 +657,7 @@ async function processCoverGenerationTask(
             categoryId: posts.categoryId,
             language: posts.language,
             content: posts.content,
+            imgUrl: posts.imgUrl,
           })
           .from(posts)
           .where(eq(posts.id, task.postId))
@@ -825,38 +827,44 @@ async function processCoverGenerationTask(
 
   const snapshot = activeTask.inputSnapshot as CoverTaskInputSnapshot;
   const hasExpectedCover = "expectedCoverUrl" in snapshot;
-  const [updatedPost] = await db
-    .update(posts)
-    .set({
-      imgUrl: generated.asset.path,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(posts.id, post.id),
-        hasExpectedCover
-          ? or(
-              snapshot.expectedCoverUrl === null
-                ? isNull(posts.imgUrl)
-                : eq(posts.imgUrl, snapshot.expectedCoverUrl ?? ""),
-              eq(posts.imgUrl, generated.asset.path),
-            )
-          : snapshot.replaceDefaultCoverOnly
-            ? or(
-                eq(posts.imgUrl, DEFAULT_ARTICLE_COVER),
-                eq(posts.imgUrl, ""),
-                isNull(posts.imgUrl),
-                // A retry may need to finish references/cache after the cover was written.
-                eq(posts.imgUrl, generated.asset.path),
-              )
-            : undefined,
-      ),
-    )
-    .returning({
-      id: posts.id,
-      slug: posts.slug,
-      categoryId: posts.categoryId,
-    });
+  // 生图结果是「媒体图」：用于分享与正文首图，不再顶掉编辑已经设置的封面。
+  // 只有文章没有可用封面（为空或仍是默认图）时才顺手补一张，避免列表卡片掉图。
+  const shouldApplyAsCover =
+    !hasRenderableCover(post.imgUrl) || isDefaultArticleCover(post.imgUrl);
+  const [updatedPost] = shouldApplyAsCover
+    ? await db
+        .update(posts)
+        .set({
+          imgUrl: generated.asset.path,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(posts.id, post.id),
+            hasExpectedCover
+              ? or(
+                  snapshot.expectedCoverUrl === null
+                    ? isNull(posts.imgUrl)
+                    : eq(posts.imgUrl, snapshot.expectedCoverUrl ?? ""),
+                  eq(posts.imgUrl, generated.asset.path),
+                )
+              : snapshot.replaceDefaultCoverOnly
+                ? or(
+                    eq(posts.imgUrl, DEFAULT_ARTICLE_COVER),
+                    eq(posts.imgUrl, ""),
+                    isNull(posts.imgUrl),
+                    // A retry may need to finish references/cache after the cover was written.
+                    eq(posts.imgUrl, generated.asset.path),
+                  )
+                : undefined,
+          ),
+        )
+        .returning({
+          id: posts.id,
+          slug: posts.slug,
+          categoryId: posts.categoryId,
+        })
+    : [{ id: post.id, slug: post.slug, categoryId: post.categoryId }];
 
   if (!updatedPost) {
     if (hasExpectedCover || snapshot.replaceDefaultCoverOnly) {
@@ -868,8 +876,8 @@ async function processCoverGenerationTask(
 
   signal.throwIfAborted();
 
-  // 同一张图既作为封面，也作为正文首屏配图：插在标题与正文之间。
-  // 失败只记日志，封面已写入，不能让正文写入把整条任务判成失败。
+  // 媒体图同时插进正文：位置在标题与正文之间，也是分享图的第一候选。
+  // 失败只记日志，不能让正文写入把整条任务判成失败。
   try {
     const coverImageMarkdown = buildArticleImageMarkdown({
       src: generated.asset.path,

@@ -1,4 +1,4 @@
-export const defaultCoverPromptTemplate = `为服务器/VPS推广文章生成一张正文首屏配图（同一张图会同时用作文章封面）。
+export const defaultCoverPromptTemplate = `为服务器/VPS推广文章生成一张媒体图（用于社交分享卡片，同时插在文章标题与正文之间）。
 
 文章标题（核心主题）：{title}
 文章摘要：{description}
@@ -10,7 +10,8 @@ export const defaultCoverPromptTemplate = `为服务器/VPS推广文章生成一
 - 主题必须围绕云服务器、VPS、数据中心、网络线路、优惠促销。
 - 风格清晰、现代、科技感，适合专业服务器测评网站。
 - 不要出现水印和二维码。
-- 横版 5:2 长宽比（宽:高 = 5:2），主体居中，左右留白，避免上下裁切丢信息。`;
+- 横版 5:2 长宽比（宽:高 = 5:2），主体居中，左右留白，避免上下裁切丢信息。
+- 画面要经得起分享卡片放大：主体锐利、层次清楚，避免大面积噪点或糊成一片的渐变。`;
 
 export const defaultEnglishCoverPromptTemplate = `English article cover override (highest priority):
 - These rules override earlier conflicting instructions, including references to a Chinese website, Chinese typography, or "no readable text".

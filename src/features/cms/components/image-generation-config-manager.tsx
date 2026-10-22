@@ -257,7 +257,7 @@ function ConfigForm({
           <Input
             id={`${formId}-size`}
             name="size"
-            defaultValue={config?.size ?? "1500x600"}
+            defaultValue={config?.size ?? "2000x800"}
           />
         </div>
         <div className="space-y-2">

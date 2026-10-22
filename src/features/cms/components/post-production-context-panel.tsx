@@ -331,7 +331,7 @@ export function PostProductionContextPanel({
             </div>
 
             <div className="rounded-md border border-border/70 bg-background p-3">
-              <p className="text-sm font-medium">最近封面任务</p>
+              <p className="text-sm font-medium">最近媒体图任务</p>
               <div className="mt-3 space-y-2">
                 {context.coverTasks.length > 0 ? (
                   context.coverTasks.slice(0, 4).map((task) => (
@@ -353,7 +353,7 @@ export function PostProductionContextPanel({
                   ))
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    暂无封面生成任务。
+                    暂无媒体图生成任务。
                   </p>
                 )}
               </div>

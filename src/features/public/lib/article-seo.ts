@@ -36,6 +36,20 @@ export function extractArticleSeoContent(
   const excerpt = extractExcerpt($);
   const candidates: Array<{ src: string; alt: string }> = [];
   const coverSrc = cover?.trim();
+
+  // 正文开头的第一张图是「媒体图」（AI 生图按 5:2 生成，专为分享卡片准备），
+  // 分享图优先用它；只有正文不是以图开头时才退回封面。
+  const leading = $.root().children().first();
+  const leadingSrc =
+    leading.is("figure")
+      ? leading.find("img[src]").first().attr("src")
+      : leading.is("img[src]")
+        ? leading.attr("src")
+        : undefined;
+
+  if (isRenderableImageSrc(leadingSrc ?? "")) {
+    candidates.push({ src: leadingSrc!, alt: "" });
+  }
   if (hasRenderableCover(coverSrc)) {
     candidates.push({ src: coverSrc, alt: "" });
   }
