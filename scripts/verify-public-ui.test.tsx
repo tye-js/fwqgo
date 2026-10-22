@@ -208,7 +208,7 @@ for(const language of ["zh","en"]){
   assert.equal($("img").attr("loading"),variant==="feature"?"eager":"lazy");
   assert.equal($("img").attr("alt"),"Article");
   if(variant==="home-list"){
-   assert.equal($("img").attr("sizes"),"(max-width: 639px) 80px, 144px");
+   assert.equal($("img").attr("sizes"),"(max-width: 639px) 88px, 176px");
    assert.equal($("time").length,1);
    const sparse=cheerio.load(renderToStaticMarkup(React.createElement(ArticleCard,{post:{...post,description:null,imgUrl:null,createdAt:"bad date",tags:[{tag:{id:9,name:"Missing slug",slug:" ",publiclyIndexable:true}}]},language,variant})));
    assert.equal(sparse("time").length,0);assert.equal(sparse("p").length,0);assert.equal(sparse('a[href*="/tags/"]').length,0);assert.equal(sparse("svg").length,1);

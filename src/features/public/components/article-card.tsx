@@ -62,13 +62,13 @@ function formatArticleDate(value: Date | string, locale: string) {
 }
 
 /**
- * home-list 使用 80 / 144px 的固定缩略图；旧 feature 保留原有图文分栏尺寸。
+ * home-list 使用 88 / 176px 的固定缩略图；旧 feature 保留原有图文分栏尺寸。
  * compact 始终使用缩略图：窄屏 88px 列减去 12px 边距，sm 起为 112px 列。
  * 列表页维持原有 md/lg 图片尺寸。调整栅格时同步更新 verify:public-images。
  */
 function cardImageSizes(variant: "list" | "feature" | "compact" | "home-list") {
   if (variant === "home-list") {
-    return "(max-width: 639px) 80px, 144px";
+    return "(max-width: 639px) 88px, 176px";
   }
   if (variant === "feature") {
     return "(max-width: 639px) calc(100vw - 2rem), (max-width: 1279px) 46vw, 408px";
@@ -131,7 +131,7 @@ function ArticleCard({
         aria-labelledby={titleId}
         data-testid="article-card"
         data-variant="home-list"
-        className="grid min-w-0 grid-cols-[80px_minmax(0,1fr)] items-start gap-x-3 border-b border-border/70 py-4 first:pt-0 last:border-0 sm:grid-cols-[144px_minmax(0,1fr)] sm:gap-x-5 sm:py-5"
+        className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)] items-center gap-x-3 border-b border-border/70 py-4 first:pt-0 last:border-0 sm:grid-cols-[176px_minmax(0,1fr)] sm:gap-x-5 sm:py-5"
       >
         <Link
           href={href}
@@ -162,22 +162,30 @@ function ArticleCard({
               {post.description}
             </p>
           ) : null}
-          {date ? (
-            <time
-              dateTime={new Date(post.createdAt).toISOString()}
-              className="mt-2 block text-xs tabular-nums text-muted-foreground"
-            >
-              {date}
-            </time>
-          ) : null}
-        </div>
-        {visibleTags.length > 0 ? (
-          <div className="col-span-2 flex min-w-0 flex-wrap gap-x-3 break-words text-xs [overflow-wrap:anywhere] sm:col-span-1 sm:col-start-2 [&_a]:min-w-11 [&_a]:max-w-full">
-            {visibleTags.slice(0, 3).map(({ tag }) => (
-              <ArticleTagLabel key={tag.id} tag={tag} tagPrefix={tagPrefix} />
-            ))}
+          {/* 日期与标签同排：卡片高度不再被拆成三行，缩略图也能和文字块垂直居中。 */}
+          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground [&_a]:min-w-11 [&_a]:max-w-full">
+            {date ? (
+              <time
+                dateTime={new Date(post.createdAt).toISOString()}
+                className="inline-flex min-h-11 items-center gap-1.5 tabular-nums"
+              >
+                <CalendarDays className="size-3.5" aria-hidden="true" />
+                {date}
+              </time>
+            ) : null}
+            {visibleTags.length > 0 ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 break-words [overflow-wrap:anywhere]">
+                {visibleTags.slice(0, 3).map(({ tag }) => (
+                  <ArticleTagLabel
+                    key={tag.id}
+                    tag={tag}
+                    tagPrefix={tagPrefix}
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        </div>
       </article>
     );
   }
