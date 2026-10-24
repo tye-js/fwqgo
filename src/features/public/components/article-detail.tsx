@@ -12,12 +12,15 @@ export const ARTICLE_PROSE_CLASS_NAME =
 /**
  * 文章页头的日期信息。
  *
- * 只在文章被实质性修改过时显示「更新于」：发布时间按站内约定不向读者展示。
- * `modifiedTime === publishedTime` 表示文章从未被修改（或历史数据里更新时间早于
- * 创建时间），此时不输出任何日期，避免在页头留下一个只剩图标或空白的行。
+ * 始终显示发布时间——读者需要知道这篇测评是什么时候写的，尤其是套餐价格类
+ * 内容，日期本身就是可信度的一部分。只有文章确实被改过（`modifiedTime >
+ * publishedTime`）时才追加「更新于」，避免把「创建即未修改」写成一次更新。
+ *
+ * 时间按 `DISPLAY_TIME_ZONE`（Asia/Shanghai）渲染，不跟随进程或浏览器时区，
+ * 否则 SSR 与 CSR 会得到不同字符串。
  *
  * SEO 侧的 `datePublished` / `dateModified` 由 `buildArticleSeo` 独立产出，
- * 不受这里的展示取舍影响。
+ * 与这里的展示文案无关。
  */
 export function ArticlePublicationMeta({
   publishedTime,
@@ -29,15 +32,26 @@ export function ArticlePublicationMeta({
   language?: "zh" | "en";
 }) {
   if (!publishedTime) return null;
-  // 文章未被实质修改时（含历史数据里更新时间早于创建时间的回落）不显示任何日期。
-  if (!modifiedTime || modifiedTime <= publishedTime) return null;
   const english = language === "en";
   const locale = english ? "en-US" : "zh-CN";
+  const updatedTime =
+    modifiedTime && modifiedTime > publishedTime ? modifiedTime : null;
+
   return (
-    <span className="inline-flex min-h-11 flex-wrap items-center gap-2 tabular-nums">
-      <CalendarDays className="size-4 shrink-0" aria-hidden="true" />
-      {english ? "Updated" : "更新于"}
-      <time dateTime={modifiedTime}>{formatDate(modifiedTime, locale)}</time>
+    <span className="inline-flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 tabular-nums">
+      <span className="inline-flex items-center gap-2">
+        <CalendarDays className="size-4 shrink-0" aria-hidden="true" />
+        {english ? "Published" : "发布于"}
+        <time dateTime={publishedTime}>
+          {formatDate(publishedTime, locale)}
+        </time>
+      </span>
+      {updatedTime ? (
+        <span className="inline-flex items-center gap-2">
+          {english ? "Updated" : "更新于"}
+          <time dateTime={updatedTime}>{formatDate(updatedTime, locale)}</time>
+        </span>
+      ) : null}
     </span>
   );
 }

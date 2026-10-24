@@ -260,9 +260,12 @@ void test("blank descriptions use actual prose and unpaired articles never inven
   assert.ok(long.description.endsWith("…"));
 });
 
-void test("the article header never shows the publication date", () => {
+void test("the article header always shows the publication date and adds the update date only when it changed", () => {
   for (const language of ["zh", "en"] as const) {
-    // 未被修改的文章：页头不应出现任何日期。
+    const publishLabel = language === "en" ? "Published" : "发布于";
+    const updateLabel = language === "en" ? "Updated" : "更新于";
+
+    // 从未被修改的文章：显示发布时间，不出现「更新于」。
     const fresh = load(
       renderToStaticMarkup(
         <ArticlePublicationMeta
@@ -272,13 +275,12 @@ void test("the article header never shows the publication date", () => {
         />,
       ),
     );
-    assert.equal(fresh("time").length, 0, `${language}: 未修改时不应渲染日期`);
-    assert.ok(!fresh.text().includes("发布于"));
-    assert.ok(!fresh.text().includes("Published"));
-    assert.ok(!fresh.text().includes("更新于"));
-    assert.ok(!fresh.text().includes("Updated"));
+    assert.equal(fresh("time").length, 1, `${language}: 未修改时只渲染发布时间`);
+    assert.equal(fresh("time").attr("datetime"), "2026-01-01T00:00:00.000Z");
+    assert.ok(fresh.text().includes(publishLabel), `${language}: 缺少发布标签`);
+    assert.ok(!fresh.text().includes(updateLabel), `${language}: 未修改不应出现更新标签`);
 
-    // 确实被修改过的文章：只显示更新时间，且发布时间不出现。
+    // 确实被修改过的文章：发布时间与更新时间都要在。
     const updated = load(
       renderToStaticMarkup(
         <ArticlePublicationMeta
@@ -288,17 +290,15 @@ void test("the article header never shows the publication date", () => {
         />,
       ),
     );
-    assert.equal(updated("time").length, 1, `${language}: 修改过应显示一个日期`);
-    assert.equal(
-      updated("time").attr("datetime"),
-      "2026-02-02T00:00:00.000Z",
+    assert.equal(updated("time").length, 2, `${language}: 修改过应显示两个日期`);
+    assert.deepEqual(
+      updated("time")
+        .map((_, node) => updated(node).attr("datetime"))
+        .get(),
+      ["2026-01-01T00:00:00.000Z", "2026-02-02T00:00:00.000Z"],
     );
-    assert.ok(!updated.text().includes("发布于"));
-    assert.ok(!updated.text().includes("Published"));
-    assert.ok(
-      updated.text().includes(language === "en" ? "Updated" : "更新于"),
-      `${language}: 修改过应显示更新时间标签`,
-    );
+    assert.ok(updated.text().includes(publishLabel));
+    assert.ok(updated.text().includes(updateLabel));
   }
 });
 
@@ -311,7 +311,7 @@ void test("historical backwards or invalid modified dates never create false fre
       content,
     });
     assert.equal(seo.modifiedTime, seo.publishedTime);
-    // 未修改时不输出日期，页头不会被一个等于发布时间的"更新"误导。
+    // 页头只留发布时间，不会被一个等于发布时间的"更新"误导。
     const $ = load(
       renderToStaticMarkup(
         <ArticlePublicationMeta
@@ -320,9 +320,10 @@ void test("historical backwards or invalid modified dates never create false fre
         />,
       ),
     );
-    assert.equal($("time").length, 0);
+    assert.equal($("time").length, 1);
+    assert.equal($("time").attr("datetime"), seo.publishedTime);
     assert.ok(!$.text().includes("更新于"));
-    // SEO 侧的日期仍然要如实输出，不能因为页头不显示就丢掉。
+    // SEO 侧的日期仍然要如实输出。
     assert.ok(seo.publishedTime);
     assert.equal(seo.modifiedTime, seo.publishedTime);
   }
@@ -341,10 +342,10 @@ void test("historical backwards or invalid modified dates never create false fre
       />,
     ),
   );
-  assert.equal($("time").length, 1);
-  assert.equal($("time").attr("datetime"), seo.modifiedTime);
+  assert.equal($("time").length, 2);
+  assert.equal($("time").last().attr("datetime"), seo.modifiedTime);
+  assert.ok($.text().includes("Published"));
   assert.ok($.text().includes("Updated"));
-  assert.ok(!$.text().includes("Published"));
 });
 
 void test("正文开头的媒体图优先作为分享图，正文不是以图开头时回落到封面", () => {
