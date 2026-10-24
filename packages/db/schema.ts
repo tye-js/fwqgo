@@ -40,8 +40,15 @@ export const posts = pgTable(
     affiliateReviewUpdatedAt: timestamp("affiliateReviewUpdatedAt"),
     published: boolean("published").default(false).notNull(),
     slugLocked: boolean("slugLocked").default(false).notNull(),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt"),
+    // 带时区存储：这两列会被前台按 Asia/Shanghai 展示，也常被后台脚本、psql
+    // 直接写入。若用不带时区的 timestamp，写入方（进程 TZ=+08 的脚本、
+    // session TimeZone=Asia/Shanghai 的 psql）会把北京时间当 UTC 存进来，
+    // 展示时再加 8 小时，跨零点就变成「明天的文章」。timestamptz 存的是绝对
+    // 时刻，任何写入方都不会再产生偏移。
+    createdAt: timestamp("createdAt", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updatedAt", { withTimezone: true }),
     views: integer("views").default(0).notNull(),
     recommendedTagName: text("recommendedTagName"),
     recommendedTagId: integer("recommendedTagId"),
