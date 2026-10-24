@@ -239,7 +239,7 @@ const tx={
  insert(table){let values;const apply=()=>{if(name(table)==="posts"){const row={...values,id:42};f.posts.push(row);return [row];}if(name(table)==="tags"){const row={...values,id:8};f.tags.push(row);return [row];}f.links.push(...values);return [];};const q={values(v){values=v;return q;},onConflictDoNothing(){return q;},returning:async()=>apply(),then(resolve,reject){return Promise.resolve().then(apply).then(resolve,reject);}};return q;},
 };
 mock.module("@fwqgo/db",()=>({db:{select(){throw new Error("Use the existing transaction");}}}));
-mock.module("@/server/links/outbound-short-link",()=>({shortenArticleOutboundLinks:async content=>content,shortenMarkdownOutboundLinks:async content=>content}));
+mock.module("@/server/links/outbound-short-link",()=>({applyArticleAffiliateLinks:async content=>content,applyMarkdownAffiliateLinks:async content=>content}));
 mock.module("@/server/images/assets",()=>({syncImageReferencesForPost:async()=>{}}));
 mock.module("@/server/cache/public-revalidation-client",()=>({schedulePublicWebCache(){}}));
 const {createPostRecordInTransaction}=await import("./src/server/posts/create-post-record.ts");

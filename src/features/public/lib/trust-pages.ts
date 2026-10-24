@@ -474,7 +474,7 @@ const documents: Record<
           id: "how-to-identify",
           heading: "如何识别",
           paragraphs: [
-            "站内的购买跳转统一经过本站的 /go/ 跳转地址，并在跳转到商家之前完成参数拼接。凡是经由购买按钮离开本站的链接，都应视为可能带有推广关系。",
+            "购买链接有两种形式：直接指向商家地址并附带推广参数，或经过本站的 /go/ 跳转再转发到商家。无论哪种，凡是经由购买按钮离开本站的链接，都应视为可能带有推广关系。",
           ],
         },
         {
@@ -528,7 +528,7 @@ const documents: Record<
           id: "how-to-identify",
           heading: "How to identify one",
           paragraphs: [
-            "Every purchase jump on this site goes through our own /go/ redirect, which assembles the parameters before forwarding you to the provider. Treat any link that leaves this site via a purchase button as potentially monetised.",
+            "Purchase links either point straight at the provider with our affiliate parameters attached, or pass through our /go/ redirect. Either way, treat any link that leaves this site via a purchase button as potentially monetised.",
           ],
         },
         {

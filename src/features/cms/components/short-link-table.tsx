@@ -89,7 +89,7 @@ export function ShortLinkTable({
     <div className="space-y-4">
       <AdminTableWorkbench
         title="短链跳转"
-        description="文章发布时外部链接会被转换为 /go/{slug}，这里用于检查短链和目标 URL。"
+        description="历史文章里的 /go/{slug} 与套餐跳转短链都在这里；新文章直接写原生返利链接，不再生成短链。"
         searchValue={query}
         onSearchChange={setQuery}
         onSearchCompositionStart={() => setIsComposing(true)}
@@ -103,7 +103,7 @@ export function ShortLinkTable({
       {links.length === 0 ? (
         <AdminTableEmpty
           title="没有匹配的短链"
-          description="发布包含外部链接的文章后，系统会自动生成短链。"
+          description="目前没有短链。新文章不再生成短链；历史文章的短链会一直保留。"
         />
       ) : (
         <div className="overflow-hidden rounded-md border border-border/70 bg-background">

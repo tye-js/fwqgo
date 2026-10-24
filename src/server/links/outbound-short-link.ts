@@ -221,9 +221,26 @@ function isInternalUrl(url: URL) {
   return targetHost === siteHost || targetHost.endsWith(`.${siteHost}`);
 }
 
-export async function shortenArticleOutboundLinks(
+type OutboundHrefRewriter = (affiliateUrl: string) => Promise<string | null>;
+
+type OutboundLinkAttributes = { rel: string; target: string };
+
+/**
+ * 正文外链改写的共用骨架。
+ *
+ * 两种落地形态只在「最终写进 href 的值」上分叉：
+ *
+ * - short：写 `/go/{slug}`，点击时再 302 到目标（历史形态，存量文章仍在用）；
+ * - native：直接把带推广参数的商家链接写进正文，不再经过站内跳转。
+ *
+ * 匹配供应商、解析返利参数、跳过已是 `/go/` 的链接，两条路径完全一致——所以
+ * 切换形态不会把老文章的短链改回长链，老链接也不会失效。
+ */
+async function rewriteArticleOutboundLinks(
   html: string,
-  database: OutboundLinkExecutor = db,
+  database: OutboundLinkExecutor,
+  rewriteHref: OutboundHrefRewriter,
+  attributes: OutboundLinkAttributes,
 ) {
   const $ = cheerio.load(html, null, false);
   const links = $("a[href]").toArray();
@@ -259,25 +276,23 @@ export async function shortenArticleOutboundLinks(
       continue;
     }
 
-    const shortLink = await getOrCreateOutboundShortLink(
-      affiliateTargetUrl,
-      database,
-    );
-    if (!shortLink) {
+    const nextHref = await rewriteHref(affiliateTargetUrl);
+    if (!nextHref) {
       continue;
     }
 
-    $link.attr("href", shortLink.path);
-    $link.attr("rel", "nofollow");
-    $link.attr("target", "_blank");
+    $link.attr("href", nextHref);
+    $link.attr("rel", attributes.rel);
+    $link.attr("target", attributes.target);
   }
 
   return $.html();
 }
 
-export async function shortenMarkdownOutboundLinks(
+async function rewriteMarkdownOutboundLinks(
   markdown: string,
-  database: OutboundLinkExecutor = db,
+  database: OutboundLinkExecutor,
+  rewriteHref: OutboundHrefRewriter,
 ) {
   let providers: AffiliateProvider[] | undefined;
   const replacements: Array<{
@@ -321,18 +336,15 @@ export async function shortenMarkdownOutboundLinks(
       continue;
     }
 
-    const shortLink = await getOrCreateOutboundShortLink(
-      affiliateTargetUrl,
-      database,
-    );
-    if (!shortLink) {
+    const nextHref = await rewriteHref(affiliateTargetUrl);
+    if (!nextHref) {
       continue;
     }
 
     replacements.push({
       start: match.index,
       end: match.index + original.length,
-      replacement: `[${label}](${shortLink.path})`,
+      replacement: `[${label}](${nextHref})`,
     });
   }
 
@@ -350,4 +362,58 @@ export async function shortenMarkdownOutboundLinks(
 
   output += markdown.slice(lastIndex);
   return output;
+}
+
+/** 历史形态：把正文里的商家链接换成站内 `/go/{slug}` 短链。 */
+export async function shortenArticleOutboundLinks(
+  html: string,
+  database: OutboundLinkExecutor = db,
+) {
+  return rewriteArticleOutboundLinks(
+    html,
+    database,
+    async (affiliateUrl) =>
+      (await getOrCreateOutboundShortLink(affiliateUrl, database))?.path ??
+      null,
+    { rel: "nofollow", target: "_blank" },
+  );
+}
+
+/** 历史形态：markdown 正文版本的短链改写。 */
+export async function shortenMarkdownOutboundLinks(
+  markdown: string,
+  database: OutboundLinkExecutor = db,
+) {
+  return rewriteMarkdownOutboundLinks(
+    markdown,
+    database,
+    async (affiliateUrl) =>
+      (await getOrCreateOutboundShortLink(affiliateUrl, database))?.path ??
+      null,
+  );
+}
+
+/**
+ * 现行形态：正文直接写原生返利链接。
+ *
+ * 站内跳转对读者是多余的一跳，对 SEO 也没有收益（/go/ 本来就被 robots 屏蔽），
+ * 而短链把「最终去哪」藏在了数据库里——排查链接失效时要多查一张表。改成原生
+ * 链接后，正文里看到的就是商家真实地址，返利参数在保存时已经拼好。
+ */
+export async function applyArticleAffiliateLinks(
+  html: string,
+  database: OutboundLinkExecutor = db,
+) {
+  return rewriteArticleOutboundLinks(html, database, async (url) => url, {
+    rel: "nofollow sponsored noopener noreferrer",
+    target: "_blank",
+  });
+}
+
+/** markdown 正文版本的原生返利链接改写。rel 由渲染器统一补。 */
+export async function applyMarkdownAffiliateLinks(
+  markdown: string,
+  database: OutboundLinkExecutor = db,
+) {
+  return rewriteMarkdownOutboundLinks(markdown, database, async (url) => url);
 }

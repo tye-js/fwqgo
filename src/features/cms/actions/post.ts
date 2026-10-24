@@ -173,7 +173,7 @@ async function prepareEditedArticleContent(content: string) {
     console.error("文章正文自动链接处理失败，已保留原始正文:", error);
     return {
       content,
-      warnings: ["自动短链处理失败，正文已按原始链接保存"],
+      warnings: ["自动返利链接处理失败，正文已按原始链接保存"],
     };
   }
 }

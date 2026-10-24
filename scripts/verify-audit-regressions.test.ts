@@ -105,7 +105,7 @@ assert.equal((await POST(request())).status,429);
 `);
 });
 
-void test("article creation reuses its transaction for merchant and short-link queries", () => {
+void test("article creation reuses its transaction for merchant and native affiliate links", () => {
   isolated(String.raw`
 import assert from "node:assert/strict";
 import { mock } from "bun:test";
@@ -122,7 +122,10 @@ const tx={
 };
 const result=await createPostRecordInTransaction({title:"Fixture article",description:"Fixture description",categoryId:1,published:false,content:"[buy](https://merchant.example/product?pid=4&aff=old) [another](https://merchant.example/product?pid=5&aff=old)"},tx);
 assert.equal(result.error,undefined);
-assert.match(result.data.content,/\/go\/fixture-link/);
+// 正文里写的是原生返利链接：推广参数在保存时拼好，不再换成 /go/ 短链。
+assert.ok(result.data.content.includes("https://merchant.example/product?pid=4&aff=42"));
+assert.ok(result.data.content.includes("https://merchant.example/product?pid=5&aff=42"));
+assert.ok(!result.data.content.includes("/go/"));
 assert.equal(merchantReads,1);
 `);
 });

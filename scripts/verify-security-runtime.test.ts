@@ -862,6 +862,43 @@ console.log("outbound-labels-ok");
   assert.match(result.stdout, /outbound-labels-ok/);
 });
 
+void test("article affiliate links keep the native merchant URL and create no short link", () => {
+  const result = spawnSync(process.execPath, ["--no-env-file", "-"], {
+    cwd: process.cwd(),
+    env: { ...process.env, ...databaseFixture },
+    encoding: "utf8",
+    timeout: 10000,
+    input: String.raw`
+import assert from "node:assert/strict";
+import { mock } from "bun:test";
+const provider = {officialUrl: "https://merchant.example", affUrl: "https://merchant.example/?aff=42", affParam: "aff", affValue: "42"};
+mock.module("@fwqgo/db", () => ({
+  db: {
+    select() {return {from(table) {
+      if (table[Symbol.for("drizzle:Name")] === "aff_service_providers") return Promise.resolve([provider]);
+      return {where: () => ({limit: async () => []})};
+    }};},
+    insert() {throw new Error("原生返利链接不应再写入 outbound_links");},
+  },
+  readDb: {select() {throw new Error("unexpected read");}},
+}));
+const { applyArticleAffiliateLinks, applyMarkdownAffiliateLinks } = await import("./src/server/links/outbound-short-link.ts");
+assert.equal(
+  await applyMarkdownAffiliateLinks("[买](https://merchant.example/product?pid=4&aff=old)"),
+  "[买](https://merchant.example/product?pid=4&aff=42)",
+);
+assert.equal(await applyMarkdownAffiliateLinks("[买](/go/safe123)"), "[买](/go/safe123)");
+const html = await applyArticleAffiliateLinks('<p><a href="https://merchant.example/buy?pid=9">买</a></p>');
+assert.ok(html.includes("https://merchant.example/buy?pid=9&amp;aff=42") || html.includes("https://merchant.example/buy?pid=9&aff=42"));
+assert.ok(html.includes('rel="nofollow sponsored noopener noreferrer"'));
+assert.ok(!html.includes("/go/"));
+console.log("native-affiliate-ok");
+`,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /native-affiliate-ok/);
+});
+
 void test("release builds use read-only credentials and forward server loopback URLs without changing deployment configuration", () => {
   for (const host of ["127.0.0.1", "localhost", "[::1]"]) {
     const original = {

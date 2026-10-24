@@ -17,8 +17,8 @@ import { db } from "@fwqgo/db";
 import { categories, postTags, posts, tags } from "@fwqgo/db/schema";
 import { syncImageReferencesForPost } from "@/server/images/assets";
 import {
-  shortenArticleOutboundLinks,
-  shortenMarkdownOutboundLinks,
+  applyArticleAffiliateLinks,
+  applyMarkdownAffiliateLinks,
   type OutboundLinkExecutor,
 } from "@/server/links/outbound-short-link";
 import { type CreatePostParams } from "@/types/post.types";
@@ -69,6 +69,14 @@ export function getErrorMessage(error: unknown) {
   return typeof error === "string" ? error : "未知错误";
 }
 
+/**
+ * 正文入库前的链接处理。
+ *
+ * 只做一件事：把正文里指向已登记供应商的链接补上我们的推广参数，然后**原样
+ * 保留商家地址**。2026-10 之前这里会把链接换成 `/go/{slug}` 短链，短链把「最终
+ * 去哪」藏在 `outbound_links` 表里，排查失效要多查一张表，读者也多一跳；现在
+ * 统一写原生返利链接。存量文章里的 `/go/` 不会被改动，跳转路由也仍然保留。
+ */
 export async function prepareArticleContentForStorage(
   content: string,
   database: OutboundLinkExecutor = db,
@@ -81,11 +89,11 @@ export async function prepareArticleContentForStorage(
 
   if (looksLikeHtmlContent(trimmedContent)) {
     return normalizeArticleHtml(
-      await shortenArticleOutboundLinks(trimmedContent, database),
+      await applyArticleAffiliateLinks(trimmedContent, database),
     );
   }
 
-  return shortenMarkdownOutboundLinks(trimmedContent, database);
+  return applyMarkdownAffiliateLinks(trimmedContent, database);
 }
 
 function normalizeTagName(name: string) {
