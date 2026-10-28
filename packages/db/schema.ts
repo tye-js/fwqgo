@@ -20,6 +20,11 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { MIN_PUBLIC_ARTICLE_CONTENT_LENGTH } from "@fwqgo/core/public-content-policy";
+import type {
+  ServerOfferCnPing,
+  ServerOfferGeoPing,
+  ServerOfferTestIp,
+} from "@fwqgo/core/server-offer-external-facts";
 
 // Post table
 export const posts = pgTable(
@@ -1639,6 +1644,24 @@ export const serverOffers = pgTable(
     network: text("network"),
     ipv4: text("ipv4"),
     ipv6: text("ipv6"),
+    tier: varchar("tier", { length: 40 }),
+    claudeSupport: varchar("claudeSupport", { length: 40 }),
+    nativeIpType: varchar("nativeIpType", { length: 40 }),
+    triNetwork: boolean("triNetwork").default(false).notNull(),
+    refundPolicy: text("refundPolicy"),
+    renewPriceNative: text("renewPriceNative"),
+    panelNames: jsonb("panelNames")
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    testIps: jsonb("testIps")
+      .$type<ServerOfferTestIp[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    cnPing: jsonb("cnPing").$type<ServerOfferCnPing>(),
+    geoPing: jsonb("geoPing").$type<ServerOfferGeoPing>(),
+    externalSource: varchar("externalSource", { length: 80 }),
+    externalVerifiedAt: timestamp("externalVerifiedAt"),
     priceAmount: numeric("priceAmount", { precision: 12, scale: 2 }),
     originalPriceAmount: numeric("originalPriceAmount", {
       precision: 12,
