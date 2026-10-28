@@ -123,9 +123,9 @@ const VENDOR_PROVIDER: Record<string, string | null> = {
   vpshosting: "vps.hosting",
   hostkvm: "hostkvm",
   jtti: "jtti",
+  tmhhost: "tmhhost",
   hostinger: null,
   digitalocean: null,
-  tmhhost: null,
 };
 
 const CURRENCY_BY_SYMBOL: Record<string, string> = {
@@ -567,19 +567,44 @@ async function main() {
       };
     }
 
-    const offerAffUrl = text(provider.offerAffUrl);
-    if (offerAffUrl) {
-      if (provider.offerAffiliateMode === "full_replace") {
+    // 套餐采集返利配置为空时，回退到供应商档案里的通用返利配置（affUrl/affParam/affValue）。
+    const affiliate = {
+      url: text(provider.offerAffUrl) || text(provider.affUrl),
+      param: text(provider.offerAffParam) || text(provider.affParam),
+      value: text(provider.offerAffValue) || text(provider.affValue),
+      mode: text(provider.offerAffUrl)
+        ? provider.offerAffiliateMode
+        : text(provider.affParam) === "href"
+          ? "full_replace"
+          : "query_param",
+      source: text(provider.offerAffUrl) ? "套餐采集返利配置" : "通用返利配置",
+    };
+
+    if (affiliate.url) {
+      if (affiliate.mode === "full_replace") {
         return {
-          purchaseUrl: offerAffUrl,
+          purchaseUrl: affiliate.url,
           status: "provider-aff",
-          detail: "full_replace 模式：返利短链，不带产品定位",
+          detail: `${affiliate.source}：full_replace 模式，返利短链不带产品定位`,
         };
       }
+      if (productId && affiliate.param && affiliate.value) {
+        try {
+          const url = new URL(officialUrl);
+          url.searchParams.set(affiliate.param, affiliate.value);
+          return {
+            purchaseUrl: url.toString(),
+            status: "provider-aff",
+            detail: `${affiliate.source}：产品页 + ${affiliate.param}=${affiliate.value}`,
+          };
+        } catch {
+          // 官方链接不可解析时退回通用返利入口。
+        }
+      }
       return {
-        purchaseUrl: offerAffUrl,
+        purchaseUrl: affiliate.url,
         status: "provider-aff",
-        detail: "供应商级返利链接（无产品级参数）",
+        detail: `${affiliate.source}：通用返利入口（无产品级参数）`,
       };
     }
 
@@ -1004,18 +1029,23 @@ async function main() {
         const ids = new Set(results.map((item) => item.providerId));
         return ids.has(provider.id);
       })
-      .map(
-        (provider) =>
-          `| ${provider.name} | #${provider.id} | ${
-            provider.offerAffParam && provider.offerAffValue
-              ? `${provider.offerAffParam}=${provider.offerAffValue}`
-              : provider.offerAffUrl || "缺"
-          } | ${
-            provider.offerAffUrl
-              ? "购买链接已带本站返利"
-              : "购买链接只能用官方裸链"
-          } |`,
-      ),
+      .map((provider) => {
+        const items = results.filter((item) => item.providerId === provider.id);
+        const replacedCount = items.filter(
+          (item) => item.affiliate.status !== "missing",
+        ).length;
+        const affLabel =
+          provider.offerAffParam && provider.offerAffValue
+            ? `${provider.offerAffParam}=${provider.offerAffValue}（套餐采集）`
+            : provider.affParam && provider.affValue
+              ? `${provider.affParam}=${provider.affValue}（通用）`
+              : provider.affUrl || "缺";
+        return `| ${provider.name} | #${provider.id} | ${affLabel} | ${
+          replacedCount === items.length
+            ? `购买链接已带本站返利（${items.length} 条）`
+            : `${items.length - replacedCount} 条仍为官方裸链`
+        } |`;
+      }),
     ...vendorNames
       .filter((vendorId) => !VENDOR_PROVIDER[vendorId])
       .map(
