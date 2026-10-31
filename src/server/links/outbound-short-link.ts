@@ -119,6 +119,41 @@ function isShortLink(url: URL) {
   return isInternalUrl(url) && /^\/go\/[a-z0-9-]+$/i.test(url.pathname);
 }
 
+/**
+ * 把历史 `/go/{slug}` 还原成它指向的真实地址。
+ *
+ * 采集入稿时源站可能沿用我们自己的短链（重采旧文、从本站复制素材），旧草稿里也会
+ * 残留短链。只有显式要求展开时才查询 `outbound_links`，编辑存量文章仍走「跳过
+ * `/go/`」的兼容路径，避免把老链接批量改成新地址。
+ */
+async function resolveShortLinkTarget(
+  url: URL,
+  database: OutboundLinkExecutor,
+) {
+  const slug = url.pathname.slice("/go/".length).toLowerCase();
+  if (!/^[a-z0-9-]{1,64}$/.test(slug)) return null;
+
+  const [link] = await database
+    .select({ targetUrl: outboundLinks.targetUrl })
+    .from(outboundLinks)
+    .where(eq(outboundLinks.slug, slug))
+    .limit(1);
+  if (!link?.targetUrl) return null;
+
+  try {
+    return new URL(link.targetUrl);
+  } catch {
+    return null;
+  }
+}
+
+export type OutboundRewriteOptions = {
+  /**
+   * 把 `/go/{slug}` 还原成目标地址后再走返利改写。仅采集入稿使用；默认保留历史短链。
+   */
+  expandShortLinks?: boolean;
+};
+
 type OutboundShortLinkRecord = {
   id: number;
   slug: string;
@@ -241,6 +276,7 @@ async function rewriteArticleOutboundLinks(
   database: OutboundLinkExecutor,
   rewriteHref: OutboundHrefRewriter,
   attributes: OutboundLinkAttributes,
+  options: OutboundRewriteOptions = {},
 ) {
   const $ = cheerio.load(html, null, false);
   const links = $("a[href]").toArray();
@@ -266,8 +302,15 @@ async function rewriteArticleOutboundLinks(
       continue;
     }
 
-    if (!["http:", "https:"].includes(url.protocol) || isShortLink(url)) {
+    if (!["http:", "https:"].includes(url.protocol)) {
       continue;
+    }
+
+    if (isShortLink(url)) {
+      if (!options.expandShortLinks) continue;
+      const target = await resolveShortLinkTarget(url, database);
+      if (!target) continue;
+      url = target;
     }
 
     providers ??= await getAffiliateProviders(database);
@@ -293,6 +336,7 @@ async function rewriteMarkdownOutboundLinks(
   markdown: string,
   database: OutboundLinkExecutor,
   rewriteHref: OutboundHrefRewriter,
+  options: OutboundRewriteOptions = {},
 ) {
   let providers: AffiliateProvider[] | undefined;
   const replacements: Array<{
@@ -327,7 +371,10 @@ async function rewriteMarkdownOutboundLinks(
     }
 
     if (isShortLink(url)) {
-      continue;
+      if (!options.expandShortLinks) continue;
+      const target = await resolveShortLinkTarget(url, database);
+      if (!target) continue;
+      url = target;
     }
 
     providers ??= await getAffiliateProviders(database);
@@ -403,17 +450,30 @@ export async function shortenMarkdownOutboundLinks(
 export async function applyArticleAffiliateLinks(
   html: string,
   database: OutboundLinkExecutor = db,
+  options: OutboundRewriteOptions = {},
 ) {
-  return rewriteArticleOutboundLinks(html, database, async (url) => url, {
-    rel: "nofollow sponsored noopener noreferrer",
-    target: "_blank",
-  });
+  return rewriteArticleOutboundLinks(
+    html,
+    database,
+    async (url) => url,
+    {
+      rel: "nofollow sponsored noopener noreferrer",
+      target: "_blank",
+    },
+    options,
+  );
 }
 
 /** markdown 正文版本的原生返利链接改写。rel 由渲染器统一补。 */
 export async function applyMarkdownAffiliateLinks(
   markdown: string,
   database: OutboundLinkExecutor = db,
+  options: OutboundRewriteOptions = {},
 ) {
-  return rewriteMarkdownOutboundLinks(markdown, database, async (url) => url);
+  return rewriteMarkdownOutboundLinks(
+    markdown,
+    database,
+    async (url) => url,
+    options,
+  );
 }

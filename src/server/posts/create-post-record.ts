@@ -20,6 +20,7 @@ import {
   applyArticleAffiliateLinks,
   applyMarkdownAffiliateLinks,
   type OutboundLinkExecutor,
+  type OutboundRewriteOptions,
 } from "@/server/links/outbound-short-link";
 import { type CreatePostParams } from "@/types/post.types";
 import { PostEditValidationError } from "@/features/cms/lib/post-edit";
@@ -48,7 +49,7 @@ export interface CreatePostInput {
   affiliateReviewDetails?: string | null;
 }
 
-interface CreatePostRecordOptions {
+interface CreatePostRecordOptions extends OutboundRewriteOptions {
   revalidate?: boolean;
 }
 
@@ -80,6 +81,7 @@ export function getErrorMessage(error: unknown) {
 export async function prepareArticleContentForStorage(
   content: string,
   database: OutboundLinkExecutor = db,
+  options: OutboundRewriteOptions = {},
 ) {
   const trimmedContent = content.trim();
 
@@ -89,11 +91,11 @@ export async function prepareArticleContentForStorage(
 
   if (looksLikeHtmlContent(trimmedContent)) {
     return normalizeArticleHtml(
-      await applyArticleAffiliateLinks(trimmedContent, database),
+      await applyArticleAffiliateLinks(trimmedContent, database, options),
     );
   }
 
-  return applyMarkdownAffiliateLinks(trimmedContent, database);
+  return applyMarkdownAffiliateLinks(trimmedContent, database, options);
 }
 
 function normalizeTagName(name: string) {
@@ -219,7 +221,7 @@ export async function createPostRecord(
 ) {
   const shouldRevalidate = options.revalidate ?? true;
   const result = await db.transaction((tx) =>
-    createPostRecordInTransaction(input, tx),
+    createPostRecordInTransaction(input, tx, options),
   );
 
   if (result.data) {
@@ -258,6 +260,7 @@ export async function createPostRecord(
 export async function createPostRecordInTransaction(
   input: CreatePostInput | CreatePostParams,
   tx: PostRecordExecutor,
+  options: OutboundRewriteOptions = {},
 ) {
   const postInput = "post" in input ? input.post : input;
   const inputTags = uniqueTagsBySlug("tags" in input ? input.tags : []);
@@ -314,6 +317,7 @@ export async function createPostRecordInTransaction(
   const normalizedContent = await prepareArticleContentForStorage(
     postInput.content,
     tx,
+    options,
   );
   if (!normalizedContent) {
     return { error: "文章正文不能为空" };

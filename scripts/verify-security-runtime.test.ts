@@ -875,7 +875,9 @@ const provider = {officialUrl: "https://merchant.example", affUrl: "https://merc
 mock.module("@fwqgo/db", () => ({
   db: {
     select() {return {from(table) {
-      if (table[Symbol.for("drizzle:Name")] === "aff_service_providers") return Promise.resolve([provider]);
+      const name = table[Symbol.for("drizzle:Name")];
+      if (name === "aff_service_providers") return Promise.resolve([provider]);
+      if (name === "outbound_links") return {where: () => ({limit: async () => [{targetUrl: "https://merchant.example/product?pid=77"}]})};
       return {where: () => ({limit: async () => []})};
     }};},
     insert() {throw new Error("原生返利链接不应再写入 outbound_links");},
@@ -888,10 +890,17 @@ assert.equal(
   "[买](https://merchant.example/product?pid=4&aff=42)",
 );
 assert.equal(await applyMarkdownAffiliateLinks("[买](/go/safe123)"), "[买](/go/safe123)");
+assert.equal(
+  await applyMarkdownAffiliateLinks("[买](/go/safe123)", undefined, {expandShortLinks: true}),
+  "[买](https://merchant.example/product?pid=77&aff=42)",
+);
 const html = await applyArticleAffiliateLinks('<p><a href="https://merchant.example/buy?pid=9">买</a></p>');
 assert.ok(html.includes("https://merchant.example/buy?pid=9&amp;aff=42") || html.includes("https://merchant.example/buy?pid=9&aff=42"));
 assert.ok(html.includes('rel="nofollow sponsored noopener noreferrer"'));
 assert.ok(!html.includes("/go/"));
+const expandedHtml = await applyArticleAffiliateLinks('<p><a href="/go/safe123">买</a></p>', undefined, {expandShortLinks: true});
+assert.ok(expandedHtml.includes("https://merchant.example/product?pid=77&amp;aff=42"));
+assert.ok(!expandedHtml.includes("/go/"));
 console.log("native-affiliate-ok");
 `,
   });

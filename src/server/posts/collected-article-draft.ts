@@ -105,6 +105,9 @@ export async function saveCollectedArticleDraft(
             : null,
         },
         tx,
+        // 采集入稿不应保留历史 `/go/{slug}`：源站可能复用我们的短链，旧草稿也会残留。
+        // 展开后再补返利参数，草稿里看到的就是商家真实地址。
+        { expandShortLinks: true },
       );
       if (result.error || !result.data) {
         throw new Error(result.error ?? "采集正文保存草稿失败");
