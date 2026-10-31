@@ -321,10 +321,10 @@ const articleCard = readFileSync(
 );
 assert.match(
   articleCard,
-  /variant === "home-list"[\s\S]{0,120}\(max-width: 639px\) 80px, 144px/,
+  /variant === "home-list"[\s\S]{0,120}\(max-width: 639px\) 88px, 176px/,
 );
-assert.match(articleCard, /grid-cols-\[80px_minmax\(0,1fr\)\]/);
-assert.match(articleCard, /sm:grid-cols-\[144px_minmax\(0,1fr\)\]/);
+assert.match(articleCard, /grid-cols-\[88px_minmax\(0,1fr\)\]/);
+assert.match(articleCard, /sm:grid-cols-\[176px_minmax\(0,1fr\)\]/);
 assert.match(
   articleCard,
   /variant === "feature"[\s\S]{0,120}\(max-width: 639px\) calc\(100vw - 2rem\), \(max-width: 1279px\) 46vw, 408px/,

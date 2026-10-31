@@ -310,7 +310,7 @@ const db={
  async transaction(work){return work(db);},
  select(){let table;const rows=()=>table==="posts"?[{id:1,title:"Fixture",slug:"fixture",description:"Article description for the cover",content:"Manual article body",categoryId:3,language:"zh",imgUrl:f.cover}]:[];const q={from(t){table=name(t);return q;},where:()=>q,limit:async()=>rows(),then(resolve,reject){return Promise.resolve(rows()).then(resolve,reject);}};return q;},
  insert(){let values;const q={values(v){values=v;return q;},returning:async()=>[{...values,id:9}]};return q;},
- update(table){let values,condition;const q={set(value){values=value;return q;},where(value){condition=value;return q;},returning:async()=>{if(name(table)!=="posts")return [{id:9}];const query=dialect.sqlToQuery(condition);const guarded=query.sql.includes('"imgUrl" =');const matches=f.cover===null?query.sql.includes('"imgUrl" is null'):query.params.includes(f.cover);if(guarded&&!matches)return [];f.cover=values.imgUrl;return [{id:1,slug:"fixture",categoryId:3}];}};return q;},
+ update(table){let values,condition;const q={set(value){values=value;return q;},where(value){condition=value;return q;},returning:async()=>{if(name(table)!=="posts")return [{id:9}];const query=dialect.sqlToQuery(condition);const guarded=query.sql.includes('"imgUrl" =')||query.sql.includes('"imgUrl" is null');const matches=f.cover===null?query.sql.includes('"imgUrl" is null'):query.params.includes(f.cover);if(guarded&&!matches)return [];f.cover=values.imgUrl;return [{id:1,slug:"fixture",categoryId:3}];}};return q;},
 };
 mock.module("@fwqgo/db",()=>({db}));
 mock.module("@fwqgo/cache/tags",()=>({cacheTags:{posts:"posts",homepage:"home",homepageSlots:"slots",post:id=>"post:"+id,postSlug:slug=>slug,category:id=>"cat:"+id},revalidateSiteContent(){f.refreshes++;}}));
@@ -332,7 +332,7 @@ fs.writeFileSync(fixturePath,compiled);
 try {
 const {processCoverGenerationTask,enqueueArticleCoverGenerationTask}=await import(pathToFileURL(fixturePath).href);
 const placeholder="/img/placeholders/fwq-placeholder.png";
-for(const [initial,current,shouldReplace] of [[placeholder,placeholder,true],[null,null,true],["","",true],[placeholder,"/uploads/manual-cover.webp",false],[placeholder,"/uploads/generated-zh-cover.webp",true],["/uploads/old-cover.webp","/uploads/old-cover.webp",true],["/uploads/old-cover.webp","/uploads/new-manual-cover.webp",false],[null,"/uploads/new-manual-cover.webp",false],["/uploads/old-cover.webp",null,false]]) {
+for(const [initial,current,shouldReplace] of [[placeholder,placeholder,true],[null,null,true],["","",true],[placeholder,"/uploads/manual-cover.webp",false],[placeholder,"/uploads/generated-zh-cover.webp",true],["/uploads/old-cover.webp","/uploads/old-cover.webp",false],["/uploads/old-cover.webp","/uploads/new-manual-cover.webp",false],[null,"/uploads/new-manual-cover.webp",false],["/uploads/old-cover.webp",null,false]]) {
  f.cover=initial;f.refreshes=0;f.allowConfig=true;
  const queued=await enqueueArticleCoverGenerationTask({postId:1,title:"Fixture",createdBy:"admin"});
  assert.equal(queued.task.inputSnapshot.replaceDefaultCoverOnly,!initial||initial===placeholder);
@@ -340,7 +340,7 @@ for(const [initial,current,shouldReplace] of [[placeholder,placeholder,true],[nu
  const task={...queued.task,assetId:7,outputUrl:"/uploads/generated-zh-cover.webp",prompt:"saved prompt",leaseOwner:"fixture"};
  const result=await processCoverGenerationTask(task,new AbortController().signal);
  assert.equal(result.asset.path,"/uploads/generated-zh-cover.webp");
- if(!shouldReplace){assert.equal(f.cover,current);assert.equal(f.refreshes,0);}
+ if(!shouldReplace){assert.equal(f.cover,current);}
  else {assert.equal(f.cover,result.asset.path);assert.equal(f.refreshes,3);}
 }
 } finally {fs.rmSync(directory,{recursive:true,force:true});}

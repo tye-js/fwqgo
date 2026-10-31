@@ -79,9 +79,11 @@ function articleKey(
   language: "zh" | "en" = "zh",
   search = "",
 ): VaryPath {
-  return vary.finalizePageVaryPath(
-    `/${language}/fwq/posts/$d$slug/__PAGE__`,
-    search as Parameters<VaryPathModule["finalizePageVaryPath"]>[1],
+  return vary.finalizeVaryPath(
+    `/${language}/fwq/posts/$d$slug/__PAGE__` as Parameters<
+      VaryPathModule["finalizeVaryPath"]
+    >[0],
+    search as Parameters<VaryPathModule["finalizeVaryPath"]>[1],
     vary.appendLayoutVaryPath(null, slug, "slug", false),
   );
 }
